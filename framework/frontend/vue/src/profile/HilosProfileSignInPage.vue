@@ -6,18 +6,19 @@ import {
   createHilosProfileSignInActions,
   createSignal,
   focusInitial,
-  hilosProfileLinkableProviders,
-  hilosProfilePasswordState,
+  hilosProfileAddableWays,
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
   HILOS_PROFILE_SIGN_IN_COPY,
   HILOS_STEP_UP_COPY,
   hilosToasts,
+  isHilosProfilePasskeyOnly,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
   sessionAuthMethods,
   watchHilosProfilePasswordUpdated,
   type HilosAuthContext,
+  type HilosProfileAddableWay,
   type HilosProfileSignInMethod,
 } from '@hilos/core'
 import { computed, nextTick, onUnmounted, ref, useId, watch } from 'vue'
@@ -42,17 +43,44 @@ watch(
   (methods) => methodsSignal.set(methods),
 )
 const offered = useSignal(sessionAuthMethods(props.context.scopes))
-const providers = computed(() =>
-  hilosProfileLinkableProviders(props.methods, offered.value),
-)
-const passwordState = computed(() => hilosProfilePasswordState(props.methods))
 const passkeySupported = isPasskeySupported()
+/** What the account can still add: the chooser's buttons and the warning's. */
+const ways = computed(() =>
+  hilosProfileAddableWays(props.methods, offered.value, passkeySupported),
+)
+const passkeyOnly = computed(() => isHilosProfilePasskeyOnly(props.methods))
+const passkeyOnlyWays = computed(() =>
+  ways.value.filter((way) => way.kind !== 'passkey'),
+)
 const actions = createHilosProfileSignInActions(props.context)
 const baseId = useId()
 const PASSWORD_MIN = 8
 
 function title(method: HilosProfileSignInMethod): string {
   return hilosProfileSignInTitle(method, offered.value)
+}
+
+function wayKey(way: HilosProfileAddableWay): string {
+  return way.kind === 'provider' ? way.key : way.kind
+}
+
+function passkeyOnlyWayId(way: HilosProfileAddableWay): string {
+  return way.kind === 'provider'
+    ? `profile-sign-in-passkey-only-link-${way.key}`
+    : `profile-sign-in-passkey-only-${way.kind}`
+}
+
+function passkeyOnlyWayLabel(way: HilosProfileAddableWay): string {
+  switch (way.kind) {
+    case 'password':
+      return HILOS_PROFILE_SIGN_IN_COPY.addPassword
+    case 'phone':
+      return HILOS_PROFILE_SIGN_IN_COPY.addPhone
+    case 'provider':
+      return HILOS_PROFILE_SIGN_IN_COPY.linkProvider.replace('{name}', way.name)
+    case 'passkey':
+      return 'Passkey'
+  }
 }
 
 const unlinkKey = ref<string | null>(null)
@@ -117,6 +145,8 @@ const stepUpBusy = useSignal(flow.stepUp.busy)
 const pendingProvider = useSignal(flow.provider)
 /** The dialog opens on the server's answer, never on the click. */
 const addOpening = computed(() => step.value === 'opening')
+/** The button that asked for the dialog; it alone spins while it opens. */
+const addPressed = ref<string | null>(null)
 const onStepUp = computed(
   () => step.value === 'step-up' || step.value === 'refused',
 )
@@ -140,7 +170,8 @@ const addOpen = computed({
 const addDirty = computed(() =>
   Object.values(addDraft.value).some((value) => value !== ''),
 )
-function openAdd(): void {
+function openAdd(way?: HilosProfileAddableWay): void {
+  addPressed.value = way === undefined ? 'add' : wayKey(way)
   addDraft.value = {
     email: '',
     phone: '',
@@ -148,7 +179,7 @@ function openAdd(): void {
     newPassword: '',
     confirm: '',
   }
-  void flow.open()
+  void flow.open(way)
 }
 watch(step, () => {
   void nextTick(() => {
@@ -286,6 +317,37 @@ onUnmounted(() => {
 <template>
   <section data-id="profile-sign-in-view">
     <HilosPageHeading />
+    <div
+      v-if="passkeyOnly"
+      class="alert alert-warning d-flex gap-2"
+      data-id="profile-sign-in-passkey-only"
+    >
+      <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+      <div>
+        <div class="fw-semibold">
+          {{ HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyTitle }}
+        </div>
+        <p class="mb-2">{{ HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyReason }}</p>
+        <template v-if="passkeyOnlyWays.length > 0">
+          <p class="mb-2">{{ HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyAdd }}</p>
+          <div class="d-flex flex-wrap gap-2">
+            <LoadingButton
+              v-for="way in passkeyOnlyWays"
+              :key="wayKey(way)"
+              class="btn-sm btn-outline-secondary"
+              :loading="addOpening && addPressed === wayKey(way)"
+              :disabled="addOpening"
+              :data-id="passkeyOnlyWayId(way)"
+              @click="openAdd(way)"
+              >{{ passkeyOnlyWayLabel(way) }}</LoadingButton
+            >
+          </div>
+        </template>
+        <p v-else class="mb-0" data-id="profile-sign-in-passkey-only-none">
+          {{ HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyNone }}
+        </p>
+      </div>
+    </div>
     <p v-if="methods.length === 0" class="text-body-secondary">
       No ways to sign in.
     </p>
@@ -354,10 +416,10 @@ onUnmounted(() => {
     </div>
     <LoadingButton
       class="btn-sm btn-outline-primary mt-3"
-      :loading="addOpening"
+      :loading="addOpening && addPressed === 'add'"
       :disabled="addOpening"
       data-id="profile-sign-in-add"
-      @click="openAdd"
+      @click="openAdd()"
       >Add a way to sign in</LoadingButton
     >
 
@@ -438,57 +500,63 @@ onUnmounted(() => {
             aria-hidden="true"
             inert
           >
-            <span
-              v-if="!passwordState.hasPassword"
-              class="btn btn-outline-secondary"
-              ><span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">Password</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
-                  }}</span></span
+            <template v-for="way in ways" :key="wayKey(way)">
+              <span
+                v-if="way.kind === 'password'"
+                class="btn btn-outline-secondary"
+                ><span class="d-flex align-items-center gap-3 text-start"
+                  ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                  ><span
+                    ><span class="d-block fw-semibold small">Password</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
+                    }}</span></span
+                  ></span
                 ></span
-              ></span
-            >
-            <span class="btn btn-outline-secondary"
-              ><span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">Phone</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
-                  }}</span></span
+              >
+              <span
+                v-else-if="way.kind === 'phone'"
+                class="btn btn-outline-secondary"
+                ><span class="d-flex align-items-center gap-3 text-start"
+                  ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                  ><span
+                    ><span class="d-block fw-semibold small">Phone</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
+                    }}</span></span
+                  ></span
                 ></span
-              ></span
-            >
-            <span
-              v-for="entry in providers"
-              :key="entry.key"
-              class="btn btn-outline-secondary"
-              ><span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-box-arrow-in-right fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">{{
-                    entry.label
-                  }}</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.providerDescription
-                  }}</span></span
+              >
+              <span
+                v-else-if="way.kind === 'provider'"
+                class="btn btn-outline-secondary"
+                ><span class="d-flex align-items-center gap-3 text-start"
+                  ><i
+                    class="bi bi-box-arrow-in-right fs-5"
+                    aria-hidden="true"
+                  ></i
+                  ><span
+                    ><span class="d-block fw-semibold small">{{
+                      way.label
+                    }}</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.providerDescription
+                    }}</span></span
+                  ></span
                 ></span
-              ></span
-            >
-            <span v-if="passkeySupported" class="btn btn-outline-secondary"
-              ><span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">Passkey</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
-                  }}</span></span
+              >
+              <span v-else class="btn btn-outline-secondary"
+                ><span class="d-flex align-items-center gap-3 text-start"
+                  ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
+                  ><span
+                    ><span class="d-block fw-semibold small">Passkey</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
+                    }}</span></span
+                  ></span
                 ></span
-              ></span
-            >
+              >
+            </template>
           </div>
           <form
             v-if="step === 'step-up'"
@@ -504,78 +572,83 @@ onUnmounted(() => {
             v-else-if="step === 'choose'"
             class="d-flex flex-column gap-2 align-self-start"
           >
-            <button
-              v-if="!passwordState.hasPassword"
-              type="button"
-              class="btn btn-outline-secondary"
-              :disabled="busy"
-              data-id="profile-sign-in-choose-password"
-              @click="flow.choosePassword"
-            >
-              <span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">Password</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
-                  }}</span></span
-                ></span
+            <template v-for="way in ways" :key="wayKey(way)">
+              <button
+                v-if="way.kind === 'password'"
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="busy"
+                data-id="profile-sign-in-choose-password"
+                @click="flow.choosePassword"
               >
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-secondary"
-              :disabled="busy"
-              data-id="profile-sign-in-choose-phone"
-              @click="flow.choosePhone"
-            >
-              <span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">Phone</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
-                  }}</span></span
-                ></span
+                <span class="d-flex align-items-center gap-3 text-start"
+                  ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                  ><span
+                    ><span class="d-block fw-semibold small">Password</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.passwordDescription
+                    }}</span></span
+                  ></span
+                >
+              </button>
+              <button
+                v-else-if="way.kind === 'phone'"
+                type="button"
+                class="btn btn-outline-secondary"
+                :disabled="busy"
+                data-id="profile-sign-in-choose-phone"
+                @click="flow.choosePhone"
               >
-            </button>
-            <LoadingButton
-              v-for="entry in providers"
-              :key="entry.key"
-              class="btn btn-outline-secondary"
-              :loading="busy && pendingProvider === entry.key"
-              :disabled="busy"
-              :data-id="`profile-oauth-link-${entry.key}`"
-              @click="flow.chooseProvider(entry.key)"
-              ><span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-box-arrow-in-right fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">{{
-                    entry.label
-                  }}</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.providerDescription
-                  }}</span></span
-                ></span
-              ></LoadingButton
-            >
-            <LoadingButton
-              v-if="passkeySupported"
-              class="btn btn-outline-secondary"
-              :loading="busy && pendingProvider === null"
-              :disabled="busy"
-              data-id="profile-passkey-add"
-              @click="flow.choosePasskey"
-              ><span class="d-flex align-items-center gap-3 text-start"
-                ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                ><span
-                  ><span class="d-block fw-semibold small">Passkey</span
-                  ><span class="d-block small text-body-secondary">{{
-                    HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
-                  }}</span></span
-                ></span
-              ></LoadingButton
-            >
+                <span class="d-flex align-items-center gap-3 text-start"
+                  ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                  ><span
+                    ><span class="d-block fw-semibold small">Phone</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.phoneDescription
+                    }}</span></span
+                  ></span
+                >
+              </button>
+              <LoadingButton
+                v-else-if="way.kind === 'provider'"
+                class="btn btn-outline-secondary"
+                :loading="busy && pendingProvider === way.key"
+                :disabled="busy"
+                :data-id="`profile-oauth-link-${way.key}`"
+                @click="flow.chooseProvider(way.key)"
+                ><span class="d-flex align-items-center gap-3 text-start"
+                  ><i
+                    class="bi bi-box-arrow-in-right fs-5"
+                    aria-hidden="true"
+                  ></i
+                  ><span
+                    ><span class="d-block fw-semibold small">{{
+                      way.label
+                    }}</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.providerDescription
+                    }}</span></span
+                  ></span
+                ></LoadingButton
+              >
+              <LoadingButton
+                v-else
+                class="btn btn-outline-secondary"
+                :loading="busy && pendingProvider === null"
+                :disabled="busy"
+                data-id="profile-passkey-add"
+                @click="flow.choosePasskey"
+                ><span class="d-flex align-items-center gap-3 text-start"
+                  ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
+                  ><span
+                    ><span class="d-block fw-semibold small">Passkey</span
+                    ><span class="d-block small text-body-secondary">{{
+                      HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription
+                    }}</span></span
+                  ></span
+                ></LoadingButton
+              >
+            </template>
           </div>
           <form
             v-else

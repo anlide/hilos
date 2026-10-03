@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\Data\SelfConnectionBrowserData;
 use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
+use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
@@ -19,6 +20,7 @@ use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\AccountDeletion\AccountDeletionStateProjector;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -33,6 +35,8 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\DataExport\DataExportGroup;
 use Hilos\DataExport\DataExportStateProjector;
 use Hilos\Database\Object\Item\Session;
+use Hilos\Database\Pages\HilosPageCatalog;
+use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Legal\LegalStandingResolver;
@@ -199,6 +203,34 @@ final class ProfileSessionsListTest extends IntegrationTestCase
         self::assertSame(
             new NotificationChannelPreferenceProjector()->sectionData($userId)->toArray(),
             $payload[PagePayload::data][AbstractHilosProfileNotificationsPage::NOTIFICATION_SECTION],
+        );
+    }
+
+    public function testNotificationsPageNamesTheSignInSectionForAnAddress(): void
+    {
+        $this->createUserWithTwoSessions();
+        Hilos::$sr = new ChatSignalRouter();
+
+        ExecutionContext::run(
+            new ExecutionFrame(acceptKey: self::ACCEPT_KEY),
+            static function (): void {
+                new ProfileNotificationsPage(new ChatAgent())->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            },
+        );
+
+        $payload = $this->nextPagePayloadWithData(
+            ProfileNotificationsPage::PAGE,
+            AbstractHilosProfileNotificationsPage::ADDRESS_SECTION,
+        );
+        self::assertSame(
+            [
+                PageCatalogConstants::WIRE_CHILD_PAGE => HilosPageConstants::HILOS_PROFILE_SIGN_IN,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL
+                    => HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_PROFILE_SIGN_IN][PageCatalogConstants::CATALOG_ENTRY_LABEL],
+                PageCatalogConstants::CATALOG_ENTRY_LEAD
+                    => HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_PROFILE_SIGN_IN][PageCatalogConstants::CATALOG_ENTRY_LEAD],
+            ],
+            $payload[PagePayload::data][AbstractHilosProfileNotificationsPage::ADDRESS_SECTION],
         );
     }
 

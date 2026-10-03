@@ -31,6 +31,7 @@ import {
 import {
   describeHilosProfileSignInMethods,
   hilosProfilePasswordState,
+  isHilosProfilePasskeyOnly,
   type HilosProfileSignInMethod,
 } from './profileSignInMethods.js'
 import { type HilosProfileRename } from './profileRename.js'
@@ -72,6 +73,8 @@ export const HILOS_PROFILE_ROOT_COPY = {
   sections: 'Sections',
   open: 'Open',
   loading: 'Loading profile…',
+  passkeyOnly:
+    'Only passkeys can sign you in: access cannot be restored automatically',
 } as const
 
 /** The prefix every profile section's page key carries. */
@@ -123,6 +126,11 @@ export interface HilosProfileRootStore {
   readonly summaries: ReadonlySignal<Readonly<Record<string, string>>>
   /** The account's verified address, or null — no Email row then. */
   readonly verifiedEmail: ReadonlySignal<string | null>
+  /**
+   * Whether device keys are the account's only way in (HIL-1166) — the warning
+   * line under the sign-in row; false while the project hands no method list.
+   */
+  readonly passkeyOnly: ReadonlySignal<boolean>
   /** Start taking the sections from the page's answer and their frames. */
   start(): void
   /** Stop taking them. */
@@ -189,6 +197,10 @@ export function createHilosProfileRootStore(
       return methods === undefined
         ? null
         : hilosProfilePasswordState(methods).verifiedEmail
+    }),
+    passkeyOnly: computedSignal(() => {
+      const methods = binding.signInMethods?.get()
+      return methods === undefined ? false : isHilosProfilePasskeyOnly(methods)
     }),
     start() {
       stopPreferences ??= startHilosNotificationPreferences(context)

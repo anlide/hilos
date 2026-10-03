@@ -2,9 +2,11 @@
 // Initial state rides in page_response; updates arrive on the user's existing
 // notification group. The shared store never makes an optimistic toggle.
 import { z } from 'zod'
+import { type HilosPageCrumb } from '../admin/identity/hilosPageIdentity.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import {
+  computedSignal,
   createSignal,
   subscribeSignal,
   type ReadonlySignal,
@@ -211,6 +213,46 @@ export const hilosNotificationPreferences: HilosNotificationPreferencesStore =
 /** Page-data key carrying the notification preference section. */
 export const PROFILE_NOTIFICATION_PREFERENCES_SECTION =
   'notificationPreferences'
+
+/**
+ * Page-data key naming the profile section where an address is added, or null
+ * when the project serves none (PHP `AbstractHilosProfileNotificationsPage::ADDRESS_SECTION`, HIL-1166).
+ */
+export const PROFILE_NOTIFICATION_ADDRESS_SECTION = 'addressSection'
+
+const addressSectionSchema = z.looseObject({
+  page: z.string(),
+  label: z.string(),
+})
+
+/**
+ * The section a channel without an address points at, from the notifications
+ * page's answer (HIL-1166). Only the server knows which pages the project
+ * serves, so the hint links there only when the answer names the section; a
+ * missing or malformed slot reads as none.
+ *
+ * @param scopes The page's scope manager.
+ */
+export function hilosNotificationAddressSection(
+  scopes: ScopeManager,
+): ReadonlySignal<HilosPageCrumb | null> {
+  const slot = scopes.pageDataSignal(PROFILE_NOTIFICATION_ADDRESS_SECTION)
+
+  return computedSignal(() => {
+    const parsed = addressSectionSchema.safeParse(slot.get())
+
+    return parsed.success
+      ? { page: parsed.data.page, label: parsed.data.label }
+      : null
+  })
+}
+
+/** The notification preference rows' words shared by the three view layers. */
+export const HILOS_NOTIFICATION_PREFERENCES_COPY = {
+  noAddress: 'Add an address in your profile to enable this channel.',
+  noAddressBefore: 'Add an address in',
+  noAddressAfter: 'to enable this channel.',
+} as const
 
 /** The stores and connection of a page carrying notification preferences. */
 export interface HilosProfileNotificationsContext {

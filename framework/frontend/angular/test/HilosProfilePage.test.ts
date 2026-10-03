@@ -16,13 +16,23 @@ import { HilosProfilePage } from '../src/profile/HilosProfilePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
 /** A router on the profile root whose sections all have an address. */
-function router(): HilosRouter {
+function router(withSignIn = false): HilosRouter {
   return {
     pageIdentity: createSignal({
       label: 'Profile',
       lead: '',
       breadcrumb: [{ page: HilosPages.PROFILE, label: 'Profile' }],
       children: [
+        ...(withSignIn
+          ? [
+              {
+                page: HilosPages.PROFILE_SIGN_IN,
+                label: 'Ways to sign in',
+                lead: '',
+                icon: null,
+              },
+            ]
+          : []),
         {
           page: HilosPages.PROFILE_SECURITY,
           label: 'Security',
@@ -48,7 +58,11 @@ function router(): HilosRouter {
   } as unknown as HilosRouter
 }
 
-function setup(binding: HilosProfileBinding, signedIn = true) {
+function setup(
+  binding: HilosProfileBinding,
+  signedIn = true,
+  withSignIn = false,
+) {
   const scopes = new ScopeManager()
   if (signedIn) scopes.session.data.set('currentUser', { type: 'user', id: 1 })
   const context = {
@@ -62,7 +76,7 @@ function setup(binding: HilosProfileBinding, signedIn = true) {
     scopes,
   } as unknown as HilosProfilePageContext
   TestBed.configureTestingModule({
-    providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    providers: [{ provide: HILOS_ROUTER, useValue: router(withSignIn) }],
   })
   const fixture = TestBed.createComponent(HilosProfilePage)
   fixture.componentRef.setInput('context', context)
@@ -71,7 +85,7 @@ function setup(binding: HilosProfileBinding, signedIn = true) {
   const root = fixture.nativeElement as HTMLElement
   const node = (id: string) =>
     root.querySelector<HTMLElement>(`[data-id="${id}"]`)
-  return { node, root }
+  return { fixture, node, root }
 }
 
 function nameOnly(): HilosProfileBinding {
@@ -142,4 +156,46 @@ it('draws only the placeholder while nobody is signed in', () => {
 
   expect(node('profile-loading')).not.toBeNull()
   expect(node('profile-view')).toBeNull()
+})
+
+it('warns under the sign-in row while device keys are the only way in, live', () => {
+  const methods = createSignal(
+    resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 2,
+          type: 'passkey',
+          provider: null,
+          identifier: 'opaque',
+          verified: true,
+        },
+      ],
+      [],
+    ),
+  )
+  const { fixture, node } = setup(
+    { ...nameOnly(), signInMethods: methods },
+    true,
+    true,
+  )
+
+  expect(node('profile-sign-in-passkey-only-line')?.textContent?.trim()).toBe(
+    'Only passkeys can sign you in: access cannot be restored automatically',
+  )
+  methods.set(
+    resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          provider: null,
+          identifier: 'ann@example.test',
+          verified: true,
+        },
+      ],
+      [],
+    ),
+  )
+  fixture.detectChanges()
+  expect(node('profile-sign-in-passkey-only-line')).toBeNull()
 })

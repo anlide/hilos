@@ -1,6 +1,11 @@
 // Projected sign-in methods shared by the profile root and its sign-in section.
 // Projects resolve their entity references; this module joins the public fields.
 import { oauthProviderOptionsFor } from '../auth/authContext.js'
+import {
+  PASSKEY_METHOD_KEY,
+  PASSWORD_METHOD_KEY,
+  SMS_METHOD_KEY,
+} from '../auth/authFlow.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type AuthMethodEntry } from '../session/sessionScope.js'
 import {
@@ -95,11 +100,74 @@ export function hilosProfilePasswordState(
 export function hilosProfileLinkableProviders(
   methods: readonly HilosProfileSignInMethod[],
   offered: readonly AuthMethodEntry[],
-): { key: string; label: string }[] {
+): { key: string; label: string; name: string }[] {
   const linked = new Set(methods.map((method) => method.provider))
   return oauthProviderOptionsFor(offered)
     .filter((provider) => !linked.has(provider.key))
-    .map(({ key, label }) => ({ key, label }))
+    .map(({ key, label, name }) => ({ key, label, name }))
+}
+
+/**
+ * Whether device keys are the account's only way in (HIL-1166): the list is
+ * not empty and every method in it is a passkey. An empty list — not arrived
+ * yet, or not supplied by the project — answers false: no warning is better
+ * than a warning on a guess.
+ *
+ * @param methods The current account's projected methods.
+ */
+export function isHilosProfilePasskeyOnly(
+  methods: readonly HilosProfileSignInMethod[],
+): boolean {
+  return (
+    methods.length > 0 &&
+    methods.every((method) => method.type === PASSKEY_METHOD_KEY)
+  )
+}
+
+/** One way the current account can still add, in the order of the add window. */
+export type HilosProfileAddableWay =
+  | { readonly kind: 'password' }
+  | { readonly kind: 'phone' }
+  | {
+      readonly kind: 'provider'
+      readonly key: string
+      readonly label: string
+      readonly name: string
+    }
+  | { readonly kind: 'passkey' }
+
+/**
+ * The ways the account can add right now, in the order of the add window
+ * (HIL-1166). One list feeds both the passkey-only warning and the window's
+ * choices, so a method the administrator switched off leaves both at once.
+ *
+ * @param methods The current account's projected methods.
+ * @param offered The session's offered sign-in methods — on and ready.
+ * @param passkeySupported Whether this browser can create a passkey.
+ */
+export function hilosProfileAddableWays(
+  methods: readonly HilosProfileSignInMethod[],
+  offered: readonly AuthMethodEntry[],
+  passkeySupported: boolean,
+): HilosProfileAddableWay[] {
+  const isOffered = (key: string): boolean =>
+    offered.some((entry) => entry.key === key)
+  const ways: HilosProfileAddableWay[] = []
+  if (
+    !hilosProfilePasswordState(methods).hasPassword &&
+    isOffered(PASSWORD_METHOD_KEY)
+  ) {
+    ways.push({ kind: 'password' })
+  }
+  if (isOffered(SMS_METHOD_KEY)) ways.push({ kind: 'phone' })
+  for (const provider of hilosProfileLinkableProviders(methods, offered)) {
+    ways.push({ kind: 'provider', ...provider })
+  }
+  if (passkeySupported && isOffered(PASSKEY_METHOD_KEY)) {
+    ways.push({ kind: 'passkey' })
+  }
+
+  return ways
 }
 
 /**

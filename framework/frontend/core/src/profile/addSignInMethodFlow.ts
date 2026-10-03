@@ -1,7 +1,8 @@
 // The one add-method dialog: choosing a method and proving its address stay in
 // this flow. A closed or superseded round never consumes a late action outcome.
 // Adding a way in is a protected operation (HIL-1138): the dialog opens on the
-// server's word, at the confirmation step or straight at the chooser.
+// server's word, at the confirmation step or straight at the chooser — or, when
+// it was opened for one way (HIL-1166), straight at that way's first step.
 import { type HilosAuthContext } from '../auth/authContext.js'
 import { createOAuthLogin, describeOAuthError } from '../auth/oauthLogin.js'
 import { createPasskeyCeremony } from '../auth/passkeyCeremony.js'
@@ -19,6 +20,7 @@ import { hilosToasts } from '../state/toasts.js'
 import {
   hilosProfilePasswordState,
   watchHilosProfilePasswordUpdated,
+  type HilosProfileAddableWay,
   type HilosProfileSignInMethod,
 } from './profileSignInMethods.js'
 import { createHilosProfileSignInActions } from './signInMethods.js'
@@ -53,9 +55,14 @@ export interface HilosProfileAddSignInFlow {
   readonly provider: ReadonlySignal<string | null>
   readonly email: ReadonlySignal<string>
   readonly phone: ReadonlySignal<string>
-  /** Ask the server whether a confirmation is needed and open on its answer. */
-  open(): Promise<void>
-  /** Send the confirmation step's proof; the chooser follows a success. */
+  /**
+   * Ask the server whether a confirmation is needed and open on its answer.
+   *
+   * @param way The way to enter instead of the chooser once the confirmation
+   *   is behind (HIL-1166); without it the dialog opens on the chooser.
+   */
+  open(way?: HilosProfileAddableWay): Promise<void>
+  /** Send the confirmation step's proof; the chooser — or the way asked for at open — follows a success. */
   confirmStepUp(): Promise<void>
   choosePassword(): void
   choosePhone(): void
@@ -84,6 +91,14 @@ export const HILOS_PROFILE_SIGN_IN_COPY = {
   passkeyAdded: 'Passkey added. You can now sign in with it.',
   failed: 'The action failed. Please try again.',
   onlyMethod: 'You cannot remove your only login method',
+  passkeyOnlyTitle: 'Only your passkeys can sign you in',
+  passkeyOnlyReason:
+    'If you lose them, your access cannot be restored automatically: there is no email address or phone number to send a recovery code to.',
+  passkeyOnlyAdd: 'Add another way to sign in:',
+  passkeyOnlyNone: 'No other way to sign in is available here.',
+  addPassword: 'Add a password',
+  addPhone: 'Add a phone',
+  linkProvider: 'Link {name}',
 } as const
 
 /**
@@ -112,9 +127,11 @@ export function createHilosProfileAddSignInFlow(
   let stopPassword: (() => void) | null = null
   let stopTrip: (() => void) | null = null
   let tripAbort: AbortController | null = null
+  let pendingWay: HilosProfileAddableWay | null = null
 
   function close(): void {
     round += 1
+    pendingWay = null
     stopPassword?.()
     stopPassword = null
     stopTrip?.()
@@ -133,6 +150,32 @@ export function createHilosProfileAddSignInFlow(
     if (busy.get() || step.get() !== 'choose') return
     refusal.set(null)
     step.set(next)
+  }
+
+  /**
+   * Land on the chooser, then step into the way the dialog was opened for, if
+   * any. Entering goes through the chooser's own commands, so Back from the
+   * way's first step returns to the chooser exactly as after a choice.
+   */
+  function enterChooser(): void {
+    step.set('choose')
+    const way = pendingWay
+    pendingWay = null
+    if (way === null) return
+    switch (way.kind) {
+      case 'password':
+        flow.choosePassword()
+        break
+      case 'phone':
+        flow.choosePhone()
+        break
+      case 'provider':
+        void flow.chooseProvider(way.key)
+        break
+      case 'passkey':
+        void flow.choosePasskey()
+        break
+    }
   }
 
   async function submit(
@@ -162,7 +205,7 @@ export function createHilosProfileAddSignInFlow(
     }
   }
 
-  return {
+  const flow: HilosProfileAddSignInFlow = {
     step,
     stepUp,
     busy,
@@ -170,8 +213,9 @@ export function createHilosProfileAddSignInFlow(
     provider,
     email,
     phone,
-    async open() {
+    async open(way) {
       if (step.get() !== 'closed') return
+      pendingWay = way ?? null
       stopPassword = watchHilosProfilePasswordUpdated(
         context.connection,
         () => {
@@ -192,13 +236,8 @@ export function createHilosProfileAddSignInFlow(
       if (round !== started) return
       busy.set(false)
       if (verdict === 'refused') refusal.set(stepUp.refusal.get())
-      step.set(
-        verdict === 'skip'
-          ? 'choose'
-          : verdict === 'ask'
-            ? 'step-up'
-            : 'refused',
-      )
+      if (verdict === 'skip') enterChooser()
+      else step.set(verdict === 'ask' ? 'step-up' : 'refused')
     },
     async confirmStepUp() {
       if (busy.get() || step.get() !== 'step-up') return
@@ -207,7 +246,7 @@ export function createHilosProfileAddSignInFlow(
       const confirmed = await stepUp.confirm()
       if (round !== started) return
       busy.set(false)
-      if (confirmed) step.set('choose')
+      if (confirmed) enterChooser()
     },
     choosePassword() {
       if (hilosProfilePasswordState(methods.get()).hasPassword) return
@@ -343,4 +382,6 @@ export function createHilosProfileAddSignInFlow(
       close()
     },
   }
+
+  return flow
 }

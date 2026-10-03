@@ -11,21 +11,26 @@
 // server fans the changed signal back to every one of the user's tabs, and a send
 // that never leaves simply settles the loader and snaps the row back. A channel
 // with no address for it is shown disabled with a hint to add one rather than
-// hidden, so the user sees the whole channel set. Mandatory types carry no toggle
+// hidden, so the user sees the whole channel set; where the mounting page names
+// the profile section that adds an address (HIL-1166), the hint links there.
+// Mandatory types carry no toggle
 // — a switch that cannot be turned off is worse than none — only the note. Sparse
 // opt-out: no muted row means allowed. Mirrors the Vue section. Bootstrap classes
 // only.
 import {
+  HILOS_NOTIFICATION_PREFERENCES_COPY as COPY,
   hilosNotificationPreferences,
   hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
+  type HilosPageCrumb,
   type HilosPushSubscriptionStore,
 } from '@hilos/core'
 import { useId } from 'react'
 
+import { HilosLink } from './HilosLink.js'
 import { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 import { HilosSwitch } from './HilosSwitch.js'
 import { useSignal } from './useSignal.js'
@@ -38,6 +43,10 @@ export interface HilosNotificationPreferencesProps {
   store?: HilosNotificationPreferencesStore
   /** The per-device push store the push channel's toggle renders. */
   pushStore?: HilosPushSubscriptionStore
+  /** The profile section where an address is added, or null when the project has none. */
+  addressSection?: HilosPageCrumb | null
+  /** The path of that section; without it the hint stays plain text. */
+  addressTo?: string
 }
 
 /**
@@ -50,6 +59,8 @@ export function HilosNotificationPreferences({
   connection,
   store = hilosNotificationPreferences,
   pushStore = hilosPushSubscription,
+  addressSection = null,
+  addressTo,
 }: HilosNotificationPreferencesProps) {
   const channels = useSignal(store.channels)
   const mandatoryNote = useSignal(store.mandatoryNote)
@@ -132,7 +143,20 @@ export function HilosNotificationPreferences({
                 className="form-text mt-0"
                 data-id={`hilos-notification-preference-hint-${row.channel}`}
               >
-                Add an address in your profile to enable this channel.
+                {addressSection && addressTo !== undefined ? (
+                  <>
+                    {COPY.noAddressBefore}{' '}
+                    <HilosLink
+                      to={addressTo}
+                      data-id={`hilos-notification-preference-address-${row.channel}`}
+                    >
+                      {addressSection.label}
+                    </HilosLink>{' '}
+                    {COPY.noAddressAfter}
+                  </>
+                ) : (
+                  COPY.noAddress
+                )}
               </div>
             )}
           </div>

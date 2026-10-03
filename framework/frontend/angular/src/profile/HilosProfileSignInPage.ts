@@ -15,13 +15,13 @@ import {
   createHilosProfileSignInActions,
   createSignal,
   focusInitial,
-  hilosProfileLinkableProviders,
-  hilosProfilePasswordState,
+  hilosProfileAddableWays,
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
   HILOS_PROFILE_SIGN_IN_COPY,
   HILOS_STEP_UP_COPY,
   hilosToasts,
+  isHilosProfilePasskeyOnly,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
   sessionAuthMethods,
@@ -30,6 +30,7 @@ import {
   type AuthMethodEntry,
   type HilosAuthContext,
   type HilosProfileAddSignInStep,
+  type HilosProfileAddableWay,
   type HilosProfilePasswordChangeStep,
   type HilosProfileSignInMethod,
 } from '@hilos/core'
@@ -68,6 +69,42 @@ let signInSequence = 0
   template: `
     <section data-id="profile-sign-in-view">
       <hilos-page-heading />
+      @if (passkeyOnly()) {
+        <div
+          class="alert alert-warning d-flex gap-2"
+          data-id="profile-sign-in-passkey-only"
+        >
+          <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+          <div>
+            <div class="fw-semibold">{{ copy.passkeyOnlyTitle }}</div>
+            <p class="mb-2">{{ copy.passkeyOnlyReason }}</p>
+            @if (passkeyOnlyWays().length > 0) {
+              <p class="mb-2">{{ copy.passkeyOnlyAdd }}</p>
+              <div class="d-flex flex-wrap gap-2">
+                @for (way of passkeyOnlyWays(); track wayKey(way)) {
+                  <button
+                    hilosLoadingButton
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    [loading]="
+                      step() === 'opening' && addPressed() === wayKey(way)
+                    "
+                    [disabled]="step() === 'opening'"
+                    [attr.data-id]="passkeyOnlyWayId(way)"
+                    (click)="openAdd(way)"
+                  >
+                    {{ passkeyOnlyWayLabel(way) }}
+                  </button>
+                }
+              </div>
+            } @else {
+              <p class="mb-0" data-id="profile-sign-in-passkey-only-none">
+                {{ copy.passkeyOnlyNone }}
+              </p>
+            }
+          </div>
+        </div>
+      }
       @if (methods().length === 0) {
         <p class="text-body-secondary">No ways to sign in.</p>
       }
@@ -142,7 +179,7 @@ let signInSequence = 0
         hilosLoadingButton
         class="btn btn-sm btn-outline-primary mt-3"
         type="button"
-        [loading]="step() === 'opening'"
+        [loading]="step() === 'opening' && addPressed() === 'add'"
         [disabled]="step() === 'opening'"
         data-id="profile-sign-in-add"
         (click)="openAdd()"
@@ -228,60 +265,61 @@ let signInSequence = 0
               aria-hidden="true"
               inert
             >
-              @if (!passwordState().hasPassword) {
-                <span class="btn btn-outline-secondary"
-                  ><span class="d-flex align-items-center gap-3 text-start"
-                    ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                    ><span
-                      ><span class="d-block fw-semibold small">Password</span
-                      ><span class="d-block small text-body-secondary">{{
-                        copy.passwordDescription
-                      }}</span></span
+              @for (way of ways(); track wayKey(way)) {
+                @if (way.kind === 'password') {
+                  <span class="btn btn-outline-secondary"
+                    ><span class="d-flex align-items-center gap-3 text-start"
+                      ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                      ><span
+                        ><span class="d-block fw-semibold small">Password</span
+                        ><span class="d-block small text-body-secondary">{{
+                          copy.passwordDescription
+                        }}</span></span
+                      ></span
                     ></span
-                  ></span
-                >
-              }
-              <span class="btn btn-outline-secondary"
-                ><span class="d-flex align-items-center gap-3 text-start"
-                  ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                  ><span
-                    ><span class="d-block fw-semibold small">Phone</span
-                    ><span class="d-block small text-body-secondary">{{
-                      copy.phoneDescription
-                    }}</span></span
-                  ></span
-                ></span
-              >
-              @for (entry of providers(); track entry.key) {
-                <span class="btn btn-outline-secondary"
-                  ><span class="d-flex align-items-center gap-3 text-start"
-                    ><i
-                      class="bi bi-box-arrow-in-right fs-5"
-                      aria-hidden="true"
-                    ></i
-                    ><span
-                      ><span class="d-block fw-semibold small">{{
-                        entry.label
-                      }}</span
-                      ><span class="d-block small text-body-secondary">{{
-                        copy.providerDescription
-                      }}</span></span
+                  >
+                } @else if (way.kind === 'phone') {
+                  <span class="btn btn-outline-secondary"
+                    ><span class="d-flex align-items-center gap-3 text-start"
+                      ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                      ><span
+                        ><span class="d-block fw-semibold small">Phone</span
+                        ><span class="d-block small text-body-secondary">{{
+                          copy.phoneDescription
+                        }}</span></span
+                      ></span
                     ></span
-                  ></span
-                >
-              }
-              @if (passkeySupported) {
-                <span class="btn btn-outline-secondary"
-                  ><span class="d-flex align-items-center gap-3 text-start"
-                    ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                    ><span
-                      ><span class="d-block fw-semibold small">Passkey</span
-                      ><span class="d-block small text-body-secondary">{{
-                        copy.passkeyDescription
-                      }}</span></span
+                  >
+                } @else if (way.kind === 'provider') {
+                  <span class="btn btn-outline-secondary"
+                    ><span class="d-flex align-items-center gap-3 text-start"
+                      ><i
+                        class="bi bi-box-arrow-in-right fs-5"
+                        aria-hidden="true"
+                      ></i
+                      ><span
+                        ><span class="d-block fw-semibold small">{{
+                          way.label
+                        }}</span
+                        ><span class="d-block small text-body-secondary">{{
+                          copy.providerDescription
+                        }}</span></span
+                      ></span
                     ></span
-                  ></span
-                >
+                  >
+                } @else {
+                  <span class="btn btn-outline-secondary"
+                    ><span class="d-flex align-items-center gap-3 text-start"
+                      ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
+                      ><span
+                        ><span class="d-block fw-semibold small">Passkey</span
+                        ><span class="d-block small text-body-secondary">{{
+                          copy.passkeyDescription
+                        }}</span></span
+                      ></span
+                    ></span
+                  >
+                }
               }
             </div>
             @if (step() === 'step-up') {
@@ -297,86 +335,91 @@ let signInSequence = 0
               <div class="align-self-start"></div>
             } @else if (step() === 'choose') {
               <div class="d-flex flex-column gap-2 align-self-start">
-                @if (!passwordState().hasPassword) {
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary"
-                    [disabled]="busy()"
-                    data-id="profile-sign-in-choose-password"
-                    (click)="flow().choosePassword()"
-                  >
-                    <span class="d-flex align-items-center gap-3 text-start"
-                      ><i class="bi bi-lock fs-5" aria-hidden="true"></i
-                      ><span
-                        ><span class="d-block fw-semibold small">Password</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.passwordDescription
-                        }}</span></span
-                      ></span
+                @for (way of ways(); track wayKey(way)) {
+                  @if (way.kind === 'password') {
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      [disabled]="busy()"
+                      data-id="profile-sign-in-choose-password"
+                      (click)="flow().choosePassword()"
                     >
-                  </button>
-                }
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary"
-                  [disabled]="busy()"
-                  data-id="profile-sign-in-choose-phone"
-                  (click)="flow().choosePhone()"
-                >
-                  <span class="d-flex align-items-center gap-3 text-start"
-                    ><i class="bi bi-phone fs-5" aria-hidden="true"></i
-                    ><span
-                      ><span class="d-block fw-semibold small">Phone</span
-                      ><span class="d-block small text-body-secondary">{{
-                        copy.phoneDescription
-                      }}</span></span
-                    ></span
-                  >
-                </button>
-                @for (entry of providers(); track entry.key) {
-                  <button
-                    hilosLoadingButton
-                    class="btn btn-outline-secondary"
-                    [loading]="busy() && pendingProvider() === entry.key"
-                    [disabled]="busy()"
-                    [attr.data-id]="'profile-oauth-link-' + entry.key"
-                    (click)="flow().chooseProvider(entry.key)"
-                  >
-                    <span class="d-flex align-items-center gap-3 text-start"
-                      ><i
-                        class="bi bi-box-arrow-in-right fs-5"
-                        aria-hidden="true"
-                      ></i
-                      ><span
-                        ><span class="d-block fw-semibold small">{{
-                          entry.label
-                        }}</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.providerDescription
-                        }}</span></span
-                      ></span
+                      <span class="d-flex align-items-center gap-3 text-start"
+                        ><i class="bi bi-lock fs-5" aria-hidden="true"></i
+                        ><span
+                          ><span class="d-block fw-semibold small"
+                            >Password</span
+                          ><span class="d-block small text-body-secondary">{{
+                            copy.passwordDescription
+                          }}</span></span
+                        ></span
+                      >
+                    </button>
+                  } @else if (way.kind === 'phone') {
+                    <button
+                      type="button"
+                      class="btn btn-outline-secondary"
+                      [disabled]="busy()"
+                      data-id="profile-sign-in-choose-phone"
+                      (click)="flow().choosePhone()"
                     >
-                  </button>
-                }
-                @if (passkeySupported) {
-                  <button
-                    hilosLoadingButton
-                    class="btn btn-outline-secondary"
-                    [loading]="busy() && pendingProvider() === null"
-                    [disabled]="busy()"
-                    data-id="profile-passkey-add"
-                    (click)="flow().choosePasskey()"
-                  >
-                    <span class="d-flex align-items-center gap-3 text-start"
-                      ><i class="bi bi-fingerprint fs-5" aria-hidden="true"></i
-                      ><span
-                        ><span class="d-block fw-semibold small">Passkey</span
-                        ><span class="d-block small text-body-secondary">{{
-                          copy.passkeyDescription
-                        }}</span></span
-                      ></span
+                      <span class="d-flex align-items-center gap-3 text-start"
+                        ><i class="bi bi-phone fs-5" aria-hidden="true"></i
+                        ><span
+                          ><span class="d-block fw-semibold small">Phone</span
+                          ><span class="d-block small text-body-secondary">{{
+                            copy.phoneDescription
+                          }}</span></span
+                        ></span
+                      >
+                    </button>
+                  } @else if (way.kind === 'provider') {
+                    <button
+                      hilosLoadingButton
+                      class="btn btn-outline-secondary"
+                      [loading]="busy() && pendingProvider() === way.key"
+                      [disabled]="busy()"
+                      [attr.data-id]="'profile-oauth-link-' + way.key"
+                      (click)="flow().chooseProvider(way.key)"
                     >
-                  </button>
+                      <span class="d-flex align-items-center gap-3 text-start"
+                        ><i
+                          class="bi bi-box-arrow-in-right fs-5"
+                          aria-hidden="true"
+                        ></i
+                        ><span
+                          ><span class="d-block fw-semibold small">{{
+                            way.label
+                          }}</span
+                          ><span class="d-block small text-body-secondary">{{
+                            copy.providerDescription
+                          }}</span></span
+                        ></span
+                      >
+                    </button>
+                  } @else {
+                    <button
+                      hilosLoadingButton
+                      class="btn btn-outline-secondary"
+                      [loading]="busy() && pendingProvider() === null"
+                      [disabled]="busy()"
+                      data-id="profile-passkey-add"
+                      (click)="flow().choosePasskey()"
+                    >
+                      <span class="d-flex align-items-center gap-3 text-start"
+                        ><i
+                          class="bi bi-fingerprint fs-5"
+                          aria-hidden="true"
+                        ></i
+                        ><span
+                          ><span class="d-block fw-semibold small">Passkey</span
+                          ><span class="d-block small text-body-secondary">{{
+                            copy.passkeyDescription
+                          }}</span></span
+                        ></span
+                      >
+                    </button>
+                  }
                 }
               </div>
             } @else {
@@ -482,13 +525,23 @@ export class HilosProfileSignInPage {
     readonly HilosProfileSignInMethod[]
   >([])
   private readonly offered = signal<readonly AuthMethodEntry[]>([])
-  protected readonly providers = computed(() =>
-    hilosProfileLinkableProviders(this.methods(), this.offered()),
-  )
-  protected readonly passwordState = computed(() =>
-    hilosProfilePasswordState(this.methods()),
-  )
   protected readonly passkeySupported = isPasskeySupported()
+  /** What the account can still add: the chooser's buttons and the warning's. */
+  protected readonly ways = computed(() =>
+    hilosProfileAddableWays(
+      this.methods(),
+      this.offered(),
+      this.passkeySupported,
+    ),
+  )
+  protected readonly passkeyOnly = computed(() =>
+    isHilosProfilePasskeyOnly(this.methods()),
+  )
+  protected readonly passkeyOnlyWays = computed(() =>
+    this.ways().filter((way) => way.kind !== 'passkey'),
+  )
+  /** The button that asked for the dialog; it alone spins while it opens. */
+  protected readonly addPressed = signal<string | null>(null)
   private readonly actions = computed(() =>
     createHilosProfileSignInActions(this.context()),
   )
@@ -720,9 +773,30 @@ export class HilosProfileSignInPage {
     if (await this.unlinkAction.run(this.actions().unlinkIdentity(Number(key))))
       this.unlinkKey.set(null)
   }
-  protected openAdd(): void {
+  protected openAdd(way?: HilosProfileAddableWay): void {
+    this.addPressed.set(way === undefined ? 'add' : this.wayKey(way))
     this.draft.set(emptyDraft())
-    void this.flow().open()
+    void this.flow().open(way)
+  }
+  protected wayKey(way: HilosProfileAddableWay): string {
+    return way.kind === 'provider' ? way.key : way.kind
+  }
+  protected passkeyOnlyWayId(way: HilosProfileAddableWay): string {
+    return way.kind === 'provider'
+      ? `profile-sign-in-passkey-only-link-${way.key}`
+      : `profile-sign-in-passkey-only-${way.kind}`
+  }
+  protected passkeyOnlyWayLabel(way: HilosProfileAddableWay): string {
+    switch (way.kind) {
+      case 'password':
+        return this.copy.addPassword
+      case 'phone':
+        return this.copy.addPhone
+      case 'provider':
+        return this.copy.linkProvider.replace('{name}', way.name)
+      case 'passkey':
+        return 'Passkey'
+    }
   }
   protected closeAdd(open: boolean): void {
     if (!open) this.flow().close()

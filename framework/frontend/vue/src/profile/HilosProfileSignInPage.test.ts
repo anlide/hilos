@@ -41,7 +41,30 @@ const PASSWORD_STEP = {
   purpose: 'add a way to sign in',
   method: 'password',
 }
-function setup(opening: object = NO_STEP) {
+/** The methods the session offers: on, ready, in button order. */
+const OFFERED = [
+  { key: 'password', name: null },
+  { key: 'sms', name: null },
+  { key: 'oauth:github', name: 'GitHub' },
+  { key: 'passkey', name: null },
+]
+const passkeyOnly = resolveHilosProfileSignInMethods(
+  [
+    {
+      id: 3,
+      type: 'passkey',
+      identifier: 'opaque',
+      verified: true,
+      provider: null,
+    },
+  ],
+  [],
+)
+function setup(
+  opening: object = NO_STEP,
+  initial = methods,
+  offered: readonly object[] = OFFERED,
+) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
@@ -49,8 +72,10 @@ function setup(opening: object = NO_STEP) {
       action === 'hilos_step_up_start' ? { reply: opening } : {},
     ),
   }))
+  const scopes = new ScopeManager()
+  scopes.session.data.set('authMethods', offered)
   const context = {
-    scopes: new ScopeManager(),
+    scopes,
     actions: { dispatch },
     channels: [],
     connection: {
@@ -61,7 +86,7 @@ function setup(opening: object = NO_STEP) {
     },
   } as unknown as HilosAuthContext
   const wrapper = mount(HilosProfileSignInPage, {
-    props: { context, methods },
+    props: { context, methods: initial },
     attachTo: document.body,
     global: { stubs: { HilosPageHeading: true } },
   })
@@ -250,5 +275,67 @@ describe('profile sign-in page dialogs', () => {
         .get('[data-id="profile-password-change"]')
         .attributes('disabled'),
     ).toBeUndefined()
+  })
+})
+
+describe('profile sign-in page passkey-only warning', () => {
+  it('warns a passkey-only account with a button per offered way and leaves when another way arrives', async () => {
+    const world = setup(NO_STEP, passkeyOnly)
+    const block = world.wrapper.get('[data-id="profile-sign-in-passkey-only"]')
+    expect(block.text()).toContain('Only your passkeys can sign you in')
+    expect(
+      block.find('[data-id="profile-sign-in-passkey-only-password"]').text(),
+    ).toBe('Add a password')
+    expect(
+      block.find('[data-id="profile-sign-in-passkey-only-phone"]').text(),
+    ).toBe('Add a phone')
+    expect(
+      block
+        .find('[data-id="profile-sign-in-passkey-only-link-oauth:github"]')
+        .text(),
+    ).toBe('Link GitHub')
+    expect(block.findAll('button')).toHaveLength(3)
+    expect(
+      world.wrapper
+        .find('[data-id="profile-sign-in-passkey-only-none"]')
+        .exists(),
+    ).toBe(false)
+    await world.wrapper.setProps({ methods: [...passkeyOnly, methods[1]] })
+    expect(
+      world.wrapper.find('[data-id="profile-sign-in-passkey-only"]').exists(),
+    ).toBe(false)
+  })
+  it('keeps the warning without buttons when nothing but a passkey is on', () => {
+    const world = setup(NO_STEP, passkeyOnly, [{ key: 'passkey', name: null }])
+    const block = world.wrapper.get('[data-id="profile-sign-in-passkey-only"]')
+    expect(block.findAll('button')).toHaveLength(0)
+    expect(
+      block.get('[data-id="profile-sign-in-passkey-only-none"]').text(),
+    ).toBe('No other way to sign in is available here.')
+  })
+  it('opens the dialog straight at the pressed way once no confirmation is needed', async () => {
+    const world = setup(NO_STEP, passkeyOnly)
+    await world.wrapper
+      .get('[data-id="profile-sign-in-passkey-only-password"]')
+      .trigger('click')
+    await flushPromises()
+    expect(byId('profile-add-password-email')).toBeDefined()
+    expect(
+      document.querySelector('[data-id="profile-sign-in-choose-password"]'),
+    ).toBeNull()
+  })
+  it('leaves a method switched off by the administrator out of the chooser', async () => {
+    const world = setup(NO_STEP, passkeyOnly, [{ key: 'password', name: null }])
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    expect(byId('profile-sign-in-choose-password')).toBeDefined()
+    expect(
+      document.querySelector('[data-id="profile-sign-in-choose-phone"]'),
+    ).toBeNull()
+    expect(
+      world.wrapper
+        .find('[data-id="profile-sign-in-passkey-only-phone"]')
+        .exists(),
+    ).toBe(false)
   })
 })

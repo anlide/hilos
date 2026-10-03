@@ -268,4 +268,50 @@ describe('add sign-in method flow', () => {
     doubles.trip?.({ kind: 'linked', message: '' })
     expect(world.flow.step.get()).toBe('closed')
   })
+  it('opens for one way straight at its first step when no confirmation is needed, and Back returns to the chooser', async () => {
+    const world = setup()
+    await world.flow.open({ kind: 'password' })
+    expect(world.flow.step.get()).toBe('password-email')
+    world.flow.back()
+    expect(world.flow.step.get()).toBe('choose')
+    world.flow.close()
+    await world.flow.open({ kind: 'phone' })
+    expect(world.flow.step.get()).toBe('phone-number')
+  })
+  it('opens for one way at the confirmation step and enters the way once it is confirmed', async () => {
+    const world = setup(false, PASSWORD_STEP)
+    await world.flow.open({
+      kind: 'provider',
+      key: 'oauth:github',
+      label: 'Continue with GitHub',
+      name: 'GitHub',
+    })
+    expect(world.flow.step.get()).toBe('step-up')
+    expect(doubles.start).not.toHaveBeenCalled()
+    world.flow.stepUp.password.set('right')
+    await world.flow.confirmStepUp()
+    expect(world.flow.step.get()).toBe('choose')
+    expect(world.flow.provider.get()).toBe('oauth:github')
+    expect(doubles.start).toHaveBeenCalledWith(
+      'oauth:github',
+      expect.anything(),
+    )
+  })
+  it('keeps a refused opening for one way at the refusal and forgets the way on close', async () => {
+    const world = setup(false, PASSWORD_STEP)
+    world.dispatch.mockReturnValueOnce({
+      done: Promise.reject(
+        new ActionError('step-up', 'fail', 'Too many codes'),
+      ),
+    })
+    await world.flow.open({ kind: 'phone' })
+    expect(world.flow.step.get()).toBe('refused')
+    world.flow.close()
+    await world.flow.open({ kind: 'phone' })
+    world.flow.close()
+    await world.flow.open()
+    world.flow.stepUp.password.set('right')
+    await world.flow.confirmStepUp()
+    expect(world.flow.step.get()).toBe('choose')
+  })
 })

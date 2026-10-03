@@ -5,18 +5,19 @@ import {
   createHilosProfileSignInActions,
   createSignal,
   focusInitial,
-  hilosProfileLinkableProviders,
-  hilosProfilePasswordState,
+  hilosProfileAddableWays,
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
   HILOS_PROFILE_SIGN_IN_COPY,
   HILOS_STEP_UP_COPY,
   hilosToasts,
+  isHilosProfilePasskeyOnly,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
   sessionAuthMethods,
   watchHilosProfilePasswordUpdated,
   type HilosAuthContext,
+  type HilosProfileAddableWay,
   type HilosProfileSignInMethod,
 } from '@hilos/core'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
@@ -38,6 +39,29 @@ const emptyDraft = () => ({
   confirm: '',
 })
 
+function wayKey(way: HilosProfileAddableWay): string {
+  return way.kind === 'provider' ? way.key : way.kind
+}
+
+function passkeyOnlyWayId(way: HilosProfileAddableWay): string {
+  return way.kind === 'provider'
+    ? `profile-sign-in-passkey-only-link-${way.key}`
+    : `profile-sign-in-passkey-only-${way.kind}`
+}
+
+function passkeyOnlyWayLabel(way: HilosProfileAddableWay): string {
+  switch (way.kind) {
+    case 'password':
+      return HILOS_PROFILE_SIGN_IN_COPY.addPassword
+    case 'phone':
+      return HILOS_PROFILE_SIGN_IN_COPY.addPhone
+    case 'provider':
+      return HILOS_PROFILE_SIGN_IN_COPY.linkProvider.replace('{name}', way.name)
+    case 'passkey':
+      return 'Passkey'
+  }
+}
+
 /** The account's methods and the dialogs that add, change and remove them. */
 export function HilosProfileSignInPage({
   context,
@@ -53,9 +77,11 @@ export function HilosProfileSignInPage({
     [context.scopes],
   )
   const offered = useSignal(offeredSignal)
-  const providers = hilosProfileLinkableProviders(methods, offered)
-  const passwordState = hilosProfilePasswordState(methods)
   const passkeySupported = isPasskeySupported()
+  // What the account can still add: the chooser's buttons and the warning's.
+  const ways = hilosProfileAddableWays(methods, offered, passkeySupported)
+  const passkeyOnly = isHilosProfilePasskeyOnly(methods)
+  const passkeyOnlyWays = ways.filter((way) => way.kind !== 'passkey')
   const actions = useMemo(
     () => createHilosProfileSignInActions(context),
     [context],
@@ -125,6 +151,8 @@ export function HilosProfileSignInPage({
   const pendingProvider = useSignal(flow.provider)
   // The dialog opens on the server's answer, never on the click.
   const addOpening = step === 'opening'
+  // The button that asked for the dialog; it alone spins while it opens.
+  const [addPressed, setAddPressed] = useState<string | null>(null)
   const onStepUp = step === 'step-up' || step === 'refused'
   const [draft, setDraft] = useState(emptyDraft)
   const addBody = useRef<HTMLDivElement>(null)
@@ -132,9 +160,10 @@ export function HilosProfileSignInPage({
     const dialog = addBody.current?.closest<HTMLElement>('[role="dialog"]')
     if (dialog) focusInitial(dialog)
   }, [step])
-  function openAdd(): void {
+  function openAdd(way?: HilosProfileAddableWay): void {
+    setAddPressed(way === undefined ? 'add' : wayKey(way))
     setDraft(emptyDraft())
-    void flow.open()
+    void flow.open(way)
   }
   const passwordFields = [
     {
@@ -238,6 +267,47 @@ export function HilosProfileSignInPage({
   return (
     <section data-id="profile-sign-in-view">
       <HilosPageHeading />
+      {passkeyOnly ? (
+        <div
+          className="alert alert-warning d-flex gap-2"
+          data-id="profile-sign-in-passkey-only"
+        >
+          <i className="bi bi-exclamation-triangle" aria-hidden="true"></i>
+          <div>
+            <div className="fw-semibold">
+              {HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyTitle}
+            </div>
+            <p className="mb-2">
+              {HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyReason}
+            </p>
+            {passkeyOnlyWays.length > 0 ? (
+              <>
+                <p className="mb-2">
+                  {HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyAdd}
+                </p>
+                <div className="d-flex flex-wrap gap-2">
+                  {passkeyOnlyWays.map((way) => (
+                    <LoadingButton
+                      key={wayKey(way)}
+                      className="btn-sm btn-outline-secondary"
+                      loading={addOpening && addPressed === wayKey(way)}
+                      disabled={addOpening}
+                      data-id={passkeyOnlyWayId(way)}
+                      onClick={() => openAdd(way)}
+                    >
+                      {passkeyOnlyWayLabel(way)}
+                    </LoadingButton>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mb-0" data-id="profile-sign-in-passkey-only-none">
+                {HILOS_PROFILE_SIGN_IN_COPY.passkeyOnlyNone}
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
       {methods.length === 0 ? (
         <p className="text-body-secondary">No ways to sign in.</p>
       ) : null}
@@ -313,10 +383,10 @@ export function HilosProfileSignInPage({
       </div>
       <LoadingButton
         className="btn-sm btn-outline-primary mt-3"
-        loading={addOpening}
+        loading={addOpening && addPressed === 'add'}
         disabled={addOpening}
         data-id="profile-sign-in-add"
-        onClick={openAdd}
+        onClick={() => openAdd()}
       >
         Add a way to sign in
       </LoadingButton>
@@ -450,66 +520,69 @@ export function HilosProfileSignInPage({
               aria-hidden="true"
               inert
             >
-              {!passwordState.hasPassword ? (
-                <span className="btn btn-outline-secondary">
-                  <span className="d-flex align-items-center gap-3 text-start">
-                    <i className="bi bi-lock fs-5" aria-hidden="true"></i>
-                    <span>
-                      <span className="d-block fw-semibold small">
-                        Password
-                      </span>
-                      <span className="d-block small text-body-secondary">
-                        {HILOS_PROFILE_SIGN_IN_COPY.passwordDescription}
-                      </span>
-                    </span>
-                  </span>
-                </span>
-              ) : null}
-              <span className="btn btn-outline-secondary">
-                <span className="d-flex align-items-center gap-3 text-start">
-                  <i className="bi bi-phone fs-5" aria-hidden="true"></i>
-                  <span>
-                    <span className="d-block fw-semibold small">Phone</span>
-                    <span className="d-block small text-body-secondary">
-                      {HILOS_PROFILE_SIGN_IN_COPY.phoneDescription}
-                    </span>
-                  </span>
-                </span>
-              </span>
-              {providers.map((entry) => (
-                <span key={entry.key} className="btn btn-outline-secondary">
-                  <span className="d-flex align-items-center gap-3 text-start">
-                    <i
-                      className="bi bi-box-arrow-in-right fs-5"
-                      aria-hidden="true"
-                    ></i>
-                    <span>
-                      <span className="d-block fw-semibold small">
-                        {entry.label}
-                      </span>
-                      <span className="d-block small text-body-secondary">
-                        {HILOS_PROFILE_SIGN_IN_COPY.providerDescription}
+              {ways.map((way) =>
+                way.kind === 'password' ? (
+                  <span key="password" className="btn btn-outline-secondary">
+                    <span className="d-flex align-items-center gap-3 text-start">
+                      <i className="bi bi-lock fs-5" aria-hidden="true"></i>
+                      <span>
+                        <span className="d-block fw-semibold small">
+                          Password
+                        </span>
+                        <span className="d-block small text-body-secondary">
+                          {HILOS_PROFILE_SIGN_IN_COPY.passwordDescription}
+                        </span>
                       </span>
                     </span>
                   </span>
-                </span>
-              ))}
-              {passkeySupported ? (
-                <span className="btn btn-outline-secondary">
-                  <span className="d-flex align-items-center gap-3 text-start">
-                    <i
-                      className="bi bi-fingerprint fs-5"
-                      aria-hidden="true"
-                    ></i>
-                    <span>
-                      <span className="d-block fw-semibold small">Passkey</span>
-                      <span className="d-block small text-body-secondary">
-                        {HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription}
+                ) : way.kind === 'phone' ? (
+                  <span key="phone" className="btn btn-outline-secondary">
+                    <span className="d-flex align-items-center gap-3 text-start">
+                      <i className="bi bi-phone fs-5" aria-hidden="true"></i>
+                      <span>
+                        <span className="d-block fw-semibold small">Phone</span>
+                        <span className="d-block small text-body-secondary">
+                          {HILOS_PROFILE_SIGN_IN_COPY.phoneDescription}
+                        </span>
                       </span>
                     </span>
                   </span>
-                </span>
-              ) : null}
+                ) : way.kind === 'provider' ? (
+                  <span key={way.key} className="btn btn-outline-secondary">
+                    <span className="d-flex align-items-center gap-3 text-start">
+                      <i
+                        className="bi bi-box-arrow-in-right fs-5"
+                        aria-hidden="true"
+                      ></i>
+                      <span>
+                        <span className="d-block fw-semibold small">
+                          {way.label}
+                        </span>
+                        <span className="d-block small text-body-secondary">
+                          {HILOS_PROFILE_SIGN_IN_COPY.providerDescription}
+                        </span>
+                      </span>
+                    </span>
+                  </span>
+                ) : (
+                  <span key="passkey" className="btn btn-outline-secondary">
+                    <span className="d-flex align-items-center gap-3 text-start">
+                      <i
+                        className="bi bi-fingerprint fs-5"
+                        aria-hidden="true"
+                      ></i>
+                      <span>
+                        <span className="d-block fw-semibold small">
+                          Passkey
+                        </span>
+                        <span className="d-block small text-body-secondary">
+                          {HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription}
+                        </span>
+                      </span>
+                    </span>
+                  </span>
+                ),
+              )}
             </div>
             {step === 'step-up' ? (
               <form
@@ -527,93 +600,99 @@ export function HilosProfileSignInPage({
               <div className="align-self-start"></div>
             ) : step === 'choose' ? (
               <div className="d-flex flex-column gap-2 align-self-start">
-                {!passwordState.hasPassword ? (
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary"
-                    disabled={busy}
-                    data-id="profile-sign-in-choose-password"
-                    onClick={flow.choosePassword}
-                  >
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i className="bi bi-lock fs-5" aria-hidden="true"></i>
-                      <span>
-                        <span className="d-block fw-semibold small">
-                          Password
-                        </span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.passwordDescription}
-                        </span>
-                      </span>
-                    </span>
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary"
-                  disabled={busy}
-                  data-id="profile-sign-in-choose-phone"
-                  onClick={flow.choosePhone}
-                >
-                  <span className="d-flex align-items-center gap-3 text-start">
-                    <i className="bi bi-phone fs-5" aria-hidden="true"></i>
-                    <span>
-                      <span className="d-block fw-semibold small">Phone</span>
-                      <span className="d-block small text-body-secondary">
-                        {HILOS_PROFILE_SIGN_IN_COPY.phoneDescription}
-                      </span>
-                    </span>
-                  </span>
-                </button>
-                {providers.map((entry) => (
-                  <LoadingButton
-                    key={entry.key}
-                    className="btn btn-outline-secondary"
-                    loading={busy && pendingProvider === entry.key}
-                    disabled={busy}
-                    data-id={`profile-oauth-link-${entry.key}`}
-                    onClick={() => void flow.chooseProvider(entry.key)}
-                  >
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i
-                        className="bi bi-box-arrow-in-right fs-5"
-                        aria-hidden="true"
-                      ></i>
-                      <span>
-                        <span className="d-block fw-semibold small">
-                          {entry.label}
-                        </span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.providerDescription}
+                {ways.map((way) =>
+                  way.kind === 'password' ? (
+                    <button
+                      key="password"
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      disabled={busy}
+                      data-id="profile-sign-in-choose-password"
+                      onClick={flow.choosePassword}
+                    >
+                      <span className="d-flex align-items-center gap-3 text-start">
+                        <i className="bi bi-lock fs-5" aria-hidden="true"></i>
+                        <span>
+                          <span className="d-block fw-semibold small">
+                            Password
+                          </span>
+                          <span className="d-block small text-body-secondary">
+                            {HILOS_PROFILE_SIGN_IN_COPY.passwordDescription}
+                          </span>
                         </span>
                       </span>
-                    </span>
-                  </LoadingButton>
-                ))}
-                {passkeySupported ? (
-                  <LoadingButton
-                    className="btn btn-outline-secondary"
-                    loading={busy && pendingProvider === null}
-                    disabled={busy}
-                    data-id="profile-passkey-add"
-                    onClick={() => void flow.choosePasskey()}
-                  >
-                    <span className="d-flex align-items-center gap-3 text-start">
-                      <i
-                        className="bi bi-fingerprint fs-5"
-                        aria-hidden="true"
-                      ></i>
-                      <span>
-                        <span className="d-block fw-semibold small">
-                          Passkey
-                        </span>
-                        <span className="d-block small text-body-secondary">
-                          {HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription}
+                    </button>
+                  ) : way.kind === 'phone' ? (
+                    <button
+                      key="phone"
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      disabled={busy}
+                      data-id="profile-sign-in-choose-phone"
+                      onClick={flow.choosePhone}
+                    >
+                      <span className="d-flex align-items-center gap-3 text-start">
+                        <i className="bi bi-phone fs-5" aria-hidden="true"></i>
+                        <span>
+                          <span className="d-block fw-semibold small">
+                            Phone
+                          </span>
+                          <span className="d-block small text-body-secondary">
+                            {HILOS_PROFILE_SIGN_IN_COPY.phoneDescription}
+                          </span>
                         </span>
                       </span>
-                    </span>
-                  </LoadingButton>
-                ) : null}
+                    </button>
+                  ) : way.kind === 'provider' ? (
+                    <LoadingButton
+                      key={way.key}
+                      className="btn btn-outline-secondary"
+                      loading={busy && pendingProvider === way.key}
+                      disabled={busy}
+                      data-id={`profile-oauth-link-${way.key}`}
+                      onClick={() => void flow.chooseProvider(way.key)}
+                    >
+                      <span className="d-flex align-items-center gap-3 text-start">
+                        <i
+                          className="bi bi-box-arrow-in-right fs-5"
+                          aria-hidden="true"
+                        ></i>
+                        <span>
+                          <span className="d-block fw-semibold small">
+                            {way.label}
+                          </span>
+                          <span className="d-block small text-body-secondary">
+                            {HILOS_PROFILE_SIGN_IN_COPY.providerDescription}
+                          </span>
+                        </span>
+                      </span>
+                    </LoadingButton>
+                  ) : (
+                    <LoadingButton
+                      key="passkey"
+                      className="btn btn-outline-secondary"
+                      loading={busy && pendingProvider === null}
+                      disabled={busy}
+                      data-id="profile-passkey-add"
+                      onClick={() => void flow.choosePasskey()}
+                    >
+                      <span className="d-flex align-items-center gap-3 text-start">
+                        <i
+                          className="bi bi-fingerprint fs-5"
+                          aria-hidden="true"
+                        ></i>
+                        <span>
+                          <span className="d-block fw-semibold small">
+                            Passkey
+                          </span>
+                          <span className="d-block small text-body-secondary">
+                            {HILOS_PROFILE_SIGN_IN_COPY.passkeyDescription}
+                          </span>
+                        </span>
+                      </span>
+                    </LoadingButton>
+                  ),
+                )}
               </div>
             ) : (
               <form

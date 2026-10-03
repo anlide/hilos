@@ -135,4 +135,36 @@ describe('HilosNotificationPreferences', () => {
 
     expect(byId('hilos-notification-preferences-empty')).not.toBeNull()
   })
+
+  it('links the no-address hint to the section the page names, and keeps it plain text otherwise', () => {
+    const { connection } = fakeConnection()
+    const plain = render(
+      <HilosNotificationPreferences
+        connection={connection}
+        store={storeWith()}
+      />,
+    )
+    expect(byId('hilos-notification-preference-hint-sms')?.textContent).toBe(
+      'Add an address in your profile to enable this channel.',
+    )
+    plain.unmount()
+
+    render(
+      <HilosNotificationPreferences
+        connection={connection}
+        store={storeWith()}
+        addressSection={{
+          page: 'hilos_profile_sign_in',
+          label: 'Ways to sign in',
+        }}
+        addressTo="/profile/sign-in"
+      />,
+    )
+    expect(byId('hilos-notification-preference-hint-sms')?.textContent).toBe(
+      'Add an address in Ways to sign in to enable this channel.',
+    )
+    const link = byId('hilos-notification-preference-address-sms')
+    expect(link?.getAttribute('href')).toBe('/profile/sign-in')
+    expect(link?.textContent).toBe('Ways to sign in')
+  })
 })

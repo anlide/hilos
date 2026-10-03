@@ -607,3 +607,33 @@ export async function signUpWithVerifiedEmail(
 
   return { email, name, userId }
 }
+
+/**
+ * Walk the add window's password steps from their first one: name the address,
+ * prove it with the mailed code and set a password on it (HIL-1166).
+ *
+ * The window must already stand on `profile-add-password-email` — the step an
+ * account without a confirmed address opens on, whether it chose Password in the
+ * window or came straight from a button that named the way. Done when the window
+ * has closed on the server's profile_password_updated.
+ *
+ * @param page Page whose add window stands on the address step.
+ * @param email The address the password goes on; a fresh one, never seen by the stand.
+ */
+export async function addPasswordFromAddressStep(
+  page: Page,
+  email: string,
+): Promise<void> {
+  await expect(page.getByTestId('profile-add-password-email')).toBeVisible()
+  await typeInto(page.getByTestId('profile-add-password-email'), email)
+  await clickSubmit(page.getByTestId('profile-add-password-request'))
+  await expect(page.getByTestId('profile-add-password-code')).toBeVisible()
+  await typeInto(
+    page.getByTestId('profile-add-password-code'),
+    await waitForMailCode(email, EMAIL_ADD_SUBJECT),
+  )
+  await typeInto(page.getByTestId('profile-add-password-new'), PASSWORD)
+  await typeInto(page.getByTestId('profile-add-password-confirm'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-add-password-save'))
+  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+}

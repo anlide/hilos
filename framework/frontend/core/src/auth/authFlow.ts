@@ -968,6 +968,12 @@ export const MAGIC_LINK_METHOD_KEY = 'magic_link'
  */
 export const PASSKEY_METHOD_KEY = 'passkey'
 
+/**
+ * The `sms` method key — sign-in by a code sent to a phone. Core-known because
+ * the profile offers to add a phone only while this method is on (HIL-1166).
+ */
+export const SMS_METHOD_KEY = 'sms'
+
 /** The key prefix every OAuth provider method carries, e.g. `oauth:github`. */
 export const OAUTH_METHOD_PREFIX = 'oauth:'
 

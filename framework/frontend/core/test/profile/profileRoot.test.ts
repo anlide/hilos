@@ -182,4 +182,20 @@ describe('profile root store', () => {
     expect(store.verifiedEmail.get()).toBeNull()
     store.dispose()
   })
+
+  it('warns a passkey-only account live and stays quiet without a method list', () => {
+    expect(rootStore(answeredScopes(), nameOnly()).passkeyOnly.get()).toBe(
+      false,
+    )
+    const methods = createSignal(resolveHilosProfileSignInMethods([key], []))
+    const store = rootStore(answeredScopes(), {
+      ...nameOnly(),
+      signInMethods: methods,
+    })
+    expect(store.passkeyOnly.get()).toBe(true)
+    methods.set(resolveHilosProfileSignInMethods([password, key], []))
+    expect(store.passkeyOnly.get()).toBe(false)
+    methods.set([])
+    expect(store.passkeyOnly.get()).toBe(false)
+  })
 })

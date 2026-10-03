@@ -22,7 +22,42 @@ const PASSWORD_STEP = {
   method: 'password',
 }
 
-function setup(opening: object = NO_STEP) {
+/** The methods the session offers: on, ready, in button order. */
+const OFFERED = [
+  { key: 'password', name: null },
+  { key: 'sms', name: null },
+  { key: 'oauth:github', name: 'GitHub' },
+]
+const MAGIC_LINK = resolveHilosProfileSignInMethods(
+  [
+    {
+      id: 1,
+      type: 'magic_link',
+      provider: null,
+      identifier: 'a@example.test',
+      verified: true,
+    },
+  ],
+  [],
+)
+const PASSKEY_ONLY = resolveHilosProfileSignInMethods(
+  [
+    {
+      id: 3,
+      type: 'passkey',
+      provider: null,
+      identifier: 'opaque',
+      verified: true,
+    },
+  ],
+  [],
+)
+
+function setup(
+  opening: object = NO_STEP,
+  methods = MAGIC_LINK,
+  offered: readonly object[] = OFFERED,
+) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
@@ -41,6 +76,7 @@ function setup(opening: object = NO_STEP) {
     scopes: new ScopeManager(),
     channels: [],
   } as unknown as HilosAuthContext
+  context.scopes.session.data.set('authMethods', offered)
   const router = {
     pageIdentity: createSignal(undefined),
     currentRoute: createSignal({
@@ -49,28 +85,23 @@ function setup(opening: object = NO_STEP) {
       admin: false,
     }),
   } as unknown as HilosRouter
-  const methods = resolveHilosProfileSignInMethods(
-    [
-      {
-        id: 1,
-        type: 'magic_link',
-        provider: null,
-        identifier: 'a@example.test',
-        verified: true,
-      },
-    ],
-    [],
-  )
-  const { unmount } = render(
+  const page = (current: typeof methods) => (
     <StrictMode>
       <HilosRouterContext.Provider value={router}>
-        <HilosProfileSignInPage context={context} methods={methods} />
+        <HilosProfileSignInPage context={context} methods={current} />
       </HilosRouterContext.Provider>
-    </StrictMode>,
+    </StrictMode>
   )
+  const { rerender, unmount } = render(page(methods))
   const node = (id: string) =>
     document.querySelector(`[data-id="${id}"]`) as HTMLElement
-  return { dispatch, listeners, node, unmount }
+  return {
+    dispatch,
+    listeners,
+    node,
+    unmount,
+    setMethods: (next: typeof methods) => rerender(page(next)),
+  }
 }
 
 it('adds a password under StrictMode and removes every listener on unmount', async () => {
@@ -136,4 +167,50 @@ it('opens at the confirmation step when the server asks, and shows the chooser o
   expect(document.querySelector('.modal-title')?.textContent).toBe(
     'Add a way to sign in',
   )
+})
+
+it('warns a passkey-only account with a button per offered way and drops it when another way arrives', () => {
+  const { node, setMethods } = setup(NO_STEP, PASSKEY_ONLY)
+  const block = node('profile-sign-in-passkey-only')
+  expect(block.textContent).toContain('Only your passkeys can sign you in')
+  expect(node('profile-sign-in-passkey-only-password').textContent).toBe(
+    'Add a password',
+  )
+  expect(node('profile-sign-in-passkey-only-phone').textContent).toBe(
+    'Add a phone',
+  )
+  expect(
+    node('profile-sign-in-passkey-only-link-oauth:github').textContent,
+  ).toBe('Link GitHub')
+  expect(block.querySelectorAll('button')).toHaveLength(3)
+  expect(node('profile-sign-in-passkey-only-none')).toBeNull()
+  setMethods([...PASSKEY_ONLY, ...MAGIC_LINK])
+  expect(node('profile-sign-in-passkey-only')).toBeNull()
+})
+
+it('keeps the warning without buttons when nothing but a passkey is on', () => {
+  const { node } = setup(NO_STEP, PASSKEY_ONLY, [
+    { key: 'passkey', name: null },
+  ])
+  expect(
+    node('profile-sign-in-passkey-only').querySelectorAll('button'),
+  ).toHaveLength(0)
+  expect(node('profile-sign-in-passkey-only-none').textContent).toBe(
+    'No other way to sign in is available here.',
+  )
+})
+
+it('opens the dialog straight at the pressed way, and leaves a switched-off method out of the chooser', async () => {
+  const { node } = setup(NO_STEP, PASSKEY_ONLY, [
+    { key: 'password', name: null },
+  ])
+  expect(node('profile-sign-in-passkey-only-phone')).toBeNull()
+  await act(async () => {
+    fireEvent.click(node('profile-sign-in-passkey-only-password'))
+  })
+  expect(node('profile-add-password-email')).not.toBeNull()
+  expect(node('profile-sign-in-choose-password')).toBeNull()
+  fireEvent.click(node('profile-sign-in-add-back'))
+  expect(node('profile-sign-in-choose-password')).not.toBeNull()
+  expect(node('profile-sign-in-choose-phone')).toBeNull()
 })

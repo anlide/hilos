@@ -12,6 +12,7 @@ import {
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   hilosChildLinks,
+  HilosPages,
   HILOS_PROFILE_ROOT_COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
@@ -155,6 +156,18 @@ import { HilosProfileRename } from './HilosProfileRename.js'
                 >
                   {{ summaries()[section.page] }}
                 </div>
+                @if (section.page === signInPage && passkeyOnly()) {
+                  <div
+                    class="small text-warning-emphasis"
+                    data-id="profile-sign-in-passkey-only-line"
+                  >
+                    <i
+                      class="bi bi-exclamation-triangle me-1"
+                      aria-hidden="true"
+                    ></i
+                    >{{ copy.passkeyOnly }}
+                  </div>
+                }
               </div>
               <a
                 [hilosLink]="section.to"
@@ -217,6 +230,8 @@ export class HilosProfilePage {
   protected readonly name = signal('')
   protected readonly summaries = signal<Readonly<Record<string, string>>>({})
   protected readonly verifiedEmail = signal<string | null>(null)
+  protected readonly passkeyOnly = signal(false)
+  protected readonly signInPage = HilosPages.PROFILE_SIGN_IN
   protected readonly renameOpening = signal(false)
   protected readonly emailOpening = signal(false)
   protected readonly sectionIcon = hilosProfileSectionIcon
@@ -230,11 +245,15 @@ export class HilosProfilePage {
       this.signedIn.set(root.signedIn.get())
       this.summaries.set(root.summaries.get())
       this.verifiedEmail.set(root.verifiedEmail.get())
+      this.passkeyOnly.set(root.passkeyOnly.get())
       const off = [
         subscribeSignal(root.signedIn, (value) => this.signedIn.set(value)),
         subscribeSignal(root.summaries, (value) => this.summaries.set(value)),
         subscribeSignal(root.verifiedEmail, (value) =>
           this.verifiedEmail.set(value),
+        ),
+        subscribeSignal(root.passkeyOnly, (value) =>
+          this.passkeyOnly.set(value),
         ),
       ]
       onCleanup(() => {

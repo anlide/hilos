@@ -6,6 +6,7 @@ import {
   createHilosNotificationPreferencesStore,
   startHilosNotificationPreferences,
   describeHilosNotificationChannels,
+  hilosNotificationAddressSection,
   notificationPreferencesSectionSchema,
   type HilosNotificationPreferencesSection,
 } from '../../src/notifications/notificationPreferences.js'
@@ -189,5 +190,27 @@ describe('notification preferences page binding', () => {
         { channel: 'push', label: 'Push', allowed: true, hasAddress: true },
       ]),
     ).toBe('Email and push are on')
+  })
+})
+
+describe('notification address section', () => {
+  it('reads the section card from the page data, and none when it is null or malformed', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage('hilos_profile_notifications')
+    const section = hilosNotificationAddressSection(scopes)
+    expect(section.get()).toBeNull()
+    page.data.set('addressSection', {
+      page: 'hilos_profile_sign_in',
+      label: 'Ways to sign in',
+      lead: 'Every way into this account.',
+    })
+    expect(section.get()).toEqual({
+      page: 'hilos_profile_sign_in',
+      label: 'Ways to sign in',
+    })
+    page.data.set('addressSection', null)
+    expect(section.get()).toBeNull()
+    page.data.set('addressSection', { page: 7 })
+    expect(section.get()).toBeNull()
   })
 })

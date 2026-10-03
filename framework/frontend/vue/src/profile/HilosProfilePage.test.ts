@@ -17,6 +17,7 @@ import {
 } from '@hilos/core'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 
 import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfilePage from './HilosProfilePage.vue'
@@ -209,5 +210,47 @@ describe('HilosProfilePage', () => {
     expect(wrapper.find('[data-id="profile-loading"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="profile-identity"]').exists()).toBe(false)
     expect(wrapper.find('[data-id="profile-detail"]').exists()).toBe(false)
+  })
+
+  it('warns under the sign-in row while device keys are the only way in, live', async () => {
+    const methods = createSignal(
+      resolveHilosProfileSignInMethods(
+        [
+          {
+            id: 2,
+            type: 'passkey',
+            provider: null,
+            identifier: 'opaque',
+            verified: true,
+          },
+        ],
+        [],
+      ),
+    )
+    const wrapper = mountPage({ ...nameOnly(), signInMethods: methods })
+
+    expect(
+      wrapper.find('[data-id="profile-sign-in-passkey-only-line"]').text(),
+    ).toBe(
+      'Only passkeys can sign you in: access cannot be restored automatically',
+    )
+    methods.set(
+      resolveHilosProfileSignInMethods(
+        [
+          {
+            id: 1,
+            type: 'password',
+            provider: null,
+            identifier: 'ann@example.test',
+            verified: true,
+          },
+        ],
+        [],
+      ),
+    )
+    await nextTick()
+    expect(
+      wrapper.find('[data-id="profile-sign-in-passkey-only-line"]').exists(),
+    ).toBe(false)
   })
 })

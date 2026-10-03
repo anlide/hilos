@@ -2,12 +2,14 @@ import { test, expect } from '@playwright/test'
 
 import {
   addVirtualAuthenticator,
+  enableEmailChannel,
   platformsLeftOut,
   readPasskeyCreations,
   watchPasskeyCreation,
 } from '../../../../../framework/frontend/e2e/index.js'
 import {
   PASSWORD,
+  addPasswordFromAddressStep,
   clickSubmit,
   continueFromDone,
   createAccountWithPasskey,
@@ -20,6 +22,7 @@ import {
   typeInto,
   uniqueEmail,
 } from '../helpers/session'
+import { signUpAdmin } from '../helpers/adminGrant'
 import { readRegisterCode } from '../helpers/mail'
 import { gotoPage } from '../helpers/page'
 
@@ -209,6 +212,59 @@ test('creates a passkey account without an address from the empty field and sign
   await clickSubmit(page.getByTestId('auth-icon-passkey'))
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
   await expect(page.getByTestId('profile-name')).toHaveText(name)
+})
+
+test('warns a passkey-only account everywhere it looks and adds a password from the warning', async ({
+  page,
+  browser,
+}) => {
+  // A channel without an address is drawn only when the stand has it on.
+  const admin = await (await browser.newContext()).newPage()
+  await signUpAdmin(admin)
+  await gotoPage(admin, '/hilos/communications')
+  await enableEmailChannel(admin)
+  await admin.context().close()
+
+  await addVirtualAuthenticator(page)
+  await gotoPage(page, '/profile')
+  await createAccountWithPasskey(page)
+  await continueFromDone(page)
+
+  // The overview says it under the row, without opening the section (HIL-1166).
+  await expect(
+    page.getByTestId('profile-sign-in-passkey-only-line'),
+  ).toBeVisible()
+
+  // The mail channel has no address to go to; its hint leads to the section.
+  await gotoPage(page, '/profile/notifications')
+  await expect(
+    page.getByTestId('hilos-notification-preference-address-email'),
+  ).toHaveAttribute('href', '/profile/sign-in')
+
+  await gotoPage(page, '/profile/sign-in')
+  const warning = page.getByTestId('profile-sign-in-passkey-only')
+  await expect(warning).toBeVisible()
+  await expect(
+    warning.getByTestId('profile-sign-in-passkey-only-password'),
+  ).toBeVisible()
+  await expect(
+    warning.getByRole('button', { name: 'Passkey', exact: true }),
+  ).toHaveCount(0)
+
+  // The button opens the window on the password itself; the confirmation first
+  // is answered by the same device key the account lives on.
+  await clickSubmit(
+    warning.getByTestId('profile-sign-in-passkey-only-password'),
+  )
+  await clickSubmit(page.getByTestId('profile-sign-in-add-step-up-confirm'))
+  await expect(page.getByTestId('profile-sign-in-choose-password')).toHaveCount(
+    0,
+  )
+  await addPasswordFromAddressStep(page, uniqueEmail())
+
+  // The new way arrives in the live list and takes the warning with it.
+  await expect(page.getByTestId('profile-password-change')).toBeVisible()
+  await expect(warning).toHaveCount(0)
 })
 
 test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {

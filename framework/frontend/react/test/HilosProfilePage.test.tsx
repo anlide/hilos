@@ -172,3 +172,42 @@ it('draws only the placeholder while nobody is signed in', () => {
   expect(node('profile-loading')).not.toBeNull()
   expect(node('profile-view')).toBeNull()
 })
+
+it('warns under the sign-in row while device keys are the only way in, live', () => {
+  const methods = createSignal(
+    resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 2,
+          type: 'passkey',
+          provider: null,
+          identifier: 'opaque',
+          verified: true,
+        },
+      ],
+      [],
+    ),
+  )
+  const node = setup({ ...nameOnly(), signInMethods: methods })
+
+  expect(node('profile-sign-in-passkey-only-line')?.textContent).toBe(
+    'Only passkeys can sign you in: access cannot be restored automatically',
+  )
+  act(() =>
+    methods.set(
+      resolveHilosProfileSignInMethods(
+        [
+          {
+            id: 1,
+            type: 'password',
+            provider: null,
+            identifier: 'ann@example.test',
+            verified: true,
+          },
+        ],
+        [],
+      ),
+    ),
+  )
+  expect(node('profile-sign-in-passkey-only-line')).toBeNull()
+})

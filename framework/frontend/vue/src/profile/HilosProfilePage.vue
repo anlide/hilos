@@ -6,6 +6,7 @@ import {
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   hilosChildLinks,
+  HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
@@ -43,6 +44,7 @@ const root = createHilosProfileRootStore(props.context, props.binding)
 const signedIn = useSignal(root.signedIn)
 const summaries = useSignal(root.summaries)
 const verifiedEmail = useSignal(root.verifiedEmail)
+const passkeyOnly = useSignal(root.passkeyOnly)
 const name = useSignal(props.binding.name)
 const rename =
   props.binding.rename === null
@@ -159,6 +161,14 @@ onUnmounted(() => {
             :data-id="`${hilosProfileSectionId(section.page)}-summary`"
           >
             {{ summaries[section.page] ?? '' }}
+          </div>
+          <div
+            v-if="section.page === HilosPages.PROFILE_SIGN_IN && passkeyOnly"
+            class="small text-warning-emphasis"
+            data-id="profile-sign-in-passkey-only-line"
+          >
+            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i
+            >{{ COPY.passkeyOnly }}
           </div>
         </div>
         <HilosLink

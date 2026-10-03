@@ -11,21 +11,26 @@
 // server fans the changed signal back to every one of the user's tabs, and a send
 // that never leaves simply settles the loader and snaps the row back. A channel
 // with no address for it is shown disabled with a hint to add one rather than
-// hidden, so the user sees the whole channel set. Mandatory types carry no toggle
+// hidden, so the user sees the whole channel set; where the mounting page names
+// the profile section that adds an address (HIL-1166), the hint links there.
+// Mandatory types carry no toggle
 // — a switch that cannot be turned off is worse than none — only the note. Sparse
 // opt-out: no muted row means allowed. Mirrors the Vue section. Bootstrap classes
 // only.
 import { ChangeDetectionStrategy, Component, input } from '@angular/core'
 import {
+  HILOS_NOTIFICATION_PREFERENCES_COPY,
   hilosNotificationPreferences,
   hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
+  type HilosPageCrumb,
   type HilosPushSubscriptionStore,
 } from '@hilos/core'
 
+import { HilosLink } from './HilosLink.js'
 import { hilosSignal } from './hilosSignal.js'
 import { HilosPushDeviceToggle } from './HilosPushDeviceToggle.js'
 import { HilosSwitch } from './HilosSwitch.js'
@@ -40,7 +45,7 @@ let preferencesSeq = 0
 @Component({
   selector: 'hilos-notification-preferences',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosPushDeviceToggle, HilosSwitch],
+  imports: [HilosLink, HilosPushDeviceToggle, HilosSwitch],
   template: `
     <section
       [attr.aria-labelledby]="baseId + '-heading'"
@@ -88,7 +93,23 @@ let preferencesSeq = 0
                   'hilos-notification-preference-hint-' + row.channel
                 "
               >
-                Add an address in your profile to enable this channel.
+                @if (addressSection(); as section) {
+                  @if (addressTo(); as to) {
+                    {{ copy.noAddressBefore }}
+                    <a
+                      [hilosLink]="to"
+                      [attr.data-id]="
+                        'hilos-notification-preference-address-' + row.channel
+                      "
+                      >{{ section.label }}</a
+                    >
+                    {{ copy.noAddressAfter }}
+                  } @else {
+                    {{ copy.noAddress }}
+                  }
+                } @else {
+                  {{ copy.noAddress }}
+                }
               </div>
             }
           </div>
@@ -118,6 +139,11 @@ export class HilosNotificationPreferences {
   )
   /** The per-device push store the push channel's toggle renders. */
   readonly pushStore = input<HilosPushSubscriptionStore>(hilosPushSubscription)
+  /** The profile section where an address is added, or null when the project has none. */
+  readonly addressSection = input<HilosPageCrumb | null>(null)
+  /** The path of that section; without it the hint stays plain text. */
+  readonly addressTo = input<string | undefined>(undefined)
+  protected readonly copy = HILOS_NOTIFICATION_PREFERENCES_COPY
 
   private readonly boundStore = this.store()
   protected readonly channels = hilosSignal(this.boundStore.channels)

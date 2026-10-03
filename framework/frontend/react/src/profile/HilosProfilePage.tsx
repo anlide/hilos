@@ -5,6 +5,7 @@ import {
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
   hilosChildLinks,
+  HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
@@ -77,6 +78,7 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
   const signedIn = useSignal(root.signedIn)
   const summaries = useSignal(root.summaries)
   const verifiedEmail = useSignal(root.verifiedEmail)
+  const passkeyOnly = useSignal(root.passkeyOnly)
   const name = useSignal(binding.name)
   const emailOpening = useSignal(email.busy)
 
@@ -196,6 +198,18 @@ export function HilosProfilePage({ context, binding }: HilosProfilePageProps) {
               >
                 {summaries[section.page] ?? ''}
               </div>
+              {section.page === HilosPages.PROFILE_SIGN_IN && passkeyOnly ? (
+                <div
+                  className="small text-warning-emphasis"
+                  data-id="profile-sign-in-passkey-only-line"
+                >
+                  <i
+                    className="bi bi-exclamation-triangle me-1"
+                    aria-hidden="true"
+                  ></i>
+                  {COPY.passkeyOnly}
+                </div>
+              ) : null}
             </div>
             <HilosLink
               to={section.to}

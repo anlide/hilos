@@ -15,6 +15,8 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
@@ -36,6 +38,12 @@ abstract class AbstractHilosProfileNotificationsPage extends AbstractPage
 
     /** Page-data section slot carrying the per-user notification preferences (HIL-485). */
     public const string NOTIFICATION_SECTION = 'notificationPreferences';
+
+    /**
+     * Page-data slot naming the profile section where the account adds an address - its catalog
+     * card - or null when the project does not serve such a section (HIL-1166).
+     */
+    public const string ADDRESS_SECTION = 'addressSection';
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_NOTIFICATIONS,
@@ -64,6 +72,32 @@ abstract class AbstractHilosProfileNotificationsPage extends AbstractPage
 
         return new PagePayload(data: [
             self::NOTIFICATION_SECTION => new NotificationChannelPreferenceProjector()->sectionData($userId)->toArray(),
+            self::ADDRESS_SECTION => self::addressSectionCard(),
         ]);
+    }
+
+    /**
+     * Returns the catalog card of the section where an address is added, the way the dashboard
+     * draws its cards: only when the project serves that page.
+     *
+     * The browser cannot tell which pages a project serves, so a channel left without an address
+     * learns from this card whether its hint may link to the section or stays plain text.
+     *
+     * @return ?array<string, string> Card of the sign-in section, or null when the project does not serve it
+     */
+    private static function addressSectionCard(): ?array
+    {
+        $page = HilosPageConstants::HILOS_PROFILE_SIGN_IN;
+        $identity = PageCatalogResolver::identity($page);
+        if ($identity === null) {
+            return null;
+        }
+
+        $cards = static::servedPageCards(
+            [[PageCatalogConstants::WIRE_CHILD_PAGE => $page] + $identity],
+            PageCatalogConstants::WIRE_CHILD_PAGE,
+        );
+
+        return $cards[0] ?? null;
     }
 }

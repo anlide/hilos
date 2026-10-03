@@ -10,21 +10,25 @@ marks the row pending (a per-row loader on the switch) and fires the
 fans the changed signal back to every one of the user's tabs, and a send that
 never leaves simply settles the loader and snaps the row back. A channel with no
 address for it is shown disabled with a hint to add one rather than hidden, so the
-user sees the whole channel set. Mandatory types carry no toggle — a switch that
+user sees the whole channel set; where the mounting page names the profile
+section that adds an address (HIL-1166), the hint links there. Mandatory types carry no toggle — a switch that
 cannot be turned off is worse than none — only the note. Sparse opt-out: no muted
 row means allowed. Bootstrap classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
+  HILOS_NOTIFICATION_PREFERENCES_COPY as COPY,
   hilosNotificationPreferences,
   hilosPushSubscription,
   NOTIFICATION_ACTION_CHANNEL_SET,
   type HilosConnection,
   type HilosNotificationChannelState,
   type HilosNotificationPreferencesStore,
+  type HilosPageCrumb,
   type HilosPushSubscriptionStore,
 } from '@hilos/core'
 import { useId } from 'vue'
 
+import HilosLink from './HilosLink.vue'
 import HilosPushDeviceToggle from './HilosPushDeviceToggle.vue'
 import HilosSwitch from './HilosSwitch.vue'
 import { useSignal } from './useSignal.js'
@@ -37,10 +41,16 @@ const props = withDefaults(
     store?: HilosNotificationPreferencesStore
     /** The per-device push store the push channel's toggle renders. */
     pushStore?: HilosPushSubscriptionStore
+    /** The profile section where an address is added, or null when the project has none. */
+    addressSection?: HilosPageCrumb | null
+    /** The path of that section; without it the hint stays plain text. */
+    addressTo?: string
   }>(),
   {
     store: () => hilosNotificationPreferences,
     pushStore: () => hilosPushSubscription,
+    addressSection: null,
+    addressTo: undefined,
   },
 )
 
@@ -119,7 +129,16 @@ function toggle(row: HilosNotificationChannelState, enabled: boolean): void {
           class="form-text mt-0"
           :data-id="`hilos-notification-preference-hint-${row.channel}`"
         >
-          Add an address in your profile to enable this channel.
+          <template v-if="addressSection && addressTo !== undefined"
+            >{{ COPY.noAddressBefore }}
+            <HilosLink
+              :to="addressTo"
+              :data-id="`hilos-notification-preference-address-${row.channel}`"
+              >{{ addressSection.label }}</HilosLink
+            >
+            {{ COPY.noAddressAfter }}</template
+          >
+          <template v-else>{{ COPY.noAddress }}</template>
         </div>
       </div>
     </template>

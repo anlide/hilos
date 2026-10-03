@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   describeHilosProfileSignInMethods,
+  hilosProfileAddableWays,
   hilosProfileLinkableProviders,
   hilosProfilePasswordState,
   hilosProfileSignInSubtitle,
   hilosProfileSignInTitle,
+  isHilosProfilePasskeyOnly,
   resolveHilosProfileSignInMethods,
 } from '../../src/profile/profileSignInMethods.js'
 
@@ -87,10 +89,81 @@ describe('profile sign-in projection', () => {
     )
     expect(hilosProfileLinkableProviders(methods, offered)).toEqual([])
     expect(hilosProfileLinkableProviders([], offered)).toEqual([
-      { key: 'oauth:github', label: 'Continue with GitHub' },
+      { key: 'oauth:github', label: 'Continue with GitHub', name: 'GitHub' },
     ])
     expect(describeHilosProfileSignInMethods([], offered)).toBe(
       'No ways to sign in',
     )
+  })
+  it('reads the account as passkey-only when every method is a device key, and never on an empty list', () => {
+    expect(isHilosProfilePasskeyOnly([])).toBe(false)
+    expect(
+      isHilosProfilePasskeyOnly(
+        resolveHilosProfileSignInMethods([key, { ...key, id: 5 }], []),
+      ),
+    ).toBe(true)
+    expect(
+      isHilosProfilePasskeyOnly(
+        resolveHilosProfileSignInMethods(
+          [
+            key,
+            {
+              id: 3,
+              type: 'sms',
+              provider: null,
+              identifier: '+15551234567',
+              verified: true,
+            },
+          ],
+          [],
+        ),
+      ),
+    ).toBe(false)
+  })
+  it('lists the ways that can still be added, in the window order and only among the offered ones', () => {
+    const all = [
+      { key: 'passkey', name: null },
+      { key: 'oauth:github', name: 'GitHub' },
+      { key: 'sms', name: null },
+      { key: 'password', name: null },
+    ]
+    const keysOnly = resolveHilosProfileSignInMethods([key], [])
+    expect(hilosProfileAddableWays(keysOnly, all, true)).toEqual([
+      { kind: 'password' },
+      { kind: 'phone' },
+      {
+        kind: 'provider',
+        key: 'oauth:github',
+        label: 'Continue with GitHub',
+        name: 'GitHub',
+      },
+      { kind: 'passkey' },
+    ])
+    expect(hilosProfileAddableWays(keysOnly, all, false)).not.toContainEqual({
+      kind: 'passkey',
+    })
+    expect(
+      hilosProfileAddableWays(keysOnly, [{ key: 'passkey', name: null }], true),
+    ).toEqual([{ kind: 'passkey' }])
+    expect(hilosProfileAddableWays(keysOnly, [], true)).toEqual([])
+    expect(
+      hilosProfileAddableWays(
+        resolveHilosProfileSignInMethods(
+          [
+            password,
+            {
+              id: 4,
+              type: 'oauth',
+              provider: 'oauth:github',
+              identifier: 'octocat',
+              verified: true,
+            },
+          ],
+          [],
+        ),
+        all,
+        true,
+      ),
+    ).toEqual([{ kind: 'phone' }, { kind: 'passkey' }])
   })
 })
