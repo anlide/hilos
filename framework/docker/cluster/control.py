@@ -5,8 +5,10 @@ switches the scenarios need - `docker kill -9` (node-down / failover), `docker n
 disconnect` (partition / split-brain), and a SIGKILL of the daemon or one worker inside a live
 container (crash recovery / partial failure) - and one lever on the stand's database, `db-sql`
 (a node reading another database marker, HIL-1206; each member of a clustered database asked,
-HIL-1230). Assertions live in the scenario matrix (scenarios.py), which reads each node's
-`test:cluster:inspect` reply and compares it against the expected invariants.
+HIL-1230). It also recreates a node with an empty copy of the stand's cluster directory of its
+own: the directory guard refuses it (HIL-1242/HIL-1243). Assertions live in the scenario
+matrix (scenarios.py), which reads each node's `test:cluster:inspect` reply and compares it
+against the expected invariants.
 
 A command that the scenarios drive answers with an Outcome - its exit code, what it would print,
 and what it would complain - and prints nothing itself: the matrix reads the answer, and
@@ -27,9 +29,9 @@ Outcome = namedtuple("Outcome", "code out err")
 CLI_ENTRY = ["php", "backend/Bootstrap/cli.php"]
 
 
-def _run(args, merge_stderr=False):
+def _run(args, merge_stderr=False, input_text=None):
     """Run a command for its outcome, capturing both streams (or one merged stream)."""
-    proc = subprocess.run(args, text=True, stdout=subprocess.PIPE,
+    proc = subprocess.run(args, input=input_text, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE)
     return Outcome(proc.returncode, proc.stdout or "", proc.stderr or "")
 
@@ -399,6 +401,41 @@ def stranger(stand, action=None):
     raise StandRefused("usage: cluster stranger {up|down}")
 
 
+def own_directory(stand, node_id, action=None):
+    """Recreate one member on its own empty cluster directory, or restore the shared one."""
+    if stand.cluster_directory is None:
+        raise StandRefused(f"{stand.project} names no cluster directory (x-hilos-cluster.cluster-directory)")
+    node = stand.member(node_id)
+    name = stand.cluster_directory.name
+    # Compose keeps the existing named mount when `up --force-recreate` changes its type.
+    # Remove the old container first so the next one takes the override's actual mount.
+    if action == "on":
+        # Compose merges volumes by target: long-form tmpfs replaces the shared volume there.
+        override = {"services": {node.service: {"volumes": [
+            {"type": "tmpfs", "target": stand.cluster_directory.path}]}}}
+        removed = compose(stand, "rm", "-sf", node.service)
+        if removed.code != 0:
+            return removed
+        outcome = _run(["docker", "compose", "-f", str(stand.compose), "-f", "-", "up", "-d",
+                        "--force-recreate", node.service], input_text=json.dumps(override))
+        return _said(outcome, f"cluster: recreated {node.container} with a {name} directory of its own")
+    if action == "off":
+        removed = compose(stand, "rm", "-sf", node.service)
+        if removed.code != 0:
+            return removed
+        return _said(compose(stand, "up", "-d", "--force-recreate", node.service),
+                     f"cluster: recreated {node.container} on the stand's {name} directory")
+    raise StandRefused("usage: cluster own-directory <node> {on|off}")
+
+
+def cluster_directory_exec(stand, node_id, *argv):
+    """Run a command in one node's cluster directory for scenario assertions and cleanup."""
+    if stand.cluster_directory is None:
+        raise StandRefused(f"{stand.project} names no cluster directory (x-hilos-cluster.cluster-directory)")
+    node = stand.member(node_id)
+    return _run(["docker", "exec", "-w", stand.cluster_directory.path, node.container, *argv])
+
+
 def db_sql(stand, statement=None, member=None):
     """Run one SQL statement in the stand's database as its application user, for what it prints:
     tab-separated rows without a header (scenario 22 reads and replaces the database marker,
@@ -443,6 +480,10 @@ def execute(stand, command, *args):
     """Run one of the commands that answer with an Outcome, by the name cluster.py gives it."""
     if command == "stranger":
         return stranger(stand, *args[:1])
+    if command == "own-directory":
+        if not args:
+            raise StandRefused("usage: cluster own-directory <node> {on|off}")
+        return own_directory(stand, *args[:2])
     if command == "db-sql":
         return db_sql(stand, *args[:2])
     if not args:

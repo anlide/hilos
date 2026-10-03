@@ -179,8 +179,9 @@ $steps = [
     // group and no edge keep it apart from them (the head of this file). Takes its stand down
     // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
     // here but in binance-btc-tracker-php. Scenarios 23 and 25 freeze the masters last (HIL-1125,
-    // HIL-1128). The seconds are measured on the step run alone on nova-de (2026-10-01,
-    // HIL-1125), with scenarios 13 and 20 parked (P-169, P-456); returning one moves the number.
+    // HIL-1128). Scenarios 29 and 30 recreate and kill a slave (HIL-1243). The seconds are
+    // measured on the step run alone on nova-de (2026-10-03, HIL-1243), with scenarios 13 and
+    // 20 parked (P-169, P-456); returning one moves the number.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -189,7 +190,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 105,
+        'seconds' => 156,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the whole

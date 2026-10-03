@@ -227,6 +227,10 @@ X-Accel alias still assume a disk.
 
 ## Validation
 
-The cluster stand of binance-btc-tracker shows: nodes sharing `data_export`
-are admitted, a node with a directory of its own is refused, and a ready copy
-survives the node the export agent lived on (not in the code yet — HIL-1243).
+Scenarios 29 and 30 of the shared harness (`framework/docker/cluster/scenarios.py`)
+run on the binance-btc-tracker stand. A node recreated with an empty `data_export`
+of its own writes its own marker, is refused at both ends, and rejoins once
+restored to the stand's shared directory. A copy built by the export agent on
+one slave remains ready in both its database row and its file after that slave
+dies and the agent starts on another. The stand's `data_export` is one volume
+shared by its nodes.

@@ -337,7 +337,7 @@ scenario on a single shape retires (not in the code yet — HIL-1218).
 
 | Demo | View | Hilos cluster | MySQL | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on every master, 25 freeze settles on every master |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and a replica behind one address (not in the code yet — HIL-1229) | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node (parked, P-441/1) |
 | online-testing | Angular | three equal masters that host work themselves | a MariaDB Galera of three members behind one HAProxy address, every member written to, reads waiting for the cluster's writes | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 26 the database is one cluster of every member, the application connected to each; a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231) |
 
@@ -380,12 +380,14 @@ no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
 are read off that service — what the node itself reads. What compose cannot
 say stands in a top-level `x-hilos-cluster` block of the same file: `cli`, the
 service commands to the nodes go through; `stranger`, the node under a profile
-that a scenario raises on its own (optional); `scenarios`, the numbers the
+that a scenario raises on its own (optional); `cluster-directory`, the name and
+in-container path of a cluster directory of the stand's `$fs`, which scenario 29
+gives one node a copy of its own (optional); `scenarios`, the numbers the
 stand carries — never their order, which is the harness's. A demo's composer
 script calls `python3 ../../framework/docker/cluster/cluster.py <compose file>
 scenarios`. A scenario the stand names but cannot carry by its shape — too few
-masters or slaves, no stranger — is refused before the stand is raised, and so
-is a stand that leaves out what the harness reads.
+masters or slaves, no stranger, no cluster directory — is refused before the
+stand is raised, and so is a stand that leaves out what the harness reads.
 
 A stand whose database is a cluster says so the same way: every member is a
 service labelled `hilos.database.member: "true"`, exactly one of them also

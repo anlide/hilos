@@ -161,6 +161,8 @@ it never comes up with the rest. All of them share one MariaDB and one schema,
 on the subnet 10.221, and nothing is published on the host. It is a compose
 project of its own, `hilos-binance-btc-tracker-cluster`, because the e2e steps
 take their whole project down when they start.
+The nodes' `data_export` is one volume of this stand, shared by every node,
+rather than the demo's host directory used by the local and test stacks.
 
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
@@ -168,8 +170,10 @@ the scenarios it names — 1 master-slave mesh, 2 master-master, 5 leader-kill
 re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate
 refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on
-every master and 25 freeze settles on every master (`docs/agents/testing.md`,
-"The cluster stands — three demos, three shapes").
+every master, 25 freeze settles on every master, 29 a node with its own cluster
+directory refused on both ends, and 30 a ready export copy outliving the node
+its agent lived on (`docs/agents/testing.md`, "The cluster stands — three demos,
+three shapes").
 The framework's probe fleet and runtime-set probe are in this demo's `AGENTS`,
 and they start only here: on one node, on the Playwright stand and in
 production the rows are carried and nothing is run.
@@ -183,7 +187,7 @@ production the rows are carried and nothing is run.
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`,
-`stranger up` and the rest — are called on the module directly, from
+`stranger up`, `own-directory s1 on` and the rest — are called on the module directly, from
 `demo/binance-btc-tracker`:
 
 ```bash

@@ -1901,6 +1901,9 @@ def scenario_21_schema_rolled_out_once():
 # The row that names the database every node of the stand reads (HIL-1206); a marker is 32 hex.
 DATABASE_MARKER_SQL = "SELECT marker FROM hilos_database_marker WHERE id = 1"
 DATABASE_MARKER = re.compile(r"^[0-9a-f]{32}$")
+# Mirrors ClusterDirectoryMarker::FILE_NAME and HilosAgentType::HILOS_DATA_EXPORT.
+CLUSTER_DIRECTORY_MARKER_FILE = ".hilos-cluster-directory.json"
+DATA_EXPORT_AGENT_TYPE = "hilos_data_export"
 
 
 def scenario_22_other_database_refused():
@@ -1965,6 +1968,152 @@ def scenario_22_other_database_refused():
 
     return (f"{victim} read marker {foreign[:8]}… instead of {original[:8]}…, was refused on both ends; "
             f"the rest converged; with the marker back it rejoined")
+
+
+def scenario_29_cluster_directory_of_its_own_refused():
+    """One node with its own empty directory writes a marker and is refused on both ends.
+
+    The first writer creates its marker with O_EXCL, and the node has one marker of its own.
+    The shared marker stays intact and the node rejoins when its shared volume is restored.
+    We recreate a member, rather than add a node under a profile: the stand has no authority
+    key for a new certificate and one CLUSTER_NODE_ID must identify just one service.
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    victim = SLAVES[0] if SLAVES else next(n for n in MASTERS if n != leader)
+    observer = next(n for n in MASTERS if n != victim)
+    rest = [n for n in ALL_NODES if n != victim]
+    name = STAND.cluster_directory.name
+
+    def shared_marker():
+        outcome = control.cluster_directory_exec(STAND, observer, "cat", CLUSTER_DIRECTORY_MARKER_FILE)
+        assert outcome.code == 0, f"{observer} cannot read the shared {name} marker: {outcome.err}"
+        return json.loads(outcome.out)["marker"]
+
+    original = shared_marker()
+    assert DATABASE_MARKER.fullmatch(original), f"the shared {name} marker is invalid: {original!r}"
+    marks = {n: node_log_mark(n) for n in (observer, victim)}
+    print(f"    recreating {victim} with an empty {name} directory of its own")
+    try:
+        outcome = control.execute(STAND, "own-directory", victim, "on")
+        assert outcome.code == 0, f"could not give {victim} its own {name} directory: {outcome.err}"
+        marker_line = re.compile(rf"Cluster directory {re.escape(name)} marker ([0-9a-f]{{32}}) "
+                                 rf"written by {re.escape(victim)} at ")
+        own = None
+
+        def own_marker_written(_views):
+            nonlocal own
+            match = marker_line.search(node_log_since(victim, marks[victim]))
+            if match:
+                own = match.group(1)
+            return own is not None
+
+        wait_until(own_marker_written, CONVERGE_TIMEOUT,
+                   f"{victim} wrote its own {name} marker", nodes=rest)
+        assert own != original, f"{victim} still reads the shared {name} marker {original}"
+
+        def refused_on_both_ends(_views):
+            return (f"names directory:{name} marker '{own}'" in node_log_since(observer, marks[observer])
+                    and f"names directory:{name} marker '{original}'" in node_log_since(victim, marks[victim]))
+
+        wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
+                   f"the refused {name} handshake named by {observer} and {victim}", nodes=rest)
+
+        def left_out(current):
+            return not node_online(current, victim) and converged(rest)(current)
+
+        views = wait_until(left_out, CONVERGE_TIMEOUT,
+                           f"{victim} offline, the rest under one leader", nodes=rest)
+        for node in rest:
+            listed = [row for row in (views.get(node) or {}).get("nodes", [])
+                      if row.get("nodeId") == victim and row.get("online")]
+            assert listed == [], f"{node} lists {victim} online: {listed}"
+        assert shared_marker() == original, f"the shared {name} marker changed while {victim} was apart"
+    finally:
+        outcome = control.execute(STAND, "own-directory", victim, "off")
+        assert outcome.code == 0, f"could not restore {victim} to the shared {name} directory: {outcome.err}"
+        wait_converge(ALL_NODES)
+
+    return (f"{victim} wrote its own marker {own[:8]}… beside the shared {original[:8]}…, "
+            "was refused on both ends; the rest converged; back on the shared directory it rejoined")
+
+
+def scenario_30_ready_copy_outlives_its_node():
+    """The export agent builds a copy on one slave and finds it after moving to another.
+
+    A preparing database row asks the real agent to build it. On start the replacement agent
+    removes a ready row if its file is missing, so the unchanged ready row after failover proves
+    that the new host could see the shared file before it started work.
+    """
+    views = wait_converge(ALL_NODES)
+
+    def export_placement(current):
+        return next((row for row in leader_placements(current)
+                     if str(row.get("agentId", "")).split(":", 1)[0] == DATA_EXPORT_AGENT_TYPE
+                     and row.get("state") == "started"), None)
+
+    placement = export_placement(views)
+    assert placement is not None, "the stand places no data export agent"
+    assert placement["nodeId"] in SLAVES, f"the export agent is not on a slave: {placement}"
+    agent_id = placement["agentId"]
+    user_name = f"cluster-export-30-{int(time.time())}"
+    db_sql(f"INSERT INTO hilos_user (name) VALUES ('{user_name}')")
+    answer = db_sql(f"SELECT id FROM hilos_user WHERE name = '{user_name}'")
+    assert answer.isdigit(), f"the export user was not seeded: {answer!r}"
+    user_id = int(answer)
+    stored_name = None
+    holder = None
+    killed = False
+    try:
+        db_sql(f"INSERT INTO hilos_data_export (user_id, state, requested_at) "
+               f"VALUES ({user_id}, 'preparing', UTC_TIMESTAMP())")
+
+        def ready(_views):
+            nonlocal stored_name
+            row = db_sql(f"SELECT state, stored_name FROM hilos_data_export WHERE user_id = {user_id}")
+            match = re.fullmatch(r"ready\t([0-9a-f]{32}\.zip)", row)
+            if match:
+                stored_name = match.group(1)
+            return stored_name is not None
+
+        views = wait_until(ready, CONVERGE_TIMEOUT, f"the data export of user {user_id} is ready")
+        placement = export_placement(views)
+        assert placement is not None, "the stand places no data export agent after building the copy"
+        holder = placement["nodeId"]
+        assert holder in SLAVES, f"the export agent moved off a slave: {placement}"
+        assert control.cluster_directory_exec(STAND, holder, "test", "-f", stored_name).code == 0, \
+            f"{holder} cannot see ready copy {stored_name}"
+
+        marks = {node: node_log_mark(node) for node in SLAVES}
+        print(f"    killing export agent host {holder} after it built {stored_name}")
+        ctl("kill", holder)
+        killed = True
+
+        def replacement(current):
+            row = export_placement(current)
+            return row is not None and row.get("nodeId") != holder
+
+        views = wait_until(replacement, FAILOVER_TIMEOUT,
+                           f"data export agent {agent_id} started off {holder}")
+        new_holder = export_placement(views)["nodeId"]
+        assert new_holder in SLAVES, f"the export agent failed over outside the slaves: {new_holder}"
+        assert f"Agent '{agent_id}' start hook failed" not in node_log_since(new_holder, marks[new_holder]), \
+            f"the export agent start hook failed on {new_holder}"
+        row = db_sql(f"SELECT state, stored_name FROM hilos_data_export WHERE user_id = {user_id}")
+        assert row == f"ready\t{stored_name}", f"the ready copy changed after failover: {row!r}"
+        assert control.cluster_directory_exec(STAND, new_holder, "test", "-f", stored_name).code == 0, \
+            f"{new_holder} cannot see ready copy {stored_name}"
+    finally:
+        db_sql(f"DELETE FROM hilos_data_export WHERE user_id = {user_id}")
+        if stored_name is not None:
+            live = next(node for node in ALL_NODES if node != holder) if killed else (holder or MASTERS[0])
+            control.cluster_directory_exec(STAND, live, "rm", "-f", stored_name)
+        if killed:
+            ctl("start", holder)
+            wait_converge(ALL_NODES)
+
+    return (f"{holder} built {stored_name[:8]}….zip; after {holder} died the agent started "
+            f"on {new_holder} and the copy was still ready there")
 
 
 # The address scenario 23 names to the verifier circle. No user holds it, on purpose: the
@@ -2450,13 +2599,13 @@ def scenario_26_database_is_one_cluster():
             f"wsrep_sync_wait={waits}; the application holds {spread}")
 
 
-class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members",
-                      defaults=(0, 0, False, False, 0, False, 0))):
+class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
+                     "cluster_directory", defaults=(0, 0, False, False, 0, False, 0, False))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every
     master declaring ram - masters that carry placed work themselves - and a database of at
-    least `database_members` members. What a scenario names by role - the third master, the
-    second slave - is what it needs."""
+    least `database_members` members, and a cluster directory the stand names. What a scenario
+    names by role - the third master, the second slave - is what it needs."""
 
 
 class Scenario(namedtuple("Scenario", "name run need")):
@@ -2509,6 +2658,11 @@ SCENARIOS = [
     Scenario("22 other database refused", scenario_22_other_database_refused, Need(nodes=3)),
     Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
              Need(masters=1, slaves=1, slave_ram=True)),
+    # Both recreate or stop a slave and restore it before the freeze pair stops every master's agents.
+    Scenario("29 cluster directory of its own refused", scenario_29_cluster_directory_of_its_own_refused,
+             Need(nodes=3, cluster_directory=True)),
+    Scenario("30 ready copy outlives its node", scenario_30_ready_copy_outlives_its_node,
+             Need(slaves=2, cluster_directory=True)),
     # Last, both of them, because the freeze stops the agents of every master: a lift that fails
     # here must not leave its neighbours in the matrix running against a frozen stand.
     Scenario("23 verifier circle on every master", scenario_23_verifier_circle_on_every_master, Need(masters=2)),
@@ -2620,6 +2774,8 @@ def unmet_need(stand, scenario):
             return f"it needs {wanted} {what}, the stand has {has}"
     if need.stranger and stand.stranger is None:
         return "it needs a stranger, the stand has none"
+    if need.cluster_directory and stand.cluster_directory is None:
+        return "it needs a cluster directory, the stand names none"
     if need.slave_ram and not any(stand.members[s].ram for s in stand.slaves):
         return "it needs a slave that declares ram, the stand has none"
     if need.master_ram:

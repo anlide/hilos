@@ -32,6 +32,9 @@ directory; a demo calls this from its composer scripts)
   logs <node>          follow a node's container logs
   stranger up|down     start / remove the stand's stranger, a node certified by an authority
                        the cluster does not trust (HIL-1034, scenario 17)
+  own-directory <node> on|off
+                       recreate a node with an empty copy of the stand's cluster directory
+                       of its own / back on the stand's (scenario 29, HIL-1243)
   db-sql <statement> [<member>]
                        run one SQL statement in the stand's database, or on one member of a
                        clustered one (scenario 26, HIL-1230), and print its rows (scenario 22
@@ -55,7 +58,7 @@ REFUSED = 2
 
 COMMANDS = ("up", "down", "restart", "status", "status-json", "inspect", "inspect-local", "client",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "db-sql", "scenarios")
+            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "scenarios")
 
 
 def check_registry(stand, shown):

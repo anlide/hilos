@@ -16,6 +16,7 @@
 # fleet inside it would fall in the middle of its matrix. The nodes run the whole demo —
 # every agent it registers, the framework's cluster probes among them — and publish nothing
 # on the host: the harness reaches them through the cli container.
+# The cluster-directory key below names the demo's shared $fs directory on this stand.
 
 name: hilos-binance-btc-tracker-cluster
 
@@ -24,7 +25,12 @@ name: hilos-binance-btc-tracker-cluster
 x-hilos-cluster:
   cli: binance-btc-tracker-cluster-cli
   stranger: x1
-  scenarios: [1, 2, 5, 7, 8, 10, 13, 17, 20, 23, 25]
+  # FsContext::DATA_EXPORT lives at /app/data/data_export. Scenario 29 gives one node an
+  # empty copy of its own; scenario 30 looks for a data export copy in the shared directory.
+  cluster-directory:
+    name: data_export
+    path: /app/data/data_export
+  scenarios: [1, 2, 5, 7, 8, 10, 13, 17, 20, 23, 25, 29, 30]
 
 x-node-base: &node-base
   build: .
@@ -147,6 +153,7 @@ services:
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
+      - data-export:/app/data/data_export
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -170,6 +177,7 @@ services:
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
+      - data-export:/app/data/data_export
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -193,6 +201,7 @@ services:
       WORKER_MIN_MONOPOLISTIC: "0"
     volumes:
       - ..:/app
+      - data-export:/app/data/data_export
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -224,6 +233,7 @@ services:
       WORKER_MAX_REGULAR: "5"
     volumes:
       - ..:/app
+      - data-export:/app/data/data_export
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -249,6 +259,7 @@ services:
       WORKER_MAX_REGULAR: "5"
     volumes:
       - ..:/app
+      - data-export:/app/data/data_export
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -278,6 +289,7 @@ services:
       CLUSTER_SEEDS: "10.221.0.11:8095,10.221.0.12:8095,10.221.0.13:8095,10.221.0.14:8095,10.221.0.15:8095"
     volumes:
       - ..:/app
+      - data-export:/app/data/data_export
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
@@ -323,6 +335,12 @@ services:
 volumes:
   mysql-cluster-data:
     name: hilos-binance-btc-tracker-cluster-mysql-data
+  # This stand needs its own volume: local and test mount the demo's host data/data_export,
+  # while the export agent deletes files without ready rows in its own database at start
+  # and hourly. The full run may run this cluster step beside e2e. All six nodes share
+  # this disk, and the harness's down --volumes clears it with the database each run.
+  data-export:
+    name: hilos-binance-btc-tracker-cluster-data-export
 
 networks:
   cluster-net:

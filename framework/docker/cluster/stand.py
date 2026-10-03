@@ -10,6 +10,9 @@ of the same file:
   x-hilos-cluster:
     cli: <the service whose container `docker exec` sends commands to the nodes through>
     stranger: <CLUSTER_NODE_ID of the node under a profile a scenario raises; optional>
+    cluster-directory: {name: <the directory's name in $fs>, path: <its path inside a node's container>}
+      optional: a cluster directory of the stand's project, which scenario 29 gives one node a
+      copy of its own and scenario 30 reads
     scenarios: [<numbers of the scenarios this stand carries>]
 
 The database the nodes share is found the way the tooling finds it on every stand: the service
@@ -91,6 +94,13 @@ class Database:
 
 
 @dataclass(frozen=True)
+class ClusterDirectory:
+    """One cluster directory of the stand's project, as its $fs names it."""
+    name: str
+    path: str
+
+
+@dataclass(frozen=True)
 class Stand:
     """A cluster stand: its compose project, the nodes it starts, and what it carries."""
     compose: Path
@@ -105,6 +115,8 @@ class Stand:
     slaves: list
     # The node under a profile a scenario raises on its own, or None.
     stranger: Node | None
+    # The stand's cluster directory that scenarios may inspect or give one node a copy of its own.
+    cluster_directory: ClusterDirectory | None
     scenarios: list
     slave_work_grace_sec: float
     # The service labelled as the stand's database, or None when the stand labels none.
@@ -198,6 +210,7 @@ def stand_from_config(shown, compose, config):
         masters=[node_id for node_id, node in members.items() if node.role == ROLE_MASTER],
         slaves=[node_id for node_id, node in members.items() if node.role == ROLE_SLAVE],
         stranger=stranger,
+        cluster_directory=_cluster_directory(shown, block),
         scenarios=_scenarios(shown, block.get("scenarios")),
         slave_work_grace_sec=_slave_work_grace_sec(shown, services, members),
         database=database,
@@ -250,6 +263,20 @@ def _database(shown, project, services):
         raise StandRefused(f"{shown}: services {', '.join(labelled)} are all labelled "
                            f"{DATABASE_LABEL}: {DATABASE_ROLE}")
     return _database_of(shown, project, services, labelled[0], "database service")
+
+
+def _cluster_directory(shown, block):
+    """The optional cluster directory the stand names, with a path inside a node."""
+    if "cluster-directory" not in block:
+        return None
+    spec = block["cluster-directory"]
+    if not isinstance(spec, dict) or not isinstance(spec.get("name"), str) \
+            or not spec["name"] or not isinstance(spec.get("path"), str) or not spec["path"]:
+        raise StandRefused(f"{shown}: {BLOCK}.cluster-directory needs a name and a path")
+    path = spec["path"]
+    if not path.startswith("/"):
+        raise StandRefused(f"{shown}: {BLOCK}.cluster-directory.path {path} is not absolute")
+    return ClusterDirectory(spec["name"], path)
 
 
 def _database_members(shown, project, services, database):
