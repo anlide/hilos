@@ -4,9 +4,9 @@ reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus 
 switches the scenarios need - `docker kill -9` (node-down / failover), `docker network
 disconnect` (partition / split-brain), and a SIGKILL of the daemon or one worker inside a live
 container (crash recovery / partial failure) - and one lever on the stand's database, `db-sql`
-(a node reading another database marker, HIL-1206). Assertions live in the scenario matrix
-(scenarios.py), which reads each node's `test:cluster:inspect` reply and compares it against
-the expected invariants.
+(a node reading another database marker, HIL-1206; each member of a clustered database asked,
+HIL-1230). Assertions live in the scenario matrix (scenarios.py), which reads each node's
+`test:cluster:inspect` reply and compares it against the expected invariants.
 
 A command that the scenarios drive answers with an Outcome - its exit code, what it would print,
 and what it would complain - and prints nothing itself: the matrix reads the answer, and
@@ -399,16 +399,25 @@ def stranger(stand, action=None):
     raise StandRefused("usage: cluster stranger {up|down}")
 
 
-def db_sql(stand, statement=None):
+def db_sql(stand, statement=None, member=None):
     """Run one SQL statement in the stand's database as its application user, for what it prints:
     tab-separated rows without a header (scenario 22 reads and replaces the database marker,
     HIL-1206). The database is a fact of the stand rather than of a node, so the lever lives
-    here, beside the other switches, and not in a command of the framework."""
+    here, beside the other switches, and not in a command of the framework.
+
+    `member` names the service of one member of a clustered database, and the statement runs
+    there rather than in the member labelled as the database: scenario 26 asks every member of a
+    clustered database (HIL-1230)."""
     if stand.database is None:
         raise StandRefused(f"{stand.project} labels no service as its database (hilos.role: database)")
     if not statement:
-        raise StandRefused("usage: cluster db-sql <statement>")
+        raise StandRefused("usage: cluster db-sql <statement> [<member>]")
     database = stand.database
+    if member is not None:
+        database = next((m for m in stand.database_members if m.service == member), None)
+        if database is None:
+            raise StandRefused(f"unknown database member '{member}' (expected one of: "
+                               f"{' '.join(m.service for m in stand.database_members)})")
     return _run(["docker", "exec", database.container, "mariadb", f"-u{database.user}",
                  f"-p{database.password}", "-N", "-B", database.name, "-e", statement])
 
@@ -435,7 +444,7 @@ def execute(stand, command, *args):
     if command == "stranger":
         return stranger(stand, *args[:1])
     if command == "db-sql":
-        return db_sql(stand, *args[:1])
+        return db_sql(stand, *args[:2])
     if not args:
         raise StandRefused(f"unknown node '' (expected one of: {' '.join(stand.members)})")
     return NODE_COMMANDS[command](stand, *args)

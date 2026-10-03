@@ -228,7 +228,7 @@ What keeps each promise on each topology:
 |---|---|---|
 | one server | kept | kept |
 | primary + replica behind one address that always leads to the primary | kept | kept |
-| multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL) |
+| multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL); the cluster stand of online-testing runs this row (`demo/online-testing/docker/galera/galera.cnf`) |
 | a proxy that hands reads to replicas, or reads from an asynchronous replica | kept | **not kept — not supported** |
 
 Two operator moves split a cluster through the marker, and both are the

@@ -1,8 +1,14 @@
 # The cluster stand of online-testing (HIL-1217): three equal masters that carry the work
-# themselves, on one database.
+# themselves, on a MariaDB Galera of three members that every node writes to, behind one
+# proxy address (HIL-1230).
 #
-# One shared MariaDB carrying ONE schema for the whole stand (HIL-712) — the model
-# Hilos is built on, and what makes "node A writes a row, node B reads it" sayable —
+# One logical database carrying ONE schema for the whole stand (HIL-712) — the model
+# Hilos is built on, and what makes "node A writes a row, node B reads it" sayable — held
+# by the three members of a Galera cluster. The nodes see ONE address, an HAProxy that
+# hands their connections out over all three members (leastconn), so writes arrive at
+# every member; a read waits for the writes of the cluster (wsrep_sync_wait=1,
+# docker/galera/galera.cnf), which is what the demo's declared READ_AFTER_WRITE asks of a
+# multi-primary (docs/agents/app-topology.md, "Database Guarantees"). Beside them,
 # three daemon nodes that roll that schema out themselves as they start together,
 # under the rollout claim in the database (HIL-1228), on a dedicated bridge with
 # static IPs — three masters, each the consensus and the data plane at once — and a
@@ -23,14 +29,17 @@ name: hilos-online-testing-cluster
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
 x-hilos-cluster:
   cli: online-testing-cluster-cli
-  scenarios: [11, 15, 21, 22, 24]
+  scenarios: [11, 15, 21, 22, 24, 26]
 
 x-node-base: &node-base
   build: .
   restart: "no"
   command: ["php", "backend/Bootstrap/docker.php"]
+  # The proxy is healthy once all three members are up behind it; a connection the proxy takes
+  # with no member behind it reaches the client as error 2013, which a node's start does not
+  # retry (MysqlClientErrorCode).
   depends_on:
-    online-testing-cluster-mysql:
+    online-testing-cluster-proxy:
       condition: service_healthy
 
 x-node-env: &node-env
@@ -41,7 +50,7 @@ x-node-env: &node-env
   # APP_ENV=test, and no env file can point a container of this stand at a database
   # of its own anyway — every one of them names the same DB_DATABASE.
   APP_ENV: dev
-  DB_HOST: online-testing-cluster-mysql
+  DB_HOST: online-testing-cluster-proxy
   DB_PORT: "3306"
   # One schema for the whole stand, nodes and CLI alike: the cluster model is
   # "one database per cluster", and a node that cannot see its neighbour's row
@@ -91,32 +100,109 @@ x-node-env: &node-env
   WORKER_MAX_REGULAR: "5"
   WORKER_MIN_MONOPOLISTIC: "1"
 
+# One member of the stand's database. The merge key copies the top level only: a service that
+# sets labels or volumes of its own lists them whole.
+x-galera-base: &galera-base
+  image: mariadb:11.4
+  restart: "no"
+  environment:
+    MYSQL_ROOT_PASSWORD: hilos_root_pass
+    MYSQL_DATABASE: hilos-demo-online-testing-cluster
+    MYSQL_USER: hilos
+    MYSQL_PASSWORD: hilos_pass
+    TZ: UTC
+    # mysql@localhost over unix_socket, with no grant beyond USAGE: the user the health check
+    # below signs in as. The image creates it only when asked.
+    MARIADB_MYSQL_LOCALHOST_USER: "1"
+  labels:
+    hilos.database.member: "true"
+  # Synced is what a member owes before anything leans on it. Not the image's healthcheck user:
+  # its password is random on each member (/var/lib/mysql/.my-healthcheck.cnf) and SST brings the
+  # donor's user table, so the two part; mysql@localhost is created on every member and travels
+  # with SST.
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--su-mysql", "--no-defaults", "--connect", "--galera_online"]
+    interval: 2s
+    timeout: 5s
+    retries: 60
+    start_period: 20s
+
 services:
-  online-testing-cluster-mysql:
-    image: mariadb:11.4
-    container_name: online-testing-cluster-mysql
-    # How the runner's artifact collector finds this container: the stands spell their
-    # database service several ways, so it is asked for by role rather than guessed at by
-    # name (HIL-841).
+  online-testing-cluster-galera1:
+    <<: *galera-base
+    container_name: online-testing-cluster-galera1
+    # How the runner's artifact collector finds the database: the stands spell their database
+    # service several ways, so it is asked for by role rather than guessed at by name (HIL-841).
+    # And the one member the tooling execs into — db-sql and the step's artifact collector; any
+    # member would answer the same, one keeps the answer off docker's listing order.
     labels:
       hilos.role: database
-    environment:
-      MYSQL_ROOT_PASSWORD: hilos_root_pass
-      MYSQL_DATABASE: hilos-demo-online-testing-cluster
-      MYSQL_USER: hilos
-      MYSQL_PASSWORD: hilos_pass
-      TZ: UTC
+      hilos.database.member: "true"
+    # Raises the cluster when no other member answers, joins it otherwise (docker/galera/bootstrap.sh).
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-bootstrap.sh"]
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-node-name=galera1", "--wsrep-node-address=10.223.0.21"]
     volumes:
-      - mysql-cluster-data:/var/lib/mysql
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_0900_ai_ci
+      - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
+      - ./galera/bootstrap.sh:/usr/local/bin/hilos-galera-bootstrap.sh:ro
+      - galera1-data:/var/lib/mysql
+    networks:
+      cluster-net:
+        ipv4_address: 10.223.0.21
+
+  # Joins, never bootstraps; waits for galera1 so that two joiners do not pull a full copy from
+  # one donor at once.
+  online-testing-cluster-galera2:
+    <<: *galera-base
+    container_name: online-testing-cluster-galera2
+    depends_on:
+      online-testing-cluster-galera1:
+        condition: service_healthy
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-node-name=galera2", "--wsrep-node-address=10.223.0.22"]
+    volumes:
+      - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
+      - galera2-data:/var/lib/mysql
+    networks:
+      cluster-net:
+        ipv4_address: 10.223.0.22
+
+  # The same as galera2, after it; see the comment there.
+  online-testing-cluster-galera3:
+    <<: *galera-base
+    container_name: online-testing-cluster-galera3
+    depends_on:
+      online-testing-cluster-galera2:
+        condition: service_healthy
+    command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
+              "--wsrep-node-name=galera3", "--wsrep-node-address=10.223.0.23"]
+    volumes:
+      - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
+      - galera3-data:/var/lib/mysql
+    networks:
+      cluster-net:
+        ipv4_address: 10.223.0.23
+
+  # The ONE address of the database — the nodes and the cli know only this. Hilos sees one
+  # database address (2026-09-06), and the topology behind it is the project's.
+  online-testing-cluster-proxy:
+    image: haproxy:3.4-alpine
+    container_name: online-testing-cluster-proxy
+    restart: "no"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      online-testing-cluster-galera1:
+        condition: service_healthy
+      online-testing-cluster-galera2:
+        condition: service_healthy
+      online-testing-cluster-galera3:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 2s
-      timeout: 5s
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8404/healthz"]
+      interval: 1s
+      timeout: 3s
       retries: 30
-      start_period: 10s
     networks:
       cluster-net:
         ipv4_address: 10.223.0.10
@@ -210,7 +296,7 @@ services:
     command: ["sleep", "infinity"]
     environment:
       APP_ENV: test
-      DB_HOST: online-testing-cluster-mysql
+      DB_HOST: online-testing-cluster-proxy
       DB_PORT: "3306"
       # Not inherited: this service carries no anchor. Same schema as the nodes
       # (HIL-712).
@@ -224,7 +310,7 @@ services:
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
     depends_on:
-      online-testing-cluster-mysql:
+      online-testing-cluster-proxy:
         condition: service_healthy
     profiles:
       - cli
@@ -232,8 +318,12 @@ services:
       - cluster-net
 
 volumes:
-  mysql-cluster-data:
-    name: hilos-online-testing-cluster-mysql-data
+  galera1-data:
+    name: hilos-online-testing-cluster-galera1-data
+  galera2-data:
+    name: hilos-online-testing-cluster-galera2-data
+  galera3-data:
+    name: hilos-online-testing-cluster-galera3-data
 
 networks:
   cluster-net:

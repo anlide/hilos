@@ -149,25 +149,30 @@ three equal masters, `m1`–`m3`, each declaring `worker,ram=10`: every master i
 the consensus and the data plane at once and carries placed work itself, and
 the leader is still last among them, so the work lives on the two that do not
 lead until a re-election hands the leader what it carried. All three share one
-MariaDB and one schema, on the subnet 10.223, and nothing is published on the
-host. It is a compose project of its own, `hilos-online-testing-cluster`,
-because the e2e steps take their whole project down when they start.
+schema on a MariaDB Galera of three members, `galera1`–`galera3`, which every
+node writes to through one address, an HAProxy in front of them
+(`online-testing-cluster-proxy`, leastconn); reads wait for the cluster's writes
+(`wsrep_sync_wait=1`). All of it sits on the subnet 10.223, and nothing is
+published on the host. It is a compose project of its own,
+`hilos-online-testing-cluster`, because the e2e steps take their whole project
+down when they start.
 
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 21 schema rolled out once, 24 cut-off leader stops its
-work, 11 cross-node db fact, 15 db interest addressing and 22 other database
-refused (`docs/agents/testing.md`, "The cluster stands — three demos, three
-shapes"). The framework's probe fleet and database probe are in this demo's
-`AGENTS`, and they start only here: on one node, on the Playwright stand and in
-production the rows are carried and nothing is run.
+work, 26 database is one cluster, 11 cross-node db fact, 15 db interest
+addressing and 22 other database refused (`docs/agents/testing.md`, "The
+cluster stands — three demos, three shapes"). The framework's probe fleet and
+database probe are in this demo's `AGENTS`, and they start only here: on one
+node, on the Playwright stand and in production the rows are carried and
+nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
+| `composer run test:cluster:up` | build the images and start the three database members, the proxy in front of them, the three nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 24` runs only the ones named |
-| `composer run test:cluster:down-volumes` | take the stand down, database included |
+| `composer run test:cluster:down-volumes` | take the stand down, the database members' volumes included |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`
@@ -175,6 +180,22 @@ and the rest — are called on the module directly, from `demo/online-testing`:
 
 ```bash
 python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
+```
+
+### Database
+
+`galera1` raises the cluster, and only while `galera2` and `galera3` are silent;
+the other two always join, one after the other. That is why
+`test:cluster:down` followed by `test:cluster:up` brings the stand back with its
+data: `galera1` finds nobody to join and raises the cluster again from what it
+kept. The members share `docker/galera/galera.cnf`, the proxy reads
+`docker/haproxy/haproxy.cfg`.
+
+`db-sql` runs a statement in `galera1`, and on the member named after it
+otherwise:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-sql "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size'" online-testing-cluster-galera2
 ```
 
 ### TLS fixtures

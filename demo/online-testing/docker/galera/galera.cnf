@@ -1,0 +1,27 @@
+# What makes a member of the cluster stand's database a member of one MariaDB Galera
+# (HIL-1230), mounted into all three. Each member names itself on its command line
+# (--wsrep-node-name, --wsrep-node-address); everything they share is here.
+#
+# The image's temporary server, the one that initialises an empty data directory, runs
+# with --wsrep_on=OFF of its own accord (the image's docker-entrypoint.sh), so the
+# first boot creates the schema and the users locally before the member joins anyone.
+#
+# Not writable by everybody: mariadbd skips a world-writable .cnf without failing.
+
+[mariadb]
+wsrep_on = ON
+wsrep_provider = /usr/lib/galera/libgalera_smm.so
+wsrep_cluster_name = hilos-online-testing-cluster
+wsrep_cluster_address = gcomm://10.223.0.21,10.223.0.22,10.223.0.23
+# A full copy to a joining member over rsync: it needs no user and no password, where
+# mariabackup would ask for wsrep_sst_auth.
+wsrep_sst_method = rsync
+# A read waits until the member has applied what the cluster already committed: the
+# READ_AFTER_WRITE the demo declares, which on a multi-primary with members on
+# different servers holds only this way (docs/agents/app-topology.md, "Database
+# Guarantees").
+wsrep_sync_wait = 1
+# What Galera requires of every member.
+binlog_format = ROW
+default_storage_engine = InnoDB
+innodb_autoinc_lock_mode = 2

@@ -74,6 +74,9 @@ Plus scenarios beyond that matrix:
  25 freeze settles on every    every master reads active once the freeze holds, and the close
     master                     back from the window answers only once every master has stopped
                                again what the entry stopped (HIL-1128)
+ 26 database is one cluster    every member of a clustered database is in one synced primary
+                               cluster, reads wait for the cluster's writes, and the application
+                               is connected to each (HIL-1230)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -331,9 +334,10 @@ def node_log_since(node, mark):
     return control.node_log_since(STAND.node(node), mark)
 
 
-def db_sql(statement):
-    """Run one SQL statement in the stand's database: its rows as printed, or '' when it failed."""
-    return ctl_out("db-sql", statement)
+def db_sql(statement, member=None):
+    """Run one SQL statement in the stand's database, or on the member of a clustered one that
+    `member` names by service: its rows as printed, or '' when it failed."""
+    return ctl_out("db-sql", statement, *([member] if member else []))
 
 
 def container_id(node):
@@ -2377,12 +2381,82 @@ def scenario_24_cut_off_leader_stops_its_work():
         wait_converge(ALL_NODES)
 
 
-class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram",
-                      defaults=(0, 0, False, False, 0, False))):
+# What scenario 26 asks every member of a clustered database about itself.
+CLUSTER_STATUS_SQL = ("SHOW GLOBAL STATUS WHERE Variable_name IN "
+                      "('wsrep_cluster_size', 'wsrep_cluster_status', 'wsrep_local_state_comment')")
+SYNC_WAIT_SQL = "SELECT @@GLOBAL.wsrep_sync_wait"
+
+
+def scenario_26_database_is_one_cluster():
+    """Every member of the stand's clustered database is one synced cluster the application writes
+    to (HIL-1230).
+
+    Every other scenario passes the same on a database that is one server: a proxy that forgot a
+    member, or a database quietly living on one member, reads and writes as well as three. So the
+    shape itself is asked, of each member the stand declares, through db-sql on that member:
+
+    - the cluster it sees is as large as the stand declares, and it is in the primary component;
+    - it is Synced, that is it has applied what the cluster committed and takes writes;
+    - wsrep_sync_wait is at least 1: a read there waits for the writes the other members
+      committed, which is the READ_AFTER_WRITE the demo declares (docs/agents/app-topology.md,
+      "Database Guarantees") and what scenarios 11 and 22 read through;
+    - the application's user holds a connection there, not counting the one asking: the one
+      address the nodes know leads to every member, so every member is written to. The daemons
+      and the workers of the nodes hold more long connections than there are members, and the
+      proxy lays each next one on the least busy member.
+
+    Only reads, and asked once: the stand has converged before the matrix, so there is nothing to
+    wait for, and every miss is a hard failure naming the member. A user without the PROCESS
+    privilege still sees every thread of its own account in PROCESSLIST, and the application signs
+    in as the same user db-sql does, so no privilege is added for this.
+    """
+    members = [member.service for member in STAND.database_members]
+    count = len(members)
+    user = STAND.database.user
+    sync_waits = set()
+    held = {}
+    for member in members:
+        status = {}
+        for line in db_sql(CLUSTER_STATUS_SQL, member).splitlines():
+            name, _, value = line.partition("\t")
+            status[name.lower()] = value
+        assert status, f"{member} did not answer: {CLUSTER_STATUS_SQL}"
+        size = status.get("wsrep_cluster_size")
+        assert size == str(count), f"{member} sees a database cluster of {size}, the stand declares {count} members"
+        state = status.get("wsrep_cluster_status")
+        assert state == "Primary", f"{member} is outside the primary component: wsrep_cluster_status={state}"
+        local = status.get("wsrep_local_state_comment")
+        assert local == "Synced", f"{member} is {local}, not Synced"
+
+        answer = db_sql(SYNC_WAIT_SQL, member)
+        assert answer.isdigit(), f"{member} did not answer: {SYNC_WAIT_SQL}"
+        sync_wait = int(answer)
+        assert sync_wait >= 1, (f"{member} runs wsrep_sync_wait={sync_wait}: a read there may miss a write "
+                                "another member committed, and the demo declares READ_AFTER_WRITE")
+        sync_waits.add(sync_wait)
+
+        connections_sql = (f"SELECT COUNT(*) FROM information_schema.PROCESSLIST "
+                           f"WHERE USER = '{user}' AND ID <> CONNECTION_ID()")
+        answer = db_sql(connections_sql, member)
+        assert answer.isdigit(), f"{member} did not answer: {connections_sql}"
+        held[member] = int(answer)
+        assert held[member] >= 1, (f"{member} holds no connection of {user}: the one address does not lead "
+                                   "to every member, so the database is not written as a multi-primary")
+
+    spread = ", ".join(f"{held[member]} connection(s) on {member}" if index == 0 else f"{held[member]} on {member}"
+                       for index, member in enumerate(members))
+    waits = "/".join(str(value) for value in sorted(sync_waits))
+    return (f"one cluster of {in_words(count)} members, all synced in the primary component with "
+            f"wsrep_sync_wait={waits}; the application holds {spread}")
+
+
+class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members",
+                      defaults=(0, 0, False, False, 0, False, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
-    slaves, a stranger, a slave that declares ram, at least `nodes` members in all, and every
-    master declaring ram - masters that carry placed work themselves. What a
-    scenario names by role - the third master, the second slave - is what it needs."""
+    slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every
+    master declaring ram - masters that carry placed work themselves - and a database of at
+    least `database_members` members. What a scenario names by role - the third master, the
+    second slave - is what it needs."""
 
 
 class Scenario(namedtuple("Scenario", "name run need")):
@@ -2404,6 +2478,10 @@ SCENARIOS = [
     # scenario that kills or recreates a node reshuffles it.
     Scenario("24 cut-off leader stops its work", scenario_24_cut_off_leader_stops_its_work,
              Need(masters=3, master_ram=True)),
+    # Right after 24 and before every scenario that leans on the shared database: a database that
+    # is not one cluster of every member is named here rather than failed for in 11 or 22. It
+    # only reads.
+    Scenario("26 database is one cluster", scenario_26_database_is_one_cluster, Need(database_members=2)),
     Scenario("1 master-slave mesh", scenario_1_master_slave_mesh, Need(masters=1, slaves=1)),
     Scenario("2 master-master", scenario_2_master_master, Need(masters=1)),
     Scenario("3 placement", scenario_3_placement, Need(slaves=1)),
@@ -2536,7 +2614,8 @@ def unmet_need(stand, scenario):
     need = scenario.need
     for wanted, has, what in ((need.masters, len(stand.masters), "masters"),
                               (need.slaves, len(stand.slaves), "slaves"),
-                              (need.nodes, len(stand.members), "nodes")):
+                              (need.nodes, len(stand.members), "nodes"),
+                              (need.database_members, len(stand.database_members), "database members")):
         if has < wanted:
             return f"it needs {wanted} {what}, the stand has {has}"
     if need.stranger and stand.stranger is None:

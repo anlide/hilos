@@ -210,10 +210,12 @@ $steps = [
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
-    // the whole demo on one database. Beside the other fleets and any e2e step, no group and no
-    // edge (the head of this file); takes its stand down with it, at any outcome, for the reason
-    // `cluster` does. The demo's unit suite runs in online-testing-php. The seconds are measured
-    // on the step run alone on nova-de (2026-10-01, HIL-1217).
+    // the whole demo on a MariaDB Galera of three members behind one proxy (HIL-1230). Beside
+    // the other fleets and any e2e step, no group and no edge (the head of this file); takes its
+    // stand down with it, at any outcome, for the reason `cluster` does. The demo's unit suite
+    // runs in online-testing-php. The seconds are measured on nova-de with nothing beside it
+    // (2026-10-03, HIL-1230): the median of ten matrices in a row, each of which took the
+    // previous stand down first, as the step takes down its own.
     [
         'id' => 'online-testing-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -222,7 +224,7 @@ $steps = [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 80,
+        'seconds' => 129,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

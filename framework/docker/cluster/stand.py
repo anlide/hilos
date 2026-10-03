@@ -16,6 +16,10 @@ The database the nodes share is found the way the tooling finds it on every stan
 labelled `hilos.role: database`, with the credentials its image is started with (MYSQL_USER,
 MYSQL_PASSWORD, MYSQL_DATABASE). A scenario sends SQL there through `db-sql` (control.py).
 
+A stand whose database is a cluster labels every member `hilos.database.member: "true"` and
+exactly one of them `hilos.role: database`; the nodes reach the members through one address the
+stand provides (online-testing: a proxy), never a member directly. Scenario 26 asks every member.
+
 The file is read whole through `docker compose config` as JSON rather than parsed as YAML:
 the host has no YAML parser, and compose resolves the anchors, the relative paths and the
 defaults on its way out, so what is read here is what compose itself would run.
@@ -39,6 +43,10 @@ DAEMON_LOG = "daemon.log"
 # label every demo stand carries for the tooling that asks a stand for its database.
 DATABASE_LABEL = "hilos.role"
 DATABASE_ROLE = "database"
+# The label every member of a clustered database carries; exactly one of them also carries
+# DATABASE_LABEL.
+DATABASE_MEMBER_LABEL = "hilos.database.member"
+DATABASE_MEMBER = "true"
 # What the database image of a stand is started with, and what db-sql signs in with.
 DATABASE_ENV = ("MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
 ROLE_MASTER = "master"
@@ -101,6 +109,9 @@ class Stand:
     slave_work_grace_sec: float
     # The service labelled as the stand's database, or None when the stand labels none.
     database: Database | None
+    # The Database of every member of a clustered database, by service name; empty on a stand
+    # whose database is one server.
+    database_members: tuple
 
     @property
     def demo_dir(self):
@@ -175,6 +186,7 @@ def stand_from_config(shown, compose, config):
                                "which is not a node under a profile")
 
     members = {node_id: node for node_id, node in sorted(nodes.items()) if node.profile is None}
+    database = _database(shown, project, services)
     return Stand(
         compose=compose,
         project=project,
@@ -188,7 +200,8 @@ def stand_from_config(shown, compose, config):
         stranger=stranger,
         scenarios=_scenarios(shown, block.get("scenarios")),
         slave_work_grace_sec=_slave_work_grace_sec(shown, services, members),
-        database=_database(shown, project, services),
+        database=database,
+        database_members=_database_members(shown, project, services, database),
     )
 
 
@@ -236,12 +249,34 @@ def _database(shown, project, services):
     if len(labelled) > 1:
         raise StandRefused(f"{shown}: services {', '.join(labelled)} are all labelled "
                            f"{DATABASE_LABEL}: {DATABASE_ROLE}")
-    service = labelled[0]
+    return _database_of(shown, project, services, labelled[0], "database service")
+
+
+def _database_members(shown, project, services, database):
+    """The members of a clustered database, by service name; empty when the stand labels none.
+
+    The service labelled as the database must be one of them: it is the member the tooling
+    reaches, and a database apart from its own cluster would be a second database.
+    """
+    labelled = sorted(service for service, spec in services.items()
+                      if (spec.get("labels") or {}).get(DATABASE_MEMBER_LABEL) == DATABASE_MEMBER)
+    if not labelled:
+        return ()
+    if database is None or database.service not in labelled:
+        name = database.service if database is not None else "(none)"
+        raise StandRefused(f"{shown}: the database service {name} is not one of the database members: "
+                           f"{', '.join(labelled)}")
+    return tuple(_database_of(shown, project, services, service, "database member service")
+                 for service in labelled)
+
+
+def _database_of(shown, project, services, service, what):
+    """One database service read into a Database; `what` names it in a refusal."""
     spec = services[service]
     env = spec.get("environment") or {}
     missing = [key for key in DATABASE_ENV if not env.get(key)]
     if missing:
-        raise StandRefused(f"{shown}: database service {service} has no {', '.join(missing)}")
+        raise StandRefused(f"{shown}: {what} {service} has no {', '.join(missing)}")
     return Database(
         service=service,
         container=spec.get("container_name") or f"{project}-{service}-1",
