@@ -82,6 +82,7 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: () => {},
     replacePath: () => {},
     start: () => {},

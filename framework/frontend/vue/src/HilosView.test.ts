@@ -23,7 +23,9 @@ const NOT_FOUND: PageSubscriptionError = {
   message: 'Not found',
 }
 
-const MainPage = defineComponent(() => () => h('div', { 'data-id': 'main' }))
+const MainPage = defineComponent(
+  () => () => h('div', { 'data-id': 'main' }, 'Leaving page'),
+)
 const MainSkeleton = defineComponent(
   () => () => h('div', { 'data-id': 'main-skeleton' }),
 )
@@ -32,15 +34,23 @@ interface TestRouter {
   router: HilosRouter
   pageLoading: WritableSignal<boolean>
   pageError: WritableSignal<PageSubscriptionError | null>
+  depart(): void
 }
 
 function testRouter(page: string): TestRouter {
   const pageLoading = createSignal(true)
   const pageError = createSignal<PageSubscriptionError | null>(null)
+  const leaveListeners = new Set<() => void>()
 
   return {
     pageLoading,
     pageError,
+    depart: () => {
+      for (const listener of [...leaveListeners]) {
+        listener()
+      }
+      pageLoading.set(true)
+    },
     router: {
       currentRoute: createSignal<PageRouteMatch>({
         page,
@@ -57,6 +67,12 @@ function testRouter(page: string): TestRouter {
       clearPageError: () => {},
       denyCurrentPage: () => {},
       awaitPageAnswer: () => {},
+      onLeave: (listener) => {
+        leaveListeners.add(listener)
+        return () => {
+          leaveListeners.delete(listener)
+        }
+      },
       navigate: () => {},
       replacePath: () => {},
       start: () => {},
@@ -165,5 +181,71 @@ describe('HilosView skeleton', () => {
     pageLoading.set(false)
     await nextTick()
     expect(marker().attributes('data-state')).toBe('ready')
+  })
+})
+
+describe('HilosView departure', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps an inert copy until the next page answers', async () => {
+    const { router, pageLoading, depart } = testRouter('main')
+    pageLoading.set(false)
+    const wrapper = mountView(router)
+
+    depart()
+    await nextTick()
+    const departure = wrapper.find('[data-id="hilos-page-departure"]')
+    expect(departure.attributes('aria-hidden')).toBe('true')
+    expect(departure.attributes()).toHaveProperty('inert')
+    expect(departure.text()).toBe('Leaving page')
+    expect(departure.find('[data-id]').exists()).toBe(false)
+
+    pageLoading.set(false)
+    await nextTick()
+    expect(departure.element.childElementCount).toBe(0)
+  })
+
+  it('removes the copy on an error or the skeleton threshold', async () => {
+    const { router, pageLoading, pageError, depart } = testRouter('main')
+    pageLoading.set(false)
+    const wrapper = mountView(router)
+    const departure = () => wrapper.find('[data-id="hilos-page-departure"]')
+
+    depart()
+    await nextTick()
+    pageError.set(NOT_FOUND)
+    expect(departure().element.childElementCount).toBe(0)
+
+    pageError.set(null)
+    pageLoading.set(false)
+    await nextTick()
+    depart()
+    await nextTick()
+    await outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(wrapper.find('[data-id="hilos-page-skeleton"]').exists()).toBe(true)
+    expect(departure().element.childElementCount).toBe(0)
+  })
+
+  it('does not copy a loading change and keeps a copy through repeated departures', async () => {
+    const { router, pageLoading, depart } = testRouter('main')
+    pageLoading.set(false)
+    const wrapper = mountView(router)
+    const departure = wrapper.find('[data-id="hilos-page-departure"]')
+
+    pageLoading.set(true)
+    await nextTick()
+    expect(departure.element.childElementCount).toBe(0)
+
+    pageLoading.set(false)
+    await nextTick()
+    depart()
+    const copied = departure.element.firstElementChild
+    depart()
+    expect(departure.element.firstElementChild).toBe(copied)
   })
 })

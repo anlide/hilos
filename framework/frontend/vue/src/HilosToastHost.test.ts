@@ -52,6 +52,7 @@ function router(visited: string[]): HilosRouter {
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: (path: string) => {
       visited.push(path)
     },

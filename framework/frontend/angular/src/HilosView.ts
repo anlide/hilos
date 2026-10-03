@@ -22,6 +22,10 @@
 // resubscription after a reconnect keeps the page on screen and raises no
 // skeleton.
 //
+// Navigation leaves an inert copy of the old page in place until the new
+// answer, error, or skeleton arrives (HIL-1146). The router announces departure
+// before Angular replaces the live view; the core binding owns the copy.
+//
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 // the `authGate`'s modal shows the same surface over the live page for a gated
@@ -29,18 +33,22 @@
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 import { NgComponentOutlet } from '@angular/common'
 import {
+  afterNextRender,
   ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
+  ElementRef,
   effect,
   inject,
   input,
   signal,
+  viewChild,
 } from '@angular/core'
 import type { Type } from '@angular/core'
 import {
   AUTH_SURFACE_HEADING_ID,
+  bindPageDeparture,
   createDeferredFlagState,
   DEFAULT_SKELETON_DELAY_MS,
   subscribeSignal,
@@ -68,22 +76,31 @@ import { HILOS_ROUTER } from './hilosRouterToken.js'
       [attr.data-state]="pageState()"
       hidden
     ></div>
-    @if (showAuthInPlace()) {
-      <ng-container [ngComponentOutlet]="authSurfaceType()" />
-    } @else if (pageError(); as error) {
-      <hilos-error-page [error]="error" />
-    } @else if (!pageLoading()) {
-      <ng-container [ngComponentOutlet]="view()" />
-    } @else if (showSkeleton()) {
-      <div class="h-100" data-id="hilos-page-skeleton">
-        <span class="visually-hidden" role="status">Loading…</span>
-        @if (skeleton(); as declared) {
-          <ng-container [ngComponentOutlet]="declared" />
-        } @else {
-          <hilos-skeleton />
-        }
-      </div>
-    }
+    <div #pageSlot class="hilos-page-slot">
+      @if (showAuthInPlace()) {
+        <ng-container [ngComponentOutlet]="authSurfaceType()" />
+      } @else if (pageError(); as error) {
+        <hilos-error-page [error]="error" />
+      } @else if (!pageLoading()) {
+        <ng-container [ngComponentOutlet]="view()" />
+      } @else if (showSkeleton()) {
+        <div class="h-100" data-id="hilos-page-skeleton">
+          <span class="visually-hidden" role="status">Loading…</span>
+          @if (skeleton(); as declared) {
+            <ng-container [ngComponentOutlet]="declared" />
+          } @else {
+            <hilos-skeleton />
+          }
+        </div>
+      }
+    </div>
+    <div
+      #pageDeparture
+      class="hilos-page-departure position-relative h-100"
+      data-id="hilos-page-departure"
+      aria-hidden="true"
+      inert
+    ></div>
     <!-- No title of its own: the sign-in surface is identifier-first (HIL-423),
     so what the screen is called changes with the step the person is on, and only
     the surface knows that. It renders its own heading in the body. The dialog is
@@ -146,6 +163,11 @@ export class HilosView {
   protected readonly headingId = AUTH_SURFACE_HEADING_ID
 
   private readonly router = inject(HILOS_ROUTER)
+  private readonly destroyRef = inject(DestroyRef)
+  private readonly pageSlot =
+    viewChild.required<ElementRef<HTMLElement>>('pageSlot')
+  private readonly pageDeparture =
+    viewChild.required<ElementRef<HTMLElement>>('pageDeparture')
   private readonly route = hilosSignal(this.router.currentRoute)
   protected readonly pageError = hilosSignal(this.router.pageError)
   protected readonly pageLoading = hilosSignal(this.router.pageLoading)
@@ -184,10 +206,19 @@ export class HilosView {
   protected readonly modalOpen = signal(false)
 
   constructor() {
+    afterNextRender(() => {
+      const unbind = bindPageDeparture({
+        router: this.router,
+        slot: this.pageSlot().nativeElement,
+        departure: this.pageDeparture().nativeElement,
+        skeletonShown: this.skeletonFlag.shown,
+      })
+      this.destroyRef.onDestroy(unbind)
+    })
     effect(() => {
       this.skeletonFlag.set(this.pageLoading())
     })
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       this.skeletonFlag.dispose()
     })
     effect((onCleanup) => {

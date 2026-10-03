@@ -408,6 +408,11 @@ outlet's own state (`hilos-page-state`: `loading` → `ready` or `error`), so th
 spec resumes exactly when the page is settled and a refusal is reported as a
 refusal rather than as a missing element.
 
+While that answer is in flight, a still copy of the departing page occupies its
+place without `data-id` and outside the accessibility tree. Test-id and role
+locators cannot mistake it for the live page; waiting on `hilos-page-state`
+remains the way to know the new page has settled.
+
 The same applies to the second window of a two-window spec, and to any helper
 that navigates on a spec's behalf.
 

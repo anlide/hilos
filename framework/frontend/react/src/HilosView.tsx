@@ -21,15 +21,20 @@
 // resubscription after a reconnect keeps the page on screen and raises no
 // skeleton.
 //
+// Navigation leaves an inert copy of the old page in place until the new
+// answer, error, or skeleton arrives (HIL-1146). The router announces departure
+// before React replaces the live view; the core binding owns the copy.
+//
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 // the `authGate`'s modal shows the same surface over the live page for a gated
 // action. Both dismiss and resume through the core gate — no navigation. Omit
 // the pair and behavior is unchanged: a 401 renders ErrorPage like any status.
-import { useContext, useEffect, useRef } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import {
   AUTH_SURFACE_HEADING_ID,
+  bindPageDeparture,
   createDeferredFlagState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
@@ -97,6 +102,18 @@ export function HilosView({
   }
   const skeletonFlag = skeletonFlagRef.current
   const showSkeleton = useSignal(skeletonFlag.shown)
+  const slotRef = useRef<HTMLDivElement>(null)
+  const departureRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (slotRef.current && departureRef.current) {
+      return bindPageDeparture({
+        router,
+        slot: slotRef.current,
+        departure: departureRef.current,
+        skeletonShown: skeletonFlag.shown,
+      })
+    }
+  }, [router, skeletonFlag])
   useEffect(() => {
     skeletonFlag.set(pageLoading)
   }, [skeletonFlag, pageLoading])
@@ -138,7 +155,16 @@ export function HilosView({
   return (
     <>
       <div data-id="hilos-page-state" data-state={pageState} hidden />
-      {content}
+      <div ref={slotRef} className="hilos-page-slot">
+        {content}
+      </div>
+      <div
+        ref={departureRef}
+        className="hilos-page-departure position-relative h-100"
+        data-id="hilos-page-departure"
+        aria-hidden="true"
+        inert
+      />
       {/* No title of its own: the sign-in surface is identifier-first (HIL-423),
           so what the screen is called changes with the step the person is on,
           and only the surface knows that. It renders its own heading in the

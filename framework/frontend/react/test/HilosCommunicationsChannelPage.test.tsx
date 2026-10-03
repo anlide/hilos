@@ -76,6 +76,7 @@ function router(
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: () => {},
     replacePath: () => {},
     start: () => {},

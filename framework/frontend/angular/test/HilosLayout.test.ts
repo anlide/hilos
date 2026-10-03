@@ -1174,6 +1174,7 @@ function routerOn(page: string, admin = false): HilosRouter {
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: () => {},
     replacePath: () => {},
     start: () => {},

@@ -217,6 +217,7 @@ export {
   unlockBodyScroll,
   type ScrollLockOwner,
 } from './dom/scrollLock.js'
+export { copyPageInto } from './dom/pageCopy.js'
 export {
   enterModalLayer,
   leaveModalLayer,
@@ -905,6 +906,10 @@ export {
   type NavigablePages,
   type NavigationEnvironment,
 } from './routing/HilosRouter.js'
+export {
+  bindPageDeparture,
+  type PageDepartureBinding,
+} from './routing/bindPageDeparture.js'
 export {
   HilosPages,
   HILOS_ROUTE_DECLARATIONS,

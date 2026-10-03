@@ -25,7 +25,7 @@ const NOT_FOUND: PageSubscriptionError = {
 
 @Component({
   selector: 'test-main-page',
-  template: '<div data-id="main"></div>',
+  template: '<div data-id="main">Leaving page</div>',
 })
 class MainPage {}
 
@@ -39,6 +39,7 @@ interface WaitingRouter {
   router: HilosRouter
   pageLoading: WritableSignal<boolean>
   pageError: WritableSignal<PageSubscriptionError | null>
+  depart(): void
 }
 
 /**
@@ -50,10 +51,17 @@ interface WaitingRouter {
 function waitingRouter(page: string): WaitingRouter {
   const pageLoading = createSignal(true)
   const pageError = createSignal<PageSubscriptionError | null>(null)
+  const leaveListeners = new Set<() => void>()
 
   return {
     pageLoading,
     pageError,
+    depart: () => {
+      for (const listener of [...leaveListeners]) {
+        listener()
+      }
+      pageLoading.set(true)
+    },
     router: {
       currentRoute: createSignal<PageRouteMatch>({
         page,
@@ -70,6 +78,12 @@ function waitingRouter(page: string): WaitingRouter {
       clearPageError: () => {},
       denyCurrentPage: () => {},
       awaitPageAnswer: () => {},
+      onLeave: (listener) => {
+        leaveListeners.add(listener)
+        return () => {
+          leaveListeners.delete(listener)
+        }
+      },
       navigate: () => {},
       replacePath: () => {},
       start: () => {},
@@ -202,5 +216,72 @@ describe('HilosView skeleton', () => {
     pageLoading.set(false)
     fixture.detectChanges()
     expect(marker()).toBe('ready')
+  })
+})
+
+describe('HilosView departure', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps an inert copy until the next page answers', () => {
+    const state = waitingRouter('main')
+    state.pageLoading.set(false)
+    const fixture = mountView(state.router)
+
+    state.depart()
+    fixture.detectChanges()
+    const departure = find(fixture, 'hilos-page-departure')!
+    expect(departure.getAttribute('aria-hidden')).toBe('true')
+    expect(departure.hasAttribute('inert')).toBe(true)
+    expect(departure.textContent?.trim()).toBe('Leaving page')
+    expect(departure.querySelector('[data-id]')).toBeNull()
+
+    state.pageLoading.set(false)
+    fixture.detectChanges()
+    expect(departure.childElementCount).toBe(0)
+  })
+
+  it('removes the copy on an error or the skeleton threshold', () => {
+    const state = waitingRouter('main')
+    state.pageLoading.set(false)
+    const fixture = mountView(state.router)
+    const departure = find(fixture, 'hilos-page-departure')!
+
+    state.depart()
+    fixture.detectChanges()
+    state.pageError.set(NOT_FOUND)
+    fixture.detectChanges()
+    expect(departure.childElementCount).toBe(0)
+
+    state.pageError.set(null)
+    state.pageLoading.set(false)
+    fixture.detectChanges()
+    state.depart()
+    fixture.detectChanges()
+    outlast(fixture, DEFAULT_SKELETON_DELAY_MS)
+    expect(find(fixture, 'hilos-page-skeleton')).not.toBeNull()
+    expect(departure.childElementCount).toBe(0)
+  })
+
+  it('does not copy a loading change and keeps a copy through repeated departures', () => {
+    const state = waitingRouter('main')
+    state.pageLoading.set(false)
+    const fixture = mountView(state.router)
+    const departure = find(fixture, 'hilos-page-departure')!
+
+    state.pageLoading.set(true)
+    fixture.detectChanges()
+    expect(departure.childElementCount).toBe(0)
+
+    state.pageLoading.set(false)
+    fixture.detectChanges()
+    state.depart()
+    const copied = departure.firstElementChild
+    state.depart()
+    expect(departure.firstElementChild).toBe(copied)
   })
 })

@@ -69,6 +69,7 @@ function router(identity: HilosPageIdentity | undefined): HilosRouter {
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: () => {},
     replacePath: () => {},
     start: () => {},

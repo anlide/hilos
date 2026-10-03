@@ -33,7 +33,7 @@ const UNAUTHORIZED: PageSubscriptionError = {
   message: 'Authentication required',
 }
 
-const PAGES = { user: () => <div data-id="user-page" /> }
+const PAGES = { user: () => <div data-id="user-page">Leaving page</div> }
 
 function AuthSurface() {
   return <div data-id="auth-surface" />
@@ -49,7 +49,16 @@ function HeadedAuthSurface() {
   )
 }
 
-function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
+interface DepartureRouter extends HilosRouter {
+  pageLoading: WritableSignal<boolean>
+  pageError: WritableSignal<PageSubscriptionError | null>
+  depart(): void
+}
+
+function routerWith(pageError: PageSubscriptionError | null): DepartureRouter {
+  const pageLoading = createSignal(false)
+  const pageErrorSignal = createSignal<PageSubscriptionError | null>(pageError)
+  const leaveListeners = new Set<() => void>()
   return {
     currentRoute: createSignal<PageRouteMatch>({
       page: 'user',
@@ -58,14 +67,26 @@ function routerWith(pageError: PageSubscriptionError | null): HilosRouter {
     }),
     currentPath: createSignal(''),
     currentTitle: createSignal(''),
-    pageError: createSignal<PageSubscriptionError | null>(pageError),
-    pageLoading: createSignal(false),
+    pageError: pageErrorSignal,
+    pageLoading,
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     resolvePath: () => undefined,
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: (listener) => {
+      leaveListeners.add(listener)
+      return () => {
+        leaveListeners.delete(listener)
+      }
+    },
+    depart: () => {
+      for (const listener of [...leaveListeners]) {
+        listener()
+      }
+      pageLoading.set(true)
+    },
     navigate: () => {},
     replacePath: () => {},
     start: () => {},
@@ -296,5 +317,69 @@ describe('HilosView skeleton', () => {
       pageLoading.set(false)
     })
     expect(marker()).toBe('ready')
+  })
+})
+
+describe('HilosView departure', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps an inert copy until the next page answers', () => {
+    const router = routerWith(null)
+    renderView(router)
+
+    act(() => router.depart())
+    const departure = document.querySelector(
+      '[data-id="hilos-page-departure"]',
+    )!
+    expect(departure.getAttribute('aria-hidden')).toBe('true')
+    expect(departure.hasAttribute('inert')).toBe(true)
+    expect(departure.textContent).toBe('Leaving page')
+    expect(departure.querySelector('[data-id]')).toBeNull()
+
+    act(() => router.pageLoading.set(false))
+    expect(departure.childElementCount).toBe(0)
+  })
+
+  it('removes the copy on an error or the skeleton threshold', () => {
+    const router = routerWith(null)
+    renderView(router)
+    const departure = document.querySelector(
+      '[data-id="hilos-page-departure"]',
+    )!
+
+    act(() => router.depart())
+    act(() => router.pageError.set(NOT_FOUND))
+    expect(departure.childElementCount).toBe(0)
+
+    act(() => {
+      router.pageError.set(null)
+      router.pageLoading.set(false)
+    })
+    act(() => router.depart())
+    outlast(DEFAULT_SKELETON_DELAY_MS)
+    expect(pageSkeleton()).not.toBeNull()
+    expect(departure.childElementCount).toBe(0)
+  })
+
+  it('does not copy a loading change and keeps a copy through repeated departures', () => {
+    const router = routerWith(null)
+    renderView(router)
+    const departure = document.querySelector(
+      '[data-id="hilos-page-departure"]',
+    )!
+
+    act(() => router.pageLoading.set(true))
+    expect(departure.childElementCount).toBe(0)
+
+    act(() => router.pageLoading.set(false))
+    act(() => router.depart())
+    const copied = departure.firstElementChild
+    act(() => router.depart())
+    expect(departure.firstElementChild).toBe(copied)
   })
 })

@@ -208,8 +208,10 @@ The rules to apply when building a view or an SDK component:
 - **Visible focus** — `:focus-visible` rings on buttons, links, and form
   controls. Do not remove outlines; do not add custom ones.
 - **Reduced motion** — Bootstrap guards its own animations per component (and
-  disables smooth scroll) under `prefers-reduced-motion: reduce`. The app adds no
-  custom animation, so nothing more is needed. Do **not** add a blanket reset.
+  disables smooth scroll) under `prefers-reduced-motion: reduce`. The app's own
+  animations live only in the Sass layer: the toast life bar and the veil over a
+  departing page each have a nearby reduced-motion variant (HIL-1146). Do **not**
+  add a blanket reset.
 - **Contrast** — the default theme targets AA. A few stock combinations (muted or
   secondary text on a tinted surface) sit near the 4.5:1 line; tuning them means a
   full Bootstrap Sass recompile, which [styling-rules.md](styling-rules.md) defers

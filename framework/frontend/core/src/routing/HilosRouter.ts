@@ -6,6 +6,7 @@
 // popstate event) is injected as a NavigationEnvironment, so the navigator
 // stays testable with no DOM and core keeps its no-browser-environment test
 // rule; browserNavigationEnvironment is the binding a project passes in.
+// onLeave announces the departure while the view still shows the old page.
 
 import {
   type HilosDashboardSection,
@@ -174,6 +175,17 @@ export interface HilosRouter {
    * @param pathname The address to rewrite the current one to.
    */
   replacePath(pathname: string): void
+  /**
+   * Listen for the moment navigation leaves the current page. Called
+   * synchronously at the start of navigate, start, and back/forward, before
+   * the next route is published or its page subscribed, so HilosView can copy
+   * the page still on screen. Not called by replacePath, awaitPageAnswer,
+   * denyCurrentPage, clearPageError, or a reconnect's re-subscribe.
+   *
+   * @param listener Called before the current page changes.
+   * @returns A function that removes this listener.
+   */
+  onLeave(listener: () => void): Unsubscribe
   /** Apply the current location and begin tracking history. */
   start(): void
   /** Stop tracking history. */
@@ -212,6 +224,7 @@ export function createHilosRouter(
     resolveTitle(currentRoute.get().page),
   )
   let detachPopState: Unsubscribe | null = null
+  const leaveListeners = new Set<() => void>()
 
   // Resolve a pathname and publish it as the current route and path, leaving the
   // page subscription alone — shared by apply and replacePath.
@@ -222,9 +235,12 @@ export function createHilosRouter(
     return match
   }
 
-  // Publish a pathname and re-subscribe its page — shared by start, navigate,
-  // and the popstate listener.
+  // First tell listeners we are leaving, then publish and re-subscribe — shared
+  // by start, navigate, and the popstate listener.
   const apply = (pathname: string): void => {
+    for (const listener of [...leaveListeners]) {
+      listener()
+    }
     const match = publish(pathname)
     if (unbuilt.has(match.page)) {
       pages.refuseUnbuilt(match.page)
@@ -253,6 +269,12 @@ export function createHilosRouter(
     replacePath: (pathname) => {
       env.replaceState(pathname)
       publish(pathname)
+    },
+    onLeave: (listener) => {
+      leaveListeners.add(listener)
+      return () => {
+        leaveListeners.delete(listener)
+      }
     },
     start: () => {
       apply(env.pathname())

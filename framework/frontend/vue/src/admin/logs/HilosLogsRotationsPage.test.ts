@@ -68,6 +68,7 @@ function router(
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: () => {},
     replacePath: (pathname: string) => {
       rewrites.push(pathname)

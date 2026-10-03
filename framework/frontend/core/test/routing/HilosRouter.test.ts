@@ -170,6 +170,69 @@ describe('unbuilt pages', () => {
 })
 
 describe('createHilosRouter', () => {
+  it('announces start, navigation, and history before publishing or subscribing', () => {
+    const { env, pop } = fakeEnvironment('/')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    const departures: Array<{ page: string; subscriptions: number }> = []
+    navigator.onLeave(() => {
+      departures.push({
+        page: navigator.currentRoute.get().page,
+        subscriptions: calls.length,
+      })
+    })
+
+    navigator.start()
+    navigator.navigate('/user/42')
+    pop('/hilos')
+
+    expect(departures).toEqual([
+      { page: 'main', subscriptions: 0 },
+      { page: 'main', subscriptions: 1 },
+      { page: 'user', subscriptions: 2 },
+    ])
+    expect(navigator.currentRoute.get().page).toBe('dash')
+  })
+
+  it('does not announce address rewrites or access re-evaluation', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    let departures = 0
+    navigator.onLeave(() => {
+      departures += 1
+    })
+
+    navigator.replacePath('/user/42')
+    navigator.awaitPageAnswer()
+    navigator.denyCurrentPage()
+    navigator.clearPageError()
+
+    expect(departures).toBe(0)
+  })
+
+  it('lets a departing listener unsubscribe without skipping its neighbor', () => {
+    const { env } = fakeEnvironment('/')
+    const { pages } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    const calls: string[] = []
+    const offFirst = navigator.onLeave(() => {
+      calls.push('first')
+      offFirst()
+    })
+    const offSecond = navigator.onLeave(() => {
+      calls.push('second')
+    })
+
+    navigator.start()
+    navigator.navigate('/hilos')
+    offSecond()
+    navigator.navigate('/')
+
+    expect(calls).toEqual(['first', 'second', 'second'])
+  })
+
   it('seeds the current route from the location before start', () => {
     const { env } = fakeEnvironment('/hilos')
     const { pages } = fakePages()

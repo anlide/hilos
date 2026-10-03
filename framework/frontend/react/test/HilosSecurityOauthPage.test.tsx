@@ -48,6 +48,7 @@ function router(): HilosRouter {
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
+    onLeave: () => () => {},
     navigate: () => {},
     replacePath: () => {},
     start: () => {},

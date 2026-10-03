@@ -93,6 +93,65 @@
   }
 }
 
+// WHY: Bootstrap has no display:contents utility. The slot needs a DOM
+// boundary for copying but no layout box, so page and skeleton h-100 still
+// measure their height from the shell's main region.
+// WHAT: the live page's copyable boundary.
+.hilos-page-slot {
+  display: contents;
+}
+
+// WHY: Bootstrap has no isolation utility. Keep the veil above copied sticky
+// headers (1020) and dropdowns (1000) without leaking its z-index outside.
+// WHAT: the departure copy's own stacking context.
+.hilos-page-departure {
+  isolation: isolate;
+}
+
+// WHY: Bootstrap has no empty-only display utility. Hiding the empty container
+// also restarts the veil animation for each new copy.
+// WHAT: no page-height box or overlay when no departure is in progress.
+.hilos-page-departure:empty {
+  display: none;
+}
+
+// WHY: no utility creates a pseudo-element veil above the copied page. Its
+// background follows the Bootstrap theme, so dark mode never flashes white.
+// 1100 is above the copied Bootstrap layers but contained by isolation; 0.9 is
+// the agreed veil strength. 300ms copies DEFAULT_SKELETON_DELAY_MS: CSS cannot
+// read that TypeScript constant, so move both durations together.
+// WHAT: a growing theme-colored veil over the departing page.
+.hilos-page-departure::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1100;
+  background-color: var(--bs-body-bg);
+  opacity: 0;
+  animation: hilos-page-departure-veil 300ms ease-in forwards;
+}
+
+// WHY: Bootstrap cannot animate opacity over a page copy through utilities.
+// WHAT: the veil's fade from transparent to nearly the theme background.
+@keyframes hilos-page-departure-veil {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 0.9;
+  }
+}
+
+// WHY: this application animation is not guarded by Bootstrap. A still veil
+// at 0.9 would flash on quick transitions, so reduced motion has no veil.
+// WHAT: keep the copied page still for readers requesting less movement.
+@media (prefers-reduced-motion: reduce) {
+  .hilos-page-departure::after {
+    animation: none;
+  }
+}
+
 // WHY: the mark sits over the corner of an icon, so it needs a font-size below
 // every Bootstrap step (.fs-6 is already 1rem) and an overhang past the icon's
 // own box, which no offset utility expresses — the stock .bottom-0/.end-0 sit

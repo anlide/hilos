@@ -20,16 +20,21 @@ page's full height, so a project skeleton can lay out the way its page does. Onl
 the FIRST answer is waited for: a resubscription after a reconnect keeps the page
 on screen and raises no skeleton.
 
+On navigation, the old page remains as an inert copy in the same place until
+the new answer, error, or skeleton arrives (HIL-1146). The router announces
+departure before the live view changes; the core binding owns that copy.
+
 It also hosts the auth gate (HIL-165): when the project registers an
 `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
 the `authGate`'s modal shows the same surface over the live page for a gated
 action. Both dismiss and resume through the core gate — no navigation. Omit the
 pair and behavior is unchanged: a 401 renders ErrorPage like any status. -->
 <script setup lang="ts">
-import { computed, inject, onUnmounted, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import {
   AUTH_SURFACE_HEADING_ID,
+  bindPageDeparture,
   createDeferredFlagState,
   createSignal,
   DEFAULT_SKELETON_DELAY_MS,
@@ -70,6 +75,20 @@ const skeletonFlag = createDeferredFlagState(DEFAULT_SKELETON_DELAY_MS)
 const showSkeleton = useSignal(skeletonFlag.shown)
 watch(pageLoading, (loading) => skeletonFlag.set(loading), { immediate: true })
 onUnmounted(skeletonFlag.dispose)
+const pageSlot = ref<HTMLElement | null>(null)
+const pageDeparture = ref<HTMLElement | null>(null)
+let unbindPageDeparture: (() => void) | null = null
+onMounted(() => {
+  if (pageSlot.value && pageDeparture.value) {
+    unbindPageDeparture = bindPageDeparture({
+      router,
+      slot: pageSlot.value,
+      departure: pageDeparture.value,
+      skeletonShown: skeletonFlag.shown,
+    })
+  }
+})
+onUnmounted(() => unbindPageDeparture?.())
 const skeleton = computed(
   () => props.pageSkeletons?.[route.value.page] ?? HilosSkeleton,
 )
@@ -98,17 +117,26 @@ function onModalToggle(open: boolean): void {
 
 <template>
   <div data-id="hilos-page-state" :data-state="pageState" hidden />
-  <component :is="props.authSurface" v-if="showAuthInPlace" />
-  <ErrorPage v-else-if="pageError" :error="pageError" />
-  <component :is="view" v-else-if="view && !pageLoading" />
-  <div
-    v-else-if="pageLoading && showSkeleton"
-    class="h-100"
-    data-id="hilos-page-skeleton"
-  >
-    <span class="visually-hidden" role="status">Loading…</span>
-    <component :is="skeleton" />
+  <div ref="pageSlot" class="hilos-page-slot">
+    <component :is="props.authSurface" v-if="showAuthInPlace" />
+    <ErrorPage v-else-if="pageError" :error="pageError" />
+    <component :is="view" v-else-if="view && !pageLoading" />
+    <div
+      v-else-if="pageLoading && showSkeleton"
+      class="h-100"
+      data-id="hilos-page-skeleton"
+    >
+      <span class="visually-hidden" role="status">Loading…</span>
+      <component :is="skeleton" />
+    </div>
   </div>
+  <div
+    ref="pageDeparture"
+    class="hilos-page-departure position-relative h-100"
+    data-id="hilos-page-departure"
+    aria-hidden="true"
+    inert
+  />
   <!-- No title of its own: the sign-in surface is identifier-first (HIL-423), so
   what the screen is called changes with the step the person is on, and only the
   surface knows that. It renders its own heading in the body. The dialog is still
