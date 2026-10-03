@@ -1,20 +1,21 @@
 // Covers the profile root's state (HIL-1169): the row icons and ids, the
-// summary of each section from the page's answer and the project's lists, the
-// summaries a project without those lists leaves out, and the verified address
-// the Email row shows.
+// summary of each section from the page's answer and browser lists, and the
+// verified address the Email row shows.
 import { describe, expect, it } from 'vitest'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { describeHilosNotificationChannels } from '../../src/notifications/notificationPreferences.js'
+import { HILOS_PROFILE_IDENTITIES_LIST } from '../../src/profile/profileIdentities.js'
 import {
   createHilosProfileRootStore,
   hilosProfileSectionIcon,
   hilosProfileSectionId,
   type HilosProfileBinding,
 } from '../../src/profile/profileRoot.js'
-import { resolveHilosProfileSignInMethods } from '../../src/profile/profileSignInMethods.js'
+import { type HilosProfileSignInIdentitySource } from '../../src/profile/profileSignInMethods.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { ingest } from '../../src/state/normalizer.js'
 import { createSignal } from '../../src/state/signal.js'
 
 const password = {
@@ -73,12 +74,33 @@ function rootStore(scopes: ScopeManager, binding: HilosProfileBinding) {
   )
 }
 
+/** Put the framework's ways-in list in the current page and update it live. */
+function setWaysIn(
+  scopes: ScopeManager,
+  identities: readonly HilosProfileSignInIdentitySource[],
+): void {
+  const page = scopes.page()
+  if (!page) throw new Error('Profile page scope is missing')
+
+  ingest(page, {
+    lists: {
+      [HILOS_PROFILE_IDENTITIES_LIST]: {
+        items: [
+          {
+            itemKey: 1,
+            slots: { identities, passkeyCredentials: [] },
+          },
+        ],
+      },
+    },
+  })
+}
+
 /** A binding with the name only, as polls and tasks hand it. */
 function nameOnly(): HilosProfileBinding {
   return {
     name: createSignal('Ann'),
     rename: null,
-    signInMethods: null,
     sessionCount: null,
     deviceCount: null,
   }
@@ -118,7 +140,7 @@ describe('profile root store', () => {
     )
     expect(summaries[HilosPages.PROFILE_DATA]).toBeDefined()
     expect(summaries[HilosPages.PROFILE_AGREEMENTS]).toBeDefined()
-    expect(summaries).not.toHaveProperty(HilosPages.PROFILE_SIGN_IN)
+    expect(summaries[HilosPages.PROFILE_SIGN_IN]).toBe('No ways to sign in')
     expect(summaries).not.toHaveProperty(HilosPages.PROFILE_SESSIONS)
     expect(summaries).not.toHaveProperty(HilosPages.PROFILE_DEVICES)
     expect(store.verifiedEmail.get()).toBeNull()
@@ -148,15 +170,13 @@ describe('profile root store', () => {
     store.dispose()
   })
 
-  it("summarizes the project's lists live and reads the verified address from its ways in", () => {
-    const methods = createSignal(
-      resolveHilosProfileSignInMethods([password, key], []),
-    )
+  it('summarizes the framework list and project lists live', () => {
+    const scopes = answeredScopes()
+    setWaysIn(scopes, [password, key])
     const sessions = createSignal(1)
     const devices = createSignal(2)
-    const store = rootStore(answeredScopes(), {
+    const store = rootStore(scopes, {
       ...nameOnly(),
-      signInMethods: methods,
       sessionCount: sessions,
       deviceCount: devices,
     })
@@ -174,7 +194,7 @@ describe('profile root store', () => {
     expect(store.verifiedEmail.get()).toBe('a@example.test')
 
     sessions.set(3)
-    methods.set(resolveHilosProfileSignInMethods([key], []))
+    setWaysIn(scopes, [key])
     expect(store.summaries.get()[HilosPages.PROFILE_SESSIONS]).toBe(
       '3 active sign-ins',
     )
@@ -183,19 +203,17 @@ describe('profile root store', () => {
     store.dispose()
   })
 
-  it('warns a passkey-only account live and stays quiet without a method list', () => {
+  it('warns a passkey-only account live and stays quiet without a list', () => {
     expect(rootStore(answeredScopes(), nameOnly()).passkeyOnly.get()).toBe(
       false,
     )
-    const methods = createSignal(resolveHilosProfileSignInMethods([key], []))
-    const store = rootStore(answeredScopes(), {
-      ...nameOnly(),
-      signInMethods: methods,
-    })
+    const scopes = answeredScopes()
+    setWaysIn(scopes, [key])
+    const store = rootStore(scopes, nameOnly())
     expect(store.passkeyOnly.get()).toBe(true)
-    methods.set(resolveHilosProfileSignInMethods([password, key], []))
+    setWaysIn(scopes, [password, key])
     expect(store.passkeyOnly.get()).toBe(false)
-    methods.set([])
+    setWaysIn(scopes, [])
     expect(store.passkeyOnly.get()).toBe(false)
   })
 })

@@ -4,6 +4,7 @@
 // while the name is not known yet.
 import {
   createSignal,
+  HILOS_PROFILE_IDENTITIES_LIST,
   HilosPages,
   resolveHilosProfileSignInMethods,
   ScopeManager,
@@ -12,6 +13,7 @@ import {
   type HilosPageIdentity,
   type HilosProfileBinding,
   type HilosProfileRename,
+  type HilosProfileSignInMethod,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
@@ -94,7 +96,6 @@ function nameOnly(name = 'Ann Lee'): HilosProfileBinding {
   return {
     name: createSignal(name),
     rename: null,
-    signInMethods: null,
     sessionCount: null,
     deviceCount: null,
   }
@@ -105,6 +106,30 @@ function signedInScopes(): ScopeManager {
   const scopes = new ScopeManager()
   scopes.session.data.set('currentUser', { type: 'user', id: 1 })
   return scopes
+}
+
+/** Set the framework identity list in the profile's page scope. */
+function setMethods(
+  scopes: ScopeManager,
+  methods: readonly HilosProfileSignInMethod[],
+): void {
+  const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
+  const identities = methods.map((method) => {
+    const id = Number(method.key)
+    const ref = { type: 'identities', id }
+    page.entities.upsert(ref, {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+    })
+    return ref
+  })
+  page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
+    identities,
+    passkeyCredentials: [],
+  })
 }
 
 function mountPage(
@@ -144,24 +169,23 @@ describe('HilosProfilePage', () => {
   })
 
   it("offers Change for the project's rename and the Email row for a verified address", () => {
-    const wrapper = mountPage({
-      ...nameOnly(),
-      rename: RENAME,
-      signInMethods: createSignal(
-        resolveHilosProfileSignInMethods(
-          [
-            {
-              id: 1,
-              type: 'password',
-              provider: null,
-              identifier: 'ann@example.test',
-              verified: true,
-            },
-          ],
-          [],
-        ),
+    const scopes = signedInScopes()
+    setMethods(
+      scopes,
+      resolveHilosProfileSignInMethods(
+        [
+          {
+            id: 1,
+            type: 'password',
+            provider: null,
+            identifier: 'ann@example.test',
+            verified: true,
+          },
+        ],
+        [],
       ),
-    })
+    )
+    const wrapper = mountPage({ ...nameOnly(), rename: RENAME }, scopes)
 
     expect(wrapper.find('[data-id="profile-edit"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="profile-email"]').text()).toBe(
@@ -185,7 +209,9 @@ describe('HilosProfilePage', () => {
       expect.stringContaining('Sessions'),
       expect.stringContaining('Security'),
     ])
-    expect(wrapper.find('[data-id="profile-sign-in-summary"]').text()).toBe('')
+    expect(wrapper.find('[data-id="profile-sign-in-summary"]').text()).toBe(
+      'No ways to sign in',
+    )
     expect(wrapper.find('[data-id="profile-sessions-summary"]').text()).toBe(
       '2 active sign-ins',
     )
@@ -227,14 +253,17 @@ describe('HilosProfilePage', () => {
         [],
       ),
     )
-    const wrapper = mountPage({ ...nameOnly(), signInMethods: methods })
+    const scopes = signedInScopes()
+    setMethods(scopes, methods.get())
+    const wrapper = mountPage(nameOnly(), scopes)
 
     expect(
       wrapper.find('[data-id="profile-sign-in-passkey-only-line"]').text(),
     ).toBe(
       'Only passkeys can sign you in: access cannot be restored automatically',
     )
-    methods.set(
+    setMethods(
+      scopes,
       resolveHilosProfileSignInMethods(
         [
           {

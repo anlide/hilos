@@ -12,8 +12,8 @@ import {
 import {
   createHilosProfileAddSignInFlow,
   createHilosProfilePasswordChangeFlow,
+  createHilosProfileSignInMethods,
   createHilosProfileSignInActions,
-  createSignal,
   focusInitial,
   hilosProfileAddableWays,
   hilosProfileSignInSubtitle,
@@ -520,10 +520,10 @@ let signInSequence = 0
 })
 export class HilosProfileSignInPage {
   readonly context = input.required<HilosAuthContext>()
-  readonly methods = input.required<readonly HilosProfileSignInMethod[]>()
-  private readonly methodsSignal = createSignal<
-    readonly HilosProfileSignInMethod[]
-  >([])
+  protected readonly methods = signal<readonly HilosProfileSignInMethod[]>([])
+  private readonly methodsSignal = computed(() =>
+    createHilosProfileSignInMethods(this.context().scopes),
+  )
   private readonly offered = signal<readonly AuthMethodEntry[]>([])
   protected readonly passkeySupported = isPasskeySupported()
   /** What the account can still add: the chooser's buttons and the warning's. */
@@ -573,7 +573,7 @@ export class HilosProfileSignInPage {
   protected readonly passwordStep =
     signal<HilosProfilePasswordChangeStep>('closed')
   protected readonly flow = computed(() =>
-    createHilosProfileAddSignInFlow(this.context(), this.methodsSignal),
+    createHilosProfileAddSignInFlow(this.context(), this.methodsSignal()),
   )
   protected readonly step = signal<HilosProfileAddSignInStep>('closed')
   protected readonly busy = signal(false)
@@ -690,7 +690,11 @@ export class HilosProfileSignInPage {
         flow.dispose()
       })
     })
-    effect(() => this.methodsSignal.set(this.methods()))
+    effect((onCleanup) => {
+      const methods = this.methodsSignal()
+      this.methods.set(methods.get())
+      onCleanup(subscribeSignal(methods, (value) => this.methods.set(value)))
+    })
     effect(() => {
       if (this.unlinkKey() !== null && !this.unlinkMethod())
         this.unlinkKey.set(null)

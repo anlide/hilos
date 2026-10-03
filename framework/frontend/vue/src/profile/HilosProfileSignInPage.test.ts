@@ -1,9 +1,11 @@
 import {
   ActionError,
   createSignal,
+  HILOS_PROFILE_IDENTITIES_LIST,
   ScopeManager,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
+  type HilosProfileSignInMethod,
   type ProjectSignal,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
@@ -60,6 +62,31 @@ const passkeyOnly = resolveHilosProfileSignInMethods(
   ],
   [],
 )
+
+/** Feed the framework list and its normalized identity fields into a page scope. */
+function setMethods(
+  scopes: ScopeManager,
+  current: readonly HilosProfileSignInMethod[],
+): void {
+  const page = scopes.page() ?? scopes.openPage('hilos_profile_sign_in')
+  const identities = current.map((method) => {
+    const id = Number(method.key)
+    const ref = { type: 'identities', id }
+    page.entities.upsert(ref, {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+    })
+    return ref
+  })
+  page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
+    identities,
+    passkeyCredentials: [],
+  })
+}
+
 function setup(
   opening: object = NO_STEP,
   initial = methods,
@@ -74,6 +101,7 @@ function setup(
   }))
   const scopes = new ScopeManager()
   scopes.session.data.set('authMethods', offered)
+  setMethods(scopes, initial)
   const context = {
     scopes,
     actions: { dispatch },
@@ -86,13 +114,15 @@ function setup(
     },
   } as unknown as HilosAuthContext
   const wrapper = mount(HilosProfileSignInPage, {
-    props: { context, methods: initial },
+    props: { context },
     attachTo: document.body,
     global: { stubs: { HilosPageHeading: true } },
   })
   return {
     wrapper,
     dispatch,
+    setMethods: (next: readonly HilosProfileSignInMethod[]) =>
+      setMethods(scopes, next),
     emit: (type: string, data: unknown) => {
       for (const listener of listeners)
         listener({ kind: 'project', type, data } as ProjectSignal)
@@ -136,7 +166,8 @@ describe('profile sign-in page dialogs', () => {
     expect(
       byId('profile-unlink-modal').querySelector('[aria-live="assertive"]'),
     ).not.toBeNull()
-    await world.wrapper.setProps({ methods: methods.slice(1) })
+    world.setMethods(methods.slice(1))
+    await flushPromises()
     expect(
       document.querySelector('[data-id="profile-unlink-modal"]'),
     ).toBeNull()
@@ -261,9 +292,8 @@ describe('profile sign-in page dialogs', () => {
   })
   it('leaves Change enabled for a sole password and explains its disabled removal', async () => {
     const world = setup()
-    await world.wrapper.setProps({
-      methods: [{ ...methods[0], canUnlink: false }],
-    })
+    world.setMethods(methods.slice(0, 1))
+    await flushPromises()
     expect(
       world.wrapper.get('[data-id="identity-unlink"]').attributes('disabled'),
     ).toBeDefined()
@@ -300,7 +330,8 @@ describe('profile sign-in page passkey-only warning', () => {
         .find('[data-id="profile-sign-in-passkey-only-none"]')
         .exists(),
     ).toBe(false)
-    await world.wrapper.setProps({ methods: [...passkeyOnly, methods[1]] })
+    world.setMethods([...passkeyOnly, methods[1]])
+    await flushPromises()
     expect(
       world.wrapper.find('[data-id="profile-sign-in-passkey-only"]').exists(),
     ).toBe(false)

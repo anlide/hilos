@@ -12,7 +12,6 @@ final class ChatBrowserList
     public const string MAIN_EVENTS = 'mainEvents';
     public const string MAIN_USERS = 'mainUsers';
     public const string MAIN_BOTS = 'mainBots';
-    public const string PROFILE_IDENTITIES = 'profileIdentities';
     public const string PROFILE_SESSIONS = 'profileSessions';
     public const string PROFILE_DEVICES = 'profileDevices';
 }

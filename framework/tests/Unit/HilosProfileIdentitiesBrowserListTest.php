@@ -2,35 +2,31 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tests\Unit;
+namespace Hilos\Tests\Unit;
 
-use Demo\Chat\Browser\ChatBrowserRef;
-use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
-use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\ProfilePage;
-use Demo\Chat\Pages\Hilos\ProfileSignInPage;
-use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserListFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Object\Item\Identity;
+use Hilos\Database\Object\Item\PasskeyCredential;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
+use Hilos\Runtime\State\Item\HilosConnection;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Contract tests for the profile linked-identities read-list (HIL-297).
+ * Contract tests for the profile linked-identities read-list (HIL-1277).
  *
  * The list is the only surface that projects a user's identities to the client,
  * so its config carries two security-critical invariants: the `secret` hash is
  * never a selectable field, and the projection is scoped to the subscribing user
  * (self-connection anchor by accept key, identities joined by owner id). These
  * are asserted at the config level; the live projection behavior rides the
- * generic BrowserContext MANY/VIA machinery (framework-tested) and the full
- * profile e2e is HIL-305.
+ * generic BrowserContext MANY/VIA machinery and the profile e2e scenarios.
  */
-final class ProfileIdentitiesBrowserListTest extends TestCase
+final class HilosProfileIdentitiesBrowserListTest extends TestCase
 {
     /**
      * Returns the identities item config (the MANY DB source), the row that
@@ -40,13 +36,13 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
      */
     private function identitiesItem(): array
     {
-        foreach (ProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
-            if (($item[BrowserListFieldKey::SOURCE] ?? null) === ChatBrowserSource::DB_IDENTITIES) {
+        foreach (HilosProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
+            if (($item[BrowserListFieldKey::SOURCE] ?? null) === HilosProfileIdentitiesBrowserList::DB_IDENTITIES) {
                 return $item;
             }
         }
 
-        $this->fail('ProfileIdentitiesBrowserList has no DB_IDENTITIES item');
+        $this->fail('HilosProfileIdentitiesBrowserList has no DB_IDENTITIES item');
     }
 
     /**
@@ -56,13 +52,13 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
      */
     private function anchorItem(): array
     {
-        foreach (ProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
-            if (($item[BrowserListFieldKey::SOURCE] ?? null) === ChatBrowserSource::RT_CONNECTIONS) {
+        foreach (HilosProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
+            if (($item[BrowserListFieldKey::SOURCE] ?? null) === HilosProfileIdentitiesBrowserList::RT_CONNECTIONS) {
                 return $item;
             }
         }
 
-        $this->fail('ProfileIdentitiesBrowserList has no RT_CONNECTIONS anchor');
+        $this->fail('HilosProfileIdentitiesBrowserList has no RT_CONNECTIONS anchor');
     }
 
     public function testProjectedFieldsAreTheNonSecretIdentityFields(): void
@@ -93,9 +89,9 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
     {
         $anchor = $this->anchorItem();
 
-        $this->assertSame(Connection::userId, $anchor[BrowserListFieldKey::ITEM_KEY]);
+        $this->assertSame(HilosConnection::userId, $anchor[BrowserListFieldKey::ITEM_KEY]);
         $this->assertSame(
-            [Connection::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY],
+            [HilosConnection::acceptKey => HilosProfileIdentitiesBrowserList::TABLE_ACCEPT_KEY],
             $anchor[BrowserListFieldKey::WHERE],
         );
     }
@@ -106,7 +102,7 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
 
         $this->assertTrue($item[BrowserListFieldKey::MANY]);
         $this->assertSame(
-            [Identity::userId => Connection::userId],
+            [Identity::userId => HilosConnection::userId],
             $item[BrowserListFieldKey::VIA],
         );
     }
@@ -120,26 +116,50 @@ final class ProfileIdentitiesBrowserListTest extends TestCase
         $this->assertSame(Identity::userId, $this->identitiesItem()[BrowserListFieldKey::ITEM_KEY]);
     }
 
+    public function testPasskeySidecarsJoinByOwnerWithoutKeyMaterial(): void
+    {
+        foreach (HilosProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::ITEMS] as $item) {
+            if (($item[BrowserListFieldKey::SOURCE] ?? null) !== HilosProfileIdentitiesBrowserList::DB_PASSKEY_CREDENTIALS) {
+                continue;
+            }
+
+            $this->assertTrue($item[BrowserListFieldKey::MANY]);
+            $this->assertSame(PasskeyCredential::userId, $item[BrowserListFieldKey::ITEM_KEY]);
+            $this->assertSame([PasskeyCredential::userId => HilosConnection::userId], $item[BrowserListFieldKey::VIA]);
+            $this->assertSame(
+                [
+                    PasskeyCredential::id,
+                    PasskeyCredential::userId,
+                    PasskeyCredential::identityId,
+                    PasskeyCredential::label,
+                    PasskeyCredential::createdAt,
+                ],
+                $item[BrowserListFieldKey::FIELDS],
+            );
+
+            return;
+        }
+
+        $this->fail('HilosProfileIdentitiesBrowserList has no passkey sidecar item');
+    }
+
     public function testListRequiresTheAcceptKeyParam(): void
     {
-        $param = ProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY];
+        $param = HilosProfileIdentitiesBrowserList::BROWSER[BrowserListConfigKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY];
 
         $this->assertTrue($param[BrowserParamKey::REQUIRED]);
     }
 
-    public function testListIsRegisteredAndBoundToTheProfileRootAndSignInSection(): void
+    public function testBindingFillsAcceptKeyFromTheConnection(): void
     {
         $this->assertSame(
-            ProfileIdentitiesBrowserList::class,
-            Hilos::BROWSER_LISTS[ProfileIdentitiesBrowserList::LIST],
+            HilosProfileIdentitiesBrowserList::ACCEPT_KEY,
+            HilosProfileIdentitiesBrowserList::BINDING[BrowserParamKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY],
         );
-
-        foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
-            $binding = Hilos::PAGE_LISTS[$page][ProfileIdentitiesBrowserList::LIST];
-            $this->assertSame(
-                ChatBrowserRef::ACCEPT_KEY,
-                $binding[BrowserParamKey::PARAMS][BrowserRuntimeParam::ACCEPT_KEY],
-            );
-        }
+        $this->assertSame('connections', HilosProfileIdentitiesBrowserList::CONNECTIONS);
+        $this->assertSame(
+            HilosProfileIdentitiesBrowserList::CONNECTIONS,
+            HilosProfileIdentitiesBrowserList::RT_CONNECTIONS[BrowserSourceKey::KEY],
+        );
     }
 }

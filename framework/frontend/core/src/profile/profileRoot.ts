@@ -2,7 +2,8 @@
 // framework draws it — the person's own line, the Account rows, a row per
 // section of the catalog with its live summary, the danger zone — and the
 // project hands it only what the framework cannot know: the person's name, its
-// own rename if it has one, and the lists behind the summaries only it keeps.
+// own rename if it has one, and its session and device summary lists. The
+// framework's identities list supplies the account's ways in.
 //
 // The summaries of the framework's own sections come from the answer of the
 // page (notifications, two-step verification, agreements, the data copy) and
@@ -28,11 +29,11 @@ import {
   describeHilosDataExport,
   profileDataExportNode,
 } from './dataExport.js'
+import { createHilosProfileSignInMethods } from './profileIdentities.js'
 import {
   describeHilosProfileSignInMethods,
   hilosProfilePasswordState,
   isHilosProfilePasskeyOnly,
-  type HilosProfileSignInMethod,
 } from './profileSignInMethods.js'
 import { type HilosProfileRename } from './profileRename.js'
 import { createHilosSecondFactorStore } from './secondFactor.js'
@@ -53,10 +54,6 @@ export interface HilosProfileBinding {
   readonly name: ReadonlySignal<string>
   /** The project's own rename, or null — Name then shows without Change. */
   readonly rename: HilosProfileRename | null
-  /** The account's ways in, or null — no Email row and an empty summary then. */
-  readonly signInMethods: ReadonlySignal<
-    readonly HilosProfileSignInMethod[]
-  > | null
   /** How many sign-ins are active, or null for an empty summary. */
   readonly sessionCount: ReadonlySignal<number> | null
   /** How many devices take push, or null for an empty summary. */
@@ -128,7 +125,7 @@ export interface HilosProfileRootStore {
   readonly verifiedEmail: ReadonlySignal<string | null>
   /**
    * Whether device keys are the account's only way in (HIL-1166) — the warning
-   * line under the sign-in row; false while the project hands no method list.
+   * line under the sign-in row; false while the list is empty.
    */
   readonly passkeyOnly: ReadonlySignal<boolean>
   /** Start taking the sections from the page's answer and their frames. */
@@ -139,6 +136,7 @@ export interface HilosProfileRootStore {
 
 /**
  * Create the profile root's state over the framework's section stores and the project's binding.
+ * The ways in come from the framework browser list in the page scope.
  *
  * @param context The page's connection, scopes and actions.
  * @param binding What the project handed the page.
@@ -154,12 +152,12 @@ export function createHilosProfileRootStore(
     profileDataExportNode(context.scopes),
   )
   const offered = sessionAuthMethods(context.scopes)
+  const methods = createHilosProfileSignInMethods(context.scopes)
   const userId = sessionUserId(context.scopes)
   let stopPreferences: (() => void) | null = null
   let stopAgreements: (() => void) | null = null
 
   const summaries = computedSignal(() => {
-    const methods = binding.signInMethods?.get()
     const sessions = binding.sessionCount?.get()
     const devices = binding.deviceCount?.get()
     const summary: Record<string, string> = {
@@ -176,11 +174,10 @@ export function createHilosProfileRootStore(
         secondFactor.state.get()?.authenticators.length ? 'on' : 'off'
       }`,
     }
-    if (methods !== undefined)
-      summary[HilosPages.PROFILE_SIGN_IN] = describeHilosProfileSignInMethods(
-        methods,
-        offered.get(),
-      )
+    summary[HilosPages.PROFILE_SIGN_IN] = describeHilosProfileSignInMethods(
+      methods.get(),
+      offered.get(),
+    )
     if (sessions !== undefined)
       summary[HilosPages.PROFILE_SESSIONS] =
         sessions === 1 ? '1 active sign-in' : `${sessions} active sign-ins`
@@ -192,16 +189,10 @@ export function createHilosProfileRootStore(
   return {
     signedIn: computedSignal(() => userId.get() !== null),
     summaries,
-    verifiedEmail: computedSignal(() => {
-      const methods = binding.signInMethods?.get()
-      return methods === undefined
-        ? null
-        : hilosProfilePasswordState(methods).verifiedEmail
-    }),
-    passkeyOnly: computedSignal(() => {
-      const methods = binding.signInMethods?.get()
-      return methods === undefined ? false : isHilosProfilePasskeyOnly(methods)
-    }),
+    verifiedEmail: computedSignal(
+      () => hilosProfilePasswordState(methods.get()).verifiedEmail,
+    ),
+    passkeyOnly: computedSignal(() => isHilosProfilePasskeyOnly(methods.get())),
     start() {
       stopPreferences ??= startHilosNotificationPreferences(context)
       secondFactor.start()

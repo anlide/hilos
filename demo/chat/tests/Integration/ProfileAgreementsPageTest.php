@@ -31,6 +31,7 @@ use Hilos\Pages\Legal\DTO\LegalRevisionChangesActionDTO;
 use Hilos\Pages\Legal\DTO\LegalRevisionChangesReplyDTO;
 use Hilos\Pages\Legal\DTO\LegalRevisionTextActionDTO;
 use Hilos\Pages\Legal\DTO\LegalRevisionTextReplyDTO;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -96,7 +97,7 @@ final class ProfileAgreementsPageTest extends IntegrationTestCase
         if ($pageClass === ProfilePage::class) {
             // The root has browser lists of its own, and they ride the same answer as its legal section and its heading.
             $lists = $answers[0][PageResponseSignalData::payload][PagePayload::lists] ?? [];
-            self::assertArrayHasKey(ChatBrowserList::PROFILE_IDENTITIES, $lists);
+            self::assertArrayHasKey(HilosProfileIdentitiesBrowserList::LIST, $lists);
             self::assertArrayHasKey(ChatBrowserList::PROFILE_SESSIONS, $lists);
             self::assertArrayHasKey(PageCatalogConstants::WIRE_PAGE_LABEL, $sections);
         }

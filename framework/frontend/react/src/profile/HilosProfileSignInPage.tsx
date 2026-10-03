@@ -2,8 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   createHilosProfileAddSignInFlow,
   createHilosProfilePasswordChangeFlow,
+  createHilosProfileSignInMethods,
   createHilosProfileSignInActions,
-  createSignal,
   focusInitial,
   hilosProfileAddableWays,
   hilosProfileSignInSubtitle,
@@ -65,13 +65,14 @@ function passkeyOnlyWayLabel(way: HilosProfileAddableWay): string {
 /** The account's methods and the dialogs that add, change and remove them. */
 export function HilosProfileSignInPage({
   context,
-  methods,
 }: {
   context: HilosAuthContext
-  methods: readonly HilosProfileSignInMethod[]
 }) {
-  const methodsSignal = useMemo(() => createSignal(methods), [])
-  useEffect(() => methodsSignal.set(methods), [methodsSignal, methods])
+  const methodsSignal = useMemo(
+    () => createHilosProfileSignInMethods(context.scopes),
+    [context.scopes],
+  )
+  const methods = useSignal(methodsSignal)
   const offeredSignal = useMemo(
     () => sessionAuthMethods(context.scopes),
     [context.scopes],

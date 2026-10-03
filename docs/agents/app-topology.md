@@ -105,6 +105,13 @@ table contexts when they can read the project registry.
 - `Hilos::PAGE_TABLES` declares which registered table or browser-only table is
   used by each page, including browser table params. Page classes must not put
   table bindings in `BROWSER[BrowserConfigKey::TABLES]`.
+- A framework page may name framework browser lists it reads in
+  `AbstractPage::REQUIRED_LISTS`; a project registering such a page registers each
+  list in `Hilos::BROWSER_LISTS` under its `::LIST` and binds it in
+  `Hilos::PAGE_LISTS` (the list carries its binding as `::BINDING`). The first is
+  `HilosProfileIdentitiesBrowserList` — the person's ways in, read by the profile
+  root and its sign-in section; it anchors on the connections collection under
+  the key `connections`.
 - `Hilos::UPLOAD_TARGETS` names the upload targets of a project that declares
   `HilosFeature::UPLOADS` ([architecture/uploads.md](architecture/uploads.md)).
 - `Hilos::DATABASE_GUARANTEES` states what the project's database promises every
@@ -114,7 +121,8 @@ table contexts when they can read the project registry.
 `Hilos::validateTopology()` runs before layer initialization and checks the
 registry for missing classes, mismatched keys, duplicate signal ownership,
 unknown page/table references, missing page subscription owners, and page-local
-table bindings that should live in `Hilos::PAGE_TABLES`.
+table bindings that should live in `Hilos::PAGE_TABLES`, and a framework page
+whose `REQUIRED_LISTS` are left unregistered or unbound.
 
 Each project pins this check with its own unit test,
 `testProjectTopologyPassesStartupValidation` in its `*TopologyRegistryTest`,

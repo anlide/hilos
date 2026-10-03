@@ -1,9 +1,11 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   createSignal,
+  HILOS_PROFILE_IDENTITIES_LIST,
   ScopeManager,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
+  type HilosProfileSignInMethod,
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
@@ -38,6 +40,30 @@ const PASSKEY_ONLY = resolveHilosProfileSignInMethods(
   [],
 )
 
+/** Feed the framework list and normalized identities to the page scope. */
+function setMethods(
+  scopes: ScopeManager,
+  current: readonly HilosProfileSignInMethod[],
+): void {
+  const page = scopes.page() ?? scopes.openPage('hilos_profile_sign_in')
+  const identities = current.map((method) => {
+    const id = Number(method.key)
+    const ref = { type: 'identities', id }
+    page.entities.upsert(ref, {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+    })
+    return ref
+  })
+  page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
+    identities,
+    passkeyCredentials: [],
+  })
+}
+
 function setup(
   opening: object = NO_STEP,
   methods = resolveHilosProfileSignInMethods([], []),
@@ -62,6 +88,7 @@ function setup(
     channels: [],
   } as unknown as HilosAuthContext
   context.scopes.session.data.set('authMethods', offered)
+  setMethods(context.scopes, methods)
   const router = {
     pageIdentity: createSignal(undefined),
     currentRoute: createSignal({
@@ -75,7 +102,6 @@ function setup(
   })
   const fixture = TestBed.createComponent(HilosProfileSignInPage)
   fixture.componentRef.setInput('context', context)
-  fixture.componentRef.setInput('methods', methods)
   fixture.detectChanges()
   const node = (id: string) =>
     (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
@@ -87,7 +113,17 @@ function setup(
     input.dispatchEvent(new Event('input', { bubbles: true }))
     fixture.detectChanges()
   }
-  return { dispatch, fill, fixture, listeners, node }
+  return {
+    dispatch,
+    fill,
+    fixture,
+    listeners,
+    node,
+    setMethods: (next: readonly HilosProfileSignInMethod[]) => {
+      setMethods(context.scopes, next)
+      fixture.detectChanges()
+    },
+  }
 }
 
 /**
@@ -155,7 +191,7 @@ it('opens at the confirmation step when the server asks, and shows the chooser o
 })
 
 it('warns a passkey-only account with a button per offered way and drops it when another way arrives', () => {
-  const { fixture, node } = setup(NO_STEP, PASSKEY_ONLY)
+  const { node, setMethods } = setup(NO_STEP, PASSKEY_ONLY)
   const block = node('profile-sign-in-passkey-only')
   expect(block.textContent).toContain('Only your passkeys can sign you in')
   expect(
@@ -169,8 +205,7 @@ it('warns a passkey-only account with a button per offered way and drops it when
   ).toBe('Link GitHub')
   expect(block.querySelectorAll('button')).toHaveLength(3)
   expect(node('profile-sign-in-passkey-only-none')).toBeNull()
-  fixture.componentRef.setInput(
-    'methods',
+  setMethods(
     resolveHilosProfileSignInMethods(
       [
         {
@@ -191,7 +226,6 @@ it('warns a passkey-only account with a button per offered way and drops it when
       [],
     ),
   )
-  fixture.detectChanges()
   expect(node('profile-sign-in-passkey-only')).toBeNull()
 })
 

@@ -3,9 +3,11 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   createSignal,
+  HILOS_PROFILE_IDENTITIES_LIST,
   ScopeManager,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
+  type HilosProfileSignInMethod,
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
@@ -53,6 +55,30 @@ const PASSKEY_ONLY = resolveHilosProfileSignInMethods(
   [],
 )
 
+/** Feed the framework list and normalized identities to the page scope. */
+function setMethods(
+  scopes: ScopeManager,
+  current: readonly HilosProfileSignInMethod[],
+): void {
+  const page = scopes.page() ?? scopes.openPage('hilos_profile_sign_in')
+  const identities = current.map((method) => {
+    const id = Number(method.key)
+    const ref = { type: 'identities', id }
+    page.entities.upsert(ref, {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+    })
+    return ref
+  })
+  page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
+    identities,
+    passkeyCredentials: [],
+  })
+}
+
 function setup(
   opening: object = NO_STEP,
   methods = MAGIC_LINK,
@@ -77,6 +103,7 @@ function setup(
     channels: [],
   } as unknown as HilosAuthContext
   context.scopes.session.data.set('authMethods', offered)
+  setMethods(context.scopes, methods)
   const router = {
     pageIdentity: createSignal(undefined),
     currentRoute: createSignal({
@@ -85,14 +112,14 @@ function setup(
       admin: false,
     }),
   } as unknown as HilosRouter
-  const page = (current: typeof methods) => (
+  const page = (
     <StrictMode>
       <HilosRouterContext.Provider value={router}>
-        <HilosProfileSignInPage context={context} methods={current} />
+        <HilosProfileSignInPage context={context} />
       </HilosRouterContext.Provider>
     </StrictMode>
   )
-  const { rerender, unmount } = render(page(methods))
+  const { unmount } = render(page)
   const node = (id: string) =>
     document.querySelector(`[data-id="${id}"]`) as HTMLElement
   return {
@@ -100,7 +127,8 @@ function setup(
     listeners,
     node,
     unmount,
-    setMethods: (next: typeof methods) => rerender(page(next)),
+    setMethods: (next: readonly HilosProfileSignInMethod[]) =>
+      act(() => setMethods(context.scopes, next)),
   }
 }
 

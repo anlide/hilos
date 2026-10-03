@@ -15,7 +15,6 @@ import { scopes } from '../../bootstrap/session.js'
 import {
   profileDeviceCount,
   profileSessionCount,
-  profileSignInMethods,
 } from '../../profile/profileLists.js'
 import { chatProfileRename } from './profileActions.js'
 import { committedName } from './profilePage.js'
@@ -26,7 +25,6 @@ const context: HilosProfilePageContext = { connection, scopes, actions }
 const binding: HilosProfileBinding = {
   name: committedName,
   rename: chatProfileRename,
-  signInMethods: profileSignInMethods,
   sessionCount: profileSessionCount,
   deviceCount: profileDeviceCount,
 }

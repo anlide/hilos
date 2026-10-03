@@ -3,8 +3,8 @@
 import {
   createHilosProfileAddSignInFlow,
   createHilosProfilePasswordChangeFlow,
+  createHilosProfileSignInMethods,
   createHilosProfileSignInActions,
-  createSignal,
   focusInitial,
   hilosProfileAddableWays,
   hilosProfileSignInSubtitle,
@@ -35,20 +35,16 @@ import { useTrackedAction } from '../useTrackedAction.js'
 
 const props = defineProps<{
   context: HilosAuthContext
-  methods: readonly HilosProfileSignInMethod[]
 }>()
-const methodsSignal = createSignal(props.methods)
-watch(
-  () => props.methods,
-  (methods) => methodsSignal.set(methods),
-)
+const methodsSignal = createHilosProfileSignInMethods(props.context.scopes)
+const methods = useSignal(methodsSignal)
 const offered = useSignal(sessionAuthMethods(props.context.scopes))
 const passkeySupported = isPasskeySupported()
 /** What the account can still add: the chooser's buttons and the warning's. */
 const ways = computed(() =>
-  hilosProfileAddableWays(props.methods, offered.value, passkeySupported),
+  hilosProfileAddableWays(methods.value, offered.value, passkeySupported),
 )
-const passkeyOnly = computed(() => isHilosProfilePasskeyOnly(props.methods))
+const passkeyOnly = computed(() => isHilosProfilePasskeyOnly(methods.value))
 const passkeyOnlyWays = computed(() =>
   ways.value.filter((way) => way.kind !== 'passkey'),
 )
@@ -85,10 +81,10 @@ function passkeyOnlyWayLabel(way: HilosProfileAddableWay): string {
 
 const unlinkKey = ref<string | null>(null)
 const unlinkMethod = computed(() =>
-  props.methods.find((method) => method.key === unlinkKey.value),
+  methods.value.find((method) => method.key === unlinkKey.value),
 )
 const remaining = computed(() =>
-  props.methods
+  methods.value
     .filter((method) => method.key !== unlinkKey.value)
     .map(title)
     .join(', '),
@@ -110,16 +106,13 @@ async function remove(): Promise<void> {
   if (await unlinkAction.run(actions.unlinkIdentity(Number(unlinkKey.value))))
     unlinkKey.value = null
 }
-watch(
-  () => props.methods,
-  (methods) => {
-    if (
-      unlinkKey.value !== null &&
-      !methods.some((method) => method.key === unlinkKey.value)
-    )
-      unlinkKey.value = null
-  },
-)
+watch(methods, (current) => {
+  if (
+    unlinkKey.value !== null &&
+    !current.some((method) => method.key === unlinkKey.value)
+  )
+    unlinkKey.value = null
+})
 
 const passwordFlow = createHilosProfilePasswordChangeFlow(props.context)
 const passwordStep = useSignal(passwordFlow.step)

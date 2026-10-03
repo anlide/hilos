@@ -26,6 +26,7 @@ use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Legal\LegalAgreementsProjector;
 use Hilos\Legal\LegalStandingResolver;
 use Hilos\Notification\NotificationChannelPreferenceProjector;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 
 /**
  * The framework current-user profile root, served by the project's agent.
@@ -33,8 +34,8 @@ use Hilos\Notification\NotificationChannelPreferenceProjector;
  * The framework owns the page key, route and subscription signal, and the answer (HIL-1169):
  * the person's sections the root's rows summarize - notifications, two-step verification,
  * agreements, the data copy - and the account deletion's danger zone at its bottom. The
- * project binds its agent and, when it has them, its own browser lists and data for the name
- * and the summaries only it knows. Each profile section has its own page (HIL-493); the
+ * project binds its agent and the framework identities list, plus any project browser lists
+ * and data for the name and summaries only it knows. Each profile section has its own page (HIL-493); the
  * provider-link start belongs to AbstractHilosProfileSignInPage and account writes belong to
  * the users library.
  *
@@ -57,6 +58,8 @@ abstract class AbstractHilosProfilePage extends AbstractPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE,
     ];
+
+    public const array REQUIRED_LISTS = [HilosProfileIdentitiesBrowserList::class];
 
     /**
      * @var list<string> What the answer's projectors read: the notification section and the two

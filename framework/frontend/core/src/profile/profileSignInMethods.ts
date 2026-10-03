@@ -1,5 +1,5 @@
 // Projected sign-in methods shared by the profile root and its sign-in section.
-// Projects resolve their entity references; this module joins the public fields.
+// The framework resolves its browser-list references and joins the public fields.
 import { oauthProviderOptionsFor } from '../auth/authContext.js'
 import {
   PASSKEY_METHOD_KEY,
@@ -13,7 +13,7 @@ import {
   type HilosProfilePasswordUpdated,
 } from './signInMethods.js'
 
-/** The public half of an identity supplied by a project's normalized store. */
+/** The public half of an identity supplied by the framework's normalized store. */
 export interface HilosProfileSignInIdentitySource {
   readonly id: number
   readonly type: string
@@ -110,7 +110,7 @@ export function hilosProfileLinkableProviders(
 /**
  * Whether device keys are the account's only way in (HIL-1166): the list is
  * not empty and every method in it is a passkey. An empty list — not arrived
- * yet, or not supplied by the project — answers false: no warning is better
+ * yet, or the account has no ways in — answers false: no warning is better
  * than a warning on a guess.
  *
  * @param methods The current account's projected methods.

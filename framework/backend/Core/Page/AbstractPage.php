@@ -220,6 +220,15 @@ abstract class AbstractPage implements ActionHostInterface
     public const array READS_RT = [];
 
     /**
+     * @var list<class-string> Framework browser lists this page reads. A project
+     *     registering the page must register each class in BROWSER_LISTS under its
+     *     LIST key and bind it to the page in PAGE_LISTS. validateTopology checks
+     *     both declarations. A subclass replaces this list; extend a parent's
+     *     requirements with `[...parent::REQUIRED_LISTS, ...]` when needed.
+     */
+    public const array REQUIRED_LISTS = [];
+
+    /**
      * Whether the browser navigates to this page, or it only hosts actions.
      *
      * PageReach::ROUTE says a person can be on this page, so a subscription takes up

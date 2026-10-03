@@ -99,6 +99,7 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
@@ -345,8 +346,18 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
     ];
 
+    public const array BROWSER_LISTS = [
+        HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
+    ];
+
     public const array BROWSER_TABLES = [
         HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
+    ];
+
+    public const array PAGE_LISTS = [
+        ProfilePage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
     ];
 
     public const array PAGE_TABLES = [

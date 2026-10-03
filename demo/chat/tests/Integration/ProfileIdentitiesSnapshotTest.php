@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
-use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Pages\Hilos\ProfilePage;
 use Demo\Chat\Pages\Hilos\ProfileSignInPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
@@ -15,6 +14,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\Identity;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -78,7 +78,7 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
      */
     private function identitiesOfSnapshotItem(PagePayload $snapshot): array
     {
-        $items = $snapshot->lists[ProfileIdentitiesBrowserList::LIST][PagePayload::items];
+        $items = $snapshot->lists[HilosProfileIdentitiesBrowserList::LIST][PagePayload::items];
         $this->assertCount(1, $items);
 
         return $items[0][PagePayload::slots][ChatDbContext::identities];

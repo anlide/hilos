@@ -12,9 +12,7 @@ import {
   BOT_TYPE,
   EVENT_ATTACHMENT_TYPE,
   EVENT_TYPE,
-  IDENTITY_TYPE,
   MODERATOR_PIECE_TYPE,
-  PASSKEY_CREDENTIAL_TYPE,
   PUSH_SUBSCRIPTION_TYPE,
   SESSION_TYPE,
 } from '../types'
@@ -26,8 +24,6 @@ export const pageEntityTypes: Record<string, string> = {
   events: EVENT_TYPE,
   eventAttachments: EVENT_ATTACHMENT_TYPE,
   moderatorPromptPieces: MODERATOR_PIECE_TYPE,
-  identities: IDENTITY_TYPE,
-  passkeyCredentials: PASSKEY_CREDENTIAL_TYPE,
   sessions: SESSION_TYPE,
   pushSubscriptions: PUSH_SUBSCRIPTION_TYPE,
 }

@@ -199,6 +199,7 @@ final class TopologyValidator
         $this->validateBrowserBindings($pages, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
         $this->validateBrowserBindings($pages, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
         $this->validateBrowserBindings($pages, $browserSources, $pageData, self::SECTION_PAGE_DATA, $errors);
+        $this->validatePageRequiredLists($pages, $browserLists, $pageLists, $errors);
         $this->validateProtectedModeStub(
             Hilos::catalogConstantOf($hilosClass, self::SECTION_PROTECTED_MODE_STUB),
             $errors,
@@ -1731,6 +1732,39 @@ final class TopologyValidator
                     if ($required === true && !array_key_exists($name, $boundParams)) {
                         $errors[] = "{$path} does not fill required param {$name} of {$sourceClass}::BROWSER";
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Requires every framework list read by a registered page to be registered and bound.
+     *
+     * @param array $pages Page registry
+     * @param array $browserLists Browser list registry
+     * @param array $pageLists Page-to-list binding registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageRequiredLists(
+        array $pages,
+        array $browserLists,
+        array $pageLists,
+        array &$errors,
+    ): void {
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::REQUIRED_LISTS as $listClass) {
+                $key = $listClass::LIST;
+                if (($browserLists[$key] ?? null) !== $listClass) {
+                    $errors[] = "PAGES[{$page}] {$pageClass} reads the framework list {$listClass},"
+                        . " which BROWSER_LISTS does not register under '{$key}'";
+                }
+
+                if (!isset($pageLists[$page][$key])) {
+                    $errors[] = "PAGE_LISTS[{$page}] does not bind '{$key}', which {$pageClass} reads (REQUIRED_LISTS)";
                 }
             }
         }

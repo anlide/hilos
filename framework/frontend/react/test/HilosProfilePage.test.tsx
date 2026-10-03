@@ -7,12 +7,14 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   createSignal,
+  HILOS_PROFILE_IDENTITIES_LIST,
   HilosPages,
   resolveHilosProfileSignInMethods,
   ScopeManager,
   type HilosProfileBinding,
   type HilosProfilePageContext,
   type HilosProfileRename,
+  type HilosProfileSignInMethod,
   type HilosRouter,
 } from '@hilos/core'
 import { HilosProfilePage } from '../src/profile/HilosProfilePage.js'
@@ -50,7 +52,35 @@ const router = {
   resolvePath: (page: string) => `/${page}`,
 } as unknown as HilosRouter
 
-function setup(binding: HilosProfileBinding, signedIn = true) {
+/** Set the framework identity list in the profile's page scope. */
+function setMethods(
+  scopes: ScopeManager,
+  methods: readonly HilosProfileSignInMethod[],
+): void {
+  const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
+  const identities = methods.map((method) => {
+    const id = Number(method.key)
+    const ref = { type: 'identities', id }
+    page.entities.upsert(ref, {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+    })
+    return ref
+  })
+  page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
+    identities,
+    passkeyCredentials: [],
+  })
+}
+
+function setup(
+  binding: HilosProfileBinding,
+  signedIn = true,
+  initialMethods?: readonly HilosProfileSignInMethod[],
+) {
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
     done: Promise.resolve(
@@ -61,6 +91,7 @@ function setup(binding: HilosProfileBinding, signedIn = true) {
   }))
   const scopes = new ScopeManager()
   if (signedIn) scopes.session.data.set('currentUser', { type: 'user', id: 1 })
+  if (initialMethods) setMethods(scopes, initialMethods)
   const context = {
     actions: { dispatch },
     connection: { on: () => () => {} },
@@ -73,22 +104,25 @@ function setup(binding: HilosProfileBinding, signedIn = true) {
       </HilosRouterContext.Provider>
     </StrictMode>,
   )
-  return (id: string) =>
-    document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  return {
+    node: (id: string) =>
+      document.querySelector<HTMLElement>(`[data-id="${id}"]`),
+    setMethods: (next: readonly HilosProfileSignInMethod[]) =>
+      act(() => setMethods(scopes, next)),
+  }
 }
 
 function nameOnly(): HilosProfileBinding {
   return {
     name: createSignal('Ann Lee'),
     rename: null,
-    signInMethods: null,
     sessionCount: null,
     deviceCount: null,
   }
 }
 
 it('shows the name without Change and no Email row when the project hands neither', () => {
-  const node = setup(nameOnly())
+  const { node } = setup(nameOnly())
 
   expect(node('profile-identity-name')?.textContent).toBe('Ann Lee')
   expect(node('profile-edit')).toBeNull()
@@ -98,7 +132,9 @@ it('shows the name without Change and no Email row when the project hands neithe
       (row) => row.querySelector('.fw-semibold')?.textContent,
     ),
   ).toEqual(['Ways to sign in', 'Security'])
-  expect(node('profile-sign-in-summary')?.textContent).toBe('')
+  expect(node('profile-sign-in-summary')?.textContent).toBe(
+    'No ways to sign in',
+  )
   expect(node('profile-security-summary')?.textContent).toBe(
     'Two-step verification is off',
   )
@@ -108,23 +144,22 @@ it('shows the name without Change and no Email row when the project hands neithe
 })
 
 it('shows the Email row for a verified address and the ways-in summary', () => {
-  const node = setup({
-    ...nameOnly(),
-    signInMethods: createSignal(
-      resolveHilosProfileSignInMethods(
-        [
-          {
-            id: 1,
-            type: 'password',
-            provider: null,
-            identifier: 'ann@example.test',
-            verified: true,
-          },
-        ],
-        [],
-      ),
+  const { node } = setup(
+    nameOnly(),
+    true,
+    resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          provider: null,
+          identifier: 'ann@example.test',
+          verified: true,
+        },
+      ],
+      [],
     ),
-  })
+  )
 
   expect(node('profile-email')?.textContent).toBe('ann@example.test · verified')
   expect(node('profile-identity-email')?.textContent).toBe('ann@example.test')
@@ -145,7 +180,7 @@ it('opens the name window under StrictMode and closes it on the name it sent', a
     minLength: 2,
     maxLength: 64,
   }
-  const node = setup({ ...nameOnly(), name, rename })
+  const { node } = setup({ ...nameOnly(), name, rename })
 
   await act(async () => {
     fireEvent.click(node('profile-edit') as HTMLElement)
@@ -167,46 +202,42 @@ it('opens the name window under StrictMode and closes it on the name it sent', a
 })
 
 it('draws only the placeholder while nobody is signed in', () => {
-  const node = setup(nameOnly(), false)
+  const { node } = setup(nameOnly(), false)
 
   expect(node('profile-loading')).not.toBeNull()
   expect(node('profile-view')).toBeNull()
 })
 
 it('warns under the sign-in row while device keys are the only way in, live', () => {
-  const methods = createSignal(
-    resolveHilosProfileSignInMethods(
-      [
-        {
-          id: 2,
-          type: 'passkey',
-          provider: null,
-          identifier: 'opaque',
-          verified: true,
-        },
-      ],
-      [],
-    ),
+  const methods = resolveHilosProfileSignInMethods(
+    [
+      {
+        id: 2,
+        type: 'passkey',
+        provider: null,
+        identifier: 'opaque',
+        verified: true,
+      },
+    ],
+    [],
   )
-  const node = setup({ ...nameOnly(), signInMethods: methods })
+  const { node, setMethods } = setup(nameOnly(), true, methods)
 
   expect(node('profile-sign-in-passkey-only-line')?.textContent).toBe(
     'Only passkeys can sign you in: access cannot be restored automatically',
   )
-  act(() =>
-    methods.set(
-      resolveHilosProfileSignInMethods(
-        [
-          {
-            id: 1,
-            type: 'password',
-            provider: null,
-            identifier: 'ann@example.test',
-            verified: true,
-          },
-        ],
-        [],
-      ),
+  setMethods(
+    resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          provider: null,
+          identifier: 'ann@example.test',
+          verified: true,
+        },
+      ],
+      [],
     ),
   )
   expect(node('profile-sign-in-passkey-only-line')).toBeNull()

@@ -4,11 +4,13 @@
 import { TestBed } from '@angular/core/testing'
 import {
   createSignal,
+  HILOS_PROFILE_IDENTITIES_LIST,
   HilosPages,
   resolveHilosProfileSignInMethods,
   ScopeManager,
   type HilosProfileBinding,
   type HilosProfilePageContext,
+  type HilosProfileSignInMethod,
   type HilosRouter,
 } from '@hilos/core'
 import { expect, it, vi } from 'vitest'
@@ -58,13 +60,39 @@ function router(withSignIn = false): HilosRouter {
   } as unknown as HilosRouter
 }
 
+/** Set the framework identity list in the profile's page scope. */
+function setMethods(
+  scopes: ScopeManager,
+  methods: readonly HilosProfileSignInMethod[],
+): void {
+  const page = scopes.page() ?? scopes.openPage(HilosPages.PROFILE)
+  const identities = methods.map((method) => {
+    const id = Number(method.key)
+    const ref = { type: 'identities', id }
+    page.entities.upsert(ref, {
+      id,
+      type: method.type,
+      provider: method.provider,
+      identifier: method.identifier,
+      verified: method.verified,
+    })
+    return ref
+  })
+  page.lists.upsert(HILOS_PROFILE_IDENTITIES_LIST, 1, {
+    identities,
+    passkeyCredentials: [],
+  })
+}
+
 function setup(
   binding: HilosProfileBinding,
   signedIn = true,
   withSignIn = false,
+  initialMethods?: readonly HilosProfileSignInMethod[],
 ) {
   const scopes = new ScopeManager()
   if (signedIn) scopes.session.data.set('currentUser', { type: 'user', id: 1 })
+  if (initialMethods) setMethods(scopes, initialMethods)
   const context = {
     actions: {
       dispatch: vi.fn(() => ({
@@ -85,14 +113,21 @@ function setup(
   const root = fixture.nativeElement as HTMLElement
   const node = (id: string) =>
     root.querySelector<HTMLElement>(`[data-id="${id}"]`)
-  return { fixture, node, root }
+  return {
+    fixture,
+    node,
+    root,
+    setMethods: (next: readonly HilosProfileSignInMethod[]) => {
+      setMethods(scopes, next)
+      fixture.detectChanges()
+    },
+  }
 }
 
 function nameOnly(): HilosProfileBinding {
   return {
     name: createSignal('Ann Lee'),
     rename: null,
-    signInMethods: null,
     sessionCount: null,
     deviceCount: null,
   }
@@ -118,31 +153,33 @@ it('shows the name without Change and the sections in catalog order when the pro
 })
 
 it("offers Change for the project's rename and the Email row for a verified address", () => {
-  const { node } = setup({
-    ...nameOnly(),
-    rename: {
-      send: () => false,
-      refusal: createSignal(null),
-      clearRefusal: () => {},
-      stepUpOperation: 'change_name',
-      minLength: 2,
-      maxLength: 64,
+  const { node } = setup(
+    {
+      ...nameOnly(),
+      rename: {
+        send: () => false,
+        refusal: createSignal(null),
+        clearRefusal: () => {},
+        stepUpOperation: 'change_name',
+        minLength: 2,
+        maxLength: 64,
+      },
     },
-    signInMethods: createSignal(
-      resolveHilosProfileSignInMethods(
-        [
-          {
-            id: 1,
-            type: 'password',
-            provider: null,
-            identifier: 'ann@example.test',
-            verified: true,
-          },
-        ],
-        [],
-      ),
+    true,
+    false,
+    resolveHilosProfileSignInMethods(
+      [
+        {
+          id: 1,
+          type: 'password',
+          provider: null,
+          identifier: 'ann@example.test',
+          verified: true,
+        },
+      ],
+      [],
     ),
-  })
+  )
 
   expect(node('profile-edit')).not.toBeNull()
   expect(node('profile-email')?.textContent?.trim()).toBe(
@@ -159,30 +196,24 @@ it('draws only the placeholder while nobody is signed in', () => {
 })
 
 it('warns under the sign-in row while device keys are the only way in, live', () => {
-  const methods = createSignal(
-    resolveHilosProfileSignInMethods(
-      [
-        {
-          id: 2,
-          type: 'passkey',
-          provider: null,
-          identifier: 'opaque',
-          verified: true,
-        },
-      ],
-      [],
-    ),
+  const methods = resolveHilosProfileSignInMethods(
+    [
+      {
+        id: 2,
+        type: 'passkey',
+        provider: null,
+        identifier: 'opaque',
+        verified: true,
+      },
+    ],
+    [],
   )
-  const { fixture, node } = setup(
-    { ...nameOnly(), signInMethods: methods },
-    true,
-    true,
-  )
+  const { node, setMethods } = setup(nameOnly(), true, true, methods)
 
   expect(node('profile-sign-in-passkey-only-line')?.textContent?.trim()).toBe(
     'Only passkeys can sign you in: access cannot be restored automatically',
   )
-  methods.set(
+  setMethods(
     resolveHilosProfileSignInMethods(
       [
         {
@@ -196,6 +227,5 @@ it('warns under the sign-in row while device keys are the only way in, live', ()
       [],
     ),
   )
-  fixture.detectChanges()
   expect(node('profile-sign-in-passkey-only-line')).toBeNull()
 })

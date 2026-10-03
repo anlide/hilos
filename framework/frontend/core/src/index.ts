@@ -519,6 +519,10 @@ export {
   type HilosProfilePushChannel,
 } from './profile/profileDevices.js'
 export {
+  createHilosProfileSignInMethods,
+  HILOS_PROFILE_IDENTITIES_LIST,
+} from './profile/profileIdentities.js'
+export {
   resolveHilosProfileSignInMethods,
   hilosProfilePasswordState,
   hilosProfileLinkableProviders,

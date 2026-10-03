@@ -6,18 +6,6 @@
 export { type Presence, toPresence } from './Presence'
 export { Users } from './User'
 export {
-  type Identity,
-  IDENTITY_TYPE,
-  identityFromFields,
-  Identities,
-} from './Identity'
-export {
-  type PasskeyCredential,
-  PASSKEY_CREDENTIAL_TYPE,
-  passkeyCredentialFromFields,
-  PasskeyCredentials,
-} from './PasskeyCredential'
-export {
   type Session,
   SESSION_TYPE,
   sessionFromFields,

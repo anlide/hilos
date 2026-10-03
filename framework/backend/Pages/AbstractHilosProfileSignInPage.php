@@ -31,6 +31,7 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Random\RandomException;
 
 /**
@@ -59,6 +60,8 @@ abstract class AbstractHilosProfileSignInPage extends AbstractPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_PROFILE_SIGN_IN,
     ];
+
+    public const array REQUIRED_LISTS = [HilosProfileIdentitiesBrowserList::class];
 
     /**
      * The profile's own submit: starting a provider link, which writes nothing (HIL-1137).

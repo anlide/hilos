@@ -12,32 +12,23 @@ import {
   readString,
   resolveHilosProfileDevices,
   resolveHilosProfileSessions,
-  resolveHilosProfileSignInMethods,
   type EntityRef,
   type HilosProfileSelfConnection,
 } from '@hilos/core'
 
 import { actions } from '../bootstrap/connection.js'
 import { scopes } from '../bootstrap/session.js'
-import {
-  Identities,
-  PasskeyCredentials,
-  PushSubscriptions,
-  Sessions,
-} from '../types/index.js'
+import { PushSubscriptions, Sessions } from '../types/index.js'
 
 /** Page list keys declared by the chat backend. */
 export const PROFILE_SESSIONS_LIST = 'profileSessions'
 export const PROFILE_DEVICES_LIST = 'profileDevices'
-export const PROFILE_IDENTITIES_LIST = 'profileIdentities'
 
 /** Page slots declared by the chat backend source collections. */
 const SESSIONS_SLOT = 'sessions'
 const CONNECTIONS_SLOT = 'connections'
 const PUSH_SUBSCRIPTIONS_SLOT = 'pushSubscriptions'
 const SELF_CONNECTION_DATA = 'selfConnection'
-const IDENTITIES_SLOT = 'identities'
-const PASSKEY_CREDENTIALS_SLOT = 'passkeyCredentials'
 
 function records(slot: unknown): readonly Readonly<Record<string, unknown>>[] {
   return Array.isArray(slot)
@@ -133,23 +124,3 @@ export const profileDevicePushChannel = computedSignal(() =>
 
 /** Tracked remove action shared by the profile devices page and SDK block. */
 export const profileDeviceActions = createHilosProfileDeviceActions({ actions })
-
-const identityItems = scopes.pageListSignal(PROFILE_IDENTITIES_LIST)
-
-/** The current account's sign-in methods, resolved from normalized entity references. */
-export const profileSignInMethods = computedSignal(() =>
-  resolveHilosProfileSignInMethods(
-    identityItems.get().flatMap((item) =>
-      references(item.slots[IDENTITIES_SLOT]).flatMap((reference) => {
-        const identity = Identities.signal(reference).get()
-        return identity === undefined ? [] : [identity]
-      }),
-    ),
-    identityItems.get().flatMap((item) =>
-      references(item.slots[PASSKEY_CREDENTIALS_SLOT]).flatMap((reference) => {
-        const credential = PasskeyCredentials.signal(reference).get()
-        return credential === undefined ? [] : [credential]
-      }),
-    ),
-  ),
-)

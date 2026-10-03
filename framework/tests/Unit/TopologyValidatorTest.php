@@ -85,6 +85,36 @@ final class TopologyValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testPageRequiredListMustBeRegistered(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'PAGES[required_list_page] ' . TopologyRequiredListPage::class
+            . ' reads the framework list ' . TopologyRequiredList::class
+            . ", which BROWSER_LISTS does not register under 'required_list'",
+        );
+
+        TopologyRequiredListMissingHilos::validateTopology();
+    }
+
+    public function testPageRequiredListMustBeBound(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            "PAGE_LISTS[required_list_page] does not bind 'required_list', which "
+            . TopologyRequiredListPage::class . ' reads (REQUIRED_LISTS)',
+        );
+
+        TopologyRequiredListUnboundHilos::validateTopology();
+    }
+
+    public function testPageRequiredListRegistrationAndBindingPasses(): void
+    {
+        TopologyRequiredListBoundHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testComputedPageRoutesComeFromRegisteredPageClasses(): void
     {
         $this->assertSame(
@@ -2091,6 +2121,68 @@ final class TopologyValidHilos extends HilosFacade
     {
         return new TopologyTestDbContext();
     }
+}
+
+final class TopologyRequiredList
+{
+    public const string LIST = 'required_list';
+
+    public const array BINDING = [];
+
+    public const array BROWSER = [];
+}
+
+final class TopologyRequiredListPage extends AbstractPage
+{
+    public const string PAGE = 'required_list_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+
+    public const array REQUIRED_LISTS = [TopologyRequiredList::class];
+}
+
+abstract class TopologyRequiredListHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyRequiredListPage::PAGE => TopologyRequiredListPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyRequiredListMissingHilos extends TopologyRequiredListHilos
+{
+}
+
+class TopologyRequiredListUnboundHilos extends TopologyRequiredListHilos
+{
+    public const array BROWSER_LISTS = [
+        TopologyRequiredList::LIST => TopologyRequiredList::class,
+    ];
+}
+
+final class TopologyRequiredListBoundHilos extends TopologyRequiredListUnboundHilos
+{
+    public const array PAGE_LISTS = [
+        TopologyRequiredListPage::PAGE => [
+            TopologyRequiredList::LIST => TopologyRequiredList::BINDING,
+        ],
+    ];
 }
 
 final class TopologyPerNodeAgentHilos extends HilosFacade

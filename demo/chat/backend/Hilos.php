@@ -55,7 +55,6 @@ use Demo\Chat\Browser\Data\UserPresenceBrowserData;
 use Demo\Chat\Browser\List\MainBotsBrowserList;
 use Demo\Chat\Browser\List\MainEventsBrowserList;
 use Demo\Chat\Browser\List\MainUsersBrowserList;
-use Demo\Chat\Browser\List\ProfileIdentitiesBrowserList;
 use Demo\Chat\Browser\List\ProfileDevicesBrowserList;
 use Demo\Chat\Browser\List\ProfileSessionsBrowserList;
 use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
@@ -219,6 +218,7 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Log\LogStoreAgentDaemon;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Hilos\Push\Delivery\PushDeliveryChannelAgent;
 use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
@@ -659,7 +659,7 @@ final class Hilos extends HilosFacade
         MainEventsBrowserList::LIST => MainEventsBrowserList::class,
         MainUsersBrowserList::LIST => MainUsersBrowserList::class,
         MainBotsBrowserList::LIST => MainBotsBrowserList::class,
-        ProfileIdentitiesBrowserList::LIST => ProfileIdentitiesBrowserList::class,
+        HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
         ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
         ProfileDevicesBrowserList::LIST => ProfileDevicesBrowserList::class,
     ];
@@ -683,11 +683,7 @@ final class Hilos extends HilosFacade
             MainBotsBrowserList::LIST => [],
         ],
         ProfilePage::PAGE => [
-            ProfileIdentitiesBrowserList::LIST => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
-                ],
-            ],
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
             ProfileSessionsBrowserList::LIST => [
                 BrowserParamKey::PARAMS => [
                     BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
@@ -700,11 +696,7 @@ final class Hilos extends HilosFacade
             ],
         ],
         ProfileSignInPage::PAGE => [
-            ProfileIdentitiesBrowserList::LIST => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
-                ],
-            ],
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         ProfileSessionsPage::PAGE => [
             ProfileSessionsBrowserList::LIST => [
