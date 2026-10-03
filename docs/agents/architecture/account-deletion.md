@@ -79,7 +79,9 @@ in ONE transaction:
 1. the request is marked carried out; lost to a cancel — rolled back, nothing
    touched;
 2. for each folded account, a live request of its own is marked carried out;
-3. for each account, the framework's rows go: device keys before ways in, codes,
+3. for each account, the framework's rows go: device keys before ways in, codes
+   — those carrying the person's id and those on their current addresses,
+   whatever user they carry (HIL-1163),
    the second factor whole, operation confirmations, legal acceptances, the
    [access log](access-log.md) (HIL-1174), and the account's merge row when it
    was folded into another one (HIL-1199);

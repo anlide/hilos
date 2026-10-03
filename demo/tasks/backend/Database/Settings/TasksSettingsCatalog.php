@@ -9,6 +9,7 @@ use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
+use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -60,6 +61,7 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
             StepUpSettingsCatalog::getCatalog(),
             ImpersonationSettingsCatalog::getCatalog(),
             AccountDeletionSettingsCatalog::getCatalog(),
+            VerificationSweepSettingsCatalog::getCatalog(),
         );
     }
 }

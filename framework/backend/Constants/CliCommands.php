@@ -111,6 +111,9 @@ final class CliCommands
     /** @var string Command: Expire an active auth verification challenge (test-only) */
     public const string VERIFICATION_TEST_EXPIRE = 'test:verification:expire';
 
+    /** @var string Command: Age every code of one address past retention and sweep now (test-only) */
+    public const string VERIFICATION_TEST_SWEEP = 'test:verification:sweep';
+
     /** @var string Command: Age a live session's expiry into the past by its cookie token (test-only) */
     public const string SESSION_TEST_EXPIRE = 'test:session:expire';
 

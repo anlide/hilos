@@ -25,6 +25,7 @@ use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
 use Hilos\Database\Exception\ObjectCollectionNotFoundException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Item\Object_;
@@ -202,6 +203,36 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertSame(self::NEIGHBOUR_ID, self::userOf(self::NEIGHBOUR_TOKEN));
 
         self::assertSame([self::USER_ID], $this->forgottenUsers());
+    }
+
+    /**
+     * Anonymous codes on the person's current email and phone leave with the account.
+     * A neighbour's address keeps its own code, even when that code also has no user id.
+     *
+     * @throws HilosException When seeding or erasure fails
+     */
+    public function testErasureRemovesAnonymousCodesOnCurrentAddresses(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
+        $email = 'erase-me@example.test';
+        $phone = '+15550000302';
+        $neighbourEmail = 'keep-me@example.test';
+        self::seedIdentity(self::USER_ID, IdentityType::PASSWORD, $email);
+        self::seedIdentity(self::USER_ID, IdentityType::SMS, $phone);
+        self::seedIdentity(self::NEIGHBOUR_ID, IdentityType::PASSWORD, $neighbourEmail);
+        $verifications = Hilos::$db?->getObjectCollection(HilosDbContext::verifications);
+        self::assertInstanceOf(ObjectUserVerifications::class, $verifications);
+        $verifications->createChallenge(VerificationType::REGISTER_CONFIRM, $email, null, '111111', 3600);
+        $verifications->createChallenge(VerificationType::SMS_LOGIN, $phone, null, '222222', 3600);
+        $verifications->createChallenge(VerificationType::REGISTER_CONFIRM, $neighbourEmail, null, '333333', 3600);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+        $this->runSweep();
+
+        self::assertSame(0, EntityUserVerification::count([EntityUserVerification::identifier => $email]));
+        self::assertSame(0, EntityUserVerification::count([EntityUserVerification::identifier => $phone]));
+        self::assertSame(1, EntityUserVerification::count([EntityUserVerification::identifier => $neighbourEmail]));
     }
 
     /**

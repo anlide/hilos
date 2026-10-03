@@ -364,6 +364,38 @@ class UserVerification extends Object_
     }
 
     /**
+     * Ages a challenge for the test-only verification sweep command (HIL-1163).
+     *
+     * @param string $createdAtSql Past issue time as an SQL datetime
+     * @throws DatabaseException When the update fails
+     * @throws WriteNotAllowedException When no truth source may update this row
+     */
+    public function backdate(string $createdAtSql): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            $this->touchedSetKeys(...),
+            TruthSourceOperation::Update,
+        );
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($createdAtSql));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityUserVerification::_table . '` SET `' . EntityUserVerification::created_at
+                . '` = ? WHERE `' . EntityUserVerification::id . '` = ?',
+            $params,
+        );
+
+        $this->entity->created_at = $createdAtSql;
+    }
+
+    /**
      * Converts the challenge to an associative array (never includes the code hash).
      *
      * @return array<string, mixed> Verification data (id, userId, type, identifier, channel, attempts, createdAt, expiresAt, consumedAt)

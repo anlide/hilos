@@ -45,6 +45,20 @@ class UserVerifications extends DbCollection
     }
 
     /**
+     * Removes challenges on a person's current addresses, whatever user id they carry.
+     *
+     * @param list<string> $identifiers Addresses whose challenges are removed
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the query or a queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source may remove a row
+     * @throws SourceChangeSubscriberException When a store announcement fails
+     */
+    public function deleteForIdentifiers(array $identifiers): void
+    {
+        $this->objectCollection->deleteForIdentifiers($identifiers);
+    }
+
+    /**
      * Deletes one type of code on every address belonging to a person (HIL-300).
      *
      * Every deleted row leaves through its object and announces the deletion.

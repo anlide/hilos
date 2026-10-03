@@ -133,6 +133,43 @@ Also not covered here, and not covered anywhere yet: two *issues* racing each
 other (both voiding, both inserting), and a front end that submits the same code
 twice on its own.
 
+## How Long a Row Lives: the Sweep
+
+The users library owns the verification table and sweeps it once for the cluster.
+It removes a row only when its issue time is older than the retention cutoff
+**and** the code was spent or has expired. A live code survives regardless of age;
+a younger spent code stays until the cutoff. After an old code has been removed,
+the same attempted proof reads as `no_challenge`, the ordinary expired-code
+refusal to the person.
+
+`auth.verification.retention_seconds` defaults to the node's
+`HILOS_VERIFICATION_SEND_WINDOW_SEC` (3600 seconds by default). Its write rule
+requires a whole number at least as large as that window; reads clamp a row
+written outside the rule to the window. The floor matters because the send cap
+counts every issue from `created_at`, including spent and expired codes: removing
+one inside the window would erase evidence of a send. The setting is read on
+each sweep, so a changed retention takes effect on the next pass.
+
+`auth.verification.sweep_cron` defaults to `*/10 * * * *`. It requires a nonempty,
+runnable five-field cron expression; the sweep cannot be switched off. An empty
+or invalid stored value reads as the default. The users library checks the
+setting once a minute and rebuilds its cron rule when the expression changes,
+so a change takes effect at the next minute on its owning node without a restart.
+An installation with no catalog entry for either setting uses these defaults.
+
+Each pass removes at most 500 rows, oldest id first. A full batch continues on
+the next tick until the backlog is drained. Each removal goes through its object
+and announces the row's deletion to readers; a bulk SQL delete would leave the
+`DbCollection` cache stale, while `DB_SYNC_CLEARED` means the whole table was
+cleared. The agent logs a nonempty pass with its count and effective retention.
+
+Account erasure also removes every code on the person's current identity
+addresses, whatever `user_id` the code carries, before deleting those identities.
+This includes SMS sign-in and registration codes with no user id and does not
+wait for the scheduled sweep. The test-only `test:verification:sweep <identifier>`
+command ages every code on one address past retention, runs one sweep through
+the users library, and reports removed and remaining rows. Live codes stay.
+
 ## What the Person Watching Is Told: The Send-Progress Line
 
 The code screen carries a live line saying where the code has got to — `queued`,
@@ -383,6 +420,14 @@ same questions again, because seconds pass between the two.
   and the difference is a person waiting for a message that is not coming.
 
 ## Validation
+
+`VerificationSweepSettingsTest`, `VerificationRetentionRuleTest`,
+`VerificationSweepCronRuleTest` and `VerificationSweepSettingsCatalogTest` pin
+the two settings and their write rules. `VerificationTestSweepCommandTest` pins
+the CLI boundary. `VerificationSweepIntegrationTest` covers selection, retention
+changes, schedule rebuilding, batch continuation and the command reply against
+the real table. `AccountErasureIntegrationTest` checks anonymous codes on current
+addresses and a neighbour's surviving code.
 
 `composer run test:framework:integration` — `VerificationSpendRaceIntegrationTest`
 drives the race with two `DbContext` instances over one row, and

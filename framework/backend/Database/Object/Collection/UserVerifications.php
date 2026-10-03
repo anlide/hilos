@@ -21,6 +21,7 @@ use Hilos\Database\Object\Item\UserVerification as ObjectUserVerification;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Database\SqlSortDirection;
 use Hilos\Database\Verification\VerificationSendStats;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -336,6 +337,110 @@ class UserVerifications extends Objects
             $this->objects[$id]->delete();
             unset($this[$id]);
         }
+    }
+
+    /**
+     * Deletes old spent or expired challenges, oldest id first and one bounded batch at a time.
+     *
+     * @param string $cutoffSql Oldest eligible issue time as an SQL datetime
+     * @param string $nowSql Current moment as an SQL datetime
+     * @param int $limit Maximum rows to remove
+     * @return int Number of removed rows
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the query or a queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source may remove a row
+     * @throws SourceChangeSubscriberException When a store announcement fails
+     */
+    public function deleteSpentBefore(string $cutoffSql, string $nowSql, int $limit): int
+    {
+        $removed = 0;
+        foreach (static::entityClass()::get(
+            '`' . EntityUserVerification::created_at . '` < ? AND (`' . EntityUserVerification::consumed_at
+                . '` IS NOT NULL OR `' . EntityUserVerification::expires_at . '` <= ?)',
+            [$cutoffSql, $nowSql],
+            [EntityUserVerification::id => SqlSortDirection::ASC],
+            $limit,
+        ) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+            $removed++;
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Deletes challenges on a person's current addresses during account erasure (HIL-1163).
+     * The challenge's user id may belong to anyone, or be null.
+     *
+     * @param list<string> $identifiers Addresses whose challenges are removed
+     * @throws DatabaseException When the lookup or a delete fails
+     * @throws InvalidArgumentException When the query or a queued DB-sync signal is invalid
+     * @throws WriteNotAllowedException When no truth source may remove a row
+     * @throws SourceChangeSubscriberException When a store announcement fails
+     */
+    public function deleteForIdentifiers(array $identifiers): void
+    {
+        $identifiers = array_values(array_unique($identifiers));
+        if ($identifiers === []) {
+            return;
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($identifiers), '?'));
+        foreach (static::entityClass()::get('`' . EntityUserVerification::identifier . "` IN ({$placeholders})", $identifiers) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
+            }
+            $this->objects[$id]->delete();
+            unset($this[$id]);
+        }
+    }
+
+    /**
+     * Ages every challenge on one address for the test-only sweep command.
+     *
+     * @param string $identifier Address whose rows are aged
+     * @param string $createdAtSql Past issue time as an SQL datetime
+     * @return int Number of aged rows
+     * @throws DatabaseException When the lookup or an update fails
+     */
+    public function backdateIdentifier(string $identifier, string $createdAtSql): int
+    {
+        $aged = 0;
+        foreach (static::entityClass()::get([EntityUserVerification::identifier => $identifier]) as $entity) {
+            $id = $entity->id;
+            if ($id === null) {
+                continue;
+            }
+            if (!isset($this->objects[$id])) {
+                $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
+            }
+            $this->objects[$id]->backdate($createdAtSql);
+            $aged++;
+        }
+
+        return $aged;
+    }
+
+    /**
+     * @param string $identifier Address to count
+     * @return int Number of challenges on that address
+     * @throws DatabaseException When the count query fails
+     */
+    public function countForIdentifier(string $identifier): int
+    {
+        return static::entityClass()::count([EntityUserVerification::identifier => $identifier]);
     }
 
     /**

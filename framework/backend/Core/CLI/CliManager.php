@@ -84,6 +84,7 @@ use Hilos\Core\CLI\Commands\TableTestRefuseCommand;
 use Hilos\Core\CLI\Commands\ThrottleTestResetCommand;
 use Hilos\Core\CLI\Commands\UserTestSeedCommand;
 use Hilos\Core\CLI\Commands\VerificationTestExpireCommand;
+use Hilos\Core\CLI\Commands\VerificationTestSweepCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Database\DatabaseException;
 use Throwable;
@@ -170,6 +171,7 @@ class CliManager
         $this->commands[CliCommands::LOGS_TEST_RESET] = new LogsTestResetCommand();
         $this->commands[CliCommands::BACKUP_TEST_RESET] = new BackupTestResetCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
+        $this->commands[CliCommands::VERIFICATION_TEST_SWEEP] = new VerificationTestSweepCommand();
         $this->commands[CliCommands::SESSION_TEST_EXPIRE] = new SessionTestExpireCommand();
         $this->commands[CliCommands::ORPHAN_TEST_CREATE] = new OrphanTestCreateCommand();
         $this->commands[CliCommands::ORPHAN_TEST_DELETE] = new OrphanTestDeleteCommand();

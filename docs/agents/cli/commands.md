@@ -183,7 +183,7 @@ family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the tw
 beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reason: the
 master answers them out of memory, and a partitioned node is exactly where they are worth
 running),
-`test:notification:emit`, `test:account:force-purge` and `test:legal:hold` (every row they cause is written
+`test:notification:emit`, `test:account:force-purge`, `test:verification:sweep` and `test:legal:hold` (every row they cause is written
 by the agent that answers them, so the CLI process itself has nothing to read or write),
 `test:table:lag` (the master answers it out of memory and writes its own node's lag row,
 so the CLI process has nothing to read or

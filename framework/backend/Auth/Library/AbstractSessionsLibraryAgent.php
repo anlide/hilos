@@ -5518,8 +5518,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * then erased from leaves to the named account. A folded account can also have its own due
      * request made before its merge; its circle is erased without touching the survivor. Any live
      * request of an account in the circle is completed, but no new request is written for it.
-     * The framework's rows go first, then the project's rows, then the rename journal and the
-     * person row. A failure at any account rolls the entire circle and its requests back.
+     * The framework's rows go first, including codes carrying the person's id and codes on
+     * their current addresses; then the project's rows, the rename journal and the person row.
+     * A failure at any account rolls the entire circle and its requests back.
      *
      * After the commit, outside the transaction because none of it can be rolled back: every
      * session of every erased account is signed out, the files library is asked to remove the
@@ -5638,6 +5639,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         // The device keys before the ways in: a credential restricts the delete of its anchor.
         Hilos::$db->passkeyCredentials->deleteForUser($userId);
+        // Capture current addresses before their ways in go. SMS login and registration
+        // codes may have no user id; the erasure promise does not depend on sweep retention.
+        $addresses = array_values(array_unique(array_map(
+            static fn ($identity): string => $identity->identifier,
+            Hilos::$db->identities->listByUser($userId),
+        )));
+        Hilos::$db->verifications->deleteForIdentifiers($addresses);
         Hilos::$db->identities->deleteForUser($userId);
         Hilos::$db->verifications->deleteForUser($userId);
         Hilos::$db->secondFactors->actions->deleteForUser($userId);

@@ -122,6 +122,9 @@ use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Auth\Verification\VerificationSweepCommandConstants;
+use Hilos\Auth\Verification\VerificationSweepSettings;
+use Hilos\Auth\Verification\VerificationSweeper;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -479,18 +482,21 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     ];
 
     /**
-     * The single command answered by the users library (test-only).
+     * The two commands answered by the users library (both test-only).
      *
      * The test: prefix enforces the production ban via NonProductionGate. Routed here because
-     * the users library is the single writer of acceptance records ({@see self::OWNS_DB})
-     * and publishes the agreements state of the person.
+     * this library owns both acceptance records and verification rows ({@see self::OWNS_DB}).
      */
     public const array AGENT_COMMANDS = [
         CliCommands::LEGAL_TEST_HOLD,
+        CliCommands::VERIFICATION_TEST_SWEEP,
     ];
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
     private const string SECOND_FACTOR_RESET_SWEEP_RULE = 'hilos_second_factor_reset_sweep';
+
+    /** Name of the live verification sweep rule (HIL-1163). */
+    private const string VERIFICATION_SWEEP_RULE = 'hilos_verification_sweep';
 
     /** Once a minute: a removal is carried out within a minute of its moment. */
     private const string SECOND_FACTOR_RESET_SWEEP_CRON = '* * * * *';
@@ -550,6 +556,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
     private ?CronRule $secondFactorResetSweepRule = null;
 
+    /** Schedule rebuilt when its setting changes. */
+    private ?CronRule $verificationSweepRule = null;
+
+    /** A full batch means another pass is due on the next tick. */
+    private bool $verificationSweepBacklog = false;
+
+    /** Minute in which the schedule setting was last checked. */
+    private int $verificationSweepCheckedMinute = -1;
+
     /**
      * What a library does to a row it shares with another owner: bring it into being, take it away.
      *
@@ -592,17 +607,46 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Carries out the second-factor removals whose time came and reminds of the rest, when the rule says so (HIL-494).
+     * Carries out due second-factor removals and a bounded verification-code sweep.
      *
      * @throws HilosException When a lookup, a write, a frame or an announcement fails
      */
     public function onTick(): void
     {
-        if ($this->secondFactorResetSweepRule?->shouldRun() !== true) {
+        if ($this->secondFactorResetSweepRule?->shouldRun() === true) {
+            new SecondFactorResetSweeper($this->secondFactorCommands())->sweep();
+        }
+
+        $this->sweepVerifications();
+    }
+
+    /**
+     * Sweeps one batch on schedule, then drains a full batch on subsequent ticks.
+     * A changed schedule takes effect at the next minute without restarting the library.
+     *
+     * @throws HilosException When settings or verification persistence fails
+     */
+    private function sweepVerifications(): void
+    {
+        $minute = intdiv(time(), 60);
+        if ($minute !== $this->verificationSweepCheckedMinute) {
+            $this->verificationSweepCheckedMinute = $minute;
+            $expression = VerificationSweepSettings::sweepCron();
+            if ($this->verificationSweepRule === null || $this->verificationSweepRule->expression !== $expression) {
+                $this->verificationSweepRule = new CronRule(self::VERIFICATION_SWEEP_RULE, $expression);
+            }
+        }
+
+        if (!$this->verificationSweepBacklog && $this->verificationSweepRule?->shouldRun() !== true) {
             return;
         }
 
-        new SecondFactorResetSweeper($this->secondFactorCommands())->sweep();
+        $removed = new VerificationSweeper()->sweep();
+        $this->verificationSweepBacklog = $removed === VerificationSweeper::BATCH;
+        if ($removed > 0) {
+            $retention = VerificationSweepSettings::retentionSeconds();
+            $this->logAgentInfo("Verification sweep: removed {$removed} spent or expired codes older than {$retention} s");
+        }
     }
 
     /**
@@ -699,7 +743,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * Routes a CLI command sent to this library.
      *
-     * The single name of {@see self::AGENT_COMMANDS}; anything else gets an error reply
+     * The names of {@see self::AGENT_COMMANDS}; anything else gets an error reply
      * rather than silence, because the socket parks the caller until it is answered.
      *
      * @param CommandRequestDTO $data Command request payload
@@ -711,6 +755,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     {
         if ($data->command === CliCommands::LEGAL_TEST_HOLD) {
             $this->handleLegalHoldCommand($data);
+
+            return;
+        }
+
+        if ($data->command === CliCommands::VERIFICATION_TEST_SWEEP) {
+            $this->handleVerificationSweepCommand($data);
 
             return;
         }
@@ -756,6 +806,42 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             LegalHoldCommandConstants::FIELD_STANDING => $standing->standing->value,
             LegalHoldCommandConstants::FIELD_DEADLINE => $standing->deadline,
             LegalHoldCommandConstants::FIELD_FROZEN => $frozen,
+        ]));
+    }
+
+    /**
+     * Ages one address and sweeps once for the test-only command.
+     *
+     * @param CommandRequestDTO $data Command request carrying a non-empty identifier
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleVerificationSweepCommand(CommandRequestDTO $data): void
+    {
+        $identifier = $data->payload[VerificationSweepCommandConstants::FIELD_IDENTIFIER] ?? null;
+        if (!is_string($identifier) || trim($identifier) === '') {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'Verification sweep requires a non-empty identifier',
+            ));
+
+            return;
+        }
+
+        try {
+            $sweeper = new VerificationSweeper();
+            $sweeper->age($identifier);
+            $removed = $sweeper->sweep();
+            $kept = $sweeper->countFor($identifier);
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            VerificationSweepCommandConstants::FIELD_IDENTIFIER => $identifier,
+            VerificationSweepCommandConstants::FIELD_REMOVED => $removed,
+            VerificationSweepCommandConstants::FIELD_KEPT => $kept,
         ]));
     }
 
