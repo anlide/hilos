@@ -90,6 +90,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /** @var float Registration timeout in seconds */
     private float $registrationTimeout = 10.0;
 
+    /** @var array<string, true> Agents this link was sent agent_stop for, not yet reported stopped by the worker */
+    private array $stopsAwaitingReport = [];
+
     /**
      * Create worker client with socket and agent manager.
      *
@@ -354,6 +357,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     private function handleAgentStoppedMessage(WorkerAgentStoppedDTO $dto): void
     {
+        unset($this->stopsAwaitingReport[$dto->agentId]);
         $this->agentManager->handleAgentStopped($dto);
     }
 
@@ -730,6 +734,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /**
      * Send agent_stop signal to worker
+     * The link remembers the stop until the worker reports it ({@see self::awaitsStopReport()}).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
@@ -738,6 +743,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
+        $this->stopsAwaitingReport[$agentId] = true;
         Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
         $dto = new AgentStopDTO(
@@ -745,6 +751,19 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         );
 
         $this->send($dto->toJson());
+    }
+
+    /**
+     * Whether this link was sent agent_stop for the agent and has not heard the worker report it stopped yet.
+     * A worker handles its frames in order, so the report also means everything sent to that agent
+     * before the stop has been handled (HIL-1314).
+     *
+     * @param string $agentId Agent whose stop report is awaited
+     * @return bool True while the worker has not reported the requested stop
+     */
+    public function awaitsStopReport(string $agentId): bool
+    {
+        return isset($this->stopsAwaitingReport[$agentId]);
     }
 
     /**

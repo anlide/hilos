@@ -201,7 +201,7 @@ owner 30.09.2026): SIGTERM to every worker but the journal's; once their process
 have exited, their connections are closed and their last frames were dispatched,
 the journal agent is stopped with an
 ordinary `agent_stop` over its connection, behind everything sent to it before,
-and closes its open file as ready; then its worker gets SIGTERM. The daemon marks
+and closes its open file as ready and reports itself stopped; only then its worker gets SIGTERM. The daemon marks
 this with `AnalyticsJournalAgentDaemon::stopsAfterOtherWorkers()`; the mechanism
 is `WorkerServer`'s ([worker-lifecycle.md](worker-lifecycle.md)). The master's
 shutdown ceiling does not change. The stop of the journal's own worker session is

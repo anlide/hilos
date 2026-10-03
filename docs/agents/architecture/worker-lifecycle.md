@@ -88,7 +88,9 @@ have exited and their connections are closed — the master reads a connection a
 an exited worker's last batch may still sit in its socket — the pass that saw it dispatches their
 last frames; the next pass stops the held
 agent with an ordinary `agent_stop` over its connection — behind every frame sent to it before —
-and the pass after that sends its worker SIGTERM. The master's shutdown ceiling covers both waves.
+and its worker gets SIGTERM once it has reported that agent stopped — a worker reads its connection
+a buffer at a time, and a SIGTERM sent on a count of passes cut off the batches still unread behind
+the stop (HIL-1314). The master's shutdown ceiling covers both waves.
 A node with no such agent stops in one wave, as before.
 
 Sending those frames is an attempt, not a guarantee:

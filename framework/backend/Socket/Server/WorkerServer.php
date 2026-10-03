@@ -94,7 +94,7 @@ abstract class WorkerServer extends AbstractServer implements
     /** Second wave: the first wave is gone, and this pass's dispatch carries its last frames. */
     private const int SECOND_WAVE_FIRST_GONE = 1;
 
-    /** Second wave: the held agents were stopped over their connection; their workers go next. */
+    /** Second wave: agent_stop went to the held agents; their workers go once each has reported them stopped. */
     private const int SECOND_WAVE_AGENTS_STOPPED = 2;
 
     /**
@@ -1009,15 +1009,18 @@ abstract class WorkerServer extends AbstractServer implements
     /**
      * Moves the second wave of a stop one step on, once per pass; nothing while no stop holds a worker.
      *
-     * Three passes, because each step needs the one before it to have reached the wire. The first
+     * At least three passes, because each step needs the one before it to have reached the wire. The first
      * wave is gone when its processes are gone AND their connections are closed: the master reads a
      * connection a buffer at a time, so the last batch of a worker that has exited may still be in
      * its socket for a few passes. The pass that sees the first wave gone only notes it: what the
      * last of it sent is read on this pass and dispatched at its end, into the connection of the
      * held worker. The next pass stops every held agent with an ordinary agent_stop over that
      * connection, which carries frames in order - so the stop lands behind everything sent to the
-     * agent before it. The pass after that, once the stop has been written, sends SIGTERM to the
-     * held workers.
+     * agent before it. SIGTERM goes to the held workers once each has reported its held agents stopped:
+     * a worker reads its link a buffer at a time and handles frames in order, so the report means
+     * everything sent to the agent before the stop was handled - a SIGTERM sent on a count of passes
+     * cut off the last batches still unread behind it (HIL-1314). A held worker whose link is gone
+     * is not waited for, and the master's shutdown ceiling covers the wait.
      */
     protected function advanceSecondStopWave(): void
     {
@@ -1046,6 +1049,10 @@ abstract class WorkerServer extends AbstractServer implements
             }
             $this->secondStopWaveStep = self::SECOND_WAVE_AGENTS_STOPPED;
 
+            return;
+        }
+
+        if ($this->heldAgentsAwaitStopReport()) {
             return;
         }
 
@@ -1083,6 +1090,34 @@ abstract class WorkerServer extends AbstractServer implements
 
             if (!isset($this->secondStopWave[$this->buildWorkerKey($client->isMonopolistic(), $client->getWorkerIndex())])) {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a held worker still owes the report that its held agents stopped;
+     * a worker whose link is gone owes nothing.
+     *
+     * @return bool True while a connected held worker owes a stop report
+     */
+    private function heldAgentsAwaitStopReport(): bool
+    {
+        foreach ($this->secondStopWave as $key => $agentIds) {
+            $worker = $this->parseWorkerKey($key);
+            $client = $this->findWorkerClientById($this->agentManager->calculateWorkerId(
+                $worker[WorkerConstants::FIELD_WORKER_INDEX],
+                $worker[WorkerConstants::FIELD_WORKER_TYPE] === WorkerConstants::TYPE_MONOPOLISTIC,
+            ));
+            if ($client === null) {
+                continue;
+            }
+
+            foreach ($agentIds as $agentId) {
+                if ($client->awaitsStopReport($agentId)) {
+                    return true;
+                }
             }
         }
 

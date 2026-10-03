@@ -10,9 +10,13 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Process;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -91,6 +95,66 @@ final class WorkerServerStopWavesTest extends TestCase
         ], StopWavesTestLog::$events);
     }
 
+    /**
+     * Several master passes may go by while the held worker drains its connection before agent_stop.
+     */
+    public function testTheHeldWorkerGetsItsSigtermOnlyOnceItReportedItsAgentStopped(): void
+    {
+        $server = $this->buildServer(withJournal: true);
+        $connection = $this->connectJournalWorker($server);
+
+        $this->assertFalse($connection->awaitsStopReport(HilosAgentType::HILOS_ANALYTICS_JOURNAL));
+        $server->stop();
+        $connection->sendAgentStop(HilosAgentType::HILOS_ANALYTICS_JOURNAL);
+        $this->workerLeaves($server, $this->regularKey());
+        for ($pass = 0; $pass < 5; $pass++) {
+            $server->advance();
+        }
+
+        $this->assertTrue($connection->awaitsStopReport(HilosAgentType::HILOS_ANALYTICS_JOURNAL));
+        $this->assertSame([
+            'sigterm:' . self::PLAIN_WORKER,
+            'agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+        ], StopWavesTestLog::$events);
+
+        $connection->reportAgentStopped(HilosAgentType::HILOS_ANALYTICS_JOURNAL);
+        $this->assertFalse($connection->awaitsStopReport(HilosAgentType::HILOS_ANALYTICS_JOURNAL));
+        $server->advance();
+        $this->assertSame([
+            'sigterm:' . self::PLAIN_WORKER,
+            'agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            'sigterm:' . self::JOURNAL_WORKER,
+        ], StopWavesTestLog::$events);
+    }
+
+    /**
+     * A held worker whose connection is gone cannot report the stop; it no longer holds the wave.
+     */
+    public function testTheHeldWorkerDoesNotWaitForAReportFromALostConnection(): void
+    {
+        $server = $this->buildServer(withJournal: true);
+        $connection = $this->connectJournalWorker($server);
+
+        $server->stop();
+        $connection->sendAgentStop(HilosAgentType::HILOS_ANALYTICS_JOURNAL);
+        $this->workerLeaves($server, $this->regularKey());
+        $server->advance();
+        $server->advance();
+        $server->advance();
+        $this->assertSame([
+            'sigterm:' . self::PLAIN_WORKER,
+            'agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+        ], StopWavesTestLog::$events);
+
+        new ReflectionProperty(WorkerServer::class, 'clients')->setValue($server, []);
+        $server->advance();
+        $this->assertSame([
+            'sigterm:' . self::PLAIN_WORKER,
+            'agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            'sigterm:' . self::JOURNAL_WORKER,
+        ], StopWavesTestLog::$events);
+    }
+
     public function testShutdownWaitsForTheLastLinkedWorkerConnectionAfterProcessesExit(): void
     {
         $server = $this->buildServer(withJournal: false);
@@ -138,6 +202,24 @@ final class WorkerServerStopWavesTest extends TestCase
         ]);
 
         return $server;
+    }
+
+    /**
+     * @param StopWavesTestWorkerServer $server Server receiving the journal worker's reports
+     * @return StopWavesTestWorkerClient Connection of the held monopolistic worker
+     */
+    private function connectJournalWorker(StopWavesTestWorkerServer $server): StopWavesTestWorkerClient
+    {
+        $connection = new ReflectionClass(StopWavesTestWorkerClient::class)->newInstanceWithoutConstructor();
+        $connection->setWorkerIndex(self::JOURNAL_WORKER);
+        $connection->setIsMonopolistic(true);
+        new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue(
+            $connection,
+            new ReflectionProperty(WorkerServer::class, 'agentManager')->getValue($server),
+        );
+        new ReflectionProperty(WorkerServer::class, 'clients')->setValue($server, [$connection]);
+
+        return $connection;
     }
 
     /**
@@ -209,12 +291,24 @@ final class StopWavesTestWorkerServer extends WorkerServer
 }
 
 /**
- * Worker client that carries nothing but the index it reports.
+ * Worker client whose stop reports are fed through the ordinary frame parser.
  */
 final class StopWavesTestWorkerClient extends WorkerClient
 {
     public function __construct()
     {
+    }
+
+    /**
+     * @param string $agentId Agent reported stopped by the worker
+     * @throws InvalidFormatException When the frame cannot be decoded
+     * @throws InvalidArgumentException When handling a frame cannot name a queued signal
+     * @throws AgentDaemonCreationFailedException When handling a frame cannot create an agent
+     */
+    public function reportAgentStopped(string $agentId): void
+    {
+        $this->readBuffer .= new WorkerAgentStoppedDTO($agentId)->toJson() . "\n";
+        $this->processReadBuffer();
     }
 }
 
