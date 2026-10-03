@@ -197,6 +197,8 @@ that address is the proxy. `HILOS_TRUSTED_PROXIES` names the networks allowed to
 otherwise: a comma-separated list in CIDR notation, a single address written as
 `/32` or `/128`, host names not accepted (resolving one would block the master's
 accept loop). It is empty by default.
+In a cluster, every master lists the shared browser proxy or load balancer in
+`HILOS_TRUSTED_PROXIES`.
 
 There is no wildcard, and `0.0.0.0/0` is not the missing one: it is refused by the
 parse, as is any entry whose prefix is zero bits long — `::/0` and `10.0.0.0/0`

@@ -28,6 +28,11 @@ interface Leadership
     public function leaderId(): ?string;
 
     /**
+     * @return bool True when the current remote leader reported its WebSocket open
+     */
+    public function leaderWebSocketOpen(): bool;
+
+    /**
      * @return bool True when a quorum of masters is currently visible
      */
     public function hasQuorum(): bool;

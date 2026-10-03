@@ -102,7 +102,7 @@ final class ClusterCoordinatorLogTest extends TestCase
     {
         $coordinator = $this->electedLeader(new ConsensusLogTestMesh(self::MASTER_SET));
 
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'c'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(3, 'c', false));
 
         $this->assertSame([
             "Consensus: term 3 adopted from node 'c' (was 1), role follower (was leader)",
@@ -114,7 +114,7 @@ final class ClusterCoordinatorLogTest extends TestCase
     {
         $coordinator = $this->electedLeader(new ConsensusLogTestMesh(self::MASTER_SET));
 
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
 
         $this->assertSame(
             ["Consensus: lost leadership held in term 1: another leader 'b' heartbeats in the same term"],
@@ -155,7 +155,7 @@ final class ClusterCoordinatorLogTest extends TestCase
         $coordinator = $this->followerOf(new ConsensusLogTestMesh(self::MASTER_SET), 'b');
 
         $coordinator->noteNodeOffline('b');
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'c'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'c', false));
         $coordinator->tick(0.6);
         $this->newLines();
 
@@ -196,15 +196,15 @@ final class ClusterCoordinatorLogTest extends TestCase
         $leader->tick(1.5);
         $leader->onVoteReply(new PeerVoteReplyDTO(1, true, 'c'));
         $leader->onVoteReply(new PeerVoteReplyDTO(1, false, 'b'));
-        $leader->onHeartbeat(new PeerHeartbeatDTO(0, 'b'));
-        $leader->onHeartbeat(new PeerHeartbeatDTO(1, 'a'));
+        $leader->onHeartbeat(new PeerHeartbeatDTO(0, 'b', false));
+        $leader->onHeartbeat(new PeerHeartbeatDTO(1, 'a', false));
         $this->assertNotEmpty($mesh->broadcasts, 'Precondition: the leader heartbeated');
         $this->assertSame([], $this->newLines(), 'A leader heartbeating and hearing late or stale frames writes nothing');
 
         $follower = $this->followerOf(new ConsensusLogTestMesh(self::MASTER_SET), 'b');
-        $follower->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $follower->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
         $follower->tick(0.7);
-        $follower->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $follower->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
         $follower->tick(0.9);
 
         $this->assertSame([], $this->newLines(), 'A follower hearing its leader writes nothing');
@@ -239,7 +239,7 @@ final class ClusterCoordinatorLogTest extends TestCase
     {
         $coordinator = $this->coordinator($mesh);
         $coordinator->tick(0.0);
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, $leaderId));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, $leaderId, false));
         $coordinator->tick(0.5);
         $this->assertSame($leaderId, $coordinator->leaderId(), 'Precondition: node follows the leader');
         $this->newLines();

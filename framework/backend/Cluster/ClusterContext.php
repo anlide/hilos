@@ -273,6 +273,20 @@ final class ClusterContext
     }
 
     /**
+     * Records the daemon's WebSocket opening for leader heartbeats.
+     * Outside consensus there is no peer to notify.
+     *
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    public function noteWebSocketOpen(): void
+    {
+        $leadership = $this->leadership();
+        if ($leadership instanceof ClusterCoordinator) {
+            $leadership->noteWebSocketOpen();
+        }
+    }
+
+    /**
      * Resolves the local node's coarse lifecycle phase.
      *
      * Disabled mode is Standalone; otherwise the phase is derived from the

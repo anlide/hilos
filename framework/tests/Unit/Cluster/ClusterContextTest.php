@@ -354,6 +354,12 @@ final class ClusterContextTest extends TestCase
                 return 'node-a';
             }
 
+            /** @return bool This test leader has no remote leader to follow */
+            public function leaderWebSocketOpen(): bool
+            {
+                return false;
+            }
+
             public function hasQuorum(): bool
             {
                 return true;

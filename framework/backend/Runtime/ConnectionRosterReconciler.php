@@ -26,7 +26,8 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  * up and its agents being linked.
  *
  * The cure is at the other end of the window rather than inside it: the master hands each agent
- * start the accept keys it still holds sockets for, and everything the collection has that the
+ * start its local socket keys and keys other nodes hold according to the cluster index.
+ * Everything the collection has that the
  * roster does not is struck out here. That makes the thaw, the restart and the first start one
  * behavior - on a first start the roster is empty and there is nothing to strike, which is the
  * same answer for the same reason.
@@ -44,7 +45,7 @@ final class ConnectionRosterReconciler
      * which is most of them, since the roster rides every agent start and only one agent per
      * node brings connection rows into being and takes them away.
      *
-     * @param list<string> $liveAcceptKeys Accept keys the node still holds sockets for
+     * @param list<string> $liveAcceptKeys Accept keys still held across the cluster
      * @return int Rows struck out
      *
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable

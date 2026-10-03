@@ -7,10 +7,12 @@ namespace Hilos\Tests\Unit\Cluster\Placement;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\PendingLeadership;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -86,6 +88,18 @@ final class ClusterPlacementLocateTest extends TestCase
         $placement = $this->follower(leaderId: self::SELF);
 
         $this->assertSame(AgentLocationKind::Here, $placement->locate('chat', null)->kind);
+    }
+
+    /** A slave follows the leader that placed its work, without a consensus coordinator. */
+    public function testASlaveRoutesToTheLeaderThatPlacedItsAgent(): void
+    {
+        $placement = $this->follower(leaderId: null);
+        Hilos::$cluster?->registerLeadership(new PendingLeadership());
+        $this->assertSame(AgentLocationKind::Unknown, $placement->locate('chat', null)->kind);
+
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+
+        $this->assertSame('node-b', $placement->locate('chat', null)->nodeId);
     }
 
     /**
@@ -237,6 +251,12 @@ final class LocateTestLeadership implements Leadership
     public function leaderId(): ?string
     {
         return $this->leaderId;
+    }
+
+    /** @return bool This placement stub does not model WebSocket readiness */
+    public function leaderWebSocketOpen(): bool
+    {
+        return false;
     }
 
     public function hasQuorum(): bool

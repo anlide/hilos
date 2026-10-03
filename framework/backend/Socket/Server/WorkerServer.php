@@ -1338,9 +1338,9 @@ abstract class WorkerServer extends AbstractServer implements
         // Link agent daemon to selected worker
         $agentDaemon->setWorkerClient($workerClient);
 
-        // Send agent_start signal to worker, with the sockets this node holds open right now:
-        // the agent coming up is the only one entitled to strike out the connection rows left
-        // behind by tabs that closed while it was down (HIL-664).
+        // Send agent_start with live keys from this node's sockets and the cluster index:
+        // the agent coming up may strike rows left by tabs that closed while it was down,
+        // but must keep rows for browsers attached to another master (HIL-664, HIL-1304).
         $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? []);
     }
 

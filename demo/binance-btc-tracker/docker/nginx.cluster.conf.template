@@ -1,0 +1,117 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    upstream hilos_ws_m1 { server 10.221.0.11:8092; }
+    upstream hilos_ws_m2 { server 10.221.0.12:8092; }
+    upstream hilos_ws_m3 { server 10.221.0.13:8092; }
+    upstream hilos_ws_masters {
+        server 10.221.0.11:8092;
+        server 10.221.0.12:8092;
+        server 10.221.0.13:8092;
+    }
+
+    upstream hilos_http_m1 { server 10.221.0.11:8090; }
+    upstream hilos_http_m2 { server 10.221.0.12:8090; }
+    upstream hilos_http_m3 { server 10.221.0.13:8090; }
+    upstream hilos_http_masters {
+        server 10.221.0.11:8090;
+        server 10.221.0.12:8090;
+        server 10.221.0.13:8090;
+    }
+
+    map $cookie_hilos_stand_master $hilos_stand_ws {
+        '' hilos_ws_masters;
+        m1 hilos_ws_m1;
+        m2 hilos_ws_m2;
+        m3 hilos_ws_m3;
+        default '';
+    }
+
+    map $cookie_hilos_stand_master $hilos_stand_http {
+        '' hilos_http_masters;
+        m1 hilos_http_m1;
+        m2 hilos_http_m2;
+        m3 hilos_http_m3;
+        default '';
+    }
+
+    sendfile on;
+    keepalive_timeout 65;
+
+    server {
+        listen 80;
+        server_name localhost;
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name localhost;
+        root /srv/frontend/dist;
+
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/plain text/css text/xml text/javascript application/javascript application/json;
+
+        rewrite ^(.+)/$ $1 permanent;
+
+        location = /robots.txt { try_files $uri =404; }
+        location = /sitemap.xml { try_files $uri =404; }
+
+        location /assets/ {
+            try_files $uri =404;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+        location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
+            try_files $uri =404;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+
+        location = /_hilos/data-export {
+            if ($hilos_stand_http = '') { return 421; }
+            proxy_pass http://$hilos_stand_http;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            add_header X-Hilos-Stand-Master $upstream_addr always;
+        }
+        location ^~ /__hilos_data_export/ {
+            internal;
+            alias /data_export/;
+        }
+
+        location /ws {
+            if ($hilos_stand_ws = '') { return 421; }
+            proxy_pass http://$hilos_stand_ws;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_read_timeout 3600s;
+            add_header X-Hilos-Stand-Master $upstream_addr always;
+        }
+
+        location = / { try_files /index.html =404; }
+        location / { try_files $uri $uri.html /index.html; }
+
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+    }
+}

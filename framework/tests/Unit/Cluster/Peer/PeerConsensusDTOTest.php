@@ -57,13 +57,14 @@ final class PeerConsensusDTOTest extends TestCase
 
     public function testHeartbeatRoundTripsThroughTheWire(): void
     {
-        $frame = new PeerHeartbeatDTO(9, 'node-a');
+        $frame = new PeerHeartbeatDTO(9, 'node-a', true);
 
         $parsed = PeerDTO::fromWire($frame->toJson());
 
         $this->assertInstanceOf(PeerHeartbeatDTO::class, $parsed);
         $this->assertSame(9, $parsed->term);
         $this->assertSame('node-a', $parsed->leaderId);
+        $this->assertTrue($parsed->webSocketOpen);
     }
 
     public function testRequestVoteRejectsMissingCandidateId(): void
@@ -94,6 +95,13 @@ final class PeerConsensusDTOTest extends TestCase
         $this->expectException(PeerTransportException::class);
 
         PeerDTO::fromWire('{"type":"peer_heartbeat","leaderId":"node-a"}');
+    }
+
+    public function testHeartbeatRejectsAFrameWithoutWebSocketReadiness(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire('{"type":"peer_heartbeat","term":1,"leaderId":"node-a"}');
     }
 
     public function testRequestVoteRejectsAFrameWithoutItsTerm(): void

@@ -161,6 +161,10 @@ it never comes up with the rest. All of them share one MariaDB and one schema,
 on the subnet 10.221, and nothing is published on the host. It is a compose
 project of its own, `hilos-binance-btc-tracker-cluster`, because the e2e steps
 take their whole project down when they start.
+The one nginx entry is `10.221.0.30` inside the stand network, unpublished on the
+host. `hilos_stand_master=m1|m2|m3` selects the master behind it; without the cookie
+nginx rotates over the masters, and an unknown name returns 421. The response header
+`X-Hilos-Stand-Master` carries the responding master's upstream address.
 The nodes' `data_export` is one volume of this stand, shared by every node,
 rather than the demo's host directory used by the local and test stacks.
 
@@ -172,7 +176,7 @@ re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
 refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on
 every master, 25 freeze settles on every master, 29 a node with its own cluster
 directory refused on both ends, and 30 a ready export copy outliving the node
-its agent lived on (`docs/agents/testing.md`, "The cluster stands — three demos,
+its agent lived on, and 33 every master takes browsers (`docs/agents/testing.md`, "The cluster stands — three demos,
 three shapes").
 The framework's probe fleet and runtime-set probe are in this demo's `AGENTS`,
 and they start only here: on one node, on the Playwright stand and in

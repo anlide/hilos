@@ -2300,6 +2300,95 @@ def scenario_25_freeze_settles_on_every_master():
             f"and the close answered only once each had stopped again what the entry stopped")
 
 
+def scenario_33_every_master_takes_browsers():
+    """Every master admits browsers, and an agent restart keeps a remote socket's row (HIL-1304)."""
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    follower = next(node for node in MASTERS if node != leader)
+    term = views[leader].get("term")
+    held_key = None
+    cookie_responders = []
+    round_robin_responders = set()
+
+    try:
+        for master in MASTERS:
+            answer = ctl_out("entry-upgrade", master)
+            assert answer == f"101 {master}", f"entry cookie {master} reached {answer!r}, expected 101 {master}"
+            cookie_responders.append(master)
+
+        for _ in range(6):
+            answer = ctl_out("entry-upgrade")
+            code, _, responder = answer.partition(" ")
+            assert code == "101" and responder in MASTERS, f"entry without cookie reached {answer!r}"
+            round_robin_responders.add(responder)
+        assert len(round_robin_responders) >= 2, \
+            f"six cookie-free upgrades reached only {sorted(round_robin_responders)}"
+
+        for slave in SLAVES:
+            answer = ctl_out("direct-upgrade", slave)
+            assert answer == "refused", f"slave {slave} accepted or mishandled a WebSocket: {answer!r}"
+
+        def probes_closed(current):
+            return not rt_rows(current, leader, "connections") and \
+                all(indexed_for(current, leader, master) == 0 for master in MASTERS)
+
+        views = wait_until(probes_closed, CONVERGE_TIMEOUT, "one-shot browser sockets close")
+        before = set(rt_rows(views, leader, "connections"))
+        assert control.execute(STAND, "entry-hold", follower, "up").code == 0, \
+            f"could not hold a browser socket on {follower}"
+
+        def held_socket_indexed(current):
+            added = set(rt_rows(current, leader, "connections")) - before
+            return len(added) == 1 and indexed_for(current, leader, follower) >= 1
+
+        views = wait_until(held_socket_indexed, CONVERGE_TIMEOUT,
+                           f"one browser on {follower} appears in {leader}'s rows and index")
+        held_key = next(iter(set(rt_rows(views, leader, "connections")) - before))
+
+        entered = client_out(leader, "test:protected-mode:enter", SETTLE_OPERATION)
+        assert entered is not None, f"the index agent on {leader} refused the freeze"
+        wait_protected_mode(lambda row: row.get("phase") == "active", "every master frozen")
+        wait_until(lambda current: rt_collection(current, leader, "connections").get("owned") is False,
+                   CONVERGE_TIMEOUT, f"the connection owner on {leader} stopped under the freeze")
+
+        # The test driver uses the same three-step contract as production: enter freezes,
+        # leave reaches the verification window, and open lifts it (HIL-1304 Data Result
+        # abbreviates this drive to enter -> open, which the driver refuses).
+        assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not leave the freeze"
+        wait_protected_mode(lambda row: row.get("phase") == "verifying", "every master verifying")
+        assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not lift the freeze"
+        wait_protected_mode(lambda row: row.get("phase") == "inactive", "every master open again")
+
+        def owner_restarted_with_row(current):
+            return rt_collection(current, leader, "connections").get("owned") is True and \
+                held_key in rt_rows(current, leader, "connections")
+
+        wait_until(owner_restarted_with_row, CONVERGE_TIMEOUT,
+                   f"connection {held_key} survives its owning agent's restart on {leader}")
+
+        assert control.execute(STAND, "entry-hold", follower, "down").code == 0, \
+            f"could not close the held socket on {follower}"
+        wait_until(lambda current: held_key not in rt_rows(current, leader, "connections"),
+                   CONVERGE_TIMEOUT, f"connection {held_key} closes after its socket leaves")
+    finally:
+        control.execute(STAND, "entry-hold", follower, "down")
+        now = inspect_all(MASTERS)
+        current_leaders = leaders(now)
+        moved = current_leaders != [leader] or (now.get(leader) or {}).get("term") != term
+        if moved:
+            print(f"  leadership moved from {leader} (term {term}) to {current_leaders} "
+                  f"(terms {[now[node].get('term') for node in current_leaders]}) under the freeze (P-459)")
+        replies = {node: protected_mode(node) for node in MASTERS}
+        if any(row is None or row.get("phase") != "inactive" for row in replies.values()):
+            client(leader, "test:protected-mode:open")
+        wait_converge(ALL_NODES)
+        if moved:
+            raise AssertionError(f"leadership changed from {leader} under the freeze (P-459)")
+
+    return (f"cookies reached {', '.join(cookie_responders)}; no cookie reached "
+            f"{len(round_robin_responders)} masters; {held_key} on {follower} survived the freeze on {leader}")
+
+
 # What a master writes when it loses its quorum while it carries placed work, when it arms its fence
 # and when the fence fires (ClusterPlacement::noteQuorumLost() and selfFence(),
 # framework/backend/Cluster/Placement/ClusterPlacement.php, HIL-1217); the fired line carries its
@@ -2600,11 +2689,12 @@ def scenario_26_database_is_one_cluster():
 
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
-                     "cluster_directory", defaults=(0, 0, False, False, 0, False, 0, False))):
+                     "cluster_directory entry", defaults=(0, 0, False, False, 0, False, 0, False, False))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every
     master declaring ram - masters that carry placed work themselves - and a database of at
-    least `database_members` members, and a cluster directory the stand names. What a scenario
+    least `database_members` members, a cluster directory, and a browser entry the stand names.
+    What a scenario
     names by role - the third master, the second slave - is what it needs."""
 
 
@@ -2667,6 +2757,8 @@ SCENARIOS = [
     # here must not leave its neighbours in the matrix running against a frozen stand.
     Scenario("23 verifier circle on every master", scenario_23_verifier_circle_on_every_master, Need(masters=2)),
     Scenario("25 freeze settles on every master", scenario_25_freeze_settles_on_every_master, Need(masters=2)),
+    Scenario("33 every master takes browsers", scenario_33_every_master_takes_browsers,
+             Need(masters=2, slaves=1, entry=True)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the
@@ -2776,6 +2868,8 @@ def unmet_need(stand, scenario):
         return "it needs a stranger, the stand has none"
     if need.cluster_directory and stand.cluster_directory is None:
         return "it needs a cluster directory, the stand names none"
+    if need.entry and stand.entry is None:
+        return "it needs a browser entry, the stand names none"
     if need.slave_ram and not any(stand.members[s].ram for s in stand.slaves):
         return "it needs a slave that declares ram, the stand has none"
     if need.master_ram:

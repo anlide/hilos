@@ -61,6 +61,17 @@ final class ClusterClientLocation implements ClientLocation
     }
 
     /**
+     * Names the accept keys the index attributes to other nodes. An agent starting
+     * on this node must keep their connection rows during roster reconciliation.
+     *
+     * @return list<string> Remote accept keys currently known to the cluster index
+     */
+    public function remoteAcceptKeys(): array
+    {
+        return array_keys($this->nodeByAcceptKey);
+    }
+
+    /**
      * Replaces everything this index holds for one node with the set that node just announced.
      *
      * Replacement rather than merge, exactly as an RT snapshot is: the announcing node is the

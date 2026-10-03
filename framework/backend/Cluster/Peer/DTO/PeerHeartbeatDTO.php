@@ -15,6 +15,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  * master set is read from the membership registry, not from acknowledgements. A
  * recipient seeing a term at least as new as its own accepts the sender as leader
  * and refreshes its election timer; a newer term makes it step down and adopt it.
+ * The leader also reports whether its WebSocket is open, so follower masters can
+ * open their own browser entry after the leader is ready (HIL-1304).
  */
 final class PeerHeartbeatDTO extends PeerDTO
 {
@@ -27,13 +29,18 @@ final class PeerHeartbeatDTO extends PeerDTO
     /** @var string Payload key: leader node id */
     public const string FIELD_LEADER_ID = 'leaderId';
 
+    /** @var string Payload key: whether the leader accepts browsers */
+    public const string FIELD_WEB_SOCKET_OPEN = 'webSocketOpen';
+
     /**
      * @param int $term Leader current term
      * @param string $leaderId Leader node id
+     * @param bool $webSocketOpen Whether the leader's WebSocket is open
      */
     public function __construct(
         public readonly int $term,
         public readonly string $leaderId,
+        public readonly bool $webSocketOpen,
     ) {
     }
 
@@ -58,6 +65,7 @@ final class PeerHeartbeatDTO extends PeerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_TERM => $this->term,
             self::FIELD_LEADER_ID => $this->leaderId,
+            self::FIELD_WEB_SOCKET_OPEN => $this->webSocketOpen,
         ];
     }
 
@@ -71,13 +79,14 @@ final class PeerHeartbeatDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the term or the leader id is missing
+     * @throws PeerTransportException When a required heartbeat field is missing or malformed
      */
     public static function fromArray(array $data): static
     {
         try {
             $term = self::requireInt($data, self::FIELD_TERM);
             $leaderId = trim(self::requireString($data, self::FIELD_LEADER_ID));
+            $webSocketOpen = self::requireBool($data, self::FIELD_WEB_SOCKET_OPEN);
         } catch (InvalidFormatException $exception) {
             throw new PeerTransportException(
                 'Peer heartbeat frame is malformed: ' . $exception->getMessage(),
@@ -93,6 +102,7 @@ final class PeerHeartbeatDTO extends PeerDTO
         return new static(
             term: $term,
             leaderId: $leaderId,
+            webSocketOpen: $webSocketOpen,
         );
     }
 }

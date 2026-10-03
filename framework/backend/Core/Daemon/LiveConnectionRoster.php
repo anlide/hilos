@@ -8,10 +8,10 @@ use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 
 /**
- * LiveConnectionRoster - master-side seam that names the node's live WebSocket connections.
+ * LiveConnectionRoster - master-side seam that names live WebSocket connections across the cluster.
  *
- * The sockets live in the master process, so the only place that can answer "who is still
- * on the wire right now" is the daemon. The {@see DaemonManager} implements this and is
+ * Local sockets live in the master process and remote keys are mirrored in the cluster
+ * connection index, so the daemon combines both. The {@see DaemonManager} implements this and is
  * wired into the {@see WorkerServer} at registration, the same way {@see ConnectionDropper}
  * is wired into the {@see WebSocketServer}, so the server that starts agents does not depend
  * on the concrete manager.
@@ -25,12 +25,12 @@ use Hilos\Socket\Server\WorkerServer;
 interface LiveConnectionRoster
 {
     /**
-     * Names the accept keys of the WebSocket connections this node holds open.
+     * Names local socket keys and keys the cluster index attributes to other nodes.
      *
      * A connection that has not finished its handshake carries no accept key yet and is not
      * named: it has no runtime row either, so there is nothing about it to reconcile.
      *
-     * @return list<string> Accept keys live at the moment of the call, empty when the node holds no socket
+     * @return list<string> Accept keys known live at the moment of the call
      */
     public function liveAcceptKeys(): array;
 }

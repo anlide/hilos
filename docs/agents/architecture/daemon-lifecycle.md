@@ -83,7 +83,7 @@
    It never refuses the start: a latch it cannot read keeps the mode off with an ERROR
    ([admin-view-mode.md](admin-view-mode.md), *The Switch And Its Prod Latch*).
 11. `daemon->run()` → creates `EventLoop`, sets up error/signal handlers, enters main loop
-12. WebSocket server starts **only after** the required startup agents finish `onStart` (see below); with none declared it opens as soon as `WORKERS_READY`
+12. WebSocket opens on every cluster master and never on a slave; the leader waits for required startup agents, while follower masters wait for the leader's open-WebSocket heartbeat (see below)
 
 ## Container watchdog and crash recovery (HIL-450)
 
@@ -225,12 +225,15 @@ placements again — with the same container id.
 
 ## WebSocket readiness gate
 
-The WebSocket server opens only after the agents a project declares in
+The leader's WebSocket opens only after the agents a project declares in
 `DaemonManager::getRequiredReadinessAgents()` have finished `onStart` (reported
-`agent_started`). Default is empty — the socket opens as soon as `WORKERS_READY`.
-A `$readinessTimeout` (seconds, `null` = wait forever) opens the socket degraded if
-the agents never report; while pending, the daemon warns once per minute with the
-missing agent ids.
+`agent_started`). Default is empty — it opens as soon as `WORKERS_READY`.
+On a cluster, each follower master waits for its own workers and the current
+leader's heartbeat with `webSocketOpen=true`; it does not wait for the leader's
+agents on its own node. A slave never opens a WebSocket. A `$readinessTimeout`
+(seconds, `null` = wait forever) opens a master's socket degraded if its gate
+does not clear. While pending, the daemon logs once per minute. Once open, a
+WebSocket stays open, including after the node loses leadership.
 
 ## Main loop (each iteration)
 
@@ -238,10 +241,10 @@ missing agent ids.
 processEventLoop()     ← epoll: accept connections, read data
 servers->onTick()      ← process buffered client data
 dispatchRoleTick()     ← per-iteration hook for the current node lifecycle phase
-if amLeader():         ← leader (or standalone); a follower skips all three
+if amLeader():         ← leader (or standalone); a follower skips both singleton start and cron
   ensureSingletonsStarted()  ← start cluster-singleton agents once per term, and again after a worker dies with agents
-  tickReadiness()            ← open the WS once required startup agents are ready
   checkCronJobs()            ← once per minute, after workers ready
+tickReadiness()       ← every node; a slave never opens, a follower waits for its leader's word
 dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
 Hilos::$ac->tick()     ← analytics flush
 pcntl_signal_dispatch()
@@ -557,8 +560,9 @@ The marker lives in the master's memory from here on; the handshake touches no d
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
 markers by kind: `database`, and `directory:<name>` for every cluster directory of `$fs`
 (*Cluster directories* below). The field is required, and
-`PeerProtocol::VERSION` was raised to `9` for these markers and is `10` today after
-HIL-1297 added initiator identity to six protected-mode frames. A node of the previous
+`PeerProtocol::VERSION` was raised to `9` for these markers, to `10` when HIL-1297
+added initiator identity, and to `11` when HIL-1304 added WebSocket readiness to
+the leader heartbeat. A node of the previous
 protocol and a node of this one do not link, with the line about the version.
 The accepting side on a hello and the dialing side on a welcome check, in order:
 the protocol version, the certificate name,
@@ -657,10 +661,10 @@ replicated log or state machine.
 ## Role-based singleton duties (HIL-340)
 
 Singleton duties run on **exactly one node cluster-wide** — the leader, or the sole
-node when cluster mode is off. Each main-loop iteration the daemon gates them behind
-`amLeader()` (`Hilos::$cluster->amLeader()`, which is true for a `StandaloneLeadership`
-daemon), so a standalone daemon is unchanged and a clustered follower runs none of
-them:
+node when cluster mode is off. Each main-loop iteration the daemon gates singleton
+agent start and cron behind `amLeader()` (`Hilos::$cluster->amLeader()`, which is true
+for a `StandaloneLeadership` daemon). WebSocket admission follows the separate
+readiness rule above:
 
 - **Cluster-singleton agents.** `ensureSingletonsStarted()` is an ensure-once for the
   "leader AND local workers ready" start condition (the two arrive in any order). The
@@ -673,9 +677,10 @@ them:
   overrides it to start its own cluster-singletons (e.g. one agent per active bot).
   `WorkerServer::onInitialWorkersReady()` is now a per-node "local workers up" hook
   only and no longer starts singletons.
-- **WebSocket.** A follower does not open its WebSocket (`tickReadiness()` is inside
-  the gate), so browsers never reach a non-leader until cross-node routing exists
-  (HIL-180). On promotion the socket opens and duties start.
+- **WebSocket.** Every master accepts browsers (HIL-1304); a slave never does.
+  HIL-340's leader-only gate was lifted after cross-node routing arrived in
+  HIL-180 and HIL-668. In production, put only masters in the load balancer's
+  upstream and list that shared proxy in `HILOS_TRUSTED_PROXIES` on each master.
 - **Cron.** `checkCronJobs()` runs only inside the gate.
 
 **The placement gate.** Where an agent may run is declared once, in its `Hilos::AGENTS`

@@ -340,7 +340,7 @@ scenario on a single shape retires (not in the code yet — HIL-1218).
 
 | Demo | View | Hilos cluster | MySQL | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 33 every master takes browsers |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and a replica behind one address (not in the code yet — HIL-1229) | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node (parked, P-441/1) |
 | online-testing | Angular | three equal masters that host work themselves | a MariaDB Galera of three members behind one HAProxy address, every member written to, reads waiting for the cluster's writes | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 26 the database is one cluster of every member, the application connected to each; a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231) |
 
@@ -382,7 +382,8 @@ no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
 `CLUSTER_NODE_ID`, and its container, address, role, `ram` and log directory
 are read off that service — what the node itself reads. What compose cannot
 say stands in a top-level `x-hilos-cluster` block of the same file: `cli`, the
-service commands to the nodes go through; `stranger`, the node under a profile
+service commands to the nodes go through; `entry`, the one browser-facing service
+shared by the masters (optional); `stranger`, the node under a profile
 that a scenario raises on its own (optional); `cluster-directory`, the name and
 in-container path of a cluster directory of the stand's `$fs`, which scenario 29
 gives one node a copy of its own (optional); `scenarios`, the numbers the
@@ -423,6 +424,8 @@ at once on an empty database — which is what scenario 21 reads.
 The Playwright suite of binance-btc-tracker drives the backup, logs and
 protected-mode specs against the multi-node binance stand, with the browser
 open on a node that does not hold the agent (not in the code yet — HIL-1232).
+The browser enters through the stand's one nginx entry, where the
+`hilos_stand_master` cookie selects a master (HIL-1304).
 
 The full run carries three fleets now instead of one. An e2e step may stand
 beside any of them in the lane plan: nothing keeps them apart, and each fleet

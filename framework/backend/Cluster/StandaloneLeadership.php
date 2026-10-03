@@ -30,6 +30,14 @@ final class StandaloneLeadership implements Leadership
     }
 
     /**
+     * @return bool Always false: a standalone daemon follows no remote leader
+     */
+    public function leaderWebSocketOpen(): bool
+    {
+        return false;
+    }
+
+    /**
      * @return bool Always true: a single node is a trivial quorum
      */
     public function hasQuorum(): bool

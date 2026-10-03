@@ -841,9 +841,9 @@ abstract class DaemonManager extends BaseManager implements
             // Dispatch the per-iteration hook for the current node lifecycle phase
             $this->dispatchRoleTick();
 
-            // Singleton duties run on exactly one node cluster-wide: the leader, or the
-            // sole node when cluster mode is off. A follower starts no cluster-singleton
-            // agents, runs no cron, and keeps its WebSocket closed until it is promoted.
+            // Singleton duties run on the leader, or the sole node outside the cluster.
+            // A follower starts no cluster-singleton agents and runs no cron. Each master's
+            // WebSocket follows the role-specific readiness rule below.
             if ($this->amLeader()) {
                 // Start this node's cluster-singleton agents once per term, and again after a worker dies with agents
                 $this->ensureSingletonsStarted();
@@ -858,9 +858,6 @@ abstract class DaemonManager extends BaseManager implements
                 // pool's size is the framework's. Empty where the fleet is not listed (HIL-1211).
                 $this->probeFleetSupervisor->tick();
 
-                // Open the WebSocket server once the required startup agents are ready
-                $this->tickReadiness();
-
                 // Check cron jobs (not more than once per minute)
                 $this->checkCronJobs();
 
@@ -869,6 +866,9 @@ abstract class DaemonManager extends BaseManager implements
                 // produce one alert per node. It never lifts anything (HIL-482).
                 $this->protectedModeWatchdog->tick(time());
             }
+
+            // Every master may accept browsers; a slave never opens its WebSocket.
+            $this->tickReadiness();
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
@@ -1520,7 +1520,8 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Names the accept keys of the WebSocket connections this node holds open.
+     * Names live accept keys across the cluster: local sockets and connections
+     * the cluster index attributes to other nodes.
      *
      * Implements {@see LiveConnectionRoster}. The walk is the one
      * {@see dropWebSocketConnection()} makes, stopping at the accept key instead of closing
@@ -1531,7 +1532,7 @@ abstract class DaemonManager extends BaseManager implements
      * constructed with, and is left out - it is not a connection anyone could have a runtime
      * row for.
      *
-     * @return list<string> Accept keys live at the moment of the call, empty when the node holds no socket
+     * @return list<string> Accept keys known live at the moment of the call
      */
     public function liveAcceptKeys(): array
     {
@@ -1548,7 +1549,10 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
 
-        return $acceptKeys;
+        return array_keys(array_fill_keys(array_merge(
+            $acceptKeys,
+            Hilos::$cluster?->clientConnections()?->remoteAcceptKeys() ?? [],
+        ), true));
     }
 
     /**
@@ -2094,8 +2098,8 @@ abstract class DaemonManager extends BaseManager implements
      * Agent ids whose onStart must finish before the WebSocket server opens.
      *
      * Default is empty: the WebSocket server opens as soon as the workers are ready. A project
-     * overrides this to gate the socket on its critical startup agents, so no connection is
-     * accepted before those agents have built their state.
+     * overrides this to gate the leader's socket on its critical startup agents. A follower
+     * master waits for the leader's open-WebSocket heartbeat instead of reading this list.
      *
      * @return list<string> Agent ids to wait for; empty opens the socket as soon as workers are ready
      */
@@ -2105,11 +2109,12 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Opens the WebSocket server once the required startup agents are ready.
+     * Opens a master's WebSocket once its role-specific readiness condition holds.
      *
      * Runs every main-loop iteration after the workers are ready. Opens the socket when every
-     * required agent has reported agent_started; while they are pending it logs at most once per
-     * READINESS_LOG_INTERVAL, and opens the socket degraded once readinessTimeout elapses.
+     * leader agent has reported agent_started. A follower instead waits for the current
+     * leader's heartbeat saying its WebSocket is open. Either path logs at most once per
+     * READINESS_LOG_INTERVAL and opens degraded once readinessTimeout elapses. A slave never opens.
      *
      * @throws SocketException When opening the WebSocket server fails; a daemon without its only
      *     client entry point must not keep running
@@ -2120,11 +2125,21 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
+        $state = $this->resolveLifecycleState();
+        if ($state === NodeLifecycleState::Slave) {
+            return;
+        }
+
+        if ($state === NodeLifecycleState::MasterFollowerOrCandidate
+            || $state === NodeLifecycleState::MasterNoQuorum) {
+            $this->tickFollowerWebSocketReadiness();
+            return;
+        }
+
         $pending = $this->pendingReadinessAgents();
 
         if ($pending === []) {
-            $this->startWebSocketServer();
-            $this->webSocketStarted = true;
+            $this->openReadyWebSocket();
             return;
         }
 
@@ -2136,12 +2151,60 @@ abstract class DaemonManager extends BaseManager implements
                 $waited,
                 implode(', ', $pending),
             ));
-            $this->startWebSocketServer();
-            $this->webSocketStarted = true;
+            $this->openReadyWebSocket();
             return;
         }
 
         $this->logReadinessStuck($pending, $waited);
+    }
+
+    /**
+     * Waits for the current leader's open-WebSocket heartbeat, with the normal timeout.
+     *
+     * @throws SocketException When opening the WebSocket server fails
+     */
+    private function tickFollowerWebSocketReadiness(): void
+    {
+        if (Hilos::$cluster?->leadership()->leaderWebSocketOpen() === true) {
+            $this->openReadyWebSocket();
+            return;
+        }
+
+        $waited = microtime(true) - ($this->readinessWaitSince ?? microtime(true));
+        $leaderId = Hilos::$cluster?->leadership()->leaderId() ?? 'none';
+        if ($this->readinessTimeout !== null && $waited >= $this->readinessTimeout) {
+            Logger::error(sprintf(
+                'WebSocket readiness timed out after %.0fs; opening degraded, the leader never said its WebSocket is open (leader: %s)',
+                $waited,
+                $leaderId,
+            ));
+            $this->openReadyWebSocket();
+            return;
+        }
+
+        $lastLog = $this->lastReadinessLogAt ?? $this->readinessWaitSince ?? microtime(true);
+        if (microtime(true) - $lastLog < self::READINESS_LOG_INTERVAL) {
+            return;
+        }
+
+        $this->lastReadinessLogAt = microtime(true);
+        Logger::error(sprintf(
+            'WebSocket not opened: waited %.0fs for the leader to open its WebSocket (leader: %s)',
+            $waited,
+            $leaderId,
+        ));
+    }
+
+    /**
+     * Opens once and records the fact for any future leader heartbeat.
+     *
+     * @throws SocketException When opening the WebSocket server fails
+     */
+    private function openReadyWebSocket(): void
+    {
+        $this->startWebSocketServer();
+        $this->webSocketStarted = true;
+        Hilos::$cluster?->noteWebSocketOpen();
     }
 
     /**
@@ -6561,7 +6624,7 @@ abstract class DaemonManager extends BaseManager implements
      * Per-iteration hook for a clustered master that holds leadership.
      *
      * A project override point for leader-only per-loop logic. The framework's own
-     * leader duties (cluster-singleton start, cron, WebSocket readiness) are gated on
+     * leader duties (cluster-singleton start and cron) are gated on
      * {@see amLeader()} in the main loop rather than here, so they also cover the
      * standalone phase; the default is a no-op.
      */
@@ -6699,6 +6762,7 @@ abstract class DaemonManager extends BaseManager implements
      * replica was never tied to it. A project
      * may override to add its own teardown, calling parent::onLostLeadership() first.
      * Runs on the daemon master loop, so overrides must stay non-blocking.
+     * An opened WebSocket stays open, so a former leader accepts browsers like any master.
      *
      * @param int $term Election term in which leadership was held and then lost
      */

@@ -9,6 +9,7 @@ of the same file:
 
   x-hilos-cluster:
     cli: <the service whose container `docker exec` sends commands to the nodes through>
+    entry: <the service of the stand's one browser entry; optional>
     stranger: <CLUSTER_NODE_ID of the node under a profile a scenario raises; optional>
     cluster-directory: {name: <the directory's name in $fs>, path: <its path inside a node's container>}
       optional: a cluster directory of the stand's project, which scenario 29 gives one node a
@@ -101,6 +102,14 @@ class ClusterDirectory:
 
 
 @dataclass(frozen=True)
+class Entry:
+    """One browser entry shared by the masters of a stand."""
+    service: str
+    container: str
+    ip: str
+
+
+@dataclass(frozen=True)
 class Stand:
     """A cluster stand: its compose project, the nodes it starts, and what it carries."""
     compose: Path
@@ -109,6 +118,8 @@ class Stand:
     cli_service: str
     cli_container: str
     cli_profiles: tuple
+    # One browser entry shared by the masters, or None on a headless stand.
+    entry: Entry | None
     # The nodes that come up with the stand, by id.
     members: dict
     masters: list
@@ -198,6 +209,7 @@ def stand_from_config(shown, compose, config):
                                "which is not a node under a profile")
 
     members = {node_id: node for node_id, node in sorted(nodes.items()) if node.profile is None}
+    entry = _entry(shown, block, services, network_keys)
     database = _database(shown, project, services)
     return Stand(
         compose=compose,
@@ -206,6 +218,7 @@ def stand_from_config(shown, compose, config):
         cli_service=cli,
         cli_container=cli_container,
         cli_profiles=tuple(services[cli].get("profiles") or ()),
+        entry=entry,
         members=members,
         masters=[node_id for node_id, node in members.items() if node.role == ROLE_MASTER],
         slaves=[node_id for node_id, node in members.items() if node.role == ROLE_SLAVE],
@@ -216,6 +229,24 @@ def stand_from_config(shown, compose, config):
         database=database,
         database_members=_database_members(shown, project, services, database),
     )
+
+
+def _entry(shown, block, services, network_keys):
+    """Resolve the optional browser entry on the same network as the cluster nodes."""
+    service = block.get("entry")
+    if service is None:
+        return None
+    spec = services.get(service)
+    if spec is None:
+        raise StandRefused(f"{shown}: {BLOCK}.entry names {service}, which is not a service")
+    container = spec.get("container_name")
+    if not container:
+        _lacks(shown, service, "container_name")
+    addresses = {key: value.get("ipv4_address") for key, value in (spec.get("networks") or {}).items()
+                 if isinstance(value, dict) and value.get("ipv4_address")}
+    if len(addresses) != 1 or next(iter(addresses)) not in network_keys:
+        raise StandRefused(f"{shown}: {BLOCK}.entry must have one address on the node network")
+    return Entry(service, container, next(iter(addresses.values())))
 
 
 def _node(shown, service, spec, node_id):

@@ -57,6 +57,12 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     /** @var ?string Node id this node currently recognises as leader, or null when none */
     private ?string $currentLeaderId = null;
 
+    /** @var ?string Leader whose open WebSocket this node last heard about */
+    private ?string $webSocketOpenLeaderId = null;
+
+    /** @var bool Whether this node has opened its WebSocket; never reset after opening */
+    private bool $webSocketOpen = false;
+
     /** @var float Microtime after which a follower/candidate starts (or restarts) an election */
     private float $electionDeadline = 0.0;
 
@@ -101,6 +107,22 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     public function leaderId(): ?string
     {
         return $this->currentLeaderId;
+    }
+
+    /**
+     * @return bool True when the current remote leader reported its WebSocket open
+     */
+    public function leaderWebSocketOpen(): bool
+    {
+        return $this->role !== ConsensusRole::Leader
+            && $this->currentLeaderId !== null
+            && $this->webSocketOpenLeaderId === $this->currentLeaderId;
+    }
+
+    /** Records the local WebSocket opening for every later leader heartbeat. */
+    public function noteWebSocketOpen(): void
+    {
+        $this->webSocketOpen = true;
     }
 
     /**
@@ -256,6 +278,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         $this->currentLeaderId = $frame->leaderId;
+        $this->webSocketOpenLeaderId = $frame->webSocketOpen ? $frame->leaderId : null;
         $this->deferElectionReset = true;
     }
 
@@ -389,7 +412,11 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         if ($now >= $this->heartbeatDueAt) {
-            $this->mesh->broadcastToMasters(new PeerHeartbeatDTO($this->currentTerm, $this->config->selfNodeId));
+            $this->mesh->broadcastToMasters(new PeerHeartbeatDTO(
+                $this->currentTerm,
+                $this->config->selfNodeId,
+                $this->webSocketOpen,
+            ));
             $this->heartbeatDueAt = $now + $this->config->heartbeatIntervalMs / TimeConstants::MS_PER_SECOND;
         }
     }

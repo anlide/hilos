@@ -18,6 +18,8 @@ print as they go.
 
 import json
 import os
+import re
+import shlex
 import subprocess
 from collections import namedtuple
 
@@ -96,7 +98,7 @@ def _freeze_files(stand):
 
 
 def up(stand, prog):
-    """Build every image, clear the last run's freezes, start the members and the cli container."""
+    """Build every image, clear freezes, and start members, entry and CLI containers."""
     freeze_files = _freeze_files(stand)
     ensure_env(stand)
     print("cluster: building images...", flush=True)
@@ -118,6 +120,8 @@ def up(stand, prog):
     # starts whatever the members depend on.
     print(f"cluster: starting {len(stand.members)} nodes and the cli container...", flush=True)
     services = [node.service for node in stand.members.values()]
+    if stand.entry is not None:
+        services.append(stand.entry.service)
     code = compose(stand, *_cli_profiles(stand), "up", "-d", *services, stand.cli_service, capture=False)
     if code != 0:
         return code
@@ -165,6 +169,68 @@ def client(stand, node_id, *args):
     node = stand.member(node_id)
     return _run(["docker", "exec", "-e", f"HILOS_DAEMON_HOST={node.ip}", stand.cli_container,
                  *CLI_ENTRY, *args])
+
+
+def _upgrade_curl(url, cookie=None, seconds=3):
+    """The browser upgrade request shared by the one-shot and held-socket commands."""
+    args = ["curl", "--http1.1", "-k", "-sS", "-D", "-", "-o", "/dev/null", "--max-time", str(seconds),
+            "-H", "Connection: Upgrade", "-H", "Upgrade: websocket",
+            "-H", "Sec-WebSocket-Version: 13", "-H", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="]
+    if cookie is not None:
+        args.extend(["-H", f"Cookie: hilos_stand_master={cookie}"])
+    return [*args, url]
+
+
+def _upgrade_status(raw):
+    """The HTTP status and stand upstream address from curl's response headers."""
+    statuses = re.findall(r"^HTTP/1\.[01] (\d{3})", raw, re.M)
+    upstream = re.findall(r"^X-Hilos-Stand-Master:\s*([^\r\n]+)", raw, re.I | re.M)
+    return (int(statuses[-1]) if statuses else None,
+            upstream[-1].strip() if upstream else None)
+
+
+def entry_upgrade(stand, master=None):
+    """Upgrade through the shared TLS entry, reporting status and responding master."""
+    if stand.entry is None:
+        raise StandRefused(f"{stand.project} has no browser entry (x-hilos-cluster.entry)")
+    outcome = _run(["docker", "exec", stand.cli_container,
+                    *_upgrade_curl(f"https://{stand.entry.ip}/ws", master)])
+    status, upstream = _upgrade_status(outcome.out)
+    if status is None:
+        return Outcome(outcome.code or 1, "", outcome.err or "entry upgrade gave no HTTP response")
+    node = next((node_id for node_id in stand.masters
+                 if upstream and upstream.startswith(stand.member(node_id).ip + ":")), "-")
+    return Outcome(0, f"{status} {node}\n", "")
+
+
+def direct_upgrade(stand, node_id):
+    """Try a node's WebSocket port directly, reporting its status or refusal."""
+    node = stand.member(node_id)
+    outcome = _run(["docker", "exec", stand.cli_container,
+                    *_upgrade_curl(f"http://{node.ip}:8092/ws")])
+    status, _ = _upgrade_status(outcome.out)
+    if status is None and outcome.code == 7:
+        return Outcome(0, "refused\n", "")
+    if status is None:
+        return Outcome(outcome.code or 1, "", outcome.err or "direct upgrade gave no HTTP response")
+    return Outcome(0, f"{status}\n", "")
+
+
+def entry_hold(stand, master, action):
+    """Keep one upgraded socket on a named master until the scenario closes it."""
+    if stand.entry is None:
+        raise StandRefused(f"{stand.project} has no browser entry (x-hilos-cluster.entry)")
+    if master not in stand.masters or action not in ("up", "down"):
+        raise StandRefused("usage: cluster entry-hold <master> {up|down}")
+    pid_file = "/tmp/hilos-entry-hold.pid"
+    if action == "down":
+        script = (f'if [ -f {pid_file} ]; then read hold < {pid_file}; '
+                  f'kill "$hold" 2>/dev/null || true; rm -f {pid_file}; fi')
+        return _run(["docker", "exec", stand.cli_container, "sh", "-c", script])
+    curl = _upgrade_curl(f"https://{stand.entry.ip}/ws", master, seconds=600)
+    script = (shlex.join(curl) + f" > /tmp/hilos-entry-hold.out 2>&1 & "
+              f'hold=$!; echo "$hold" > {pid_file}; wait "$hold"')
+    return _run(["docker", "exec", "-d", stand.cli_container, "sh", "-c", script])
 
 
 def _json_reply(raw):
@@ -473,6 +539,9 @@ NODE_COMMANDS = {
     "container-log": container_log,
     "partition": partition,
     "heal": heal,
+    "entry-upgrade": entry_upgrade,
+    "direct-upgrade": direct_upgrade,
+    "entry-hold": entry_hold,
 }
 
 
@@ -486,6 +555,18 @@ def execute(stand, command, *args):
         return own_directory(stand, *args[:2])
     if command == "db-sql":
         return db_sql(stand, *args[:2])
+    if command == "entry-upgrade":
+        if len(args) > 1:
+            raise StandRefused("usage: cluster entry-upgrade [<master>]")
+        return entry_upgrade(stand, *args)
+    if command == "direct-upgrade":
+        if len(args) != 1:
+            raise StandRefused("usage: cluster direct-upgrade <node>")
+        return direct_upgrade(stand, *args)
+    if command == "entry-hold":
+        if len(args) != 2:
+            raise StandRefused("usage: cluster entry-hold <master> {up|down}")
+        return entry_hold(stand, *args)
     if not args:
         raise StandRefused(f"unknown node '' (expected one of: {' '.join(stand.members)})")
     return NODE_COMMANDS[command](stand, *args)

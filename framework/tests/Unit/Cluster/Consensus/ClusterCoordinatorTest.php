@@ -96,11 +96,46 @@ final class ClusterCoordinatorTest extends TestCase
         $coordinator->tick(1.0);
         $this->assertCount(1, $mesh->requestVotes(), 'Precondition: node is now a candidate');
 
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
 
         $this->assertFalse($coordinator->amLeader());
         $this->assertSame('b', $coordinator->leaderId());
         $this->assertSame([], $observer->lostLeadership, 'A candidate never held leadership to lose');
+    }
+
+    public function testLeaderHeartbeatsReportTheWebSocketAfterItOpens(): void
+    {
+        $mesh = $this->mesh(self::MASTER_SET);
+        $coordinator = $this->electedLeader($mesh, new RecordingLeadershipObserver());
+
+        $coordinator->tick(1.1);
+        $this->assertFalse($mesh->heartbeats()[0]->webSocketOpen);
+
+        $coordinator->noteWebSocketOpen();
+        $coordinator->tick(1.3);
+        $this->assertTrue($mesh->heartbeats()[1]->webSocketOpen);
+        $this->assertFalse($coordinator->leaderWebSocketOpen(), 'A leader does not follow its own heartbeat');
+    }
+
+    public function testOpenWebSocketWordBelongsOnlyToTheCurrentLeader(): void
+    {
+        $coordinator = new ClusterCoordinator(
+            $this->config(),
+            $this->mesh(self::MASTER_SET),
+            new RecordingLeadershipObserver(),
+        );
+
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', true));
+        $this->assertTrue($coordinator->leaderWebSocketOpen());
+
+        $coordinator->noteNodeOffline('b');
+        $this->assertFalse($coordinator->leaderWebSocketOpen());
+
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(2, 'c', false));
+        $this->assertFalse($coordinator->leaderWebSocketOpen());
+
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(2, 'c', true));
+        $this->assertTrue($coordinator->leaderWebSocketOpen());
     }
 
     public function testLeaderStepsDownOnNewerTerm(): void
@@ -109,7 +144,7 @@ final class ClusterCoordinatorTest extends TestCase
         $observer = new RecordingLeadershipObserver();
         $coordinator = $this->electedLeader($mesh, $observer);
 
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(5, 'b'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(5, 'b', false));
 
         $this->assertFalse($coordinator->amLeader());
         $this->assertSame([1], $observer->lostLeadership);
@@ -123,7 +158,7 @@ final class ClusterCoordinatorTest extends TestCase
         $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
 
         // Follow leader 'b', then it announces a graceful leave naming this node successor.
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
         $coordinator->tick(0.0);
         $this->assertSame('b', $coordinator->leaderId());
         $this->assertCount(0, $mesh->requestVotes());
@@ -190,7 +225,7 @@ final class ClusterCoordinatorTest extends TestCase
         $mesh = $this->mesh(self::MASTER_SET);
         $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
 
-        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b'));
+        $coordinator->onHeartbeat(new PeerHeartbeatDTO(1, 'b', false));
         $coordinator->tick(0.0);
         $this->assertSame('b', $coordinator->leaderId());
         $this->assertCount(0, $mesh->requestVotes());

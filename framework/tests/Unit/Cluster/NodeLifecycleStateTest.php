@@ -80,6 +80,12 @@ final class NodeLifecycleStateTest extends TestCase
                 return null;
             }
 
+            /** @return bool This lifecycle stub does not follow a remote leader */
+            public function leaderWebSocketOpen(): bool
+            {
+                return false;
+            }
+
             public function hasQuorum(): bool
             {
                 return $this->hasQuorum;

@@ -146,6 +146,20 @@ final class ClusterClientLocationTest extends TestCase
         $this->assertSame(self::NODE_C, $index->nodeFor('ak-3'));
     }
 
+    public function testRemoteAcceptKeysTrackSnapshotsDeltasAndNodeDeparture(): void
+    {
+        $index = new ClusterClientLocation();
+        $index->applySnapshot(self::NODE_B, ['ak-1', 'ak-2']);
+        $index->applyDelta(self::NODE_B, ['ak-3'], ['ak-1']);
+        $index->applySnapshot(self::NODE_C, ['ak-4']);
+
+        $this->assertSame(['ak-2', 'ak-3', 'ak-4'], $index->remoteAcceptKeys());
+
+        $index->forgetNode(self::NODE_B);
+
+        $this->assertSame(['ak-4'], $index->remoteAcceptKeys());
+    }
+
     /**
      * Forgetting a node nobody announced for is a no-op: node-down fires for every node that
      * leaves, including the ones that never had a browser attached.

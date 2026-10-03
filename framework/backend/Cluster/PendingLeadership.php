@@ -32,6 +32,14 @@ final class PendingLeadership implements Leadership
     }
 
     /**
+     * @return bool Always false: no leader has reported WebSocket readiness yet
+     */
+    public function leaderWebSocketOpen(): bool
+    {
+        return false;
+    }
+
+    /**
      * @return bool Always false: quorum is undecided until the coordinator lands
      */
     public function hasQuorum(): bool

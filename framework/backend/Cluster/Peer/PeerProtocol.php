@@ -12,11 +12,12 @@ namespace Hilos\Cluster\Peer;
  * Bump it whenever the peer frame shape or handshake sequence changes in a way
  * an older node could not parse. Six protected-mode frames carry the initiator agent
  * identity as of HIL-1297.
+ * The leader heartbeat reports WebSocket readiness as of HIL-1304.
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 10;
+    public const int VERSION = 11;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

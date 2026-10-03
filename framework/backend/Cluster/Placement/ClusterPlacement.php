@@ -16,6 +16,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
+use Hilos\Cluster\PendingLeadership;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AgentRegistry;
@@ -196,7 +197,8 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Node id of the leader this node answers to: the one that placed its hosted agents or took
      * them over with a rebuild query; null on a leader, after a self-fence and after a lost
-     * quorum. Stop reports go to it, and the self-fence is armed against it.
+     * quorum. Stop reports go to it, the self-fence is armed against it, and a slave uses it
+     * to address leader-hosted agents because it does not run consensus (HIL-1304).
      *
      * @var ?string
      */
@@ -278,8 +280,8 @@ final class ClusterPlacement implements WorkerPlacement
      *   record is expected for it at all;
      * - {@see AgentScope::CLUSTER} + {@see AgentPlacement::LEADER} — it runs wherever leadership
      *   sits, which the placement view never carries because a leader-hosted singleton does not
-     *   start through placement. Leadership is asked directly; a cluster mid-election knows no
-     *   leader and the answer is unknown;
+     *   start through placement. Masters ask consensus directly; a slave has no coordinator and
+     *   uses the leader that placed its own work. Before one is known the answer is unknown;
      * - {@see AgentScope::CLUSTER} + {@see AgentPlacement::POLICY} — the placement view answers,
      *   and a view with no entry for it is the honest "nobody has placed it, or nobody has told
      *   me yet".
@@ -300,7 +302,10 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         if (AgentRegistry::placement($registryEntry) === AgentPlacement::LEADER) {
-            $leaderId = Hilos::$cluster?->leadership()->leaderId();
+            $leadership = Hilos::$cluster?->leadership();
+            $leaderId = $leadership instanceof PendingLeadership
+                ? $this->placingLeaderId
+                : $leadership?->leaderId();
 
             return $this->locationOfNode($leaderId);
         }

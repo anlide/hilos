@@ -23,7 +23,7 @@ use ReflectionProperty;
 /**
  * Unit tests for the leader-gated singleton duties on the daemon (HIL-340, HIL-502):
  * the ensure-once that starts cluster-singleton agents, the re-arm after a worker dies
- * hosting them, and the amLeader() gate that keeps cron / readiness / singleton-start
+ * hosting them, and the amLeader() gate that keeps cron and singleton start
  * on the leader (or standalone) node only.
  */
 final class DaemonManagerSingletonDutiesTest extends TestCase
@@ -141,7 +141,7 @@ final class DaemonManagerSingletonDutiesTest extends TestCase
 
         $this->assertFalse(
             $this->invokeAmLeader($manager),
-            'A clustered node without leadership must skip singleton duties (cron, readiness, singleton start).',
+            'A clustered node without leadership must skip singleton duties (cron and singleton start).',
         );
     }
 
