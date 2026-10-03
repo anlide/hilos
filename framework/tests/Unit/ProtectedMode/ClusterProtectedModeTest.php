@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
@@ -209,7 +210,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onRefreeze('node-x');
+        $this->coordinator->onRefreeze('node-x', 'backup', 0);
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
@@ -280,13 +281,13 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onDisable('node-b');
+        $this->coordinator->onDisable('node-b', 'backup', 0);
 
         $this->assertSame(['enterDeactivating', 'enterInactive'], $this->executor->calls);
         $this->assertSame([['broadcastLift', null]], $this->mesh->calls);
     }
 
-    public function testLeaderIgnoresDisableFromANonInitiatorNode(): void
+    public function testLeaderIgnoresDisableFromAnotherAgent(): void
     {
         $this->mesh->followers = [];
         $this->coordinator->onBecameLeader();
@@ -294,10 +295,84 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onDisable('node-c');
+        $this->coordinator->onDisable('node-c', 'other-agent', 0);
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testMovedInitiatorCanDriveTheFreezeByIdentity(): void
+    {
+        $this->mesh->followers = [];
+        $this->mesh->location = AgentLocation::onNode('node-c');
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->mesh->calls = [];
+
+        $this->coordinator->onVerify('node-c', 'backup', 0);
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->withDaemonTruthSource(function (): void {
+            $this->coordinator->onPass('node-c', 'backup', 0, 'pass-hash');
+            $this->coordinator->onCircle('node-c', 'backup', 0, $this->circleSnapshot());
+        });
+        $this->coordinator->onRefreeze('node-c', 'backup', 0);
+
+        $this->assertSame([
+            ['broadcastVerify', null],
+            ['broadcastPass', 'pass-hash'],
+            ['broadcastCircle', '1'],
+            ['broadcastQuiesce', 'restore'],
+        ], $this->mesh->calls);
+
+        $this->coordinator->onDisable('node-c', 'backup', 0);
+        $this->assertContains('enterInactive', $this->executor->calls);
+    }
+
+    public function testLeaderRejectsOtherAgentTypesAndIndexesOnEveryInitiatorFrame(): void
+    {
+        $this->mesh->followers = [];
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+
+        foreach ([['other-agent', 0], ['backup', 1]] as [$agentType, $agentIndex]) {
+            $this->executor->calls = [];
+            $this->mesh->calls = [];
+
+            $this->coordinator->onVerify('node-c', $agentType, $agentIndex);
+            $this->coordinator->onProgress('node-c', $agentType, $agentIndex);
+            $this->coordinator->onCircle('node-c', $agentType, $agentIndex, $this->circleSnapshot());
+            $this->coordinator->onDisable('node-c', $agentType, $agentIndex);
+            $this->openTheVerificationWindowOnTheRuntimeRow();
+            $this->coordinator->onPass('node-c', $agentType, $agentIndex, 'pass-hash');
+            $this->coordinator->onRefreeze('node-c', $agentType, $agentIndex);
+
+            $this->assertSame([], $this->executor->calls);
+            $this->assertSame([], $this->mesh->calls);
+            $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+            $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        }
+    }
+
+    public function testReadyUsesCurrentAgentPlacementAndDropsUnknown(): void
+    {
+        $this->mesh->followers = [];
+        $this->mesh->location = AgentLocation::unknown();
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+
+        $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null]], $this->mesh->calls);
+        $this->assertNotContains('notifyInitiatorReady', $this->executor->calls);
+
+        $this->mesh->location = AgentLocation::onNode('node-c');
+        $this->mesh->calls = [];
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->coordinator->onEnable('node-c', $this->enableDataFrom('node-c'));
+
+        $this->assertSame([['sendReady', 'node-c']], $this->mesh->calls);
     }
 
     public function testNonLeaderIgnoresEnable(): void
@@ -348,9 +423,10 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([['sendReady', 'node-b']], $this->mesh->calls);
     }
 
-    public function testLeaderStillRefusesASecondNodeUnderAFreezeThatStands(): void
+    public function testLeaderAnswersMovedInitiatorUnderAFreezeThatStands(): void
     {
         $this->mesh->followers = ['node-b'];
+        $this->mesh->location = AgentLocation::onNode('node-c');
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable('node-b', $this->enableData());
         $this->stopTheRoster();
@@ -362,9 +438,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-c', $this->enableDataFrom('node-c'));
 
         $this->assertSame([], $this->executor->calls);
-        $this->assertSame([
-            ['sendRefused', 'node-c', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
-        ], $this->mesh->calls);
+        $this->assertSame([['sendReady', 'node-c']], $this->mesh->calls);
     }
 
     public function testLeaderRefusesASecondAgentOnTheInitiatorNodeUnderAFreezeThatStands(): void
@@ -468,7 +542,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([['broadcastQuiesce', 'restore'], ['broadcastSettled', null], ['sendReady', 'node-b']], $this->mesh->calls);
     }
 
-    public function testLeaderRefusesEnableUnderVerifyingWindowFromDifferentInitiatorNode(): void
+    public function testLeaderAcceptsMovedInitiatorUnderVerifyingWindow(): void
     {
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
@@ -482,10 +556,8 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->coordinator->onEnable('node-c', $this->enableDataFrom('node-c'));
 
-        $this->assertSame([], $this->executor->calls);
-        $this->assertSame([
-            ['sendRefused', 'node-c', ProtectedModeRefusalCopy::FOREIGN_FREEZE],
-        ], $this->mesh->calls);
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([['broadcastQuiesce', 'restore']], $this->mesh->calls);
     }
 
     public function testFollowerRequestEnableWithoutKnownLeaderDeliversRefusalLocally(): void
@@ -600,6 +672,88 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([], $this->executor->calls);
     }
 
+    public function testFollowerFollowsNewLeaderForRepeatRoundAndLift(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $this->coordinator->onQuiesce('node-x', $freeze);
+        $this->stopTheRoster();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->mesh->leader = 'node-y';
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onQuiesce('node-y', $freeze);
+        $this->stopTheRoster();
+
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+        $this->assertSame([['sendQuiesced', 'node-y']], $this->mesh->calls);
+
+        $this->executor->calls = [];
+        $this->coordinator->onLift('node-x');
+        $this->assertSame([], $this->executor->calls);
+
+        $this->coordinator->onLift('node-y');
+        $this->assertSame(['enterInactive'], $this->executor->calls);
+    }
+
+    public function testFollowerAcceptsWindowFramesAndReadyFromNewLeader(): void
+    {
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->stopTheRoster();
+        $this->mesh->leader = 'node-y';
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onSettled('node-y');
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->coordinator->onVerify('node-y', 'backup', 0);
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->withDaemonTruthSource(function (): void {
+            $this->coordinator->onPass('node-y', 'backup', 0, 'pass-hash');
+            $this->coordinator->onCircle('node-y', 'backup', 0, $this->circleSnapshot());
+        });
+        $this->coordinator->onReady('node-y');
+
+        $this->assertSame(['enterActive', 'enterVerifying', 'announcePassIssued', 'notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame(['pass-hash'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testFormerLeaderAcceptsLiftFromTheNewLeader(): void
+    {
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onLostLeadership();
+        $this->mesh->leader = 'node-y';
+
+        $this->coordinator->onLift('node-y');
+
+        $this->assertSame(['enterInactive'], $this->executor->calls);
+    }
+
+    public function testRestartedFollowerRefusesFreshQuiesceAndAcceptsCurrentLeadersLift(): void
+    {
+        // A restored runtime row has a freeze but no in-memory freezing leader.
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->mesh->leader = 'node-y';
+
+        $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->assertSame([], $this->executor->calls);
+
+        $this->coordinator->onLift('node-y');
+        $this->assertSame(['enterInactive'], $this->executor->calls);
+    }
+
+    public function testCurrentLeadersLiftOnAnUnfrozenNodeDoesNothing(): void
+    {
+        $this->mesh->leader = 'node-y';
+
+        $this->coordinator->onLift('node-y');
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
     public function testFollowerIgnoresARepeatQuiesceWhileAlreadyFrozen(): void
     {
         $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
@@ -696,6 +850,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testLeaderInitiatorRelaysReadyLocallyOnceFollowersQuiesce(): void
     {
+        $this->mesh->location = AgentLocation::here();
         $this->mesh->followers = ['node-b'];
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable(self::SELF, $this->enableDataFrom(self::SELF));
@@ -712,6 +867,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testInitiatorLeaderHandlesEnableRequestLocally(): void
     {
+        $this->mesh->location = AgentLocation::here();
         $this->mesh->followers = [];
         $this->coordinator->onBecameLeader();
 
@@ -778,7 +934,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->calls = [];
 
         $before = time();
-        $this->withDaemonTruthSource(fn() => $this->coordinator->onProgress('node-b'));
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onProgress('node-b', 'backup', 0));
 
         $stamped = Hilos::$rt?->hilosProtectedModeRuntime?->progressAt;
         $this->assertNotNull($stamped);
@@ -802,8 +958,8 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->calls = [];
 
         $this->withDaemonTruthSource(function (): void {
-            $this->coordinator->onPass('node-b', 'hash-a');
-            $this->coordinator->onPass('node-b', 'hash-b');
+            $this->coordinator->onPass('node-b', 'backup', 0, 'hash-a');
+            $this->coordinator->onPass('node-b', 'backup', 0, 'hash-b');
         });
 
         $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
@@ -822,8 +978,8 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->calls = [];
 
         $this->withDaemonTruthSource(function (): void {
-            $this->coordinator->onPass('node-x', 'hash-a');
-            $this->coordinator->onPass('node-x', 'hash-b');
+            $this->coordinator->onPass('node-x', 'backup', 0, 'hash-a');
+            $this->coordinator->onPass('node-x', 'backup', 0, 'hash-b');
         });
 
         $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
@@ -840,7 +996,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onPass('node-b', 'hash-a');
+        $this->coordinator->onPass('node-b', 'backup', 0, 'hash-a');
 
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
         $this->assertSame([], $this->executor->calls);
@@ -921,7 +1077,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
         $this->mesh->calls = [];
 
-        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-x', $this->circleSnapshot()));
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-x', 'backup', 0, $this->circleSnapshot()));
 
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
         $this->assertSame(1, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
@@ -938,13 +1094,13 @@ final class ClusterProtectedModeTest extends TestCase
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->mesh->calls = [];
 
-        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-b', $this->circleSnapshot()));
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-b', 'backup', 0, $this->circleSnapshot()));
 
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
         $this->assertSame([['broadcastCircle', '1']], $this->mesh->calls);
     }
 
-    public function testTheLeaderDropsACircleFromANodeThatDidNotInitiateTheFreeze(): void
+    public function testTheLeaderDropsACircleFromAnotherAgent(): void
     {
         // The same authorization every frame of the window is given. Run without the truth source
         // on purpose: reaching the row here would throw.
@@ -953,7 +1109,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onEnable('node-b', $this->enableData());
         $this->mesh->calls = [];
 
-        $this->coordinator->onCircle('node-c', $this->circleSnapshot());
+        $this->coordinator->onCircle('node-c', 'other-agent', 0, $this->circleSnapshot());
 
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
         $this->assertSame([], $this->mesh->calls);
@@ -967,22 +1123,22 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onLift('node-x');
         $this->mesh->calls = [];
 
-        $this->coordinator->onCircle('node-x', $this->circleSnapshot());
+        $this->coordinator->onCircle('node-x', 'backup', 0, $this->circleSnapshot());
 
         $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
         $this->assertSame([], $this->mesh->calls);
     }
 
-    public function testLeaderDropsAProgressMarkFromANodeThatDoesNotOwnTheFreeze(): void
+    public function testLeaderDropsAProgressMarkFromAnotherAgent(): void
     {
-        // Same authorization the release is given: a node that did not ask for the freeze could
+        // Same authorization the release is given: an agent that did not ask for the freeze could
         // otherwise keep a hung operation looking alive on the leader's row indefinitely.
         $this->mesh->followers = [];
         $this->coordinator->onBecameLeader();
         $this->coordinator->onEnable('node-b', $this->enableData());
         $this->settleTheFreezeOnTheRuntimeRow();
 
-        $this->withDaemonTruthSource(fn() => $this->coordinator->onProgress('node-c'));
+        $this->withDaemonTruthSource(fn() => $this->coordinator->onProgress('node-c', 'other-agent', 0));
 
         $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
     }
@@ -991,7 +1147,7 @@ final class ClusterProtectedModeTest extends TestCase
     {
         // The ordinary tail of an operation whose last marks outlived its freeze; run without the
         // truth source on purpose, because reaching the row here would throw.
-        $this->coordinator->onProgress('node-b');
+        $this->coordinator->onProgress('node-b', 'backup', 0);
 
         $this->assertNull(Hilos::$rt?->hilosProtectedModeRuntime?->progressAt);
     }
@@ -1082,17 +1238,27 @@ final class ClusterProtectedModeTest extends TestCase
         // The whole point of the rebuild: leader-side state dies with the leader, so a blank
         // successor drops the disable of a live and healthy initiator and NOTHING can unfreeze the
         // cluster - while the watchdog, by design, never lifts one either.
+        $followerMesh = new FakeProtectedModeMesh();
+        $followerExecutor = new FakeProtectedModeExecutor();
+        $follower = new ClusterProtectedMode('node-b', $followerMesh, $followerExecutor);
+        $follower->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $followerExecutor->calls = [];
+        $followerMesh->leader = self::SELF;
+
         $this->mesh->followers = ['node-b'];
         $this->settleTheFreezeOnTheRuntimeRow();
 
         $this->coordinator->onBecameLeader();
-        $this->coordinator->onDisable('node-b');
+        $this->coordinator->onDisable('node-b', 'backup', 0);
 
         $this->assertSame(['enterDeactivating', 'enterInactive'], $this->executor->calls);
         $this->assertSame([['broadcastLift', null]], $this->mesh->calls);
+
+        $follower->onLift(self::SELF);
+        $this->assertSame(['enterInactive'], $followerExecutor->calls);
     }
 
-    public function testAPromotedLeaderStillIgnoresADisableFromANonInitiatorNode(): void
+    public function testAPromotedLeaderStillIgnoresADisableFromAnotherAgent(): void
     {
         // The identity is rebuilt from the row, not assumed: an inherited freeze is authorized the
         // same way one this leader ordered itself is.
@@ -1100,7 +1266,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->settleTheFreezeOnTheRuntimeRow();
 
         $this->coordinator->onBecameLeader();
-        $this->coordinator->onDisable('node-c');
+        $this->coordinator->onDisable('node-c', 'other-agent', 0);
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
@@ -1170,7 +1336,8 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->coordinator->onBecameLeader();
-        $this->coordinator->onDisable('node-b');
+        $this->coordinator->onDisable('node-b', 'backup', 0);
+        $this->withDaemonTruthSource(static fn() => Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterInactive());
         $this->coordinator->onLostLeadership();
         $this->executor->calls = [];
         $this->mesh->calls = [];
@@ -1189,7 +1356,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b'];
 
         $this->coordinator->onBecameLeader();
-        $this->coordinator->onDisable('node-b');
+        $this->coordinator->onDisable('node-b', 'backup', 0);
 
         $this->assertSame([], $this->coordinator->pendingNodeIds());
         $this->assertSame([], $this->executor->calls);
@@ -1246,7 +1413,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onRefreeze('node-b');
+        $this->coordinator->onRefreeze('node-b', 'backup', 0);
     }
 
     /**
@@ -1388,8 +1555,16 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     /** @var ?string Leader node id to advertise to an initiator, or null when leadership is unknown */
     public ?string $leader = null;
 
+    /** @var AgentLocation Current location returned for the initiator */
+    public AgentLocation $location;
+
     /** @var array<array{0: string, 1: ?string}> Ordered [method, argument] pairs sent */
     public array $calls = [];
+
+    public function __construct()
+    {
+        $this->location = AgentLocation::onNode('node-b');
+    }
 
     public function followerMasterNodeIds(): array
     {
@@ -1401,12 +1576,17 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
         return $this->leader;
     }
 
+    public function locateAgent(string $agentType, ?int $agentIndex): AgentLocation
+    {
+        return $this->location;
+    }
+
     public function sendEnable(string $leaderNodeId, ProtectedModeEnableSignalData $data): void
     {
         $this->calls[] = ['sendEnable', $leaderNodeId];
     }
 
-    public function sendDisable(string $leaderNodeId): void
+    public function sendDisable(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
         $this->calls[] = ['sendDisable', $leaderNodeId];
     }
@@ -1436,42 +1616,42 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
         $this->calls[] = ['sendQuiesced', $leaderNodeId];
     }
 
-    public function sendVerify(string $leaderNodeId): void
+    public function sendVerify(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
         $this->calls[] = ['sendVerify', $leaderNodeId];
     }
 
-    public function sendProgress(string $leaderNodeId): void
+    public function sendProgress(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
         $this->calls[] = ['sendProgress', $leaderNodeId];
     }
 
-    public function broadcastVerify(): void
+    public function broadcastVerify(string $agentType, ?int $agentIndex): void
     {
         $this->calls[] = ['broadcastVerify', null];
     }
 
-    public function sendPass(string $leaderNodeId, string $passHash): void
+    public function sendPass(string $leaderNodeId, string $agentType, ?int $agentIndex, string $passHash): void
     {
         $this->calls[] = ['sendPass', $leaderNodeId];
     }
 
-    public function broadcastPass(string $passHash): void
+    public function broadcastPass(string $agentType, ?int $agentIndex, string $passHash): void
     {
         $this->calls[] = ['broadcastPass', $passHash];
     }
 
-    public function sendCircle(string $leaderNodeId, VerifierCircleSnapshot $snapshot): void
+    public function sendCircle(string $leaderNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
         $this->calls[] = ['sendCircle', $leaderNodeId];
     }
 
-    public function broadcastCircle(VerifierCircleSnapshot $snapshot): void
+    public function broadcastCircle(string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
         $this->calls[] = ['broadcastCircle', (string)$snapshot->namedCount];
     }
 
-    public function sendRefreeze(string $leaderNodeId): void
+    public function sendRefreeze(string $leaderNodeId, string $agentType, ?int $agentIndex): void
     {
         $this->calls[] = ['sendRefreeze', $leaderNodeId];
     }

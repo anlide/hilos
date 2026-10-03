@@ -6,6 +6,7 @@ namespace Hilos\Core\Topology;
 
 use Closure;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -147,6 +148,7 @@ final class TopologyValidator
         $pageLists = $this->constantArray($hilosClass, self::SECTION_PAGE_LISTS, $errors);
         $pageData = $this->constantArray($hilosClass, self::SECTION_PAGE_DATA, $errors);
         $browserSources = $browserLists + $browserTables + $browserData;
+        $commandAgentRoutes = $hilosClass::getCommandAgentRoutes();
 
         $this->validatePages($pages, $errors);
         $this->validateGroups($groups, $errors);
@@ -191,7 +193,8 @@ final class TopologyValidator
             $errors,
         );
         $this->validateAgentSignalDtoRoutes($agents, $hilosClass::getAgentSignalDtoRoutes(), $errors);
-        $this->validateAgentCommandRoutes($agents, $hilosClass::getCommandAgentRoutes(), $errors);
+        $this->validateAgentCommandRoutes($agents, $commandAgentRoutes, $errors);
+        $this->validateProtectedModeInitiators($agents, $commandAgentRoutes, $errors);
         $this->validateAgentHttpRoutes($agents, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageTables, self::SECTION_PAGE_TABLES, $errors);
         $this->validatePageTables($pages, $tables, $browserSources, $pageLists, self::SECTION_PAGE_LISTS, $errors);
@@ -2933,6 +2936,38 @@ final class TopologyValidator
         foreach ($declaredRoutes as $command => $agentType) {
             if (($commandAgentRoutes[$command] ?? null) !== $agentType) {
                 $errors[] = "Agent command route {$command} is missing from computed command routes";
+            }
+        }
+    }
+
+    /**
+     * Refuses a replicated or indexed owner of a protected-mode open command.
+     *
+     * The open command answers only to the initiator identity recorded on the freeze row.
+     * A command has one owning agent type, so the owner of either open command is the initiator.
+     * Its type and index must name one instance cluster-wide, even in a single-node installation.
+     *
+     * @param array $agents Agent registry
+     * @param array $commandAgentRoutes Computed command route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateProtectedModeInitiators(array $agents, array $commandAgentRoutes, array &$errors): void
+    {
+        foreach ([CliCommands::PROTECTED_MODE_OPEN, CliCommands::PROTECTED_MODE_TEST_OPEN] as $command) {
+            $agentType = $commandAgentRoutes[$command] ?? null;
+            if ($agentType === null) {
+                continue;
+            }
+
+            $entry = $agents[$agentType] ?? null;
+            if (AgentRegistry::scope($entry) === AgentScope::NODE) {
+                $errors[] = "AGENTS[{$agentType}] owns {$command}, so it initiates protected mode, and cannot set scope "
+                    . AgentScope::NODE->name . ': a cluster authorizes the freeze by agent type and index alone,'
+                    . ' and a replica on every node would hand that right to every node (HIL-1297)';
+            }
+            if (AgentRegistry::requiresIndex($entry)) {
+                $errors[] = "AGENTS[{$agentType}] owns {$command}, so it initiates protected mode, and cannot be "
+                    . AgentRegistryKey::INDEXED . ': an initiator is one instance cluster-wide (HIL-1297)';
             }
         }
     }

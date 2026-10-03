@@ -10,12 +10,13 @@ namespace Hilos\Cluster\Peer;
  * A peer declares this version in its handshake; a link whose remote reports a
  * different version is rejected rather than risking a frame-format mismatch.
  * Bump it whenever the peer frame shape or handshake sequence changes in a way
- * an older node could not parse.
+ * an older node could not parse. Six protected-mode frames carry the initiator agent
+ * identity as of HIL-1297.
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 9;
+    public const int VERSION = 10;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

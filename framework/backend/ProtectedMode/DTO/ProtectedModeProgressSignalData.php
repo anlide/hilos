@@ -18,10 +18,9 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * let in or out, and a mark that never arrives costs an alert rather than a stuck system.
  *
  * It carries the same two identity fields {@see ProtectedModeVerifySignalData} carries, for the
- * same reason: on a single node the recorded initiator agent is the whole authorization, while a
- * cluster compares initiator node ids instead ({@see ClusterProtectedMode::onProgress()}) and
- * ignores these fields. What it deliberately does NOT carry is the moment of the progress - the
- * master that owns the row stamps that itself, so a node with a skewed clock cannot push another
+ * same reason: the recorded initiator agent is the whole authorization on a single node and in a
+ * cluster ({@see ClusterProtectedMode::onProgress()}). It deliberately carries no progress time:
+ * the master that owns the row stamps it, so a node with a skewed clock cannot push another
  * node's silence threshold around.
  */
 final class ProtectedModeProgressSignalData extends BaseDTO implements SignalDataInterface

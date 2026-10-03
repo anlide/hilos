@@ -29,6 +29,12 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
     /** @var string Wire message type for the protected-mode circle frame */
     public const string MESSAGE_TYPE = 'peer_protected_mode_circle';
 
+    /** @var string Frame key naming the initiator agent type */
+    public const string FIELD_INITIATOR_AGENT_TYPE = 'initiatorAgentType';
+
+    /** @var string Frame key naming the initiator agent index */
+    public const string FIELD_INITIATOR_AGENT_INDEX = 'initiatorAgentIndex';
+
     /** @var string Frame key carrying how many people the circle named at the freeze */
     public const string FIELD_NAMED_COUNT = 'namedCount';
 
@@ -36,9 +42,13 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
     public const string FIELD_SESSION_TOKEN_HASHES = 'sessionTokenHashes';
 
     /**
+     * @param string $initiatorAgentType Type of the agent that initiated the freeze
+     * @param ?int $initiatorAgentIndex Index of that agent, or null for a singleton
      * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
      */
     public function __construct(
+        public readonly string $initiatorAgentType,
+        public readonly ?int $initiatorAgentIndex,
         public readonly VerifierCircleSnapshot $snapshot,
     ) {
     }
@@ -62,6 +72,8 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
     {
         return [
             self::TYPE => self::MESSAGE_TYPE,
+            self::FIELD_INITIATOR_AGENT_TYPE => $this->initiatorAgentType,
+            self::FIELD_INITIATOR_AGENT_INDEX => $this->initiatorAgentIndex,
             self::FIELD_NAMED_COUNT => $this->snapshot->namedCount,
             self::FIELD_SESSION_TOKEN_HASHES => $this->snapshot->sessionTokenHashes,
         ];
@@ -70,17 +82,15 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
     /**
      * Restores a circle frame from its wire array.
      *
-     * A hash list with anything but non-empty strings in it is refused whole rather than thinned:
-     * the hashes are who the window lets in, and a list read without one of them would lock out a
-     * person the photograph named.
-     *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the count is not an integer or the hashes are not a list of strings
+     * @throws PeerTransportException When the initiator identity or payload is malformed
      */
     public static function fromArray(array $data): static
     {
         try {
+            $agentType = self::requireString($data, self::FIELD_INITIATOR_AGENT_TYPE);
+            $agentIndex = self::optionalInt($data, self::FIELD_INITIATOR_AGENT_INDEX);
             $namedCount = self::requireInt($data, self::FIELD_NAMED_COUNT);
             $rawHashes = self::requireArray($data, self::FIELD_SESSION_TOKEN_HASHES);
         } catch (InvalidFormatException $exception) {
@@ -89,6 +99,10 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
                 0,
                 $exception,
             );
+        }
+
+        if ($agentType === '') {
+            throw new PeerTransportException('Peer protected-mode circle frame is malformed: initiatorAgentType is empty');
         }
 
         if (!array_is_list($rawHashes)) {
@@ -104,6 +118,6 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
             $sessionTokenHashes[] = $sessionTokenHash;
         }
 
-        return new static(new VerifierCircleSnapshot($namedCount, $sessionTokenHashes));
+        return new static($agentType, $agentIndex, new VerifierCircleSnapshot($namedCount, $sessionTokenHashes));
     }
 }

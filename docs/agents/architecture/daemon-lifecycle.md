@@ -557,9 +557,11 @@ The marker lives in the master's memory from here on; the handshake touches no d
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
 markers by kind: `database`, and `directory:<name>` for every cluster directory of `$fs`
 (*Cluster directories* below). The field is required, and
-`PeerProtocol::VERSION` is `9` for it: a node of the previous protocol and a node of this
-one do not link, with the line about the version. The accepting side on a hello and the
-dialing side on a welcome check, in order: the protocol version, the certificate name,
+`PeerProtocol::VERSION` was raised to `9` for these markers and is `10` today after
+HIL-1297 added initiator identity to six protected-mode frames. A node of the previous
+protocol and a node of this one do not link, with the line about the version.
+The accepting side on a hello and the dialing side on a welcome check, in order:
+the protocol version, the certificate name,
 the markers. The rule (`PeerMarkers::refusalFor()`): a kind named by either side is named
 by the other with the same value. A breach drops the link through the existing branch —
 `Peer link dropped: …` at WARNING — before the link remembers the peer or tells the
@@ -608,10 +610,11 @@ Then one INFO line per directory:
 On the handshake the kind is judged by the same rule and refused in the same words, the place
 being `cluster directory <name> at <path>`:
 `Peer handshake from node '<id>' names directory:data_export marker '<theirs>', but this node reads '<ours>' from cluster directory data_export at /app/data/data_export: the two nodes do not read one directory:data_export`.
-`PeerProtocol::VERSION` stays `9`: the frame keeps its shape, and on an installation with a
-cluster directory a node of the previous build, which names no directory kind, is refused by
-the existing rule. What the marker means for the
-files beside it, and who may remove it — [filesystem.md](filesystem.md), "The Guard".
+The directory marker did not itself raise `PeerProtocol::VERSION` (now `10` after
+HIL-1297): the frame kept its shape. At the time of the directory marker change,
+a node of the previous build that named no directory kind was refused by the
+marker rule. What the marker means for the files beside it, and who may remove
+it — [filesystem.md](filesystem.md), "The Guard".
 
 **Proof on the stand.** The cluster matrix starts five nodes at once on an empty database
 (HIL-1228), and the first convergence passes only if all five read one marker — the race of

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
@@ -588,6 +589,35 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('cannot combine scope ' . AgentScope::NODE->name . ' with ' . AgentRegistryKey::INDEXED);
 
         TopologyPerNodeIndexedHilos::validateTopology();
+    }
+
+    public function testProtectedModeOpenOwnerCannotHaveNodeScope(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'AGENTS[protected_mode_open_agent] owns ' . CliCommands::PROTECTED_MODE_OPEN
+            . ', so it initiates protected mode, and cannot set scope ' . AgentScope::NODE->name,
+        );
+
+        TopologyProtectedModeNodeInitiatorHilos::validateTopology();
+    }
+
+    public function testProtectedModeTestOpenOwnerCannotBeIndexed(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'AGENTS[protected_mode_test_open_agent] owns ' . CliCommands::PROTECTED_MODE_TEST_OPEN
+            . ', so it initiates protected mode, and cannot be ' . AgentRegistryKey::INDEXED,
+        );
+
+        TopologyProtectedModeIndexedInitiatorHilos::validateTopology();
+    }
+
+    public function testProtectedModeOpenOwnerAsClusterSingletonPasses(): void
+    {
+        TopologyProtectedModeClusterInitiatorHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
     }
 
     public function testNodeScopeCannotCarryPlacement(): void
@@ -2181,6 +2211,75 @@ final class TopologyRequiredListBoundHilos extends TopologyRequiredListUnboundHi
     public const array PAGE_LISTS = [
         TopologyRequiredListPage::PAGE => [
             TopologyRequiredList::LIST => TopologyRequiredList::BINDING,
+        ],
+    ];
+}
+
+final class TopologyProtectedModeOpenAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'protected_mode_open_agent';
+
+    public const array AGENT_COMMANDS = [CliCommands::PROTECTED_MODE_OPEN];
+}
+
+final class TopologyProtectedModeOpenAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = TopologyProtectedModeOpenAgent::AGENT_TYPE;
+}
+
+final class TopologyProtectedModeTestOpenAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'protected_mode_test_open_agent';
+
+    public const array AGENT_COMMANDS = [CliCommands::PROTECTED_MODE_TEST_OPEN];
+}
+
+final class TopologyProtectedModeTestOpenAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = TopologyProtectedModeTestOpenAgent::AGENT_TYPE;
+}
+
+abstract class TopologyProtectedModeInitiatorHilos extends HilosFacade
+{
+    /**
+     * Creates a no-op DB context for topology validation.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyProtectedModeNodeInitiatorHilos extends TopologyProtectedModeInitiatorHilos
+{
+    public const array AGENTS = [
+        TopologyProtectedModeOpenAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyProtectedModeOpenAgent::class,
+            AgentRegistryKey::DAEMON => TopologyProtectedModeOpenAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+    ];
+}
+
+final class TopologyProtectedModeIndexedInitiatorHilos extends TopologyProtectedModeInitiatorHilos
+{
+    public const array AGENTS = [
+        TopologyProtectedModeTestOpenAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyProtectedModeTestOpenAgent::class,
+            AgentRegistryKey::DAEMON => TopologyProtectedModeTestOpenAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+    ];
+}
+
+final class TopologyProtectedModeClusterInitiatorHilos extends TopologyProtectedModeInitiatorHilos
+{
+    public const array AGENTS = [
+        TopologyProtectedModeOpenAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyProtectedModeOpenAgent::class,
+            AgentRegistryKey::DAEMON => TopologyProtectedModeOpenAgentDaemon::class,
         ],
     ];
 }

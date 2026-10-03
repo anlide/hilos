@@ -10,10 +10,14 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeCircleDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeReadyDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
@@ -86,16 +90,34 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->assertSame([], $restored->data->toArray());
     }
 
-    public function testDisableFrameRoundTripsCarryingOnlyItsType(): void
+    public function testInitiatorFramesRoundTripWithIdentityAndNullableIndex(): void
     {
-        // Unlike the worker->daemon disable frame, this one names no initiator agent: the leader
-        // authorizes the release by the node id of the link it arrived on.
-        $frame = new PeerProtectedModeDisableDTO();
+        foreach ([0, null] as $index) {
+            $frames = [
+                new PeerProtectedModeDisableDTO('backup', $index),
+                new PeerProtectedModeVerifyDTO('backup', $index),
+                new PeerProtectedModeProgressDTO('backup', $index),
+                new PeerProtectedModeRefreezeDTO('backup', $index),
+                new PeerProtectedModePassDTO('backup', $index, 'pass-hash'),
+                new PeerProtectedModeCircleDTO('backup', $index, new VerifierCircleSnapshot(1, ['session-hash'])),
+            ];
 
-        $restored = PeerProtectedModeDisableDTO::fromJson($frame->toJson());
+            foreach ($frames as $frame) {
+                $restored = PeerDTO::fromWire($frame->toJson());
 
-        $this->assertSame(PeerProtectedModeDisableDTO::MESSAGE_TYPE, $restored->getType());
-        $this->assertSame([PeerProtectedModeDisableDTO::TYPE => PeerProtectedModeDisableDTO::MESSAGE_TYPE], $restored->toArray());
+                $this->assertSame($frame::class, $restored::class);
+                $this->assertSame('backup', $restored->initiatorAgentType);
+                $this->assertSame($index, $restored->initiatorAgentIndex);
+                $this->assertArrayHasKey('initiatorAgentIndex', $restored->toArray());
+            }
+        }
+    }
+
+    public function testInitiatorFrameWithoutIdentityIsRejected(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerProtectedModeDisableDTO::fromArray([PeerDTO::TYPE => PeerProtectedModeDisableDTO::MESSAGE_TYPE]);
     }
 
     public function testEnableFrameDispatchesThroughTheSharedWireParser(): void
@@ -126,7 +148,7 @@ final class ProtectedModePeerFrameTest extends TestCase
 
     public function testDisableFrameDispatchesThroughTheSharedWireParser(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerProtectedModeDisableDTO()->toJson());
+        $parsed = PeerDTO::fromWire(new PeerProtectedModeDisableDTO('backup', 0)->toJson());
 
         $this->assertInstanceOf(PeerProtectedModeDisableDTO::class, $parsed);
     }
@@ -233,7 +255,7 @@ final class ProtectedModePeerFrameTest extends TestCase
 
     public function testCircleFrameRoundTripsThroughTheWire(): void
     {
-        $frame = new PeerProtectedModeCircleDTO(new VerifierCircleSnapshot(3, ['hash-a', 'hash-b']));
+        $frame = new PeerProtectedModeCircleDTO('backup', 0, new VerifierCircleSnapshot(3, ['hash-a', 'hash-b']));
 
         $restored = PeerProtectedModeCircleDTO::fromJson($frame->toJson());
 
@@ -246,7 +268,7 @@ final class ProtectedModePeerFrameTest extends TestCase
     {
         // Named but nobody online: the count alone still travels, so a node can tell "nobody was
         // named" from "nobody named was online".
-        $frame = new PeerProtectedModeCircleDTO(new VerifierCircleSnapshot(1, []));
+        $frame = new PeerProtectedModeCircleDTO('backup', null, new VerifierCircleSnapshot(1, []));
 
         $parsed = PeerDTO::fromWire($frame->toJson());
 
@@ -260,6 +282,8 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->expectException(PeerTransportException::class);
 
         PeerProtectedModeCircleDTO::fromArray([
+            PeerProtectedModeCircleDTO::FIELD_INITIATOR_AGENT_TYPE => 'backup',
+            PeerProtectedModeCircleDTO::FIELD_INITIATOR_AGENT_INDEX => null,
             PeerProtectedModeCircleDTO::FIELD_NAMED_COUNT => '1',
             PeerProtectedModeCircleDTO::FIELD_SESSION_TOKEN_HASHES => [],
         ]);
@@ -270,6 +294,8 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->expectException(PeerTransportException::class);
 
         PeerProtectedModeCircleDTO::fromArray([
+            PeerProtectedModeCircleDTO::FIELD_INITIATOR_AGENT_TYPE => 'backup',
+            PeerProtectedModeCircleDTO::FIELD_INITIATOR_AGENT_INDEX => null,
             PeerProtectedModeCircleDTO::FIELD_NAMED_COUNT => 1,
             PeerProtectedModeCircleDTO::FIELD_SESSION_TOKEN_HASHES => 'hash-a',
         ]);
@@ -281,6 +307,8 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->expectException(PeerTransportException::class);
 
         PeerProtectedModeCircleDTO::fromArray([
+            PeerProtectedModeCircleDTO::FIELD_INITIATOR_AGENT_TYPE => 'backup',
+            PeerProtectedModeCircleDTO::FIELD_INITIATOR_AGENT_INDEX => null,
             PeerProtectedModeCircleDTO::FIELD_NAMED_COUNT => 2,
             PeerProtectedModeCircleDTO::FIELD_SESSION_TOKEN_HASHES => ['hash-a', 7],
         ]);

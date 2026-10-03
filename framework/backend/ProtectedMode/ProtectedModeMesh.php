@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
@@ -38,6 +39,16 @@ interface ProtectedModeMesh
     public function leaderNodeId(): ?string;
 
     /**
+     * Finds the agent using the same placement lookup as signal routing.
+     *
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
+     * @return AgentLocation Current placement of the initiator
+     * @throws EnvException When the cluster-enabled flag value is invalid
+     */
+    public function locateAgent(string $agentType, ?int $agentIndex): AgentLocation;
+
+    /**
      * Forwards this initiator node's freeze request to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
@@ -49,8 +60,10 @@ interface ProtectedModeMesh
      * Forwards this initiator node's release request to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      */
-    public function sendDisable(string $leaderNodeId): void;
+    public function sendDisable(string $leaderNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
      * Broadcasts the freeze order to every follower master.
@@ -62,9 +75,9 @@ interface ProtectedModeMesh
     /**
      * Signals the initiator that every node has quiesced and its operation may proceed.
      *
-     * @param string $initiatorNodeId Node id that hosts the initiator agent
+     * @param string $nodeId Node where the initiator agent currently runs
      */
-    public function sendReady(string $initiatorNodeId): void;
+    public function sendReady(string $nodeId): void;
 
     /**
      * Signals the initiator node that the freeze was refused and cannot be entered.
@@ -97,16 +110,20 @@ interface ProtectedModeMesh
      * Forwards this initiator node's request to open the verification window to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      */
-    public function sendVerify(string $leaderNodeId): void;
+    public function sendVerify(string $leaderNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
      * Broadcasts the verification window to every follower master.
      *
      * The phase has to reach every node, because a verifier may land on any of them and each node
      * decides admission against its own copy of the row.
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      */
-    public function broadcastVerify(): void;
+    public function broadcastVerify(string $agentType, ?int $agentIndex): void;
 
     /**
      * Forwards this initiator node's progress mark to the leader.
@@ -115,31 +132,39 @@ interface ProtectedModeMesh
      * watchdog, and the watchdog runs on the leader alone.
      *
      * @param string $leaderNodeId Node id of the current leader
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      */
-    public function sendProgress(string $leaderNodeId): void;
+    public function sendProgress(string $leaderNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
      * Forwards this initiator node's minted pass to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param string $passHash SHA-256 of the minted pass
      */
-    public function sendPass(string $leaderNodeId, string $passHash): void;
+    public function sendPass(string $leaderNodeId, string $agentType, ?int $agentIndex, string $passHash): void;
 
     /**
      * Broadcasts one minted pass to every follower master.
      *
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param string $passHash SHA-256 of the minted pass
      */
-    public function broadcastPass(string $passHash): void;
+    public function broadcastPass(string $agentType, ?int $agentIndex, string $passHash): void;
 
     /**
      * Forwards the circle photographed on this initiator node to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param VerifierCircleSnapshot $snapshot The circle as this node photographed it
      */
-    public function sendCircle(string $leaderNodeId, VerifierCircleSnapshot $snapshot): void;
+    public function sendCircle(string $leaderNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void;
 
     /**
      * Broadcasts the photographed circle to every follower master.
@@ -147,14 +172,18 @@ interface ProtectedModeMesh
      * Every master, for the reason {@see broadcastVerify()} names: a member of the circle may land
      * on any of them, and each decides admission against its own copy of the row.
      *
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
      */
-    public function broadcastCircle(VerifierCircleSnapshot $snapshot): void;
+    public function broadcastCircle(string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void;
 
     /**
      * Forwards this initiator node's request to close back out of the window to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      */
-    public function sendRefreeze(string $leaderNodeId): void;
+    public function sendRefreeze(string $leaderNodeId, string $agentType, ?int $agentIndex): void;
 }

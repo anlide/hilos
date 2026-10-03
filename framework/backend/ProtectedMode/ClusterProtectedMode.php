@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -43,11 +44,14 @@ use Hilos\Utils\Logger;
  *   (HIL-1057), and so does the close back from it (HIL-1128) - which owes nobody a ready. The
  *   initiator's {@see onDisable()} deactivates, broadcasts lift, and releases the leader's own
  *   node. The leader role is gated on holding leadership, driven by {@see onBecameLeader()} /
- *   {@see onLostLeadership()}.
+ *   {@see onLostLeadership()}. The leader authorizes initiator frames by agent type and index,
+ *   while their link node id supplies log context. Ready finds the agent's current placement.
  * - Follower side: {@see onQuiesce()} freezes this node and, once its roster has stopped
  *   ({@see onRosterStopped()}), reports quiesced; {@see onSettled()} writes active once the leader
- *   says every node has stopped, and {@see onLift()} releases it. The initiator's own node relays
- *   the leader's {@see onReady()} to its agent. The verifier circle photographed at the freeze is
+ *   says every node has stopped, and {@see onLift()} releases it. A frozen follower, former leader,
+ *   or node restored from a freeze file follows the current leader when that leader sends a frame.
+ *   The initiator's own node relays the leader's {@see onReady()} to its agent. The verifier circle
+ *   photographed at the freeze is
  *   written on a follower's row from the leader's frame ({@see onCircle()}), as a pass is.
  *
  * A single-node cluster has no followers, so the leader activates the moment its own roster has
@@ -230,10 +234,7 @@ final class ClusterProtectedMode implements
      * leads, otherwise sent to the current leader over the peer channel and dropped when no leader
      * is known.
      *
-     * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release,
-     *                                             unused here: a cluster authorizes the release by
-     *                                             the initiator node id it recorded, which is what
-     *                                             the peer frame carries
+     * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -241,7 +242,7 @@ final class ClusterProtectedMode implements
     public function requestDisable(ProtectedModeDisableSignalData $data): void
     {
         if ($this->isLeader) {
-            $this->onDisable($this->selfNodeId);
+            $this->onDisable($this->selfNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
             return;
         }
 
@@ -251,7 +252,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->mesh->sendDisable($leaderNodeId);
+        $this->mesh->sendDisable($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
     }
 
     /**
@@ -260,9 +261,7 @@ final class ClusterProtectedMode implements
      * Mirrors {@see requestDisable()} in routing and in authorization; the phase check that makes
      * it fail-closed lives on the leader ({@see onVerify()}), where the freeze being driven is.
      *
-     * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window,
-     *                                            unused here for the same reason the disable
-     *                                            payload is: a cluster authorizes by node id
+     * @param ProtectedModeVerifySignalData $data Identity of the agent asking for the window
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -270,7 +269,7 @@ final class ClusterProtectedMode implements
     public function requestVerify(ProtectedModeVerifySignalData $data): void
     {
         if ($this->isLeader) {
-            $this->onVerify($this->selfNodeId);
+            $this->onVerify($this->selfNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
             return;
         }
 
@@ -280,7 +279,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->mesh->sendVerify($leaderNodeId);
+        $this->mesh->sendVerify($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
     }
 
     /**
@@ -295,9 +294,7 @@ final class ClusterProtectedMode implements
      * channel to report a condition the watchdog states better anyway - a freeze that nobody
      * leads is a freeze whose row stops being refreshed, which is precisely what gets reported.
      *
-     * @param ProtectedModeProgressSignalData $data Identity of the agent reporting the progress,
-     *                                              unused here for the same reason the disable
-     *                                              payload is: a cluster authorizes by node id
+     * @param ProtectedModeProgressSignalData $data Identity of the agent reporting progress
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -305,7 +302,7 @@ final class ClusterProtectedMode implements
     public function requestProgress(ProtectedModeProgressSignalData $data): void
     {
         if ($this->isLeader) {
-            $this->onProgress($this->selfNodeId);
+            $this->onProgress($this->selfNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
             return;
         }
 
@@ -314,7 +311,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->mesh->sendProgress($leaderNodeId);
+        $this->mesh->sendProgress($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
     }
 
     /**
@@ -326,7 +323,7 @@ final class ClusterProtectedMode implements
     public function requestPass(ProtectedModePassSignalData $data): void
     {
         if ($this->isLeader) {
-            $this->onPass($this->selfNodeId, $data->passHash);
+            $this->onPass($this->selfNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex, $data->passHash);
             return;
         }
 
@@ -336,7 +333,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->mesh->sendPass($leaderNodeId, $data->passHash);
+        $this->mesh->sendPass($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex, $data->passHash);
     }
 
     /**
@@ -353,8 +350,8 @@ final class ClusterProtectedMode implements
      *
      * A node holding no freeze of its own still sends: that is a slave, which no freeze frame reaches
      * at all - they go to masters only - so there is no row of its own to write, while the leader
-     * authorizes the photograph by the node that initiated the operation, exactly as it authorizes
-     * every other frame of the window. With no leader known as well, the photograph is dropped.
+     * authorizes the photograph by the agent identity it carries, exactly as it authorizes every
+     * other frame of the window. With no leader known as well, the photograph is dropped.
      *
      * The phase is deliberately not checked, unlike the pass - a follower reaches `active` only on
      * its leader's settled frame ({@see onSettled()}, HIL-1128), and gating on `active` would make
@@ -369,7 +366,7 @@ final class ClusterProtectedMode implements
     {
         $snapshot = new VerifierCircleSnapshot($data->namedCount, $data->sessionTokenHashes);
         if ($this->isLeader) {
-            $this->onCircle($this->selfNodeId, $snapshot);
+            $this->onCircle($this->selfNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex, $snapshot);
             return;
         }
 
@@ -382,7 +379,7 @@ final class ClusterProtectedMode implements
                 return;
             }
 
-            $this->mesh->sendCircle($leaderNodeId, $snapshot);
+            $this->mesh->sendCircle($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex, $snapshot);
             return;
         }
 
@@ -392,14 +389,13 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->mesh->sendCircle($leaderNodeId, $snapshot);
+        $this->mesh->sendCircle($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex, $snapshot);
     }
 
     /**
      * Entry point on the initiator's own node: routes the request to close back out of the window.
      *
-     * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back,
-     *                                              unused here: a cluster authorizes by node id
+     * @param ProtectedModeRefreezeSignalData $data Identity of the agent asking to close back
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -407,7 +403,7 @@ final class ClusterProtectedMode implements
     public function requestRefreeze(ProtectedModeRefreezeSignalData $data): void
     {
         if ($this->isLeader) {
-            $this->onRefreeze($this->selfNodeId);
+            $this->onRefreeze($this->selfNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
             return;
         }
 
@@ -417,12 +413,13 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        $this->mesh->sendRefreeze($leaderNodeId);
+        $this->mesh->sendRefreeze($leaderNodeId, $data->initiatorAgentType, $data->initiatorAgentIndex);
     }
 
     /**
      * @param string $fromNodeId Node id of the initiator that sent the request
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -433,9 +430,7 @@ final class ClusterProtectedMode implements
             $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::NO_LEADER);
             return;
         }
-        // A nameless initiator is a single-node payload that reached a cluster: the leader would
-        // have no node to send ready to and no node id to authorize the later disable against,
-        // so the freeze is refused instead of entered and never lifted.
+        // A clustered enable needs an entry node for the row's history.
         if ($data->initiatorNodeId === null) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — the request names no initiator node");
             $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
@@ -469,6 +464,7 @@ final class ClusterProtectedMode implements
 
     /**
      * @param string $fromNodeId Node id of the follower that quiesced
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -485,18 +481,14 @@ final class ClusterProtectedMode implements
 
     /**
      * @param string $fromNodeId Node id of the initiator that released the freeze
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function onDisable(string $fromNodeId): void
+    public function onDisable(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
-        if (!$this->isLeader || $this->activeFreeze === null) {
-            Logger::warning("Protected mode: dropping disable from '{$fromNodeId}' — no freeze is being led here");
-            return;
-        }
-        if ($fromNodeId !== $this->activeFreeze->initiatorNodeId) {
-            Logger::warning("Protected mode: dropping disable from '{$fromNodeId}'"
-                . " — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
+        if (!$this->leadsFreezeFor($fromNodeId, $agentType, $agentIndex, 'disable')) {
             return;
         }
 
@@ -513,7 +505,7 @@ final class ClusterProtectedMode implements
      * re-rolls the stopped-agent set the lift will resume against an already-emptied roster, so the second
      * pass would shrink it and strand agents. Mirrors the in-flight guard on {@see onEnable()}.
      *
-     * The exception is a quiesce from this node's freezing leader while the row is still verifying
+     * The exception is a quiesce from the leader this node follows while the row is still verifying
      * (HIL-1057): the window has returned the roster, so a second stop is safe, and that is how a
      * repeat entry from the window - and the close back from it (HIL-1128) - reaches a follower,
      * which does not tell the two apart. On activating or active the same frame is still dropped,
@@ -527,19 +519,20 @@ final class ClusterProtectedMode implements
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void
     {
-        if (
-            $this->freezingLeaderId !== null
-            && !(
-                $this->frozenByThisLeader($fromNodeId)
-                && $this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)
-            )
-        ) {
-            Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
-                . " — node '{$this->selfNodeId}' is already frozen by '{$this->freezingLeaderId}'");
-            return;
+        if ($this->underFreeze()) {
+            $acceptedLeader = $this->obeysLeader($fromNodeId);
+            if ($acceptedLeader) {
+                $this->followLeader($fromNodeId);
+            }
+            if (!$acceptedLeader || !$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+                Logger::warning("Protected mode: dropping quiesce from '{$fromNodeId}'"
+                    . " — node '{$this->selfNodeId}' is already frozen by '" . ($this->freezingLeaderId ?? 'nobody') . "'");
+                return;
+            }
         }
         // The leader's guard, from the follower side, and the refusal stays off the wire: reporting
         // quiesced for a freeze this node never entered would let the leader hand ready to the
@@ -576,6 +569,7 @@ final class ClusterProtectedMode implements
      * makes: a quiesced report for a freeze this node has not entered lets the leader hand ready to
      * the initiator while the node is still serving its clients.
      *
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -614,23 +608,25 @@ final class ClusterProtectedMode implements
     /**
      * Relays the leader's ready to this node's initiator agent, exactly once per request.
      *
-     * Only the leader that froze this node may confirm it, and only the first confirmation runs:
+     * Only the leader this node follows may confirm it, and only the first confirmation runs:
      * {@see ProtectedModeExecutor::notifyInitiatorReady} lets the initiator start its destructive
      * operation, so a stray or duplicate ready must not re-fire it. What re-arms the guard is this
      * node's own initiator asking again ({@see requestEnable()}) or a fresh freeze being ordered
      * against this node ({@see onQuiesce()}) - the two moments a ready is owed.
      *
      * @param string $fromNodeId Node id of the leader that confirmed the freeze
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onReady(string $fromNodeId): void
     {
         $this->pendingInitiatorAgentType = null;
         $this->pendingInitiatorAgentIndex = null;
 
-        if ($this->freezingLeaderId === null || $fromNodeId !== $this->freezingLeaderId) {
+        if (!$this->obeysLeader($fromNodeId)) {
             Logger::warning("Protected mode: dropping ready from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen by it");
             return;
         }
+        $this->followLeader($fromNodeId);
         if ($this->readyRelayed) {
             return;
         }
@@ -666,28 +662,32 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Releases this follower node, but only when the leader that froze it orders the lift.
+     * Releases this follower node only on an order from the leader it follows.
      *
-     * Symmetric with the initiator check on {@see onDisable()}: a stray or stale lift from any other
-     * handshaked peer must not thaw the node mid-operation.
+     * A frozen row outlives a former leader or a node restart. The current leader may take over
+     * that row; a stale lift from any other peer must not thaw the node mid-operation.
      *
      * @param string $fromNodeId Node id of the leader that lifted the freeze
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onLift(string $fromNodeId): void
     {
         $this->pendingInitiatorAgentType = null;
         $this->pendingInitiatorAgentIndex = null;
 
-        if ($this->freezingLeaderId === null) {
+        if (!$this->underFreeze()) {
             Logger::warning("Protected mode: dropping lift from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen");
             return;
         }
-        if ($fromNodeId !== $this->freezingLeaderId) {
-            Logger::warning("Protected mode: dropping lift from '{$fromNodeId}' — freeze was ordered by '{$this->freezingLeaderId}'");
+        if (!$this->obeysLeader($fromNodeId)) {
+            $leaderNodeId = $this->mesh->leaderNodeId() ?? 'no leader';
+            Logger::warning("Protected mode: dropping lift from '{$fromNodeId}' — node '{$this->selfNodeId}'"
+                . " was frozen by '" . ($this->freezingLeaderId ?? 'nobody') . "' and knows '{$leaderNodeId}' as the leader");
             return;
         }
+        $this->followLeader($fromNodeId);
 
         $this->executor->enterInactive();
         $this->freezingLeaderId = null;
@@ -698,7 +698,7 @@ final class ClusterProtectedMode implements
      *
      * The leader's word is all that active says on a follower (HIL-1128): this node's own walk ends
      * in a quiesced report, and only the round as a whole decides that the freeze holds. Taken only
-     * from the leader that froze this node and only on activating, because the frame rides every
+     * from the leader this node follows and only on activating, because the frame rides every
      * link to the node ({@see PeerServer::broadcastToMasters()}): a copy over the second link
      * arrives on active, with the circle photographed after the first copy already on the row, and
      * writing active again would clear it.
@@ -706,13 +706,15 @@ final class ClusterProtectedMode implements
      * @param string $fromNodeId Node id of the leader that closed the round
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onSettled(string $fromNodeId): void
     {
-        if (!$this->frozenByThisLeader($fromNodeId)) {
+        if (!$this->obeysLeader($fromNodeId)) {
             Logger::warning("Protected mode: dropping settled from '{$fromNodeId}' — node '{$this->selfNodeId}' is not frozen by it");
             return;
         }
+        $this->followLeader($fromNodeId);
         if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVATING)) {
             Logger::warning("Protected mode: dropping settled from '{$fromNodeId}' — node '{$this->selfNodeId}' is not activating");
             return;
@@ -723,12 +725,16 @@ final class ClusterProtectedMode implements
 
     /**
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
-    public function onVerify(string $fromNodeId): void
+    public function onVerify(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
-        if ($this->frozenByThisLeader($fromNodeId)) {
+        if ($this->obeysLeader($fromNodeId)) {
+            $this->followLeader($fromNodeId);
             // Follower half: the leader has already decided, so what is left to refuse is a repeat
             // - reapplying the window would re-roll the stopped-agent roster the lift resumes.
             if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
@@ -740,7 +746,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        if (!$this->leadsFreezeFor($fromNodeId, 'verify')) {
+        if (!$this->leadsFreezeFor($fromNodeId, $agentType, $agentIndex, 'verify')) {
             return;
         }
         if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE)) {
@@ -749,7 +755,7 @@ final class ClusterProtectedMode implements
         }
 
         $this->executor->enterVerifying();
-        $this->mesh->broadcastVerify();
+        $this->mesh->broadcastVerify($this->activeFreeze->initiatorAgentType, $this->activeFreeze->initiatorAgentIndex);
     }
 
     /**
@@ -759,8 +765,8 @@ final class ClusterProtectedMode implements
      * reads the row it already carries, so a mark landing here is what keeps that row from
      * looking silent while the operation behind it is fine.
      *
-     * Authorized exactly as {@see onDisable()} authorizes the release - only the node that asked
-     * for the freeze may say anything about it - with one difference in what is said out loud. A
+     * Authorized exactly as {@see onDisable()} authorizes the release: only the agent that asked
+     * for the freeze may say anything about it, regardless of its current node. A
      * mark for a freeze this node is not leading is dropped without a log, because it is the
      * ordinary tail of an operation whose last marks outlived its freeze, and this frame arrives
      * once per line of the operation's output. A mark from a node that does NOT own a freeze that
@@ -768,17 +774,17 @@ final class ClusterProtectedMode implements
      * keep a hung operation looking alive indefinitely.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function onProgress(string $fromNodeId): void
+    public function onProgress(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
         if (!$this->isLeader || $this->activeFreeze === null) {
             return;
         }
-        if ($fromNodeId !== $this->activeFreeze->initiatorNodeId) {
-            Logger::warning("Protected mode: dropping progress from '{$fromNodeId}'"
-                . " — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
+        if (!$this->leadsFreezeFor($fromNodeId, $agentType, $agentIndex, 'progress')) {
             return;
         }
 
@@ -787,11 +793,15 @@ final class ClusterProtectedMode implements
 
     /**
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param string $passHash SHA-256 of the minted pass
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
-    public function onPass(string $fromNodeId, string $passHash): void
+    public function onPass(string $fromNodeId, string $agentType, ?int $agentIndex, string $passHash): void
     {
-        if ($this->frozenByThisLeader($fromNodeId)) {
+        if ($this->obeysLeader($fromNodeId)) {
+            $this->followLeader($fromNodeId);
             if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
                 Logger::warning("Protected mode: dropping pass from '{$fromNodeId}' — node '{$this->selfNodeId}' is not verifying");
                 return;
@@ -801,7 +811,7 @@ final class ClusterProtectedMode implements
             return;
         }
 
-        if (!$this->leadsFreezeFor($fromNodeId, 'pass')) {
+        if (!$this->leadsFreezeFor($fromNodeId, $agentType, $agentIndex, 'pass')) {
             return;
         }
         if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
@@ -810,7 +820,7 @@ final class ClusterProtectedMode implements
         }
 
         $this->issuePassAndAnnounceFirst($passHash);
-        $this->mesh->broadcastPass($passHash);
+        $this->mesh->broadcastPass($this->activeFreeze->initiatorAgentType, $this->activeFreeze->initiatorAgentIndex, $passHash);
     }
 
     /**
@@ -822,23 +832,27 @@ final class ClusterProtectedMode implements
      * {@see leadsFreezeFor()} has already said that the freeze it belongs to is the one being led here.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
-    public function onCircle(string $fromNodeId, VerifierCircleSnapshot $snapshot): void
+    public function onCircle(string $fromNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
-        if ($this->frozenByThisLeader($fromNodeId)) {
+        if ($this->obeysLeader($fromNodeId)) {
+            $this->followLeader($fromNodeId);
             $this->runtimeView()?->actions->admitCircle($snapshot);
             return;
         }
 
-        if (!$this->leadsFreezeFor($fromNodeId, 'circle')) {
+        if (!$this->leadsFreezeFor($fromNodeId, $agentType, $agentIndex, 'circle')) {
             return;
         }
 
         $this->runtimeView()?->actions->admitCircle($snapshot);
-        $this->mesh->broadcastCircle($snapshot);
+        $this->mesh->broadcastCircle($this->activeFreeze->initiatorAgentType, $this->activeFreeze->initiatorAgentIndex, $snapshot);
     }
 
     /**
@@ -853,12 +867,14 @@ final class ClusterProtectedMode implements
      * same operator in.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function onRefreeze(string $fromNodeId): void
+    public function onRefreeze(string $fromNodeId, string $agentType, ?int $agentIndex): void
     {
-        if (!$this->leadsFreezeFor($fromNodeId, 'refreeze')) {
+        if (!$this->leadsFreezeFor($fromNodeId, $agentType, $agentIndex, 'refreeze')) {
             return;
         }
         if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
@@ -922,15 +938,10 @@ final class ClusterProtectedMode implements
      * this node and every follower have reported. Any other asker is refused
      * with a stated reason ({@see ProtectedModeRefusalCopy}) instead of being left to its timeout.
      *
-     * Authorized by initiator node id AND by the agent identity the freeze records, which is one
-     * check more than this class asks anywhere else. The node id keeps a second node from freezing
-     * a cluster already frozen for somebody else, the case the refusal was written for. The agent
-     * identity is what the node id cannot cover here: a project holds two initiators - the one that
-     * runs real operations and the test driver's carrier - and on a cluster they sit on the same
-     * node, so a node-id match alone would answer ready under a freeze the asking agent does not
-     * own. The ready would not even reach it: {@see ProtectedModeExecutor::notifyInitiatorReady()}
-     * delivers to the identity written on the row, so the agent that asked would wait out its
-     * timeout while the other one was told a second time that it may start destroying things.
+     * Authorized by agent type and index alone. The initiator is a singleton cluster-wide,
+     * enforced by topology validation, so the identity still names one actor after it moves.
+     * A repeat entry from the verification window runs another quiesce round, letting the
+     * operator keep the system closed while checking the restored data.
      *
      * @param string $fromNodeId Node id of the initiator that sent the request
      * @param ProtectedModeQuiesceData $freeze Freeze this leader is driving
@@ -949,8 +960,7 @@ final class ClusterProtectedMode implements
         }
 
         if (
-            $data->initiatorNodeId !== $freeze->initiatorNodeId
-            || $data->initiatorAgentType !== $freeze->initiatorAgentType
+            $data->initiatorAgentType !== $freeze->initiatorAgentType
             || $data->initiatorAgentIndex !== $freeze->initiatorAgentIndex
         ) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}'"
@@ -993,44 +1003,95 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Whether this node is a follower frozen by the peer that sent the frame.
+     * Whether this follower may accept a freeze frame from its former or current leader.
      *
-     * The verification frames travel in both directions under one name, so the receiving
-     * node decides which half it is playing from what it already knows about itself. Being frozen
-     * by the sender is checked first and settles it: a leader never records a freezing leader for
-     * itself, so the two halves cannot both match.
+     * This check is pure; {@see followLeader()} records an accepted change separately.
      *
      * @param string $fromNodeId Node id the frame came from
-     * @return bool Whether this node should apply the frame as a follower
+     * @return bool Whether this follower accepts that leader
+     * @throws EnvException When the cluster-enabled flag value is invalid
      */
-    private function frozenByThisLeader(string $fromNodeId): bool
+    private function obeysLeader(string $fromNodeId): bool
     {
-        return $this->freezingLeaderId !== null && $fromNodeId === $this->freezingLeaderId;
+        if ($this->isLeader) {
+            return false;
+        }
+        if ($this->freezingLeaderId !== null && $fromNodeId === $this->freezingLeaderId) {
+            return true;
+        }
+        return $fromNodeId === $this->mesh->leaderNodeId() && $this->underFreeze();
+    }
+
+    /**
+     * Records the leader this frozen follower now obeys after {@see obeysLeader()} accepts it.
+     *
+     * @param string $fromNodeId Accepted leader node id
+     */
+    private function followLeader(string $fromNodeId): void
+    {
+        if ($this->freezingLeaderId === $fromNodeId) {
+            return;
+        }
+        Logger::info("Protected mode: node '{$this->selfNodeId}' now follows leader '{$fromNodeId}' for its freeze"
+            . " (was '" . ($this->freezingLeaderId ?? 'nobody') . "')");
+        $this->freezingLeaderId = $fromNodeId;
+    }
+
+    /**
+     * Whether this node still carries a freeze in memory or on its runtime row.
+     *
+     * @return bool Whether this node is under a freeze
+     */
+    private function underFreeze(): bool
+    {
+        $phase = $this->runtimeView()?->phase;
+        return $this->freezingLeaderId !== null
+            || ($phase !== null && $phase !== StateProtectedModeRuntime::PHASE_INACTIVE);
     }
 
     /**
      * Whether this node leads the freeze the sending node initiated.
      *
-     * The authorization the leader half of every verification frame shares with
-     * {@see onDisable()}: only the node that asked for the freeze may drive what happens to it.
+     * The leader half of every verification frame shares this authorization with
+     * {@see onDisable()}: only the agent that asked for the freeze may drive it.
      *
-     * @param string $fromNodeId Node id the frame came from
+     * @param string $fromNodeId Node id the frame came from, for logging
+     * @param string $agentType Agent type in the frame
+     * @param ?int $agentIndex Agent index in the frame
      * @param string $frame Frame name for the refusal log line
-     * @return bool Whether this node may drive the freeze on the sender's behalf
+     * @return bool Whether the agent may drive the freeze
      */
-    private function leadsFreezeFor(string $fromNodeId, string $frame): bool
+    private function leadsFreezeFor(string $fromNodeId, string $agentType, ?int $agentIndex, string $frame): bool
     {
+        $label = self::agentLabel($agentType, $agentIndex);
         if (!$this->isLeader || $this->activeFreeze === null) {
-            Logger::warning("Protected mode: dropping {$frame} from '{$fromNodeId}' — no freeze is being led here");
+            Logger::warning("Protected mode: dropping {$frame} from agent '{$label}' on '{$fromNodeId}' — no freeze is being led here");
             return false;
         }
-        if ($fromNodeId !== $this->activeFreeze->initiatorNodeId) {
-            Logger::warning("Protected mode: dropping {$frame} from '{$fromNodeId}'"
-                . " — freeze was initiated by '{$this->activeFreeze->initiatorNodeId}'");
+        if (
+            $agentType !== $this->activeFreeze->initiatorAgentType
+            || $agentIndex !== $this->activeFreeze->initiatorAgentIndex
+        ) {
+            $initiatorLabel = self::agentLabel(
+                $this->activeFreeze->initiatorAgentType,
+                $this->activeFreeze->initiatorAgentIndex,
+            );
+            Logger::warning("Protected mode: dropping {$frame} from agent '{$label}' on '{$fromNodeId}'"
+                . " — freeze was initiated by agent '{$initiatorLabel}'");
             return false;
         }
 
         return true;
+    }
+
+    /**
+     * @param string $agentType Agent type
+     * @param ?int $agentIndex Agent index, or null for a singleton
+     * @return string Human-readable agent identity
+     */
+    private static function agentLabel(string $agentType, ?int $agentIndex): string
+    {
+        return $agentIndex === null ? $agentType : $agentType . '#' . $agentIndex;
     }
 
     /**
@@ -1093,26 +1154,28 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Tells the node that asked for the freeze that the cluster has quiesced and it may run.
+     * Finds the initiator's current placement and tells it the cluster has quiesced.
      *
-     * When the leader is itself the initiator the ready has no peer to travel over — a self send
-     * would go nowhere — so it is relayed to the local agent directly; otherwise it rides the peer
-     * channel to the initiator's node.
+     * A local agent is notified directly; a remote one receives a ready peer frame. Unknown
+     * placement is logged and left to the watchdog rather than sent to the old entry node.
      *
      * @param ProtectedModeQuiesceData $freeze Freeze whose initiator is being signalled
+     * @throws EnvException When the cluster-enabled flag value is invalid during placement lookup
      */
     private function signalInitiatorReady(ProtectedModeQuiesceData $freeze): void
     {
-        // A nameless initiator never gets past onEnable, so null cannot reach here; relaying
-        // locally is nonetheless the safe reading of it, because a ready sent to no node would
-        // leave the initiator waiting forever under a freeze nobody can lift.
-        $initiatorNodeId = $freeze->initiatorNodeId;
-        if ($initiatorNodeId === null || $initiatorNodeId === $this->selfNodeId) {
+        $location = $this->mesh->locateAgent($freeze->initiatorAgentType, $freeze->initiatorAgentIndex);
+        if ($location->kind === AgentLocationKind::Here) {
             $this->executor->notifyInitiatorReady();
             return;
         }
+        if ($location->kind === AgentLocationKind::Node && $location->nodeId !== null) {
+            $this->mesh->sendReady($location->nodeId);
+            return;
+        }
 
-        $this->mesh->sendReady($initiatorNodeId);
+        $label = self::agentLabel($freeze->initiatorAgentType, $freeze->initiatorAgentIndex);
+        Logger::warning("Protected mode: the ready for agent '{$label}' reached nobody — no node is known to host it");
     }
 
     /**

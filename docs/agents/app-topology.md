@@ -28,7 +28,9 @@ table contexts when they can read the project registry.
   entry that declares neither keeps its behavior. `NODE` combines with neither
   `INDEXED` (a sharded pool needs an index) nor `PLACEMENT` (a replica runs on
   every node, so no node is picked). `TopologyAgentFactory` creates worker and
-  daemon instances from this registry.
+  daemon instances from this registry. An agent that owns `protected-mode:open`
+  or `test:protected-mode:open` initiates protected mode and must be one
+  cluster-wide instance: neither `NODE` scope nor `INDEXED` is allowed.
 - `Hilos::SHARED_DB_OWNERS` and `Hilos::SHARED_RT_OWNERS` record the collections
   more than one registered owner still holds, keyed by collection: the owners
   under `SharedOwnersKey::OWNERS` and the leaf that will part them under
@@ -282,7 +284,8 @@ without one stays without one ([orm/migrations.md](orm/migrations.md)).
    for a single cluster-wide instance on the node the placement policy picks
    (the leader places it; unindexed ones the framework places itself). Leave
    both out for today's leader-hosted cluster singleton. `NODE` combines with
-   neither `INDEXED` nor `PLACEMENT`.
+   neither `INDEXED` nor `PLACEMENT`. An agent owning either protected-mode open
+   command must remain a cluster singleton, without `NODE` or `INDEXED`.
 8. Declare directly handled agent-to-agent signal names in
    `public const array AGENT_SIGNALS = [...]` when the agent owns them. Prefer
    `signal name => SignalDataInterface` class for singleton typed signals. For

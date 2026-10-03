@@ -66,6 +66,13 @@ recorded on entry is what authorizes the later release (a stray agent must not
 thaw the system mid-restore) and what the agent-start gate lets through, so a
 synthetic initiator would test a path production does not have.
 
+An initiator owns the open command (`protected-mode:open` or
+`test:protected-mode:open`) as one cluster-wide instance. Startup refuses that
+command's agent with `NODE` scope or `INDEXED` set, on a cluster and on a single
+node alike. The leader authorizes its later frames by agent type and index;
+replicas or multiple indexed instances would hand that right to more than one
+actor.
+
 What this obliges a test driver to do (HIL-344): give the driver its own
 initiator agent and ask for the mode through it, rather than poking the daemon
 past the agent. The precedent is the backup test commands, which ride
@@ -345,7 +352,7 @@ the leader once every node of the round, itself included, has reported
 carries weight: an initiator on a follower gets both over one link, writes
 `active` first, and only then relays the ready that photographs the verifier
 circle, so its `enterActive()` never clears a circle already on the row. A
-follower takes it only from the leader that froze it and only on `activating` —
+follower takes it only from the leader it follows and only on `activating` —
 the frame rides every link to the node, and a copy over the second link would
 otherwise clear that circle. The close owes nobody a ready: the switch remembers
 whether the walk in flight owes one (`readyOwed`), because the phase no longer
@@ -434,6 +441,9 @@ automatically, the human path out has to actually work.
   initiator's and every admitted verifier's — and that one is a decision rather
   than a consequence: those cookies do outlive the daemon, and keeping them would
   hand their browsers the run of a node whose operation nobody is driving.
+  A restored row is still frozen even before this node remembers its leader. It
+  accepts the current leader's frames and refuses a fresh quiesce outside the
+  verification window.
 - **Leader change.** `ClusterProtectedMode::onBecameLeader()` rebuilds the
   leader-side freeze from the row this node carries. Without it `onDisable()`
   from a live and healthy initiator is dropped (`leadsFreezeFor()` on
@@ -443,7 +453,17 @@ automatically, the human path out has to actually work.
   not close, which the watchdog reports as overdue. Every threshold is counted
   from the moment the watchdog first saw the freeze, never from the clocks on the
   row, or a promotion in the middle of a healthy hour-long restore would report
-  it stuck in the same second.
+  it stuck in the same second. Frozen followers and the former leader follow the
+  current leader when it sends a frame, and send the next `quiesced` to it.
+- **Initiator moves.** The leader checks the initiator agent type and index in
+  disable, verify, progress, pass, circle, and refreeze frames, not the sending
+  node. It locates the agent for `ready` through the same placement lookup used
+  by signal routing: local delivery, a peer frame to the current node, or a
+  warning when placement is unknown. There is no retry or fallback to the entry
+  node. A refused enable still answers the requesting node. An agent that moves
+  during the verification window may enable again and begin a new quiesce round.
+  The row keeps the original node as history, never as the authorization or
+  delivery address.
 
 What the watchdog never does: lift, move a phase, touch `passHashes` or the node
 list, restart the initiator. Everything past the alert is a person's to decide.
@@ -530,7 +550,7 @@ row. A follower initiator writes its own row before it sends, so with no leader
 known that row still holds it and the rest of the cluster lets the circle in by
 code alone. An initiator on a slave has no freeze row to write — the freeze
 frames reach masters only — and sends the photograph to the leader all the same:
-the leader authorizes it by the node that initiated the operation, as it does
+the leader authorizes it by the agent type and index carried in the frame, as it does
 every frame of the window, and that authorization is all either half checks:
 neither reads the phase.
 
@@ -810,7 +830,9 @@ Refuse loudly and before any trace of entry, as above.
 ## Validation
 
 - `composer run test:framework:unit` — covers the entry guards
-  (`ClusterProtectedModeTest`, `StandaloneProtectedModeTest`), the unconditional
+  (`ClusterProtectedModeTest`, `StandaloneProtectedModeTest`), initiator placement
+  and peer-frame identity (`ProtectedModePeerFrameTest`), singleton initiator
+  topology (`TopologyValidatorTest`), the unconditional
   mount (`ProtectedModeRuntimeMountTest`), the master-side snapshot
   (`ProtectedModeSnapshotTest`), the agent driver
   (`ProtectedModeTestDriverTest`), the four verdicts and the alarm's repetition
@@ -836,3 +858,5 @@ Refuse loudly and before any trace of entry, as above.
   named, leave, the window working again, and the verifier circle walking in on
   the tab it had open. It freezes the whole node, so its teardown lifts
   unconditionally; the runner is serialized (`CI=1`).
+- `demo/binance-btc-tracker` cluster scenarios 23 and 25 — drive the freeze and
+  verification window through the live peer mesh and repeated quiesce rounds.

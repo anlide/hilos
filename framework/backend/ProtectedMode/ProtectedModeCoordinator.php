@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -17,8 +18,8 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
  * worker-sent agent signal only ever lands on another worker, never on the leader daemon. The
  * {@see PeerServer} unwraps each arriving envelope and calls the method for
  * its kind here, so this seam receives the domain payload and never the wire frame: enable carries
- * the {@see ProtectedModeEnableSignalData} contract fields, ready and disable are bare signals (the
- * frame itself is the whole message) and carry only the originating node id, and refused carries
+ * the {@see ProtectedModeEnableSignalData} contract fields. Disable and verification frames carry
+ * the initiator agent identity; ready is a bare signal. Refused carries
  * the reason the leader gives (HIL-909).
  *
  * The initiator↔leader half (enable/ready/refused/disable) is mirrored by the cluster-wide half
@@ -40,6 +41,7 @@ interface ProtectedModeCoordinator
      *
      * @param string $fromNodeId Node id of the initiator that sent the request
      * @param ProtectedModeEnableSignalData $data Initiator identity and the operation the freeze protects
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -51,6 +53,7 @@ interface ProtectedModeCoordinator
      * Arrives on the initiator; the destructive operation may now proceed.
      *
      * @param string $fromNodeId Node id of the leader that confirmed the freeze
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onReady(string $fromNodeId): void;
 
@@ -71,10 +74,12 @@ interface ProtectedModeCoordinator
      * Arrives on the leader; the leader drives the cluster-wide release.
      *
      * @param string $fromNodeId Node id of the initiator that released the freeze
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function onDisable(string $fromNodeId): void;
+    public function onDisable(string $fromNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
      * Handles the leader's order to freeze this node for a destructive operation.
@@ -86,6 +91,7 @@ interface ProtectedModeCoordinator
      * @param ProtectedModeQuiesceData $data Operation and initiator identity the freeze protects
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onQuiesce(string $fromNodeId, ProtectedModeQuiesceData $data): void;
 
@@ -95,6 +101,7 @@ interface ProtectedModeCoordinator
      * Arrives on the leader; the leader activates the mode once every follower has reported.
      *
      * @param string $fromNodeId Node id of the follower that quiesced
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -108,18 +115,20 @@ interface ProtectedModeCoordinator
      * @param string $fromNodeId Node id of the leader that lifted the freeze
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onLift(string $fromNodeId): void;
 
     /**
      * Handles the leader's word that every node has stopped its roster.
      *
-     * Arrives on a follower from the leader that froze it, at the end of every quiesce round; the
+     * Arrives on a follower from the leader it follows, at the end of every quiesce round; the
      * follower writes active (HIL-1128).
      *
      * @param string $fromNodeId Node id of the leader that closed the round
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onSettled(string $fromNodeId): void;
 
@@ -133,10 +142,13 @@ interface ProtectedModeCoordinator
      * about itself, exactly as the enable/quiesce pair splits the same knowledge across two names.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
-    public function onVerify(string $fromNodeId): void;
+    public function onVerify(string $fromNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
      * Handles a progress mark from the node that initiated the freeze.
@@ -147,10 +159,12 @@ interface ProtectedModeCoordinator
      * clock is wrong cannot decide how long another node's freeze may stay silent.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function onProgress(string $fromNodeId): void;
+    public function onProgress(string $fromNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
      * Handles one minted pass, either asked for by the initiator or fanned out by the leader.
@@ -159,9 +173,12 @@ interface ProtectedModeCoordinator
      * accept key means something only on the node holding that connection.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param string $passHash SHA-256 of the minted pass
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
-    public function onPass(string $fromNodeId, string $passHash): void;
+    public function onPass(string $fromNodeId, string $agentType, ?int $agentIndex, string $passHash): void;
 
     /**
      * Handles the verifier circle photographed at the freeze, either sent by the initiator's node
@@ -171,11 +188,14 @@ interface ProtectedModeCoordinator
      * own photograph back from the leader - writes the same thing twice and changes nothing.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @param VerifierCircleSnapshot $snapshot The circle as the initiator's node photographed it
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
-    public function onCircle(string $fromNodeId, VerifierCircleSnapshot $snapshot): void;
+    public function onCircle(string $fromNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void;
 
     /**
      * Handles the close-back out of the verification window, from the initiator's node to the leader.
@@ -184,8 +204,10 @@ interface ProtectedModeCoordinator
      * sent this frame.
      *
      * @param string $fromNodeId Node id the frame came from
+     * @param string $agentType Initiator agent type
+     * @param ?int $agentIndex Initiator index, or null for a singleton
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
-    public function onRefreeze(string $fromNodeId): void;
+    public function onRefreeze(string $fromNodeId, string $agentType, ?int $agentIndex): void;
 }

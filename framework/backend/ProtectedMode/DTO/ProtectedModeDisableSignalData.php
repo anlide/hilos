@@ -14,12 +14,10 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * ProtectedModeDisableSignalData - initiator -> daemon payload for PROTECTED_MODE_DISABLE.
  *
  * The initiator sends it once its operation has finished, asking for the freeze to be lifted.
- * It names the agent that asks, and on a single node that name is the whole authorization: only
- * the agent recorded as the initiator on {@see ProtectedModeRuntime} may thaw the system, or any
- * other agent could resume the node in the middle of a restore. A cluster authorizes by initiator
- * node id instead ({@see ClusterProtectedMode::onDisable()}) and ignores these fields - that
- * comparison is what degenerates to nothing when there is only one node, which is why the identity
- * had to enter the payload at all.
+ * It names the agent that asks. Both a single node and a cluster authorize the release by the
+ * type and index recorded on {@see ProtectedModeRuntime}; another agent cannot thaw the system
+ * mid-restore. The cluster forwards that identity to {@see ClusterProtectedMode::onDisable()},
+ * so a moved initiator retains its right to release the freeze.
  */
 final class ProtectedModeDisableSignalData extends BaseDTO implements SignalDataInterface
 {

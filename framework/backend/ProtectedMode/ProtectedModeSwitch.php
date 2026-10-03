@@ -42,9 +42,8 @@ interface ProtectedModeSwitch
     /**
      * Asks to lift the freeze once the destructive operation has finished.
      *
-     * The carried identity is how a single node authorizes the release: with no peers there is
-     * no node id to compare, so the initiator agent names itself instead. The clustered
-     * implementation authorizes by initiator node id and ignores it.
+     * Both the single-node and clustered implementations authorize the release by the carried
+     * agent type and index. The cluster uses the same identity after the agent changes nodes.
      *
      * @param ProtectedModeDisableSignalData $data Identity of the agent asking for the release
      * @throws EnvException When the cluster-enabled flag value is invalid
@@ -147,6 +146,7 @@ interface ProtectedModeSwitch
      * included (HIL-1128). The phase no longer tells them apart: the switch remembers whether the
      * walk in flight owes the initiator a ready, and a walk that closes a window back owes nobody.
      *
+     * @throws EnvException When the cluster-enabled flag value is invalid during initiator placement lookup
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */

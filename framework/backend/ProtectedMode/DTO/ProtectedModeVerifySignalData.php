@@ -18,9 +18,8 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * ({@see ProtectedModeRuntime::PHASE_VERIFYING}).
  *
  * It authorizes exactly like {@see ProtectedModeDisableSignalData} does, and carries the same
- * identity for the same reason: on a single node the recorded initiator agent is the whole
- * authorization, while a cluster compares initiator node ids instead
- * ({@see ClusterProtectedMode::onVerify()}) and ignores these fields.
+ * identity for the same reason: the recorded initiator agent is the whole authorization on a
+ * single node and in a cluster ({@see ClusterProtectedMode::onVerify()}).
  */
 final class ProtectedModeVerifySignalData extends BaseDTO implements SignalDataInterface
 {
