@@ -18,6 +18,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Environment\Exception\EnvException;
@@ -36,7 +37,8 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  * ({@see HilosSignalConstants::ANALYTICS_JOURNAL_APPEND}); it appends them to the open file and
  * leaves the rest to {@see AnalyticsJournalDirectory}: the sync once a second, the rotation, the
  * names. The writer reads ready files through it and confirms each one it loaded, which deletes
- * the file.
+ * the file. Each rotation and a start that finds ready files also tells the writer that this node
+ * has work; the writer's own register scan covers a notice lost during its move or restart.
  *
  * What came in is guaranteed to reach the database now or later - with the losses the owner
  * accepted and docs/agents/architecture/analytics.md lists: a machine crash costs up to a second,
@@ -53,7 +55,8 @@ final class AnalyticsJournalAgent extends AbstractAgent
 
     /**
      * A batch always goes to the sender's own node; the read and the confirmation name the node in
-     * the payload, so a writer elsewhere reaches this one (HIL-1155).
+     * the payload, so a writer elsewhere reaches this one. This agent sends ready notices to the
+     * one cluster writer; it does not take them (HIL-1155).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => AnalyticsJournalAppendSignalData::class,
@@ -96,6 +99,7 @@ final class AnalyticsJournalAgent extends AbstractAgent
      * @throws EnvException When the cluster flag, a cluster value or APP_ENV cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
      * @throws DirectoryNotFoundException When the project registers no analytics_journal directory
+     * @throws InvalidArgumentException When a ready notice cannot be named
      */
     public function onStart(): void
     {
@@ -122,6 +126,7 @@ final class AnalyticsJournalAgent extends AbstractAgent
      *
      * @param AnalyticsJournalDirectory $journal The node's journal
      * @param ?string $nodeId Cluster node id of this node, null off a cluster
+     * @throws InvalidArgumentException When a ready notice cannot be named
      */
     public function openJournal(AnalyticsJournalDirectory $journal, ?string $nodeId): void
     {
@@ -133,6 +138,8 @@ final class AnalyticsJournalAgent extends AbstractAgent
 
     /**
      * Syncs and rotates the open file when due; a start that failed is tried again here.
+     *
+     * @throws InvalidArgumentException When a ready notice cannot be named
      */
     public function onTick(): void
     {
@@ -141,7 +148,9 @@ final class AnalyticsJournalAgent extends AbstractAgent
         }
 
         try {
-            $this->journal?->tick(self::nowMs());
+            if ($this->journal?->tick(self::nowMs()) !== null) {
+                $this->announceReady();
+            }
             $this->clearFailure(self::OPERATION_SYNC);
         } catch (FsException $failure) {
             $this->reportFailure(self::OPERATION_SYNC, $failure);
@@ -155,10 +164,12 @@ final class AnalyticsJournalAgent extends AbstractAgent
      * belongs to it: what was not loaded by then is lost, by the owner's decision, and counted by
      * HIL-1157. Asked here and not at the swap, because the swap is invisible to an agent - the
      * re-read round comes on a failed restore too.
+     *
+     * @throws InvalidArgumentException When a ready notice cannot be named
      */
     public function onStop(): void
     {
-        if ($this->journal === null || !$this->ensureStarted()) {
+        if ($this->journal === null || !$this->ensureStarted(false)) {
             return;
         }
 
@@ -238,7 +249,9 @@ final class AnalyticsJournalAgent extends AbstractAgent
         }
 
         try {
-            $this->journal?->append($kept, self::nowMs());
+            if ($this->journal?->append($kept, self::nowMs()) !== null) {
+                $this->announceReady();
+            }
             $this->clearFailure(self::OPERATION_WRITE);
         } catch (FsException $failure) {
             $this->reportFailure(self::OPERATION_WRITE, $failure);
@@ -269,6 +282,13 @@ final class AnalyticsJournalAgent extends AbstractAgent
             $this->reportFailure(self::OPERATION_READ, $failure);
 
             return;
+        }
+
+        if ($portion !== null && $portion->passedOver > 0) {
+            $this->logAgentWarning(
+                "Analytics journal: passed over {$portion->passedOver} line(s) longer than "
+                . AnalyticsJournalRecord::MAX_LINE_BYTES . " bytes in {$file}",
+            );
         }
 
         $this->sendToAgent(HilosSignalConstants::ANALYTICS_JOURNAL_PORTION, new AnalyticsJournalPortionSignalData(
@@ -304,12 +324,13 @@ final class AnalyticsJournalAgent extends AbstractAgent
     /**
      * Sets up the subdirectory unless that is done.
      *
+     * @param bool $announceReady Whether a recovered ready file should notify the writer
      * @return bool Whether the journal is ready to work
      */
-    private function ensureStarted(): bool
+    private function ensureStarted(bool $announceReady = true): bool
     {
         if (!$this->started) {
-            $this->startJournal();
+            $this->startJournal($announceReady);
         }
 
         return $this->started;
@@ -317,8 +338,10 @@ final class AnalyticsJournalAgent extends AbstractAgent
 
     /**
      * Sets up the subdirectory and closes what a previous life left open.
+     *
+     * @param bool $announceReady Whether a recovered ready file should notify the writer
      */
-    private function startJournal(): void
+    private function startJournal(bool $announceReady = true): void
     {
         if ($this->journal === null) {
             return;
@@ -326,14 +349,33 @@ final class AnalyticsJournalAgent extends AbstractAgent
 
         try {
             $closed = $this->journal->start();
+            // The listing belongs to the start: if it fails, the next tick must retry and
+            // announce files that would otherwise remain unseen by an already running writer.
+            $hasReady = $announceReady && $this->journal->oldestReady() !== null;
             $this->started = true;
             $this->clearFailure(self::OPERATION_START);
             if ($closed > 0) {
                 $this->logAgentInfo("Analytics journal: closed {$closed} file(s) a previous life left open");
             }
+            if ($hasReady) {
+                $this->announceReady();
+            }
         } catch (FsException $failure) {
             $this->reportFailure(self::OPERATION_START, $failure);
         }
+    }
+
+    /**
+     * Tells the cluster writer that this node has at least one ready file.
+     *
+     * @throws InvalidArgumentException When the notice cannot be named
+     */
+    private function announceReady(): void
+    {
+        $this->sendToAgent(
+            HilosSignalConstants::ANALYTICS_JOURNAL_READY,
+            new AnalyticsJournalReadySignalData($this->nodeId),
+        );
     }
 
     /**

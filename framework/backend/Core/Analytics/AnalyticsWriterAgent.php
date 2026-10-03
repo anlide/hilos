@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Analytics;
 
-use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -14,127 +13,135 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
- * The one writer of the analytics tables in a cluster (HIL-1154).
+ * The one writer of analytics tables, wherever policy places it in the cluster (HIL-1155).
  *
- * Placed by policy, one instance for the cluster, on a monopolistic worker: a load is blocking
- * database work, and it runs right in the handler of the portion that completes a file. It takes
- * the ready files of its own node through that node's journal agent ({@see AnalyticsJournalAgent})
- * - the files of other nodes wait on their disks until HIL-1155 - strictly in their order:
+ * Its worker receives the node register before start. Every online node is initially waiting;
+ * later a ready notice or a changed online register row makes it waiting. It reads one whole file
+ * from a waiting node, then visits the next node in id order. Files of one node stay in sequence;
+ * there is no order between nodes. An offline or silent node keeps its files on disk while other
+ * nodes proceed. A database failure pauses only that node, with its failed file ahead of later
+ * files. Loading is blocking, so this agent has a monopolistic worker.
  *
- * - once a second, while it holds no file, it asks for the oldest ready one;
- * - it reads the file portion by portion, asking again when an answer is ten seconds late;
- * - a whole file is one transaction ({@see AnalyticsJournalLoader}), then it confirms the file,
- *   and the journal agent deletes it; a file loaded before is only confirmed again;
- * - a database failure throws what was read away and asks for the same file again after five
- *   seconds, doubling up to a minute, so no later file of the node lands before it.
- *
- * It starts with empty caches: the numbers it learns live only in its own memory and are kept
- * only once their transaction committed.
+ * See docs/agents/architecture/analytics.md, Across Nodes.
  */
 final class AnalyticsWriterAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_ANALYTICS_WRITER;
 
-    /** The one frame it takes: a portion of a ready file. */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => AnalyticsJournalPortionSignalData::class,
+        HilosSignalConstants::ANALYTICS_JOURNAL_READY => AnalyticsJournalReadySignalData::class,
     ];
 
-    public const int POLL_INTERVAL_MS = 1000;
+    /** @var list<string> The node register is the authority for membership and connectivity. */
+    public const array READS_RT = [HilosClusterNode::RT_COLLECTION];
+
     public const int READ_TIMEOUT_MS = 10000;
     public const int RETRY_MIN_MS = 5000;
     public const int RETRY_MAX_MS = 60000;
 
     private AnalyticsJournalLoader $loader;
 
-    /** @var ?string Cluster node id of this node, null off a cluster */
-    private ?string $nodeId = null;
+    /** @var array<string, true> Nodes that may have ready files */
+    private array $waitingNodes = [];
 
-    /** @var string Ready file being read, {@see AnalyticsJournalReadSignalData::OLDEST_READY} while none is */
+    /** @var array<string, string> Last online and lastSeen value observed for each node */
+    private array $seenRows = [];
+
+    /** @var ?string Node with an outstanding read, null when free */
+    private ?string $readingNode = null;
+
+    /** @var string File being read, or the oldest-ready sentinel before its first answer */
     private string $file = AnalyticsJournalReadSignalData::OLDEST_READY;
 
-    /** @var list<string> Lines of that file read so far */
+    /** @var list<string> Lines of the current file */
     private array $lines = [];
 
-    /** @var int Offset of the portion asked for */
+    /** @var int Offset of the outstanding read */
     private int $offset = 0;
-
-    /** @var bool Whether a read is outstanding */
-    private bool $waiting = false;
 
     /** @var int Moment the outstanding read was sent, in milliseconds */
     private int $askedAtMs = 0;
 
-    /** @var int Moment of the last ask for the oldest ready file, in milliseconds */
-    private int $lastPollAtMs = 0;
+    /** @var ?string Node at which the last file read began, for round-robin selection */
+    private ?string $lastStartedNode = null;
 
-    /** @var string File a failed load is to be retried with, {@see AnalyticsJournalReadSignalData::OLDEST_READY} when nothing failed */
-    private string $retryFile = AnalyticsJournalReadSignalData::OLDEST_READY;
+    /** @var array<string, AnalyticsWriterNodePause> Database retry state, by node */
+    private array $pauses = [];
 
-    /** @var int Moment the retry may start, in milliseconds */
-    private int $retryAtMs = 0;
-
-    /** @var int Pause before the next retry, 0 while loads succeed */
-    private int $retryDelayMs = 0;
+    /** @var array<string, true> Nodes whose silence has already been logged */
+    private array $silentNodes = [];
 
     /**
-     * Learns which node this is and opens an empty store.
-     *
-     * @throws EnvException When the cluster flag or a cluster value cannot be read
-     * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     * Opens the loader and marks every online node as worth asking after this start.
      */
     public function onStart(): void
     {
-        $cluster = Hilos::$cluster;
-        $this->nodeId = $cluster !== null && $cluster->isEnabled() ? $cluster->identity()->nodeId : null;
         $this->loader = new AnalyticsJournalLoader(new AnalyticsStore());
+        $this->refreshNodes();
     }
 
     /**
-     * Asks for the next file when free, again when an answer is late, and the failed file once its pause is over.
+     * Reconciles membership and asks at most one node for a file or a portion.
      *
      * @throws InvalidArgumentException When a read cannot be named
      */
     public function onTick(): void
     {
-        $this->pollIfDue(self::nowMs());
+        $this->step(self::nowMs());
     }
 
     /**
-     * Throttle only: decides which read is due and sends it.
+     * Drives one short scheduling step with a caller-supplied clock.
      *
-     * @param int $nowMs Moment of this tick, in milliseconds
+     * @param int $nowMs Moment of this step, in milliseconds
      * @throws InvalidArgumentException When a read cannot be named
      */
-    public function pollIfDue(int $nowMs): void
+    public function step(int $nowMs): void
     {
-        if ($this->waiting) {
-            if ($nowMs - $this->askedAtMs >= self::READ_TIMEOUT_MS) {
-                $this->ask($this->file, $this->offset, $nowMs);
+        $online = $this->refreshNodes();
+        if ($this->readingNode !== null) {
+            if (!isset($online[$this->readingNode])) {
+                $this->releaseRead();
+            } elseif ($nowMs - $this->askedAtMs >= self::READ_TIMEOUT_MS) {
+                $node = $this->readingNode;
+                $this->releaseRead();
+                if (!isset($this->silentNodes[$node])) {
+                    $this->silentNodes[$node] = true;
+                    $this->logAgentWarning("Analytics writer: node {$node} does not answer, its files wait");
+                }
+            } else {
+                return;
+            }
+        }
+
+        $nodes = array_keys($this->waitingNodes);
+        sort($nodes, SORT_STRING);
+        $ordered = $this->lastStartedNode === null
+            ? $nodes
+            : [...array_filter($nodes, fn(string $node): bool => $node > $this->lastStartedNode),
+                ...array_filter($nodes, fn(string $node): bool => $node <= $this->lastStartedNode)];
+        foreach ($ordered as $node) {
+            if (!isset($online[$node]) || (($this->pauses[$node]->atMs ?? 0) > $nowMs)) {
+                continue;
             }
 
+            $this->ask($node, $this->pauses[$node]->file ?? AnalyticsJournalReadSignalData::OLDEST_READY, 0, $nowMs);
+
             return;
         }
-
-        if ($nowMs < $this->retryAtMs || $nowMs - $this->lastPollAtMs < self::POLL_INTERVAL_MS) {
-            return;
-        }
-
-        $this->lastPollAtMs = $nowMs;
-        $this->lines = [];
-        $this->ask($this->retryFile, 0, $nowMs);
     }
 
     /**
-     * Nothing owned to release: what was read and not loaded is read again by the next writer.
+     * Nothing owned to release: a new writer reads an unfinished file again.
      */
     public function onStop(): void
     {
@@ -142,54 +149,91 @@ final class AnalyticsWriterAgent extends AbstractAgent
     }
 
     /**
-     * Takes a portion of the file it asked for; the portion that completes a file loads it.
+     * Takes the journal's answer or its notice of a ready file.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full
      * @param string $name Routed agent-signal name
-     * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
-     * @throws InvalidAgentSignalPayloadException When the payload is not the class the signal declares
-     * @throws InvalidArgumentException When the next read or the confirmation cannot be named
+     * @throws AgentUnknownSignalException When the signal has no owner here
+     * @throws InvalidAgentSignalPayloadException When the payload does not match its declaration
+     * @throws InvalidArgumentException When the next read or confirmation cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== HilosSignalConstants::ANALYTICS_JOURNAL_PORTION) {
-            throw new AgentUnknownSignalException($name);
-        }
+        $payload = $data->data;
+        switch ($name) {
+            case HilosSignalConstants::ANALYTICS_JOURNAL_PORTION:
+                if (!$payload instanceof AnalyticsJournalPortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AnalyticsJournalPortionSignalData::class, $payload);
+                }
 
-        $portion = $data->data;
-        if (!$portion instanceof AnalyticsJournalPortionSignalData) {
-            throw new InvalidAgentSignalPayloadException($name, AnalyticsJournalPortionSignalData::class, $portion);
-        }
+                $this->applyPortion($payload, self::nowMs());
 
-        $this->applyPortion($portion, self::nowMs());
+                return;
+
+            case HilosSignalConstants::ANALYTICS_JOURNAL_READY:
+                if (!$payload instanceof AnalyticsJournalReadySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AnalyticsJournalReadySignalData::class, $payload);
+                }
+
+                $this->applyReady($payload, self::nowMs());
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**
-     * Files one portion: the next read, the load of a complete file, or the end of a file that is gone.
+     * Makes the sender waiting; a restarted journal may have lost its outstanding read.
      *
-     * A portion that is not the one asked for - a late answer to a read sent again - is dropped.
-     *
-     * @param AnalyticsJournalPortionSignalData $portion The portion
+     * @param AnalyticsJournalReadySignalData $ready Notice from the node
      * @param int $nowMs Moment it arrived, in milliseconds
-     * @throws InvalidArgumentException When the next read or the confirmation cannot be named
+     * @throws InvalidArgumentException When a repeated read cannot be named
+     */
+    public function applyReady(AnalyticsJournalReadySignalData $ready, int $nowMs): void
+    {
+        $node = $ready->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID;
+        $this->waitingNodes[$node] = true;
+        if ($this->readingNode === $node) {
+            $this->ask($node, $this->file, $this->offset, $nowMs);
+        }
+    }
+
+    /**
+     * Accepts only the node, file and offset currently asked for.
+     *
+     * @param AnalyticsJournalPortionSignalData $portion Portion from a node
+     * @param int $nowMs Moment it arrived, in milliseconds
+     * @throws InvalidArgumentException When the next read or confirmation cannot be named
      */
     public function applyPortion(AnalyticsJournalPortionSignalData $portion, int $nowMs): void
     {
-        $expected = $this->waiting
-            && $portion->offset === $this->offset
-            && ($this->file === AnalyticsJournalReadSignalData::OLDEST_READY || $portion->file === $this->file);
-        if (!$expected) {
+        $node = $portion->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID;
+        if (
+            $this->readingNode !== $node
+            || $portion->offset !== $this->offset
+            || ($this->file !== AnalyticsJournalReadSignalData::OLDEST_READY && $portion->file !== $this->file)
+        ) {
             return;
         }
 
-        $this->waiting = false;
-        if ($portion->file === AnalyticsJournalPortionSignalData::NO_READY_FILE || $portion->gone) {
-            // No ready file, or the one asked for is gone - deleted after an earlier confirmation,
-            // or thrown away under a freeze: nothing to load, the writer is free again.
-            $this->file = AnalyticsJournalReadSignalData::OLDEST_READY;
-            $this->lines = [];
-            $this->retryFile = AnalyticsJournalReadSignalData::OLDEST_READY;
+        if (isset($this->silentNodes[$node])) {
+            unset($this->silentNodes[$node]);
+            $this->logAgentInfo("Analytics writer: node {$node} answers again");
+        }
+
+        if ($portion->file === AnalyticsJournalPortionSignalData::NO_READY_FILE) {
+            unset($this->waitingNodes[$node]);
+            $this->releaseRead();
+
+            return;
+        }
+
+        if ($portion->gone) {
+            unset($this->pauses[$node]);
+            $this->releaseRead();
 
             return;
         }
@@ -197,52 +241,45 @@ final class AnalyticsWriterAgent extends AbstractAgent
         $this->file = $portion->file;
         array_push($this->lines, ...$portion->lines);
         if (!$portion->complete) {
-            $this->ask($this->file, $portion->nextOffset, $nowMs);
+            $this->ask($node, $this->file, $portion->nextOffset, $nowMs);
 
             return;
         }
 
-        $this->load($nowMs);
+        $this->load($node, $nowMs);
     }
 
     /**
-     * Loads the file read whole and confirms it, or schedules the same file again after a database failure.
+     * Loads one file, or pauses just its node after a database failure.
      *
+     * @param string $node Node whose file was read
      * @param int $nowMs Moment of the load, in milliseconds
      * @throws InvalidArgumentException When the confirmation cannot be named
      */
-    private function load(int $nowMs): void
+    private function load(string $node, int $nowMs): void
     {
         $file = $this->file;
         $lines = $this->lines;
-        $this->file = AnalyticsJournalReadSignalData::OLDEST_READY;
-        $this->lines = [];
+        $this->releaseRead();
 
         try {
-            $outcome = $this->loader->load($this->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID, $file, $lines);
+            $outcome = $this->loader->load($node, $file, $lines);
         } catch (HilosException $failure) {
-            if ($this->retryDelayMs === 0) {
-                $this->logAgentError("Analytics writer: loading {$file} failed, it is retried later: " . $failure->getMessage());
+            $previous = $this->pauses[$node] ?? null;
+            if ($previous === null) {
+                $this->logAgentError("Analytics writer: node {$node} loading {$file} failed, it is retried later: " . $failure->getMessage());
             }
 
-            $this->retryDelayMs = $this->retryDelayMs === 0
-                ? self::RETRY_MIN_MS
-                : min(self::RETRY_MAX_MS, $this->retryDelayMs * 2);
-            $this->retryAtMs = $nowMs + $this->retryDelayMs;
-            $this->retryFile = $file;
+            $delay = $previous === null ? self::RETRY_MIN_MS : min(self::RETRY_MAX_MS, $previous->delayMs * 2);
+            $this->pauses[$node] = new AnalyticsWriterNodePause($file, $nowMs + $delay, $delay);
 
             return;
         }
 
-        if ($this->retryDelayMs !== 0) {
-            $this->logAgentInfo("Analytics writer: the database takes files again, {$file} loaded");
+        if (isset($this->pauses[$node])) {
+            $this->logAgentInfo("Analytics writer: node {$node} takes files again, {$file} loaded");
+            unset($this->pauses[$node]);
         }
-
-        $this->retryDelayMs = 0;
-        $this->retryAtMs = 0;
-        $this->retryFile = AnalyticsJournalReadSignalData::OLDEST_READY;
-        // The next file is asked for at once: a backlog drains at the pace of the database, not of the poll.
-        $this->lastPollAtMs = 0;
 
         if ($outcome->skippedCount() > 0) {
             $reasons = [];
@@ -258,29 +295,72 @@ final class AnalyticsWriterAgent extends AbstractAgent
 
         $this->sendToAgent(
             HilosSignalConstants::ANALYTICS_JOURNAL_LOADED,
-            new AnalyticsJournalLoadedSignalData(nodeId: $this->nodeId, file: $file),
+            new AnalyticsJournalLoadedSignalData(nodeId: $node === HilosClusterNode::STANDALONE_NODE_ID ? null : $node, file: $file),
         );
     }
 
     /**
-     * Asks the journal agent of this node for a portion.
+     * Sends one read to the journal of the named node.
      *
-     * @param string $file Ready file to read, {@see AnalyticsJournalReadSignalData::OLDEST_READY} for the oldest one
+     * @param string $node Node that owns the file
+     * @param string $file Ready file, or the oldest-ready sentinel
      * @param int $offset Byte offset to read from
      * @param int $nowMs Moment of the ask, in milliseconds
      * @throws InvalidArgumentException When the read cannot be named
      */
-    private function ask(string $file, int $offset, int $nowMs): void
+    private function ask(string $node, string $file, int $offset, int $nowMs): void
     {
+        $this->readingNode = $node;
         $this->file = $file;
         $this->offset = $offset;
-        $this->waiting = true;
         $this->askedAtMs = $nowMs;
+        if ($offset === 0) {
+            $this->lastStartedNode = $node;
+        }
 
         $this->sendToAgent(
             HilosSignalConstants::ANALYTICS_JOURNAL_READ,
-            new AnalyticsJournalReadSignalData(nodeId: $this->nodeId, file: $file, offset: $offset),
+            new AnalyticsJournalReadSignalData(
+                nodeId: $node === HilosClusterNode::STANDALONE_NODE_ID ? null : $node,
+                file: $file,
+                offset: $offset,
+            ),
         );
+    }
+
+    /**
+     * Updates the waiting set from the node register and returns its online ids.
+     *
+     * @return array<string, true> Nodes currently reachable from this worker's node
+     */
+    private function refreshNodes(): array
+    {
+        $online = [];
+        $seen = [];
+        foreach (Hilos::$rt?->hilosClusterNodes ?? [] as $row) {
+            $node = $row->nodeId;
+            $stamp = ($row->online ? '1' : '0') . '|' . $row->lastSeen;
+            $seen[$node] = $stamp;
+            if ($row->online) {
+                $online[$node] = true;
+                if (($this->seenRows[$node] ?? null) !== $stamp) {
+                    $this->waitingNodes[$node] = true;
+                }
+            }
+        }
+
+        $this->seenRows = $seen;
+
+        return $online;
+    }
+
+    private function releaseRead(): void
+    {
+        $this->readingNode = null;
+        $this->file = AnalyticsJournalReadSignalData::OLDEST_READY;
+        $this->lines = [];
+        $this->offset = 0;
+        $this->askedAtMs = 0;
     }
 
     /**

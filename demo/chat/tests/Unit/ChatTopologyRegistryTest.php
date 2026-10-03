@@ -171,6 +171,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -708,6 +709,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
+            HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AgentType::HILOS_AUTH_CODE,
@@ -889,6 +891,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
             HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => AnalyticsJournalPortionSignalData::class,
+            HilosSignalConstants::ANALYTICS_JOURNAL_READY => AnalyticsJournalReadySignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,

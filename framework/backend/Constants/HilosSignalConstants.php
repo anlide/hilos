@@ -58,6 +58,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
 use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
@@ -2160,6 +2161,15 @@ final class HilosSignalConstants
      * error. Carried by {@see AnalyticsJournalLoadedSignalData}, routed by its node id like the read.
      */
     public const string ANALYTICS_JOURNAL_LOADED = 'analytics_journal_loaded';
+
+    /**
+     * {@see AnalyticsJournalAgent} of a node → {@see AnalyticsWriterAgent}: a ready file exists (HIL-1155).
+     *
+     * Sent at rotation and after a start that finds ready files. The notice is neither acknowledged
+     * nor repeated: writer start, node return or a later rotation covers a lost notice. Carried by
+     * {@see AnalyticsJournalReadySignalData}.
+     */
+    public const string ANALYTICS_JOURNAL_READY = 'analytics_journal_ready';
 
     // ── Hilos logs admin: the node that owns the files → the cluster log aggregator (agent signal) ──
     /**

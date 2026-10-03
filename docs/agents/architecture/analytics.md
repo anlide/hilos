@@ -20,7 +20,7 @@ The chain is four leaves; this document describes what has landed:
 | Leaf | What it does |
 |---|---|
 | HIL-1154 | the journal on every node, the writer loading the files of its own node |
-| HIL-1155 | the writer collects the files of every node (not in the code yet) |
+| HIL-1155 | the writer collects the files of every node |
 | HIL-1156 | the master stops writing analytics itself (not in the code yet) |
 | HIL-1157 | a ceiling on the journal and an account of what was lost (not in the code yet) |
 
@@ -29,7 +29,7 @@ The chain is four leaves; this document describes what has landed:
 ```
 worker process ── Hilos::$ac ──► AnalyticsJournalOutbox ──(analytics_journal_append)──►
     AnalyticsJournalAgent (one per node) ── AnalyticsJournalDirectory: open file → ready file
-        ◄──(analytics_journal_read / _portion / _loaded)──► AnalyticsWriterAgent (one per cluster)
+        ◄──(analytics_journal_read / _portion / _loaded / _ready)──► AnalyticsWriterAgent (one per cluster)
             ── AnalyticsJournalLoader ──► AnalyticsStore ──► hilos_analytics_* tables
 ```
 
@@ -50,14 +50,19 @@ worker process ── Hilos::$ac ──► AnalyticsJournalOutbox ──(analyti
   to the open file at once, syncs the file to disk once a second when it was
   written to and at rotation, and rotates it at 1 MiB or 10 seconds after it
   opened. It answers the writer's reads with portions of whole lines of a ready
-  file and deletes a file the writer confirmed.
+  file and deletes a file the writer confirmed. A rotation, whether caused by size
+  or age, tells the writer that a ready file exists. So does a start that finds
+  ready files from a previous life. It sends nothing on stop.
 - **The writer** (`AnalyticsWriterAgent`, `AgentPlacement::POLICY`, a monopolistic
-  worker) asks the journal agent of its own node once a second, while it holds no
-  file, for the oldest ready file; reads it in portions of up to 128 KiB, asking
-  again when an answer is ten seconds late; loads the whole file in one
-  transaction and confirms it. A database failure throws what was read away and
-  asks for the same file again after 5 seconds, doubling up to a minute: the files
-  of a node are loaded strictly in order.
+  worker) reads the node register (`hilosClusterNodes`) before start and asks all
+  online nodes for ready files. A node waits in its queue after a ready notice or
+  a meaningful online register change, until it answers that no ready file exists.
+  The writer takes one file per node in ascending id order, wrapping round to the
+  first; it reads that file in portions, loads it in one transaction and confirms
+  it to the same node. An offline node or one silent for ten seconds keeps its
+  files on disk while the writer moves on. A database failure pauses only that
+  node for five seconds, doubling up to a minute, then retries its same file
+  before any later file of that node. Quiet nodes cost no polling frames.
 
 Turning it on is `HilosFeature::ANALYTICS`: it requires both agents, the framework
 starts the collector in every process of the project, `Hilos::initAnalytics()`
@@ -151,6 +156,31 @@ writes nothing twice. All SQL lives in `AnalyticsStore`.
 - The numbers the store learns inside the transaction enter its cache only at the
   commit: a number born in a rolled-back transaction never names a row later.
 
+## Across Nodes
+
+Files of **one** node load in their numbered order. Between nodes there is no
+load order: the writer visits waiting, online nodes in a round, one file per node.
+The files of different nodes can cover overlapping time spans, each file is one
+transaction, and their clocks can differ by milliseconds. Thus a link between
+records written on different nodes must work whichever file lands first: the
+answer carries the key of its cause, and the second of the two records to arrive
+completes the link. HIL-1156 builds that link; this leaf has no such relation.
+
+The writer learns nodes and connectivity from the node-local `hilosClusterNodes`
+register, not from a file name or its own placement. On start it asks every online
+node. A changed online row or a `analytics_journal_ready` notice makes that node
+waiting again. A notice is not acknowledged or repeated; a writer restart, node
+return, later rotation or journal-agent restart supplies another opportunity.
+If a node falls offline during a read, the incomplete file is discarded and
+read from zero after the node returns. A silent node gets one warning until it
+answers again. Late portions from another node, file or offset are ignored.
+
+A journal line may be at most 128 KiB. A larger payload is removed at its source
+while its event stays; a record still too long without payload is dropped. A
+legacy long line is read to its end by the journal agent, then omitted with one
+warning for that portion. The limit keeps a portion safely inside the peer link's
+8 MiB outgoing buffer even when an unbounded browser action carried the payload.
+
 ## The Freeze
 
 Both agents are in the roster and the freeze stops them like any other agent. The
@@ -200,10 +230,14 @@ The other losses the owner accepted, with the same standing:
 
 ## What Is Not Here Yet
 
-- The files of other nodes wait on their disks: the writer reads its own node only
-  (HIL-1155).
 - The master writes its facts itself, through `AnalyticsStore`, and its row numbers
   travel in the meta of the signal (HIL-1156). Its meta also stamps the frames it
   forwards while an HTTP request is parked, which is why the journal's own signals
   are excluded at the source.
-- The journal has no ceiling, and nothing counts what was lost (HIL-1157).
+- The journal directory has no size ceiling, and nothing counts what was lost
+  (HIL-1157).
+- A browser session rename that finds its new token already occupied leaves the
+  visit split. In a cluster where `ChatAgent` records the session from a different
+  node, the outcome depends on file arrival order; a safe join needs the single
+  writer of HIL-1156. No demo currently runs analytics on a live cluster, so
+  this behavior is covered by unit tests and a two-node registry integration test.

@@ -156,7 +156,7 @@ final class AnalyticsJournalDirectoryTest extends TestCase
     /**
      * @throws FsException When the journal cannot be read
      */
-    public function testAPortionIsWholeLinesAndALongLineComesWholeAndAlone(): void
+    public function testAPortionSkipsAnOversizedLineAndAdvancesPastIt(): void
     {
         $journal = $this->startedJournal();
         $short = '{"t":"' . str_repeat('s', 40_000) . '"}';
@@ -167,15 +167,18 @@ final class AnalyticsJournalDirectoryTest extends TestCase
         $read = [];
         $offset = 0;
         $portions = 0;
+        $passedOver = 0;
         do {
             $portion = $journal->readPortion($ready, $offset);
             $this->assertNotNull($portion);
             $read = [...$read, ...$portion->lines];
             $offset = $portion->nextOffset;
+            $passedOver += $portion->passedOver;
             $portions++;
         } while (!$portion->complete);
 
-        $this->assertSame([$short, $short, $short, $short, $long, $short], array_slice($read, 1));
+        $this->assertSame([$short, $short, $short, $short, $short], array_slice($read, 1));
+        $this->assertSame(1, $passedOver);
         $this->assertSame(filesize($this->path . '/' . $ready), $offset);
         $this->assertGreaterThanOrEqual(3, $portions);
     }

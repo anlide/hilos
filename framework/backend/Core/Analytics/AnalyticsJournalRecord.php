@@ -69,6 +69,12 @@ final class AnalyticsJournalRecord
     /** @var string A session key as it travels: 16 random bytes in lowercase hex */
     public const string SESSION_KEY_PATTERN = '/^[0-9a-f]{32}$/';
 
+    /**
+     * A journal line must fit in a portion before it crosses the 8 MiB peer link buffer.
+     * A browser action has no comparable size limit, so its payload may exceed this by itself.
+     */
+    public const int MAX_LINE_BYTES = 131072;
+
     private const int JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
     /**
@@ -334,21 +340,21 @@ final class AnalyticsJournalRecord
     /**
      * Encodes a record into the line it is written as, without the line break.
      *
-     * A payload that cannot be encoded - a string that is not UTF-8 - costs the record its payload
-     * and not the record itself: the record is encoded again with a null payload, the same verdict
-     * the payload dictionary gives such a value.
+     * A payload that cannot be encoded or makes the line longer than the limit costs the record
+     * its payload, not the event. The record is encoded again with a null payload. A record still
+     * too long or unencodable without its payload is dropped.
      *
      * @param array<string, mixed> $record Record built by one of the builders above
-     * @return ?string The line, or null when even the record without its payload cannot be encoded
+     * @return ?string The line, or null when it cannot fit or be encoded even without its payload
      */
     public static function encode(array $record): ?string
     {
         $line = json_encode($record, self::JSON_FLAGS);
-        if ($line === false && ($record[self::KEY_PAYLOAD] ?? null) !== null) {
+        if (($line === false || strlen($line) > self::MAX_LINE_BYTES) && ($record[self::KEY_PAYLOAD] ?? null) !== null) {
             $record[self::KEY_PAYLOAD] = null;
             $line = json_encode($record, self::JSON_FLAGS);
         }
 
-        return $line === false ? null : $line;
+        return $line === false || strlen($line) > self::MAX_LINE_BYTES ? null : $line;
     }
 }

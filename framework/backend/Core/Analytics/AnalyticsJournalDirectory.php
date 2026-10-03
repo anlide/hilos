@@ -231,8 +231,9 @@ final class AnalyticsJournalDirectory
     /**
      * Reads whole lines of a ready file from an offset, up to {@see self::PORTION_BYTES}.
      *
-     * A line longer than a portion comes whole, alone. The tail a machine crash left - the last
-     * line without its line break - comes as a line too, for the writer to pass over.
+     * A line longer than the journal limit is consumed and counted without crossing the wire.
+     * The tail a machine crash left - the last line without its line break - comes as a line too,
+     * for the writer to pass over.
      *
      * @param string $file Name of a ready file
      * @param int $offset Byte offset to read from
@@ -357,7 +358,7 @@ final class AnalyticsJournalDirectory
         $chunk = (string)fread($handle, self::PORTION_BYTES);
         $end = strrpos($chunk, self::LINE_BREAK);
         while ($end === false && $offset + strlen($chunk) < $size) {
-            // One line longer than a portion: read on to its end, and hand it over whole and alone.
+            // Read to the end of an oversized line so the next offset advances past it.
             $more = (string)fread($handle, self::PORTION_BYTES);
             if ($more === '') {
                 break;
@@ -372,11 +373,18 @@ final class AnalyticsJournalDirectory
         $body = $end === false ? $chunk : substr($chunk, 0, $end);
         $nextOffset = $offset + ($end === false ? strlen($chunk) : $end + 1);
 
-        return new AnalyticsJournalPortion(
-            explode(self::LINE_BREAK, $body),
-            $nextOffset,
-            $nextOffset >= $size,
-        );
+        $lines = [];
+        $passedOver = 0;
+        foreach (explode(self::LINE_BREAK, $body) as $line) {
+            if (strlen($line) > AnalyticsJournalRecord::MAX_LINE_BYTES) {
+                $passedOver++;
+                continue;
+            }
+
+            $lines[] = $line;
+        }
+
+        return new AnalyticsJournalPortion($lines, $nextOffset, $nextOffset >= $size, $passedOver);
     }
 
     /**

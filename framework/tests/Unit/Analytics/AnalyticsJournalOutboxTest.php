@@ -48,6 +48,18 @@ final class AnalyticsJournalOutboxTest extends TestCase
         parent::tearDown();
     }
 
+    public function testOversizedPayloadIsRemovedAndOversizedRecordIsDropped(): void
+    {
+        $payload = ['body' => str_repeat('x', AnalyticsJournalRecord::MAX_LINE_BYTES)];
+        $record = AnalyticsJournalRecord::agentSystemSignal('agent', 'event', $payload, self::T0);
+        $line = AnalyticsJournalRecord::encode($record);
+        $this->assertNotNull($line);
+        $this->assertNull(json_decode($line, true)[AnalyticsJournalRecord::KEY_PAYLOAD]);
+
+        $tooLong = AnalyticsJournalRecord::workerSystemSignal('worker', str_repeat('x', AnalyticsJournalRecord::MAX_LINE_BYTES), null, self::T0);
+        $this->assertNull(AnalyticsJournalRecord::encode($tooLong));
+    }
+
     /**
      * Every method a worker calls builds its record by the catalog, key for key.
      */

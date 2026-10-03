@@ -7,10 +7,12 @@ namespace Hilos\Tests\Unit\Analytics;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalDirectory;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
@@ -112,6 +114,30 @@ final class AnalyticsJournalAgentTest extends TestCase
     /**
      * @throws HilosException When a frame cannot be handled
      */
+    public function testAnOversizedLineIsOmittedAndWarnedAboutOncePerPortion(): void
+    {
+        $agent = $this->startedAgent();
+        $long = str_repeat('x', AnalyticsJournalRecord::MAX_LINE_BYTES + 1);
+        $this->append($agent, [$long, '{"t":"small"}']);
+        $agent->onStop();
+
+        $this->read($agent, '', 0);
+        $portion = $this->portion();
+        $lines = $portion->lines;
+        while (!$portion->complete) {
+            $this->read($agent, $portion->file, $portion->nextOffset);
+            $portion = $this->portion();
+            $lines = [...$lines, ...$portion->lines];
+        }
+
+        $this->assertSame(['{"t":"small"}'], array_slice($lines, 1));
+        $warning = 'passed over 1 line(s) longer than ' . AnalyticsJournalRecord::MAX_LINE_BYTES;
+        $this->assertStringContainsString($warning . " bytes in {$portion->file}", $this->agentLog());
+    }
+
+    /**
+     * @throws HilosException When a frame cannot be handled
+     */
     public function testAnOrdinaryStopLeavesTheJournalReadyForTheWriter(): void
     {
         $agent = $this->startedAgent();
@@ -122,6 +148,67 @@ final class AnalyticsJournalAgentTest extends TestCase
         $files = $this->files();
         $this->assertCount(1, $files);
         $this->assertTrue(AnalyticsJournalDirectory::isReadyName($files[0]));
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /**
+     * @throws HilosException When a frame cannot be handled
+     */
+    public function testSizeRotationAnnouncesAReadyFile(): void
+    {
+        $agent = $this->startedAgent();
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->append($agent, array_fill(0, 9, str_repeat('x', 120_000)));
+        $this->assertReadyNotice();
+    }
+
+    /**
+     * @throws HilosException When a frame cannot be handled
+     */
+    public function testAgeRotationAnnouncesAReadyFile(): void
+    {
+        $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
+        $agent = new AnalyticsJournalAgent();
+        $agent->openJournal($journal, self::NODE);
+        $journal->append(['{"t":"a"}'], 1);
+
+        $agent->onTick();
+        $this->assertReadyNotice();
+    }
+
+    /**
+     * @throws HilosException When a frame cannot be handled
+     */
+    public function testStartAnnouncesFilesLeftReadyByAnEarlierLife(): void
+    {
+        $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
+        $journal->start();
+        $journal->append(['{"t":"a"}'], 1);
+        $journal->rotate(1);
+
+        $this->startedAgent();
+        $this->assertReadyNotice();
+    }
+
+    /**
+     * @throws HilosException When a frame cannot be handled
+     */
+    public function testAFailedStartRetriesAndAnnouncesTheFilesItThenFinds(): void
+    {
+        mkdir($this->root);
+        file_put_contents($this->root . '/test', 'blocks the journal directory');
+        $agent = new AnalyticsJournalAgent();
+        $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        unlink($this->root . '/test');
+        $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
+        $journal->start();
+        $journal->append(['{"t":"a"}'], 1);
+        $journal->rotate(1);
+
+        $agent->onTick();
+        $this->assertReadyNotice();
     }
 
     /**
@@ -195,6 +282,18 @@ final class AnalyticsJournalAgentTest extends TestCase
         $this->assertInstanceOf(AnalyticsJournalPortionSignalData::class, $signal->data->data);
 
         return $signal->data->data;
+    }
+
+    private function assertReadyNotice(): void
+    {
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(HilosSignalConstants::ANALYTICS_JOURNAL_READY, $signal->signalName->getName());
+        $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+        $this->assertInstanceOf(AnalyticsJournalReadySignalData::class, $signal->data->data);
+        $this->assertSame(self::NODE, $signal->data->data->nodeId);
+        $this->assertSame(self::NODE, AnalyticsJournalReadySignalData::fromArray($signal->data->data->toArray())->nodeId);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     /**
