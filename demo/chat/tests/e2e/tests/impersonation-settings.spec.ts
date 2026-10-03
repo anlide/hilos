@@ -107,7 +107,14 @@ test('switching impersonation off takes the takeover off the card, and on brings
   }
 })
 
-test('a takeover that only looks says so, is refused a message, and Stop still returns', async ({
+// Red in runs 0749 (HIL-1237) and 0770 (HIL-1179) of the 32 full runs since it
+// came, green alone in one lane on the same HEAD. The first attempt passes every
+// check and times out in its own cleanup: after Stop, setScope(page, 'act')
+// opens the impersonation settings and the edit button never shows. The scope
+// is the installation's and stays on view, so both retries fail at their first
+// setScope(page, 'view') with Save disabled. Parked by the owner on 03.10.2026
+// (HOTFIX) without a diagnosis of why the edit button is missing after Stop.
+test.fixme('a takeover that only looks says so, is refused a message, and Stop still returns', async ({
   browser,
   page,
 }) => {
