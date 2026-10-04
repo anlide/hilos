@@ -346,3 +346,14 @@ CREATE TABLE `hilos_analytics_journal_file` (
     UNIQUE KEY `uk_ha_journal_file` (`node_id`, `file_name`),
     KEY `idx_ha_journal_file_loaded_ts` (`loaded_ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `hilos_analytics_loss` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `node_id` VARCHAR(64) NOT NULL,
+    `reason` VARCHAR(32) NOT NULL,
+    `event_count` INT UNSIGNED NOT NULL,
+    `from_ts` BIGINT UNSIGNED NOT NULL,
+    `to_ts` BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_ha_loss_from_ts` (`from_ts`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

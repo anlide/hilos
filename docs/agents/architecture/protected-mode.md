@@ -284,19 +284,21 @@ foreign key, which is the lucky case; one that the restored database gives to
 another value files facts under the wrong name with no error at all. The analytics
 collector is the worked example. In every process it is still outside every
 roster, so it answers the freeze itself: while the row silences it, it records
-nothing and throws away the batch it had gathered for the journal, and an agent
-that stops meanwhile is remembered and its stop handed over, with its own moment,
+nothing and counts the batch it discards and each refused event as `restore`.
+An agent that stops meanwhile is remembered and its stop handed over with its moment,
 once the row lets go. `forgetReplacedDatabase()` is called first in
 `WorkerManager::handleDbReHydrateMessage()` and
 `DaemonManager::applyReHydrateContained()` — on the failed re-read too — and the
-collector then discards its batch and captures and forgets the master's remembered
-connections and pages. It keeps no database row numbers in any process. Nothing
-is opened again at resume: a worker names its sessions by keys, and their descriptions travel with every batch, so the writer inserts
-them into the restored database from the first batch that names them. The two
+collector then counts and discards its batch and captures, and forgets the
+master's remembered connections and pages. It keeps no database row numbers in
+any process. Nothing is opened again at resume: a worker names its sessions by
+keys, and their descriptions travel with every batch, so the writer inserts them
+into the restored database from the first batch that names them. The two
 agents of the journal are in the roster and the freeze stops them like any other:
 the node's journal agent, stopped under the freeze, throws the node's journal
-away — what was not loaded by then is lost, by the owner's decision
-([analytics.md](analytics.md)) — and the writer starts again with empty caches.
+away and places one ready file with the number of discarded events and its other
+closed loss episodes. The writer starts again with empty caches and loads that
+file after the lift ([analytics.md](analytics.md)).
 The re-read after a peer link does not forget: the database there is the same one.
 The durable half of the mail pool is the second example, and the forgetting in its
 strongest form: it keeps nothing across the freeze at all.
@@ -797,7 +799,7 @@ project" — activation is not declarative, so there is nothing to ask:
 | `WorkerServer::protectedModeRefusesStart()` | may this agent start during a freeze? |
 | `AbstractDeliveryChannelAgent::freezeSilencesDeliveries()` | must the durable deliveries go quiet? |
 | `AnalyticsCollector::isHeld()` | must the collector record nothing and throw its batch away? |
-| `AnalyticsJournalAgent::onStop()` | is this stop the freeze's, so the node's journal goes? |
+| `AnalyticsJournalAgent::onStop()` | is this stop the freeze's, so the node's journal goes with its lost events counted? |
 
 The two entries read the same row as their guard (`StandaloneProtectedMode` and
 `ClusterProtectedMode`, each with its own `runtimeView()`).

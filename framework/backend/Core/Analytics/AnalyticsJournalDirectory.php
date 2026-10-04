@@ -13,6 +13,7 @@ use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsPath;
+use Hilos\Fs\FsException;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -36,6 +37,10 @@ use Hilos\Utils\Helpers\RandomHelper;
  * after a freeze emptied the directory and the numbers started over, while the writer still
  * remembers the files it loaded under the old ones. A name from the wire is checked against the
  * pattern before it becomes a path: only this class turns a name into a path.
+ *
+ * A final journal_end line records each ready file's event count. This lets a freeze count the
+ * files it discards by reading only their headers and tails. Open episodes of loss are saved in
+ * losses.json beside the files, while the byte ceiling counts only open and ready journal files.
  */
 final class AnalyticsJournalDirectory
 {
@@ -55,6 +60,9 @@ final class AnalyticsJournalDirectory
     private const int DIRECTORY_MODE = 0700;
     private const int FILE_MODE = 0600;
     private const string LINE_BREAK = "\n";
+    private const string LOSS_STATE_NAME = 'losses.json';
+    private const string LOSS_STATE_TEMP_NAME = 'losses.json.tmp';
+    private const int SUMMARY_TAIL_BYTES = 256;
 
     /** @var ?string Stem of the open file, null while none is open */
     private ?string $openStem = null;
@@ -64,6 +72,12 @@ final class AnalyticsJournalDirectory
 
     /** @var int Bytes written into the open file, its header included */
     private int $openBytes = 0;
+
+    /** @var int All ready and open journal bytes of this node */
+    private int $bytes = 0;
+
+    /** @var int Events accepted into the current open file */
+    private int $openEvents = 0;
 
     /** @var bool Whether the open file holds lines not yet synced to the disk */
     private bool $unsynced = false;
@@ -98,13 +112,16 @@ final class AnalyticsJournalDirectory
     /**
      * Creates the subdirectory, closes the file a previous life left open as ready, and continues the numbering.
      *
-     * The left-over file may end in half a line when the machine fell; the writer passes it over.
+     * A left-over file may end in half a line when the machine fell. A line break separates that
+     * tail from the summary, so the writer can pass the malformed record over.
      *
      * @return int Files a previous life left open and this start closed
      * @throws DirectoryCreateException When the subdirectory cannot be created
      * @throws DirectoryNotFoundException When the subdirectory vanished between creating and listing it
      * @throws FileReadException When the subdirectory cannot be listed
      * @throws FileMoveException When a left-over file cannot be closed
+     * @throws FileWriteException When a left-over file cannot receive its summary
+     * @throws FileNotFoundException When a listed file vanishes before it is read or measured
      * @throws FilePermissionException When the subdirectory's mode cannot be set
      */
     public function start(): int
@@ -117,6 +134,12 @@ final class AnalyticsJournalDirectory
         foreach (FsPath::entries($this->path) as $entry) {
             if (preg_match(self::OPEN_NAME_PATTERN, $entry) === 1) {
                 $stem = substr($entry, 0, -strlen(self::OPEN_SUFFIX));
+                $data = FsPath::read($this->filePath($entry));
+                $events = $this->countEvents($data);
+                if ($data !== '' && !str_ends_with($data, self::LINE_BREAK)) {
+                    FsPath::append($this->filePath($entry), self::LINE_BREAK);
+                }
+                FsPath::append($this->filePath($entry), $this->endLine($events, self::nowMs()));
                 FsPath::move($this->filePath($entry), $this->filePath($stem . self::READY_SUFFIX));
                 $closed++;
             } elseif (!self::isReadyName($entry)) {
@@ -127,6 +150,12 @@ final class AnalyticsJournalDirectory
         }
 
         $this->nextSequence = $largest + 1;
+        $this->bytes = 0;
+        foreach (FsPath::entries($this->path) as $entry) {
+            if (self::isReadyName($entry)) {
+                $this->bytes += FsPath::size($this->filePath($entry));
+            }
+        }
 
         return $closed;
     }
@@ -135,15 +164,14 @@ final class AnalyticsJournalDirectory
      * Writes lines into the open file, opening one first when none is, and rotates it once it is full.
      *
      * @param list<string> $lines Lines without line breaks; none may be empty or hold a line break
+     * @param int $events Events among the lines, excluding descriptions and losses
      * @param int $nowMs Moment of the write, in milliseconds
      * @return ?string Name of the file this write made ready, or null when none was
-     * @throws FileWriteException When the file cannot be opened, written or synced
+     * @throws FileWriteException When the file cannot be opened or the batch cannot be written
      * @throws FilePermissionException When a new file's mode cannot be set
-     * @throws FileNotFoundException When the open file vanished before its sync
-     * @throws FileReadException When the open file cannot be opened for its sync
-     * @throws FileMoveException When the full file cannot be made ready
+     * @throws AnalyticsJournalRotationException When the batch was written but rotation then failed
      */
-    public function append(array $lines, int $nowMs): ?string
+    public function append(array $lines, int $events, int $nowMs): ?string
     {
         if ($lines === []) {
             return null;
@@ -156,9 +184,22 @@ final class AnalyticsJournalDirectory
         $data = implode(self::LINE_BREAK, $lines) . self::LINE_BREAK;
         FsPath::append($this->openPath(), $data);
         $this->openBytes += strlen($data);
+        $this->bytes += strlen($data);
+        $this->openEvents += $events;
         $this->unsynced = true;
 
-        return $this->openBytes >= self::ROTATE_BYTES ? $this->rotate($nowMs) : null;
+        if ($this->openBytes < self::ROTATE_BYTES) {
+            return null;
+        }
+
+        try {
+            return $this->rotate($nowMs);
+        } catch (FsException $failure) {
+            throw new AnalyticsJournalRotationException(
+                'Batch was written but rotation failed: ' . $failure->getMessage(),
+                previous: $failure,
+            );
+        }
     }
 
     /**
@@ -177,7 +218,7 @@ final class AnalyticsJournalDirectory
             return null;
         }
 
-        if ($nowMs - $this->openedAtMs >= self::ROTATE_AGE_MS) {
+        if ($this->openBytes >= self::ROTATE_BYTES || $nowMs - $this->openedAtMs >= self::ROTATE_AGE_MS) {
             return $this->rotate($nowMs);
         }
 
@@ -204,11 +245,17 @@ final class AnalyticsJournalDirectory
             return null;
         }
 
+        $summary = $this->endLine($this->openEvents, $nowMs);
+        FsPath::append($this->openPath(), $summary);
+        $this->openBytes += strlen($summary);
+        $this->bytes += strlen($summary);
+        $this->unsynced = true;
         $this->sync($nowMs);
         $ready = $this->openStem . self::READY_SUFFIX;
         FsPath::move($this->openPath(), $this->filePath($ready));
         $this->openStem = null;
         $this->openBytes = 0;
+        $this->openEvents = 0;
 
         return $ready;
     }
@@ -259,6 +306,8 @@ final class AnalyticsJournalDirectory
      *
      * @param string $file Name of a ready file
      * @throws FileDeleteException When the file stays
+     * @throws FileNotFoundException When a ready file vanishes before it is measured
+     * @throws FileReadException When its size cannot be read
      */
     public function delete(string $file): void
     {
@@ -266,34 +315,97 @@ final class AnalyticsJournalDirectory
             return;
         }
 
-        FsPath::delete($this->filePath($file));
+        $path = $this->filePath($file);
+        if (is_file($path)) {
+            $size = FsPath::size($path);
+            FsPath::delete($path);
+            $this->bytes = max(0, $this->bytes - $size);
+        }
     }
 
     /**
      * Throws the whole journal away - the open file and every ready one - and forgets the open file.
      *
-     * @return int Files deleted
+     * @return AnalyticsJournalDiscard Files and events removed, and when the oldest file opened
      * @throws DirectoryNotFoundException When the subdirectory is not there
      * @throws FileReadException When the subdirectory cannot be listed
      * @throws FileDeleteException When a file stays
+     * @throws FileNotFoundException When a listed file vanishes before it is read
      */
-    public function discardAll(): int
+    public function discardAll(): AnalyticsJournalDiscard
     {
-        $this->openStem = null;
-        $this->openBytes = 0;
-        $this->unsynced = false;
-
         $deleted = 0;
-        foreach (FsPath::entries($this->path) as $entry) {
+        $events = 0;
+        $oldestOpenedTs = null;
+        $entries = FsPath::entries($this->path);
+        sort($entries, SORT_STRING);
+        foreach ($entries as $entry) {
             if (preg_match(self::OPEN_NAME_PATTERN, $entry) !== 1 && !self::isReadyName($entry)) {
                 continue;
             }
 
+            if ($entry === $this->openStem . self::OPEN_SUFFIX) {
+                $file = new AnalyticsJournalDiscard(1, $this->openEvents, $this->openedAtMs);
+            } else {
+                $file = $this->readDiscardFile($this->filePath($entry));
+            }
+            $events += $file->events;
+            $oldestOpenedTs ??= $file->oldestOpenedTs;
             FsPath::delete($this->filePath($entry));
             $deleted++;
         }
 
-        return $deleted;
+        $this->openStem = null;
+        $this->openBytes = 0;
+        $this->openEvents = 0;
+        $this->unsynced = false;
+        $this->bytes = 0;
+
+        return new AnalyticsJournalDiscard($deleted, $events, $oldestOpenedTs);
+    }
+
+    /**
+     * @return int Ready and open journal bytes, excluding the loss state file
+     */
+    public function bytes(): int
+    {
+        return $this->bytes;
+    }
+
+    /**
+     * @return ?string Saved episodes, or null when no file exists
+     * @throws FileReadException When the state file cannot be read
+     * @throws FileNotFoundException When the state file vanishes after it was found
+     */
+    public function readLossState(): ?string
+    {
+        $path = $this->filePath(self::LOSS_STATE_NAME);
+
+        return is_file($path) ? FsPath::read($path) : null;
+    }
+
+    /**
+     * Atomically replaces the saved episode state with mode 0600.
+     *
+     * @param string $json Complete state document
+     * @throws FileWriteException When the temporary file cannot be written
+     * @throws FilePermissionException When its mode cannot be set
+     * @throws FileMoveException When it cannot replace the state file
+     */
+    public function writeLossState(string $json): void
+    {
+        $temp = $this->filePath(self::LOSS_STATE_TEMP_NAME);
+        FsPath::write($temp, $json);
+        FsPath::chmod($temp, self::FILE_MODE);
+        FsPath::move($temp, $this->filePath(self::LOSS_STATE_NAME));
+    }
+
+    /**
+     * @throws FileDeleteException When the state file stays
+     */
+    public function deleteLossState(): void
+    {
+        FsPath::delete($this->filePath(self::LOSS_STATE_NAME));
     }
 
     /**
@@ -316,6 +428,8 @@ final class AnalyticsJournalDirectory
         $this->openStem = $stem;
         $this->openedAtMs = $nowMs;
         $this->openBytes = strlen($header);
+        $this->bytes += strlen($header);
+        $this->openEvents = 0;
         $this->unsynced = true;
     }
 
@@ -402,5 +516,81 @@ final class AnalyticsJournalDirectory
     private function filePath(string $name): string
     {
         return $this->path . '/' . $name;
+    }
+
+    /**
+     * @param string $data Journal bytes, including any partial final line
+     * @return int Decodable event records in those bytes
+     */
+    private function countEvents(string $data): int
+    {
+        $events = 0;
+        foreach (explode(self::LINE_BREAK, $data) as $line) {
+            $record = json_decode($line, true);
+            if (is_array($record) && is_string($record[AnalyticsJournalRecord::KEY_TYPE] ?? null)
+                && AnalyticsJournalRecord::isEvent($record[AnalyticsJournalRecord::KEY_TYPE])) {
+                $events++;
+            }
+        }
+
+        return $events;
+    }
+
+    /**
+     * Reads the header and final summary, scanning old files only when they have no summary.
+     *
+     * @param string $path Ready file path
+     * @return AnalyticsJournalDiscard Its event count and opening moment
+     * @throws FileReadException When the file cannot be read
+     * @throws FileNotFoundException When the file vanishes before it is read
+     */
+    private function readDiscardFile(string $path): AnalyticsJournalDiscard
+    {
+        return FsPath::readWith($path, function ($handle): AnalyticsJournalDiscard {
+            $header = json_decode((string)fgets($handle), true);
+            $openedTs = is_array($header) ? ($header[AnalyticsJournalRecord::KEY_OPENED_TS] ?? null) : null;
+            $openedTs = is_int($openedTs) ? $openedTs : null;
+
+            $size = (int)(fstat($handle)['size'] ?? 0);
+            fseek($handle, max(0, $size - self::SUMMARY_TAIL_BYTES));
+            $tail = rtrim((string)stream_get_contents($handle), self::LINE_BREAK);
+            $lastBreak = strrpos($tail, self::LINE_BREAK);
+            $last = $lastBreak === false ? $tail : substr($tail, $lastBreak + 1);
+            $summary = json_decode($last, true);
+            if (is_array($summary) && ($summary[AnalyticsJournalRecord::KEY_TYPE] ?? null) === AnalyticsJournalRecord::TYPE_JOURNAL_END
+                && is_int($summary[AnalyticsJournalRecord::KEY_EVENTS] ?? null)) {
+                return new AnalyticsJournalDiscard(1, $summary[AnalyticsJournalRecord::KEY_EVENTS], $openedTs);
+            }
+
+            rewind($handle);
+            $events = 0;
+            while (($line = fgets($handle)) !== false) {
+                $record = json_decode($line, true);
+                if (is_array($record) && is_string($record[AnalyticsJournalRecord::KEY_TYPE] ?? null)
+                    && AnalyticsJournalRecord::isEvent($record[AnalyticsJournalRecord::KEY_TYPE])) {
+                    $events++;
+                }
+            }
+
+            return new AnalyticsJournalDiscard(1, $events, $openedTs);
+        });
+    }
+
+    /**
+     * @param int $events Events this file accepted
+     * @param int $closedTs Closing moment in milliseconds
+     * @return string Encoded summary and its line break
+     */
+    private function endLine(int $events, int $closedTs): string
+    {
+        return (string)AnalyticsJournalRecord::encode(AnalyticsJournalRecord::journalEnd($events, $closedTs)) . self::LINE_BREAK;
+    }
+
+    /**
+     * @return int Current Unix time in milliseconds
+     */
+    private static function nowMs(): int
+    {
+        return (int)floor(microtime(true) * 1000);
     }
 }

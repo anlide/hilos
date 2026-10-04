@@ -872,6 +872,25 @@ final class AnalyticsStore
     }
 
     /**
+     * Writes a counted loss in the transaction of the journal file that carried it.
+     *
+     * @param string $nodeId Node whose file carried the count
+     * @param string $reason Loss reason or loader skip value
+     * @param int $events Events lost
+     * @param int $fromTs First loss moment in milliseconds
+     * @param int $toTs Last loss moment in milliseconds
+     * @throws DatabaseException When the insert fails
+     */
+    public function insertLoss(string $nodeId, string $reason, int $events, int $fromTs, int $toTs): void
+    {
+        Database::sql(
+            'INSERT INTO `hilos_analytics_loss` (`node_id`, `reason`, `event_count`, `from_ts`, `to_ts`)
+             VALUES (?, ?, ?, ?, ?)',
+            [$nodeId, $reason, $events, $fromTs, $toTs],
+        );
+    }
+
+    /**
      * Reads a session row by its key and caches what it found.
      *
      * @param string $table Session table

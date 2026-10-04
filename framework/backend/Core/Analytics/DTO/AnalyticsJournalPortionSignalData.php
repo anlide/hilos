@@ -41,6 +41,9 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
     /** Payload key: whether the file asked for is no longer there. */
     public const string gone = 'gone';
 
+    /** Payload key: lines too long for a portion and omitted by the journal reader. */
+    public const string passedOver = 'passedOver';
+
     /** The file an answer names when the node has no ready file at all. */
     public const string NO_READY_FILE = '';
 
@@ -52,6 +55,7 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
      * @param list<string> $lines Whole lines of the portion
      * @param bool $complete Whether the file ends with this portion
      * @param bool $gone Whether the file asked for is no longer there
+     * @param int $passedOver Lines omitted for exceeding the journal line limit
      */
     public function __construct(
         public readonly ?string $nodeId,
@@ -61,6 +65,7 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
         public readonly array $lines,
         public readonly bool $complete,
         public readonly bool $gone,
+        public readonly int $passedOver = 0,
     ) {
     }
 
@@ -77,6 +82,7 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
             self::lines => $this->lines,
             self::complete => $this->complete,
             self::gone => $this->gone,
+            self::passedOver => $this->passedOver,
         ];
     }
 
@@ -92,6 +98,12 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
             throw new InvalidFormatException('Payload carries no list of strings under key ' . self::lines);
         }
 
+        // external-boundary: an older journal agent sends no passedOver field before loss counting is available
+        $passedOver = self::optionalInt($data, self::passedOver) ?? 0;
+        if ($passedOver < 0) {
+            throw new InvalidFormatException('Payload carries a negative count under key ' . self::passedOver);
+        }
+
         return new static(
             nodeId: self::optionalString($data, self::nodeId),
             file: self::requireString($data, self::file),
@@ -100,6 +112,7 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
             lines: $lines,
             complete: self::requireBool($data, self::complete),
             gone: self::requireBool($data, self::gone),
+            passedOver: $passedOver,
         );
     }
 }

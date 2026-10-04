@@ -123,6 +123,53 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
     }
 
     /**
+     * @throws HilosException When a file cannot be loaded
+     */
+    public function testOversizedLineCountsAccumulateAcrossPortionsOfOneFile(): void
+    {
+        $writer = $this->startedWriter();
+        $writer->step(self::T0);
+        $this->assertRead('', 0);
+        $writer->applyPortion($this->portion(self::FILE, 0, 50, [
+            $this->line(AnalyticsJournalRecord::journal('', self::T0)),
+        ], false, passedOver: 1), self::T0);
+        $this->assertRead(self::FILE, 50);
+        $writer->applyPortion($this->portion(self::FILE, 50, 90, [
+            $this->line(AnalyticsJournalRecord::journalEnd(0, self::T0 + 10)),
+        ], true, passedOver: 2), self::T0);
+        $this->assertLoaded(self::FILE);
+
+        $this->assertSame([['line_too_long', '3', (string)self::T0, (string)(self::T0 + 10)]], $this->rows(
+            'SELECT `reason`, `event_count`, `from_ts`, `to_ts` FROM `hilos_analytics_loss`',
+        ));
+    }
+
+    /**
+     * @throws HilosException When a file cannot be loaded
+     */
+    public function testAbandonedReadDoesNotCarryItsSkippedLineCountIntoTheNextFile(): void
+    {
+        $writer = $this->startedWriter();
+        $writer->step(self::T0);
+        $this->assertRead('', 0);
+        $writer->applyPortion($this->portion(self::FILE, 0, 50, [
+            $this->line(AnalyticsJournalRecord::journal('', self::T0)),
+        ], false, passedOver: 2), self::T0);
+        $this->assertRead(self::FILE, 50);
+        $writer->applyPortion(new AnalyticsJournalPortionSignalData(null, self::FILE, 50, 50, [], false, true), self::T0);
+
+        $writer->step(self::T0 + 1);
+        $this->assertRead('', 0);
+        $writer->applyPortion($this->portion(self::SECOND_FILE, 0, 50, [
+            $this->line(AnalyticsJournalRecord::journal('', self::T0 + 1)),
+        ], true, passedOver: 1), self::T0 + 1);
+        $this->assertLoaded(self::SECOND_FILE);
+        $this->assertSame([['line_too_long', '1']], $this->rows(
+            'SELECT `reason`, `event_count` FROM `hilos_analytics_loss`',
+        ));
+    }
+
+    /**
      * @throws HilosException When a frame cannot be handled
      */
     public function testAFileLoadedBeforeIsOnlyConfirmedAgain(): void
@@ -366,6 +413,8 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      * @param int $nextOffset Offset after it
      * @param list<string> $lines Lines of the portion
      * @param bool $complete Whether the file ends here
+     * @param ?string $node Node whose journal answered
+     * @param int $passedOver Oversized lines omitted from this portion
      * @return AnalyticsJournalPortionSignalData Portion as the journal agent would send it
      */
     private function portion(
@@ -375,9 +424,10 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         array $lines,
         bool $complete,
         ?string $node = null,
+        int $passedOver = 0,
     ): AnalyticsJournalPortionSignalData
     {
-        return new AnalyticsJournalPortionSignalData($node, $file, $offset, $nextOffset, $lines, $complete, false);
+        return new AnalyticsJournalPortionSignalData($node, $file, $offset, $nextOffset, $lines, $complete, false, $passedOver);
     }
 
     /**

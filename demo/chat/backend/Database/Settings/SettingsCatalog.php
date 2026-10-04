@@ -16,6 +16,7 @@ use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Log\LogSettingsCatalog;
@@ -134,6 +135,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
+            AnalyticsSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),

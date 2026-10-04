@@ -29,6 +29,8 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  * there is no order between nodes. An offline or silent node keeps its files on disk while other
  * nodes proceed. A database failure pauses only that node, with its failed file ahead of later
  * files. Loading is blocking, so this agent has a monopolistic worker.
+ * It carries the journal reader's omitted-line count across portions of one file, and the loader
+ * writes that count and its own skips as loss rows in the file's transaction.
  *
  * See docs/agents/architecture/analytics.md, Across Nodes.
  */
@@ -64,6 +66,9 @@ final class AnalyticsWriterAgent extends AbstractAgent
 
     /** @var list<string> Lines of the current file */
     private array $lines = [];
+
+    /** @var int Oversized lines omitted across portions of the current file */
+    private int $passedOver = 0;
 
     /** @var int Offset of the outstanding read */
     private int $offset = 0;
@@ -240,6 +245,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
 
         $this->file = $portion->file;
         array_push($this->lines, ...$portion->lines);
+        $this->passedOver += $portion->passedOver;
         if (!$portion->complete) {
             $this->ask($node, $this->file, $portion->nextOffset, $nowMs);
 
@@ -260,10 +266,11 @@ final class AnalyticsWriterAgent extends AbstractAgent
     {
         $file = $this->file;
         $lines = $this->lines;
+        $passedOver = $this->passedOver;
         $this->releaseRead();
 
         try {
-            $outcome = $this->loader->load($node, $file, $lines);
+            $outcome = $this->loader->load($node, $file, $lines, $passedOver);
         } catch (HilosException $failure) {
             $previous = $this->pauses[$node] ?? null;
             if ($previous === null) {
@@ -359,6 +366,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
         $this->readingNode = null;
         $this->file = AnalyticsJournalReadSignalData::OLDEST_READY;
         $this->lines = [];
+        $this->passedOver = 0;
         $this->offset = 0;
         $this->askedAtMs = 0;
     }

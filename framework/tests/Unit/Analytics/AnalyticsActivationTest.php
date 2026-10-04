@@ -9,6 +9,7 @@ use Hilos\Core\Feature\Definition\AnalyticsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
@@ -29,6 +30,7 @@ final class AnalyticsActivationTest extends TestCase
             $requirements->requiredAgents,
         );
         self::assertSame(HilosFeature::ANALYTICS, (new AnalyticsFeature())->feature());
+        self::assertSame([AnalyticsSettingsCatalog::class], $requirements->requiredCatalogFragments);
     }
 
     public function testTheRegistryKnowsTheFeature(): void

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsLossReason;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
 use Hilos\Hilos;
@@ -54,6 +57,26 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
         Hilos::$rt = null;
 
         parent::tearDown();
+    }
+
+    public function testAQueuedBatchDiscardedByTheDatabaseSwapIsReportedAfterIt(): void
+    {
+        $collector = new AnalyticsCollector();
+        $collector->openWorkerSession(self::WORKER_INDEX, false);
+        $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
+
+        $collector->forgetReplacedDatabase();
+        $collector->flush();
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+        $this->assertInstanceOf(AnalyticsJournalAppendSignalData::class, $signal->data->data);
+        $frame = $signal->data->data;
+        $this->assertSame([], $frame->lines);
+        $this->assertSame(0, $frame->events);
+        $this->assertSame(AnalyticsLossReason::RESTORE, $frame->losses[0]->reason);
+        $this->assertSame(1, $frame->losses[0]->events);
     }
 
     /**

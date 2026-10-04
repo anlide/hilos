@@ -60,8 +60,15 @@ final class AnalyticsJournalRecord
     public const string KEY_PATH = 'path';
     public const string KEY_STATUS = 'status';
     public const string KEY_DURATION_MS = 'durationMs';
+    public const string KEY_REASON = 'reason';
+    public const string KEY_EVENTS = 'events';
+    public const string KEY_FROM_TS = 'fromTs';
+    public const string KEY_TO_TS = 'toTs';
+    public const string KEY_CLOSED_TS = 'closedTs';
 
     public const string TYPE_JOURNAL = 'journal';
+    public const string TYPE_JOURNAL_END = 'journal_end';
+    public const string TYPE_LOSS = 'loss';
     public const string TYPE_WORKER_SESSION = 'worker_session';
     public const string TYPE_WORKER_SESSION_STOP = 'worker_session_stop';
     public const string TYPE_AGENT_SESSION = 'agent_session';
@@ -109,6 +116,53 @@ final class AnalyticsJournalRecord
             self::KEY_NODE => $node,
             self::KEY_OPENED_TS => $openedTs,
         ];
+    }
+
+    /**
+     * @param AnalyticsLossReason $reason Why events were lost
+     * @param int $events Number of events lost
+     * @param int $fromTs First loss moment in milliseconds
+     * @param int $toTs Last loss moment in milliseconds
+     * @return array<string, int|string> Loss record
+     */
+    public static function loss(AnalyticsLossReason $reason, int $events, int $fromTs, int $toTs): array
+    {
+        return [
+            self::KEY_TYPE => self::TYPE_LOSS,
+            self::KEY_REASON => $reason->value,
+            self::KEY_EVENTS => $events,
+            self::KEY_FROM_TS => $fromTs,
+            self::KEY_TO_TS => $toTs,
+        ];
+    }
+
+    /**
+     * @param int $events Events the file accepted
+     * @param int $closedTs Closing moment in milliseconds
+     * @return array<string, int|string> Last record of a ready file
+     */
+    public static function journalEnd(int $events, int $closedTs): array
+    {
+        return [
+            self::KEY_TYPE => self::TYPE_JOURNAL_END,
+            self::KEY_EVENTS => $events,
+            self::KEY_CLOSED_TS => $closedTs,
+        ];
+    }
+
+    /**
+     * @param string $type Journal record type
+     * @return bool Whether the record counts as an event
+     */
+    public static function isEvent(string $type): bool
+    {
+        return !in_array($type, [
+            self::TYPE_JOURNAL,
+            self::TYPE_JOURNAL_END,
+            self::TYPE_WORKER_SESSION,
+            self::TYPE_AGENT_SESSION,
+            self::TYPE_LOSS,
+        ], true);
     }
 
     /**
@@ -465,12 +519,29 @@ final class AnalyticsJournalRecord
      */
     public static function encode(array $record): ?string
     {
+        return self::encodeEvent($record)->line;
+    }
+
+    /**
+     * Encodes an event and reports whether its payload was removed to fit the journal line.
+     *
+     * @param array<string, mixed> $record Record built by one of the builders above
+     * @return AnalyticsJournalEncoding Encoded line and payload-loss outcome
+     */
+    public static function encodeEvent(array $record): AnalyticsJournalEncoding
+    {
         $line = json_encode($record, self::JSON_FLAGS);
+        $payloadDropped = false;
         if (($line === false || strlen($line) > self::MAX_LINE_BYTES) && ($record[self::KEY_PAYLOAD] ?? null) !== null) {
             $record[self::KEY_PAYLOAD] = null;
             $line = json_encode($record, self::JSON_FLAGS);
+            $payloadDropped = true;
         }
 
-        return $line === false || strlen($line) > self::MAX_LINE_BYTES ? null : $line;
+        if ($line === false || strlen($line) > self::MAX_LINE_BYTES) {
+            return new AnalyticsJournalEncoding(null, false);
+        }
+
+        return new AnalyticsJournalEncoding($line, $payloadDropped);
     }
 }

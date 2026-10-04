@@ -6,6 +6,7 @@ namespace Hilos\Core\Feature\Definition;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
@@ -19,7 +20,8 @@ use Hilos\Fs\Context\FsContext;
  * batches to nobody; a journal without the writer fills the disk and never reaches a table. The
  * framework starts the collector itself in every process of a project that declares the feature
  * ({@see AnalyticsCollector}), and the start refuses the project that registers no
- * {@see FsContext::ANALYTICS_JOURNAL} directory - the agents are what this definition requires.
+ * {@see FsContext::ANALYTICS_JOURNAL} directory and a catalog with
+ * {@see AnalyticsSettingsCatalog}, so the administrator can set the journal ceiling.
  */
 final class AnalyticsFeature extends FeatureDefinition
 {
@@ -32,7 +34,7 @@ final class AnalyticsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The journal agent of every node and the cluster writer
+     * @return FeatureRequirements Both journal agents and the ceiling setting fragment
      */
     public function requirements(): FeatureRequirements
     {
@@ -41,6 +43,7 @@ final class AnalyticsFeature extends FeatureDefinition
                 HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosAgentType::HILOS_ANALYTICS_WRITER,
             ],
+            requiredCatalogFragments: [AnalyticsSettingsCatalog::class],
         );
     }
 }

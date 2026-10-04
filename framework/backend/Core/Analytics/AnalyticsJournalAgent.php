@@ -21,11 +21,16 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingAccessorUnavailableException;
+use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
@@ -48,6 +53,10 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  *
  * The subdirectory is `<analytics_journal>/<APP_ENV>/<node>`: one environment cannot see another's
  * files where several mount the same data directory, and neither can a node another's.
+ * The administrator sets one byte ceiling for all nodes; each node measures only its own files.
+ * Losses are episodes by reason, saved beside the journal once a second and written as journal
+ * records after a minute of quiet or at stop. A restore replaces discarded files with one ready
+ * file carrying their event count and any open episodes.
  */
 final class AnalyticsJournalAgent extends AbstractAgent
 {
@@ -80,6 +89,11 @@ final class AnalyticsJournalAgent extends AbstractAgent
     private const string OPERATION_SYNC = 'sync or rotate';
     private const string OPERATION_READ = 'read';
     private const string OPERATION_DELETE = 'delete a loaded file';
+    private const string OPERATION_CEILING = 'read its ceiling';
+    private const string OPERATION_STATE = 'keep its count of losses';
+
+    private const int CEILING_CHECK_INTERVAL_MS = 5000;
+    private const int LOSS_STATE_INTERVAL_MS = 1000;
 
     /** @var ?AnalyticsJournalDirectory The journal, null until the start resolved its subdirectory */
     private ?AnalyticsJournalDirectory $journal = null;
@@ -92,6 +106,17 @@ final class AnalyticsJournalAgent extends AbstractAgent
 
     /** @var array<string, true> Operations whose failure was said and has not cleared since */
     private array $failingOperations = [];
+
+    private int $ceilingBytes = AnalyticsSettingsCatalog::DEFAULT_JOURNAL_MAX_BYTES;
+    private int $ceilingReadAtMs = 0;
+    private ?int $ceilingOverride = null;
+    private AnalyticsJournalLosses $losses;
+    private int $lossesSavedAtMs = 0;
+
+    public function __construct()
+    {
+        $this->losses = new AnalyticsJournalLosses();
+    }
 
     /**
      * Learns which node this is, resolves the subdirectory, and closes what a previous life left open.
@@ -126,13 +151,16 @@ final class AnalyticsJournalAgent extends AbstractAgent
      *
      * @param AnalyticsJournalDirectory $journal The node's journal
      * @param ?string $nodeId Cluster node id of this node, null off a cluster
+     * @param ?int $ceilingBytes Test seam for a fixed ceiling; production reads the setting
      * @throws InvalidArgumentException When a ready notice cannot be named
      */
-    public function openJournal(AnalyticsJournalDirectory $journal, ?string $nodeId): void
+    public function openJournal(AnalyticsJournalDirectory $journal, ?string $nodeId, ?int $ceilingBytes = null): void
     {
         $this->journal = $journal;
         $this->nodeId = $nodeId;
         $this->started = false;
+        $this->ceilingOverride = $ceilingBytes;
+        $this->readCeiling(self::nowMs());
         $this->startJournal();
     }
 
@@ -143,27 +171,63 @@ final class AnalyticsJournalAgent extends AbstractAgent
      */
     public function onTick(): void
     {
+        $this->step(self::nowMs());
+    }
+
+    /**
+     * Runs one journal maintenance step with a supplied clock.
+     *
+     * @param int $nowMs Moment of the step
+     * @throws InvalidArgumentException When a ready notice cannot be named
+     */
+    public function step(int $nowMs): void
+    {
+        if ($nowMs - $this->ceilingReadAtMs >= self::CEILING_CHECK_INTERVAL_MS) {
+            $this->readCeiling($nowMs);
+        }
+
         if (!$this->ensureStarted()) {
             return;
         }
 
         try {
-            if ($this->journal?->tick(self::nowMs()) !== null) {
+            if ($this->journal?->tick($nowMs) !== null) {
                 $this->announceReady();
             }
             $this->clearFailure(self::OPERATION_SYNC);
         } catch (FsException $failure) {
             $this->reportFailure(self::OPERATION_SYNC, $failure);
         }
+
+        $closed = $this->losses->closeQuiet($nowMs);
+        if ($closed !== []) {
+            try {
+                $this->appendLossLines($closed, $nowMs);
+                $this->clearFailure(self::OPERATION_WRITE);
+                foreach ($closed as $count) {
+                    if ($count->reason === AnalyticsLossReason::JOURNAL_FULL) {
+                        $this->logAgentInfo("Analytics journal: ceiling loss episode closed with {$count->events} event(s)");
+                    }
+                }
+            } catch (FsException $failure) {
+                foreach ($closed as $count) {
+                    $this->losses->add($count, $nowMs);
+                }
+                $this->reportFailure(self::OPERATION_WRITE, $failure);
+            }
+        }
+
+        if ($this->losses->hasChanges() && $nowMs - $this->lossesSavedAtMs >= self::LOSS_STATE_INTERVAL_MS) {
+            $this->saveLossState($nowMs);
+        }
     }
 
     /**
-     * Closes the open file as ready; under a freeze throws the whole journal away instead.
+     * Closes open loss episodes and the file; under a freeze counts the discarded journal in a new ready file.
      *
      * The freeze comes before a restore, and the restored database would not know the journal
-     * belongs to it: what was not loaded by then is lost, by the owner's decision, and counted by
-     * HIL-1157. Asked here and not at the swap, because the swap is invisible to an agent - the
-     * re-read round comes on a failed restore too.
+     * belongs to it: what was not loaded by then is counted as restore loss. This check belongs
+     * here: the swap is invisible to an agent, and the re-read round also comes on a failed restore.
      *
      * @throws InvalidArgumentException When a ready notice cannot be named
      */
@@ -174,14 +238,34 @@ final class AnalyticsJournalAgent extends AbstractAgent
         }
 
         try {
+            $nowMs = self::nowMs();
             if (Hilos::$rt?->hilosProtectedModeRuntime?->silencesUnstoppedWriters() === true) {
                 $discarded = $this->journal->discardAll();
-                $this->logAgentInfo("Analytics journal: the freeze stopped it, {$discarded} file(s) of this node thrown away");
+                $closed = $this->losses->closeAll();
+                if ($discarded->events > 0) {
+                    array_unshift($closed, new AnalyticsLossCount(
+                        AnalyticsLossReason::RESTORE,
+                        $discarded->events,
+                        $discarded->oldestOpenedTs ?? $nowMs,
+                        $nowMs,
+                    ));
+                }
+                if ($closed !== []) {
+                    $this->appendLossLines($closed, $nowMs, false);
+                    $this->journal->rotate($nowMs);
+                }
+                $this->journal->deleteLossState();
+                $this->logAgentInfo(
+                    "Analytics journal: the freeze stopped it, {$discarded->files} file(s) of this node thrown away, "
+                    . "{$discarded->events} event(s) counted",
+                );
 
                 return;
             }
 
-            $this->journal->rotate(self::nowMs());
+            $this->appendLossLines($this->losses->closeAll(), $nowMs, false);
+            $this->journal->rotate($nowMs);
+            $this->journal->deleteLossState();
         } catch (FsException $failure) {
             $this->logAgentError('Analytics journal: could not close the journal on the way out: ' . $failure->getMessage());
         }
@@ -206,7 +290,7 @@ final class AnalyticsJournalAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, AnalyticsJournalAppendSignalData::class, $payload);
                 }
 
-                $this->append($payload->lines);
+                $this->append($payload);
 
                 return;
 
@@ -236,24 +320,45 @@ final class AnalyticsJournalAgent extends AbstractAgent
     /**
      * Appends the lines of a batch; an empty line or one holding a line break is dropped, since it would break the file.
      *
-     * @param list<string> $lines Lines of the batch
+     * @param AnalyticsJournalAppendSignalData $batch Lines, event count and source losses
      */
-    private function append(array $lines): void
+    private function append(AnalyticsJournalAppendSignalData $batch): void
     {
+        $nowMs = self::nowMs();
+        foreach ($batch->losses as $loss) {
+            $this->losses->add($loss, $nowMs);
+        }
+
         $kept = array_values(array_filter(
-            $lines,
+            $batch->lines,
             static fn(string $line): bool => $line !== '' && !str_contains($line, self::LINE_BREAK),
         ));
-        if ($kept === [] || !$this->ensureStarted()) {
+        if ($kept === []) {
+            return;
+        }
+
+        if (!$this->ensureStarted()) {
+            $this->addLocalLoss(AnalyticsLossReason::JOURNAL_UNWRITABLE, $batch->events, $nowMs);
+            return;
+        }
+
+        if ($this->journal->bytes() >= $this->ceilingBytes) {
+            if ($this->addLocalLoss(AnalyticsLossReason::JOURNAL_FULL, $batch->events, $nowMs)) {
+                $this->logAgentWarning("Analytics journal: at its ceiling of {$this->ceilingBytes} bytes, new events are lost and counted");
+            }
             return;
         }
 
         try {
-            if ($this->journal?->append($kept, self::nowMs()) !== null) {
+            if ($this->journal->append($kept, $batch->events, $nowMs) !== null) {
                 $this->announceReady();
             }
             $this->clearFailure(self::OPERATION_WRITE);
+        } catch (AnalyticsJournalRotationException $failure) {
+            // The event lines are already in the open file and must not be counted as lost.
+            $this->reportFailure(self::OPERATION_SYNC, $failure);
         } catch (FsException $failure) {
+            $this->addLocalLoss(AnalyticsLossReason::JOURNAL_UNWRITABLE, $batch->events, $nowMs);
             $this->reportFailure(self::OPERATION_WRITE, $failure);
         }
     }
@@ -299,6 +404,7 @@ final class AnalyticsJournalAgent extends AbstractAgent
             lines: $portion?->lines ?? [],
             complete: $portion?->complete ?? false,
             gone: $file !== null && $portion === null,
+            passedOver: $portion?->passedOver ?? 0,
         ));
     }
 
@@ -349,6 +455,12 @@ final class AnalyticsJournalAgent extends AbstractAgent
 
         try {
             $closed = $this->journal->start();
+            $saved = $this->journal->readLossState();
+            if ($saved !== null) {
+                $previous = AnalyticsJournalLosses::fromJson($saved)->closeAll();
+                $this->appendLossLines($previous, self::nowMs(), false);
+                $this->journal->deleteLossState();
+            }
             // The listing belongs to the start: if it fails, the next tick must retry and
             // announce files that would otherwise remain unseen by an already running writer.
             $hasReady = $announceReady && $this->journal->oldestReady() !== null;
@@ -362,6 +474,94 @@ final class AnalyticsJournalAgent extends AbstractAgent
             }
         } catch (FsException $failure) {
             $this->reportFailure(self::OPERATION_START, $failure);
+        }
+    }
+
+    /**
+     * Reads the cluster setting at most once per interval, retaining the last valid ceiling.
+     *
+     * @param int $nowMs Moment of the read
+     */
+    private function readCeiling(int $nowMs): void
+    {
+        $this->ceilingReadAtMs = $nowMs;
+        if ($this->ceilingOverride !== null) {
+            $this->ceilingBytes = $this->ceilingOverride;
+            return;
+        }
+
+        try {
+            $settings = Hilos::$setting;
+            if ($settings === null || !isset($settings[AnalyticsSettingsCatalog::JOURNAL_MAX_BYTES])) {
+                throw new SettingAccessorUnavailableException('Analytics journal ceiling setting is unavailable');
+            }
+
+            $ceiling = $settings[AnalyticsSettingsCatalog::JOURNAL_MAX_BYTES]->int();
+            $refusal = AnalyticsJournalCeilingRule::validate($ceiling);
+            if ($refusal !== null) {
+                throw new SettingInvalidValueException($refusal);
+            }
+
+            $this->ceilingBytes = $ceiling;
+            $this->clearFailure(self::OPERATION_CEILING);
+        } catch (DatabaseException|SettingException $failure) {
+            $this->reportFailure(self::OPERATION_CEILING, $failure);
+        }
+    }
+
+    /**
+     * @param AnalyticsLossReason $reason Why this node lost batch events
+     * @param int $events Events in the batch
+     * @param int $nowMs Moment the batch was lost
+     * @return bool Whether this reason's episode just opened
+     */
+    private function addLocalLoss(AnalyticsLossReason $reason, int $events, int $nowMs): bool
+    {
+        return $this->losses->add(new AnalyticsLossCount($reason, $events, $nowMs, $nowMs), $nowMs);
+    }
+
+    /**
+     * Appends closed counts outside the byte ceiling.
+     *
+     * @param list<AnalyticsLossCount> $closed Counts to write
+     * @param int $nowMs Moment of the write
+     * @param bool $announceReady Whether a size rotation should notify the writer
+     * @throws FsException When the journal cannot be written
+     */
+    private function appendLossLines(array $closed, int $nowMs, bool $announceReady = true): void
+    {
+        if ($closed === [] || $this->journal === null) {
+            return;
+        }
+
+        $lines = array_map(static fn(AnalyticsLossCount $count): string => $count->toLine(), $closed);
+        if ($this->journal->append($lines, 0, $nowMs) !== null && $announceReady) {
+            $this->announceReady();
+        }
+    }
+
+    /**
+     * Saves changed open episodes at most once per second.
+     *
+     * @param int $nowMs Moment of this attempt
+     */
+    private function saveLossState(int $nowMs): void
+    {
+        if ($this->journal === null) {
+            return;
+        }
+
+        $this->lossesSavedAtMs = $nowMs;
+        try {
+            if ($this->losses->isEmpty()) {
+                $this->journal->deleteLossState();
+            } else {
+                $this->journal->writeLossState($this->losses->toJson());
+            }
+            $this->losses->markSaved();
+            $this->clearFailure(self::OPERATION_STATE);
+        } catch (FsException $failure) {
+            $this->reportFailure(self::OPERATION_STATE, $failure);
         }
     }
 
@@ -382,16 +582,16 @@ final class AnalyticsJournalAgent extends AbstractAgent
      * Says a failure once per change of outcome, not on every batch.
      *
      * @param string $operation What failed, one of the OPERATION_* words
-     * @param FsException $failure The failure
+     * @param HilosException $failure The failure
      */
-    private function reportFailure(string $operation, FsException $failure): void
+    private function reportFailure(string $operation, HilosException $failure): void
     {
         if (isset($this->failingOperations[$operation])) {
             return;
         }
 
         $this->failingOperations[$operation] = true;
-        $this->logAgentError("Analytics journal cannot {$operation}, what it handles meanwhile is lost: " . $failure->getMessage());
+        $this->logAgentError("Analytics journal cannot {$operation}: " . $failure->getMessage());
     }
 
     /**

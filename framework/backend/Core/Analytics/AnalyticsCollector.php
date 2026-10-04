@@ -30,8 +30,8 @@ use Hilos\Utils\Logger;
  *
  * The collector lives in every process and is in no agent roster, so the protected-mode freeze
  * cannot stop it; it answers the freeze itself (HIL-910). While this node's freeze silences the
- * writers the roster walk leaves running (activating or active) it records nothing and throws
- * the gathered batch away; an agent that stops meanwhile is remembered and its stop handed over,
+ * writers the roster walk leaves running (activating or active) it records nothing and counts
+ * the gathered batch as a restore loss; an agent that stops meanwhile is remembered and its stop handed over,
  * with its own moment, once the freeze lets go. Nothing is re-opened after a swap: the
  * descriptions of the sessions travel in every batch that names them.
  */
@@ -383,7 +383,8 @@ final class AnalyticsCollector
         );
 
         if ($this->isHeld()) {
-            $this->outbox->clear();
+            $lost = $this->outbox->clear();
+            $this->outbox->countLoss(AnalyticsLossReason::RESTORE, $lost, $this->nowTs(), $this->nowTs());
             $this->heldStops[] = $stop;
 
             return;
@@ -688,7 +689,8 @@ final class AnalyticsCollector
      */
     public function forgetReplacedDatabase(): void
     {
-        $this->outbox->clear();
+        $lost = $this->outbox->clear();
+        $this->outbox->countLoss(AnalyticsLossReason::RESTORE, $lost, $this->nowTs(), $this->nowTs());
         $this->activeApiRequestKey = null;
         $this->activeUserActionKey = null;
         $this->connections = [];
@@ -704,6 +706,7 @@ final class AnalyticsCollector
     private function record(array $record, ?AnalyticsJournalSession $agentSession, ?array $sessions = null): void
     {
         if (!$this->recordable()) {
+            $this->outbox->countLoss(AnalyticsLossReason::RESTORE, 1, $this->nowTs(), $this->nowTs());
             return;
         }
 
@@ -712,7 +715,7 @@ final class AnalyticsCollector
     }
 
     /**
-     * Whether a record may be gathered now; under the freeze the gathered batch is thrown away.
+     * Whether a record may be gathered now; under the freeze the gathered batch is counted and thrown away.
      *
      * The first call after the freeze hands over the stops it kept back.
      *
@@ -721,7 +724,8 @@ final class AnalyticsCollector
     private function recordable(): bool
     {
         if ($this->isHeld()) {
-            $this->outbox->clear();
+            $lost = $this->outbox->clear();
+            $this->outbox->countLoss(AnalyticsLossReason::RESTORE, $lost, $this->nowTs(), $this->nowTs());
 
             return false;
         }

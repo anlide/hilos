@@ -8,6 +8,10 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalDirectory;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\AnalyticsJournalLosses;
+use Hilos\Core\Analytics\AnalyticsLossCount;
+use Hilos\Core\Analytics\AnalyticsLossReason;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
@@ -15,6 +19,7 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -91,7 +96,8 @@ final class AnalyticsJournalAgentTest extends TestCase
         $portion = $this->portion();
         $this->assertSame(self::NODE, $portion->nodeId);
         $this->assertTrue(AnalyticsJournalDirectory::isReadyName($portion->file));
-        $this->assertSame(['{"t":"a"}'], array_slice($portion->lines, 1));
+        $this->assertSame(['{"t":"a"}'], array_slice($portion->lines, 1, -1));
+        $this->assertSame(AnalyticsJournalRecord::TYPE_JOURNAL_END, json_decode($portion->lines[array_key_last($portion->lines)], true)['t']);
         $this->assertTrue($portion->complete);
         $this->assertFalse($portion->gone);
 
@@ -130,7 +136,7 @@ final class AnalyticsJournalAgentTest extends TestCase
             $lines = [...$lines, ...$portion->lines];
         }
 
-        $this->assertSame(['{"t":"small"}'], array_slice($lines, 1));
+        $this->assertSame(['{"t":"small"}'], array_slice($lines, 1, -1));
         $warning = 'passed over 1 line(s) longer than ' . AnalyticsJournalRecord::MAX_LINE_BYTES;
         $this->assertStringContainsString($warning . " bytes in {$portion->file}", $this->agentLog());
     }
@@ -163,14 +169,46 @@ final class AnalyticsJournalAgentTest extends TestCase
     }
 
     /**
+     * A failed rename follows a successful append: the bytes remain in the open file and
+     * must not also become a journal_unwritable loss episode.
+     *
+     * @throws HilosException When a frame or ready notice cannot be handled
+     */
+    public function testFailedRotationDoesNotCountAnAlreadyWrittenBatchAsLost(): void
+    {
+        $agent = $this->startedAgent();
+        $this->append($agent, ['{"t":"first"}'], 1);
+        $open = $this->files()[0];
+        $readyPath = $this->path . '/' . substr($open, 0, -strlen('.open')) . '.jsonl';
+        mkdir($readyPath);
+        try {
+            $large = '{"t":"' . str_repeat('x', 120_000) . '"}';
+            $this->append($agent, array_fill(0, 9, $large), 9);
+            self::assertStringContainsString('cannot sync or rotate', $this->agentLog());
+        } finally {
+            rmdir($readyPath);
+        }
+
+        $agent->step((int)floor(microtime(true) * 1000));
+        $records = $this->journalRecords();
+        self::assertCount(10, array_filter($records, static fn(array $record): bool => !in_array(
+            $record[AnalyticsJournalRecord::KEY_TYPE],
+            [AnalyticsJournalRecord::TYPE_JOURNAL, AnalyticsJournalRecord::TYPE_JOURNAL_END],
+            true,
+        )));
+        self::assertNotContains(AnalyticsJournalRecord::TYPE_LOSS, array_column($records, AnalyticsJournalRecord::KEY_TYPE));
+        self::assertSame(10, $records[array_key_last($records)][AnalyticsJournalRecord::KEY_EVENTS]);
+    }
+
+    /**
      * @throws HilosException When a frame cannot be handled
      */
     public function testAgeRotationAnnouncesAReadyFile(): void
     {
         $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
         $agent = new AnalyticsJournalAgent();
-        $agent->openJournal($journal, self::NODE);
-        $journal->append(['{"t":"a"}'], 1);
+        $agent->openJournal($journal, self::NODE, AnalyticsSettingsCatalog::DEFAULT_JOURNAL_MAX_BYTES);
+        $journal->append(['{"t":"a"}'], 1, 1);
 
         $agent->onTick();
         $this->assertReadyNotice();
@@ -183,7 +221,7 @@ final class AnalyticsJournalAgentTest extends TestCase
     {
         $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
         $journal->start();
-        $journal->append(['{"t":"a"}'], 1);
+        $journal->append(['{"t":"a"}'], 1, 1);
         $journal->rotate(1);
 
         $this->startedAgent();
@@ -198,13 +236,13 @@ final class AnalyticsJournalAgentTest extends TestCase
         mkdir($this->root);
         file_put_contents($this->root . '/test', 'blocks the journal directory');
         $agent = new AnalyticsJournalAgent();
-        $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE);
+        $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE, AnalyticsSettingsCatalog::DEFAULT_JOURNAL_MAX_BYTES);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
 
         unlink($this->root . '/test');
         $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
         $journal->start();
-        $journal->append(['{"t":"a"}'], 1);
+        $journal->append(['{"t":"a"}'], 1, 1);
         $journal->rotate(1);
 
         $agent->onTick();
@@ -220,22 +258,149 @@ final class AnalyticsJournalAgentTest extends TestCase
         $this->append($agent, ['{"t":"a"}']);
         $agent->onStop();
         $agent = $this->startedAgent();
-        $this->append($agent, ['{"t":"b"}']);
+        $this->append($agent, ['{"t":"b"}'], 1, [
+            new AnalyticsLossCount(AnalyticsLossReason::PAYLOAD_DROPPED, 1, 10, 20),
+        ]);
 
         $this->freeze(ProtectedModeRuntime::PHASE_ACTIVATING);
         $agent->onStop();
 
-        $this->assertSame([], $this->files());
+        $files = $this->files();
+        $this->assertCount(1, $files);
+        $this->assertTrue(AnalyticsJournalDirectory::isReadyName($files[0]));
+        $records = array_map(
+            static fn(string $line): array => (array)json_decode($line, true),
+            array_filter(explode("\n", (string)file_get_contents($this->path . '/' . $files[0]))),
+        );
+        $this->assertSame([
+            AnalyticsJournalRecord::TYPE_JOURNAL,
+            AnalyticsJournalRecord::TYPE_LOSS,
+            AnalyticsJournalRecord::TYPE_LOSS,
+            AnalyticsJournalRecord::TYPE_JOURNAL_END,
+        ], array_column($records, AnalyticsJournalRecord::KEY_TYPE));
+        $this->assertSame(2, $records[1][AnalyticsJournalRecord::KEY_EVENTS]);
+        $this->assertSame('restore', $records[1][AnalyticsJournalRecord::KEY_REASON]);
+        $this->assertSame('payload_dropped', $records[2][AnalyticsJournalRecord::KEY_REASON]);
+        $this->assertFileDoesNotExist($this->path . '/losses.json');
         $this->assertStringContainsString('2 file(s) of this node thrown away', $this->agentLog());
+    }
+
+    /**
+     * @throws HilosException When a frame or ready notice cannot be handled
+     */
+    public function testCeilingDropsNewBatchesButAClosedLossWritesPastIt(): void
+    {
+        $agent = $this->startedAgent(1);
+        $this->append($agent, ['{"t":"first"}'], 1);
+        $this->append($agent, ['{"t":"second"}'], 1, [
+            new AnalyticsLossCount(AnalyticsLossReason::PAYLOAD_DROPPED, 1, 10, 10),
+        ]);
+        $this->append($agent, ['{"t":"third"}'], 1);
+
+        $nowMs = (int)floor(microtime(true) * 1000);
+        $agent->step($nowMs + AnalyticsJournalLosses::QUIET_MS + 1);
+        $agent->onStop();
+
+        $records = $this->journalRecords();
+        self::assertContains('first', array_column($records, AnalyticsJournalRecord::KEY_TYPE));
+        self::assertNotContains('second', array_column($records, AnalyticsJournalRecord::KEY_TYPE));
+        self::assertNotContains('third', array_column($records, AnalyticsJournalRecord::KEY_TYPE));
+        $losses = array_values(array_filter($records, static fn(array $record): bool => $record['t'] === AnalyticsJournalRecord::TYPE_LOSS));
+        $counts = array_map(static fn(array $record): array => [$record['reason'], $record['events']], $losses);
+        sort($counts);
+        self::assertSame([
+            ['journal_full', 2],
+            ['payload_dropped', 1],
+        ], $counts);
+        self::assertSame(1, substr_count($this->agentLog(), 'at its ceiling of 1 bytes'));
+        self::assertStringContainsString('closed with 2 event(s)', $this->agentLog());
+        self::assertFileDoesNotExist($this->path . '/losses.json');
+    }
+
+    /**
+     * @throws HilosException When a saved count cannot be written or reopened
+     */
+    public function testStartClosesEpisodesSavedByThePreviousLife(): void
+    {
+        $journal = new AnalyticsJournalDirectory($this->path, self::NODE);
+        $journal->start();
+        $losses = new AnalyticsJournalLosses();
+        $losses->add(new AnalyticsLossCount(AnalyticsLossReason::JOURNAL_UNWRITABLE, 3, 10, 20), 20);
+        $journal->writeLossState($losses->toJson());
+
+        $agent = $this->startedAgent();
+        self::assertFileDoesNotExist($this->path . '/losses.json');
+        $agent->onStop();
+
+        $records = $this->journalRecords();
+        $closed = array_values(array_filter($records, static fn(array $record): bool => $record['t'] === AnalyticsJournalRecord::TYPE_LOSS));
+        self::assertSame('journal_unwritable', $closed[0]['reason']);
+        self::assertSame(3, $closed[0]['events']);
+    }
+
+    /**
+     * @throws HilosException When a failed start or later write cannot be handled
+     */
+    public function testFailedDirectoryStartCountsTheBatchItCouldNotWrite(): void
+    {
+        mkdir($this->root);
+        file_put_contents($this->root . '/test', 'blocks the journal directory');
+        $agent = new AnalyticsJournalAgent();
+        $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE, 1);
+        $this->append($agent, ['{"t":"lost"}'], 1);
+
+        unlink($this->root . '/test');
+        $nowMs = (int)floor(microtime(true) * 1000);
+        $agent->step($nowMs + AnalyticsJournalLosses::QUIET_MS + 1);
+        $agent->onStop();
+
+        $records = $this->journalRecords();
+        $closed = array_values(array_filter($records, static fn(array $record): bool => $record['t'] === AnalyticsJournalRecord::TYPE_LOSS));
+        self::assertSame('journal_unwritable', $closed[0]['reason']);
+        self::assertSame(1, $closed[0]['events']);
+    }
+
+    /**
+     * @throws HilosException When the journal cannot be opened or ticked
+     */
+    public function testUnreadableCeilingRetainsTheLastValueAndReportsOnce(): void
+    {
+        $previous = Hilos::$setting;
+        $settings = new class(AnalyticsSettingsCatalog::class) extends SettingsAccessor {
+            public int $value = AnalyticsJournalDirectory::ROTATE_BYTES;
+
+            public function effectiveValueFor(string $key): mixed
+            {
+                return $this->value;
+            }
+        };
+        Hilos::$setting = $settings;
+        try {
+            $agent = new AnalyticsJournalAgent();
+            $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE);
+            $settings->value = 1;
+            $nowMs = (int)floor(microtime(true) * 1000);
+            $agent->step($nowMs + 5000);
+            $agent->step($nowMs + 10000);
+            self::assertSame(1, substr_count($this->agentLog(), 'cannot read its ceiling'));
+            $this->append($agent, ['{"t":"kept"}'], 1);
+            self::assertContains('kept', array_column($this->journalRecords(), AnalyticsJournalRecord::KEY_TYPE));
+        } finally {
+            Hilos::$setting = $previous;
+        }
     }
 
     /**
      * @return AnalyticsJournalAgent An agent over this case's journal, started
      */
-    private function startedAgent(): AnalyticsJournalAgent
+    private function startedAgent(?int $ceilingBytes = null): AnalyticsJournalAgent
     {
         $agent = new AnalyticsJournalAgent();
-        $agent->openJournal(new AnalyticsJournalDirectory($this->path, self::NODE), self::NODE);
+        $agent->openJournal(
+            new AnalyticsJournalDirectory($this->path, self::NODE),
+            self::NODE,
+            $ceilingBytes ?? AnalyticsSettingsCatalog::DEFAULT_JOURNAL_MAX_BYTES,
+        );
 
         return $agent;
     }
@@ -243,12 +408,14 @@ final class AnalyticsJournalAgentTest extends TestCase
     /**
      * @param AnalyticsJournalAgent $agent Agent to hand the batch to
      * @param list<string> $lines Lines of the batch
+     * @param ?int $events Event count when not equal to the line count
+     * @param list<AnalyticsLossCount> $losses Source losses
      * @throws HilosException When the frame cannot be handled
      */
-    private function append(AnalyticsJournalAgent $agent, array $lines): void
+    private function append(AnalyticsJournalAgent $agent, array $lines, ?int $events = null, array $losses = []): void
     {
         $agent->onSignalAgent(
-            new AgentSignalData(data: new AnalyticsJournalAppendSignalData($lines)),
+            new AgentSignalData(data: new AnalyticsJournalAppendSignalData($lines, $events ?? count($lines), $losses)),
             'worker',
             HilosSignalConstants::ANALYTICS_JOURNAL_APPEND,
         );
@@ -333,6 +500,25 @@ final class AnalyticsJournalAgentTest extends TestCase
         sort($files);
 
         return $files;
+    }
+
+    /**
+     * @return list<array<string, mixed>> Decoded records of this node's open and ready files
+     */
+    private function journalRecords(): array
+    {
+        $records = [];
+        foreach ($this->files() as $file) {
+            if (!str_ends_with($file, '.open') && !AnalyticsJournalDirectory::isReadyName($file)) {
+                continue;
+            }
+
+            foreach (array_filter(explode("\n", (string)file_get_contents($this->path . '/' . $file))) as $line) {
+                $records[] = (array)json_decode($line, true);
+            }
+        }
+
+        return $records;
     }
 
     /**

@@ -9,6 +9,7 @@ use Hilos\Core\Analytics\AnalyticsJournalLoader;
 use Hilos\Core\Analytics\AnalyticsJournalLoadOutcome;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
 use Hilos\Core\Analytics\AnalyticsJournalSkip;
+use Hilos\Core\Analytics\AnalyticsLossReason;
 use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -172,6 +173,57 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
     }
 
     /**
+     * @throws HilosException When a load fails
+     */
+    public function testLossAndLoaderSkipsBelongToTheFileAndLoadOnlyOnce(): void
+    {
+        $lines = $this->lines([
+            AnalyticsJournalRecord::journal(self::NODE, self::STARTED_TS),
+            AnalyticsJournalRecord::loss(AnalyticsLossReason::RESTORE, 4, self::STARTED_TS + 1, self::STARTED_TS + 2),
+            [AnalyticsJournalRecord::KEY_TYPE => 'unrecognized'],
+            [AnalyticsJournalRecord::KEY_TYPE => AnalyticsJournalRecord::TYPE_LOSS,
+                AnalyticsJournalRecord::KEY_REASON => 'unexpected', AnalyticsJournalRecord::KEY_EVENTS => 2,
+                AnalyticsJournalRecord::KEY_FROM_TS => self::STARTED_TS, AnalyticsJournalRecord::KEY_TO_TS => self::STARTED_TS],
+            [AnalyticsJournalRecord::KEY_TYPE => AnalyticsJournalRecord::TYPE_LOSS,
+                AnalyticsJournalRecord::KEY_REASON => AnalyticsLossReason::RESTORE->value, AnalyticsJournalRecord::KEY_EVENTS => 0,
+                AnalyticsJournalRecord::KEY_FROM_TS => self::STARTED_TS, AnalyticsJournalRecord::KEY_TO_TS => self::STARTED_TS],
+            AnalyticsJournalRecord::journalEnd(1, self::STARTED_TS + 10),
+        ]);
+        $loader = $this->loader();
+        $first = $loader->load('node-a', 'loss.jsonl', $lines, 3);
+        $second = $loader->load('node-a', 'loss.jsonl', $lines, 3);
+
+        $this->assertFalse($first->alreadyLoaded);
+        $this->assertTrue($second->alreadyLoaded);
+        $this->assertSame(4, $first->recordCount);
+        $this->assertSame([
+            AnalyticsJournalSkip::UNKNOWN_TYPE->value => 1,
+            AnalyticsJournalSkip::MALFORMED->value => 2,
+        ], $first->skipped);
+        $this->assertSame([
+            ['node-a', 'restore', '4', (string)(self::STARTED_TS + 1), (string)(self::STARTED_TS + 2)],
+            ['node-a', 'unknown_type', '1', (string)self::STARTED_TS, (string)(self::STARTED_TS + 10)],
+            ['node-a', 'malformed', '2', (string)self::STARTED_TS, (string)(self::STARTED_TS + 10)],
+            ['node-a', 'line_too_long', '3', (string)self::STARTED_TS, (string)(self::STARTED_TS + 10)],
+        ], $this->rows('SELECT `node_id`, `reason`, `event_count`, `from_ts`, `to_ts` FROM `hilos_analytics_loss` ORDER BY `id`'));
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testSkipPeriodFallsBackToOpeningWhenThereIsNoEnd(): void
+    {
+        $this->load([
+            AnalyticsJournalRecord::journal(self::NODE, self::STARTED_TS),
+            ['t' => 'unrecognized'],
+        ]);
+
+        $this->assertSame([
+            ['unknown_type', (string)self::STARTED_TS, (string)self::STARTED_TS],
+        ], $this->rows('SELECT `reason`, `from_ts`, `to_ts` FROM `hilos_analytics_loss`'));
+    }
+
+    /**
      * The failure comes at the very end - the last fact table is gone when the facts are
      * written - after sessions and dictionary rows were inserted inside the transaction. Those
      * rows are rolled back, and a writer that kept their numbers in memory would hand the
@@ -184,6 +236,7 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
         $loader = $this->loader();
         $lines = $this->lines([
             ...$this->sessions(),
+            AnalyticsJournalRecord::loss(AnalyticsLossReason::RESTORE, 2, self::STARTED_TS, self::STARTED_TS),
             AnalyticsJournalRecord::agentSystemSignal(self::AGENT_KEY, 'hil_1154_system', null, self::STARTED_TS),
             AnalyticsJournalRecord::agentCronSignal(self::AGENT_KEY, 'hil_1154_cron', null, self::STARTED_TS),
         ]);
@@ -201,6 +254,7 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
         foreach (['worker_session', 'agent_session', 'signal_name', 'agent_system_signal', 'journal_file'] as $table) {
             $this->assertSame([['0']], $this->rows("SELECT COUNT(*) FROM `hilos_analytics_{$table}`"), $table);
         }
+        $this->assertSame([['0']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_loss`'));
 
         $outcome = $loader->load(self::NODE, 'hil-1154.jsonl', $lines);
 

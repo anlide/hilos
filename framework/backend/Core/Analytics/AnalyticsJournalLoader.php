@@ -21,6 +21,8 @@ use Hilos\HilosException;
  * the broken tail a machine crash leaves, a type this writer does not know, a session no
  * description wrote, or a page or action naming an unknown connection. A file is
  * never refused for its records - one poisoned file would stop its node's journal for good.
+ * Loss records and counts of skipped records or oversized lines enter the loss table in the
+ * same transaction as the file mark, so a second load cannot double them.
  *
  * The record catalog is {@see AnalyticsJournalRecord}; the rules of each record are in
  * docs/agents/architecture/analytics.md.
@@ -42,6 +44,8 @@ final class AnalyticsJournalLoader
     private const string KIND_NULLABLE_UNSIGNED_INT = 'nullable_unsigned_int';
     private const string KIND_BOOL = 'bool';
     private const string KIND_PAYLOAD = 'payload';
+    private const string KIND_LOSS_REASON = 'loss_reason';
+    private const string KIND_POSITIVE_INT = 'positive_int';
 
     /** @var int Widest value of a `VARCHAR(100)` column the records feed: names, tokens, accept keys */
     private const int NAME_MAX_CHARS = 100;
@@ -188,6 +192,12 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::KEY_DURATION_MS => self::KIND_NULLABLE_UNSIGNED_INT,
             AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
         ],
+        AnalyticsJournalRecord::TYPE_LOSS => [
+            AnalyticsJournalRecord::KEY_REASON => self::KIND_LOSS_REASON,
+            AnalyticsJournalRecord::KEY_EVENTS => self::KIND_POSITIVE_INT,
+            AnalyticsJournalRecord::KEY_FROM_TS => self::KIND_INT,
+            AnalyticsJournalRecord::KEY_TO_TS => self::KIND_INT,
+        ],
     ];
 
     /**
@@ -203,10 +213,11 @@ final class AnalyticsJournalLoader
      * @param string $nodeId Cluster node id of the file's node, '' outside a cluster
      * @param string $fileName Name of the ready file
      * @param list<string> $lines Every line of the file, in order, without line breaks
+     * @param int $passedOver Lines the journal reader omitted for exceeding its limit
      * @return AnalyticsJournalLoadOutcome What was written and what was passed over
      * @throws HilosException When the database refuses the load; nothing of the file is written then
      */
-    public function load(string $nodeId, string $fileName, array $lines): AnalyticsJournalLoadOutcome
+    public function load(string $nodeId, string $fileName, array $lines, int $passedOver = 0): AnalyticsJournalLoadOutcome
     {
         if ($this->store->isFileLoaded($nodeId, $fileName)) {
             return AnalyticsJournalLoadOutcome::alreadyLoaded();
@@ -217,14 +228,28 @@ final class AnalyticsJournalLoader
         try {
             $recordCount = 0;
             $skipped = [];
+            $openedTs = null;
+            $closedTs = null;
             foreach ($lines as $line) {
                 $record = json_decode($line, true);
                 if (is_array($record) && ($record[AnalyticsJournalRecord::KEY_TYPE] ?? null) === AnalyticsJournalRecord::TYPE_JOURNAL) {
+                    $opened = $record[AnalyticsJournalRecord::KEY_OPENED_TS] ?? null;
+                    if (is_int($opened) && $opened >= 0) {
+                        $openedTs = $opened;
+                    }
+                    continue;
+                }
+
+                if (is_array($record) && ($record[AnalyticsJournalRecord::KEY_TYPE] ?? null) === AnalyticsJournalRecord::TYPE_JOURNAL_END) {
+                    $closed = $record[AnalyticsJournalRecord::KEY_CLOSED_TS] ?? null;
+                    if (is_int($closed) && $closed >= 0) {
+                        $closedTs = $closed;
+                    }
                     continue;
                 }
 
                 $recordCount++;
-                $skip = is_array($record) ? $this->apply($record) : AnalyticsJournalSkip::MALFORMED;
+                $skip = is_array($record) ? $this->apply($record, $nodeId) : AnalyticsJournalSkip::MALFORMED;
                 if ($skip !== null) {
                     $skipped[$skip->value] = ($skipped[$skip->value] ?? 0) + 1;
                 }
@@ -235,7 +260,16 @@ final class AnalyticsJournalLoader
             }
 
             $this->store->flushFacts();
-            $this->store->markFileLoaded($nodeId, $fileName, $recordCount, (int)floor(microtime(true) * 1000));
+            $loadedTs = (int)floor(microtime(true) * 1000);
+            $fromTs = $openedTs ?? $loadedTs;
+            $toTs = $closedTs ?? $fromTs;
+            foreach ($skipped as $reason => $count) {
+                $this->store->insertLoss($nodeId, $reason, $count, $fromTs, $toTs);
+            }
+            if ($passedOver > 0) {
+                $this->store->insertLoss($nodeId, AnalyticsLossReason::LINE_TOO_LONG->value, $passedOver, $fromTs, $toTs);
+            }
+            $this->store->markFileLoaded($nodeId, $fileName, $recordCount, $loadedTs);
             Database::transactionCommit();
         } catch (HilosException $failure) {
             // First, so a rollback that fails in its turn cannot leave numbers of rows that never were.
@@ -253,10 +287,11 @@ final class AnalyticsJournalLoader
      * Applies one decoded record.
      *
      * @param array<mixed> $record Decoded record
+     * @param string $nodeId Node whose file is loading
      * @return ?AnalyticsJournalSkip Why the record was passed over, or null when it was applied
      * @throws DatabaseException When a statement fails
      */
-    private function apply(array $record): ?AnalyticsJournalSkip
+    private function apply(array $record, string $nodeId): ?AnalyticsJournalSkip
     {
         $type = $record[AnalyticsJournalRecord::KEY_TYPE] ?? null;
         if (!is_string($type)) {
@@ -293,7 +328,27 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::TYPE_PAGE_SESSION_CLOSE => $this->applyPageSessionClose($record),
             AnalyticsJournalRecord::TYPE_USER_ACTION => $this->applyUserAction($record),
             AnalyticsJournalRecord::TYPE_API_REQUEST => $this->applyApiRequest($record),
+            AnalyticsJournalRecord::TYPE_LOSS => $this->applyLoss($record, $nodeId),
         };
+    }
+
+    /**
+     * @param array<mixed> $record Well-formed loss record
+     * @param string $nodeId Node whose file carried the count
+     * @return ?AnalyticsJournalSkip Always null after insertion
+     * @throws DatabaseException When the insert fails
+     */
+    private function applyLoss(array $record, string $nodeId): ?AnalyticsJournalSkip
+    {
+        $this->store->insertLoss(
+            $nodeId,
+            $record[AnalyticsJournalRecord::KEY_REASON],
+            $record[AnalyticsJournalRecord::KEY_EVENTS],
+            $record[AnalyticsJournalRecord::KEY_FROM_TS],
+            $record[AnalyticsJournalRecord::KEY_TO_TS],
+        );
+
+        return null;
     }
 
     /**
@@ -636,6 +691,8 @@ final class AnalyticsJournalLoader
             self::KIND_NULLABLE_UNSIGNED_INT => $value === null || (is_int($value) && $value >= 0 && $value <= self::UNSIGNED_INT_MAX),
             self::KIND_BOOL => is_bool($value),
             self::KIND_PAYLOAD => $value === null || is_array($value),
+            self::KIND_LOSS_REASON => is_string($value) && AnalyticsLossReason::tryFrom($value) !== null,
+            self::KIND_POSITIVE_INT => is_int($value) && $value >= 1 && $value <= self::UNSIGNED_INT_MAX,
         };
     }
 

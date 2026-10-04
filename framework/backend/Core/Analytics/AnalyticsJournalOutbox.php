@@ -25,6 +25,8 @@ use Hilos\Hilos;
  * A batch stands on its own: it opens with the description of every session its records name -
  * the worker first, then the agents - so a batch lost on the way loses only its own events, and
  * every later event of the same agent still finds its session described in its own batch.
+ * The frame carries its event count and source losses too: oversized payloads can be removed
+ * without losing the event, whole records can be dropped, and a freeze can discard a batch.
  */
 final class AnalyticsJournalOutbox
 {
@@ -36,6 +38,12 @@ final class AnalyticsJournalOutbox
 
     /** @var list<string> Record lines, in the order they happened */
     private array $records = [];
+
+    /** @var array<string, AnalyticsLossCount> Loss counts gathered by reason for the next frame */
+    private array $losses = [];
+
+    /** @var int Event records in the next frame, excluding session descriptions */
+    private int $events = 0;
 
     /** @var int Bytes of the descriptions and records gathered */
     private int $bytes = 0;
@@ -83,14 +91,43 @@ final class AnalyticsJournalOutbox
      */
     public function add(array $record, array $sessions, int $nowMs): void
     {
-        $line = AnalyticsJournalRecord::encode($record);
-        if ($line === null) {
+        $encoded = AnalyticsJournalRecord::encodeEvent($record);
+        if ($encoded->line === null) {
+            $this->countLoss(AnalyticsLossReason::RECORD_DROPPED, 1, $nowMs, $nowMs);
             return;
         }
 
-        $this->records[] = $line;
-        $this->bytes += strlen($line);
+        if ($encoded->payloadDropped) {
+            $this->countLoss(AnalyticsLossReason::PAYLOAD_DROPPED, 1, $nowMs, $nowMs);
+        }
+
+        $this->records[] = $encoded->line;
+        $this->events++;
+        $this->bytes += strlen($encoded->line);
         $this->describe($sessions, $nowMs);
+    }
+
+    /**
+     * Adds a loss to the next frame, retaining its first and last moment.
+     *
+     * @param AnalyticsLossReason $reason Why the events were lost
+     * @param int $events Number of events lost; nonpositive counts change nothing
+     * @param int $fromMs First loss moment in milliseconds
+     * @param int $toMs Last loss moment in milliseconds
+     */
+    public function countLoss(AnalyticsLossReason $reason, int $events, int $fromMs, int $toMs): void
+    {
+        if ($events <= 0) {
+            return;
+        }
+
+        $previous = $this->losses[$reason->value] ?? null;
+        $this->losses[$reason->value] = new AnalyticsLossCount(
+            $reason,
+            ($previous?->events ?? 0) + $events,
+            $previous === null ? $fromMs : min($previous->fromTs, $fromMs),
+            $previous === null ? $toMs : max($previous->toTs, $toMs),
+        );
     }
 
     /**
@@ -115,29 +152,38 @@ final class AnalyticsJournalOutbox
     public function flush(int $nowMs): void
     {
         $this->lastFlushAtMs = $nowMs;
-        if ($this->descriptions === [] && $this->records === []) {
+        if ($this->descriptions === [] && $this->records === [] && $this->losses === []) {
             return;
         }
 
         $lines = [...array_values($this->descriptions), ...$this->records];
+        $events = $this->events;
+        $losses = array_values($this->losses);
         $this->clear();
+        $this->losses = [];
 
         Hilos::$sr?->queueSignal(
             signalSource: new SignalSource(SignalSource::WORKER),
             signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             signalName: new SignalName(HilosSignalConstants::ANALYTICS_JOURNAL_APPEND),
-            signalData: new AgentSignalData(data: new AnalyticsJournalAppendSignalData($lines)),
+            signalData: new AgentSignalData(data: new AnalyticsJournalAppendSignalData($lines, $events, $losses)),
         );
     }
 
     /**
-     * Throws what was gathered away: under a freeze, and when the database under it was replaced.
+     * Throws gathered lines away and returns their event count. Loss counts survive until flush.
+     *
+     * @return int Events whose lines were thrown away
      */
-    public function clear(): void
+    public function clear(): int
     {
+        $events = $this->events;
         $this->descriptions = [];
         $this->records = [];
         $this->bytes = 0;
+        $this->events = 0;
+
+        return $events;
     }
 
     /**

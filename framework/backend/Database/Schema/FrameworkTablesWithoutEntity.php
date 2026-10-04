@@ -154,6 +154,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'hilos_analytics_api_request' => [],
             'hilos_analytics_api_agent_action' => [],
             'hilos_analytics_journal_file' => [],
+            'hilos_analytics_loss' => [],
         ];
     }
 
@@ -322,6 +323,8 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             ],
             // `node_id` names the machine a journal file came from, not a person.
             'hilos_analytics_journal_file' => ['id', 'node_id', 'file_name', 'record_count', 'loaded_ts'],
+            // A node names a machine, a reason is framework vocabulary, and counts and moments name no person.
+            'hilos_analytics_loss' => ['id', 'node_id', 'reason', 'event_count', 'from_ts', 'to_ts'],
         ];
     }
 }

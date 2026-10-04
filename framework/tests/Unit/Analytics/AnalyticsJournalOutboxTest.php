@@ -9,6 +9,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Analytics\AnalyticsJournalOutbox;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\AnalyticsLossReason;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
@@ -58,6 +59,33 @@ final class AnalyticsJournalOutboxTest extends TestCase
 
         $tooLong = AnalyticsJournalRecord::workerSystemSignal('worker', str_repeat('x', AnalyticsJournalRecord::MAX_LINE_BYTES), null, self::T0);
         $this->assertNull(AnalyticsJournalRecord::encode($tooLong));
+
+        $outbox = new AnalyticsJournalOutbox(self::T0);
+        $outbox->add($record, [], self::T0);
+        $outbox->add($tooLong, [], self::T0 + 1);
+        $outbox->flush(self::T0 + 2);
+        $frame = $this->frames()[0];
+        $this->assertSame(1, $frame->events);
+        $this->assertCount(1, $frame->lines);
+        $this->assertSame([
+            ['reason' => AnalyticsLossReason::PAYLOAD_DROPPED->value, 'events' => 1, 'fromTs' => self::T0, 'toTs' => self::T0],
+            ['reason' => AnalyticsLossReason::RECORD_DROPPED->value, 'events' => 1, 'fromTs' => self::T0 + 1, 'toTs' => self::T0 + 1],
+        ], array_map(static fn($loss): array => $loss->toArray(), $frame->losses));
+    }
+
+    public function testLossCountsSurviveClearingLinesAndLeaveInAnEmptyBatch(): void
+    {
+        $outbox = new AnalyticsJournalOutbox(self::T0);
+        $outbox->add(AnalyticsJournalRecord::browserSessionRename('a', 'b', self::T0), [], self::T0);
+        $outbox->countLoss(AnalyticsLossReason::RESTORE, 2, self::T0, self::T0 + 1);
+        $this->assertSame(1, $outbox->clear());
+        $outbox->countLoss(AnalyticsLossReason::RESTORE, 1, self::T0 + 2, self::T0 + 2);
+        $outbox->flush(self::T0 + 3);
+
+        $frame = $this->frames()[0];
+        $this->assertSame([], $frame->lines);
+        $this->assertSame(0, $frame->events);
+        $this->assertSame(['reason' => 'restore', 'events' => 3, 'fromTs' => self::T0, 'toTs' => self::T0 + 2], $frame->losses[0]->toArray());
     }
 
     /**
@@ -206,18 +234,21 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $this->assertSame([], $this->batches());
 
         $this->freeze(ProtectedModeRuntime::PHASE_VERIFYING);
-        $collector->flush();
-        $this->assertSame([], $this->batches());
-
         $collector->logWorkerSystemSignal('hil_1154_after', null);
         $collector->flush();
-        $batches = $this->batches();
-        $this->assertCount(1, $batches);
+        $frames = $this->frames();
+        $this->assertCount(1, $frames);
+        $this->assertSame(1, $frames[0]->events);
+        $this->assertSame(['reason' => 'restore', 'events' => 2], [
+            'reason' => $frames[0]->losses[0]->reason->value,
+            'events' => $frames[0]->losses[0]->events,
+        ]);
+        $records = array_map(static fn(string $line): array => (array)json_decode($line, true), $frames[0]->lines);
         $this->assertSame(
             [AnalyticsJournalRecord::TYPE_WORKER_SESSION, AnalyticsJournalRecord::TYPE_WORKER_SYSTEM_SIGNAL],
-            array_column($batches[0], 't'),
+            array_column($records, 't'),
         );
-        $this->assertSame('hil_1154_after', $batches[0][1]['signal']);
+        $this->assertSame('hil_1154_after', $records[1]['signal']);
     }
 
     public function testAStopUnderTheFreezeLeavesAfterItWithItsOwnMoment(): void
@@ -227,6 +258,7 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $collector->openAgentSession(self::AGENT_TYPE, null);
         $collector->flush();
         $this->batches();
+        $collector->logWorkerSystemSignal('hil_1157_pending', null);
 
         $this->freeze(ProtectedModeRuntime::PHASE_ACTIVE);
         $before = (int)floor(microtime(true) * 1000);
@@ -240,8 +272,12 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $collector->tick();
         $collector->flush();
 
-        $batches = $this->batches();
-        $this->assertCount(1, $batches);
+        $frames = $this->frames();
+        $this->assertCount(1, $frames);
+        $this->assertSame(1, $frames[0]->events);
+        $this->assertSame(1, $frames[0]->losses[0]->events);
+        $this->assertSame(AnalyticsLossReason::RESTORE, $frames[0]->losses[0]->reason);
+        $batches = [array_map(static fn(string $line): array => (array)json_decode($line, true), $frames[0]->lines)];
         $this->assertSame([
             AnalyticsJournalRecord::TYPE_WORKER_SESSION,
             AnalyticsJournalRecord::TYPE_AGENT_SESSION,
@@ -276,16 +312,30 @@ final class AnalyticsJournalOutboxTest extends TestCase
      */
     private function batches(): array
     {
-        $batches = [];
+        return array_map(
+            static fn(AnalyticsJournalAppendSignalData $batch): array => array_map(
+                static fn(string $line): array => (array)json_decode($line, true),
+                $batch->lines,
+            ),
+            $this->frames(),
+        );
+    }
+
+    /**
+     * @return list<AnalyticsJournalAppendSignalData> Frames queued for the journal agent
+     */
+    private function frames(): array
+    {
+        $frames = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $this->assertSame(HilosSignalConstants::ANALYTICS_JOURNAL_APPEND, $signal->signalName->getName());
             $this->assertInstanceOf(AgentSignalData::class, $signal->data);
             $batch = $signal->data->data;
             $this->assertInstanceOf(AnalyticsJournalAppendSignalData::class, $batch);
-            $batches[] = array_map(static fn(string $line): array => (array)json_decode($line, true), $batch->lines);
+            $frames[] = $batch;
         }
 
-        return $batches;
+        return $frames;
     }
 
     /**
