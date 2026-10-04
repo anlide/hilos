@@ -1204,8 +1204,8 @@ export class TableViewportController<R> implements TableWindowSink {
    * bulk operations still has this to read — `enabled` is then false, the four
    * inputs stay silent, and the state reads empty.
    *
-   * SCAFFOLD: the Vue panel, its checkbox column and the send over what is marked
-   * read it; React and Angular follow in HIL-813.
+   * The selection panel, its checkbox column and the send over what is marked read
+   * it in all three kits.
    */
   get selection(): HilosTableSelectionState {
     return this.selectionState
@@ -1221,8 +1221,8 @@ export class TableViewportController<R> implements TableWindowSink {
    * replaces the lot is the snapshot a subscription answer carries, which is the server naming
    * the whole truth at once.
    *
-   * SCAFFOLD: read by the bars themselves, which are HIL-805 (Vue) and HIL-814 (React,
-   * Angular). The backup's run moves onto this channel in HIL-820.
+   * Read by the bars themselves in all three kits; the backup's run goes on this
+   * channel.
    */
   get progress(): HilosTableProgressState {
     return this.progressState
@@ -1241,7 +1241,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * It stands until the next run on this table begins, which is the one thing that
    * clears it, or the reader dismisses it through {@link dismissBulkReport}.
    *
-   * SCAFFOLD: the room of live messages reads it.
+   * The room of live messages reads it in all three kits.
    */
   get bulk(): HilosTableBulkState {
     return this.bulkState

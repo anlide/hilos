@@ -1,25 +1,25 @@
 // HilosBackupPage — the framework Hilos backup page (HilosPages.BACKUP): the
-// stored-backup list inside the admin shell, with its row actions. The list is
-// live — rows arrive over the socket from the backup runtime index, and a run in
-// flight is not one of them: it is the table's own bar, which this view does not draw
-// yet (HIL-814) and reads only to keep the create button honest. Its actions (create,
-// asked for its scope in the dialog the table's main action opens; per-row delete,
-// per-row keep toggle, per-row restore) are the core headless's
-// (createHilosBackupsActions); each dispatches a tracked action
-// and surfaces the backend's failure (authoritative-backend). Restore is the
-// destructive one: it is offered as a button only where the backend says so
-// (everywhere but production), it confirms by typing the archive id, and while it
-// runs the addressed progress frames are the only live thing on the page — the node
-// is frozen and the table sends nothing. Once it ends, the node stands in a
-// verification window, and the one browser that started the restore is offered the
-// block that closes it — the backend answers that personally in the page-data section,
-// so a second admin looking at the same page sees nothing. A pointer leads to the
-// verifier circle in Maintenance. All table logic, the row
-// view-model, and what the backup list declares about its frame — its search, the
-// scope and period filters, the create button as its main action, its columns — are
-// the core headless's too; this view owns only the markup (and the create dialog
-// that main action opens), so a project mounts it by passing its HilosBackupsContext.
-// Bootstrap classes only (styling-rules.md).
+// stored-backup list inside the admin shell, with its row actions. The list is live
+// — rows arrive over the socket from the backup runtime index, and a run in flight
+// is not one of them: it stands as the bar above the table, with the caption the
+// core assembles out of the bar's own figures (HIL-820), and the bar is read as
+// well to keep the create button honest. Its actions (create, asked for its scope
+// in the dialog the table's main action opens; per-row delete, per-row keep toggle,
+// per-row restore) are the core headless's (createHilosBackupsActions); each
+// dispatches a tracked action and surfaces the backend's failure
+// (authoritative-backend). Restore is the destructive one: it is offered as a
+// button only where the backend says so (everywhere but production), it confirms by
+// typing the archive id, and while it runs the addressed progress frames are the
+// only live thing on the page — the node is frozen and the table sends nothing.
+// Once it ends, the node stands in a verification window, and the one browser that
+// started the restore is offered the block that closes it — the backend answers
+// that personally in the page-data section, so a second admin looking at the same
+// page sees nothing. A pointer leads to the verifier circle in Maintenance. All
+// table logic, the row view-model, and what the backup list declares about its
+// frame — its search, the scope and period filters, the create button as its main
+// action, its columns — are the core headless's too; this view owns only the markup
+// (and the create dialog that main action opens), so a project mounts it by passing
+// its HilosBackupsContext. Bootstrap classes only (styling-rules.md).
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   HILOS_BACKUP_CIRCLE_POINTER_COPY,
@@ -101,7 +101,7 @@ export interface HilosBackupPageProps {
  * the phase, the percentage, and the time left.
  *
  * A create run is not drawn here — it arrives as the table's own bar, already counted
- * on the server (HIL-820), and this view does not draw that yet (HIL-814).
+ * on the server (HIL-820).
  *
  * @param anchors The progress anchors of the restore frame.
  * @param nowMs The current epoch milliseconds the percentage is measured against.
