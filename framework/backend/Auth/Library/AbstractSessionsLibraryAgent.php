@@ -5574,11 +5574,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * within the transaction too, before the project's rows, rename journal and person row.
      * A failure at any account rolls the entire circle and its requests back.
      *
-     * After the commit, outside the transaction because disk files cannot be rolled back, the
-     * files library removes the registry files the project named and the export agents remove
-     * files of erased orders. The request row stays behind,
-     * carried out: the number of an account that no longer exists and three dates. A failure
-     * there is logged and not retried - the request is carried out, and no sweep returns to it.
+     * After the commit, outside the transaction because disk files cannot be rolled back,
+     * the files library removes the registry files the project named and the export agents
+     * remove files of erased orders. The request row stays behind, carried out: the number
+     * of an account that no longer exists and three dates. A failure there is logged and not
+     * retried - the request is carried out, and no sweep returns to it.
      *
      * @param AccountDeletion $deletion Standing request whose moment has come
      * @return ?AccountErasure Combined project erasure outcome, or null when cancellation won the race

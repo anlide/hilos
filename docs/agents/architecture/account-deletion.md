@@ -112,7 +112,8 @@ returning the sum of the project's tallies for the circle. A failed erasure
 leaves the request due for the next sweep.
 
 After the commit, outside the transaction: the registry files the project and
-the framework photo row named go to the files library in one `Hilos::$files->remove()` when the project declares `FILES`
+the framework photo row named go to the files library in one
+`Hilos::$files->remove()` when the project declares `FILES`
 ([files-registry.md](files-registry.md#removing)) — nothing is deleted from disk
 past the registry. Export agents receive forget frames to remove files whose
 orders the erasure already deleted. A failure after the commit is logged and not
@@ -120,8 +121,8 @@ retried: the request is carried out, and no sweep comes back for it.
 
 `DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user`
 for each account to the export owner after the commit, removing files with no
-ready order. A builder checks the retained completed-erasure row before publishing; see
-[data-export.md](data-export.md).
+ready order. A builder checks the retained completed-erasure row before
+publishing; see [data-export.md](data-export.md).
 
 `LegalAcceptancesExportNotifier::forgetUser()` queues
 `hilos_legal_acceptances_export_forget` for each account to the legal agent,
