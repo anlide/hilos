@@ -26,7 +26,6 @@ import {
   enterIdentifierAndPassword,
   logout,
   signUp,
-  signUpWithVerifiedEmail,
   typeInto,
 } from '../helpers/session'
 import { nextTotpCode, totpStep } from '../helpers/totp'
@@ -150,7 +149,7 @@ test.describe('two-step verification', () => {
     await signUpAdmin(admin)
     await gotoPage(admin, '/hilos/communications')
     await enableEmailChannel(admin)
-    const user = await signUpWithVerifiedEmail(page)
+    const user = await signUp(page)
     await connectFirstApp(page)
 
     await clickSubmit(page.getByTestId('profile-2fa-reset-request'))

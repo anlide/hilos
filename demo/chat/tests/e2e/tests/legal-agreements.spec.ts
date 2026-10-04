@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { clickSubmit, signUpWithVerifiedEmail } from '../helpers/session.js'
+import { clickSubmit, signUp } from '../helpers/session.js'
 import { gotoPage } from '../helpers/page.js'
 import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
 
 test('reads personal agreements and compares published revisions on wide and narrow screens', async ({
   page,
 }) => {
-  await signUpWithVerifiedEmail(page)
+  await signUp(page)
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
     'Terms and privacy accepted',

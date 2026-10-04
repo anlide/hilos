@@ -533,13 +533,13 @@ export async function changePassword(
 const EMAIL_ADD_SUBJECT = 'Confirm your email address'
 
 /**
- * Establish an account whose email address the server itself has verified.
+ * Establish an account with two ways in: a phone (SMS) and a password on an email
+ * address the server itself has verified.
  *
- * A verified email is what an email delivery channel resolves an address from
- * (MailDeliveryChannel::resolveAddress → findVerifiedEmailByUser), so any spec
- * about mail delivery starts here. Registration leaves the address UNVERIFIED and
- * no browser surface confirms it afterwards, so the account is built the long way
- * — the way the product actually offers:
+ * A spec that needs only a verified address takes `signUp`: the registration code
+ * proves the address, and registration writes it verified (HIL-825). This helper
+ * is for a spec that needs a second way in beside the password, and it builds the
+ * account the long way — the way the product actually offers:
  *
  *   1. sign in by SMS with a fresh number, which mints a user with no password and
  *      no email at all (MainPage::handleConfirmPhoneCode creates the user if new);
