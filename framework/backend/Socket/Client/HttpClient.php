@@ -225,8 +225,8 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * Writes an agent's answer to the parked request and lets the connection read on.
      *
      * The response leaves on the server's next write, like every other one, and a request that
-     * waited behind the parked one is parsed once it has drained. The analytics row the router
-     * started is finished here, with the reply's status and the time since the request parked.
+     * waited behind the parked one is parsed once it has drained. The analytics request the router
+     * described becomes one journal record here, with the reply's status and elapsed time.
      *
      * A reply with nothing parked is dropped: the server delivers only to a client it holds, so
      * this is a reply that lost a race to the connection's own close.
@@ -241,7 +241,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         }
 
         $this->parked = null;
-        Hilos::$ac?->finishApiRequest($parked->apiRequestId, $reply->status, self::millisecondsSince($parked->startedAtNs));
+        Hilos::$ac?->finishApiRequest($parked->analytics, $reply->status, self::millisecondsSince($parked->startedAtNs));
         $this->queueResponse([
             HttpConstants::RESPONSE_KEY_STATUS => $reply->status,
             HttpConstants::RESPONSE_KEY_HEADERS => $reply->headers,
@@ -421,7 +421,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * The browser left before the agent answered - its own timeout, or a closed tab. The server
      * drops the hold and tells the master, which drops a frame it keeps for a starting agent on
      * this request's behalf (HIL-1040); the reply, whenever it comes, finds nobody. The analytics
-     * row the router started is finished without a status: no response was ever written.
+     * request becomes one journal record without a status: no response was ever written.
      */
     protected function onClose(): void
     {
@@ -433,7 +433,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         $request = $parked->request;
         Logger::warning("HTTP: the browser left while {$request->method} {$request->path} #{$request->correlationId} was parked");
         $this->parked = null;
-        Hilos::$ac?->finishApiRequest($parked->apiRequestId, null, self::millisecondsSince($parked->startedAtNs));
+        Hilos::$ac?->finishApiRequest($parked->analytics, null, self::millisecondsSince($parked->startedAtNs));
         $this->server?->abandon($request->correlationId);
     }
 

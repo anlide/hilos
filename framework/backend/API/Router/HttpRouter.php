@@ -108,8 +108,8 @@ class HttpRouter
     /**
      * Routes HTTP request to matching handler, or parks it for the agent that answers its address.
      *
-     * A parked request starts its analytics row here, the way a handled one does; the row is
-     * finished by whoever writes the agent's reply.
+     * Analytics keeps a request description here and writes one journal record at its end;
+     * a parked request is recorded by whoever writes the agent's reply.
      *
      * @param array<string, mixed> $request Request data (method, path, etc.)
      * @return array{status: int, headers: array<string, string>, body: string}|ParkedHttpRequest HTTP
@@ -134,7 +134,7 @@ class HttpRouter
 
         // Find matching route
         $route = $this->registry->match($method, $path);
-        $apiRequestId = Hilos::$ac?->startApiRequest(
+        $analytics = Hilos::$ac?->startApiRequest(
             $sessionToken,
             (string)$method,
             (string)$path,
@@ -149,7 +149,7 @@ class HttpRouter
                 HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
                 HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Not Found']),
             ];
-            Hilos::$ac?->finishApiRequest($apiRequestId, HttpConstants::HTTP_NOT_FOUND, 0);
+            Hilos::$ac?->finishApiRequest($analytics, HttpConstants::HTTP_NOT_FOUND, 0);
             return $response;
         }
 
@@ -163,29 +163,32 @@ class HttpRouter
                     sessionToken: $sessionToken,
                     originNodeId: Hilos::$cluster?->localNodeId(),
                 ),
-                $apiRequestId,
+                $analytics,
                 hrtime(true),
             );
         }
 
         // Resolve and execute handler
         $startedAt = hrtime(true);
+        Hilos::$ac?->startApiRequestCapture($analytics);
         try {
             $response = $this->resolver->resolve($route, $request);
             $durationMs = (int)round((hrtime(true) - $startedAt) / TimeConstants::NS_PER_MILLISECOND);
             $statusCode = isset($response[HttpConstants::RESPONSE_KEY_STATUS])
                 ? (int)$response[HttpConstants::RESPONSE_KEY_STATUS]
                 : HttpConstants::HTTP_OK;
-            Hilos::$ac?->finishApiRequest($apiRequestId, $statusCode, $durationMs);
+            Hilos::$ac?->finishApiRequest($analytics, $statusCode, $durationMs);
             return $response;
         } catch (Throwable $e) {
             $durationMs = (int)round((hrtime(true) - $startedAt) / TimeConstants::NS_PER_MILLISECOND);
-            Hilos::$ac?->finishApiRequest($apiRequestId, HttpConstants::HTTP_INTERNAL_ERROR, $durationMs);
+            Hilos::$ac?->finishApiRequest($analytics, HttpConstants::HTTP_INTERNAL_ERROR, $durationMs);
             return [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_INTERNAL_ERROR,
                 HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
                 HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Internal Server Error', 'message' => $e->getMessage()]),
             ];
+        } finally {
+            Hilos::$ac?->clearApiRequestCapture();
         }
     }
 

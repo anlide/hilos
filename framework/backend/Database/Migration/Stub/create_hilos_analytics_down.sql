@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS `hilos_analytics_ws_connection`;
 DROP TABLE IF EXISTS `hilos_analytics_browser_session_accept_language_change`;
 DROP TABLE IF EXISTS `hilos_analytics_browser_session_user_agent_change`;
 DROP TABLE IF EXISTS `hilos_analytics_browser_session`;
+DROP TABLE IF EXISTS `hilos_analytics_browser_session_alias`;
 DROP TABLE IF EXISTS `hilos_analytics_payload_json`;
 DROP TABLE IF EXISTS `hilos_analytics_cron_name`;
 DROP TABLE IF EXISTS `hilos_analytics_signal_name`;

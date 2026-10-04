@@ -30,9 +30,9 @@ final class AnalyticsJournalOutboxTest extends TestCase
 
     private const int WORKER_INDEX = 2;
 
-    private const int USER_ACTION_ID = 11;
+    private const string USER_ACTION_KEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
-    private const int API_REQUEST_ID = 12;
+    private const string API_REQUEST_KEY = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
     protected function setUp(): void
     {
@@ -68,11 +68,11 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $collector = new AnalyticsCollector();
         $collector->openWorkerSession(self::WORKER_INDEX, true);
         $collector->openAgentSession(self::AGENT_TYPE, '4');
-        $collector->logAgentUserAction(self::AGENT_TYPE, '4', self::USER_ACTION_ID, 'hil_1154_action', ['a' => 1]);
+        $collector->logAgentUserAction(self::AGENT_TYPE, '4', self::USER_ACTION_KEY, 'hil_1154_action', ['a' => 1]);
         $collector->logAgentSystemSignal(self::AGENT_TYPE, '4', 'hil_1154_system', ['b' => 2]);
         $collector->logAgentCronSignal(self::AGENT_TYPE, '4', 'hil_1154_cron', null);
         $collector->logWorkerSystemSignal('hil_1154_worker', ['c' => 3]);
-        $collector->logApiAgentAction(self::API_REQUEST_ID, self::AGENT_TYPE, '4', 'hil_1154_api', ['d' => 4]);
+        $collector->logApiAgentAction(self::API_REQUEST_KEY, self::AGENT_TYPE, '4', 'hil_1154_api', ['d' => 4]);
         $collector->attachWsConnectionToBrowserSession('ak', 'token-a', 'UA', 'en');
         $collector->identifyBrowserSessionUser('token-a', 42);
         $collector->closeAgentSession(self::AGENT_TYPE, '4');
@@ -84,11 +84,11 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $this->assertSame([
             [AnalyticsJournalRecord::TYPE_WORKER_SESSION, ['t', 'key', 'workerIndex', 'monopolistic', 'startedTs']],
             [AnalyticsJournalRecord::TYPE_AGENT_SESSION, ['t', 'key', 'workerKey', 'agentType', 'agentIndex', 'startedTs']],
-            [AnalyticsJournalRecord::TYPE_AGENT_USER_ACTION, ['t', 'agentKey', 'userActionId', 'signal', 'payload', 'ts']],
+            [AnalyticsJournalRecord::TYPE_AGENT_USER_ACTION, ['t', 'agentKey', 'userActionKey', 'signal', 'payload', 'ts']],
             [AnalyticsJournalRecord::TYPE_AGENT_SYSTEM_SIGNAL, ['t', 'agentKey', 'signal', 'payload', 'ts']],
             [AnalyticsJournalRecord::TYPE_AGENT_CRON_SIGNAL, ['t', 'agentKey', 'cron', 'payload', 'ts']],
             [AnalyticsJournalRecord::TYPE_WORKER_SYSTEM_SIGNAL, ['t', 'workerKey', 'signal', 'payload', 'ts']],
-            [AnalyticsJournalRecord::TYPE_API_AGENT_ACTION, ['t', 'apiRequestId', 'agentKey', 'signal', 'payload', 'ts']],
+            [AnalyticsJournalRecord::TYPE_API_AGENT_ACTION, ['t', 'apiRequestKey', 'agentKey', 'signal', 'payload', 'ts']],
             [AnalyticsJournalRecord::TYPE_WS_CONNECTION_ATTACH, ['t', 'acceptKey', 'sessionToken', 'userAgent', 'acceptLanguage', 'ts']],
             [AnalyticsJournalRecord::TYPE_BROWSER_SESSION_IDENTITY, ['t', 'sessionToken', 'identityType', 'identityValue', 'ts']],
             [AnalyticsJournalRecord::TYPE_AGENT_SESSION_STOP, ['t', 'key', 'ts']],
@@ -100,11 +100,11 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $this->assertMatchesRegularExpression(AnalyticsJournalRecord::SESSION_KEY_PATTERN, $worker['key']);
         $this->assertSame([self::WORKER_INDEX, true], [$worker['workerIndex'], $worker['monopolistic']]);
         $this->assertSame([$worker['key'], self::AGENT_TYPE, '4'], [$agent['workerKey'], $agent['agentType'], $agent['agentIndex']]);
-        $this->assertSame([$agent['key'], self::USER_ACTION_ID], [$userAction['agentKey'], $userAction['userActionId']]);
+        $this->assertSame([$agent['key'], self::USER_ACTION_KEY], [$userAction['agentKey'], $userAction['userActionKey']]);
         // An action the topology does not know keeps its name and loses its payload (HIL-1187).
         $this->assertNull($userAction['payload']);
         $this->assertSame(['b' => 2], $system['payload']);
-        $this->assertSame(self::API_REQUEST_ID, $records[6]['apiRequestId']);
+        $this->assertSame(self::API_REQUEST_KEY, $records[6]['apiRequestKey']);
         $this->assertSame(['user_id', '42'], [$records[8]['identityType'], $records[8]['identityValue']]);
         $this->assertSame([$agent['key'], $worker['key']], [$records[9]['key'], $records[10]['key']]);
     }
@@ -258,7 +258,7 @@ final class AnalyticsJournalOutboxTest extends TestCase
         foreach ([HilosAgentType::HILOS_ANALYTICS_JOURNAL, HilosAgentType::HILOS_ANALYTICS_WRITER] as $type) {
             $collector->openAgentSession($type, null);
             $collector->logAgentSystemSignal($type, null, 'hil_1154_system', null);
-            $collector->logApiAgentAction(self::API_REQUEST_ID, $type, null, HilosSignalConstants::ANALYTICS_JOURNAL_APPEND, null);
+            $collector->logApiAgentAction(self::API_REQUEST_KEY, $type, null, HilosSignalConstants::ANALYTICS_JOURNAL_APPEND, null);
             $collector->closeAgentSession($type, null);
         }
         $collector->flush();

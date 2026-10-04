@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Core\Analytics\AnalyticsApiRequest;
 use Hilos\Core\Analytics\AnalyticsJournalLoader;
 use Hilos\Core\Analytics\AnalyticsJournalLoadOutcome;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
@@ -33,7 +34,9 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
 
     private const int STARTED_TS = 1_700_000_000_000;
 
-    private const int MISSING_MASTER_ROW = 999_999;
+    private const string ACTION_KEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    private const string REQUEST_KEY = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
     private const string ACCEPT_KEY = 'hil-1154-accept-key';
 
@@ -216,7 +219,7 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
     /**
      * @throws HilosException When a load fails
      */
-    public function testARenameOntoATakenTokenIsPassedOverAndTheVisitStaysSplit(): void
+    public function testARenameOntoATakenTokenMergesTheVisit(): void
     {
         $outcome = $this->load([
             AnalyticsJournalRecord::browserSessionIdentity(self::TOKEN, 'user_id', '1', self::STARTED_TS),
@@ -224,9 +227,9 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
             AnalyticsJournalRecord::browserSessionRename(self::TOKEN, self::ROTATED_TOKEN, self::STARTED_TS + 2),
         ]);
 
-        $this->assertSame([AnalyticsJournalSkip::RENAME_CONFLICT->value => 1], $outcome->skipped);
+        $this->assertSame([], $outcome->skipped);
         $this->assertSame(
-            [[self::ROTATED_TOKEN], [self::TOKEN]],
+            [[self::ROTATED_TOKEN]],
             $this->rows('SELECT `session_token` FROM `hilos_analytics_browser_session` ORDER BY `session_token`'),
         );
     }
@@ -234,17 +237,122 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
     /**
      * @throws HilosException When a load fails
      */
-    public function testAVanishedUserActionLeavesTheReactionUncorrelatedAndAVanishedRequestTakesItsRow(): void
+    public function testMasterRecordsLoadAfterAnAttachmentAndRepeatedKeysDoNotDuplicateRows(): void
+    {
+        $pageKey = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $actionKey = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        $requestKey = 'cccccccccccccccccccccccccccccccc';
+        $request = new AnalyticsApiRequest(
+            $requestKey, self::TOKEN, 'GET', '/health', ['from' => 'test'], 'UA/1.0', 'en', self::STARTED_TS,
+        );
+        $this->load([
+            AnalyticsJournalRecord::wsConnectionAttach(self::ACCEPT_KEY, self::TOKEN, null, null, self::STARTED_TS),
+            AnalyticsJournalRecord::wsConnectionOpen(self::ACCEPT_KEY, '127.0.0.1', self::STARTED_TS + 1),
+            AnalyticsJournalRecord::pageSessionOpen($pageKey, self::ACCEPT_KEY, 'chat', ['room' => 1], self::STARTED_TS + 2),
+            AnalyticsJournalRecord::pageSessionUpdate($pageKey, ['room' => 2], self::STARTED_TS + 3),
+            AnalyticsJournalRecord::userAction($actionKey, self::ACCEPT_KEY, $pageKey, 'send', ['body' => 'hi'], self::STARTED_TS + 4),
+            AnalyticsJournalRecord::wsConnectionIpChange(self::ACCEPT_KEY, '127.0.0.2', self::STARTED_TS + 5),
+            AnalyticsJournalRecord::pageSessionClose($pageKey, self::STARTED_TS + 6),
+            AnalyticsJournalRecord::wsConnectionClose(self::ACCEPT_KEY, self::STARTED_TS + 7),
+            AnalyticsJournalRecord::apiRequest($request, 200, 12, self::STARTED_TS + 8),
+        ]);
+        $this->load([
+            AnalyticsJournalRecord::pageSessionOpen($pageKey, self::ACCEPT_KEY, 'chat', ['room' => 1], self::STARTED_TS + 2),
+            AnalyticsJournalRecord::userAction($actionKey, self::ACCEPT_KEY, $pageKey, 'send', ['body' => 'hi'], self::STARTED_TS + 4),
+            AnalyticsJournalRecord::apiRequest($request, 200, 12, self::STARTED_TS + 8),
+        ]);
+
+        $this->assertSame([['1', '127.0.0.1', self::TOKEN]], $this->rows(
+            'SELECT COUNT(*), INET_NTOA(`opened_ipv4`), b.`session_token`
+             FROM `hilos_analytics_ws_connection` c
+             JOIN `hilos_analytics_browser_session` b ON b.`id` = c.`browser_session_id`
+             GROUP BY b.`session_token`, c.`opened_ipv4`',
+        ));
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_page_session`'));
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_user_action`'));
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_api_request`'));
+        $this->assertSame([['127.0.0.2']], $this->rows(
+            'SELECT INET_NTOA(`new_ipv4`) FROM `hilos_analytics_ws_connection_ipv4_change`',
+        ));
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testUnknownConnectionIsCountedForItsDependentRecords(): void
+    {
+        $key = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $outcome = $this->load([
+            AnalyticsJournalRecord::wsConnectionIpChange(self::ACCEPT_KEY, '127.0.0.1', self::STARTED_TS),
+            AnalyticsJournalRecord::pageSessionOpen($key, self::ACCEPT_KEY, 'chat', null, self::STARTED_TS),
+            AnalyticsJournalRecord::userAction($key, self::ACCEPT_KEY, null, 'send', null, self::STARTED_TS),
+        ]);
+        $this->assertSame([AnalyticsJournalSkip::UNKNOWN_CONNECTION->value => 3], $outcome->skipped);
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testAnAddressChangeAfterAWriterRestartUsesTheLastStoredAddress(): void
+    {
+        $this->load([
+            AnalyticsJournalRecord::wsConnectionOpen(self::ACCEPT_KEY, '127.0.0.1', self::STARTED_TS),
+            AnalyticsJournalRecord::wsConnectionIpChange(self::ACCEPT_KEY, '127.0.0.2', self::STARTED_TS + 1),
+        ]);
+        $this->load([
+            AnalyticsJournalRecord::wsConnectionIpChange(self::ACCEPT_KEY, '127.0.0.2', self::STARTED_TS + 2),
+            AnalyticsJournalRecord::wsConnectionIpChange(self::ACCEPT_KEY, '127.0.0.3', self::STARTED_TS + 3),
+        ]);
+        $this->assertSame([
+            ['127.0.0.1', '127.0.0.2'],
+            ['127.0.0.2', '127.0.0.3'],
+        ], $this->rows('SELECT INET_NTOA(`old_ipv4`), INET_NTOA(`new_ipv4`)
+            FROM `hilos_analytics_ws_connection_ipv4_change` ORDER BY `id`'));
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testAgentFactsLoadedBeforeTheirCausesKeepTheirRowsAndLinkWhenTheCausesArrive(): void
     {
         $outcome = $this->load([
             ...$this->sessions(),
-            AnalyticsJournalRecord::agentUserAction(self::AGENT_KEY, self::MISSING_MASTER_ROW, 'hil_1154_action', null, self::STARTED_TS),
-            AnalyticsJournalRecord::apiAgentAction(self::MISSING_MASTER_ROW, self::AGENT_KEY, 'hil_1154_api', null, self::STARTED_TS),
+            AnalyticsJournalRecord::agentUserAction(self::AGENT_KEY, self::ACTION_KEY, 'hil_1154_action', null, self::STARTED_TS),
+            AnalyticsJournalRecord::apiAgentAction(self::REQUEST_KEY, self::AGENT_KEY, 'hil_1154_api', null, self::STARTED_TS),
         ]);
 
-        $this->assertSame([AnalyticsJournalSkip::MISSING_API_REQUEST->value => 1], $outcome->skipped);
+        $this->assertSame([], $outcome->skipped);
         $this->assertSame([[null]], $this->rows('SELECT `user_action_id` FROM `hilos_analytics_agent_user_action`'));
-        $this->assertSame([['0']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_api_agent_action`'));
+        $this->assertSame([[null]], $this->rows('SELECT `api_request_id` FROM `hilos_analytics_api_agent_action`'));
+
+        $request = new AnalyticsApiRequest(self::REQUEST_KEY, null, 'GET', '/health', null, null, null, self::STARTED_TS);
+        $this->load([
+            AnalyticsJournalRecord::wsConnectionOpen(self::ACCEPT_KEY, null, self::STARTED_TS),
+            AnalyticsJournalRecord::userAction(self::ACTION_KEY, self::ACCEPT_KEY, null, 'send', null, self::STARTED_TS),
+            AnalyticsJournalRecord::apiRequest($request, 200, 1, self::STARTED_TS + 1),
+        ]);
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_agent_user_action` WHERE `user_action_id` IS NOT NULL'));
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_api_agent_action` WHERE `api_request_id` IS NOT NULL'));
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testAgentFactsLinkToCausesLoadedFirst(): void
+    {
+        $request = new AnalyticsApiRequest(self::REQUEST_KEY, null, 'GET', '/health', null, null, null, self::STARTED_TS);
+        $this->load([
+            AnalyticsJournalRecord::wsConnectionOpen(self::ACCEPT_KEY, null, self::STARTED_TS),
+            AnalyticsJournalRecord::userAction(self::ACTION_KEY, self::ACCEPT_KEY, null, 'send', null, self::STARTED_TS),
+            AnalyticsJournalRecord::apiRequest($request, 200, 1, self::STARTED_TS + 1),
+        ]);
+        $this->load([
+            ...$this->sessions(),
+            AnalyticsJournalRecord::agentUserAction(self::AGENT_KEY, self::ACTION_KEY, 'hil_1154_action', null, self::STARTED_TS),
+            AnalyticsJournalRecord::apiAgentAction(self::REQUEST_KEY, self::AGENT_KEY, 'hil_1154_api', null, self::STARTED_TS),
+        ]);
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_agent_user_action` WHERE `user_action_id` IS NOT NULL'));
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_api_agent_action` WHERE `api_request_id` IS NOT NULL'));
     }
 
     /**

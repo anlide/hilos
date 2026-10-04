@@ -88,6 +88,15 @@ CREATE TABLE `hilos_analytics_browser_session` (
     CONSTRAINT `fk_ha_browser_accept_language` FOREIGN KEY (`current_accept_language_id`) REFERENCES `hilos_analytics_accept_language` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `hilos_analytics_browser_session_alias` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `old_token` VARCHAR(100) NOT NULL,
+    `new_token` VARCHAR(100) NOT NULL,
+    `created_ts` BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_browser_alias_old_token` (`old_token`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `hilos_analytics_browser_session_user_agent_change` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `browser_session_id` BIGINT UNSIGNED NOT NULL,
@@ -157,12 +166,14 @@ CREATE TABLE `hilos_analytics_ws_connection_ipv6_change` (
 
 CREATE TABLE `hilos_analytics_page_session` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `session_key` BINARY(16) DEFAULT NULL,
     `ws_connection_id` BIGINT UNSIGNED NOT NULL,
     `page_id` BIGINT UNSIGNED NOT NULL,
     `page_params_id` BIGINT UNSIGNED DEFAULT NULL,
     `opened_ts` BIGINT UNSIGNED NOT NULL,
     `closed_ts` BIGINT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_page_session_key` (`session_key`),
     KEY `idx_ha_page_session_conn_ts` (`ws_connection_id`, `opened_ts`),
     KEY `idx_ha_page_session_page` (`page_id`),
     KEY `idx_ha_page_session_params` (`page_params_id`),
@@ -202,12 +213,14 @@ CREATE TABLE `hilos_analytics_agent_session` (
 
 CREATE TABLE `hilos_analytics_user_action` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `action_key` BINARY(16) DEFAULT NULL,
     `ws_connection_id` BIGINT UNSIGNED NOT NULL,
     `page_session_id` BIGINT UNSIGNED DEFAULT NULL,
     `action_name_id` BIGINT UNSIGNED NOT NULL,
     `payload_json_id` BIGINT UNSIGNED DEFAULT NULL,
     `created_ts` BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_user_action_key` (`action_key`),
     KEY `idx_ha_user_action_conn_ts` (`ws_connection_id`, `created_ts`),
     KEY `idx_ha_user_action_page_session` (`page_session_id`),
     KEY `idx_ha_user_action_name` (`action_name_id`),
@@ -222,12 +235,14 @@ CREATE TABLE `hilos_analytics_agent_user_action` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `agent_session_id` BIGINT UNSIGNED NOT NULL,
     `user_action_id` BIGINT UNSIGNED DEFAULT NULL,
+    `user_action_key` BINARY(16) DEFAULT NULL,
     `signal_name_id` BIGINT UNSIGNED NOT NULL,
     `payload_json_id` BIGINT UNSIGNED DEFAULT NULL,
     `created_ts` BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_ha_agent_user_action_agent_ts` (`agent_session_id`, `created_ts`),
     KEY `idx_ha_agent_user_action_user_action` (`user_action_id`),
+    KEY `idx_ha_agent_user_action_cause_key` (`user_action_key`),
     KEY `idx_ha_agent_user_action_signal` (`signal_name_id`),
     KEY `idx_ha_agent_user_action_payload` (`payload_json_id`),
     CONSTRAINT `fk_ha_agent_user_action_agent` FOREIGN KEY (`agent_session_id`) REFERENCES `hilos_analytics_agent_session` (`id`) ON DELETE CASCADE,
@@ -283,6 +298,7 @@ CREATE TABLE `hilos_analytics_worker_system_signal` (
 
 CREATE TABLE `hilos_analytics_api_request` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `request_key` BINARY(16) DEFAULT NULL,
     `browser_session_id` BIGINT UNSIGNED DEFAULT NULL,
     `method` VARCHAR(10) NOT NULL,
     `path` VARCHAR(255) NOT NULL,
@@ -292,6 +308,7 @@ CREATE TABLE `hilos_analytics_api_request` (
     `started_ts` BIGINT UNSIGNED NOT NULL,
     `finished_ts` BIGINT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_ha_api_request_key` (`request_key`),
     KEY `idx_ha_api_browser_ts` (`browser_session_id`, `started_ts`),
     KEY `idx_ha_api_path` (`path`),
     KEY `idx_ha_api_params` (`params_json_id`),
@@ -301,13 +318,15 @@ CREATE TABLE `hilos_analytics_api_request` (
 
 CREATE TABLE `hilos_analytics_api_agent_action` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `api_request_id` BIGINT UNSIGNED NOT NULL,
+    `api_request_id` BIGINT UNSIGNED DEFAULT NULL,
+    `api_request_key` BINARY(16) DEFAULT NULL,
     `agent_session_id` BIGINT UNSIGNED NOT NULL,
     `signal_name_id` BIGINT UNSIGNED NOT NULL,
     `payload_json_id` BIGINT UNSIGNED DEFAULT NULL,
     `created_ts` BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_ha_api_agent_action_api_ts` (`api_request_id`, `created_ts`),
+    KEY `idx_ha_api_agent_action_cause_key` (`api_request_key`),
     KEY `idx_ha_api_agent_action_agent` (`agent_session_id`),
     KEY `idx_ha_api_agent_action_signal` (`signal_name_id`),
     KEY `idx_ha_api_agent_action_payload` (`payload_json_id`),

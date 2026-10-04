@@ -7,7 +7,7 @@ writing into an `hilos_analytics_*` table from anywhere.
 ## The Rule
 
 **The analytics tables are written by one agent, the cluster's writer, and by
-nobody else** — the master process excepted until HIL-1156 moves its half too.
+nobody else.**
 Every other process hands its events to the **journal agent of its node**, which
 keeps them in files until the writer has them in the database. This is the frame
 the owner set when P-415 was taken apart (26.09.2026): analytics is written into
@@ -21,28 +21,30 @@ The chain is four leaves; this document describes what has landed:
 |---|---|
 | HIL-1154 | the journal on every node, the writer loading the files of its own node |
 | HIL-1155 | the writer collects the files of every node |
-| HIL-1156 | the master stops writing analytics itself (not in the code yet) |
+| HIL-1156 | the master sends its connections, pages, actions and requests through its node's journal |
 | HIL-1157 | a ceiling on the journal and an account of what was lost (not in the code yet) |
 
 ## The Chain
 
 ```
-worker process ── Hilos::$ac ──► AnalyticsJournalOutbox ──(analytics_journal_append)──►
+every process, including master ── Hilos::$ac ──► AnalyticsJournalOutbox
+    ──(analytics_journal_append)──►
     AnalyticsJournalAgent (one per node) ── AnalyticsJournalDirectory: open file → ready file
         ◄──(analytics_journal_read / _portion / _loaded / _ready)──► AnalyticsWriterAgent (one per cluster)
             ── AnalyticsJournalLoader ──► AnalyticsStore ──► hilos_analytics_* tables
 ```
 
-- **The source** is `AnalyticsCollector` (`Hilos::$ac`) in every process but the
-  master. Its worker methods — the sessions of the worker and its agents, the
-  signals delivered to them, a connection joined to its browser session, a
-  session renamed or identified — build records of the journal and gather them
-  in `AnalyticsJournalOutbox`. The batch leaves as one frame to the journal agent
-  of the node once a second, at 64 KiB gathered, and at the end of the process
-  (`WorkerManager::cleanup()` sends it with the stop hooks' frames, before the
-  connection closes) - and at once after a browser session is renamed, so the
-  rename reaches the journal ahead of the new token's first record from another
-  worker. The payload is masked here, at the source
+- **The source** is `AnalyticsCollector` (`Hilos::$ac`) in every process. Its
+  worker methods describe sessions, signals, browser-session attachments and
+  token changes. The master records WebSocket connections, their current pages,
+  user actions and completed HTTP requests. It remembers only connection-to-page
+  keys and correlation keys captured during synchronous dispatch; it has no
+  analytics database access. Records gather in `AnalyticsJournalOutbox`. A batch
+  leaves as one frame to the journal agent of the node once a second, at 64 KiB
+  gathered, and at worker shutdown (`WorkerManager::cleanup()` sends it with the
+  stop hooks' frames). The master queues its batch through its signal router,
+  which `dispatchSignals()` delivers to the journal agent of that same node.
+  A browser-session rename flushes at once. The payload is masked at the source
   ([../signals/dto-convention.md](../signals/dto-convention.md)): the file on the
   node's disk is storage too.
 - **The journal agent** (`AnalyticsJournalAgent`, `AgentScope::NODE`, a monopolistic
@@ -94,29 +96,40 @@ At its start the journal agent closes a file a previous life left open as ready
 A line is one JSON object and a line break, encoded with
 `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES`; the keys live in
 `AnalyticsJournalRecord`. `ts`, `startedTs` and `openedTs` are unix milliseconds
-at the source, never at the writer. A session key is 32 lowercase hex characters,
-drawn by the process (`RandomHelper::hex(16)`) and stored as `UNHEX()` in
-`session_key`.
+at the source, never at the writer. A `key`, `pageKey`, `userActionKey` or
+`apiRequestKey` is 32 lowercase hex characters, drawn by the process
+(`RandomHelper::hex(16)`) and stored as `UNHEX()` in its binary key column.
 
 ```
-{"t":"journal","v":1,"node":"<nodeId|''>","openedTs":…}          first line of a file, by the journal agent
+{"t":"journal","v":2,"node":"<nodeId|''>","openedTs":…}          first line of a file, by the journal agent
 {"t":"worker_session","key","workerIndex","monopolistic","startedTs"}
 {"t":"worker_session_stop","key","ts"}
 {"t":"agent_session","key","workerKey","agentType","agentIndex","startedTs"}
 {"t":"agent_session_stop","key","ts"}
-{"t":"agent_user_action","agentKey","userActionId","signal","payload","ts"}
+{"t":"agent_user_action","agentKey","userActionKey","signal","payload","ts"}
 {"t":"agent_system_signal","agentKey","signal","payload","ts"}
 {"t":"agent_cron_signal","agentKey","cron","payload","ts"}
 {"t":"worker_system_signal","workerKey","signal","payload","ts"}
-{"t":"api_agent_action","apiRequestId","agentKey","signal","payload","ts"}
+{"t":"api_agent_action","apiRequestKey","agentKey","signal","payload","ts"}
+{"t":"ws_connection_open","acceptKey","ip","ts"}
+{"t":"ws_connection_close","acceptKey","ts"}
+{"t":"ws_connection_ip_change","acceptKey","ip","ts"}
+{"t":"page_session_open","key","acceptKey","page","params","ts"}
+{"t":"page_session_update","key","params","ts"}
+{"t":"page_session_close","key","ts"}
+{"t":"user_action","key","acceptKey","pageKey","action","payload","ts"}
+{"t":"api_request","key","sessionToken","method","path","params","userAgent","acceptLanguage","startedTs","status","durationMs","ts"}
 {"t":"ws_connection_attach","acceptKey","sessionToken","userAgent","acceptLanguage","ts"}
 {"t":"browser_session_rename","oldToken","newToken","ts"}
 {"t":"browser_session_identity","sessionToken","identityType","identityValue","ts"}
 ```
 
-`userActionId` and `apiRequestId` are row numbers the master wrote and sent in the
-meta of the signal (HIL-1156 replaces them with keys). A payload is an object
-already masked, or null; one that cannot be encoded travels as null.
+The master's synchronous signal meta carries `userActionKey` or `apiRequestKey`;
+an agent response carries that key in its journal record. A parked HTTP request
+has no active capture while it waits. A payload is an object already masked, or
+null; one that cannot be encoded travels as null. The master's `ip`, `pageKey`,
+`params`, `sessionToken`, `userAgent`, `acceptLanguage`, `status` and `durationMs`
+are nullable where their builders say so.
 
 **A batch stands on its own.** It opens with the description of every session its
 records name — the worker first, then the agents — so a batch lost on the way
@@ -138,19 +151,31 @@ writes nothing twice. All SQL lives in `AnalyticsStore`.
 
 - A session description is an upsert on its key — a repeat costs nothing; a stop
   stamps `stopped_ts` once.
-- The master's rows a portion of facts names are checked in one select per
-  table: a vanished user action leaves the reaction uncorrelated, a vanished API
-  request takes its fact with it.
-- A connection attach upserts the browser session by its token (and keeps the
-  history of user-agent and accept-language changes), then gives the connection
-  row, found by its accept key, its owner.
-- A rename onto a token another session already holds is passed over: the visit
-  stays split rather than the unique token refusing the whole file.
+- A connection opening and its browser-session attachment upsert the same unique
+  `accept_key`. Either may arrive first: the opening supplies the address and its
+  moment; the attachment supplies `browser_session_id`. A page or user action
+  whose connection is still unknown is skipped as `unknown_connection`.
+- Page sessions, user actions and API requests upsert by process-drawn key;
+  repeating their record in another file adds no row. A page update or close
+  finds its key, and an address change compares the stored current address,
+  including a previous change loaded in another file.
+- Agent facts carry cause keys. Before each multi-row insert, the writer looks
+  up known causes in one select per key column of that portion. An unknown cause
+  leaves its fact's id column null while the fact stays. Inserting the cause
+  later updates those facts by key where their id is null.
+- A browser-session token is looked up as a session, then through up to eight
+  stored aliases. A rename A→B records A as an alias even when A has no session.
+  If A has a row and B does not, it renames A. If both have rows, it merges A
+  into B: connections, requests and User-Agent and Accept-Language history move
+  to B; first and last moments become min/max; B's identity and current header
+  values win where present, otherwise A's. The writer rewires its cached token
+  states before it can use an id of the deleted A row again. If A has no row,
+  the first later event under either token opens B. No arrival order splits a visit.
 - `last_seen_ts` of a browser session never moves back: the batches of different
   processes arrive out of order.
 - What cannot be applied — the half line a machine crash left, an unknown type,
-  an unknown session key, a value too wide for its column, a rename conflict, a
-  vanished API request — is passed over and counted, and the writer says it in one
+  an unknown session key, an unknown connection or a value too wide for its
+  column — is passed over and counted, and the writer says it in one
   warning per file. A file is never refused for its records: one poisoned file
   would stop its node's journal for good.
 - The numbers the store learns inside the transaction enter its cache only at the
@@ -161,10 +186,10 @@ writes nothing twice. All SQL lives in `AnalyticsStore`.
 Files of **one** node load in their numbered order. Between nodes there is no
 load order: the writer visits waiting, online nodes in a round, one file per node.
 The files of different nodes can cover overlapping time spans, each file is one
-transaction, and their clocks can differ by milliseconds. Thus a link between
-records written on different nodes must work whichever file lands first: the
-answer carries the key of its cause, and the second of the two records to arrive
-completes the link. HIL-1156 builds that link; this leaf has no such relation.
+transaction, and their clocks can differ by milliseconds. Every cross-node pair
+works in either order: opening ↔ session attachment, user action ↔ agent answer,
+HTTP request ↔ agent action, and token rotation ↔ an event under the old token.
+The second cause/answer record to arrive completes their link.
 
 The writer learns nodes and connectivity from the node-local `hilosClusterNodes`
 register, not from a file name or its own placement. On start it asks every online
@@ -186,11 +211,13 @@ warning for that portion. The limit keeps a portion safely inside the peer link'
 Both agents are in the roster and the freeze stops them like any other agent. The
 journal agent, stopped by the freeze, throws the node's whole journal away; the
 writer starts again with empty caches. The collector is in no roster and answers
-the freeze itself: while the node's row silences the unstopped writers it records
-nothing and throws its gathered batch away, and an agent stopped meanwhile has its
+the freeze itself, in the master as in workers: while the node's row silences the
+unstopped writers it records nothing and throws its gathered batch away, but the
+master keeps its connection-to-page map. An agent stopped meanwhile has its
 stop handed over, with its own moment, once the freeze lets go
-([protected-mode.md](protected-mode.md)). Nothing is reopened after a swap: the
-descriptions travel with every batch.
+([protected-mode.md](protected-mode.md)). `forgetReplacedDatabase()` discards the
+batch and active captures and forgets the master's connections and pages; browsers
+reconnect. Worker-session descriptions travel with every later batch.
 
 ## Stopping A Node
 
@@ -198,8 +225,9 @@ The journal agent is the last to leave. Every other worker hands it its last
 batch on the way out — `WorkerManager::cleanup()` records the stops and sends the
 batch with the stop hooks' frames — so a node stops in two waves (approved by the
 owner 30.09.2026): SIGTERM to every worker but the journal's; once their processes
-have exited, their connections are closed and their last frames were dispatched,
-the journal agent is stopped with an
+have exited and their connections are closed, the master records closures of its
+remaining pages and connections and sends that batch in `dispatchSignals()` of the
+same pass. The next pass stops the journal agent with an
 ordinary `agent_stop` over its connection, behind everything sent to it before,
 and closes its open file as ready and reports itself stopped; only then its worker gets SIGTERM. The daemon marks
 this with `AnalyticsJournalAgentDaemon::stopsAfterOtherWorkers()`; the mechanism
@@ -227,17 +255,16 @@ The other losses the owner accepted, with the same standing:
   the writer had not loaded by then (counted by HIL-1157).
 - **A source process that crashes** loses its unsent batch, up to a second, as it
   lost its insert buffer before.
+- **A master after it releases the journal agent** loses events that finish in the
+  last milliseconds of node shutdown, including a parked HTTP request abandoned
+  after release. A fallen master loses its own unsent batch, up to a second.
+
+Old journal records carrying row numbers are not loaded after this change; they
+are counted as malformed. The owner settled compatibility on 03.10.2026:
+«Нет. Когда будет продакшн какой-то, мы будем делать обратную совместимость, а пока нет.»
+— “No. When there is some production, we will do backward compatibility; not yet.”
 
 ## What Is Not Here Yet
 
-- The master writes its facts itself, through `AnalyticsStore`, and its row numbers
-  travel in the meta of the signal (HIL-1156). Its meta also stamps the frames it
-  forwards while an HTTP request is parked, which is why the journal's own signals
-  are excluded at the source.
 - The journal directory has no size ceiling, and nothing counts what was lost
   (HIL-1157).
-- A browser session rename that finds its new token already occupied leaves the
-  visit split. In a cluster where `ChatAgent` records the session from a different
-  node, the outcome depends on file arrival order; a safe join needs the single
-  writer of HIL-1156. No demo currently runs analytics on a live cluster, so
-  this behavior is covered by unit tests and a two-node registry integration test.

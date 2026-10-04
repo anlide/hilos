@@ -806,7 +806,6 @@ abstract class DaemonManager extends BaseManager implements
 
         // Cleanup
         $this->eventLoop->cleanup();
-        Hilos::$ac?->shutdown();
         Logger::info("Daemon " . $this->departure->value);
 
         return $this->departure;
@@ -906,7 +905,7 @@ abstract class DaemonManager extends BaseManager implements
             // Report the re-hydrate barrier once everyone has answered, or the deadline passed
             $this->tickReHydrateRound();
 
-            // Flush buffered analytics rows on schedule
+            // Send the gathered analytics batch on schedule.
             Hilos::$ac?->tick();
 
             // Close the windows the client-read limiter has been counting in, so a

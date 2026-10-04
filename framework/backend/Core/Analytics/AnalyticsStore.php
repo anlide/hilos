@@ -6,6 +6,7 @@ namespace Hilos\Core\Analytics;
 
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Utils\Logger;
 
 /**
  * The one home of the analytics SQL: every statement that reads or writes an analytics table.
@@ -15,9 +16,8 @@ use Hilos\Database\DatabaseException;
  * well: dictionary tables deduplicated by SHA-1 hash via `INSERT IGNORE`, and fact rows
  * accumulated in memory then written in multi-row inserts.
  *
- * Two callers write through it. The writer agent loads the journal files of its node
- * ({@see AnalyticsJournalLoader}); the master process still writes its own facts here
- * synchronously, until HIL-1156 hands them to the journal too. The store itself never decides
+ * One cluster writer loads each node's journal files through it
+ * ({@see AnalyticsJournalLoader}). The store itself never decides
  * a moment: every method takes the time of the event as a parameter, because a journal record
  * is loaded long after it happened and its row must carry the moment at the source.
  *
@@ -35,7 +35,7 @@ use Hilos\Database\DatabaseException;
  */
 final class AnalyticsStore
 {
-    /** @var int Fact rows written by one multi-row insert, and checked by one lookup of the master's rows */
+    /** @var int Fact rows written by one multi-row insert and linked by one lookup of cause keys */
     public const int FACT_PORTION_ROWS = 500;
 
     private const string TABLE_AGENT_USER_ACTION = 'hilos_analytics_agent_user_action';
@@ -46,6 +46,9 @@ final class AnalyticsStore
 
     private const string COLUMN_USER_ACTION_ID = 'user_action_id';
     private const string COLUMN_API_REQUEST_ID = 'api_request_id';
+    private const string COLUMN_USER_ACTION_KEY = 'user_action_key';
+    private const string COLUMN_API_REQUEST_KEY = 'api_request_key';
+    private const int MAX_TOKEN_ALIAS_HOPS = 8;
 
     private AnalyticsIdCache $cache;
 
@@ -91,20 +94,6 @@ final class AnalyticsStore
             $this->committedCache = null;
         }
 
-        $this->facts = [];
-    }
-
-    /**
-     * Forgets every number of the database the store wrote into, and the fact rows that reference them.
-     *
-     * Called when that database was replaced under the process: a row of the restored database may
-     * take a number the cache still holds for another value, and a stale id then files facts under
-     * the wrong name with no error at all. Memory only; cannot fail.
-     */
-    public function forgetAll(): void
-    {
-        $this->cache = new AnalyticsIdCache();
-        $this->committedCache = null;
         $this->facts = [];
     }
 
@@ -241,7 +230,15 @@ final class AnalyticsStore
      */
     public function ensureBrowserSession(string $sessionToken, ?string $userAgent, ?string $acceptLanguage, int $ts): int
     {
-        $existing = $this->loadBrowserSession($sessionToken);
+        $cached = $this->cache->browserSessions[$sessionToken] ?? null;
+        if ($cached !== null) {
+            $existing = $cached;
+            $resolvedToken = $this->resolveBrowserSessionToken($sessionToken);
+        } else {
+            $existing = $this->loadBrowserSessionDirect($sessionToken);
+            $resolvedToken = $existing === null ? $this->resolveBrowserSessionToken($sessionToken) : $sessionToken;
+            $existing ??= $this->loadBrowserSession($resolvedToken);
+        }
         $userAgentId = $this->ensureUserAgent($userAgent, $ts);
         $acceptLanguageId = $this->ensureAcceptLanguage($acceptLanguage, $ts);
 
@@ -256,11 +253,12 @@ final class AnalyticsStore
                      `current_user_agent_id`, `current_accept_language_id`, `first_seen_ts`, `last_seen_ts`)
                  VALUES (?, NULL, NULL, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`), `last_seen_ts` = GREATEST(`last_seen_ts`, VALUES(`last_seen_ts`))',
-                [$sessionToken, $userAgentId, $acceptLanguageId, $ts, $ts],
+                [$resolvedToken, $userAgentId, $acceptLanguageId, $ts, $ts],
             );
 
             $id = Database::lastInsertId();
-            $this->cache->browserSessions[$sessionToken] = new BrowserSessionState($id, $userAgentId, $acceptLanguageId);
+            $this->cache->browserSessions[$resolvedToken] = new BrowserSessionState($id, $userAgentId, $acceptLanguageId);
+            $this->cache->browserSessions[$sessionToken] = $this->cache->browserSessions[$resolvedToken];
 
             return $id;
         }
@@ -300,11 +298,12 @@ final class AnalyticsStore
             $params,
         );
 
-        $this->cache->browserSessions[$sessionToken] = new BrowserSessionState(
+        $this->cache->browserSessions[$resolvedToken] = new BrowserSessionState(
             $existing->id,
             $currentUserAgentId,
             $currentAcceptLanguageId,
         );
+        $this->cache->browserSessions[$sessionToken] = $this->cache->browserSessions[$resolvedToken];
 
         return $existing->id;
     }
@@ -335,10 +334,9 @@ final class AnalyticsStore
      *
      * The analytics session is named by the secret rather than by the application session's id,
      * so a rotation that changes only the secret would strand everything collected before the
-     * login under a token nobody presents again. A token whose session was never opened is
-     * nothing to rename. A session already under the new token - an event of the new token
-     * reached the database first - is not touched: the visit stays split rather than the
-     * unique token refusing the whole write.
+     * login under a token nobody presents again. A token whose session was never opened
+     * becomes an alias. When both tokens already have sessions, their rows and dependent facts
+     * join under the new token.
      *
      * @param string $oldToken Token the session answered to before the rotation
      * @param string $newToken Token the session answers to now
@@ -348,26 +346,81 @@ final class AnalyticsStore
      */
     public function renameBrowserSession(string $oldToken, string $newToken, int $ts): BrowserSessionRename
     {
-        $session = $this->loadBrowserSession($oldToken);
-        if ($session === null) {
-            return BrowserSessionRename::ABSENT;
+        Database::sql(
+            'INSERT IGNORE INTO `hilos_analytics_browser_session_alias` (`old_token`, `new_token`, `created_ts`) VALUES (?, ?, ?)',
+            [$oldToken, $newToken, $ts],
+        );
+
+        $old = $this->loadBrowserSessionDirect($oldToken);
+        $resolvedNewToken = $this->resolveBrowserSessionToken($newToken);
+        $new = $this->loadBrowserSession($resolvedNewToken);
+        if ($old === null) {
+            return BrowserSessionRename::ALIASED;
         }
 
-        if ($this->loadBrowserSession($newToken) !== null) {
-            return BrowserSessionRename::CONFLICT;
+        if ($new === null) {
+            Database::sql(
+                'UPDATE `hilos_analytics_browser_session`
+                 SET `session_token` = ?, `last_seen_ts` = GREATEST(`last_seen_ts`, ?)
+                 WHERE `id` = ?',
+                [$resolvedNewToken, $ts, $old->id],
+            );
+            $this->cache->browserSessions[$oldToken] = $old;
+            $this->cache->browserSessions[$resolvedNewToken] = $old;
+            return BrowserSessionRename::RENAMED;
+        }
+
+        if ($old->id === $new->id) {
+            return BrowserSessionRename::ALIASED;
         }
 
         Database::sql(
-            'UPDATE `hilos_analytics_browser_session`
-             SET `session_token` = ?, `last_seen_ts` = GREATEST(`last_seen_ts`, ?)
-             WHERE `id` = ?',
-            [$newToken, $ts, $session->id],
+            'SELECT `first_seen_ts`, `last_seen_ts`, `user_identity_type`, `user_identity_value`,
+                    `current_user_agent_id`, `current_accept_language_id`
+             FROM `hilos_analytics_browser_session` WHERE `id` = ?',
+            [$old->id],
         );
+        $oldRow = Database::row();
+        Database::sql(
+            'SELECT `first_seen_ts`, `last_seen_ts`, `user_identity_type`, `user_identity_value`,
+                    `current_user_agent_id`, `current_accept_language_id`
+             FROM `hilos_analytics_browser_session` WHERE `id` = ?',
+            [$new->id],
+        );
+        $newRow = Database::row();
+        if ($oldRow === null || $newRow === null) {
+            return BrowserSessionRename::ALIASED;
+        }
 
-        unset($this->cache->browserSessions[$oldToken]);
-        $this->cache->browserSessions[$newToken] = $session;
+        Database::sql(
+            'UPDATE `hilos_analytics_browser_session` SET `first_seen_ts` = ?, `last_seen_ts` = ?,
+                    `user_identity_type` = ?, `user_identity_value` = ?,
+                    `current_user_agent_id` = ?, `current_accept_language_id` = ? WHERE `id` = ?',
+            [min((int)$oldRow['first_seen_ts'], (int)$newRow['first_seen_ts']),
+                max($ts, (int)$oldRow['last_seen_ts'], (int)$newRow['last_seen_ts']),
+                $newRow['user_identity_type'] ?? $oldRow['user_identity_type'],
+                $newRow['user_identity_type'] !== null ? $newRow['user_identity_value'] : $oldRow['user_identity_value'],
+                $newRow['current_user_agent_id'] ?? $oldRow['current_user_agent_id'],
+                $newRow['current_accept_language_id'] ?? $oldRow['current_accept_language_id'], $new->id],
+        );
+        foreach (['hilos_analytics_ws_connection', 'hilos_analytics_api_request',
+            'hilos_analytics_browser_session_user_agent_change', 'hilos_analytics_browser_session_accept_language_change'] as $table) {
+            Database::sql("UPDATE `{$table}` SET `browser_session_id` = ? WHERE `browser_session_id` = ?", [$new->id, $old->id]);
+        }
+        Database::sql('DELETE FROM `hilos_analytics_browser_session` WHERE `id` = ?', [$old->id]);
 
-        return BrowserSessionRename::RENAMED;
+        $merged = new BrowserSessionState($new->id,
+            isset($newRow['current_user_agent_id']) ? (int)$newRow['current_user_agent_id'] : $old->currentUserAgentId,
+            isset($newRow['current_accept_language_id']) ? (int)$newRow['current_accept_language_id'] : $old->currentAcceptLanguageId);
+        foreach ($this->cache->browserSessions as $token => $state) {
+            if ($state->id === $old->id || $state->id === $new->id) {
+                $this->cache->browserSessions[$token] = $merged;
+            }
+        }
+        $this->cache->browserSessions[$oldToken] = $merged;
+        $this->cache->browserSessions[$resolvedNewToken] = $merged;
+
+        return BrowserSessionRename::MERGED;
     }
 
     /**
@@ -376,41 +429,45 @@ final class AnalyticsStore
      * @param string $acceptKey WebSocket accept key
      * @param ?string $clientIp Client IP address (IPv4 or IPv6), or null when unknown
      * @param int $ts Moment the connection opened, in milliseconds
-     * @return int WS connection id
      * @throws DatabaseException When the insert fails
      */
-    public function openWsConnection(string $acceptKey, ?string $clientIp, int $ts): int
+    public function openWsConnection(string $acceptKey, ?string $clientIp, int $ts): void
     {
         $ip = $clientIp !== null ? $this->parseIp($clientIp) : new ParsedIp(null, null);
 
         Database::sql(
             'INSERT INTO `hilos_analytics_ws_connection`
                 (`browser_session_id`, `accept_key`, `opened_ipv4`, `opened_ipv6`, `opened_ts`, `closed_ts`)
-             VALUES (NULL, ?, ?, UNHEX(?), ?, NULL)',
+             VALUES (NULL, ?, ?, UNHEX(?), ?, NULL)
+             ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`),
+                 `opened_ipv4` = VALUES(`opened_ipv4`), `opened_ipv6` = VALUES(`opened_ipv6`),
+                 `opened_ts` = VALUES(`opened_ts`)',
             [$acceptKey, $ip->ipv4, $ip->ipv6Hex, $ts],
         );
 
         $id = Database::lastInsertId();
         $this->cache->wsConnections[$acceptKey] = new WsConnectionState($id, $ip->ipv4, $ip->ipv6Hex);
-
-        return $id;
     }
 
     /**
      * Gives the WebSocket connection row the browser session it belongs to.
      *
-     * The connection is found by its accept key rather than by a cached id: the master opened the
-     * row, and its cache is not this process's. The key is unique in the table.
+     * The attachment may reach this writer before the opening from another node. Both upsert
+     * the same accept key, and the later opening fills the address and opening moment.
      *
      * @param string $acceptKey WebSocket accept key
      * @param int $browserSessionId Browser session the connection belongs to
-     * @throws DatabaseException When the update fails
+     * @param int $ts Moment of the attachment, in milliseconds
+     * @throws DatabaseException When the upsert fails
      */
-    public function attachWsConnection(string $acceptKey, int $browserSessionId): void
+    public function attachWsConnection(string $acceptKey, int $browserSessionId, int $ts): void
     {
         Database::sql(
-            'UPDATE `hilos_analytics_ws_connection` SET `browser_session_id` = ? WHERE `accept_key` = ?',
-            [$browserSessionId, $acceptKey],
+            'INSERT INTO `hilos_analytics_ws_connection`
+                (`browser_session_id`, `accept_key`, `opened_ipv4`, `opened_ipv6`, `opened_ts`, `closed_ts`)
+             VALUES (?, ?, NULL, NULL, ?, NULL)
+             ON DUPLICATE KEY UPDATE `browser_session_id` = VALUES(`browser_session_id`)',
+            [$browserSessionId, $acceptKey, $ts],
         );
     }
 
@@ -420,13 +477,42 @@ final class AnalyticsStore
      * @param string $acceptKey WebSocket accept key
      * @param string $clientIp Current client IP address
      * @param int $ts Moment of the change, in milliseconds
-     * @throws DatabaseException When an insert fails
+     * @return ?int Connection row id, or null when it does not exist
+     * @throws DatabaseException When an insert or lookup fails
      */
-    public function trackWsConnectionIpChange(string $acceptKey, string $clientIp, int $ts): void
+    public function trackWsConnectionIpChange(string $acceptKey, string $clientIp, int $ts): ?int
     {
         $connection = $this->cache->wsConnections[$acceptKey] ?? null;
         if ($connection === null) {
-            return;
+            Database::sql(
+                'SELECT `id`, `opened_ipv4`, HEX(`opened_ipv6`) AS `opened_ipv6_hex`
+                 FROM `hilos_analytics_ws_connection` WHERE `accept_key` = ? LIMIT 1',
+                [$acceptKey],
+            );
+            $row = Database::row();
+            if ($row === null) {
+                return null;
+            }
+            $id = (int)$row['id'];
+            Database::sql(
+                'SELECT `new_ipv4` FROM `hilos_analytics_ws_connection_ipv4_change`
+                 WHERE `ws_connection_id` = ? ORDER BY `id` DESC LIMIT 1',
+                [$id],
+            );
+            $ipv4Change = Database::row();
+            Database::sql(
+                'SELECT HEX(`new_ipv6`) AS `new_ipv6_hex` FROM `hilos_analytics_ws_connection_ipv6_change`
+                 WHERE `ws_connection_id` = ? ORDER BY `id` DESC LIMIT 1',
+                [$id],
+            );
+            $ipv6Change = Database::row();
+            $connection = new WsConnectionState(
+                $id,
+                $ipv4Change === null ? (isset($row['opened_ipv4']) ? (int)$row['opened_ipv4'] : null)
+                    : (isset($ipv4Change['new_ipv4']) ? (int)$ipv4Change['new_ipv4'] : null),
+                $ipv6Change === null ? (isset($row['opened_ipv6_hex']) ? strtolower((string)$row['opened_ipv6_hex']) : null)
+                    : (isset($ipv6Change['new_ipv6_hex']) ? strtolower((string)$ipv6Change['new_ipv6_hex']) : null),
+            );
         }
 
         $parsed = $this->parseIp($clientIp);
@@ -450,6 +536,7 @@ final class AnalyticsStore
         }
 
         $this->cache->wsConnections[$acceptKey] = new WsConnectionState($connection->id, $parsed->ipv4, $parsed->ipv6Hex);
+        return $connection->id;
     }
 
     /**
@@ -461,177 +548,152 @@ final class AnalyticsStore
      */
     public function closeWsConnection(string $acceptKey, int $ts): void
     {
-        $connection = $this->cache->wsConnections[$acceptKey] ?? null;
-        if ($connection === null) {
-            return;
-        }
-
         Database::sql(
-            'UPDATE `hilos_analytics_ws_connection` SET `closed_ts` = ? WHERE `id` = ?',
-            [$ts, $connection->id],
+            'UPDATE `hilos_analytics_ws_connection` SET `closed_ts` = ? WHERE `accept_key` = ?',
+            [$ts, $acceptKey],
         );
     }
 
     /**
-     * Opens a page session on a WS connection, closing any prior one first.
+     * Opens the page named by its process key. The source sends a separate close for the previous page.
      *
+     * @param string $key Page session key
      * @param string $acceptKey WebSocket accept key
-     * @param string $pageName Page name being opened
-     * @param ?array<string, mixed> $params Page route params, or null
-     * @param int $ts Moment the page opened, in milliseconds
-     * @return ?int Page session id, or null when the connection is unknown
+     * @param string $pageName Page name
+     * @param ?array<string, mixed> $params Page route parameters
+     * @param int $ts Opening moment in milliseconds
+     * @return ?int Page session id, or null when its connection is unknown
      * @throws DatabaseException When a statement fails
      */
-    public function openPageSession(string $acceptKey, string $pageName, ?array $params, int $ts): ?int
+    public function openPageSession(string $key, string $acceptKey, string $pageName, ?array $params, int $ts): ?int
     {
-        $connection = $this->cache->wsConnections[$acceptKey] ?? null;
-        if ($connection === null) {
+        $connectionId = $this->findWsConnection($acceptKey);
+        if ($connectionId === null) {
             return null;
         }
-
-        $this->closePageSession($acceptKey, $ts);
-
         Database::sql(
             'INSERT INTO `hilos_analytics_page_session`
-                (`ws_connection_id`, `page_id`, `page_params_id`, `opened_ts`, `closed_ts`)
-             VALUES (?, ?, ?, ?, NULL)',
-            [$connection->id, $this->ensurePage($pageName, $ts), $this->ensurePageParams($params, $ts), $ts],
+                (`session_key`, `ws_connection_id`, `page_id`, `page_params_id`, `opened_ts`, `closed_ts`)
+             VALUES (UNHEX(?), ?, ?, ?, ?, NULL)
+             ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`)',
+            [$key, $connectionId, $this->ensurePage($pageName, $ts), $this->ensurePageParams($params, $ts), $ts],
         );
-
         $id = Database::lastInsertId();
-        $this->cache->pageSessions[$acceptKey] = $id;
-
+        $this->cache->pageSessions[$key] = $id;
         return $id;
     }
 
     /**
-     * Updates the route params of the current page session; nothing when none is open.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @param ?array<string, mixed> $params New page route params, or null
-     * @param int $ts Moment of the update, in milliseconds
+     * @param string $key Page session key
+     * @param ?array<string, mixed> $params New page route parameters
+     * @param int $ts Update moment in milliseconds
      * @throws DatabaseException When a statement fails
      */
-    public function updatePageSession(string $acceptKey, ?array $params, int $ts): void
+    public function updatePageSession(string $key, ?array $params, int $ts): void
     {
-        $pageSessionId = $this->cache->pageSessions[$acceptKey] ?? null;
-        if ($pageSessionId === null) {
+        $id = $this->findPageSession($key);
+        if ($id === null) {
             return;
         }
-
-        Database::sql(
-            'UPDATE `hilos_analytics_page_session` SET `page_params_id` = ? WHERE `id` = ?',
-            [$this->ensurePageParams($params, $ts), $pageSessionId],
-        );
+        Database::sql('UPDATE `hilos_analytics_page_session` SET `page_params_id` = ? WHERE `id` = ?',
+            [$this->ensurePageParams($params, $ts), $id]);
     }
 
     /**
-     * Marks the current page session closed and drops it from the cache; nothing when none is open.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @param int $ts Moment the page closed, in milliseconds
+     * @param string $key Page session key
+     * @param int $ts Closing moment in milliseconds
      * @throws DatabaseException When the update fails
      */
-    public function closePageSession(string $acceptKey, int $ts): void
+    public function closePageSession(string $key, int $ts): void
     {
-        $pageSessionId = $this->cache->pageSessions[$acceptKey] ?? null;
-        if ($pageSessionId === null) {
-            return;
-        }
-
         Database::sql(
-            'UPDATE `hilos_analytics_page_session` SET `closed_ts` = ? WHERE `id` = ?',
-            [$ts, $pageSessionId],
+            'UPDATE `hilos_analytics_page_session` SET `closed_ts` = ?
+             WHERE `session_key` = UNHEX(?) AND `closed_ts` IS NULL',
+            [$ts, $key],
         );
-
-        unset($this->cache->pageSessions[$acceptKey]);
     }
 
     /**
-     * Writes a user action against the WS connection and its current page session.
+     * Writes a keyed user action and connects agent responses that reached the writer first.
      *
+     * @param string $key User action key
      * @param string $acceptKey WebSocket accept key
+     * @param ?string $pageKey Current page session key, or null
      * @param string $actionName Client action name
-     * @param ?array<string, mixed> $payload Payload already masked by the caller, or null
-     * @param int $ts Moment of the action, in milliseconds
-     * @return ?int User action id, or null when the connection is unknown
+     * @param ?array<string, mixed> $payload Masked action payload
+     * @param int $ts Action moment in milliseconds
+     * @return ?int Action row id, or null when the connection is unknown
      * @throws DatabaseException When a statement fails
      */
-    public function insertUserAction(string $acceptKey, string $actionName, ?array $payload, int $ts): ?int
+    public function insertUserAction(string $key, string $acceptKey, ?string $pageKey, string $actionName, ?array $payload, int $ts): ?int
     {
-        $connection = $this->cache->wsConnections[$acceptKey] ?? null;
-        if ($connection === null) {
+        $connectionId = $this->findWsConnection($acceptKey);
+        if ($connectionId === null) {
             return null;
         }
-
         Database::sql(
             'INSERT INTO `hilos_analytics_user_action`
-                (`ws_connection_id`, `page_session_id`, `action_name_id`, `payload_json_id`, `created_ts`)
-             VALUES (?, ?, ?, ?, ?)',
-            [
-                $connection->id,
-                $this->cache->pageSessions[$acceptKey] ?? null,
+                (`action_key`, `ws_connection_id`, `page_session_id`, `action_name_id`, `payload_json_id`, `created_ts`)
+             VALUES (UNHEX(?), ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`)',
+            [$key, $connectionId, $pageKey === null ? null : $this->findPageSession($pageKey),
                 $this->ensureNamedDictionaryValue($actionName, 'hilos_analytics_action_name', $this->cache->actionNameIds, $ts),
-                $this->ensurePayloadJson($payload, $ts),
-                $ts,
-            ],
+                $this->ensurePayloadJson($payload, $ts), $ts],
         );
-
-        return Database::lastInsertId();
+        $id = Database::lastInsertId();
+        Database::sql(
+            'UPDATE `hilos_analytics_agent_user_action` SET `user_action_id` = ?
+             WHERE `user_action_key` = UNHEX(?) AND `user_action_id` IS NULL',
+            [$id, $key],
+        );
+        return $id;
     }
 
     /**
-     * Opens an API request row, resolving its browser session.
+     * Writes one completed HTTP request and connects agent facts that reached the writer first.
      *
-     * @param ?string $sessionToken Browser session token, or null for anonymous
+     * @param string $key Request key
+     * @param ?string $sessionToken Browser session token, or null
      * @param string $method HTTP method
      * @param string $path Request path
-     * @param ?array<string, mixed> $params Request params, or null
-     * @param ?string $userAgent Raw User-Agent header, or null
-     * @param ?string $acceptLanguage Raw Accept-Language header, or null
-     * @param int $ts Moment the request started, in milliseconds
-     * @return int API request id
+     * @param ?array<string, mixed> $params Route parameters
+     * @param ?string $userAgent User-Agent header
+     * @param ?string $acceptLanguage Accept-Language header
+     * @param int $startedTs Start moment in milliseconds
+     * @param ?int $statusCode HTTP status, or null when the client left
+     * @param ?int $durationMs Duration in milliseconds, or null
+     * @param int $finishedTs Completion moment in milliseconds
      * @throws DatabaseException When a statement fails
      */
-    public function startApiRequest(
+    public function insertApiRequest(
+        string $key,
         ?string $sessionToken,
         string $method,
         string $path,
         ?array $params,
         ?string $userAgent,
         ?string $acceptLanguage,
-        int $ts,
-    ): int {
+        int $startedTs,
+        ?int $statusCode,
+        ?int $durationMs,
+        int $finishedTs,
+    ): void {
         $browserSessionId = $sessionToken === null || $sessionToken === ''
-            ? null
-            : $this->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage, $ts);
-
+            ? null : $this->ensureBrowserSession($sessionToken, $userAgent, $acceptLanguage, $startedTs);
         Database::sql(
             'INSERT INTO `hilos_analytics_api_request`
-                (`browser_session_id`, `method`, `path`, `params_json_id`, `status_code`, `duration_ms`, `started_ts`, `finished_ts`)
-             VALUES (?, ?, ?, ?, NULL, NULL, ?, NULL)',
-            [$browserSessionId, $method, $path, $this->ensurePageParams($params, $ts), $ts],
+                (`request_key`, `browser_session_id`, `method`, `path`, `params_json_id`, `status_code`,
+                 `duration_ms`, `started_ts`, `finished_ts`)
+             VALUES (UNHEX(?), ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE `id` = LAST_INSERT_ID(`id`)',
+            [$key, $browserSessionId, $method, $path, $this->ensurePageParams($params, $startedTs),
+                $statusCode, $durationMs, $startedTs, $finishedTs],
         );
-
-        return Database::lastInsertId();
-    }
-
-    /**
-     * Finalizes an API request row with status, duration and finish time.
-     *
-     * @param int $apiRequestId API request id
-     * @param ?int $statusCode HTTP status code, or null
-     * @param ?int $durationMs Request duration in milliseconds, or null
-     * @param int $ts Moment the request finished, in milliseconds
-     * @throws DatabaseException When the update fails
-     */
-    public function finishApiRequest(int $apiRequestId, ?int $statusCode, ?int $durationMs, int $ts): void
-    {
+        $id = Database::lastInsertId();
         Database::sql(
-            'UPDATE `hilos_analytics_api_request`
-             SET `status_code` = ?, `duration_ms` = ?, `finished_ts` = ?
-             WHERE `id` = ?',
-            [$statusCode, $durationMs, $ts, $apiRequestId],
+            'UPDATE `hilos_analytics_api_agent_action` SET `api_request_id` = ?
+             WHERE `api_request_key` = UNHEX(?) AND `api_request_id` IS NULL',
+            [$id, $key],
         );
     }
 
@@ -639,17 +701,18 @@ final class AnalyticsStore
      * Buffers an agent reaction to a user action until {@see self::flushFacts()}.
      *
      * @param int $agentSessionId Agent session id
-     * @param ?int $userActionId User action row the master wrote, or null when uncorrelated
+     * @param ?string $userActionKey Key of the originating action, or null
      * @param string $signalName Signal name handled by the agent
      * @param ?array<string, mixed> $payload Payload already masked by the source, or null
      * @param int $ts Moment of the event, in milliseconds
      * @throws DatabaseException When a dictionary value cannot be written
      */
-    public function addAgentUserAction(int $agentSessionId, ?int $userActionId, string $signalName, ?array $payload, int $ts): void
+    public function addAgentUserAction(int $agentSessionId, ?string $userActionKey, string $signalName, ?array $payload, int $ts): void
     {
         $this->facts[self::TABLE_AGENT_USER_ACTION][] = [
             'agent_session_id' => $agentSessionId,
-            self::COLUMN_USER_ACTION_ID => $userActionId,
+            self::COLUMN_USER_ACTION_ID => null,
+            self::COLUMN_USER_ACTION_KEY => $userActionKey === null ? null : hex2bin($userActionKey),
             'signal_name_id' => $this->ensureNamedDictionaryValue($signalName, 'hilos_analytics_signal_name', $this->cache->signalNameIds, $ts),
             'payload_json_id' => $this->ensurePayloadJson($payload, $ts),
             'created_ts' => $ts,
@@ -716,17 +779,18 @@ final class AnalyticsStore
     /**
      * Buffers a signal an agent received inside an HTTP request until {@see self::flushFacts()}.
      *
-     * @param int $apiRequestId API request row the master wrote
+     * @param string $apiRequestKey Key of the originating API request
      * @param int $agentSessionId Agent session id
      * @param string $signalName Signal name dispatched to the agent
      * @param ?array<string, mixed> $payload Payload already masked by the source, or null
      * @param int $ts Moment of the event, in milliseconds
      * @throws DatabaseException When a dictionary value cannot be written
      */
-    public function addApiAgentAction(int $apiRequestId, int $agentSessionId, string $signalName, ?array $payload, int $ts): void
+    public function addApiAgentAction(string $apiRequestKey, int $agentSessionId, string $signalName, ?array $payload, int $ts): void
     {
         $this->facts[self::TABLE_API_AGENT_ACTION][] = [
-            self::COLUMN_API_REQUEST_ID => $apiRequestId,
+            self::COLUMN_API_REQUEST_ID => null,
+            self::COLUMN_API_REQUEST_KEY => hex2bin($apiRequestKey),
             'agent_session_id' => $agentSessionId,
             'signal_name_id' => $this->ensureNamedDictionaryValue($signalName, 'hilos_analytics_signal_name', $this->cache->signalNameIds, $ts),
             'payload_json_id' => $this->ensurePayloadJson($payload, $ts),
@@ -750,33 +814,25 @@ final class AnalyticsStore
     /**
      * Writes the buffered fact rows in multi-row inserts of at most {@see self::FACT_PORTION_ROWS}.
      *
-     * Before each insert the rows of the master process the portion names are looked up, one
-     * select per table for the whole portion: the master writes them synchronously before the
-     * signal leaves, but a restore may have taken them since. A vanished user action leaves its
-     * reaction uncorrelated; a vanished API request takes its row with it, since the row means
-     * nothing without the request it belongs to.
+     * Before each insert the cause keys the portion names are looked up in one select per table.
+     * A cause that has not arrived yet leaves its response's row without a number; inserting
+     * the cause later fills it.
      *
      * The buffer is emptied before the first insert, so a failure does not write the same rows
      * twice on the next flush.
      *
-     * @return int Rows dropped because the API request they belong to is gone
      * @throws DatabaseException When a lookup or an insert fails
      */
-    public function flushFacts(): int
+    public function flushFacts(): void
     {
         $facts = $this->facts;
         $this->facts = [];
 
-        $dropped = 0;
         foreach ($facts as $table => $rows) {
             foreach (array_chunk($rows, self::FACT_PORTION_ROWS) as $portion) {
-                $kept = $this->keepRowsOfLiveMasterRows($portion);
-                $dropped += count($portion) - count($kept);
-                $this->bulkInsert($table, $kept);
+                $this->bulkInsert($table, $this->linkCauses($portion));
             }
         }
-
-        return $dropped;
     }
 
     /**
@@ -842,6 +898,39 @@ final class AnalyticsStore
     }
 
     /**
+     * @param string $acceptKey WebSocket accept key
+     * @return ?int Connection row id, or null when no opening or attachment was loaded
+     * @throws DatabaseException When the lookup fails
+     */
+    private function findWsConnection(string $acceptKey): ?int
+    {
+        if (isset($this->cache->wsConnections[$acceptKey])) {
+            return $this->cache->wsConnections[$acceptKey]->id;
+        }
+        Database::sql('SELECT `id` FROM `hilos_analytics_ws_connection` WHERE `accept_key` = ? LIMIT 1', [$acceptKey]);
+        $id = Database::field('id');
+        return $id === null ? null : (int)$id;
+    }
+
+    /**
+     * @param string $key Page session key
+     * @return ?int Page session row id, or null when its opening was not loaded
+     * @throws DatabaseException When the lookup fails
+     */
+    private function findPageSession(string $key): ?int
+    {
+        if (isset($this->cache->pageSessions[$key])) {
+            return $this->cache->pageSessions[$key];
+        }
+        Database::sql('SELECT `id` FROM `hilos_analytics_page_session` WHERE `session_key` = UNHEX(?) LIMIT 1', [$key]);
+        $id = Database::field('id');
+        if ($id !== null) {
+            $this->cache->pageSessions[$key] = (int)$id;
+        }
+        return $id === null ? null : (int)$id;
+    }
+
+    /**
      * Returns the browser session row of a token from the cache or the database.
      *
      * @param string $sessionToken Session token
@@ -875,6 +964,63 @@ final class AnalyticsStore
         $this->cache->browserSessions[$sessionToken] = $session;
 
         return $session;
+    }
+
+    /**
+     * Reads a session under its exact token, without interpreting a cached alias.
+     *
+     * @param string $token Browser session token
+     * @return ?BrowserSessionState Session row, or null when absent
+     * @throws DatabaseException When the lookup fails
+     */
+    private function loadBrowserSessionDirect(string $token): ?BrowserSessionState
+    {
+        Database::sql(
+            'SELECT `id`, `current_user_agent_id`, `current_accept_language_id`
+             FROM `hilos_analytics_browser_session` WHERE `session_token` = ? LIMIT 1',
+            [$token],
+        );
+        $row = Database::row();
+        return $row === null ? null : new BrowserSessionState(
+            (int)$row['id'],
+            isset($row['current_user_agent_id']) ? (int)$row['current_user_agent_id'] : null,
+            isset($row['current_accept_language_id']) ? (int)$row['current_accept_language_id'] : null,
+        );
+    }
+
+    /**
+     * Follows token renames recorded by earlier files, even when their source session did not exist yet.
+     *
+     * @param string $token Browser session token
+     * @return string Final token, or the original when the chain is invalid
+     * @throws DatabaseException When an alias lookup fails
+     */
+    private function resolveBrowserSessionToken(string $token): string
+    {
+        $original = $token;
+        $seen = [];
+        for ($hop = 0; $hop <= self::MAX_TOKEN_ALIAS_HOPS; $hop++) {
+            if (isset($seen[$token])) {
+                Logger::warning('Analytics browser-session alias cycle');
+                return $original;
+            }
+            $seen[$token] = true;
+            Database::sql(
+                'SELECT `new_token` FROM `hilos_analytics_browser_session_alias` WHERE `old_token` = ? LIMIT 1',
+                [$token],
+            );
+            $next = Database::field('new_token');
+            if ($next === null) {
+                return $token;
+            }
+            if ($hop === self::MAX_TOKEN_ALIAS_HOPS) {
+                Logger::warning('Analytics browser-session alias chain exceeded its limit');
+                return $original;
+            }
+            $token = (string)$next;
+        }
+
+        return $original;
     }
 
     /**
@@ -1057,61 +1203,43 @@ final class AnalyticsStore
     }
 
     /**
-     * Keeps the rows of a portion whose master rows still exist, clearing a vanished user action.
+     * Resolves any cause already loaded, with one lookup per key column for the portion.
+     * An absent cause keeps its key and null number; its later insert fills that number.
      *
      * @param list<array<string, int|string|null>> $rows Fact rows of one table
-     * @return list<array<string, int|string|null>> Rows to insert
+     * @return list<array<string, int|string|null>> Rows with known cause numbers
      * @throws DatabaseException When a lookup fails
      */
-    private function keepRowsOfLiveMasterRows(array $rows): array
+    private function linkCauses(array $rows): array
     {
-        $liveUserActions = $this->existingIds('hilos_analytics_user_action', array_column($rows, self::COLUMN_USER_ACTION_ID));
-        $liveApiRequests = $this->existingIds('hilos_analytics_api_request', array_column($rows, self::COLUMN_API_REQUEST_ID));
-
-        $kept = [];
-        foreach ($rows as $row) {
-            $apiRequestId = $row[self::COLUMN_API_REQUEST_ID] ?? null;
-            if ($apiRequestId !== null && !isset($liveApiRequests[$apiRequestId])) {
+        foreach ([
+            [self::COLUMN_USER_ACTION_KEY, self::COLUMN_USER_ACTION_ID, 'hilos_analytics_user_action', 'action_key'],
+            [self::COLUMN_API_REQUEST_KEY, self::COLUMN_API_REQUEST_ID, 'hilos_analytics_api_request', 'request_key'],
+        ] as [$causeKeyColumn, $causeIdColumn, $table, $sourceKeyColumn]) {
+            $wanted = array_values(array_unique(array_filter(
+                array_column($rows, $causeKeyColumn), static fn(?string $key): bool => $key !== null,
+            )));
+            if ($wanted === []) {
                 continue;
             }
-
-            $userActionId = $row[self::COLUMN_USER_ACTION_ID] ?? null;
-            if ($userActionId !== null && !isset($liveUserActions[$userActionId])) {
-                $row[self::COLUMN_USER_ACTION_ID] = null;
+            Database::sql(
+                "SELECT `id`, `{$sourceKeyColumn}` FROM `{$table}` WHERE `{$sourceKeyColumn}` IN ("
+                . implode(', ', array_fill(0, count($wanted), '?')) . ')',
+                $wanted,
+            );
+            $found = [];
+            foreach (Database::rows() as $source) {
+                $found[$source[$sourceKeyColumn]] = (int)$source['id'];
             }
-
-            $kept[] = $row;
+            foreach ($rows as &$row) {
+                $key = $row[$causeKeyColumn] ?? null;
+                if ($key !== null && isset($found[$key])) {
+                    $row[$causeIdColumn] = $found[$key];
+                }
+            }
+            unset($row);
         }
-
-        return $kept;
-    }
-
-    /**
-     * Returns which of the ids are rows of the table, in one select.
-     *
-     * @param string $table Table of the master process
-     * @param list<int|string|null> $ids Ids named by a portion; nulls are ignored
-     * @return array<int, true> Ids that exist, as keys
-     * @throws DatabaseException When the lookup fails
-     */
-    private function existingIds(string $table, array $ids): array
-    {
-        $wanted = array_values(array_unique(array_map('intval', array_filter($ids, static fn(int|string|null $id): bool => $id !== null))));
-        if ($wanted === []) {
-            return [];
-        }
-
-        Database::sql(
-            "SELECT `id` FROM `{$table}` WHERE `id` IN (" . implode(', ', array_fill(0, count($wanted), '?')) . ')',
-            $wanted,
-        );
-
-        $existing = [];
-        foreach (Database::rows() as $row) {
-            $existing[(int)$row['id']] = true;
-        }
-
-        return $existing;
+        return $rows;
     }
 
     /**

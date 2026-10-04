@@ -1676,16 +1676,16 @@ abstract class WorkerManager extends BaseManager implements PageResender
         $name = $data->signal->signalName->getName();
         $signalData = $data->signal->data;
 
-        $apiRequestId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_API_REQUEST_ID);
-        $userActionId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_USER_ACTION_ID);
+        $apiRequestKey = Hilos::$ac?->getSignalMetaKey($data->signal, AnalyticsCollector::META_API_REQUEST_KEY);
+        $userActionKey = Hilos::$ac?->getSignalMetaKey($data->signal, AnalyticsCollector::META_USER_ACTION_KEY);
 
         // Route to appropriate handler in agent based on signal type
         switch ($signalType) {
             case SignalTypeConstants::SYSTEM:
                 if ($signalData instanceof SystemSignalDTO) {
                     Hilos::$ac?->logAgentSystemSignal($agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
-                    if ($apiRequestId !== null) {
-                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    if ($apiRequestKey !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestKey, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $agent->onSignalSystem($signalData, $source, $name);
                 } else {
@@ -1696,8 +1696,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
             case SignalTypeConstants::CRON:
                 if ($signalData instanceof CronSignalDTO) {
                     Hilos::$ac?->logAgentCronSignal($agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
-                    if ($apiRequestId !== null) {
-                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    if ($apiRequestKey !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestKey, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $this->onCronHandled($name, $signalData);
                     $agent->onSignalCron($signalData, $source, $name);
@@ -1753,9 +1753,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
             case SignalTypeConstants::ACTION:
                 if ($signalData instanceof WebSocketActionSignalDTO) {
-                    Hilos::$ac?->logAgentUserAction($agent->getType(), $agent->getIndex(), $userActionId, $name, $signalData->toArray());
-                    if ($apiRequestId !== null) {
-                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    Hilos::$ac?->logAgentUserAction($agent->getType(), $agent->getIndex(), $userActionKey, $name, $signalData->toArray());
+                    if ($apiRequestKey !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestKey, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $this->onActionHandled($name, $signalData);
                     $agent->onSignalAction($signalData, $source, $name);
@@ -1985,8 +1985,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     // Only this branch names the sender in full: the nine others hand out the
                     // kind of source, and the top-level $source they share has to stay that.
                     $sender = SignalSource::describe($data->signal->signalSource);
-                    if ($apiRequestId !== null) {
-                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    if ($apiRequestKey !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestKey, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $this->onAgentSignalHandled($name, $signalData);
                     $parsedAgentSignalData = $signalData;

@@ -1131,8 +1131,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     sessionIdentity: $this->sessionIdentity,
                 );
 
-                $userActionId = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
-                Hilos::$ac?->startUserActionCapture($userActionId);
+                $userActionKey = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
+                Hilos::$ac?->startUserActionCapture($userActionKey);
                 try {
                     Hilos::$sr->queueSignal(
                         new SignalSource(SignalSource::WEBSOCKET),
@@ -1547,10 +1547,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->sessionIdentity = ThrottleIdentity::forSession($sessionToken);
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
-        // The connection row is all the master writes here: resolving the browser session
-        // costs a SELECT and an INSERT, and this code runs on the accept loop
-        // (docs/agents/antipatterns/heavy-work-in-master.md). The worker attaches the
-        // session to this row when it picks the handshake signal up.
+        // The master records the opening without a database call: resolving the browser
+        // session costs a SELECT and an INSERT on the accept loop. The worker records the
+        // session attachment when it picks the handshake signal up.
         Hilos::$ac?->openWsConnection($acceptKey, $clientIp);
 
         $dto = new WebSocketHandshakeSignalDTO(

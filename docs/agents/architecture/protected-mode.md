@@ -278,21 +278,20 @@ silence while this node's freeze row answers `silencesUnstoppedWriters()` —
 database on the leader or a single node, and a follower reaches `active` only on
 its leader's word that every node has stopped (HIL-1128), so on a follower
 `activating` is a phase in which the database may change — and at the swap it
-owes forgetting every id of the replaced database, before its process answers
-the re-hydrate round. A cached id
-that the restored database lacks fails on a foreign key, which is the lucky case;
-one that the restored database gives to another value files facts under the
-wrong name with no error at all. The analytics collector is the worked example,
-in its two halves since HIL-1154. In every process it is still outside every
+owes forgetting any memory tied to the replaced database before its process answers
+the re-hydrate round. A cached id that the restored database lacks fails on a
+foreign key, which is the lucky case; one that the restored database gives to
+another value files facts under the wrong name with no error at all. The analytics
+collector is the worked example. In every process it is still outside every
 roster, so it answers the freeze itself: while the row silences it, it records
 nothing and throws away the batch it had gathered for the journal, and an agent
 that stops meanwhile is remembered and its stop handed over, with its own moment,
 once the row lets go. `forgetReplacedDatabase()` is called first in
 `WorkerManager::handleDbReHydrateMessage()` and
 `DaemonManager::applyReHydrateContained()` — on the failed re-read too — and the
-numbers it forgets are the master's (until HIL-1156 moves that half onto the
-journal as well). Nothing is opened again at resume: a worker names its sessions
-by keys, and their descriptions travel with every batch, so the writer inserts
+collector then discards its batch and captures and forgets the master's remembered
+connections and pages. It keeps no database row numbers in any process. Nothing
+is opened again at resume: a worker names its sessions by keys, and their descriptions travel with every batch, so the writer inserts
 them into the restored database from the first batch that names them. The two
 agents of the journal are in the roster and the freeze stops them like any other:
 the node's journal agent, stopped under the freeze, throws the node's journal

@@ -13,6 +13,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
  * Integration coverage for where the HTTP router accepts a session token from (HIL-580).
@@ -141,6 +142,7 @@ final class HttpRouterSessionTokenSourceIntegrationTest extends AnalyticsSchemaI
      * @param array<string, string> $headers Request headers
      * @param array<string, string> $queryParams Query params of the request url
      * @throws EnvException When the router cannot read the session cookie name
+     * @throws HilosException When the journal cannot be loaded
      */
     private function route(array $headers, array $queryParams = []): void
     {
@@ -153,6 +155,7 @@ final class HttpRouterSessionTokenSourceIntegrationTest extends AnalyticsSchemaI
             HttpConstants::REQUEST_KEY_HEADERS => $headers,
             HttpConstants::REQUEST_KEY_QUERY_PARAMS => $queryParams,
         ]);
+        $this->loadJournal(Hilos::$ac);
     }
 
     /**

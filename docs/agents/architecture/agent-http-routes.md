@@ -77,8 +77,8 @@ router's ordinary 404.
    when the request came from this node, over the peer link
    (`peer_http_reply`) to the node named as its origin otherwise, which writes
    it without routing again. The master writes status, headers and body, adds
-   `Connection` by the keep-alive rule, finishes the request's analytics row
-   with the reply's status and the time since parking, and goes on parsing.
+   `Connection` by the keep-alive rule, records the completed request in the
+   analytics journal with the reply's status and time since parking, and goes on parsing.
 
 The addressed agent may carry the held request onward in one of its own
 frames and answer when it returns. Whoever calls `replyToHttpRequest()` sends
@@ -118,5 +118,3 @@ browser's — whose close is the event above.
 - Request bodies and headers other than the session token — a webhook's POST
   body among them: no address that needs them is built yet. Until then an agent
   declares only `GET` (HIL-204).
-- The analytics row is still written in the master when the request is routed —
-  an existing violation of the master rule, recorded as P-415.

@@ -86,7 +86,7 @@ A node stops its workers in two waves when one of its agents asks for it
 [analytics.md](analytics.md)). The first wave is SIGTERM to every other worker. Once their processes
 have exited and their connections are closed — the master reads a connection a buffer at a time, so
 an exited worker's last batch may still sit in its socket — the pass that saw it dispatches their
-last frames; the next pass stops the held
+last frames and the master's batch closing remembered pages and connections; the next pass stops the held
 agent with an ordinary `agent_stop` over its connection — behind every frame sent to it before —
 and its worker gets SIGTERM once it has reported that agent stopped — a worker reads its connection
 a buffer at a time, and a SIGTERM sent on a count of passes cut off the batches still unread behind

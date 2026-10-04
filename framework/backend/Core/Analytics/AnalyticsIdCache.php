@@ -44,7 +44,7 @@ final class AnalyticsIdCache
     /** @var array<string, WsConnectionState> Accept key to the WebSocket connection row */
     public array $wsConnections = [];
 
-    /** @var array<string, int> Accept key to the open page session id of the connection */
+    /** @var array<string, int> Page session key to its row id */
     public array $pageSessions = [];
 
     /** @var array<string, int> Worker session key to its row id */

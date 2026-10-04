@@ -19,13 +19,11 @@ use Hilos\HilosException;
 /**
  * Integration coverage for a WebSocket connection finding its browser session (HIL-580).
  *
- * The two halves of a handshake are written by two different processes: the master opens
- * the connection row on its accept loop, where reading a session is forbidden, and a worker
- * attaches the session afterwards from the handshake signal. Nothing but the accept key
- * crosses that boundary, so the join is only as good as the key - which is why it is played
- * here against the real schema, with a separate collector standing in for each process so
- * neither can quietly answer from the other's cache. The worker's half goes the way it goes
- * in production since HIL-1154: a record in the journal, loaded into the tables by the writer.
+ * The two halves of a handshake come from different processes: the master records the
+ * connection opening without reading a browser session on its accept loop, and the worker
+ * records the attachment from the handshake signal. Both go through the node journal;
+ * the writer joins them by accept key in either arrival order. Separate collectors stand
+ * in for the processes, so neither can answer from the other's memory.
  *
  * What used to happen instead is worth naming: the master fed analytics a header no browser
  * can send, so every connection row was written ownerless and stayed that way.
@@ -53,11 +51,11 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     public function testTheWorkerGivesTheConnectionTheSessionTheMasterCouldNotResolve(): void
     {
         $master = new AnalyticsCollector();
-        $opened = $master->openWsConnection(self::ACCEPT_KEY, '203.0.113.7');
-        $this->assertNotNull($opened);
+        $master->openWsConnection(self::ACCEPT_KEY, '203.0.113.7');
+        $this->loadJournal($master);
 
-        // The master writes what it can afford to write, and no more.
-        $this->assertNull($this->browserSessionIdOf($opened));
+        // The master's opening record has no browser-session identity yet.
+        $this->assertNull($this->browserSessionIdOf(self::ACCEPT_KEY));
 
         $worker = new AnalyticsCollector();
         $worker->attachWsConnectionToBrowserSession(
@@ -68,7 +66,7 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
         );
         $this->loadJournal($worker);
 
-        $attached = $this->browserSessionIdOf($opened);
+        $attached = $this->browserSessionIdOf(self::ACCEPT_KEY);
         $this->assertNotNull($attached);
         $this->assertSame(self::SESSION_TOKEN, $this->tokenOf($attached));
         $this->assertSame(self::USER_AGENT, $this->userAgentOf($attached));
@@ -80,10 +78,9 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     public function testTheAttachTouchesOnlyTheConnectionItWasHandshakenFor(): void
     {
         $master = new AnalyticsCollector();
-        $mine = $master->openWsConnection(self::ACCEPT_KEY, null);
-        $other = $master->openWsConnection('accept-key-of-a-stranger', null);
-        $this->assertNotNull($mine);
-        $this->assertNotNull($other);
+        $master->openWsConnection(self::ACCEPT_KEY, null);
+        $master->openWsConnection('accept-key-of-a-stranger', null);
+        $this->loadJournal($master);
 
         $worker = new AnalyticsCollector();
         $worker->attachWsConnectionToBrowserSession(
@@ -94,8 +91,8 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
         );
         $this->loadJournal($worker);
 
-        $this->assertNotNull($this->browserSessionIdOf($mine));
-        $this->assertNull($this->browserSessionIdOf($other));
+        $this->assertNotNull($this->browserSessionIdOf(self::ACCEPT_KEY));
+        $this->assertNull($this->browserSessionIdOf('accept-key-of-a-stranger'));
     }
 
     /**
@@ -103,14 +100,15 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
      */
     public function testAHandshakeWithoutATokenLeavesTheConnectionUnowned(): void
     {
-        $opened = new AnalyticsCollector()->openWsConnection(self::ACCEPT_KEY, null);
-        $this->assertNotNull($opened);
+        $master = new AnalyticsCollector();
+        $master->openWsConnection(self::ACCEPT_KEY, null);
+        $this->loadJournal($master);
 
         $worker = new AnalyticsCollector();
         $worker->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, '', null, null);
         $this->loadJournal($worker);
 
-        $this->assertNull($this->browserSessionIdOf($opened));
+        $this->assertNull($this->browserSessionIdOf(self::ACCEPT_KEY));
         $this->assertSame([], $this->browserSessionIds());
     }
 
@@ -129,10 +127,8 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
         $firstTab = new AnalyticsCollector();
         $secondTab = new AnalyticsCollector();
 
-        $first = $firstTab->openWsConnection(self::ACCEPT_KEY, null);
-        $second = $secondTab->openWsConnection('accept-key-second-tab', null);
-        $this->assertNotNull($first);
-        $this->assertNotNull($second);
+        $firstTab->openWsConnection(self::ACCEPT_KEY, null);
+        $secondTab->openWsConnection('accept-key-second-tab', null);
 
         $firstTab->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::SESSION_TOKEN, self::USER_AGENT, null);
         $secondTab->attachWsConnectionToBrowserSession(
@@ -146,8 +142,8 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
 
         $sessions = $this->browserSessionIds();
         $this->assertCount(1, $sessions);
-        $this->assertSame($sessions[0], $this->browserSessionIdOf($first));
-        $this->assertSame($sessions[0], $this->browserSessionIdOf($second));
+        $this->assertSame($sessions[0], $this->browserSessionIdOf(self::ACCEPT_KEY));
+        $this->assertSame($sessions[0], $this->browserSessionIdOf('accept-key-second-tab'));
     }
 
     /**
@@ -190,17 +186,15 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     public function testTwoVisitorsKeepTheirOwnSessions(): void
     {
         $collector = new AnalyticsCollector();
-        $mine = $collector->openWsConnection(self::ACCEPT_KEY, null);
-        $theirs = $collector->openWsConnection('accept-key-of-a-stranger', null);
-        $this->assertNotNull($mine);
-        $this->assertNotNull($theirs);
+        $collector->openWsConnection(self::ACCEPT_KEY, null);
+        $collector->openWsConnection('accept-key-of-a-stranger', null);
 
         $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null, null);
         $collector->attachWsConnectionToBrowserSession('accept-key-of-a-stranger', self::OTHER_TOKEN, null, null);
         $this->loadJournal($collector);
 
         $this->assertCount(2, $this->browserSessionIds());
-        $this->assertNotSame($this->browserSessionIdOf($mine), $this->browserSessionIdOf($theirs));
+        $this->assertNotSame($this->browserSessionIdOf(self::ACCEPT_KEY), $this->browserSessionIdOf('accept-key-of-a-stranger'));
     }
 
     /**
@@ -245,15 +239,15 @@ final class AnalyticsWsConnectionSessionIntegrationTest extends AnalyticsSchemaI
     }
 
     /**
-     * @param int $wsConnectionId WS connection id
+     * @param string $acceptKey WebSocket accept key
      * @return ?int Browser session the connection belongs to, or null when it has none
      * @throws DatabaseException When the query fails
      */
-    private function browserSessionIdOf(int $wsConnectionId): ?int
+    private function browserSessionIdOf(string $acceptKey): ?int
     {
         Database::sql(
-            'SELECT `browser_session_id` FROM `hilos_analytics_ws_connection` WHERE `id` = ?',
-            [$wsConnectionId],
+            'SELECT `browser_session_id` FROM `hilos_analytics_ws_connection` WHERE `accept_key` = ?',
+            [$acceptKey],
         );
         $row = Database::row();
         $this->assertNotNull($row);

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalLoader;
+use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
 use Hilos\HilosException;
@@ -84,6 +86,80 @@ final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSche
         $this->loadJournal($collector);
 
         $this->assertSame([], $this->browserSessionIds());
+    }
+
+    /**
+     * @throws HilosException When a journal file cannot be loaded
+     */
+    public function testAnOldTokenEventLoadedAfterTheRenameJoinsTheNewSession(): void
+    {
+        $collector = new AnalyticsCollector();
+        $loader = new AnalyticsJournalLoader(new AnalyticsStore());
+        $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, 'old UA', null);
+        $this->loadJournal($collector, $loader);
+        $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $this->loadJournal($collector, $loader);
+        $collector->attachWsConnectionToBrowserSession('late-connection', self::OLD_TOKEN, 'late UA', null);
+        $this->loadJournal($collector, $loader);
+        $collector->attachWsConnectionToBrowserSession('new-connection', self::NEW_TOKEN, 'new UA', null);
+        $this->loadJournal($collector, $loader);
+
+        $this->assertCount(1, $this->browserSessionIds());
+        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($this->browserSessionIds()[0]));
+        Database::sql('SELECT u.`value` FROM `hilos_analytics_browser_session_user_agent_change` c
+            JOIN `hilos_analytics_user_agent` u ON u.`id` = c.`old_user_agent_id`
+            ORDER BY c.`id` DESC LIMIT 1');
+        $this->assertSame('late UA', Database::field('value'));
+    }
+
+    /**
+     * @throws HilosException When a journal file cannot be loaded
+     */
+    public function testAVisitUnderBothTokensMergesWhenTheRenameArrivesLast(): void
+    {
+        $collector = new AnalyticsCollector();
+        $loader = new AnalyticsJournalLoader(new AnalyticsStore());
+        $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, 'old UA', null);
+        $request = $collector->startApiRequest(self::OLD_TOKEN, 'GET', '/before-login', null, null, null);
+        $collector->finishApiRequest($request, 200, 1);
+        $this->loadJournal($collector, $loader);
+        $collector->attachWsConnectionToBrowserSession('new-connection', self::NEW_TOKEN, 'new UA', null);
+        $collector->identifyBrowserSessionUser(self::NEW_TOKEN, self::USER_ID);
+        $this->loadJournal($collector, $loader);
+        $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $this->loadJournal($collector, $loader);
+        $collector->attachWsConnectionToBrowserSession('late-old-connection', self::OLD_TOKEN, null, null);
+        $this->loadJournal($collector, $loader);
+
+        $this->assertCount(1, $this->browserSessionIds());
+        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($this->browserSessionIds()[0]));
+        $this->assertSame((string)self::USER_ID, $this->identityValueOf($this->browserSessionIds()[0]));
+        Database::sql('SELECT COUNT(*) AS `total` FROM `hilos_analytics_ws_connection` WHERE `browser_session_id` = ?',
+            [$this->browserSessionIds()[0]]);
+        $this->assertSame(3, (int)Database::field('total'));
+        Database::sql('SELECT COUNT(*) AS `total` FROM `hilos_analytics_api_request` WHERE `browser_session_id` = ?',
+            [$this->browserSessionIds()[0]]);
+        $this->assertSame(1, (int)Database::field('total'));
+        Database::sql('SELECT u.`value` FROM `hilos_analytics_browser_session` b
+            JOIN `hilos_analytics_user_agent` u ON u.`id` = b.`current_user_agent_id`
+            WHERE b.`id` = ?', [$this->browserSessionIds()[0]]);
+        $this->assertSame('new UA', Database::field('value'));
+    }
+
+    /**
+     * @throws HilosException When a journal file cannot be loaded
+     */
+    public function testARenameLoadedBeforeEitherTokenDoesNotCreateAnEmptySession(): void
+    {
+        $collector = new AnalyticsCollector();
+        $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $this->loadJournal($collector);
+        $this->assertSame([], $this->browserSessionIds());
+
+        $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, null, null);
+        $this->loadJournal($collector);
+        $this->assertCount(1, $this->browserSessionIds());
+        $this->assertSame(self::NEW_TOKEN, $this->tokenOf($this->browserSessionIds()[0]));
     }
 
     /**

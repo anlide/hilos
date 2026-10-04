@@ -21,9 +21,6 @@ enum AnalyticsJournalSkip: string
     /** A record names a session no description wrote. */
     case UNKNOWN_SESSION = 'unknown_session';
 
-    /** A rotated token is already taken by another browser session. */
-    case RENAME_CONFLICT = 'rename_conflict';
-
-    /** A fact belongs to an API request the master wrote and the database no longer holds. */
-    case MISSING_API_REQUEST = 'missing_api_request';
+    /** A page, action or address change names a connection with no opening or attachment. */
+    case UNKNOWN_CONNECTION = 'unknown_connection';
 }

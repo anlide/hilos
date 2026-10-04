@@ -75,13 +75,14 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
      */
     public function testSignInIsRecordedWithThePasswordMasked(): void
     {
-        $userActionId = $this->collector->logUserAction($this->acceptKey, HilosSignalConstants::HILOS_LOGIN, [
+        $userActionKey = $this->collector->logUserAction($this->acceptKey, HilosSignalConstants::HILOS_LOGIN, [
             'email' => 'hil-1187@example.test',
             'password' => 'hil-1187-pw',
         ]);
-        $this->assertNotNull($userActionId);
+        $this->assertNotNull($userActionKey);
+        $this->loadJournal($this->journalLines());
 
-        $json = $this->userActionPayload($userActionId);
+        $json = $this->userActionPayload($userActionKey);
 
         $this->assertNotNull($json);
         $this->assertStringNotContainsString('hil-1187-pw', $json);
@@ -140,17 +141,19 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
 
     /**
      * @throws DatabaseException When the recorded row cannot be read
+     * @throws HilosException When the journal cannot be loaded
      */
     public function testActionNoPageOrAgentRoutesKeepsItsNameAndLosesItsPayload(): void
     {
-        $userActionId = $this->collector->logUserAction($this->acceptKey, 'hil_1187_unknown_action', ['x' => 'y']);
-        $this->assertNotNull($userActionId);
+        $userActionKey = $this->collector->logUserAction($this->acceptKey, 'hil_1187_unknown_action', ['x' => 'y']);
+        $this->assertNotNull($userActionKey);
+        $this->loadJournal($this->journalLines());
 
         Database::sql(
             'SELECT n.`name`, ua.`payload_json_id` FROM `hilos_analytics_user_action` ua
              JOIN `hilos_analytics_action_name` n ON n.`id` = ua.`action_name_id`
-             WHERE ua.`id` = ?',
-            [$userActionId],
+             WHERE ua.`action_key` = UNHEX(?)',
+            [$userActionKey],
         );
         $row = Database::row();
 
@@ -264,17 +267,17 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     }
 
     /**
-     * @param int $userActionId User action row id
+     * @param string $userActionKey User action key
      * @return ?string JSON the user action points at, or null when it points at none
      * @throws DatabaseException When the query fails
      */
-    private function userActionPayload(int $userActionId): ?string
+    private function userActionPayload(string $userActionKey): ?string
     {
         Database::sql(
             'SELECT p.`payload_json` FROM `hilos_analytics_user_action` ua
              JOIN `hilos_analytics_payload_json` p ON p.`id` = ua.`payload_json_id`
-             WHERE ua.`id` = ?',
-            [$userActionId],
+             WHERE ua.`action_key` = UNHEX(?)',
+            [$userActionKey],
         );
         $json = Database::field('payload_json');
 

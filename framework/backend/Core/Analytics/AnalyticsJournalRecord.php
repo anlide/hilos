@@ -23,7 +23,7 @@ namespace Hilos\Core\Analytics;
  */
 final class AnalyticsJournalRecord
 {
-    public const int VERSION = 1;
+    public const int VERSION = 2;
 
     public const string KEY_TYPE = 't';
     public const string KEY_VERSION = 'v';
@@ -38,8 +38,6 @@ final class AnalyticsJournalRecord
     public const string KEY_AGENT_TYPE = 'agentType';
     public const string KEY_AGENT_INDEX = 'agentIndex';
     public const string KEY_AGENT_KEY = 'agentKey';
-    public const string KEY_USER_ACTION_ID = 'userActionId';
-    public const string KEY_API_REQUEST_ID = 'apiRequestId';
     public const string KEY_SIGNAL = 'signal';
     public const string KEY_CRON = 'cron';
     public const string KEY_PAYLOAD = 'payload';
@@ -51,6 +49,17 @@ final class AnalyticsJournalRecord
     public const string KEY_NEW_TOKEN = 'newToken';
     public const string KEY_IDENTITY_TYPE = 'identityType';
     public const string KEY_IDENTITY_VALUE = 'identityValue';
+    public const string KEY_USER_ACTION_KEY = 'userActionKey';
+    public const string KEY_API_REQUEST_KEY = 'apiRequestKey';
+    public const string KEY_PAGE_KEY = 'pageKey';
+    public const string KEY_IP = 'ip';
+    public const string KEY_PAGE = 'page';
+    public const string KEY_PARAMS = 'params';
+    public const string KEY_ACTION = 'action';
+    public const string KEY_METHOD = 'method';
+    public const string KEY_PATH = 'path';
+    public const string KEY_STATUS = 'status';
+    public const string KEY_DURATION_MS = 'durationMs';
 
     public const string TYPE_JOURNAL = 'journal';
     public const string TYPE_WORKER_SESSION = 'worker_session';
@@ -65,6 +74,14 @@ final class AnalyticsJournalRecord
     public const string TYPE_WS_CONNECTION_ATTACH = 'ws_connection_attach';
     public const string TYPE_BROWSER_SESSION_RENAME = 'browser_session_rename';
     public const string TYPE_BROWSER_SESSION_IDENTITY = 'browser_session_identity';
+    public const string TYPE_WS_CONNECTION_OPEN = 'ws_connection_open';
+    public const string TYPE_WS_CONNECTION_CLOSE = 'ws_connection_close';
+    public const string TYPE_WS_CONNECTION_IP_CHANGE = 'ws_connection_ip_change';
+    public const string TYPE_PAGE_SESSION_OPEN = 'page_session_open';
+    public const string TYPE_PAGE_SESSION_UPDATE = 'page_session_update';
+    public const string TYPE_PAGE_SESSION_CLOSE = 'page_session_close';
+    public const string TYPE_USER_ACTION = 'user_action';
+    public const string TYPE_API_REQUEST = 'api_request';
 
     /** @var string A session key as it travels: 16 random bytes in lowercase hex */
     public const string SESSION_KEY_PATTERN = '/^[0-9a-f]{32}$/';
@@ -172,18 +189,18 @@ final class AnalyticsJournalRecord
      * An agent's reaction to a user action.
      *
      * @param string $agentKey Session key of the agent
-     * @param ?int $userActionId Row of the user action the master wrote, or null when uncorrelated
+     * @param ?string $userActionKey Key of the user action, or null when uncorrelated
      * @param string $signal Signal name handled by the agent
      * @param ?array<string, mixed> $payload Masked payload, or null
      * @param int $ts Moment of the event, in milliseconds
      * @return array<string, mixed> Record
      */
-    public static function agentUserAction(string $agentKey, ?int $userActionId, string $signal, ?array $payload, int $ts): array
+    public static function agentUserAction(string $agentKey, ?string $userActionKey, string $signal, ?array $payload, int $ts): array
     {
         return [
             self::KEY_TYPE => self::TYPE_AGENT_USER_ACTION,
             self::KEY_AGENT_KEY => $agentKey,
-            self::KEY_USER_ACTION_ID => $userActionId,
+            self::KEY_USER_ACTION_KEY => $userActionKey,
             self::KEY_SIGNAL => $signal,
             self::KEY_PAYLOAD => $payload,
             self::KEY_TS => $ts,
@@ -253,18 +270,18 @@ final class AnalyticsJournalRecord
     /**
      * A signal an agent received inside an HTTP request.
      *
-     * @param int $apiRequestId Row of the API request the master wrote
+     * @param string $apiRequestKey Key of the originating API request
      * @param string $agentKey Session key of the agent
      * @param string $signal Signal name dispatched to the agent
      * @param ?array<string, mixed> $payload Masked payload, or null
      * @param int $ts Moment of the event, in milliseconds
      * @return array<string, mixed> Record
      */
-    public static function apiAgentAction(int $apiRequestId, string $agentKey, string $signal, ?array $payload, int $ts): array
+    public static function apiAgentAction(string $apiRequestKey, string $agentKey, string $signal, ?array $payload, int $ts): array
     {
         return [
             self::KEY_TYPE => self::TYPE_API_AGENT_ACTION,
-            self::KEY_API_REQUEST_ID => $apiRequestId,
+            self::KEY_API_REQUEST_KEY => $apiRequestKey,
             self::KEY_AGENT_KEY => $agentKey,
             self::KEY_SIGNAL => $signal,
             self::KEY_PAYLOAD => $payload,
@@ -297,6 +314,105 @@ final class AnalyticsJournalRecord
             self::KEY_ACCEPT_LANGUAGE => $acceptLanguage,
             self::KEY_TS => $ts,
         ];
+    }
+
+    /**
+     * @param string $acceptKey WebSocket accept key
+     * @param ?string $ip Client address, or null
+     * @param int $ts Opening moment in milliseconds
+     * @return array<string, int|string|null> Record
+     */
+    public static function wsConnectionOpen(string $acceptKey, ?string $ip, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_WS_CONNECTION_OPEN, self::KEY_ACCEPT_KEY => $acceptKey, self::KEY_IP => $ip, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param string $acceptKey WebSocket accept key
+     * @param int $ts Closing moment in milliseconds
+     * @return array<string, int|string> Record
+     */
+    public static function wsConnectionClose(string $acceptKey, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_WS_CONNECTION_CLOSE, self::KEY_ACCEPT_KEY => $acceptKey, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param string $acceptKey WebSocket accept key
+     * @param string $ip New client address
+     * @param int $ts Change moment in milliseconds
+     * @return array<string, int|string> Record
+     */
+    public static function wsConnectionIpChange(string $acceptKey, string $ip, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_WS_CONNECTION_IP_CHANGE, self::KEY_ACCEPT_KEY => $acceptKey, self::KEY_IP => $ip, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param string $key Page session key
+     * @param string $acceptKey WebSocket accept key
+     * @param string $page Page name
+     * @param ?array<string, mixed> $params Page route params
+     * @param int $ts Opening moment in milliseconds
+     * @return array<string, mixed> Record
+     */
+    public static function pageSessionOpen(string $key, string $acceptKey, string $page, ?array $params, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_PAGE_SESSION_OPEN, self::KEY_KEY => $key, self::KEY_ACCEPT_KEY => $acceptKey,
+            self::KEY_PAGE => $page, self::KEY_PARAMS => $params, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param string $key Page session key
+     * @param ?array<string, mixed> $params Page route params
+     * @param int $ts Update moment in milliseconds
+     * @return array<string, mixed> Record
+     */
+    public static function pageSessionUpdate(string $key, ?array $params, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_PAGE_SESSION_UPDATE, self::KEY_KEY => $key, self::KEY_PARAMS => $params, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param string $key Page session key
+     * @param int $ts Closing moment in milliseconds
+     * @return array<string, int|string> Record
+     */
+    public static function pageSessionClose(string $key, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_PAGE_SESSION_CLOSE, self::KEY_KEY => $key, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param string $key User action key
+     * @param string $acceptKey WebSocket accept key
+     * @param ?string $pageKey Current page key, or null
+     * @param string $action Action name
+     * @param ?array<string, mixed> $payload Masked action payload
+     * @param int $ts Action moment in milliseconds
+     * @return array<string, mixed> Record
+     */
+    public static function userAction(string $key, string $acceptKey, ?string $pageKey, string $action, ?array $payload, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_USER_ACTION, self::KEY_KEY => $key, self::KEY_ACCEPT_KEY => $acceptKey,
+            self::KEY_PAGE_KEY => $pageKey, self::KEY_ACTION => $action, self::KEY_PAYLOAD => $payload, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param AnalyticsApiRequest $request Request description
+     * @param ?int $status HTTP status, or null
+     * @param ?int $durationMs Elapsed milliseconds, or null
+     * @param int $ts Completion moment in milliseconds
+     * @return array<string, mixed> Record
+     */
+    public static function apiRequest(AnalyticsApiRequest $request, ?int $status, ?int $durationMs, int $ts): array
+    {
+        return [self::KEY_TYPE => self::TYPE_API_REQUEST, self::KEY_KEY => $request->key,
+            self::KEY_SESSION_TOKEN => $request->sessionToken, self::KEY_METHOD => $request->method,
+            self::KEY_PATH => $request->path, self::KEY_PARAMS => $request->params,
+            self::KEY_USER_AGENT => $request->userAgent, self::KEY_ACCEPT_LANGUAGE => $request->acceptLanguage,
+            self::KEY_STARTED_TS => $request->startedTs, self::KEY_STATUS => $status,
+            self::KEY_DURATION_MS => $durationMs, self::KEY_TS => $ts];
     }
 
     /**

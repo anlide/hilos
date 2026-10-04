@@ -11,29 +11,17 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Integration coverage for the analytics collector across a protected-mode restore (HIL-910).
  *
- * The collector is in no agent roster, so the freeze cannot stop it: it has to fall silent
- * on its own while the operation may replace the database, and forget every id of the old
- * database once it has been replaced. The restore is played here the way it treats these
- * tables - the schema is dropped and built again under a collector that is still holding
- * ids - and the freeze is the node's own protected-mode row, mounted in the phase a case
- * needs.
- *
- * The failure this leaf was opened for is the lucky one: a cached id the restored database
- * does not have, rejected by a foreign key, which switched collection off until a restart.
- * The unlucky one is quiet - a restored row takes a number the cache holds for another
- * value, and facts land under the wrong name.
- *
- * Since HIL-1154 the two halves answer it differently. The master still writes and caches
- * numbers, so it forgets them. A worker writes nothing: it records into a batch for the
- * journal, throws the batch away under the freeze, and names its sessions by keys whose
- * descriptions travel with every batch - the writer, restarted after the freeze, inserts them
- * into the restored database.
+ * The collector is in no agent roster, so it answers the freeze itself: it discards its
+ * gathered journal batch while the database may be replaced. The master still remembers
+ * its live connections during the freeze, then forgets them at re-hydrate because browsers
+ * reconnect. A worker keeps its live session keys, whose descriptions travel with every
+ * later batch. Each case replaces the schema under a running collector and loads its new
+ * records through a fresh writer, so no stale row number can label a fact after restore.
  */
 final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrationTestCase
 {
@@ -58,45 +46,27 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     /** Pause between an agent's stop under the freeze and the resume, so the two moments read apart */
     private const int HELD_SPAN_MICROSECONDS = 50_000;
 
-    /** Temporary main log file the assertions read the written lines back from */
-    private string $logFile = '';
-
-    /**
-     * @throws DatabaseException When the stub schema cannot be built
-     */
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-analytics-swap');
-        Logger::setLogFile($this->logFile);
-    }
-
     /**
      * @throws DatabaseException When the stub schema cannot be dropped
      */
     protected function tearDown(): void
     {
         Hilos::$rt = null;
-        Logger::resetLogFile();
-        if (is_file($this->logFile)) {
-            unlink($this->logFile);
-        }
 
         parent::tearDown();
     }
 
     /**
-     * The failure of 05.09: the name was cached against the old database, and the restored
-     * one has no row under that number.
+     * New master actions after a restore are named by fresh keys and loaded by the writer.
      *
      * @throws DatabaseException When the schema cannot be rebuilt or the rows read back
      */
-    public function testANameCachedBeforeTheSwapIsWrittenAgainAfterIt(): void
+    public function testTheMasterRecordsFreshActionsAfterTheSwap(): void
     {
         $collector = new AnalyticsCollector();
         $collector->openWsConnection(self::ACCEPT_KEY, null);
         $this->assertNotNull($collector->logUserAction(self::ACCEPT_KEY, self::ACTION_SEND, null));
+        $this->loadJournal($collector);
 
         $this->rebuildAnalyticsSchema();
         $collector->forgetReplacedDatabase();
@@ -107,30 +77,33 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
 
         $this->assertNotNull($first);
         $this->assertNotNull($second);
+        $this->loadJournal($collector);
         $this->assertSame(self::ACTION_SEND, $this->actionNameOf($first));
         $this->assertSame(self::ACTION_SEND, $this->actionNameOf($second));
     }
 
     /**
-     * The quiet failure: another process of the node writes into the restored database first,
-     * and its names take the numbers this collector cached for its own.
+     * Another process may give the restored dictionary rows different numbers; each action's
+     * own journal key still leads to its right name.
      *
      * @throws DatabaseException When the schema cannot be rebuilt or the rows read back
      */
-    public function testANumberTakenByAnotherNameAfterTheSwapDoesNotRelabelTheAction(): void
+    public function testRowsFromAnotherProcessDoNotRelabelAnActionAfterTheSwap(): void
     {
         $collector = new AnalyticsCollector();
         $collector->openWsConnection(self::ACCEPT_KEY, null);
         $collector->logUserAction(self::ACCEPT_KEY, self::ACTION_SEND, null);
         $collector->logUserAction(self::ACCEPT_KEY, self::ACTION_EDIT, null);
+        $this->loadJournal($collector);
 
         $this->rebuildAnalyticsSchema();
 
-        // Written in the opposite order, so each name now holds the number the collector cached for the other.
+        // The other process records the names in the opposite order after the schema swap.
         $anotherProcess = new AnalyticsCollector();
         $anotherProcess->openWsConnection(self::ACCEPT_KEY_OF_ANOTHER_PROCESS, null);
         $anotherProcess->logUserAction(self::ACCEPT_KEY_OF_ANOTHER_PROCESS, self::ACTION_EDIT, null);
         $anotherProcess->logUserAction(self::ACCEPT_KEY_OF_ANOTHER_PROCESS, self::ACTION_SEND, null);
+        $this->loadJournal($anotherProcess);
 
         $collector->forgetReplacedDatabase();
 
@@ -138,6 +111,7 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
         $action = $collector->logUserAction(self::ACCEPT_KEY_AFTER_SWAP, self::ACTION_SEND, null);
 
         $this->assertNotNull($action);
+        $this->loadJournal($collector);
         $this->assertSame(self::ACTION_SEND, $this->actionNameOf($action));
     }
 
@@ -200,7 +174,7 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
         $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
 
         $this->freeze($phase);
-        $this->assertNull($collector->openWsConnection(self::ACCEPT_KEY, null));
+        $collector->openWsConnection(self::ACCEPT_KEY, null);
         $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
         $collector->flush();
 
@@ -260,27 +234,25 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     }
 
     /**
-     * The swap is a fresh start, as a restart would be: a master's half an error switched off
-     * comes back on, and says so.
+     * A database swap drops the master's remembered connections and its old batch.
      *
-     * @throws DatabaseException When the table cannot be dropped, the schema rebuilt or the rows read back
+     * @throws HilosException When the schema cannot be rebuilt or the journal loaded
      */
-    public function testACollectorSwitchedOffByAnErrorIsBackOnAfterTheSwap(): void
+    public function testTheMasterForgetsConnectionsFromBeforeTheSwap(): void
     {
         $collector = new AnalyticsCollector();
-        $this->assertNotNull($collector->openWsConnection(self::ACCEPT_KEY, '203.0.113.7'));
-        Database::sql('DROP TABLE `hilos_analytics_ws_connection_ipv4_change`');
-        $collector->trackWsConnectionIpChange(self::ACCEPT_KEY, '203.0.113.8');
-        $this->assertNull($collector->openWsConnection(self::ACCEPT_KEY_OF_ANOTHER_PROCESS, null));
+        $collector->openWsConnection(self::ACCEPT_KEY, '203.0.113.7');
+        $this->loadJournal($collector);
 
         $this->rebuildAnalyticsSchema();
         $collector->forgetReplacedDatabase();
+        $this->assertNull($collector->logUserAction(self::ACCEPT_KEY, self::ACTION_SEND, null));
 
-        $this->assertNotNull($collector->openWsConnection(self::ACCEPT_KEY_AFTER_SWAP, null));
-        $this->assertStringContainsString(
-            'Analytics collector back on: the database under it was replaced',
-            (string)file_get_contents($this->logFile),
-        );
+        $collector->openWsConnection(self::ACCEPT_KEY_AFTER_SWAP, null);
+        $action = $collector->logUserAction(self::ACCEPT_KEY_AFTER_SWAP, self::ACTION_SEND, null);
+        $this->assertNotNull($action);
+        $this->loadJournal($collector);
+        $this->assertSame(self::ACTION_SEND, $this->actionNameOf($action));
     }
 
     /**
@@ -304,17 +276,17 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     }
 
     /**
-     * @param int $userActionId User action id
+     * @param string $userActionKey User action key
      * @return string Name the action is filed under
      * @throws DatabaseException When the query fails
      */
-    private function actionNameOf(int $userActionId): string
+    private function actionNameOf(string $userActionKey): string
     {
         $rows = $this->rowsOf(
             'SELECT `n`.`name` FROM `hilos_analytics_user_action` `a`
              JOIN `hilos_analytics_action_name` `n` ON `n`.`id` = `a`.`action_name_id`
-             WHERE `a`.`id` = ?',
-            [$userActionId],
+             WHERE `a`.`action_key` = UNHEX(?)',
+            [$userActionKey],
         );
         $this->assertCount(1, $rows);
 

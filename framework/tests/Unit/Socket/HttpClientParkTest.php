@@ -6,9 +6,14 @@ namespace Hilos\Tests\Unit\Socket;
 
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Daemon\AbandonedCommandSink;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Environment\Exception\EnvException;
@@ -51,6 +56,8 @@ final class HttpClientParkTest extends TestCase
     /** @var ?SignalRouter Router in place before the test, restored after it */
     private ?SignalRouter $previousRouter = null;
 
+    private ?AnalyticsCollector $previousCollector = null;
+
     /**
      * Restores the env facade and puts a fresh signal router in place to catch what the client queues.
      *
@@ -64,7 +71,9 @@ final class HttpClientParkTest extends TestCase
             Hilos::initEnv(dirname(__DIR__, 2));
         }
         $this->previousRouter = Hilos::$sr;
+        $this->previousCollector = Hilos::$ac;
         Hilos::$sr = new SignalRouter();
+        Hilos::$ac = new AnalyticsCollector();
     }
 
     protected function tearDown(): void
@@ -74,6 +83,7 @@ final class HttpClientParkTest extends TestCase
         }
         $this->sockets = [];
         Hilos::$sr = $this->previousRouter;
+        Hilos::$ac = $this->previousCollector;
 
         parent::tearDown();
     }
@@ -101,6 +111,7 @@ final class HttpClientParkTest extends TestCase
         $this->assertSame(['id' => '42'], $request->query);
         $this->assertSame(str_repeat('a', 32), $request->sessionToken);
         $this->assertNull($request->originNodeId, 'off a cluster the reply is written where it parked');
+        $this->assertSame([], Hilos::$ac?->captureSignalMeta(), 'parking does not leave an active HTTP cause');
     }
 
     /**
@@ -128,6 +139,10 @@ final class HttpClientParkTest extends TestCase
         $this->assertStringContainsString("Content-Length: 6\r\n", $received);
         $this->assertStringEndsWith("\r\n\r\n\x89PNG\r\n", $received);
         $this->assertFalse($client->shouldClose());
+        $records = $this->analyticsRecords();
+        $this->assertCount(1, $records);
+        $this->assertSame(AnalyticsJournalRecord::TYPE_API_REQUEST, $records[0]['t']);
+        $this->assertSame(HttpConstants::HTTP_OK, $records[0]['status']);
     }
 
     /**
@@ -175,6 +190,10 @@ final class HttpClientParkTest extends TestCase
         $this->assertSame([$request->correlationId], $sink->abandoned);
         $server->deliver($request->correlationId, HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND));
         $this->assertSame('', $this->receive($peer), 'a reply to a connection that left is written nowhere');
+        $records = $this->analyticsRecords();
+        $this->assertCount(1, $records);
+        $this->assertSame(AnalyticsJournalRecord::TYPE_API_REQUEST, $records[0]['t']);
+        $this->assertNull($records[0]['status']);
     }
 
     /**
@@ -217,6 +236,31 @@ final class HttpClientParkTest extends TestCase
     }
 
     /**
+     * @throws EnvException When the client or router cannot read their env values
+     * @throws SocketException When the socket refuses a read or write
+     * @throws HilosException When the request cannot be answered
+     */
+    public function testAnOrdinaryHandlerCapturesItsRequestKeyOnlyWhileItRuns(): void
+    {
+        $inside = [];
+        $router = new HttpRouter();
+        $router->addRoute(HttpConstants::METHOD_GET, self::HANDLER_PATH,
+            static function () use (&$inside): array {
+                $inside = Hilos::$ac?->captureSignalMeta() ?? [];
+                return ['ok' => true];
+            });
+        [$client, $peer] = $this->connect(new HttpServer('127.0.0.1', 0), $router);
+        $this->send($peer, $this->get(self::HANDLER_PATH));
+        $client->read();
+
+        $this->assertSame([HttpConstants::HTTP_OK], $this->statuses($this->receive($peer)));
+        $this->assertArrayHasKey(AnalyticsCollector::META_API_REQUEST_KEY, $inside);
+        $this->assertMatchesRegularExpression(AnalyticsJournalRecord::SESSION_KEY_PATTERN,
+            $inside[AnalyticsCollector::META_API_REQUEST_KEY]);
+        $this->assertSame([], Hilos::$ac?->captureSignalMeta());
+    }
+
+    /**
      * @throws EnvException When the client or the router cannot read their env values
      * @throws SocketException When a socket of the pair refuses a read or a write
      * @throws HilosException When the client refuses to turn the request into a response
@@ -234,6 +278,25 @@ final class HttpClientParkTest extends TestCase
         $this->assertSame([HttpConstants::HTTP_OK], $this->statuses($received));
         $this->assertStringContainsString('by the project', $received);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * @return list<array<string, mixed>> Journal records emitted for the completed request
+     */
+    private function analyticsRecords(): array
+    {
+        Hilos::$ac?->flush();
+        $records = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $this->assertSame(HilosSignalConstants::ANALYTICS_JOURNAL_APPEND, $signal->signalName->getName());
+            $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+            $batch = $signal->data->data;
+            $this->assertInstanceOf(AnalyticsJournalAppendSignalData::class, $batch);
+            foreach ($batch->lines as $line) {
+                $records[] = (array)json_decode($line, true);
+            }
+        }
+        return $records;
     }
 
     /**

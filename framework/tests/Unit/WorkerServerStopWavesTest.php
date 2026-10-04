@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -14,6 +18,9 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Process;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
@@ -63,6 +70,44 @@ final class WorkerServerStopWavesTest extends TestCase
             'agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             'sigterm:' . self::JOURNAL_WORKER,
         ], StopWavesTestLog::$events);
+    }
+
+    /** The master queues its final connection records while the held journal worker is still alive. */
+    public function testMasterConnectionClosuresAreQueuedBeforeTheJournalAgentStop(): void
+    {
+        $previousCollector = Hilos::$ac;
+        $previousRouter = Hilos::$sr;
+        Hilos::$ac = new AnalyticsCollector();
+        Hilos::$sr = new SignalRouter();
+        try {
+            Hilos::$ac->openWsConnection('stop-wave-accept', null);
+            Hilos::$ac->openPageSession('stop-wave-accept', 'chat');
+            $server = $this->buildServer(withJournal: true);
+            $server->stop();
+            $this->workerLeaves($server, $this->regularKey());
+            $server->advance();
+
+            $queued = Hilos::$sr->getNextQueuedSignal();
+            $this->assertNotNull($queued);
+            $this->assertSame(HilosSignalConstants::ANALYTICS_JOURNAL_APPEND, $queued->signalName->getName());
+            $this->assertInstanceOf(AgentSignalData::class, $queued->data);
+            $batch = $queued->data->data;
+            $this->assertInstanceOf(AnalyticsJournalAppendSignalData::class, $batch);
+            $types = array_map(static fn(string $line): string => (string)json_decode($line, true)['t'], $batch->lines);
+            $this->assertSame([
+                AnalyticsJournalRecord::TYPE_WS_CONNECTION_OPEN,
+                AnalyticsJournalRecord::TYPE_PAGE_SESSION_OPEN,
+                AnalyticsJournalRecord::TYPE_PAGE_SESSION_CLOSE,
+                AnalyticsJournalRecord::TYPE_WS_CONNECTION_CLOSE,
+            ], $types);
+            $this->assertSame(['sigterm:' . self::PLAIN_WORKER], StopWavesTestLog::$events);
+
+            $server->advance();
+            $this->assertContains('agent_stop:' . HilosAgentType::HILOS_ANALYTICS_JOURNAL, StopWavesTestLog::$events);
+        } finally {
+            Hilos::$ac = $previousCollector;
+            Hilos::$sr = $previousRouter;
+        }
     }
 
     /**

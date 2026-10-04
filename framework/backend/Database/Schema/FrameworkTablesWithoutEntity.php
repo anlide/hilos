@@ -124,6 +124,10 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'session_token' => AnonymizationStrategy::HASH,
                 'user_identity_value' => AnonymizationStrategy::HASH,
             ],
+            'hilos_analytics_browser_session_alias' => [
+                'old_token' => AnonymizationStrategy::HASH,
+                'new_token' => AnonymizationStrategy::HASH,
+            ],
             'hilos_analytics_browser_session_user_agent_change' => [],
             'hilos_analytics_browser_session_accept_language_change' => [],
             'hilos_analytics_ws_connection' => [
@@ -209,6 +213,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'first_seen_ts',
                 'last_seen_ts',
             ],
+            'hilos_analytics_browser_session_alias' => ['id', 'created_ts'],
             'hilos_analytics_browser_session_user_agent_change' => [
                 'id',
                 'browser_session_id',
@@ -228,6 +233,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'hilos_analytics_ws_connection_ipv6_change' => ['id', 'ws_connection_id', 'changed_ts'],
             'hilos_analytics_page_session' => [
                 'id',
+                'session_key',
                 'ws_connection_id',
                 'page_id',
                 'page_params_id',
@@ -254,6 +260,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             ],
             'hilos_analytics_user_action' => [
                 'id',
+                'action_key',
                 'ws_connection_id',
                 'page_session_id',
                 'action_name_id',
@@ -264,6 +271,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'id',
                 'agent_session_id',
                 'user_action_id',
+                'user_action_key',
                 'signal_name_id',
                 'payload_json_id',
                 'created_ts',
@@ -293,6 +301,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             // through `browser_session_id`.
             'hilos_analytics_api_request' => [
                 'id',
+                'request_key',
                 'browser_session_id',
                 'method',
                 'path',
@@ -305,6 +314,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'hilos_analytics_api_agent_action' => [
                 'id',
                 'api_request_id',
+                'api_request_key',
                 'agent_session_id',
                 'signal_name_id',
                 'payload_json_id',

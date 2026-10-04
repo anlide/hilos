@@ -33,7 +33,7 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  *
  * Registered per node ({@see AgentScope::NODE}) on a monopolistic worker: it writes files, which is
  * blocking work, and one process per node owns the subdirectory, so nothing is locked. Every
- * process of the node but the master hands it its events in batches
+ * process of the node, the master too, hands it its events in batches
  * ({@see HilosSignalConstants::ANALYTICS_JOURNAL_APPEND}); it appends them to the open file and
  * leaves the rest to {@see AnalyticsJournalDirectory}: the sync once a second, the rotation, the
  * names. The writer reads ready files through it and confirms each one it loaded, which deletes

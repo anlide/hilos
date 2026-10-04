@@ -64,8 +64,8 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     /** Round another node was already waiting under when it told this one about a swap. */
     private const int ANNOUNCER_ROUND = 11;
 
-    /** User action id the master's analytics collector holds from before the swap. */
-    private const int CAPTURED_USER_ACTION_ID = 42;
+    /** User action key the master's analytics collector holds from before the swap. */
+    private const string CAPTURED_USER_ACTION_KEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     /** @var ?EnvAccessor Env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
@@ -101,9 +101,9 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
 
     public function testTheDaemonsOwnAnswerMakesItsCollectorForgetTheReplacedDatabase(): void
     {
-        // HIL-910: the master's collector holds ids of the database that is gone, like any worker's.
+        // The master's collector forgets the captured key when the database is replaced.
         Hilos::$ac = new AnalyticsCollector();
-        Hilos::$ac->startUserActionCapture(self::CAPTURED_USER_ACTION_ID);
+        Hilos::$ac->startUserActionCapture(self::CAPTURED_USER_ACTION_KEY);
         $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
 
         $daemon->announce(self::INITIATOR);
@@ -115,7 +115,7 @@ final class DaemonManagerDbReHydrateBarrierTest extends TestCase
     {
         // The nodes share one database, so a swap announced elsewhere replaced this node's too.
         Hilos::$ac = new AnalyticsCollector();
-        Hilos::$ac->startUserActionCapture(self::CAPTURED_USER_ACTION_ID);
+        Hilos::$ac->startUserActionCapture(self::CAPTURED_USER_ACTION_KEY);
         $daemon = new DaemonManagerDbReHydrateBarrierTestManager(1);
 
         $daemon->announceFromNode('node-a', self::ANNOUNCER_ROUND);

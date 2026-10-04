@@ -47,8 +47,8 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
     /** Round the announcements in these cases are made under. */
     private const int ROUND = 3;
 
-    /** User action id the analytics collector holds from before the swap. */
-    private const int CAPTURED_USER_ACTION_ID = 42;
+    /** User action key the analytics collector holds from before the swap. */
+    private const string CAPTURED_USER_ACTION_KEY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     /** @var ?DbContext Database context to restore after the test */
     private ?DbContext $previousDb = null;
@@ -127,9 +127,9 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
 
     public function testTheAnswerToTheRoundMakesTheCollectorForgetTheReplacedDatabase(): void
     {
-        // HIL-910: an id the collector still holds names a row of the database that is gone.
+        // A captured cause key belongs to the old database and must be cleared after a swap.
         Hilos::$db = new WorkerManagerDbReHydrateAckTestDbContext();
-        Hilos::$ac = $this->collectorHoldingAnId();
+        Hilos::$ac = $this->collectorHoldingAKey();
         $manager = new WorkerManagerDbReHydrateAckTestManager();
 
         $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup', self::ROUND));
@@ -141,7 +141,7 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
     {
         // The database was replaced whether or not this worker could read the new one.
         Hilos::$db = new WorkerManagerDbReHydrateAckTestDbContext(new DatabaseException('gone'));
-        Hilos::$ac = $this->collectorHoldingAnId();
+        Hilos::$ac = $this->collectorHoldingAKey();
         $manager = new WorkerManagerDbReHydrateAckTestManager();
 
         $manager->handleDaemonMessage(new WorkerDbReHydrateMessageDTO('backup', self::ROUND));
@@ -151,15 +151,15 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
 
     public function testTheReReadAfterAPeerLinkLeavesTheCollectorAlone(): void
     {
-        // Same database: forgetting here would open a second row for every live session.
+        // A peer-link re-read keeps the same database, so its captured cause key stays valid.
         Hilos::$db = new WorkerManagerDbReHydrateAckTestDbContext();
-        Hilos::$ac = $this->collectorHoldingAnId();
+        Hilos::$ac = $this->collectorHoldingAKey();
         $manager = new WorkerManagerDbReHydrateAckTestManager();
 
         $manager->handleDaemonMessage(new WorkerDbReReadMessageDTO());
 
         $this->assertSame(
-            [AnalyticsCollector::META_USER_ACTION_ID => self::CAPTURED_USER_ACTION_ID],
+            [AnalyticsCollector::META_USER_ACTION_KEY => self::CAPTURED_USER_ACTION_KEY],
             Hilos::$ac->captureSignalMeta(),
         );
     }
@@ -210,14 +210,14 @@ final class WorkerManagerDbReHydrateAckTest extends TestCase
     }
 
     /**
-     * Builds a collector holding a correlation id, the one of its ids readable without a database.
+     * Builds a collector holding a correlation key, which needs no database row.
      *
      * @return AnalyticsCollector Collector with a user action captured
      */
-    private function collectorHoldingAnId(): AnalyticsCollector
+    private function collectorHoldingAKey(): AnalyticsCollector
     {
         $collector = new AnalyticsCollector();
-        $collector->startUserActionCapture(self::CAPTURED_USER_ACTION_ID);
+        $collector->startUserActionCapture(self::CAPTURED_USER_ACTION_KEY);
 
         return $collector;
     }

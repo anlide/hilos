@@ -233,8 +233,11 @@ is nginx's own, unchanging because it is a separate connection between two serve
 The visitor's address arrives once, in a handshake header, and the framework does not
 read it.
 
+`trackWsConnectionIpChange()` now records `ws_connection_ip_change` in the node journal;
+the analytics writer compares it with the connection's current stored address. There is
+still no caller that observes a change inside one connection, so
 `hilos_analytics_ws_connection_ipv4_change` and `hilos_analytics_ws_connection_ipv6_change`
-exist and are empty on purpose. They get a writer again only when an address of a
+remain empty on purpose. They receive rows only when an address of a
 different nature is available: multipath TCP, which counts by a connection's paths
 rather than by its peer and needs an explicit socket type on both ends, or the
 visitor's own address read out of the handshake header. Neither is built on top of
