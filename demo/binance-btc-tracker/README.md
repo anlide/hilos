@@ -194,8 +194,8 @@ production the rows are carried and nothing is run.
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`,
-`stranger up`, `own-directory s1 on` and the rest — are called on the module directly, from
-`demo/binance-btc-tracker`:
+`stranger up`, `own-directory s1 on` and the rest — are called on the module
+directly, from `demo/binance-btc-tracker`:
 
 ```bash
 python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
