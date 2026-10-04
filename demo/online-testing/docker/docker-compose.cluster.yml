@@ -145,7 +145,10 @@ services:
     volumes:
       - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
       - ./galera/bootstrap.sh:/usr/local/bin/hilos-galera-bootstrap.sh:ro
-      - galera1-data:/var/lib/mysql
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-online-testing-cluster-galera1-data:/var/lib/mysql
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     networks:
       cluster-net:
         ipv4_address: 10.223.0.21
@@ -162,7 +165,10 @@ services:
               "--wsrep-node-name=galera2", "--wsrep-node-address=10.223.0.22"]
     volumes:
       - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
-      - galera2-data:/var/lib/mysql
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-online-testing-cluster-galera2-data:/var/lib/mysql
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     networks:
       cluster-net:
         ipv4_address: 10.223.0.22
@@ -178,7 +184,10 @@ services:
               "--wsrep-node-name=galera3", "--wsrep-node-address=10.223.0.23"]
     volumes:
       - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
-      - galera3-data:/var/lib/mysql
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-online-testing-cluster-galera3-data:/var/lib/mysql
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     networks:
       cluster-net:
         ipv4_address: 10.223.0.23
@@ -316,14 +325,6 @@ services:
       - cli
     networks:
       - cluster-net
-
-volumes:
-  galera1-data:
-    name: hilos-online-testing-cluster-galera1-data
-  galera2-data:
-    name: hilos-online-testing-cluster-galera2-data
-  galera3-data:
-    name: hilos-online-testing-cluster-galera3-data
 
 networks:
   cluster-net:

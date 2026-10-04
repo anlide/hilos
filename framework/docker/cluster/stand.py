@@ -53,6 +53,8 @@ DATABASE_MEMBER_LABEL = "hilos.database.member"
 DATABASE_MEMBER = "true"
 # What the database image of a stand is started with, and what db-sql signs in with.
 DATABASE_ENV = ("MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
+# Where a database service keeps its data inside its container.
+DATABASE_DATA_DIR = "/var/lib/mysql"
 ROLE_MASTER = "master"
 ROLE_SLAVE = "slave"
 # The grace a slave keeps its work for when no node of the stand sets CLUSTER_SLAVE_WORK_GRACE_MS;
@@ -92,6 +94,10 @@ class Database:
     user: str
     password: str
     name: str
+    # The host directory bind-mounted at DATABASE_DATA_DIR; None for a named volume.
+    data_dir: str | None = None
+    # The service image used by the container that wipes its data directory.
+    image: str = ""
 
 
 @dataclass(frozen=True)
@@ -135,6 +141,11 @@ class Stand:
     # The Database of every member of a clustered database, by service name; empty on a stand
     # whose database is one server.
     database_members: tuple
+
+    @property
+    def database_servers(self):
+        """Every server of the stand's database, or none when the stand labels no database."""
+        return self.database_members or ((self.database,) if self.database is not None else ())
 
     @property
     def demo_dir(self):
@@ -335,12 +346,17 @@ def _database_of(shown, project, services, service, what):
     missing = [key for key in DATABASE_ENV if not env.get(key)]
     if missing:
         raise StandRefused(f"{shown}: {what} {service} has no {', '.join(missing)}")
+    data_dir = next((volume.get("source") for volume in spec.get("volumes") or []
+                     if isinstance(volume, dict) and volume.get("type") == "bind"
+                     and volume.get("target") == DATABASE_DATA_DIR), None)
     return Database(
         service=service,
         container=spec.get("container_name") or f"{project}-{service}-1",
         user=env["MYSQL_USER"],
         password=env["MYSQL_PASSWORD"],
         name=env["MYSQL_DATABASE"],
+        data_dir=data_dir,
+        image=spec.get("image") or "",
     )
 
 

@@ -105,7 +105,10 @@ services:
       MYSQL_PASSWORD: hilos_pass
       TZ: UTC
     volumes:
-      - mysql-cluster-data:/var/lib/mysql
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-ecommerce-shop-cluster-mysql-data:/var/lib/mysql
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
@@ -245,10 +248,6 @@ services:
       - cli
     networks:
       - cluster-net
-
-volumes:
-  mysql-cluster-data:
-    name: hilos-ecommerce-shop-cluster-mysql-data
 
 networks:
   cluster-net:

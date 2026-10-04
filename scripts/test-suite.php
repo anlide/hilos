@@ -44,9 +44,11 @@ require_once __DIR__ . '/framework-pieces.php';
  *            by HIL-1226 in isolated green test:e2e-full cycles on 2026-10-02
  *            after the operations half moved, and the e2e of tasks and
  *            ecommerce-shop by HIL-1225 the same day, the same way), read off
- *            GREEN runs on nova-de,
- *            where a step beside its neighbours takes what it
- *            takes alone (chat-e2e 19m47s alone against 19m21s–21m30s beside two,
+ *            GREEN runs on nova-de. The framework-php group, chat-php, chat-e2e
+ *            and the three fleets were re-measured alone on nova-de by HIL-1327
+ *            on 2026-10-04 after the test databases moved into memory. A step
+ *            beside its neighbours takes what it takes alone (chat-e2e 19m47s
+ *            alone against 19m21s–21m30s beside two,
  *            28.09). A scheduling HINT only, and a narrow one
  *            (`scripts/launch-order.php`): of the steps ready to go, the group
  *            whose longest member is longest goes first, its shortest step
@@ -101,7 +103,7 @@ require_once __DIR__ . '/framework-pieces.php';
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 11, 'php' => 106, 'e2e' => 849],
+    'chat' => ['check' => 11, 'php' => 79, 'e2e' => 934],
     'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 108],
     'polls' => ['check' => 15, 'php' => 17, 'e2e' => 142],
     'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 394],
@@ -147,7 +149,7 @@ $steps = [
         'deps' => ['framework-deps'],
         'group' => null,
         'tags' => ['framework', 'backend', 'framework-php'],
-        'seconds' => 24,
+        'seconds' => 22,
     ],
     [
         'id' => 'framework-up',
@@ -157,12 +159,13 @@ $steps = [
         'deps' => ['framework-deps'],
         'group' => null,
         'tags' => ['framework', 'backend', 'framework-php'],
-        'seconds' => 6,
+        'seconds' => 7,
     ],
 ];
 
 $frameworkPieceIds = [];
-$frameworkPieceSeconds = [1 => 335, 2 => 394, 3 => 257, 4 => 358]; // Run 0789 on nova-de, seven lanes.
+// HIL-1327, the group alone on nova-de, databases in memory, 2026-10-04.
+$frameworkPieceSeconds = [1 => 10, 2 => 17, 3 => 16, 4 => 33];
 for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
     $frameworkPieceIds[] = frameworkPieceStepId($piece);
     $steps[] = [
@@ -249,8 +252,9 @@ $steps = array_merge($steps, [
     // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
     // here but in binance-btc-tracker-php. Scenarios 23 and 25 freeze the masters last (HIL-1125,
     // HIL-1128). Scenarios 29 and 30 recreate and kill a slave (HIL-1243). The seconds are
-    // measured on the step run alone on nova-de (2026-10-03, HIL-1243), with scenarios 13,
-    // 20 and 25 parked (P-169, P-456); returning one moves the number.
+    // measured alone on nova-de after the database moved into host memory (2026-10-04,
+    // HIL-1327), with scenarios 13, 20 and 25 parked (P-169, P-456); returning one
+    // moves the number.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -259,15 +263,15 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 156,
+        'seconds' => 175,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the whole
     // demo on one database. Beside the other fleets and any e2e step, no group and no edge (the
     // head of this file); takes its stand down with it, at any outcome, for the reason `cluster`
-    // does. The demo's unit suite runs in ecommerce-shop-php. The seconds are measured in run
-    // 0747, beside the other two fleets, with scenarios 16 and 19 parked (P-441/2, P-441/1);
-    // returning one moves the number.
+    // does. The demo's unit suite runs in ecommerce-shop-php. The seconds are measured alone
+    // on nova-de after the database moved into host memory (2026-10-04, HIL-1327), with
+    // scenarios 16 and 19 parked (P-441/2, P-441/1); returning one moves the number.
     [
         'id' => 'ecommerce-shop-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -276,16 +280,15 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 150,
+        'seconds' => 142,
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
     // the whole demo on a MariaDB Galera of three members behind one proxy (HIL-1230). Beside
     // the other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason `cluster` does. The demo's unit suite
-    // runs in online-testing-php. The seconds are measured on nova-de with nothing beside it
-    // (2026-10-03, HIL-1230): the median of ten matrices in a row, each of which took the
-    // previous stand down first, as the step takes down its own.
+    // runs in online-testing-php. The seconds are measured alone on nova-de after the
+    // database moved into host memory (2026-10-04, HIL-1327), with a fresh stand.
     [
         'id' => 'online-testing-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -294,7 +297,7 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 129,
+        'seconds' => 98,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

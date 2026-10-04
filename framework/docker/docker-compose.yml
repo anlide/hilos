@@ -185,8 +185,11 @@ services:
       MYSQL_USER: ${MYSQL_USER:-hilos}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
       TZ: UTC
+    # The test database lives in memory and goes with its container (HIL-1327).
+    tmpfs:
+      - /var/lib/mysql
     volumes:
-      - mysql-framework-test-data:/var/lib/mysql
+      - ./mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
@@ -261,13 +264,11 @@ volumes:
     name: hilos-preview-caddy-data
   hilos-preview-caddy-config:
     name: hilos-preview-caddy-config
-  mysql-framework-test-data:
-    name: hilos-framework-mysql-test-data
   # Credentials the backup receiver publishes for the CLI runner to ship with.
   # Rewritten on every start of sshd-framework-test, so it holds nothing worth
   # keeping and nothing worth protecting beyond the life of the stand. Pinned by
-  # name for the same reason the MySQL data volume is: `test:framework:down-volumes`
-  # names it, and a project-prefixed name would leave it behind after a rename.
+  # name because `test:framework:down-volumes` names it; a project-prefixed
+  # name would leave it behind after a rename.
   ship-keys:
     name: hilos-framework-ship-keys
   composer-cache:

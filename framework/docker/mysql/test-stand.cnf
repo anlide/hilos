@@ -1,0 +1,10 @@
+# A test stand's database trades write durability for speed (HIL-1327).
+# Its data lives in memory, either in the container's tmpfs or in a fleet's
+# /dev/shm directory, and dies with the stand. Waiting for a disk flush buys
+# nothing. Keep 2 rather than 0: 0 can lose acknowledged commits when a server
+# process is killed, which cluster scenarios do, while 2 costs the same in memory.
+# Binary logging is off by default; a replication primary enables it itself.
+[mariadb]
+innodb_flush_log_at_trx_commit = 2
+innodb_doublewrite = 0
+sync_binlog = 0

@@ -30,8 +30,11 @@ services:
       MYSQL_USER: ${MYSQL_USER:-hilos}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
       TZ: UTC
+    # The test database lives in memory and goes with its container (HIL-1327).
+    tmpfs:
+      - /var/lib/mysql
     volumes:
-      - mysql-test-data:/var/lib/mysql
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
@@ -249,8 +252,6 @@ services:
       - hilos-ecommerce-shop-test-network
 
 volumes:
-  mysql-test-data:
-    name: hilos-ecommerce-shop-mysql-test-data
   nginx-ssl-test:
 
 networks:

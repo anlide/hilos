@@ -21,6 +21,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from collections import namedtuple
 
 from stand import StandRefused
@@ -132,8 +133,25 @@ def up(stand, prog):
 
 
 def down(stand, volumes=False):
-    """Stop and remove every service of the stand; `volumes` wipes the database volume too."""
-    return compose(stand, "--profile", "*", "down", *(["-v"] if volumes else []), capture=False)
+    """Stop the stand; `volumes` also wipes its database after every server stops.
+
+    Compose removes named volumes. Host-memory directories need a container of the database's
+    own image: its files belong to the database user, which the host cannot remove directly.
+    """
+    code = compose(stand, "--profile", "*", "down", *(["-v"] if volumes else []), capture=False)
+    if code != 0 or not volumes:
+        return code
+    for server in stand.database_servers:
+        if server.data_dir is None or not os.path.isdir(server.data_dir):
+            continue
+        outcome = _run(["docker", "run", "--rm", "-v", f"{server.data_dir}:/data",
+                        "--entrypoint", "find", server.image, "/data", "-mindepth", "1", "-delete"])
+        if outcome.code != 0:
+            error = next((line for line in reversed(outcome.err.splitlines()) if line.strip()), str(outcome.code))
+            print(f"cluster: could not wipe {server.data_dir}: {error}", file=sys.stderr)
+            return 1
+        print(f"cluster: wiped {server.data_dir}", flush=True)
+    return 0
 
 
 def restart(stand, prog):

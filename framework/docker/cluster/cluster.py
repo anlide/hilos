@@ -9,10 +9,7 @@ Usage: cluster.py <compose-file> <command> [args]   (the compose file relative t
 directory; a demo calls this from its composer scripts)
 
   up                   build every image, then start the nodes (they roll the schema out
-                       under a claim in the database, HIL-1228) and the cli container. On a
-                       data volume created before HIL-712 (per-node schemas), run
-                       `down --volumes` once first: the shared schema is created by the
-                       mariadb image on the volume's first boot and never after.
+                       under a claim in the database, HIL-1228) and the cli container.
   down [--volumes]     stop and remove the stack (add --volumes to wipe the DB)
   restart              down, then up
   status               docker ps for the stack + a one-line inspect per node
@@ -100,7 +97,7 @@ def run_scenarios(stand, args, prog):
     #
     # `--volumes` on top of that since HIL-712: the schema of a stand is created by the
     # mariadb image from MYSQL_DATABASE, and an image only does that on the FIRST
-    # boot of its data volume. A volume left over from a run with a different schema
+    # boot of its data directory. A data directory left over from a run with a different schema
     # name would therefore never get one, and the nodes would not find the database
     # they are configured for. Wiping it also keeps the settings row scenario 11
     # writes from surviving into the next matrix, and it is what gives scenario 21 its

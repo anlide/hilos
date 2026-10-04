@@ -57,7 +57,10 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 **Typical local loops:**
 
 - Pure unit test iteration: `composer run test:unit` (fast, no DB).
-- Integration iteration: `composer run test:up && composer run test:db-reset && composer run test:integration` (first run only; subsequent iterations can skip `db-reset` only if the test mutates neither schema nor data — a data-mutating test needs a reset before each rerun).
+- Integration iteration: `composer run test:up && composer run test:db-reset && composer run test:integration`
+  (first run and again after a `test:down`: the database lives in memory;
+  subsequent iterations can skip `db-reset` only if the test mutates neither
+  schema nor data — a data-mutating test needs a reset before each rerun).
 - Full pass before a PR: `composer run test:all` (PHPUnit suites).
 
 ---
@@ -408,6 +411,12 @@ service labelled `hilos.database.member: "true"`, exactly one of them also
 reach — and the nodes reach the members through one address of the stand,
 never a member directly. Scenario 26 asks every member.
 
+Every server of a fleet's database, whether one server or a member of a cluster,
+keeps its data in a host directory under `/dev/shm` and mounts
+`framework/docker/mysql/test-stand.cnf`. A new fleet database server does the
+same. The harness wipes these directories on `down --volumes`; a member killed
+and started again keeps its data.
+
 A demo's cluster stand is `docker/docker-compose.cluster.yml` beside its other
 stacks, and a compose project of its own: the demo's e2e steps take their whole
 project down when they start, and a fleet inside it would fall in the middle of
@@ -466,6 +475,12 @@ ticket for the entries that are genuinely foreign.
 
 ## Re-running tests and state between runs
 
+- A test stand's database lives in its container's tmpfs, with write durability
+  reduced by `framework/docker/mysql/test-stand.cnf`. `test:down` removes the
+  container and its data, so run `test:db-reset` after the next `test:up`. A
+  fleet's database lives in host memory under `/dev/shm`: it survives `down/up`
+  and a member's `kill/start`, while `down --volumes` (including the start of
+  each scenario matrix) and a host reboot clear it.
 - A test that **mutates data** is not idempotent across runs on the same database.
   Reset before re-running it — `composer run test:db-reset` for PHPUnit; for e2e,
   `test:e2e-full`, pointed or not, resets for you, and so does `test:all`. **Do not treat a

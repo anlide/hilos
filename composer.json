@@ -65,7 +65,7 @@
         "test:framework:databases": "@php scripts/framework-databases.php",
         "test:framework:piece": "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php scripts/framework-piece.php",
         "test:framework:down": "@php scripts/down-stands.php framework",
-        "test:framework:down-volumes": "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test sshd-framework-test hilos-cli-test && docker volume rm -f hilos-framework-mysql-test-data hilos-framework-ship-keys",
+        "test:framework:down-volumes": "docker compose -f framework/docker/docker-compose.yml rm -sf mysql-framework-test sshd-framework-test hilos-cli-test && docker volume rm -f hilos-framework-ship-keys",
         "test:framework:unit": "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit",
         "test:framework:integration": "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration",
         "test:framework:phpunit": "docker compose -f framework/docker/docker-compose.yml run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml",
