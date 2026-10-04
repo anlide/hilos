@@ -81,6 +81,8 @@ Plus scenarios beyond that matrix:
                                the others (HIL-1231)
  28 database member comes      the member comes back, catches up, and is handed connections again
                                (HIL-1231)
+ 31 replica keeps up with       a replica took every write the preceding scenarios made, stays
+    the primary                read-only and is reached by nobody (HIL-1229)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -266,6 +268,13 @@ QUORUM_TIMEOUT = 30.0 * TIMEOUT_SCALE
 CRASH_RECOVERY_TIMEOUT = 90.0 * TIMEOUT_SCALE
 DB_MEMBER_DEATH_TIMEOUT = 60.0 * TIMEOUT_SCALE
 DB_MEMBER_RETURN_TIMEOUT = 120.0 * TIMEOUT_SCALE
+# A replica must catch up to the primary's position after every preceding scenario wrote.
+REPLICA_CATCH_UP_TIMEOUT = 30.0 * TIMEOUT_SCALE
+PRIMARY_POSITION_SQL = "SELECT @@GLOBAL.gtid_binlog_pos"
+REPLICA_POSITION_SQL = "SELECT @@GLOBAL.gtid_slave_pos"
+REPLICA_RUNNING_SQL = "SHOW GLOBAL STATUS LIKE 'Slaves_running'"
+READ_ONLY_SQL = "SELECT @@GLOBAL.read_only"
+REPLICATION_ERROR_MARKS = ("Error_code:", "slave SQL thread aborted", "[ERROR]")
 DB_LOAD_STEADY = 3
 # Each probe's worker also drains the other nodes' DB syncs. An unbounded writer can
 # queue more work than that worker processes and time out its own command before the fault.
@@ -349,6 +358,11 @@ def db_sql(statement, member=None):
     """Run one SQL statement in the stand's database, or on the member of a clustered one that
     `member` names by service: its rows as printed, or '' when it failed."""
     return ctl_out("db-sql", statement, *([member] if member else []))
+
+
+def db_log(member):
+    """One database member's container log so far, or '' when there is none."""
+    return ctl_out("db-log", member)
 
 
 def db_kill(member):
@@ -2784,8 +2798,7 @@ def scenario_26_database_is_one_cluster():
                                 "another member committed, and the demo declares READ_AFTER_WRITE")
         sync_waits.add(sync_wait)
 
-        connections_sql = (f"SELECT COUNT(*) FROM information_schema.PROCESSLIST "
-                           f"WHERE USER = '{user}' AND ID <> CONNECTION_ID()")
+        connections_sql = app_connections_sql(user)
         answer = db_sql(connections_sql, member)
         assert answer.isdigit(), f"{member} did not answer: {connections_sql}"
         held[member] = int(answer)
@@ -2797,6 +2810,71 @@ def scenario_26_database_is_one_cluster():
     waits = "/".join(str(value) for value in sorted(sync_waits))
     return (f"one cluster of {in_words(count)} members, all synced in the primary component with "
             f"wsrep_sync_wait={waits}; the application holds {spread}")
+
+
+def app_connections_sql(user):
+    """Count the application's other connections, excluding this db-sql probe."""
+    return (f"SELECT COUNT(*) FROM information_schema.PROCESSLIST "
+            f"WHERE USER = '{user}' AND ID <> CONNECTION_ID()")
+
+
+def scenario_31_replica_keeps_up_with_the_primary():
+    """Every replica took the writes of all preceding scenarios and remains read-only.
+
+    A replica stopped on an early Hilos write, lagging behind, or accepting writes would leave
+    every application scenario green: the application never connects to it. Run this last, after
+    all other writes, and ask each replica directly through the harness.
+    """
+    primary = STAND.database.service
+    user = STAND.database.user
+    position = db_sql(PRIMARY_POSITION_SQL)
+    assert position, (f"{primary} writes no binary log: @@gtid_binlog_pos is empty, "
+                      "so nothing reaches a replica")
+    primary_marker = db_sql(DATABASE_MARKER_SQL)
+    assert primary_marker, f"{primary} holds no database marker"
+
+    passed = []
+    for replica in STAND.database_replicas:
+        member = replica.service
+        running_rows = db_sql(REPLICA_RUNNING_SQL, member)
+        running = next((value for name, _, value in
+                        (row.partition("\t") for row in running_rows.splitlines())
+                        if name == "Slaves_running"), "")
+        if running != "1":
+            lines = db_log(member).splitlines()
+            # The server prints a generic [ERROR] after the specific warning. Prefer the
+            # diagnostic with its MariaDB error code, then fall back to the generic line.
+            reason = next((line for mark in REPLICATION_ERROR_MARKS for line in reversed(lines)
+                           if mark in line), "its log names no error")
+            raise AssertionError(f"{member} does not replicate: Slaves_running={running or '?'}; {reason}")
+
+        started = time.monotonic()
+        waited = db_sql(f"SELECT MASTER_GTID_WAIT('{position}', {REPLICA_CATCH_UP_TIMEOUT:.0f})", member)
+        if waited != "0":
+            at = db_sql(REPLICA_POSITION_SQL, member)
+            raise ScenarioTimeout(f"{member} did not catch up with the primary within "
+                                  f"{REPLICA_CATCH_UP_TIMEOUT:.0f} s: it stands at {at or '?'}, "
+                                  f"{primary} at {position}")
+        elapsed = time.monotonic() - started
+
+        marker = db_sql(DATABASE_MARKER_SQL, member)
+        assert marker == primary_marker, (f"{member} holds the database marker {marker or '(none)'}, "
+                                          f"{primary} {primary_marker}: the replica is not a copy "
+                                          "of the stand's database")
+        read_only = db_sql(READ_ONLY_SQL, member)
+        assert read_only == "1", (f"{member} takes writes (read_only={read_only or '?'}): "
+                                  "a node that reached it by mistake would write past the primary")
+        connections_sql = app_connections_sql(user)
+        answer = db_sql(connections_sql, member)
+        assert answer.isdigit(), f"{member} did not answer: {connections_sql}"
+        count = int(answer)
+        assert count == 0, (f"{member} holds {count} connection(s) of {user}: the nodes' one "
+                            "address leads past the primary, and nothing may read a replica "
+                            "(docs/agents/app-topology.md, Database Guarantees)")
+        passed.append(f"{member} replicates {primary}: caught up to {position} within "
+                      f"{elapsed:.1f} s of asking, read-only, the same database marker, "
+                      f"no connection of {user}")
+    return "; ".join(passed)
 
 
 class DbWriteAttempt(namedtuple("DbWriteAttempt", "started finished node value ok member error")):
@@ -3056,11 +3134,13 @@ def scenario_28_database_member_comes_back_and_catches_up():
 
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
-                     "cluster_directory entry", defaults=(0, 0, False, False, 0, False, 0, False, False))):
+                     "cluster_directory entry database_replicas",
+                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every master
     declaring ram - masters that carry placed work themselves - and a database of at least
-    `database_members` members, a cluster directory, and a browser entry the stand names. What a
+    `database_members` members, a cluster directory, a browser entry the stand names, and at least
+    `database_replicas` replicas of its database. What a
     scenario names by role - the third master, the second slave - is what it needs."""
 
 
@@ -3133,6 +3213,10 @@ SCENARIOS = [
              Need(masters=2, slaves=1, entry=True)),
     Scenario("34 a tab is the same on every master under protected mode", scenario_34_a_tab_is_the_same_on_every_master,
              Need(masters=3, slaves=1, entry=True)),
+    # Last of all: each replica took the writes of every preceding scenario. This only reads,
+    # so a freeze 23 or 25 may leave behind does not touch it.
+    Scenario("31 replica keeps up with the primary", scenario_31_replica_keeps_up_with_the_primary,
+             Need(database_replicas=1)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the
@@ -3253,7 +3337,8 @@ def unmet_need(stand, scenario):
     for wanted, has, what in ((need.masters, len(stand.masters), "masters"),
                               (need.slaves, len(stand.slaves), "slaves"),
                               (need.nodes, len(stand.members), "nodes"),
-                              (need.database_members, len(stand.database_members), "database members")):
+                              (need.database_members, len(stand.database_members), "database members"),
+                              (need.database_replicas, len(stand.database_replicas), "database replicas")):
         if has < wanted:
             return f"it needs {wanted} {what}, the stand has {has}"
     if need.stranger and stand.stranger is None:

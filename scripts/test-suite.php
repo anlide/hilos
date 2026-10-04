@@ -266,12 +266,13 @@ $steps = array_merge($steps, [
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the whole
-    // demo on one database. Beside the other fleets and any e2e step, no group and no edge (the
-    // head of this file); takes its stand down with it, at any outcome, for the reason
+    // demo on a MariaDB primary with a read-only replica beside it (HIL-1229). Beside the other
+    // fleets and any e2e step, no group and no edge (the head of this file); takes its stand
+    // down with it, at any outcome, for the reason
     // binance-btc-tracker-cluster does. The demo's unit suite runs in ecommerce-shop-php.
-    // The seconds are measured alone
-    // on nova-de after the database moved into host memory (2026-10-04, HIL-1327), with
-    // scenarios 16 and 19 parked (P-441/2, P-441/1); returning one moves the number.
+    // The seconds are the median of ten fresh matrices run alone on nova-de (2026-10-05,
+    // HIL-1229): 131 s, max 136 s, no retries, with scenarios 9 and 16 parked. Returning
+    // either scenario changes the estimate.
     [
         'id' => 'ecommerce-shop-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -280,7 +281,7 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 142,
+        'seconds' => 131,
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,

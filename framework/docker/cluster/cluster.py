@@ -39,6 +39,8 @@ directory; a demo calls this from its composer scripts)
                        run one SQL statement in the stand's database, or on one member of a
                        clustered one (scenario 26, HIL-1230), and print its rows (scenario 22
                        reads and replaces the database marker, HIL-1206)
+  db-log <member>      print one database member's container log so far; scenario 31 uses it
+                       to name why a replica stopped (HIL-1229)
   db-kill <member>     SIGKILL one member of a clustered database (scenarios 27 and 28, HIL-1231)
   db-start <member>    start that member's existing container again
   db-proxy             print the state of every server behind the stand's database proxy
@@ -65,7 +67,7 @@ REFUSED = 2
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "db-kill", "db-start",
+            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "db-log", "db-kill", "db-start",
             "db-proxy", "scenarios", "e2e")
 
 

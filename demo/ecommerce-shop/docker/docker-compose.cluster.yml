@@ -1,7 +1,7 @@
 # The cluster stand of ecommerce-shop (HIL-1216): one master and two slaves of unequal room
-# on one database.
+# on a MariaDB primary with a replica beside it (HIL-1229).
 #
-# One shared MariaDB carrying ONE schema for the whole stand (HIL-712) — the model
+# One schema on the primary for the whole stand (HIL-712) — the model
 # Hilos is built on, and what makes "node A writes a row, node B reads it" sayable —
 # three daemon nodes that roll that schema out themselves as they start together,
 # under the rollout claim in the database (HIL-1228), on a dedicated bridge with
@@ -12,6 +12,10 @@
 # against each node. Node role, identity, capabilities, master set, and timeouts all
 # come from CLUSTER_* env, so the same image is a master or a data-plane node purely
 # by configuration.
+# The nodes and cli know only the primary's address. An asynchronous read-only replica pulls its
+# binary log, but nothing in the application reads or writes there: reads from replicas are not
+# supported (docs/agents/app-topology.md, "Database Guarantees"), and failover to the replica is
+# outside this stand (the owner's word, 2026-10-03, HIL-1229).
 #
 # A compose project of its own, beside the demo's local and test stacks rather than inside
 # one of them: the demo's e2e steps take their whole project down when they start, and a
@@ -25,7 +29,7 @@ name: hilos-ecommerce-shop-cluster
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
 x-hilos-cluster:
   cli: ecommerce-shop-cluster-cli
-  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19]
+  scenarios: [3, 4, 6, 9, 12, 14, 16, 18, 19, 31]
 
 x-node-base: &node-base
   build: .
@@ -98,11 +102,17 @@ services:
     # name (HIL-841).
     labels:
       hilos.role: database
+      # Every server of this database carries this label; only the primary carries the role
+      # used by db-sql without a member and by the step's artifact collector.
+      hilos.database.member: "true"
     environment:
       MYSQL_ROOT_PASSWORD: hilos_root_pass
       MYSQL_DATABASE: hilos-demo-ecommerce-shop-cluster
       MYSQL_USER: hilos
       MYSQL_PASSWORD: hilos_pass
+      # The image creates the account the replica uses on its first boot.
+      MARIADB_REPLICATION_USER: replicator
+      MARIADB_REPLICATION_PASSWORD: replicator_pass
       TZ: UTC
     volumes:
       # Host memory keeps this member's data across down/up and kill/start;
@@ -112,6 +122,12 @@ services:
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
+      --log-bin=mariadb-bin
+      --server-id=1
+      --binlog-format=ROW
+    # The binary log starts with image initialization, so the schema, app user and replication
+    # account reach the replica too. A fixed log name survives container recreation; ROW makes
+    # the replica apply the rows already written rather than rerun their expressions.
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 2s
@@ -121,6 +137,49 @@ services:
     networks:
       cluster-net:
         ipv4_address: 10.222.0.10
+
+  ecommerce-shop-cluster-replica:
+    image: mariadb:11.4
+    container_name: ecommerce-shop-cluster-replica
+    labels:
+      hilos.database.member: "true"
+    environment:
+      MYSQL_ROOT_PASSWORD: hilos_root_pass
+      MARIADB_MASTER_HOST: ecommerce-shop-cluster-mysql
+      MARIADB_REPLICATION_USER: replicator
+      MARIADB_REPLICATION_PASSWORD: replicator_pass
+      MARIADB_HEALTHCHECK_GRANTS: "REPLICA MONITOR"
+      TZ: UTC
+      # No MYSQL_DATABASE, MYSQL_USER or MYSQL_PASSWORD: they arrive from the primary's log.
+      # Creating them here would stop replication on its first CREATE USER (error 1396).
+      # The harness signs in here with the primary's application credentials.
+    volumes:
+      # Host memory keeps this member's data across down/up and kill/start;
+      # the harness wipes it on down --volumes (HIL-1327).
+      - /dev/shm/hilos-ecommerce-shop-cluster-replica-data:/var/lib/mysql
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --server-id=2
+      --read-only=1
+      --relay-log=replica-relay-bin
+    # A mistaken node cannot write here; the replication thread can. A fixed relay-log name
+    # lets a recreated container continue from the saved position.
+    depends_on:
+      ecommerce-shop-cluster-mysql:
+        condition: service_healthy
+    healthcheck:
+      # Both threads must run. The options precede --replication because healthcheck.sh parses
+      # in order; REPLICA MONITOR lets the healthcheck user read their status. Lag is checked by 31.
+      test: ["CMD", "healthcheck.sh", "--connect", "--replication_io", "--replication_sql", "--replication"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      cluster-net:
+        ipv4_address: 10.222.0.20
 
   ecommerce-shop-cluster-m1:
     <<: *node-base
@@ -243,6 +302,10 @@ services:
       - ../../../framework:/hilos/framework:ro
     depends_on:
       ecommerce-shop-cluster-mysql:
+        condition: service_healthy
+      # The harness raises nodes and cli by name. The cli brings the replica up and makes the
+      # stand ready only once it replicates; nodes never wait for a copy they do not read.
+      ecommerce-shop-cluster-replica:
         condition: service_healthy
     profiles:
       - cli

@@ -237,7 +237,7 @@ What keeps each promise on each topology:
 | Topology | `ONE_LOGICAL_DATABASE` | `READ_AFTER_WRITE` |
 |---|---|---|
 | one server | kept | kept |
-| primary + replica behind one address that always leads to the primary | kept | kept |
+| primary + replica behind one address that always leads to the primary | kept | kept; the cluster stand of ecommerce-shop runs this row (`demo/ecommerce-shop/docker/docker-compose.cluster.yml`) |
 | multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL); the cluster stand of online-testing runs this row (`demo/online-testing/docker/galera/galera.cnf`) |
 | a proxy that hands reads to replicas, or reads from an asynchronous replica | kept | **not kept — not supported** |
 

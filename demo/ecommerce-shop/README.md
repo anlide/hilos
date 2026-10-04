@@ -155,27 +155,30 @@ so it takes no placed work and stays the leader for as long as it lives:
 placement and failover are proved where the leader is stable. The slaves are of
 unequal room on purpose — `s1` declares `worker,ram=10`, `s2` `worker,ram=4` —
 because scenario 18 fills them by the room they declare, not by their number.
-All three share one MariaDB and one schema, on the subnet 10.222, and nothing
-is published on the host. It is a compose project of its own,
+All three share one schema on the MariaDB primary, `ecommerce-shop-cluster-mysql`:
+it is the only database address the nodes and cli know. An asynchronous, read-only
+replica, `ecommerce-shop-cluster-replica`, is read and written by nobody. The stand
+uses subnet 10.222, publishes nothing on the host and has a compose project of its own,
 `hilos-ecommerce-shop-cluster`, because the e2e steps take their whole project
 down when they start.
 
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
-9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated
-node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed and 19
-worker death on a live node (`docs/agents/testing.md`, "The cluster stands —
+9 daemon-crash self-heal (parked as flaky), 12 rt replication, 14 rt claim refused,
+16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
+19 worker death on a live node and 31 replica keeps up with the primary
+(`docs/agents/testing.md`, "The cluster stands —
 three demos, three shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
+| `composer run test:cluster:up` | build the images and start the primary and replica, the three nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
-| `composer run test:cluster:down-volumes` | take the stand down, database included |
+| `composer run test:cluster:down-volumes` | take the stand down and wipe the bases of both primary and replica |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`,
@@ -185,6 +188,25 @@ directly, from `demo/ecommerce-shop`:
 ```bash
 python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
 ```
+
+### Database
+
+The MariaDB image sets up replication on first boot: `MARIADB_REPLICATION_*` names
+the replication account on both servers, and `MARIADB_MASTER_HOST` points the replica
+at the primary. The replica has no `MYSQL_DATABASE`, `MYSQL_USER` or `MYSQL_PASSWORD`
+of its own. It receives the schema and users from the primary's binary log; creating
+them locally would stop replication at the primary's first `CREATE USER`. The
+cluster harness uses the primary's application credentials to inspect the replica.
+
+From `demo/ecommerce-shop`, inspect its threads or the log that explains a stopped
+thread:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-sql "SHOW GLOBAL STATUS LIKE 'Slaves_running'" ecommerce-shop-cluster-replica
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-log ecommerce-shop-cluster-replica
+```
+
+The stand does not switch to the replica when the primary dies.
 
 ### TLS fixtures
 

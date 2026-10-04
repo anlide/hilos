@@ -685,6 +685,17 @@ def db_sql(stand, statement=None, member=None):
                  f"-p{database.password}", "-N", "-B", database.name, "-e", statement])
 
 
+def db_log(stand, member=None):
+    """The container log of one database member so far, without following it.
+
+    Scenario 31 names why a replica stopped from a line only its server log carries; the
+    stand is taken down after the scenario (HIL-1229).
+    """
+    if member is None:
+        raise StandRefused("usage: cluster db-log <member>")
+    return _run(["docker", "logs", _database_member(stand, member).container], merge_stderr=True)
+
+
 # The node commands, as cluster.py and the scenarios name them: each answers with an Outcome.
 NODE_COMMANDS = {
     "inspect": inspect,
@@ -716,6 +727,8 @@ def execute(stand, command, *args):
         return own_directory(stand, *args[:2])
     if command == "db-sql":
         return db_sql(stand, *args[:2])
+    if command == "db-log":
+        return db_log(stand, *args[:1])
     if command in ("db-kill", "db-start"):
         if len(args) != 1:
             raise StandRefused(f"usage: cluster {command} <member>")

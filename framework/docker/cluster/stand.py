@@ -21,9 +21,13 @@ The database the nodes share is found the way the tooling finds it on every stan
 labelled `hilos.role: database`, with the credentials its image is started with (MYSQL_USER,
 MYSQL_PASSWORD, MYSQL_DATABASE). A scenario sends SQL there through `db-sql` (control.py).
 
-A stand whose database is a cluster labels every member `hilos.database.member: "true"` and
-exactly one of them `hilos.role: database`; the nodes reach the members through one address the
-stand provides (online-testing: a proxy), never a member directly. Scenario 26 asks every member.
+A stand whose database is more than one server labels every member
+`hilos.database.member: "true"` and exactly one of them `hilos.role: database`; the nodes reach
+the database through one address the stand provides (online-testing: a proxy over every member;
+ecommerce-shop: the primary itself), never a replica. A member started as a replica of the
+database service (`MARIADB_MASTER_HOST`) carries no MYSQL_USER, MYSQL_PASSWORD or MYSQL_DATABASE:
+the harness signs in there as on the database service. Scenario 26 asks every member of a
+multi-primary; scenario 31 asks every replica.
 The proxy is labelled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
 
 The file is read whole through `docker compose config` as JSON rather than parsed as YAML:
@@ -58,6 +62,9 @@ DATABASE_PROXY_LABEL = "hilos.database.proxy"
 DATABASE_PROXY = "true"
 # What the database image of a stand is started with, and what db-sql signs in with.
 DATABASE_ENV = ("MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
+# The image's own declaration of the member a replica follows. Its schema and users arrive
+# through replication; creating them locally stops replication at the first CREATE USER (1396).
+REPLICA_ENV = "MARIADB_MASTER_HOST"
 # Where a database service keeps its data inside its container.
 DATABASE_DATA_DIR = "/var/lib/mysql"
 ROLE_MASTER = "master"
@@ -103,6 +110,8 @@ class Database:
     data_dir: str | None = None
     # The service image used by the container that wipes its data directory.
     image: str = ""
+    # The service this member replicates, or None for a member that is not a replica.
+    replica_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +172,11 @@ class Stand:
     def database_servers(self):
         """Every server of the stand's database, or none when the stand labels no database."""
         return self.database_members or ((self.database,) if self.database is not None else ())
+
+    @property
+    def database_replicas(self):
+        """Members started as replicas of the stand's database (HIL-1229)."""
+        return tuple(member for member in self.database_members if member.replica_of is not None)
 
     @property
     def demo_dir(self):
@@ -376,7 +390,8 @@ def _database_members(shown, project, services, database):
     """The members of a clustered database, by service name; empty when the stand labels none.
 
     The service labelled as the database must be one of them: it is the member the tooling
-    reaches, and a database apart from its own cluster would be a second database.
+    reaches, and a database apart from its own cluster would be a second database. A replica
+    carries no application credentials of its own: its primary's users and schema are replicated.
     """
     labelled = sorted(service for service, spec in services.items()
                       if (spec.get("labels") or {}).get(DATABASE_MEMBER_LABEL) == DATABASE_MEMBER)
@@ -386,8 +401,40 @@ def _database_members(shown, project, services, database):
         name = database.service if database is not None else "(none)"
         raise StandRefused(f"{shown}: the database service {name} is not one of the database members: "
                            f"{', '.join(labelled)}")
-    return tuple(_database_of(shown, project, services, service, "database member service")
-                 for service in labelled)
+    members = []
+    for service in labelled:
+        spec = services[service]
+        env = spec.get("environment") or {}
+        host = env.get(REPLICA_ENV)
+        if not host:
+            members.append(_database_of(shown, project, services, service, "database member service"))
+            continue
+        if service == database.service:
+            raise StandRefused(f"{shown}: the database service {service} is started as a replica of "
+                               f"{host} ({REPLICA_ENV}): the one address of the nodes must lead to the primary")
+        carried = [key for key in DATABASE_ENV if key in env]
+        if carried:
+            raise StandRefused(f"{shown}: database replica {service} carries {', '.join(carried)}: "
+                               "a replica gets the users and the schema from its primary, and "
+                               "creating them itself stops its replication on the primary's first "
+                               "CREATE USER (error 1396)")
+        if host not in (database.service, database.container):
+            raise StandRefused(f"{shown}: database replica {service} replicates {host}, "
+                               f"not the database service {database.service}")
+        data_dir = next((volume.get("source") for volume in spec.get("volumes") or []
+                         if isinstance(volume, dict) and volume.get("type") == "bind"
+                         and volume.get("target") == DATABASE_DATA_DIR), None)
+        members.append(Database(
+            service=service,
+            container=spec.get("container_name") or f"{project}-{service}-1",
+            user=database.user,
+            password=database.password,
+            name=database.name,
+            data_dir=data_dir,
+            image=spec.get("image") or "",
+            replica_of=database.service,
+        ))
+    return tuple(members)
 
 
 def _database_of(shown, project, services, service, what):
