@@ -25,13 +25,13 @@ Start with `agents.md`, then read the canonical rule.
    `browser`. No application logic at the root.
 2. Put every boot file under `src/bootstrap/` (Angular: `src/app/bootstrap/`):
    `connection.ts` (owns the connection from `createHilosConnection`),
-   `session.ts` (owns the `ScopeManager`, mints the cookie with
-   `ensureSessionTokenCookie`, exposes `sessionUserName`), and `main`
+   `session.ts` (owns the `ScopeManager`, exposes `sessionUserName`; the
+   daemon issues the session cookie on the handshake), and `main`
    (`bootHilos(...)` + mount + provide the navigator).
 3. Configure, do not re-implement: use `createHilosConnection`,
-   `ensureSessionTokenCookie`, `bindSessionScope` / `sessionUserName`, and
-   `bootHilos` from `@hilos/core`; never hand-roll the cookie, the handshake
-   ingest, or the boot sequence, and never call `connection.connect()` by hand.
+   `bindSessionScope` / `sessionUserName`, and `bootHilos` from `@hilos/core`;
+   never hand-roll the cookie, the handshake ingest, or the boot sequence, and
+   never call `connection.connect()` by hand.
 4. Add a new app-wide setup concern as its own `bootstrap/` file wired from
    `bootstrap/main` — never at the src root.
 5. A change to the session/page wire (the handshake-response signal, the scope

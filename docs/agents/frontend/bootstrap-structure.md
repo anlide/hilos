@@ -19,8 +19,8 @@ configures rather than re-implements:
 - `createHilosConnection(options)` — the single connection, with the framework
   session and page schemas merged, the action-error store attached, and the
   stale-build reload wired.
-- `ensureSessionTokenCookie()` — mint the persistent session-token cookie before
-  the socket opens.
+- No session cookie is minted here: the daemon issues the httpOnly session
+  cookie on the WebSocket handshake, and the frontend never mints it.
 - `bindSessionScope` / `sessionUserName` — route the handshake response into the
   session scope and expose the current user.
 - `bootHilos({ connection, actions, scopes, router, viewLayer, projectViews?, pageEntityTypes?, pageTitles?, appName? })`
@@ -61,10 +61,9 @@ say what to do next.
    and any extra project signal schemas. Export `connection` and `actions` —
    `actions` goes to `bootHilos` — and `actionErrors` only when the project
    reads action errors.
-3. **`bootstrap/session.ts`** owns the `ScopeManager` singleton, mints the
-   session-token cookie at module load with `ensureSessionTokenCookie()` (so it
-   rides the handshake, before the socket opens), and exports `currentUserName`
-   from `sessionUserName(scopes)`.
+3. **`bootstrap/session.ts`** owns the `ScopeManager` singleton and exports
+   `currentUserName` from `sessionUserName(scopes)`. It mints no cookie: the
+   daemon issues the session cookie on the WebSocket handshake.
 4. **`bootstrap/main`** (`main.ts` / `main.tsx`) calls `bootHilos(...)` with the
    project's `connection`, `actions`, `scopes`, page `router`, and optional
    `pageEntityTypes`, `pageTitles`, and `appName` (the latter two from
@@ -93,7 +92,7 @@ src/
   App.vue             # the root view component (stays at the root)
   bootstrap/
     connection.ts     # createHilosConnection → connection (+ actionErrors)
-    session.ts        # ScopeManager + ensureSessionTokenCookie + currentUserName
+    session.ts        # ScopeManager + currentUserName
     main.ts           # bootHilos(...) + mount + provide navigator
   pages/              # page registry (keys, routes, entity-slot types, titles)
   types/              # domain entities and shared value types
@@ -112,14 +111,9 @@ export const { connection } = createHilosConnection({
 
 ```ts
 // bootstrap/session.ts
-import {
-  ensureSessionTokenCookie,
-  ScopeManager,
-  sessionUserName,
-} from '@hilos/core'
+import { ScopeManager, sessionUserName } from '@hilos/core'
 
 export const scopes = new ScopeManager()
-ensureSessionTokenCookie()
 export const currentUserName = sessionUserName(scopes)
 ```
 
@@ -132,9 +126,10 @@ component (`App`) stays in `src/app/`, as the Angular layout already places it.
   `bootstrap/`; keep the entry a single import.
 - `connection.ts` / `session.ts` / `main` left at the src root — move them under
   `bootstrap/`.
-- Re-implementing cookie minting, the handshake-response ingest, the current-user
-  selector, or the boot sequence in the project — use `ensureSessionTokenCookie`,
-  `bindSessionScope` / `sessionUserName`, and `bootHilos` from `@hilos/core`.
+- Re-implementing the handshake-response ingest, the current-user selector, or
+  the boot sequence in the project — use `bindSessionScope` / `sessionUserName`
+  and `bootHilos` from `@hilos/core`. Minting the session cookie in the project
+  is wrong too: the daemon issues it on the handshake.
 - Calling `connection.connect()` by hand — `bootHilos` opens the socket after the
   scopes are bound.
 - A barrel `index.ts` inside `bootstrap/`.
