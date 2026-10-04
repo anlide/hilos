@@ -75,6 +75,8 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
 
     private int $personId;
 
+    private int $acceptanceId;
+
     /** @var list<int> */
     private array $createdUserIds = [];
 
@@ -97,7 +99,7 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
         $person = Hilos::$db->users->actions->createWithName(self::TEST_USER_NAME);
         $this->personId = (int) $person->id;
         Hilos::$db->identities->createPasswordIdentity($this->personId, self::TEST_USER_EMAIL, self::TEST_PASSWORD)->markVerified();
-        $this->record($this->personId, self::TEST_REVISION_ID, self::TEST_TIMESTAMP);
+        $this->acceptanceId = $this->record($this->personId, self::TEST_REVISION_ID, self::TEST_TIMESTAMP);
 
         $visitor = Hilos::$db->users->actions->createWithName('Visitor of the node');
         $visitorId = (int) $visitor->id;
@@ -254,6 +256,8 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
 
     /**
      * A viewer receives legal acceptances with filter vocabulary, unmasked acceptance fields, and masked name and email.
+     *
+     * @throws JsonException When JSON serialization fails
      */
     public function testAViewerSeesLegalAcceptancesWithFilterVocabularyAndMaskedPersonFields(): void
     {
@@ -268,10 +272,17 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             );
             $filtersAt = array_search(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LEGAL_ACCEPTANCES, array_column($frames, 'name'), true);
             self::assertIsInt($filtersAt);
+            self::assertNotInstanceOf(HilosLegalAcceptanceFiltersSignalData::class, $frames[$filtersAt]['data']);
             $filterData = $frames[$filtersAt]['data']->toArray();
-            $documents = $filterData[HilosLegalAcceptanceFiltersSignalData::documents];
-            self::assertNotEmpty($documents);
-            $revisions = $documents[0][HilosLegalAcceptanceFiltersSignalData::revisions];
+            $documents = array_column(
+                $filterData[HilosLegalAcceptanceFiltersSignalData::documents],
+                null,
+                HilosLegalAcceptanceFiltersSignalData::document,
+            );
+            self::assertArrayHasKey(self::TERMS_DOCUMENT, $documents);
+            $terms = $documents[self::TERMS_DOCUMENT];
+            self::assertFalse(HiddenValue::isMark($terms[HilosLegalAcceptanceFiltersSignalData::declared]));
+            $revisions = $terms[HilosLegalAcceptanceFiltersSignalData::revisions];
             $revisionIds = array_column($revisions, HilosLegalAcceptanceFiltersSignalData::revisionId);
             self::assertContains(self::TEST_REVISION_ID, $revisionIds);
             foreach ($revisions as $rev) {
@@ -289,8 +300,20 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             self::assertFalse(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::revisionId]));
             self::assertFalse(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::acceptedAt]));
             self::assertFalse(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::declared]));
+            self::assertSame($this->acceptanceId, $acc[HilosLegalAcceptanceTableRow::rowKey]);
+            self::assertSame($this->personId, $acc[HilosLegalAcceptanceTableRow::userId]);
+            self::assertSame(self::TERMS_DOCUMENT, $acc[HilosLegalAcceptanceTableRow::document]);
+            self::assertSame(self::TEST_REVISION_ID, $acc[HilosLegalAcceptanceTableRow::revisionId]);
+            self::assertSame(self::TEST_TIMESTAMP, $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
+            self::assertTrue($acc[HilosLegalAcceptanceTableRow::declared]);
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::name]));
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::email]));
+            $everyFrame = json_encode(
+                array_map(static fn(array $frame): array => $frame['data']->toArray(), $frames),
+                JSON_THROW_ON_ERROR,
+            );
+            self::assertStringNotContainsString(self::TEST_USER_NAME, $everyFrame);
+            self::assertStringNotContainsString(self::TEST_USER_EMAIL, $everyFrame);
             foreach (self::payloads($frames) as $payload) {
                 self::assertArrayNotHasKey(
                     LegalAcceptancesExportProjector::SECTION,
@@ -393,13 +416,16 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
      * @param int $userId Person giving the acceptance
      * @param string $revisionId Exact recorded revision
      * @param string $acceptedAt SQL acceptance timestamp
+     * @return int Id of the recorded acceptance
      */
-    private function record(int $userId, string $revisionId, string $acceptedAt): void
+    private function record(int $userId, string $revisionId, string $acceptedAt): int
     {
-        Database::sqlRun(
+        Database::sql(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
             [$userId, self::TERMS_DOCUMENT, $revisionId, $acceptedAt],
         );
+
+        return Database::lastInsertId();
     }
 
     /**
