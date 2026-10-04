@@ -11,12 +11,12 @@ import { emitNotification } from '../helpers/notifications.js'
 import { gotoPage } from '../helpers/page.js'
 import { typeInto } from '../helpers/session.js'
 
-// Notification-center e2e for the online-testing demo: the Angular half of the
-// center coverage binance-btc-tracker and tasks carry. A notification is emitted
-// through the live daemon over its command channel (helpers/notifications.ts), so the row
-// is written and the in-app signal is fanned exactly as a product caller's emit
-// would do it — the browser is then asserted on what the server actually sent,
-// never on a fixture the test planted.
+// Notification-center e2e for the online-testing demo: the Angular half of the center
+// coverage binance-btc-tracker and ecommerce-shop carry. A notification is emitted
+// through the live daemon over its command channel (helpers/notifications.ts), so the
+// row is written and the in-app signal is fanned exactly as a product caller's emit
+// would do it — the browser is then asserted on what the server actually sent, never
+// on a fixture the test planted.
 //
 // Every wait is a web-first assertion on the id the emit replied with, so the
 // suite never sleeps and never guesses which row it is looking at. Each test runs
