@@ -35,10 +35,11 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
  * re-send already is.
  *
  * It takes two steps rather than one because the two halves live in different processes.
- * The pages of one person are spread across every worker of the node, while who is behind a
+ * The pages of one person are spread across workers of every node, while who is behind a
  * connection can only be answered where a browser context is mounted, in a worker. So the
  * writing worker only ANNOUNCES ({@see self::forUser()}), the master fans that announcement
- * out to every worker link, and each worker sweeps its own mirror
+ * out to its workers and through `peer_page_access_reassess` to every other node (HIL-1306),
+ * and each worker sweeps its own mirror
  * ({@see self::sweepThisWorker()}).
  *
  * There are three criteria and therefore three announcements, because there are three ways the
@@ -58,7 +59,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 final class PageAccessReassessment
 {
     /**
-     * Announces that one user's rights changed, for every worker of this node to act on.
+     * Announces that one user's rights changed, for every worker of the cluster to act on.
      *
      * Queues one signal and returns; it resolves nobody and touches no subscription, so it
      * needs no browser context - the announcing worker is not the one that answers. The
@@ -95,8 +96,8 @@ final class PageAccessReassessment
      *
      * What it walks is the subscription mirror of the worker it runs in - the same
      * worker-local mirror the browser fan-out uses. Reaching every open page of the person
-     * is the announcement's job, not this walk's: each worker of the node runs it once over
-     * its own mirror.
+     * is the announcement's job, not this walk's: each worker of the cluster runs it once over
+     * its own mirror on any node.
      *
      * @param int $userId Durable user id whose rights just changed
      * @throws InvalidArgumentException When a queued re-decision cannot be named
@@ -128,7 +129,7 @@ final class PageAccessReassessment
     }
 
     /**
-     * Announces that named connections lost their person, for every worker of this node.
+     * Announces that named connections lost their person, for every worker of the cluster.
      *
      * The twin of {@see self::forUser()} in every respect but the criterion, and the criterion
      * is the whole point. A downgrade is the removal of the identity the user criterion matches
@@ -139,7 +140,7 @@ final class PageAccessReassessment
      * on both sides of that write.
      *
      * An empty list announces nothing rather than announcing "no connections": a session with
-     * no live socket on this node has no open page to re-judge.
+     * no live socket has no open page to re-judge.
      *
      * @param list<string> $acceptKeys Accept keys of the connections that just lost their person
      * @throws InvalidArgumentException When the announcement cannot be named
@@ -168,7 +169,7 @@ final class PageAccessReassessment
      * ask about, and asking would answer "nobody" for every key in the list.
      *
      * A key this worker holds no subscription under is matched by nobody and costs nothing: the
-     * announcement reaches every worker of the node, while what it is intersected with here is
+     * announcement reaches every worker of the cluster, while what it is intersected with here is
      * this worker's own subscription mirror - the bookkeeping written where the subscribe was
      * dispatched, which is not the same thing as owning the socket (the master does that).
      *
@@ -207,7 +208,7 @@ final class PageAccessReassessment
      *
      * The third criterion, and the one only the master can resolve: which sockets carry a session
      * is known where the sockets are accepted, so this is queued by the daemon and consumed by the
-     * daemon, which hands every worker the by-connection announcement for the accept keys it found
+     * daemon, which hands every worker of the cluster the by-connection announcement for the keys it found
      * ({@see self::forConnections()} explains why that criterion is the one a worker can answer
      * blind). Queued rather than resolved on the spot for the reason {@see self::forUser()} gives:
      * the runtime write of the phase rides the same queue ahead of it, so every worker re-judges

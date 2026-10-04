@@ -1519,6 +1519,30 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Closes local siblings of a rotated session and broadcasts keys held elsewhere.
+     *
+     * A failed local close is logged and left out of the broadcast: the socket was found
+     * here, so no other master can close it. One failure does not hold up the other keys.
+     *
+     * @param list<string> $acceptKeys Sibling connection keys of the rotated session
+     */
+    public function dropSessionConnections(array $acceptKeys): void
+    {
+        $remaining = [];
+        foreach ($acceptKeys as $acceptKey) {
+            try {
+                if (!$this->dropWebSocketConnection($acceptKey)) {
+                    $remaining[] = $acceptKey;
+                }
+            } catch (SocketException | HilosException $exception) {
+                Logger::error('Session rotation could not drop a connection', ['error' => $exception->getMessage()]);
+            }
+        }
+
+        $this->dropConnectionsOnPeers($this->findPeerServer(), $remaining);
+    }
+
+    /**
      * Names live accept keys across the cluster: local sockets and connections
      * the cluster index attributes to other nodes.
      *
@@ -2473,16 +2497,16 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             // The access re-decision announcement is fanned out and nothing more (HIL-644): the
-            // master resolves nobody, so it neither applies the fact to itself nor tells its
-            // peers - a tab on another node is not reached by the other half of the operation
-            // either. It sits beside the sync branch rather than inside it because that branch
-            // also self-applies and announces to the mesh, and both would be wrong here.
+            // master resolves nobody and does not apply the fact to itself. It tells its workers
+            // and every peer, including slaves, because the subscription mirror lives in the
+            // worker of the node serving the page's agent (HIL-1306).
             if ($signal->signalType->getType() === SignalTypeConstants::PAGE_ACCESS_REASSESS_USER) {
                 if ($signal->data instanceof PageAccessReassessUserSignalData) {
                     $this->writeFrameToWorkers(
                         $workerServer,
                         new WorkerPageAccessReassessMessageDTO($signal->data->userId),
                     );
+                    $this->announcePageAccessReassessToPeers($peerServer, $signal);
                 } else {
                     Logger::error(
                         'dispatchSignals - access re-decision carries invalid data: ' . get_class($signal->data),
@@ -2500,6 +2524,7 @@ abstract class DaemonManager extends BaseManager implements
                         $workerServer,
                         new WorkerPageAccessReassessConnectionsMessageDTO($signal->data->acceptKeys),
                     );
+                    $this->announcePageAccessReassessToPeers($peerServer, $signal);
                 } else {
                     Logger::error(
                         'dispatchSignals - by-connection re-decision carries invalid data: ' . get_class($signal->data),
@@ -2511,7 +2536,8 @@ abstract class DaemonManager extends BaseManager implements
             // which sockets carry a session is known where they were accepted. The session becomes
             // the accept keys of this node's connections, and the workers are handed the
             // by-connection frame above - the question each of them already answers against its own
-            // subscription mirror. A session with no connection here announces nothing.
+            // subscription mirror. The keys it finds also go to every other node as a
+            // by-connection announcement (HIL-1306). No local connection means no announcement.
             if ($signal->signalType->getType() === SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION) {
                 if ($signal->data instanceof PageAccessReassessSessionSignalData) {
                     $acceptKeys = $webSocketServer === null
@@ -2519,6 +2545,12 @@ abstract class DaemonManager extends BaseManager implements
                         : $this->sessionAcceptKeys($webSocketServer, $signal->data->sessionTokenHash);
                     if ($acceptKeys !== []) {
                         $this->writeFrameToWorkers($workerServer, new WorkerPageAccessReassessConnectionsMessageDTO($acceptKeys));
+                        $this->announcePageAccessReassessToPeers($peerServer, new SignalDTO(
+                            new SignalSource(SignalSource::DAEMON),
+                            new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS),
+                            new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_CONNECTIONS),
+                            new PageAccessReassessConnectionsSignalData($acceptKeys),
+                        ));
                     }
                 } else {
                     Logger::error(
@@ -4680,6 +4712,76 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Closes only the sibling sockets this master holds on another master's request.
+     *
+     * @param string $originNodeId Id of the master that spent the rotation ticket
+     * @param list<string> $acceptKeys Sibling keys to close when held here
+     */
+    public function dropConnectionsForNode(string $originNodeId, array $acceptKeys): void
+    {
+        $closed = 0;
+        foreach ($acceptKeys as $acceptKey) {
+            try {
+                if ($this->dropWebSocketConnection($acceptKey)) {
+                    $closed++;
+                }
+            } catch (SocketException | HilosException $exception) {
+                Logger::error('Session rotation could not drop a connection', [
+                    'error' => $exception->getMessage(),
+                    'origin' => $originNodeId,
+                ]);
+            }
+        }
+
+        if ($closed > 0) {
+            Logger::info(sprintf(
+                'Dropped %d connection(s) of a rotated session at the request of node %s',
+                $closed,
+                $originNodeId,
+            ));
+        }
+    }
+
+    /**
+     * Delivers a remote page access re-decision to this node's workers on arrival.
+     *
+     * Remote RT and DB sync also writes to workers on arrival, so the worker links see
+     * this announcement after everything the same peer sent before it. No local queue
+     * or rebroadcast is involved.
+     *
+     * @param string $originNodeId Id of the announcing node
+     * @param SignalDTO $signal By-user or by-connection announcement
+     */
+    public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void
+    {
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        $type = $signal->signalType->getType();
+        $data = $signal->data;
+        if ($type === SignalTypeConstants::PAGE_ACCESS_REASSESS_USER && $data instanceof PageAccessReassessUserSignalData) {
+            $this->writeFrameToWorkers($workerServer, new WorkerPageAccessReassessMessageDTO($data->userId));
+            return;
+        }
+        if ($type === SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS
+            && $data instanceof PageAccessReassessConnectionsSignalData
+        ) {
+            $this->writeFrameToWorkers($workerServer, new WorkerPageAccessReassessConnectionsMessageDTO($data->acceptKeys));
+            return;
+        }
+
+        Logger::warning(sprintf(
+            "Dropping peer page access re-decision from node '%s': carried '%s' with %s"
+            . ' - only a by-user or by-connection announcement is fanned out',
+            $originNodeId,
+            $type,
+            get_class($data),
+        ));
+    }
+
+    /**
      * Hands one node the browser connections this node holds.
      *
      * Protected, and taking the port rather than finding it, for the reason
@@ -4959,6 +5061,32 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $mesh->broadcastConnectionsDelta($delta['opened'], $delta['closed']);
+    }
+
+    /**
+     * Broadcasts sibling keys this master could not find to every other master.
+     *
+     * @param ?ClientMesh $mesh Peer server of this node, or null off-cluster
+     * @param list<string> $acceptKeys Sibling keys not held here
+     */
+    protected function dropConnectionsOnPeers(?ClientMesh $mesh, array $acceptKeys): void
+    {
+        if ($mesh === null || $acceptKeys === []) {
+            return;
+        }
+
+        $mesh->broadcastConnectionDrop($acceptKeys);
+    }
+
+    /**
+     * Broadcasts a valid local page access re-decision to every other node.
+     *
+     * @param ?ClientMesh $mesh Peer server of this node, or null off-cluster
+     * @param SignalDTO $signal By-user or by-connection announcement
+     */
+    protected function announcePageAccessReassessToPeers(?ClientMesh $mesh, SignalDTO $signal): void
+    {
+        $mesh?->broadcastPageAccessReassess($signal);
     }
 
     /**

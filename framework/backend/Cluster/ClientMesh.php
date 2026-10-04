@@ -60,6 +60,25 @@ interface ClientMesh
     public function broadcastClientFanout(SignalDTO $signal): void;
 
     /**
+     * Asks every other master to drop sibling connections of a rotated session.
+     *
+     * Delivery is best-effort like {@see broadcastClientFanout()}: an unlinked master
+     * misses the request and its stale socket remains until it dies on its own.
+     *
+     * @param list<string> $acceptKeys Sibling connection keys not held locally
+     */
+    public function broadcastConnectionDrop(array $acceptKeys): void;
+
+    /**
+     * Sends a page access re-decision announcement to every other node, slaves included.
+     *
+     * Delivery is best-effort, as with {@see broadcastClientFanout()}.
+     *
+     * @param SignalDTO $signal By-user or by-connection announcement
+     */
+    public function broadcastPageAccessReassess(SignalDTO $signal): void;
+
+    /**
      * Hands one node the whole set of browser connections this node holds.
      *
      * Addressed, and sent off the handshake rather than off membership: a node is a member as

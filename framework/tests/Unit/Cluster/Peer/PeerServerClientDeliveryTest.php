@@ -11,9 +11,11 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
+use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -24,6 +26,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Transport\PlainSocketTransport;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -254,6 +257,76 @@ final class PeerServerClientDeliveryTest extends TestCase
         $this->assertSame([], $sink->delivered);
     }
 
+    public function testAConnectionDropIsDeliveredToTheLocalSink(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onConnectionDropReceived(
+            $this->makeLink($server),
+            new PeerConnectionDropDTO('node-b', ['ak-1', 'ak-2']),
+        );
+
+        $this->assertSame([['node-b', ['ak-1', 'ak-2']]], $sink->drops);
+    }
+
+    public function testAConnectionDropWithoutALocalSinkIsContained(): void
+    {
+        $server = $this->makeServer();
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-peer-drop-');
+        Logger::setLogFile($logFile);
+
+        try {
+            $server->onConnectionDropReceived(
+                $this->makeLink($server),
+                new PeerConnectionDropDTO('node-b', ['ak-1']),
+            );
+
+            $this->assertStringContainsString(
+                "Dropping peer connection drop from node 'node-b': no local client signal sink registered",
+                (string)file_get_contents($logFile),
+            );
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+    }
+
+    public function testAPageAccessReassessIsDeliveredToTheLocalSink(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onPageAccessReassessReceived(
+            $this->makeLink($server),
+            new PeerPageAccessReassessDTO('node-b', $this->innerSignal()),
+        );
+
+        $this->assertSame([['node-b', 'room_renamed']], $sink->pageReassessments);
+    }
+
+    public function testAPageAccessReassessWithoutALocalSinkIsContained(): void
+    {
+        $server = $this->makeServer();
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-peer-reassess-');
+        Logger::setLogFile($logFile);
+
+        try {
+            $server->onPageAccessReassessReceived(
+                $this->makeLink($server),
+                new PeerPageAccessReassessDTO('node-b', $this->innerSignal()),
+            );
+
+            $this->assertStringContainsString(
+                "Dropping peer page access re-decision from node 'node-b': no local client signal sink registered",
+                (string)file_get_contents($logFile),
+            );
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+    }
+
     /**
      * Builds the application signal a forwarded frame carries.
      *
@@ -289,6 +362,12 @@ final class PeerServerClientDeliveryTest extends TestCase
             /** @var list<string> Signal name of each HTTP reply written here, in order */
             public array $httpReplies = [];
 
+            /** @var list<array{0: string, 1: list<string>}> Received sibling drops */
+            public array $drops = [];
+
+            /** @var list<array{0: string, 1: string}> Received page re-decision announcements */
+            public array $pageReassessments = [];
+
             /**
              * @param string $acceptKey Accept key of the connection to deliver to
              * @param SignalDTO $signal Signal to write to that connection
@@ -313,6 +392,24 @@ final class PeerServerClientDeliveryTest extends TestCase
             public function deliverHttpReply(SignalDTO $signal): void
             {
                 $this->httpReplies[] = $signal->signalName->getName();
+            }
+
+            /**
+             * @param string $originNodeId Node that spent the rotation ticket
+             * @param list<string> $acceptKeys Sibling keys to close
+             */
+            public function dropConnectionsForNode(string $originNodeId, array $acceptKeys): void
+            {
+                $this->drops[] = [$originNodeId, $acceptKeys];
+            }
+
+            /**
+             * @param string $originNodeId Announcing node
+             * @param SignalDTO $signal Announcement
+             */
+            public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void
+            {
+                $this->pageReassessments[] = [$originNodeId, $signal->signalName->getName()];
             }
 
             /**

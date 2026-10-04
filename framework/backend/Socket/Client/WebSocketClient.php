@@ -562,16 +562,18 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      *
      * The failure is benign for the same reason: a connection that could not be closed shows
      * a stale identity until it goes on its own.
+     * Sibling tabs on other masters are dropped through the peer mesh as of HIL-1306.
      */
     private function onOutboundDrained(): void
     {
         $keysToDrop = $this->pendingRotationDrops;
         $this->pendingRotationDrops = [];
+        if ($keysToDrop === []) {
+            return;
+        }
 
         try {
-            foreach ($keysToDrop as $acceptKey) {
-                $this->connectionDropper?->dropWebSocketConnection($acceptKey);
-            }
+            $this->connectionDropper?->dropSessionConnections($keysToDrop);
         } catch (HilosException $exception) {
             Logger::error('Session rotation could not drop a connection', ['error' => $exception->getMessage()]);
         }

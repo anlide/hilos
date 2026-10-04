@@ -681,6 +681,8 @@ readiness rule above:
   HIL-340's leader-only gate was lifted after cross-node routing arrived in
   HIL-180 and HIL-668. In production, put only masters in the load balancer's
   upstream and list that shared proxy in `HILOS_TRUSTED_PROXIES` on each master.
+  A person's tabs behave across masters as they do on one: sibling drops after
+  session rotation and open-page re-decisions travel over the peer mesh (HIL-1306).
 - **Cron.** `checkCronJobs()` runs only inside the gate.
 
 **The placement gate.** Where an agent may run is declared once, in its `Hilos::AGENTS`

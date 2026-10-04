@@ -7,12 +7,16 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
+use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
@@ -266,6 +270,77 @@ final class PeerClientFramesTest extends TestCase
         PeerDTO::fromWire(json_encode([
             PeerDTO::TYPE => PeerClientFanoutDTO::MESSAGE_TYPE,
             PeerClientFanoutDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+        ]));
+    }
+
+    public function testAConnectionDropRoundTripsThroughTheWire(): void
+    {
+        $frame = new PeerConnectionDropDTO('node-A', ['ak-1', 'ak-2']);
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerConnectionDropDTO::class, $parsed);
+        $this->assertSame('node-A', $parsed->originNodeId);
+        $this->assertSame(['ak-1', 'ak-2'], $parsed->acceptKeys);
+    }
+
+    public function testAConnectionDropRejectsAMissingOriginNodeId(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerConnectionDropDTO::MESSAGE_TYPE,
+            PeerConnectionDropDTO::FIELD_ACCEPT_KEYS => ['ak-1'],
+        ]));
+    }
+
+    public function testAConnectionDropRejectsAnEmptyKeyList(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerConnectionDropDTO::MESSAGE_TYPE,
+            PeerConnectionDropDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerConnectionDropDTO::FIELD_ACCEPT_KEYS => [],
+        ]));
+    }
+
+    public function testAConnectionDropRejectsANonStringKey(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerConnectionDropDTO::MESSAGE_TYPE,
+            PeerConnectionDropDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerConnectionDropDTO::FIELD_ACCEPT_KEYS => ['ak-1', 3],
+        ]));
+    }
+
+    public function testAPageAccessReassessRoundTripsWithItsSignal(): void
+    {
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::WORKER),
+            new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_USER),
+            new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_USER),
+            new PageAccessReassessUserSignalData(41),
+        );
+
+        $parsed = PeerDTO::fromWire((new PeerPageAccessReassessDTO('node-A', $signal))->toJson());
+
+        $this->assertInstanceOf(PeerPageAccessReassessDTO::class, $parsed);
+        $this->assertSame('node-A', $parsed->originNodeId);
+        $this->assertSame(SignalTypeConstants::PAGE_ACCESS_REASSESS_USER, $parsed->signal->signalType->getType());
+        $this->assertInstanceOf(PageAccessReassessUserSignalData::class, $parsed->signal->data);
+        $this->assertSame(41, $parsed->signal->data->userId);
+    }
+
+    public function testAPageAccessReassessRejectsAMissingInnerSignal(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerPageAccessReassessDTO::MESSAGE_TYPE,
+            PeerPageAccessReassessDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
         ]));
     }
 

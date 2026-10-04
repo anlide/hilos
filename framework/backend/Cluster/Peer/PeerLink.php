@@ -10,6 +10,7 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -18,6 +19,7 @@ use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
@@ -381,6 +383,8 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerRtReplicaOfferDTO => $this->onRtReplicaOffer($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
+            $frame instanceof PeerConnectionDropDTO => $this->onConnectionDrop($frame),
+            $frame instanceof PeerPageAccessReassessDTO => $this->onPageAccessReassess($frame),
             $frame instanceof PeerHttpReplyDTO => $this->onHttpReply($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
             $frame instanceof PeerConnectionsDeltaDTO => $this->onConnectionsDelta($frame),
@@ -787,6 +791,30 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('client fanout');
         $this->server->onClientFanoutReceived($this, $frame);
+    }
+
+    /**
+     * Hands a rotated session's sibling-drop request to the local server.
+     *
+     * @param PeerConnectionDropDTO $frame Incoming connection-drop frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onConnectionDrop(PeerConnectionDropDTO $frame): void
+    {
+        $this->requireHandshaked('connection drop');
+        $this->server->onConnectionDropReceived($this, $frame);
+    }
+
+    /**
+     * Hands a cross-node page access re-decision to this node's server.
+     *
+     * @param PeerPageAccessReassessDTO $frame Incoming re-decision frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPageAccessReassess(PeerPageAccessReassessDTO $frame): void
+    {
+        $this->requireHandshaked('page access re-decision');
+        $this->server->onPageAccessReassessReceived($this, $frame);
     }
 
     /**

@@ -450,7 +450,9 @@ the 101 — so it is traded for, not pushed:
 3. the master reads that cookie on the next handshake, answers with the rotated
    token in the session `Set-Cookie`, erases the auxiliary cookie with a second
    one, burns the ticket, and drops the other connections of the old session,
-   which come back into it carrying the new cookie.
+   which come back into it carrying the new cookie. On a cluster it closes the
+   sockets it holds and sends the remaining keys through `peer_connection_drop`
+   to every other master (HIL-1306).
 
 On sign-out, the requesting tab receives the ticket, or the first live tab when
 the session was ended remotely. Its siblings learn they are anonymous before

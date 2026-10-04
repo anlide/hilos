@@ -33,7 +33,10 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * attached to, and the client-forward frame ({@see PeerClientSignalDTO}) is what that
  * addressing then sends; the fan-out frame ({@see PeerClientFanoutDTO}) is what the same
  * index cannot help with, since which browsers a fan-out reaches is answered by each node's
- * own subscription registry rather than by an address; the claim frames
+ * own subscription registry rather than by an address; the sibling-drop frame
+ * ({@see PeerConnectionDropDTO}) asks every master to close rotated-session sockets
+ * it holds, and the page access re-decision frame ({@see PeerPageAccessReassessDTO})
+ * carries an announcement to every node's workers; the claim frames
  * ({@see PeerRtClaimsDTO}, {@see PeerRtClaimsQueryDTO}, {@see PeerRtClaimRefusedDTO}) carry the
  * other half of the same subject the RT replication frames carry — not what a node wrote, but
  * the right it holds to write it, reported to the leader and answered only when two nodes claim
@@ -113,6 +116,8 @@ abstract class PeerDTO extends BaseDTO
             PeerRtReplicaOfferDTO::MESSAGE_TYPE => PeerRtReplicaOfferDTO::fromArray($data),
             PeerClientSignalDTO::MESSAGE_TYPE => PeerClientSignalDTO::fromArray($data),
             PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),
+            PeerConnectionDropDTO::MESSAGE_TYPE => PeerConnectionDropDTO::fromArray($data),
+            PeerPageAccessReassessDTO::MESSAGE_TYPE => PeerPageAccessReassessDTO::fromArray($data),
             PeerHttpReplyDTO::MESSAGE_TYPE => PeerHttpReplyDTO::fromArray($data),
             PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),
             PeerConnectionsDeltaDTO::MESSAGE_TYPE => PeerConnectionsDeltaDTO::fromArray($data),

@@ -128,7 +128,7 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
         $probe->flushOutbound();
 
         $this->assertTrue($probe->handshakeDone());
-        $this->assertSame(['ak-second-tab', 'ak-third-tab'], $dropper->dropped);
+        $this->assertSame([['ak-second-tab', 'ak-third-tab']], $dropper->batches);
     }
 
     public function testTheLeftBehindConnectionsAreHeldUntilTheRotatedCookieIsSent(): void
@@ -140,9 +140,9 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
 
         // Dropping a tab while the rotated Set-Cookie is still queued would let it come
         // back on the pre-rotation token and write that value back over the jar.
-        $this->assertSame([], $dropper->dropped);
+        $this->assertSame([], $dropper->batches);
         $this->assertStringContainsString(self::ROTATED_TOKEN, $probe->flushOutbound());
-        $this->assertSame(['ak-second-tab'], $dropper->dropped);
+        $this->assertSame([['ak-second-tab']], $dropper->batches);
     }
 
     public function testAHandshakeWithoutATradeDropsNobody(): void
@@ -152,7 +152,7 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
 
         $this->handshakenProbe(SessionToken::mint(), null, $dropper);
 
-        $this->assertSame([], $dropper->dropped);
+        $this->assertSame([], $dropper->batches);
     }
 
     public function testAnUnknownTicketFallsBackToTheOrdinaryCookieRule(): void
@@ -221,7 +221,7 @@ final class WebSocketClientHandshakeRotationTest extends TestCase
         $this->assertFalse($probe->shouldClose());
         $this->assertSame(self::ROTATED_TOKEN, $this->issuedToken($probe->outboundBytes()));
         $probe->flushOutbound();
-        $this->assertSame(['ak-second-tab'], $dropper->dropped);
+        $this->assertSame([['ak-second-tab']], $dropper->batches);
         $this->assertNull(Hilos::$rt?->hilosSessionRotations->claimable(self::TICKET));
         $lines = $this->writtenLines();
         $this->assertCount(1, $lines);
@@ -354,8 +354,16 @@ final class RotationTestRtContext extends RtContext
  */
 final class RecordingConnectionDropper implements ConnectionDropper
 {
-    /** @var list<string> Accept keys the master asked to close, in order */
-    public array $dropped = [];
+    /** @var list<list<string>> Batches the master asked to close, in order */
+    public array $batches = [];
+
+    /**
+     * @param list<string> $acceptKeys Sibling keys the master should close
+     */
+    public function dropSessionConnections(array $acceptKeys): void
+    {
+        $this->batches[] = $acceptKeys;
+    }
 
     /**
      * @param string $acceptKey Daemon-minted identifier of the connection to close
@@ -363,7 +371,7 @@ final class RecordingConnectionDropper implements ConnectionDropper
      */
     public function dropWebSocketConnection(string $acceptKey): bool
     {
-        $this->dropped[] = $acceptKey;
+        $this->batches[] = [$acceptKey];
 
         return true;
     }

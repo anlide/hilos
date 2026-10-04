@@ -14,11 +14,12 @@ namespace Hilos\Cluster\Peer;
  * identity as of HIL-1297.
  * The leader heartbeat reports WebSocket readiness as of HIL-1304.
  * The quiesce descriptor carries the operator session hash and a peer frame carries code admission as of HIL-1305.
+ * Sibling drops and page re-decision announcements reach every node as of HIL-1306.
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 12;
+    public const int VERSION = 13;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

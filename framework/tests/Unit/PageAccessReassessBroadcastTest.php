@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Closure;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Cluster\ClientMesh;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -111,6 +112,9 @@ final class PageAccessReassessBroadcastTest extends TestCase
             $this->assertInstanceOf(WorkerPageAccessReassessMessageDTO::class, $restored);
             $this->assertSame(self::USER_ID, $restored->userId);
         }
+        $this->assertCount(1, $manager->peerAnnouncements);
+        $this->assertSame(SignalTypeConstants::PAGE_ACCESS_REASSESS_USER, $manager->peerAnnouncements[0]->signalType->getType());
+        $this->assertSame(self::USER_ID, $manager->peerAnnouncements[0]->data->userId);
         $this->assertSame('', $this->written());
     }
 
@@ -170,6 +174,12 @@ final class PageAccessReassessBroadcastTest extends TestCase
             $this->assertInstanceOf(WorkerPageAccessReassessConnectionsMessageDTO::class, $restored);
             $this->assertSame(self::ACCEPT_KEYS, $restored->acceptKeys);
         }
+        $this->assertCount(1, $manager->peerAnnouncements);
+        $this->assertSame(
+            SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS,
+            $manager->peerAnnouncements[0]->signalType->getType(),
+        );
+        $this->assertSame(self::ACCEPT_KEYS, $manager->peerAnnouncements[0]->data->acceptKeys);
         $this->assertSame('', $this->written());
     }
 
@@ -233,6 +243,15 @@ final class PageAccessReassessBroadcastTest extends TestCase
             $this->assertInstanceOf(WorkerPageAccessReassessConnectionsMessageDTO::class, $restored);
             $this->assertSame([$firstTab->acceptKey, $secondTab->acceptKey], $restored->acceptKeys);
         }
+        $this->assertCount(1, $manager->peerAnnouncements);
+        $this->assertSame(
+            SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS,
+            $manager->peerAnnouncements[0]->signalType->getType(),
+        );
+        $this->assertSame(
+            [$firstTab->acceptKey, $secondTab->acceptKey],
+            $manager->peerAnnouncements[0]->data->acceptKeys,
+        );
         $this->assertSame('', $this->written());
     }
 
@@ -253,6 +272,7 @@ final class PageAccessReassessBroadcastTest extends TestCase
         $manager->dispatch();
 
         $this->assertSame([[]], $workerServer->framesPerWorker());
+        $this->assertSame([], $manager->peerAnnouncements);
         $this->assertSame('', $this->written());
     }
 
@@ -270,6 +290,7 @@ final class PageAccessReassessBroadcastTest extends TestCase
         $manager->dispatch();
 
         $this->assertSame([[]], $workerServer->framesPerWorker());
+        $this->assertSame([], $manager->peerAnnouncements);
         $this->assertStringContainsString('access re-decision carries invalid data', $this->written());
         $this->assertStringContainsString(SignalData::class, $this->written());
     }
@@ -308,6 +329,9 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
 {
     /** Stand-in worker server, absent until a case registers one */
     public ?PageAccessReassessBroadcastTestWorkerServer $workerServer = null;
+
+    /** @var list<SignalDTO> Page access re-decision announcements sent to the peer seam */
+    public array $peerAnnouncements = [];
 
     /**
      * Registers the stand-in worker server the fan-out writes to.
@@ -426,6 +450,15 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
      */
     protected function handleDaemonSignal(SignalDTO $signal, ?string $originNodeId = null): void
     {
+    }
+
+    /**
+     * @param ?ClientMesh $mesh Peer server, absent from this test
+     * @param SignalDTO $signal Announcement sent to peers
+     */
+    protected function announcePageAccessReassessToPeers(?ClientMesh $mesh, SignalDTO $signal): void
+    {
+        $this->peerAnnouncements[] = $signal;
     }
 
     protected function createSignalRouter(): SignalRouter

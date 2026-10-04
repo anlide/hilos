@@ -19,6 +19,7 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
@@ -29,6 +30,7 @@ use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
@@ -2681,6 +2683,78 @@ final class PeerServer extends AbstractTlsServer implements
     public function broadcastClientFanout(SignalDTO $signal): void
     {
         $this->broadcastToNodes(new PeerClientFanoutDTO($this->localIdentity->nodeId, $signal));
+    }
+
+    /**
+     * Asks all other masters to close sibling sockets of a rotated session.
+     *
+     * @param list<string> $acceptKeys Sibling keys not held by this master
+     */
+    public function broadcastConnectionDrop(array $acceptKeys): void
+    {
+        $this->broadcastToMasters(new PeerConnectionDropDTO($this->localIdentity->nodeId, $acceptKeys));
+    }
+
+    /**
+     * Delivers a sibling-drop request to this master's connection sink without forwarding it.
+     *
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerConnectionDropDTO $frame Received connection-drop frame
+     */
+    public function onConnectionDropReceived(PeerLink $link, PeerConnectionDropDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer connection drop from node '{$frame->originNodeId}':"
+                . ' no local client signal sink registered',
+            );
+            return;
+        }
+
+        try {
+            $sink->dropConnectionsForNode($frame->originNodeId, $frame->acceptKeys);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to drop peer connections from node '{$frame->originNodeId}': {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Broadcasts a page access re-decision announcement to every other node.
+     *
+     * @param SignalDTO $signal By-user or by-connection announcement
+     */
+    public function broadcastPageAccessReassess(SignalDTO $signal): void
+    {
+        $this->broadcastToNodes(new PeerPageAccessReassessDTO($this->localIdentity->nodeId, $signal));
+    }
+
+    /**
+     * Gives a received page access re-decision to the local daemon without forwarding it.
+     *
+     * @param PeerLink $link Link the announcement arrived on
+     * @param PeerPageAccessReassessDTO $frame Received re-decision frame
+     */
+    public function onPageAccessReassessReceived(PeerLink $link, PeerPageAccessReassessDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer page access re-decision from node '{$frame->originNodeId}':"
+                . ' no local client signal sink registered',
+            );
+            return;
+        }
+
+        try {
+            $sink->deliverPageAccessReassess($frame->originNodeId, $frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to deliver peer page access re-decision from node '{$frame->originNodeId}': {$e->getMessage()}",
+            );
+        }
     }
 
     /**

@@ -383,7 +383,7 @@ project mounting the framework grant gets the re-decision by inheritance and has
 no call site of its own to start (HIL-729).
 
 `PageAccessReassessment::forUser($userId)` queues one `page_access_reassess_user`
-announcement naming that person and returns. Each worker of the node then runs
+announcement naming that person and returns. Each worker of the cluster then runs
 `PageAccessReassessment::sweepThisWorker($userId)` over its own live page
 subscriptions, reads each accept key through `BrowserContext::connectionIdentity`,
 and queues one `page_access_reassess` frame per page that user has open there. Each
@@ -396,20 +396,25 @@ than the 403, because the same gate answers *view* there
 ([admin-view-mode.md](admin-view-mode.md)).
 
 **Announcing and sweeping are two steps because they live in two processes** (HIL-644).
-The pages of one person are spread across every worker of the node, while who is behind
+The pages of one person are spread across workers of every node, while who is behind
 a connection can be answered only where a browser context is mounted — in a worker. So
-the writing worker announces, the master fans the announcement out to every worker link,
-and each worker sweeps the mirror it owns. The re-decision therefore reaches every open
+the writing worker announces, the master fans the announcement out to every local worker
+link and broadcasts `peer_page_access_reassess` to every other node, slaves included
+(HIL-1306). A receiving node writes to its workers on arrival and does not forward it:
+the subscription mirror lives in a worker of the node serving the page's agent. Each worker
+sweeps the mirror it owns. The re-decision therefore reaches every open
 page of that person, wherever it is served, and not merely the pages of the worker that
 happened to write the rights.
 
-The master's part is one buffered write per worker and nothing else: it resolves no
-identity, walks no registry, and holds no reverse "connections of user X" lookup — that
+The master's local part is one buffered write per worker, plus one peer broadcast.
+It resolves no identity, walks no registry, and holds no reverse "connections of user X" lookup — that
 would be a second source of truth beside `BrowserContext::connectionIdentity`. The
-announcement is queued in the master rather than acted on at receipt, because the
-database sync of the flag that was just written rides the same queue in front of it; a
-frame acted on at receipt would overtake the sync and set a worker re-deciding against a
-flag it has not seen change.
+local announcement is queued in the master rather than acted on at receipt, because
+the database sync of the flag that was just written rides the same queue in front of it;
+a local frame acted on at receipt would overtake the sync and set a worker re-deciding
+against a flag it has not seen change. A peer announcement is written to receiving
+workers on arrival, as peer DB and RT sync are; on a working link, that preserves the
+sender's order.
 
 **A downgrade is the second trigger, and it carries its own criterion** (HIL-652).
 Signing out is not a rights change: nothing is written about what the person may
@@ -464,7 +469,8 @@ sockets were accepted. The dispatch pass walks its WebSocket clients exactly as
 `sendToSessionClients()` does, collects the accept keys whose hash matches, and hands
 every worker the existing `page_access_reassess_connections` frame — so the worker half
 is the by-connection sweep, unchanged, and nothing new reaches the wire. A session with no
-connection on the node announces nothing. The one caller is
+connection on the node announces nothing. The keys found on this node also go to every
+other node as a by-connection announcement (HIL-1306). The one caller is
 `DaemonProtectedModeExecutor::enterVerifying()`, through the
 `ProtectedModeClientNotifier::reassessPagesOfSession()` seam, and it calls AFTER the
 agents are resumed: a page is answered by the agent that serves it, and while the agents
@@ -482,10 +488,15 @@ by-user criterion of a rights change, unchanged. The pages a freeze closes get t
 `account_frozen` refusal, and once it lifts they are answered again with a full
 `page_response`, without a reload.
 
-**The reach is node-local, and that is the whole operation's reach.** The other half of a
-rights change — the handshake re-send — is delivered by this node's WebSocket server, so a
-tab on another node never learns of the grant, never waits for an answer, and keeps the
-honest 403 it already had. Making the pair cross-node is one subject, not half of one.
+**The reach is cluster-wide.** The handshake re-send reaches a tab on any master
+(HIL-668), and the re-decision announcement reaches workers on every node (HIL-1306).
+On each node the announcement follows everything that its sender sent earlier on the
+same peer link. A rights write by a third node may arrive by another link, so its
+causal lead over the announcement is not ordered by that channel; the reader has the
+same guarantee as any other read of a remote replica. One known limit remains:
+a per-instance page (`PageAgentIndexRoute`) open on another master is re-decided on
+the page agent's node, where there is no bound connection entry; the frame is dropped
+with "has no destination". No demo declares such a page.
 
 **A re-decision is not a re-subscribe.** The frame never passes through
 `DaemonManager::updateSubscriptions`, because a real re-subscribe carries three

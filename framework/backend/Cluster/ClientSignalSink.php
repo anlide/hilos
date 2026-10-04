@@ -57,6 +57,22 @@ interface ClientSignalSink
     public function deliverHttpReply(SignalDTO $signal): void;
 
     /**
+     * Closes the sibling connections this node holds after another node rotates a session.
+     *
+     * @param string $originNodeId Id of the node that spent the rotation ticket
+     * @param list<string> $acceptKeys Sibling connection keys to close when held here
+     */
+    public function dropConnectionsForNode(string $originNodeId, array $acceptKeys): void;
+
+    /**
+     * Writes a remote page access re-decision announcement to this node's workers.
+     *
+     * @param string $originNodeId Id of the announcing node
+     * @param SignalDTO $signal By-user or by-connection announcement
+     */
+    public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void;
+
+    /**
      * Hands the whole set of browser connections this node holds to a node the mesh has just
      * linked to.
      *

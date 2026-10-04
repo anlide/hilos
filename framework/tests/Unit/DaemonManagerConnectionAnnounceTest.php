@@ -261,6 +261,20 @@ final class DaemonManagerConnectionAnnounceTestMesh implements ClientMesh
     }
 
     /**
+     * @param list<string> $acceptKeys Sibling keys not held locally
+     */
+    public function broadcastConnectionDrop(array $acceptKeys): void
+    {
+    }
+
+    /**
+     * @param SignalDTO $signal Page access re-decision announcement
+     */
+    public function broadcastPageAccessReassess(SignalDTO $signal): void
+    {
+    }
+
+    /**
      * @param string $nodeId Node this one can now reach
      * @param list<string> $acceptKeys Every accept key this node holds right now
      */
