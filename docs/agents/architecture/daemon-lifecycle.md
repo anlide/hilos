@@ -857,12 +857,11 @@ survivors keep working under the new leader.
   before it starts any of it again (the rebuild above). A fence that fires reports the
   emptied node to every node still linked, so a leader that adopted the work from the
   report of a link that came back meanwhile places it again rather than calling it started.
-  Before this, a leader cut off with
-  placed work kept it running, and the majority ran a second copy — the one double-run
-  the slave self-fence below did not cover, because a leader answers to nobody. Scenario
-  24 on the online-testing stand proves both halves on the logs. A slave knows nothing of
-  a quorum and is unchanged: a slave left in a minority together with a former leader
-  still runs its work (P-461).
+  Before this, a leader cut off with placed work kept it running, and the majority ran a
+  second copy — the one double-run the slave self-fence below did not cover, because a
+  leader answers to nobody. Scenario 24 on the online-testing stand proves both halves on
+  the logs. A slave knows nothing of a quorum and is unchanged: a slave left in a minority
+  together with a former leader still runs its work (P-461).
 - **Resume.** No new hook — the project resurrects through the existing
   `onQuorumGained()` / `onBecameSingletonHost()` (leader) and the slave work-grant.
 - **Graceful-leave.** A planned stop broadcasts a `PeerNodeLeavingDTO` on the peer mesh
