@@ -984,8 +984,8 @@ alone, so a fleet of equal free agents does not pile onto one node.
 - `WorkerServer::stop()` sends SIGTERM to every worker but the ones hosting an agent whose
   daemon stops after the other workers (`stopsAfterOtherWorkers()`, the analytics journal
   agent, HIL-1154); those go in a second wave once the others are gone and their last frames
-  were dispatched — `agent_stop` over the connection first, SIGTERM once the worker reports the agent stopped
-  ([worker-lifecycle.md](worker-lifecycle.md), "Graceful shutdown")
+  were dispatched — `agent_stop` over the connection first, SIGTERM once the worker reports
+  the agent stopped ([worker-lifecycle.md](worker-lifecycle.md), "Graceful shutdown")
 - Once the worker server is ready — no process and no linked worker connection — the
   master asks each browser to close after what it was sent has been written. A browser
   action pressed during this window is not read; the frontend fails its pending action

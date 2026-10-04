@@ -310,13 +310,13 @@ batch with the stop hooks' frames — so a node stops in two waves (approved by 
 owner 30.09.2026): SIGTERM to every worker but the journal's; once their processes
 have exited and their connections are closed, the master records closures of its
 remaining pages and connections and sends that batch in `dispatchSignals()` of the
-same pass. The next pass stops the journal agent with an
-ordinary `agent_stop` over its connection, behind everything sent to it before,
-and closes its open file as ready and reports itself stopped; only then its worker gets SIGTERM. The daemon marks
-this with `AnalyticsJournalAgentDaemon::stopsAfterOtherWorkers()`; the mechanism
-is `WorkerServer`'s ([worker-lifecycle.md](worker-lifecycle.md)). The master's
-shutdown ceiling does not change. The stop of the journal's own worker session is
-lost — one line per stop of a node, by consequence.
+same pass. The next pass stops the journal agent with an ordinary `agent_stop`
+over its connection, behind everything sent to it before, and closes its open file
+as ready and reports itself stopped; only then its worker gets SIGTERM. The daemon
+marks this with `AnalyticsJournalAgentDaemon::stopsAfterOtherWorkers()`; the
+mechanism is `WorkerServer`'s ([worker-lifecycle.md](worker-lifecycle.md)). The
+master's shutdown ceiling does not change. The stop of the journal's own worker
+session is lost — one line per stop of a node, by consequence.
 
 ## Settled — Do Not Reopen
 
