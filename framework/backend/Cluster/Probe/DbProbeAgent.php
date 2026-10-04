@@ -13,6 +13,7 @@ use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -126,7 +127,7 @@ final class DbProbeAgent extends AbstractAgent
      * an orphan and every later one updates it in place.
      *
      * @param CommandRequestDTO $request Request naming the setting key and its new value
-     * @return CommandReplyDTO Reply naming what was written, or why nothing was
+     * @return CommandReplyDTO Reply naming what was written and which member took it, or why nothing was
      */
     private function write(CommandRequestDTO $request): CommandReplyDTO
     {
@@ -152,6 +153,8 @@ final class DbProbeAgent extends AbstractAgent
             } else {
                 $existing->actions->updateValue($value);
             }
+            Database::sql('SELECT @@hostname AS member');
+            $member = Database::field('member');
         // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
         } catch (HilosException $e) {
             return CommandReplyDTO::error($request->correlationId, $e->getMessage());
@@ -160,6 +163,7 @@ final class DbProbeAgent extends AbstractAgent
         return CommandReplyDTO::ok($request->correlationId, [
             CommandConstants::FIELD_SETTING_KEY => $key,
             CommandConstants::FIELD_SETTING_VALUE => $value,
+            CommandConstants::FIELD_DATABASE_MEMBER => $member,
         ]);
     }
 

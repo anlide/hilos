@@ -95,6 +95,9 @@ final class CommandConstants
     /** @var string Request payload key: settings value a test DB write carries, or a read answers with */
     public const string FIELD_SETTING_VALUE = 'settingValue';
 
+    /** @var string Reply payload key: the database server (its @@hostname) a test DB write went through */
+    public const string FIELD_DATABASE_MEMBER = 'databaseMember';
+
     /** @var string Request payload key: set key a test RT write names */
     public const string FIELD_RT_SET_KEY = 'rtSetKey';
 

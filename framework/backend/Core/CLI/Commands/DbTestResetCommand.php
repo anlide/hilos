@@ -145,7 +145,6 @@ HELP;
             charset: DatabaseConnectionDefaults::CHARSET,
         );
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
-        Database::sql(DatabaseConnectionDefaults::setNamesSql());
 
         Migration::initialize();
         $applied = Migration::migrateUp();

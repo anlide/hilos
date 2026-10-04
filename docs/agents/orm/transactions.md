@@ -182,6 +182,22 @@ no object, an RT state field changed without `sync()` — changed no memory
 through a door, and the rollback does not see it. A row read after such a write
 inside the transaction is forgotten all the same.
 
+## A connection lost outside a transaction
+
+The next statement reopens a lost connection, even after earlier reconnect attempts
+failed. Inside a statement, reconnect waits out temporary connection failures for
+the policy's window; a final failure reaches the caller immediately. A link closed
+by hand with `Database::close()` stays closed until `Database::connect()` is called.
+The new session receives the same charset and collation setup as the first one.
+
+After reconnect, the statement is sent again, as before. A write that sets values
+or deletes by key is safe to repeat; refusing it could leave this process's memory
+apart from the table. A write that adds a database-numbered row or adds to a value
+may stand twice if its first send reached the server. Each resend of a statement
+other than `SELECT` or `SHOW` leaves a warning with the query template, never its
+parameter values. Inside a transaction, the rule below applies instead: the lost
+link is not reopened after `BEGIN`.
+
 ## The edges
 
 - **A commit with no open transaction** is refused with

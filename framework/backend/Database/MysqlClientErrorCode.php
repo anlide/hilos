@@ -36,6 +36,16 @@ enum MysqlClientErrorCode: int
         ];
     }
 
+    /**
+     * Connect failures a reconnect inside a statement waits out. Anything else is final.
+     *
+     * @return list<int> Retried MySQL client error codes
+     */
+    public static function retriedOnReconnectValues(): array
+    {
+        return [...self::connectionLostValues(), ...self::temporaryConnectFailureValues()];
+    }
+
     public static function isConnectionLost(int $errno): bool
     {
         return in_array($errno, self::connectionLostValues(), true);
@@ -44,5 +54,14 @@ enum MysqlClientErrorCode: int
     public static function isTemporaryConnectFailure(int $errno): bool
     {
         return in_array($errno, self::temporaryConnectFailureValues(), true);
+    }
+
+    /**
+     * @param int $errno MySQL client error code
+     * @return bool Whether reconnect waits out this failure
+     */
+    public static function isRetriedOnReconnect(int $errno): bool
+    {
+        return in_array($errno, self::retriedOnReconnectValues(), true);
     }
 }

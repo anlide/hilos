@@ -67,6 +67,9 @@ class Database
      */
     private static array $transactions = [];
 
+    /** @var array<int, true> Connection indices explicitly closed by a caller */
+    private static array $closedByHand = [];
+
     /**
      * @param ?int $index Connection index (defaults to current)
      * @return ?mysqli_result Cached mysqli result or null
@@ -150,6 +153,7 @@ class Database
         self::$connections[$index] = null;
         self::$resultSets[$index] = null;
         self::$lastSql[$index] = '';
+        unset(self::$closedByHand[$index]);
     }
 
     /**
@@ -261,7 +265,7 @@ class Database
                     $error = $e->getMessage();
 
                     // Retry only for temporary connection errors if retry is enabled
-                    if ($retryOnConnectionError && MysqlClientErrorCode::isTemporaryConnectFailure($errno) && $attempt < $retries - 1) {
+                    if ($retryOnConnectionError && MysqlClientErrorCode::isRetriedOnReconnect($errno) && $attempt < $retries - 1) {
                         $lastException = new CantConnectToMysqlServerException($error, $errno);
                         continue; // Retry
                     }
@@ -272,6 +276,9 @@ class Database
                 // Set charset
                 try {
                     mysqli_set_charset($mysqli, $config->charset);
+                    if ($config->charset === DatabaseConnectionDefaults::CHARSET) {
+                        mysqli_query($mysqli, DatabaseConnectionDefaults::setNamesSql());
+                    }
                 } catch (mysqli_sql_exception $e) {
                     $errno = $e->getCode();
                     $error = $e->getMessage();
@@ -282,6 +289,7 @@ class Database
                 }
 
                 self::$connections[$index] = $mysqli;
+                unset(self::$closedByHand[$index]);
                 return; // Success
                 
             } catch (CantConnectToMysqlServerException $e) {
@@ -305,13 +313,24 @@ class Database
      *
      * The memory its writes changed goes back here, at the moment the rows go. A transaction that
      * sent no query yet holds nothing on the server, loses nothing, and stays as it stood.
+     * A connection closed here stays closed: sql() does not reopen it, but connect() does.
      *
      * @param ?int $index Connection index (defaults to current)
      */
     public static function close(?int $index = null): void
     {
         $index = $index ?? self::$currentIndex;
+        self::dropLink($index);
+        self::$closedByHand[$index] = true;
+    }
 
+    /**
+     * Drops a link without marking it closed by its caller. The next statement may reopen it.
+     *
+     * @param int $index Connection index
+     */
+    private static function dropLink(int $index): void
+    {
         if (isset(self::$connections[$index]) && self::$connections[$index] !== null) {
             // Free current result set if exists (get mysqli_result from ResultSet)
             $resultSet = self::$resultSets[$index] ?? null;
@@ -344,6 +363,46 @@ class Database
                 }
             }
         }
+    }
+
+    /**
+     * Opens an empty configured slot unless its caller closed it or its transaction reached MySQL.
+     *
+     * @param int $index Connection index
+     * @param bool $tryReconnect Whether an empty slot may be opened
+     * @return mysqli Active connection
+     * @throws DatabaseConnectionException When the slot cannot be opened
+     */
+    private static function openLink(int $index, bool $tryReconnect): mysqli
+    {
+        if (isset(self::$connections[$index]) && self::$connections[$index] !== null) {
+            return self::$connections[$index];
+        }
+
+        $levels = self::$transactions[$index] ?? [];
+        if (
+            !$tryReconnect
+            || !isset(self::$configurations[$index])
+            || isset(self::$closedByHand[$index])
+            || ($levels !== [] && $levels[0]->isOpened())
+        ) {
+            throw new DatabaseConnectionException("Not connected to database at index {$index}");
+        }
+
+        $config = self::$configurations[$index];
+        $delayMs = max($config->reconnectDelay, DatabaseConnectionPolicy::RECONNECT_DELAY_MIN_MS);
+        $maxAttempts = max(1, min(
+            $config->reconnectAttempts,
+            (int) ceil(DatabaseConnectionPolicy::RECONNECT_TIMEOUT_MAX_MS / $delayMs),
+        ));
+        self::connect(
+            $index,
+            retryOnConnectionError: true,
+            maxRetries: $maxAttempts,
+            retryDelaySeconds: (int) ceil($delayMs / TimeConstants::MS_PER_SECOND),
+        );
+
+        return self::getConnection($index);
     }
 
     /**
@@ -384,7 +443,7 @@ class Database
     public static function sql(string $sql, array|SqlParamCollection|null $params = null, bool $tryReconnect = true): ResultSetCollection
     {
         $index = self::$currentIndex;
-        $mysqli = self::getConnection($index);
+        $mysqli = self::openLink($index, $tryReconnect);
         $config = self::$configurations[$index];
 
         // Clear cached ResultSet before new query (new query = new result set)
@@ -417,6 +476,7 @@ class Database
 
         $attempts = 0;
         $maxAttempts = $tryReconnect ? $config->reconnectAttempts : DatabaseConnectionPolicy::ATTEMPTS_WITHOUT_RECONNECT;
+        $resent = false;
 
         // A reconnect inside a transaction would lose it without a word: the statements after
         // it would autocommit, and the commit would then release announcements about rows the
@@ -431,30 +491,16 @@ class Database
         while ($attempts < $maxAttempts) {
             $attempts++;
 
-            // Check if connection is still valid before using it
-            if (!isset(self::$connections[$index]) || self::$connections[$index] === null || self::$connections[$index] !== $mysqli) {
-                // Connection was closed or changed - reconnect if allowed
-                if ($tryReconnect && $attempts < $maxAttempts) {
-                    try {
-                        self::connect($index);
-                        $mysqli = self::getConnection($index);
-                        // Re-parse SQL with new connection
-                        $parsedSql = self::parseSqlWithParams($sql, $params, $mysqli);
-                    } catch (DatabaseConnectionException $e) {
-                        throw new DatabaseConnectionException(
-                            'Database connection was closed. Attempted to reconnect'
-                            . " (attempt {$attempts}/{$maxAttempts}) but failed: " . $e->getMessage()
-                            . '. Original query: ' . substr($sql, 0, DatabaseException::QUERY_PREVIEW_MAX_LENGTH)
-                        );
-                    }
-                } else {
-                    throw new DatabaseConnectionException(
-                        "Database connection is closed at index {$index}. " .
-                        "Connection state: " . (isset(self::$connections[$index]) ? "exists but is null" : "does not exist") . ". " .
-                        "Query: " . substr($sql, 0, DatabaseException::QUERY_PREVIEW_MAX_LENGTH)
-                    );
-                }
+            if ($resent && !DatabaseSql::onlyReads($sql)) {
+                $queryPreview = strlen($sql) > DatabaseException::QUERY_PREVIEW_MAX_LENGTH
+                    ? substr($sql, 0, DatabaseException::QUERY_PREVIEW_MAX_LENGTH) . '...'
+                    : $sql;
+                Logger::warning(
+                    "A write was sent again after its database connection was lost (connection {$index}); "
+                    . 'if the first send reached the database, it now stands twice: ' . $queryPreview
+                );
             }
+            $resent = false;
 
             // Execute multi-query
             try {
@@ -467,25 +513,32 @@ class Database
                 if ($tryReconnect && MysqlClientErrorCode::isConnectionLost($errno) && $attempts < $maxAttempts) {
                     // Use minimum delay (at least 1 second) to prevent rapid retry attempts
                     $delayMs = max($config->reconnectDelay, DatabaseConnectionPolicy::RECONNECT_DELAY_MIN_MS);
-                    // Ensure total retry time doesn't exceed maximum
-                    $totalTimeMs = $attempts * $delayMs;
-                    if ($totalTimeMs >= DatabaseConnectionPolicy::RECONNECT_TIMEOUT_MAX_MS) {
-                        // Timeout exceeded, throw error
-                        MysqlExceptionMapper::runtimeException($errno, $error, $sql);
+                    self::dropLink($index);
+                    while ($attempts < $maxAttempts) {
+                        $totalTimeMs = $attempts * $delayMs;
+                        if ($totalTimeMs >= DatabaseConnectionPolicy::RECONNECT_TIMEOUT_MAX_MS) {
+                            MysqlExceptionMapper::runtimeException($errno, $error, $sql);
+                        }
+
+                        // Each failed connect consumes one of this statement's attempts.
+                        $delaySeconds = (int)ceil($delayMs / TimeConstants::MS_PER_SECOND);
+                        sleep($delaySeconds);
+
+                        try {
+                            self::connect($index);
+                            $mysqli = self::getConnection($index);
+                            $parsedSql = self::parseSqlWithParams($sql, $params, $mysqli);
+                            $resent = true;
+                            continue 2; // Retry query on the one new connection
+                        } catch (DatabaseConnectionException $connectError) {
+                            if (!MysqlClientErrorCode::isRetriedOnReconnect($connectError->getCode())) {
+                                throw $connectError;
+                            }
+                            $attempts++;
+                        }
                     }
 
-                    // Sleep using sleep() for seconds (minimum 1 second)
-                    $delaySeconds = (int)ceil($delayMs / TimeConstants::MS_PER_SECOND);
-                    sleep($delaySeconds);
-
-                    self::close($index);
-                    try {
-                        self::connect($index);
-                        continue; // Retry query
-                    } catch (DatabaseConnectionException $e) {
-                        // If reconnection fails, throw the original error
-                        MysqlExceptionMapper::runtimeException($errno, $error, $sql);
-                    }
+                    MysqlExceptionMapper::runtimeException($errno, $error, $sql);
                 }
 
                 MysqlExceptionMapper::runtimeException($errno, $error, $sql);
@@ -548,7 +601,7 @@ class Database
         bool $tryReconnect = true,
     ): void {
         $index = self::$currentIndex;
-        $mysqli = self::getConnection($index);
+        $mysqli = self::openLink($index, $tryReconnect);
 
         // Set max execution time. A connection that already died is not this method's
         // business: the failure is left to sql() below, which reconnects and reports it

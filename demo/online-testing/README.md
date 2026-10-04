@@ -161,7 +161,8 @@ Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 21 schema rolled out once, 24 cut-off leader stops its
 work, 26 database is one cluster, 11 cross-node db fact, 15 db interest
-addressing and 22 other database refused (`docs/agents/testing.md`, "The
+addressing, 22 other database refused, 27 a database member dies under load,
+and 28 a returning member catches up (`docs/agents/testing.md`, "The
 cluster stands — three demos, three shapes"). The framework's probe fleet and
 database probe are in this demo's `AGENTS`, and they start only here: on one
 node, on the Playwright stand and in production the rows are carried and
@@ -191,11 +192,26 @@ data: `galera1` finds nobody to join and raises the cluster again from what it
 kept. The members share `docker/galera/galera.cnf`, the proxy reads
 `docker/haproxy/haproxy.cfg`.
 
+Each member runs an agent on the cluster network. It answers `up` only while
+Galera reports `Synced`; a member joining or donating a full copy receives no
+new connection. HAProxy redispatches a failed new connection to another member
+while its health check catches up with a member's death. Existing connections
+remain on their member until that link closes.
+
 `db-sql` runs a statement in `galera1`, and on the member named after it
 otherwise:
 
 ```bash
 python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-sql "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size'" online-testing-cluster-galera2
+```
+
+The harness can kill a member, start that same container with its data, and read
+the proxy's server states:
+
+```bash
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-kill online-testing-cluster-galera2
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-start online-testing-cluster-galera2
+python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-proxy
 ```
 
 ### TLS fixtures

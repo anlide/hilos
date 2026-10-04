@@ -16,6 +16,7 @@ documents by touched surface; it does not replace them.
 | Object item mapping, object collection loading, object enrichment, or `getIdString()` | `object.md` |
 | Schema migrations, rollback files, seeds, or schema checks | `migrations.md` |
 | Opening a database transaction, `Database::transaction*`, code that must run only once a write commits, or memory of your own that must go back when it does not (`Database::onRollback()`) | `transactions.md` |
+| A lost database connection: what the next statement reopens, what is sent again | `transactions.md` |
 
 When a change touches more than one surface, read every matching document before
 editing. DB entity shape, RT item shape, signal DTOs, and routes still require

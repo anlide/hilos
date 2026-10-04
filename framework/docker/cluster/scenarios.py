@@ -77,6 +77,10 @@ Plus scenarios beyond that matrix:
  26 database is one cluster    every member of a clustered database is in one synced primary
                                cluster, reads wait for the cluster's writes, and the application
                                is connected to each (HIL-1230)
+ 27 database member dies       a member is killed while every node writes; each writes on through
+                               the others (HIL-1231)
+ 28 database member comes      the member comes back, catches up, and is handed connections again
+                               (HIL-1231)
 
 run_matrix() answers 0 when every scenario passes, 1 otherwise.
 """
@@ -84,6 +88,7 @@ run_matrix() answers 0 when every scenario passes, 1 otherwise.
 import json
 import os
 import re
+import threading
 import time
 from collections import namedtuple
 from datetime import datetime
@@ -259,6 +264,12 @@ QUORUM_TIMEOUT = 30.0 * TIMEOUT_SCALE
 # watchdog rate-limits an error restart to DAEMON_MIN_RESTART_INTERVAL (20s), and only
 # then does the new daemon sweep the orphans, bind, and gossip its way back in.
 CRASH_RECOVERY_TIMEOUT = 90.0 * TIMEOUT_SCALE
+DB_MEMBER_DEATH_TIMEOUT = 60.0 * TIMEOUT_SCALE
+DB_MEMBER_RETURN_TIMEOUT = 120.0 * TIMEOUT_SCALE
+DB_LOAD_STEADY = 3
+# Each probe's worker also drains the other nodes' DB syncs. An unbounded writer can
+# queue more work than that worker processes and time out its own command before the fault.
+DB_LOAD_INTERVAL_SECONDS = 0.5
 
 
 # --------------------------------------------------------------------------- io
@@ -338,6 +349,24 @@ def db_sql(statement, member=None):
     """Run one SQL statement in the stand's database, or on the member of a clustered one that
     `member` names by service: its rows as printed, or '' when it failed."""
     return ctl_out("db-sql", statement, *([member] if member else []))
+
+
+def db_kill(member):
+    """Kill one member by the service name the stand declares."""
+    outcome = control.execute(STAND, "db-kill", member)
+    assert outcome.code == 0, f"could not kill {member}: {outcome.err or outcome.out}"
+
+
+def db_start(member):
+    """Start the same member container again, retaining its data."""
+    outcome = control.execute(STAND, "db-start", member)
+    assert outcome.code == 0, f"could not start {member}: {outcome.err or outcome.out}"
+
+
+def proxy_states():
+    """HAProxy backend server name -> state, as the agent check last reported it."""
+    lines = ctl_out("db-proxy").splitlines()
+    return dict(line.split("\t", 1) for line in lines if "\t" in line)
 
 
 def container_id(node):
@@ -2701,6 +2730,16 @@ CLUSTER_STATUS_SQL = ("SHOW GLOBAL STATUS WHERE Variable_name IN "
 SYNC_WAIT_SQL = "SELECT @@GLOBAL.wsrep_sync_wait"
 
 
+def member_status(member):
+    """The Galera status a declared member reports about itself."""
+    status = {}
+    for line in db_sql(CLUSTER_STATUS_SQL, member).splitlines():
+        name, _, value = line.partition("\t")
+        status[name.lower()] = value
+    assert status, f"{member} did not answer: {CLUSTER_STATUS_SQL}"
+    return status
+
+
 def scenario_26_database_is_one_cluster():
     """Every member of the stand's clustered database is one synced cluster the application writes
     to (HIL-1230).
@@ -2730,11 +2769,7 @@ def scenario_26_database_is_one_cluster():
     sync_waits = set()
     held = {}
     for member in members:
-        status = {}
-        for line in db_sql(CLUSTER_STATUS_SQL, member).splitlines():
-            name, _, value = line.partition("\t")
-            status[name.lower()] = value
-        assert status, f"{member} did not answer: {CLUSTER_STATUS_SQL}"
+        status = member_status(member)
         size = status.get("wsrep_cluster_size")
         assert size == str(count), f"{member} sees a database cluster of {size}, the stand declares {count} members"
         state = status.get("wsrep_cluster_status")
@@ -2762,6 +2797,262 @@ def scenario_26_database_is_one_cluster():
     waits = "/".join(str(value) for value in sorted(sync_waits))
     return (f"one cluster of {in_words(count)} members, all synced in the primary component with "
             f"wsrep_sync_wait={waits}; the application holds {spread}")
+
+
+class DbWriteAttempt(namedtuple("DbWriteAttempt", "started finished node value ok member error")):
+    """One write from a node, including its failure and the member named by a success."""
+
+
+class DbLoad:
+    """One continuous DB probe writer per node, with every attempt retained for assertions."""
+
+    def __init__(self):
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._attempts = {node: [] for node in ALL_NODES}
+        self._threads = []
+
+    def start(self):
+        for node in ALL_NODES:
+            thread = threading.Thread(target=self._write, args=(node,), daemon=True)
+            self._threads.append(thread)
+            thread.start()
+
+    def stop(self):
+        self._stop.set()
+        for thread in self._threads:
+            thread.join()
+
+    def _write(self, node):
+        key = f"cluster_db_load_{node}"
+        index = 0
+        while not self._stop.is_set():
+            index += 1
+            value = f"w{index}"
+            started = time.monotonic()
+            outcome = control.client(STAND, node, "test:cluster:db:write", key, value)
+            prefix = f"Wrote {key}={value} via "
+            member = next((line[len(prefix):] for line in outcome.out.splitlines()
+                           if line.startswith(prefix)), None)
+            ok = outcome.code == 0 and bool(member)
+            error = "" if ok else (outcome.err or outcome.out or f"exit {outcome.code}").strip()
+            attempt = DbWriteAttempt(started, time.monotonic(), node, value, ok, member if ok else None, error)
+            with self._lock:
+                self._attempts[node].append(attempt)
+            self._stop.wait(DB_LOAD_INTERVAL_SECONDS)
+
+    def attempts(self, node):
+        with self._lock:
+            return list(self._attempts[node])
+
+    def last_acknowledged(self, node):
+        return next((attempt for attempt in reversed(self.attempts(node)) if attempt.ok), None)
+
+    def member_of(self, node):
+        last = self.last_acknowledged(node)
+        return last.member if last else None
+
+    def failures_since(self, since):
+        return [attempt for node in ALL_NODES for attempt in self.attempts(node)
+                if attempt.started >= since and not attempt.ok]
+
+
+def wait_db_steady(load, since, timeout, victim=None):
+    """Wait for three consecutive acknowledged writes per node, begun after `since`."""
+    deadline = time.monotonic() + timeout
+    while True:
+        recovered = {}
+        for node in ALL_NODES:
+            attempts = [attempt for attempt in load.attempts(node) if attempt.started >= since]
+            streak = []
+            for attempt in reversed(attempts):
+                if not attempt.ok:
+                    break
+                streak.append(attempt)
+            if len(streak) >= DB_LOAD_STEADY:
+                recovered[node] = streak[0].started - since
+        if len(recovered) == len(ALL_NODES):
+            return recovered
+        if time.monotonic() >= deadline:
+            node = next(node for node in ALL_NODES if node not in recovered)
+            attempts = [attempt for attempt in load.attempts(node) if attempt.started >= since]
+            last_error = next((attempt.error for attempt in reversed(attempts) if not attempt.ok), "no reply")
+            if victim is not None:
+                raise ScenarioTimeout(f"{node} did not write again within {timeout:.0f}s of killing "
+                                      f"{victim}: {last_error}")
+            raise ScenarioTimeout(f"{node} did not produce {DB_LOAD_STEADY} steady writes "
+                                  f"within {timeout:.0f}s: {last_error}")
+        time.sleep(POLL_INTERVAL)
+
+
+def database_members_by_hostname():
+    """Map the hostname in a probe reply to the service name the controller switches."""
+    mapped = {}
+    for member in STAND.database_members:
+        hostname = db_sql("SELECT @@hostname", member.service)
+        assert hostname, f"{member.service} did not answer SELECT @@hostname"
+        assert hostname not in mapped, f"two database members answer as {hostname}"
+        mapped[hostname] = member.service
+    return mapped
+
+
+def member_back(member, count, timeout, since_start=None):
+    """Wait until a returned member is Synced in the expected cluster and UP at the proxy."""
+    started = time.monotonic()
+    deadline = started + timeout
+    synced_at = None
+    up_at = None
+    while True:
+        raw = db_sql(CLUSTER_STATUS_SQL, member)
+        status = dict((name.lower(), value) for name, _, value in
+                      (line.partition("\t") for line in raw.splitlines()))
+        state = status.get("wsrep_local_state_comment", "unavailable")
+        size = status.get("wsrep_cluster_size")
+        proxy = proxy_states().get(member)
+        now = time.monotonic()
+        if state == "Synced" and size == str(count) and synced_at is None:
+            synced_at = now - started
+        if proxy == "UP":
+            assert state == "Synced" and size == str(count), \
+                f"{member} got new connections while it was {state} in a cluster of {size}"
+            if up_at is None:
+                up_at = now - started
+        if synced_at is not None and up_at is not None:
+            return synced_at, up_at
+        if time.monotonic() >= deadline:
+            if since_start is not None:
+                raise ScenarioTimeout(f"{member} is not back within {timeout:.0f}s of its start: "
+                                      f"{state}, proxy {proxy}")
+            raise ScenarioTimeout(f"{member} did not come back within {timeout:.0f}s: {state}")
+        time.sleep(POLL_INTERVAL)
+
+
+def database_value(member, node):
+    """The setting a node's load writer last placed, read directly from one member."""
+    return db_sql(f"SELECT `value` FROM `hilos_setting` WHERE `key` = 'cluster_db_load_{node}'", member)
+
+
+def assert_member_synced(member, count):
+    """Assert the same size, Primary and Synced checks as scenario 26."""
+    status = member_status(member)
+    size = status.get("wsrep_cluster_size")
+    assert size == str(count), f"{member} sees a database cluster of {size}, the stand declares {count} members"
+    state = status.get("wsrep_cluster_status")
+    assert state == "Primary", f"{member} is outside the primary component: wsrep_cluster_status={state}"
+    local = status.get("wsrep_local_state_comment")
+    assert local == "Synced", f"{member} is {local}, not Synced"
+
+
+def scenario_27_database_member_dies_under_load():
+    """Every node writes through the survivors when the member under the first probe dies."""
+    wait_converge(ALL_NODES)
+    members = [member.service for member in STAND.database_members]
+    for member in members:
+        assert_member_synced(member, len(members))
+    by_host = database_members_by_hostname()
+    started_at = {}
+    for node in ALL_NODES:
+        outcome = control.node_started_at(STAND, node)
+        assert outcome.code == 0, f"could not inspect {node}'s start: {outcome.err}"
+        started_at[node] = outcome.out.strip()
+
+    load = DbLoad()
+    victim = None
+    killed = False
+    back = 0.0
+    try:
+        load.start()
+        wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
+        victim = by_host.get(load.member_of(MASTERS[0]))
+        assert victim is not None, f"{MASTERS[0]} wrote through an unknown database member"
+        db_kill(victim)
+        killed = True
+        killed_at = time.monotonic()
+        recovered = wait_db_steady(load, killed_at, DB_MEMBER_DEATH_TIMEOUT, victim)
+        load.stop()
+
+        new_member = by_host.get(load.member_of(MASTERS[0]))
+        assert new_member != victim, f"{MASTERS[0]} still writes through {victim}, which was killed"
+        survivors = [member for member in members if member != victim]
+        for member in survivors:
+            status = member_status(member)
+            size = status.get("wsrep_cluster_size")
+            expected = len(survivors)
+            assert size == str(expected), (f"{member} sees a database cluster of {size} after {victim} "
+                                           f"was killed, {expected} members are left")
+            state = status.get("wsrep_cluster_status")
+            assert state == "Primary", f"{member} is outside the primary component: wsrep_cluster_status={state}"
+            local = status.get("wsrep_local_state_comment")
+            assert local == "Synced", f"{member} is {local}, not Synced"
+            for node in ALL_NODES:
+                last = load.last_acknowledged(node)
+                assert last is not None, f"{node} acknowledged no database write"
+                held = database_value(member, node)
+                assert held == last.value, f"{member} holds {held} for {node}, which last wrote {last.value}"
+        for node in ALL_NODES:
+            outcome = control.node_started_at(STAND, node)
+            assert outcome.code == 0 and outcome.out.strip() == started_at[node], \
+                f"{node} was restarted while {victim} was down"
+        failed = len(load.failures_since(killed_at))
+    finally:
+        load.stop()
+        if killed:
+            db_start(victim)
+            _, back = member_back(victim, len(members), DB_MEMBER_RETURN_TIMEOUT)
+
+    recovery = ", ".join(f"{node} after {recovered[node]:.1f}s" for node in ALL_NODES)
+    return (f"{victim} killed under {MASTERS[0]}'s probe; every node wrote again ({recovery}), "
+            f"{MASTERS[0]} through {new_member}; {failed} write(s) failed in the window; "
+            f"{', '.join(survivors)} kept a primary cluster of {in_words(len(survivors))} "
+            f"holding every acknowledged write; {victim} back and synced after {back:.0f}s")
+
+
+def scenario_28_database_member_comes_back_and_catches_up():
+    """The returned member catches every confirmed write and takes new links only when Synced."""
+    wait_converge(ALL_NODES)
+    members = [member.service for member in STAND.database_members]
+    for member in members:
+        assert_member_synced(member, len(members))
+    victim = next((member for member in sorted(members, reverse=True)
+                   if member != STAND.database.service), None)
+    assert victim is not None, "no non-primary database member to kill"
+
+    load = DbLoad()
+    killed = False
+    started = False
+    try:
+        load.start()
+        wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
+        db_kill(victim)
+        killed = True
+        killed_at = time.monotonic()
+        wait_db_steady(load, killed_at, DB_MEMBER_DEATH_TIMEOUT, victim)
+        wait_db_steady(load, time.monotonic(), DB_MEMBER_DEATH_TIMEOUT, victim)
+        mark = time.monotonic()
+        db_start(victim)
+        started = True
+        since_start = time.monotonic()
+        synced, up = member_back(victim, len(members), DB_MEMBER_RETURN_TIMEOUT, since_start)
+        load.stop()
+
+        for node in ALL_NODES:
+            last = load.last_acknowledged(node)
+            assert last is not None, f"{node} acknowledged no database write"
+            held = database_value(victim, node)
+            assert held == last.value, f"{victim} came back without {node}'s write: holds {held}, {node} last wrote {last.value}"
+        after_start = [attempt for node in ALL_NODES for attempt in load.attempts(node)
+                       if attempt.finished >= mark]
+        for attempt in after_start:
+            assert attempt.ok, f"{attempt.node}'s write failed while {victim} was coming back: {attempt.error}"
+    finally:
+        load.stop()
+        if killed and not started:
+            db_start(victim)
+            member_back(victim, len(members), DB_MEMBER_RETURN_TIMEOUT)
+
+    return (f"{victim} killed and brought back: synced in a cluster of {in_words(len(members))} "
+            f"after {synced:.0f}s and up behind the proxy after {up:.0f}s, holding every write "
+            f"acknowledged while it was away; none of {len(after_start)} writes failed while it came back")
 
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
@@ -2821,6 +3112,12 @@ SCENARIOS = [
     # other with a quorum left behind. Of the shapes that could carry it, this refuses only a lone
     # master with a lone slave.
     Scenario("22 other database refused", scenario_22_other_database_refused, Need(nodes=3)),
+    # These kill one member only after every shared-database scenario has read the intact stand,
+    # and each returns it before the next scenario begins.
+    Scenario("27 database member dies under load", scenario_27_database_member_dies_under_load,
+             Need(database_members=3)),
+    Scenario("28 database member comes back and catches up", scenario_28_database_member_comes_back_and_catches_up,
+             Need(database_members=3)),
     Scenario("18 capacity is consumed", scenario_18_capacity_is_consumed,
              Need(masters=1, slaves=1, slave_ram=True)),
     # Both recreate or stop a slave and restore it before the freeze pair stops every master's agents.

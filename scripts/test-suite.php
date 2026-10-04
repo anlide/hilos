@@ -287,8 +287,8 @@ $steps = array_merge($steps, [
     // the whole demo on a MariaDB Galera of three members behind one proxy (HIL-1230). Beside
     // the other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does.
-    // The demo's unit suite runs in online-testing-php. The seconds are measured alone on nova-de after the
-    // database moved into host memory (2026-10-04, HIL-1327), with a fresh stand.
+    // The demo's unit suite runs in online-testing-php. The seconds are the median of ten fresh
+    // stands after the database member death and return scenarios were added (HIL-1231).
     [
         'id' => 'online-testing-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -297,7 +297,7 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 98,
+        'seconds' => 165,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

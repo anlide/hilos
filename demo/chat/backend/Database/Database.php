@@ -43,9 +43,9 @@ final class Database extends BaseDatabase
      *                       Call Hilos::init() manually after migrations when using false.
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @throws EnvException When required env variables are missing or invalid
-     * @throws DatabaseConnectionException When connect or SET NAMES fails
+     * @throws DatabaseConnectionException When connect or session setup fails
      * @throws CantConnectToMysqlServerException When connect retries are exhausted
-     * @throws DatabaseRuntimeException When SET NAMES query fails
+     * @throws DatabaseRuntimeException When schema initialization query fails
      * @throws DatabaseException When schema initialization fails
      * @throws InvalidTopologyException When Hilos topology constants are inconsistent
      * @throws HilosException When Hilos facade initialization fails
@@ -65,8 +65,6 @@ final class Database extends BaseDatabase
 
         // Connect to primary database
         self::connect(DatabaseConnectionDefaults::PRIMARY_INDEX, retryOnConnectionError: $retryConnection);
-
-        self::sql(DatabaseConnectionDefaults::setNamesSql());
 
         // Initialize database schema structure
         Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);

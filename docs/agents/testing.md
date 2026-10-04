@@ -354,7 +354,7 @@ scenario on a single shape is retired (HIL-1218).
 |---|---|---|---|---|
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on every master, 25 freeze settles on every master (parked, P-456), 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 33 every master takes browsers, 34 a tab is the same on every master under protected mode |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and a replica behind one address (not in the code yet — HIL-1229) | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node |
-| online-testing | Angular | three equal masters that host work themselves | a MariaDB Galera of three members behind one HAProxy address, every member written to, reads waiting for the cluster's writes | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 26 the database is one cluster of every member, the application connected to each; a database node that dies and the nodes that reconnect (not in the code yet — HIL-1231) |
+| online-testing | Angular | three equal masters that host work themselves | a MariaDB Galera of three members behind one HAProxy address, every member written to, reads waiting for the cluster's writes | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 26 the database is one cluster of every member, the application connected to each, 27 a database member dies under load and every node writes on through the others, 28 a member that comes back catches up and is handed connections again |
 
 Why the scenarios fall this way (the owner's word, 2026-09-27): quorum, a
 network partition and TLS are proved on the simplest database, so that two
@@ -410,6 +410,8 @@ service labelled `hilos.database.member: "true"`, exactly one of them also
 `hilos.role: database` — the one `db-sql` and the step's artifact collector
 reach — and the nodes reach the members through one address of the stand,
 never a member directly. Scenario 26 asks every member.
+The proxy service is labelled `hilos.database.proxy: "true"`; scenario 28 reads
+its server states, and a member that is not Synced takes no new connection.
 
 Every server of a fleet's database, whether one server or a member of a cluster,
 keeps its data in a host directory under `/dev/shm` and mounts

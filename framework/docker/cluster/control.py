@@ -16,6 +16,7 @@ cluster.py prints it for a person. The commands only a person runs (up, down, st
 print as they go.
 """
 
+import csv
 import json
 import os
 import pathlib
@@ -613,6 +614,57 @@ def cluster_directory_exec(stand, node_id, *argv):
     return _run(["docker", "exec", "-w", stand.cluster_directory.path, node.container, *argv])
 
 
+def _database_member(stand, member):
+    """A member named by service, with one refusal shared by SQL and lifecycle switches."""
+    database = next((m for m in stand.database_members if m.service == member), None)
+    if database is None:
+        raise StandRefused(f"unknown database member '{member}' (expected one of: "
+                           f"{' '.join(m.service for m in stand.database_members)})")
+    return database
+
+
+def db_kill(stand, member):
+    """SIGKILL one database member, leaving its container and data for db-start."""
+    database = _database_member(stand, member)
+    return _said(_run(["docker", "kill", database.container]),
+                 f"cluster: killed database member {database.container}")
+
+
+def db_start(stand, member):
+    """Start the existing member container again, as the stand's compose declares it."""
+    database = _database_member(stand, member)
+    return _said(compose(stand, "up", "-d", database.service),
+                 f"cluster: started database member {database.container}")
+
+
+def node_started_at(stand, node):
+    """Docker's start timestamp, which changes even when the container id does not."""
+    return _run(["docker", "inspect", "-f", "{{.State.StartedAt}}", stand.member(node).container])
+
+
+def db_proxy(stand):
+    """Report the proxy's named backend servers and their states from HAProxy's CSV page."""
+    if stand.database_proxy is None:
+        raise StandRefused(f"{stand.project} labels no service as its database proxy (hilos.database.proxy)")
+    outcome = _run(["docker", "exec", stand.database_proxy, "wget", "-qO-",
+                    "http://127.0.0.1:8404/stats;csv"])
+    if outcome.code != 0:
+        return outcome
+    rows = list(csv.reader(outcome.out.splitlines()))
+    if not rows:
+        return Outcome(1, "", "proxy returned no server states")
+    header = [name.lstrip("# ") for name in rows[0]]
+    try:
+        server_index = header.index("svname")
+        status_index = header.index("status")
+    except ValueError:
+        return Outcome(1, "", "proxy returned no server status columns")
+    states = [(row[server_index], row[status_index]) for row in rows[1:]
+              if len(row) > max(server_index, status_index)
+              and row[server_index] not in ("FRONTEND", "BACKEND")]
+    return Outcome(0, "".join(f"{name}\t{status}\n" for name, status in states), "")
+
+
 def db_sql(stand, statement=None, member=None):
     """Run one SQL statement in the stand's database as its application user, for what it prints:
     tab-separated rows without a header (scenario 22 reads and replaces the database marker,
@@ -628,10 +680,7 @@ def db_sql(stand, statement=None, member=None):
         raise StandRefused("usage: cluster db-sql <statement> [<member>]")
     database = stand.database
     if member is not None:
-        database = next((m for m in stand.database_members if m.service == member), None)
-        if database is None:
-            raise StandRefused(f"unknown database member '{member}' (expected one of: "
-                               f"{' '.join(m.service for m in stand.database_members)})")
+        database = _database_member(stand, member)
     return _run(["docker", "exec", database.container, "mariadb", f"-u{database.user}",
                  f"-p{database.password}", "-N", "-B", database.name, "-e", statement])
 
@@ -667,6 +716,14 @@ def execute(stand, command, *args):
         return own_directory(stand, *args[:2])
     if command == "db-sql":
         return db_sql(stand, *args[:2])
+    if command in ("db-kill", "db-start"):
+        if len(args) != 1:
+            raise StandRefused(f"usage: cluster {command} <member>")
+        return (db_kill if command == "db-kill" else db_start)(stand, args[0])
+    if command == "db-proxy":
+        if args:
+            raise StandRefused("usage: cluster db-proxy")
+        return db_proxy(stand)
     if command == "entry-upgrade":
         if len(args) > 1:
             raise StandRefused("usage: cluster entry-upgrade [<master>]")

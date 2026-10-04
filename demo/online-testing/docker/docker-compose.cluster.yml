@@ -29,7 +29,7 @@ name: hilos-online-testing-cluster
 # below; the nodes, their addresses, roles, room and log directories it takes from the services.
 x-hilos-cluster:
   cli: online-testing-cluster-cli
-  scenarios: [11, 15, 21, 22, 24, 26]
+  scenarios: [11, 15, 21, 22, 24, 26, 27, 28]
 
 x-node-base: &node-base
   build: .
@@ -139,12 +139,14 @@ services:
       hilos.role: database
       hilos.database.member: "true"
     # Raises the cluster when no other member answers, joins it otherwise (docker/galera/bootstrap.sh).
-    entrypoint: ["bash", "/usr/local/bin/hilos-galera-bootstrap.sh"]
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "bash", "/usr/local/bin/hilos-galera-bootstrap.sh"]
     command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
               "--wsrep-node-name=galera1", "--wsrep-node-address=10.223.0.21"]
     volumes:
       - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
       - ./galera/bootstrap.sh:/usr/local/bin/hilos-galera-bootstrap.sh:ro
+      - ./galera/member.sh:/usr/local/bin/hilos-galera-member.sh:ro
+      - ./galera/agent.sh:/usr/local/bin/hilos-galera-agent.sh:ro
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
       - /dev/shm/hilos-online-testing-cluster-galera1-data:/var/lib/mysql
@@ -161,10 +163,13 @@ services:
     depends_on:
       online-testing-cluster-galera1:
         condition: service_healthy
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "docker-entrypoint.sh"]
     command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
               "--wsrep-node-name=galera2", "--wsrep-node-address=10.223.0.22"]
     volumes:
       - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
+      - ./galera/member.sh:/usr/local/bin/hilos-galera-member.sh:ro
+      - ./galera/agent.sh:/usr/local/bin/hilos-galera-agent.sh:ro
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
       - /dev/shm/hilos-online-testing-cluster-galera2-data:/var/lib/mysql
@@ -180,10 +185,13 @@ services:
     depends_on:
       online-testing-cluster-galera2:
         condition: service_healthy
+    entrypoint: ["bash", "/usr/local/bin/hilos-galera-member.sh", "docker-entrypoint.sh"]
     command: ["mariadbd", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci",
               "--wsrep-node-name=galera3", "--wsrep-node-address=10.223.0.23"]
     volumes:
       - ./galera/galera.cnf:/etc/mysql/conf.d/zz-galera.cnf:ro
+      - ./galera/member.sh:/usr/local/bin/hilos-galera-member.sh:ro
+      - ./galera/agent.sh:/usr/local/bin/hilos-galera-agent.sh:ro
       # Host memory keeps this member's data across down/up and kill/start;
       # the harness wipes it on down --volumes (HIL-1327).
       - /dev/shm/hilos-online-testing-cluster-galera3-data:/var/lib/mysql
@@ -198,6 +206,9 @@ services:
     image: haproxy:3.4-alpine
     container_name: online-testing-cluster-proxy
     restart: "no"
+    # The harness finds this proxy by label to read the backend states in scenario 28.
+    labels:
+      hilos.database.proxy: "true"
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:

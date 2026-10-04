@@ -115,7 +115,14 @@ HELP;
             return $this->printRefusal($reply);
         }
 
-        echo "Wrote {$key}={$value}\n";
+        // external-boundary: the node's reply, rendered for the harness that reads this line
+        $member = $reply->payload[CommandConstants::FIELD_DATABASE_MEMBER] ?? null;
+        if (!is_string($member)) {
+            echo "Error: database member missing from write reply\n";
+            return ExitCode::ERROR;
+        }
+
+        echo "Wrote {$key}={$value} via {$member}\n";
 
         return ExitCode::SUCCESS;
     }

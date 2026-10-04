@@ -39,6 +39,9 @@ directory; a demo calls this from its composer scripts)
                        run one SQL statement in the stand's database, or on one member of a
                        clustered one (scenario 26, HIL-1230), and print its rows (scenario 22
                        reads and replaces the database marker, HIL-1206)
+  db-kill <member>     SIGKILL one member of a clustered database (scenarios 27 and 28, HIL-1231)
+  db-start <member>    start that member's existing container again
+  db-proxy             print the state of every server behind the stand's database proxy
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's
   e2e [-- Playwright args]  run the cluster browser suite on a fresh stand, with a live
@@ -62,7 +65,8 @@ REFUSED = 2
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "scenarios", "e2e")
+            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "db-kill", "db-start",
+            "db-proxy", "scenarios", "e2e")
 
 
 def check_registry(stand, shown):

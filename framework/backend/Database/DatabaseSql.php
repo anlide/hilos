@@ -44,6 +44,15 @@ final class DatabaseSql
     public const string SESSION_MAX_STATEMENT_TIME_SET = 'SET SESSION max_statement_time = %d';
 
     /**
+     * @param string $sql SQL template, before parameter values are inserted
+     * @return bool Whether the statement only reads by its first keyword
+     */
+    public static function onlyReads(string $sql): bool
+    {
+        return preg_match('/^\s*(SELECT|SHOW)\b/i', $sql) === 1;
+    }
+
+    /**
      * @param string $table Table name (unescaped, used for probe only)
      * @return string SQL that succeeds when table exists and fails otherwise
      */

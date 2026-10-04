@@ -24,6 +24,7 @@ MYSQL_PASSWORD, MYSQL_DATABASE). A scenario sends SQL there through `db-sql` (co
 A stand whose database is a cluster labels every member `hilos.database.member: "true"` and
 exactly one of them `hilos.role: database`; the nodes reach the members through one address the
 stand provides (online-testing: a proxy), never a member directly. Scenario 26 asks every member.
+The proxy is labelled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
 
 The file is read whole through `docker compose config` as JSON rather than parsed as YAML:
 the host has no YAML parser, and compose resolves the anchors, the relative paths and the
@@ -52,6 +53,9 @@ DATABASE_ROLE = "database"
 # DATABASE_LABEL.
 DATABASE_MEMBER_LABEL = "hilos.database.member"
 DATABASE_MEMBER = "true"
+# The proxy whose per-member states the harness reads for a clustered database.
+DATABASE_PROXY_LABEL = "hilos.database.proxy"
+DATABASE_PROXY = "true"
 # What the database image of a stand is started with, and what db-sql signs in with.
 DATABASE_ENV = ("MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE")
 # Where a database service keeps its data inside its container.
@@ -151,6 +155,8 @@ class Stand:
     # The Database of every member of a clustered database, by service name; empty on a stand
     # whose database is one server.
     database_members: tuple
+    # Proxy container labelled by the stand, or None on a stand without one.
+    database_proxy: str | None = None
     e2e: E2e | None = None
 
     @property
@@ -250,6 +256,7 @@ def stand_from_config(shown, compose, config):
         slave_work_grace_sec=_slave_work_grace_sec(shown, services, members),
         database=database,
         database_members=_database_members(shown, project, services, database),
+        database_proxy=_database_proxy(shown, project, services),
         e2e=_e2e(shown, project, block.get("e2e"), services, entry),
     )
 
@@ -336,6 +343,19 @@ def _database(shown, project, services):
         raise StandRefused(f"{shown}: services {', '.join(labelled)} are all labelled "
                            f"{DATABASE_LABEL}: {DATABASE_ROLE}")
     return _database_of(shown, project, services, labelled[0], "database service")
+
+
+def _database_proxy(shown, project, services):
+    """The one service labelled as the stand's database proxy, when it has one."""
+    labelled = [service for service, spec in services.items()
+                if (spec.get("labels") or {}).get(DATABASE_PROXY_LABEL) == DATABASE_PROXY]
+    if not labelled:
+        return None
+    if len(labelled) > 1:
+        raise StandRefused(f"{shown}: services {', '.join(labelled)} are all labelled "
+                           f"{DATABASE_PROXY_LABEL}: {DATABASE_PROXY}")
+    service = labelled[0]
+    return services[service].get("container_name") or f"{project}-{service}-1"
 
 
 def _cluster_directory(shown, block):
