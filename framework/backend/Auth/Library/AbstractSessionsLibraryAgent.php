@@ -210,13 +210,13 @@ use Throwable;
  * It is ABSTRACT by convention alone, like {@see AbstractNotificationsLibraryAgent} and
  * {@see AbstractUsersLibraryAgent}: every Hilos agent is mounted through a concrete class in the
  * project's registry. The operations over the person are the framework's over `hilos_user` in
- * every project (HIL-1197) - minting the first administrator ({@see ensureAdminUser()}), the
- * admin flag ({@see applyAdminGrant()}), the block ({@see applyAccountBlock()}) and whether one
- * person may take another over ({@see assertImpersonationAllowed()}). So is whether two accounts
- * may be merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). The framework
- * also removes the person, their rename journal and the accounts folded into them on erasure
- * (HIL-1200). What a project adds is the claims over its own way in - the sign-in waits and the registration holds,
- * declared where a sign-in surface exists - and its own rows in a merge
+ * every project (HIL-1197) - minting the first administrator ({@see ensureAdminUser()}), the admin
+ * flag ({@see applyAdminGrant()}), the block ({@see applyAccountBlock()}) and whether one person
+ * may take another over ({@see assertImpersonationAllowed()}). So is whether two accounts may be
+ * merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). The framework also
+ * removes the person, their rename journal and the accounts folded into them on erasure
+ * (HIL-1200). What a project adds is the claims over its own way in - the sign-in waits and the
+ * registration holds, declared where a sign-in surface exists - and its own rows in a merge
  * ({@see applyAccountMerge()}) and an erasure ({@see applyAccountErasure()}).
  *
  * A session is anonymous (user id null) until {@see authenticateSession()} binds a user;
@@ -258,12 +258,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The person table is the users library's too, and this library holds a narrower share of it:
      * adding, editing and removing the erased person's row (HIL-1197, HIL-1200). It mints the
-     * first administrator
-     * ({@see ensureAdminUser()}) and writes the admin and block flags ({@see applyAdminGrant()},
-     * {@see applyAccountBlock()}). The share may add, so the start does not wait for it the way it
-     * waits for a borrowed claim; nothing here reads a person at start, which is what a co-owner
-     * that may add owes (docs/agents/architecture/truth-source.md). Unconditional for the reason
-     * the identity entry is: the writers are methods of this class, not a project seam.
+     * first administrator ({@see ensureAdminUser()}) and writes the admin and block flags
+     * ({@see applyAdminGrant()}, {@see applyAccountBlock()}). The share may add, so the start does
+     * not wait for it the way it waits for a borrowed claim; nothing here reads a person at start,
+     * which is what a co-owner that may add owes (docs/agents/architecture/truth-source.md).
+     * Unconditional for the reason the identity entry is: the writers are methods of this class,
+     * not a project seam.
      *
      * The merge table (HIL-1199) is this library's whole: the merge writes its row and the
      * erasure of a folded account removes it, and both run here. Unconditional for the reason the
@@ -284,13 +284,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * it here, because what a browser is let into is decided here.
      *
      * The rest are borrowed for the account erasure (HIL-302). Its transaction removes the
-     * person's rows and releases their sessions before removing the person, so a forgotten row
-     * is caught by a foreign key and rolls the erasure back (HIL-1202). The request is marked
-     * carried out - an edit - in that same transaction. Three collections were read here before,
-     * and still are: the live code behind a session's step is asked about on every
-     * handshake ({@see pendingAuthStepFor()}), and a person's confirmed authenticator and a
-     * removal of it decide what a proven sign-in is let into. A claim is the interest of its
-     * owner (docs/agents/architecture/truth-source.md), so they are no longer listed as reads.
+     * person's rows and releases their sessions before removing the person, so a forgotten row is
+     * caught by a foreign key and rolls the erasure back (HIL-1202). The request is marked carried
+     * out - an edit - in that same transaction. Three collections were read here before, and still
+     * are: the live code behind a session's step is asked about on every handshake
+     * ({@see pendingAuthStepFor()}), and a person's confirmed authenticator and a removal of it
+     * decide what a proven sign-in is let into. A claim is the interest of its owner
+     * (docs/agents/architecture/truth-source.md), so they are no longer listed as reads.
      * Unconditional because the collections are, and because a class constant cannot ask
      * {@see hasSignInSurface()} - a project carrying sessions with no login mounts them all the
      * same and simply never reaches them.
