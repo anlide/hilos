@@ -107,10 +107,19 @@ final class AnalyticsJournalAgent extends AbstractAgent
     /** @var array<string, true> Operations whose failure was said and has not cleared since */
     private array $failingOperations = [];
 
+    /** @var int Size in bytes past which new events are lost and counted, as last read from the setting */
     private int $ceilingBytes = AnalyticsSettingsCatalog::DEFAULT_JOURNAL_MAX_BYTES;
+
+    /** @var int When the ceiling was last read, in milliseconds; 0 until the first read */
     private int $ceilingReadAtMs = 0;
+
+    /** @var ?int Fixed ceiling a test opened the journal with, null when the setting is read */
     private ?int $ceilingOverride = null;
+
+    /** @var AnalyticsJournalLosses Open loss episodes of this node by reason, written into the journal once quiet */
     private AnalyticsJournalLosses $losses;
+
+    /** @var int When the count of losses was last saved, in milliseconds; 0 until the first save */
     private int $lossesSavedAtMs = 0;
 
     public function __construct()
