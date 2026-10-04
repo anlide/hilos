@@ -668,6 +668,21 @@ describe('HilosUserPage rename modal', () => {
     expect(saveButton().disabled).toBe(false)
   })
 
+  it('sends nothing on Enter while a conflict stands', async () => {
+    const { context, renameElsewhere, sent } = userContext()
+    await openModal(context)
+    await typeDraft('Mine')
+    renameElsewhere('Theirs')
+    await nextTick()
+    await nextTick()
+
+    nameInput().form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+
+    expect(sent).toHaveLength(0)
+    expect(modalEl('conflict-badge')).not.toBeNull()
+  })
+
   it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', async () => {
     const { context, renameElsewhere, sent } = userContext()
     await openModal(context)

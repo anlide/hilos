@@ -1403,7 +1403,8 @@ export class HilosUserPage {
       isHiddenValue(draft) ||
       !this.valid() ||
       this.loading() ||
-      this.live().gone
+      this.live().gone ||
+      this.live().conflict
     ) {
       return
     }

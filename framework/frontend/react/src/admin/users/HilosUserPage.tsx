@@ -596,7 +596,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }
 
   function submit(): void {
-    if (!detail || !valid || loading || live.gone) {
+    if (!detail || !valid || loading || live.gone || live.conflict) {
       return
     }
     // No change: close without a round-trip (also keeps the state-driven success

@@ -207,6 +207,7 @@ async function submitEdit(): Promise<void> {
     isHiddenValue(typed) ||
     editBusy.value ||
     live.value.gone ||
+    live.value.conflict ||
     editEmpty.value
   ) {
     return

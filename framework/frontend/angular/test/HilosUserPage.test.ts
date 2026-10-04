@@ -393,6 +393,22 @@ describe('HilosUserPage rename modal', () => {
     expect(saveButton(fixture).disabled).toBe(false)
   })
 
+  it('sends nothing on Enter while a conflict stands', () => {
+    const { context, renameElsewhere, sent } = userContext()
+    const fixture = openModal(context)
+    typeDraft(fixture, 'Mine')
+    renameElsewhere('Theirs')
+    fixture.detectChanges()
+
+    nameInput(fixture).form?.dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    )
+    fixture.detectChanges()
+
+    expect(sent).toHaveLength(0)
+    expect(el(fixture, 'conflict-badge')).not.toBeNull()
+  })
+
   it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', () => {
     const { context, renameElsewhere, sent } = userContext()
     const fixture = openModal(context)

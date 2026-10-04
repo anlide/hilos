@@ -299,7 +299,7 @@ export function HilosCommunicationsChannelPage({
   }
 
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone || editHidden) {
+    if (!editRow || edit.busy || live.gone || live.conflict || editHidden) {
       return
     }
     if (!live.dirty) {

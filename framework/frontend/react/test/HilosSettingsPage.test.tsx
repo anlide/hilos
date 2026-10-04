@@ -478,6 +478,42 @@ describe('HilosSettingsPage', () => {
     ).toBe('Default')
   })
 
+  it('sends nothing on Enter while a conflict stands', () => {
+    const { context, pushUpdate, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const { container } = renderPage(context)
+    fireEvent.click(
+      container.querySelector(
+        '[data-id="hilos-settings-edit-site_name"]',
+      ) as Element,
+    )
+    const input = document.querySelector(
+      '[data-id="hilos-settings-edit-value"]',
+    ) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Mine' } })
+    act(() => {
+      pushUpdate(
+        slot({
+          key: 'site_name',
+          valueSource: 'override',
+          value: 'Theirs',
+          overrideValue: 'Theirs',
+        }),
+      )
+    })
+
+    fireEvent.submit(input.form as HTMLFormElement)
+
+    expect(sent).toHaveLength(0)
+    expect(document.querySelector('[data-id="conflict-badge"]')).not.toBeNull()
+  })
+
   it('surfaces a conflict on a dirty edit and hides merge', () => {
     const { context, pushUpdate } = seededContext([
       slot({

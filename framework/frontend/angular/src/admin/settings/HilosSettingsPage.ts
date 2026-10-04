@@ -640,7 +640,13 @@ export class HilosSettingsPage {
   protected async submitEdit(event?: Event): Promise<void> {
     event?.preventDefault()
     const row = this.editRow()
-    if (!row || this.edit.busy() || this.live().gone || this.editHidden()) {
+    if (
+      !row ||
+      this.edit.busy() ||
+      this.live().gone ||
+      this.live().conflict ||
+      this.editHidden()
+    ) {
       return
     }
     if (!this.live().dirty) {

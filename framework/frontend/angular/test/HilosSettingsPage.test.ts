@@ -417,6 +417,40 @@ describe('HilosSettingsPage', () => {
     ).toBe('Default')
   })
 
+  it('sends nothing on Enter while a conflict stands', () => {
+    const { context, pushUpdate, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    const fixture = mountPage(context)
+    const root = fixture.nativeElement as HTMLElement
+    el(root, 'hilos-settings-edit-site_name')?.click()
+    fixture.detectChanges()
+    const input = el(root, 'hilos-settings-edit-value') as HTMLInputElement
+    input.value = 'Mine'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    fixture.detectChanges()
+    pushUpdate(
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Theirs',
+        overrideValue: 'Theirs',
+      }),
+    )
+    fixture.detectChanges()
+
+    input.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    fixture.detectChanges()
+
+    expect(sent).toHaveLength(0)
+    expect(el(root, 'conflict-badge')).not.toBeNull()
+  })
+
   it('surfaces a conflict on a dirty edit and hides merge', () => {
     const { context, pushUpdate } = seededContext([
       slot({

@@ -294,7 +294,7 @@ function acceptTheirs(): void {
 
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value || live.value.gone) {
+  if (!row || editBusy.value || live.value.gone || live.value.conflict) {
     return
   }
   if (editHidden.value || !live.value.dirty) {

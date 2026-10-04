@@ -568,7 +568,8 @@ function submit(): void {
     isHiddenValue(typed) ||
     !valid.value ||
     loading.value ||
-    live.value.gone
+    live.value.gone ||
+    live.value.conflict
   ) {
     return
   }

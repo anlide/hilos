@@ -235,7 +235,7 @@ export function HilosSettingsPage({ context }: HilosSettingsPageProps) {
   // Authoritative-backend: dispatch the tracked action, close on its `::success`
   // reply; a failure toasts and stays open so the entered value survives.
   async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone || editHidden) {
+    if (!editRow || edit.busy || live.gone || live.conflict || editHidden) {
       return
     }
     if (!live.dirty) {

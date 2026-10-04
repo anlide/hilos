@@ -296,7 +296,8 @@ async function submitForm(): Promise<void> {
 
     return
   }
-  if (formId.value === null || live.value.gone) {
+  // A conflict stands until Keep mine / Take theirs: Enter does not save past it.
+  if (formId.value === null || live.value.gone || live.value.conflict) {
     return
   }
   if (!live.value.dirty) {

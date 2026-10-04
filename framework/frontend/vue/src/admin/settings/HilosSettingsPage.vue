@@ -270,7 +270,7 @@ function acceptTheirs(): void {
 // reply; a failure toasts and stays open so the entered value survives.
 async function submitEdit(): Promise<void> {
   const row = editRow.value
-  if (!row || editBusy.value || live.value.gone) {
+  if (!row || editBusy.value || live.value.gone || live.value.conflict) {
     return
   }
   if (!live.value.dirty) {

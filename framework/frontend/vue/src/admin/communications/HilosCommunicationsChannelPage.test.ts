@@ -378,6 +378,21 @@ describe('HilosCommunicationsChannelPage edit modal', () => {
     expect(saveButton().disabled).toBe(false)
   })
 
+  it('sends nothing on Enter while a conflict stands', async () => {
+    const { context, pushUpdate, sent } = seededContext([fromField('+1000')])
+    await openModal(context)
+    await typeDraft('+mine')
+    pushUpdate(fromField('+theirs'))
+    await nextTick()
+    await nextTick()
+
+    valueInput().form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+
+    expect(sent).toHaveLength(0)
+    expect(modalEl('conflict-badge')).not.toBeNull()
+  })
+
   it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', async () => {
     const { context, pushUpdate, sent } = seededContext([fromField('+1000')])
     await openModal(context)

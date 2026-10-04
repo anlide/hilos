@@ -436,6 +436,40 @@ describe('HilosSettingsPage', () => {
     ).toBe(true)
   })
 
+  it('sends nothing on Enter while a conflict stands', async () => {
+    const { context, pushUpdate, sent } = seededContext([
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Hilos',
+        overrideValue: 'Hilos',
+      }),
+    ])
+    await mountPage(context)
+    editButton('site_name').click()
+    await nextTick()
+    const input = modalEl('hilos-settings-edit-value') as HTMLInputElement
+    input.value = 'Mine'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    pushUpdate(
+      slot({
+        key: 'site_name',
+        valueSource: 'override',
+        value: 'Theirs',
+        overrideValue: 'Theirs',
+      }),
+    )
+    await nextTick()
+    await nextTick()
+
+    input.form?.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+
+    expect(sent).toHaveLength(0)
+    expect(modalEl('conflict-badge')).not.toBeNull()
+  })
+
   it('Keep mine unlocks save on a dirty conflict', async () => {
     const { context, pushUpdate } = seededContext([
       slot({

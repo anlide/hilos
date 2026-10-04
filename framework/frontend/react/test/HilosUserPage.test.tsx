@@ -418,6 +418,20 @@ describe('HilosUserPage', () => {
     expect(saveButton().disabled).toBe(false)
   })
 
+  it('sends nothing on Enter while a conflict stands', () => {
+    const context = userContext(true)
+    openModal(context)
+    fireEvent.change(nameInput(), { target: { value: 'Mine' } })
+    act(() => {
+      context.renameElsewhere('Theirs')
+    })
+
+    fireEvent.submit(nameInput().form as HTMLFormElement)
+
+    expect(context.sent).toHaveLength(0)
+    expect(byId('conflict-badge')).not.toBeNull()
+  })
+
   it('surfaces a conflict on a dirty edit, hides merge, and Keep mine sends mine', () => {
     const context = userContext(true)
     openModal(context)
