@@ -830,4 +830,68 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
       document.querySelector('[data-id="hilos-rotation-undo-confirm"]'),
     ).toBeNull()
   })
+
+  it('a viewer filters the batches and reads the legend as an admin does', () => {
+    const scopes = makeScopes()
+    bindViewerSession(scopes).handshake(null, true)
+    const { connection } = makeConnection()
+    const container = mountPage(
+      connection,
+      makeActions().actions,
+      router(),
+      scopes,
+    )
+
+    const dueSwitch = byId(
+      container,
+      'hilos-rotation-state-due',
+    ) as HTMLButtonElement
+    expect(dueSwitch.disabled).toBe(false)
+    fireEvent.click(dueSwitch)
+    expect(
+      byId(container, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
+    ).toBe('true')
+
+    const legend = byId(container, 'hilos-rotation-legend') as HTMLButtonElement
+    expect(legend.disabled).toBe(false)
+    fireEvent.click(legend)
+    expect(document.body.textContent).toContain('What is in a batch')
+
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-legend-close"]',
+    )
+    expect(close).not.toBeNull()
+    expect(close?.disabled).toBe(false)
+    fireEvent.click(close as HTMLElement)
+    expect(document.body.textContent).not.toContain('What is in a batch')
+  })
+
+  it('an admin on a node in the mode confirms a takeout as today', async () => {
+    const scopes = makeScopes()
+    bindViewerSession(scopes).handshake({ id: 1, admin: true }, true)
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const { actions, dispatched } = makeActions()
+    const container = mountPage(connection, actions, router(), scopes)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+
+    fireEvent.click(byId(container, 'hilos-rotation-takeout') as HTMLElement)
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="hilos-rotation-takeout-confirm"]',
+    )
+    expect(confirm).not.toBeNull()
+    expect(confirm?.disabled).toBe(false)
+    expect(confirm?.getAttribute('aria-describedby')).toBeNull()
+
+    fireEvent.click(confirm as HTMLElement)
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      {
+        action: 'logs_takeout_confirm',
+        payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
+      },
+    ])
+  })
 })
