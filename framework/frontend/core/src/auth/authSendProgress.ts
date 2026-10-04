@@ -27,8 +27,9 @@ export const SIGNAL_CODE_SEND_PROGRESS = 'hilos_code_send_progress'
 
 /**
  * `state` of a send that is ordered and not yet attempted (PHP
- * `HilosCodeSendAttempt::STATE_QUEUED`). A transport that has died leaves the line
- * here, which is true: the letter IS queued.
+ * `HilosCodeSendAttempt::STATE_QUEUED`). A dead mail shard leaves the line here
+ * though the letter died with it: a raw send has no durable record. The wait ends
+ * with the code expiring or the person pressing resend.
  */
 export const CODE_SEND_STATE_QUEUED = 'queued'
 
