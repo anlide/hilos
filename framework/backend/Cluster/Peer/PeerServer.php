@@ -19,6 +19,7 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
@@ -2636,6 +2637,16 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * @param string $nodeId Node holding the console connection
+     * @param SignalDTO $signal COMMAND_REPLY signal to write there
+     * @return bool True when a live link carried the reply
+     */
+    public function sendCommandReplyToNode(string $nodeId, SignalDTO $signal): bool
+    {
+        return $this->sendToNode($nodeId, new PeerCommandReplyDTO($this->localIdentity->nodeId, $nodeId, $signal));
+    }
+
+    /**
      * Writes a received cross-node HTTP reply to the connection this node parked for it.
      *
      * Verifies the frame is addressed to this node, then hands the reply straight to the local
@@ -2666,6 +2677,35 @@ final class PeerServer extends AbstractTlsServer implements
             $sink->deliverHttpReply($frame->signal);
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer HTTP reply from node '{$frame->originNodeId}': {$e->getMessage()}");
+        }
+    }
+
+    /**
+     * Writes a cross-node command reply straight to the asking node's held connection.
+     *
+     * @param PeerLink $link Link the reply arrived on
+     * @param PeerCommandReplyDTO $frame Received command reply frame
+     */
+    public function onCommandReplyReceived(PeerLink $link, PeerCommandReplyDTO $frame): void
+    {
+        if ($frame->targetNodeId !== $this->localIdentity->nodeId) {
+            Logger::warning(
+                "Dropping peer command reply addressed to node '{$frame->targetNodeId}'"
+                . " received on node '{$this->localIdentity->nodeId}'",
+            );
+            return;
+        }
+
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning("Dropping peer command reply from node '{$frame->originNodeId}': no local client signal sink registered");
+            return;
+        }
+
+        try {
+            $sink->deliverCommandReply($frame->signal);
+        } catch (Throwable $e) {
+            Logger::warning("Failed to deliver peer command reply from node '{$frame->originNodeId}': {$e->getMessage()}");
         }
     }
 

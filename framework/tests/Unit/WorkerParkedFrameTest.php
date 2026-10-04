@@ -35,6 +35,8 @@ use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
+use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use PHPUnit\Framework\TestCase;
@@ -55,6 +57,10 @@ use ReflectionProperty;
 final class WorkerParkedFrameTest extends TestCase
 {
     private const string ACCEPT_KEY = 'ak-parked';
+
+    private const string BOOTSTRAP_CONSUMER = 'test-bootstrap';
+
+    private const string BOOTSTRAP_COLLECTION = 'test-bootstrap-state';
 
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
@@ -78,6 +84,7 @@ final class WorkerParkedFrameTest extends TestCase
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
         }
         SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::ACCEPT_KEY));
+        SourceInterestRegistry::releaseConsumer(self::BOOTSTRAP_CONSUMER);
         SourceInterestRegistry::readsWhatItMounts();
         Hilos::$sr = null;
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
@@ -97,6 +104,37 @@ final class WorkerParkedFrameTest extends TestCase
             $this->manager->agent(WorkerParkedFrameTestReader::AGENT_TYPE),
             'The start waits for its state: nothing is created before it lands.',
         );
+    }
+
+    /** An owner must not scan before the initial snapshot of this worker can replace its index. */
+    public function testAStartAndItsFramesWaitForInitialWorkerSources(): void
+    {
+        // Registration sees every process-wide interest, including fixtures left by other suites.
+        // Keep those ready for this case, then restore their state; only this snapshot is withheld.
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $previousStates = $states->getValue();
+        try {
+            foreach ([SourceChange::KIND_RT, SourceChange::KIND_DB] as $kind) {
+                foreach (SourceInterestRegistry::collections($kind) as $collection) {
+                    SourceInterestRegistry::markReady($kind, $collection);
+                }
+            }
+            SourceInterestRegistry::register(SourceChange::KIND_RT, self::BOOTSTRAP_COLLECTION, self::BOOTSTRAP_CONSUMER);
+            $this->manager->handleDaemonMessage(new WorkerRegisteredDTO(1));
+
+            $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestAgent::AGENT_TYPE));
+            $this->manager->handleDaemonMessage($this->systemSignal(WorkerParkedFrameTestAgent::AGENT_TYPE, 'after-start'));
+            $this->manager->pass(microtime(true));
+            $this->assertNull($this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE));
+
+            $this->manager->handleDaemonMessage(new WorkerRtSnapshotMessageDTO(self::BOOTSTRAP_COLLECTION, []));
+            $this->manager->pass(microtime(true));
+
+            $this->assertSame(['after-start'], $this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE)?->heard);
+            $this->assertSame([], $this->manager->failures);
+        } finally {
+            $states->setValue(null, $previousStates);
+        }
     }
 
     /**

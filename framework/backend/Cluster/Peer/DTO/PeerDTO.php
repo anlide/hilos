@@ -36,7 +36,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * own subscription registry rather than by an address; the sibling-drop frame
  * ({@see PeerConnectionDropDTO}) asks every master to close rotated-session sockets
  * it holds, and the page access re-decision frame ({@see PeerPageAccessReassessDTO})
- * carries an announcement to every node's workers; the claim frames
+ * carries an announcement to every node's workers; the reply frames
+ * ({@see PeerHttpReplyDTO}, {@see PeerCommandReplyDTO}) return agent answers directly to the
+ * node holding a parked connection; the claim frames
  * ({@see PeerRtClaimsDTO}, {@see PeerRtClaimsQueryDTO}, {@see PeerRtClaimRefusedDTO}) carry the
  * other half of the same subject the RT replication frames carry — not what a node wrote, but
  * the right it holds to write it, reported to the leader and answered only when two nodes claim
@@ -119,6 +121,7 @@ abstract class PeerDTO extends BaseDTO
             PeerConnectionDropDTO::MESSAGE_TYPE => PeerConnectionDropDTO::fromArray($data),
             PeerPageAccessReassessDTO::MESSAGE_TYPE => PeerPageAccessReassessDTO::fromArray($data),
             PeerHttpReplyDTO::MESSAGE_TYPE => PeerHttpReplyDTO::fromArray($data),
+            PeerCommandReplyDTO::MESSAGE_TYPE => PeerCommandReplyDTO::fromArray($data),
             PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),
             PeerConnectionsDeltaDTO::MESSAGE_TYPE => PeerConnectionsDeltaDTO::fromArray($data),
             PeerProtectedModeEnableDTO::MESSAGE_TYPE => PeerProtectedModeEnableDTO::fromArray($data),

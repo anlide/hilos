@@ -18,6 +18,7 @@ print as they go.
 
 import json
 import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -98,8 +99,8 @@ def _freeze_files(stand):
     return paths
 
 
-def up(stand, prog):
-    """Build every image, clear freezes, and start members, entry and CLI containers."""
+def up(stand, prog, *, clean_logs=False):
+    """Build images, prepare node logs, clear freezes, and start the stand."""
     freeze_files = _freeze_files(stand)
     ensure_env(stand)
     print("cluster: building images...", flush=True)
@@ -108,6 +109,18 @@ def up(stand, prog):
     code = compose(stand, "--profile", "*", "build", capture=False)
     if code != 0:
         return code
+    if clean_logs:
+        # A fresh browser stand must not inherit the accumulated rotation archives of earlier
+        # runs. Their indexes share the worker channel with browser requests and can leave those
+        # requests behind megabytes of old fixture metadata. Keep every tracked .gitkeep.
+        directories = [str(pathlib.PurePosixPath(path).parent) for path in freeze_files]
+        code = compose(
+            stand, *_cli_profiles(stand), "run", "--rm", stand.cli_service,
+            "sh", "-c", 'mkdir -p "$@" && find "$@" -mindepth 1 ! -name .gitkeep -delete',
+            "cluster-e2e-log-reset", *directories, capture=False,
+        )
+        if code != 0:
+            return code
     # Clear any freeze the last run left on a node, from INSIDE a container: a node's log directory
     # is owned by root (the daemons run as root in their containers) and unlink asks permission of
     # the DIRECTORY, so an rm from the host cannot reach it. On the up rather than on the teardown
@@ -152,6 +165,18 @@ def down(stand, volumes=False):
             return 1
         print(f"cluster: wiped {server.data_dir}", flush=True)
     return 0
+
+
+def up_e2e(stand):
+    """Raise the browser profile services after the cluster members and entry are running."""
+    return compose(stand, "--profile", "e2e", "up", "-d", *stand.e2e.services, capture=False)
+
+
+def run_e2e_runner(stand, env, *argv):
+    """Run one Playwright-side command with the cluster browser environment."""
+    flags = [part for key, value in env.items() for part in ("-e", f"{key}={value}")]
+    return compose(stand, "--profile", "e2e", "run", "--rm", *flags,
+                   stand.e2e.runner_service, *argv, capture=False)
 
 
 def restart(stand, prog):

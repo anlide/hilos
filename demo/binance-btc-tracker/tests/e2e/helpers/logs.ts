@@ -27,11 +27,21 @@ const REPLY_TIMEOUT_MS = 10_000
 
 const APPEND_COMMAND = 'test:log:append'
 
-const sendCommand = createCommandChannel({
-  host: COMMAND_HOST,
-  port: COMMAND_PORT,
-  timeoutMs: REPLY_TIMEOUT_MS,
-})
+const channels = new Map<string, ReturnType<typeof createCommandChannel>>()
+
+function channel(host: string): ReturnType<typeof createCommandChannel> {
+  let send = channels.get(host)
+  if (!send) {
+    send = createCommandChannel({
+      host,
+      port: COMMAND_PORT,
+      timeoutMs: REPLY_TIMEOUT_MS,
+    })
+    channels.set(host, send)
+  }
+
+  return send
+}
 
 /**
  * The cap a wait on an appended line reaching the screen gets, in milliseconds.
@@ -72,13 +82,15 @@ export const FOLLOWED_STREAM = 'agent-hilos_log_store.log'
  *
  * @param message Text of every appended line, which the agent numbers.
  * @param count How many lines to write.
+ * @param host Daemon whose log-store agent should write the lines.
  * @returns How many lines the agent reports writing.
  */
 export async function appendLogLines(
   message: string,
   count: number,
+  host = COMMAND_HOST,
 ): Promise<number> {
-  const reply = await sendCommand(APPEND_COMMAND, { message, count })
+  const reply = await channel(host)(APPEND_COMMAND, { message, count })
 
   return Number(reply.count)
 }

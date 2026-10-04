@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Constants\CommandConstants;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -21,6 +22,7 @@ final class CommandRequestDTOTest extends TestCase
             'correlationId' => 'corr-1',
             'command' => 'ping',
             'payload' => ['message' => 'hi'],
+            'originNodeId' => null,
         ], $request->toArray());
     }
 
@@ -33,6 +35,20 @@ final class CommandRequestDTOTest extends TestCase
         $this->assertSame('corr-2', $restored->correlationId);
         $this->assertSame('ping', $restored->command);
         $this->assertSame(['a' => 1, 'b' => ['c' => 2]], $restored->payload);
+        $this->assertNull($restored->originNodeId);
+    }
+
+    public function testOriginNodeRoundTripAndCopyPreserveTheCommand(): void
+    {
+        $request = new CommandRequestDTO('corr-3', 'admin:grant', ['userId' => 7]);
+        $stamped = $request->withOriginNodeId('node-2');
+        $restored = CommandRequestDTO::fromArray($stamped->toArray());
+
+        $this->assertNull($request->originNodeId);
+        $this->assertSame('node-2', $restored->originNodeId);
+        $this->assertSame($request->command, $restored->command);
+        $this->assertSame($request->payload, $restored->payload);
+        $this->assertArrayHasKey(CommandConstants::FIELD_ORIGIN_NODE_ID, $stamped->toArray());
     }
 
     public function testFromArrayRefusesAPayloadCarryingNoField(): void
@@ -67,5 +83,6 @@ final class CommandRequestDTOTest extends TestCase
         ]);
 
         $this->assertSame([], $restored->payload);
+        $this->assertNull($restored->originNodeId);
     }
 }

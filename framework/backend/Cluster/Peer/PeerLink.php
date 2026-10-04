@@ -10,6 +10,7 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
@@ -386,6 +387,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerConnectionDropDTO => $this->onConnectionDrop($frame),
             $frame instanceof PeerPageAccessReassessDTO => $this->onPageAccessReassess($frame),
             $frame instanceof PeerHttpReplyDTO => $this->onHttpReply($frame),
+            $frame instanceof PeerCommandReplyDTO => $this->onCommandReply($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
             $frame instanceof PeerConnectionsDeltaDTO => $this->onConnectionsDelta($frame),
             $frame instanceof PeerProtectedModeEnableDTO => $this->onProtectedModeEnable($frame),
@@ -779,6 +781,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('HTTP reply');
         $this->server->onHttpReplyReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received command reply to the server for the connection this node parked.
+     *
+     * @param PeerCommandReplyDTO $frame Incoming command reply-forward frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onCommandReply(PeerCommandReplyDTO $frame): void
+    {
+        $this->requireHandshaked('command reply');
+        $this->server->onCommandReplyReceived($this, $frame);
     }
 
     /**

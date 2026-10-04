@@ -1102,8 +1102,8 @@ class SignalRouter
      * returned untouched, so single-node behavior is unchanged.
      *
      * Only {@see AgentDestination} is eligible: a browser is placed by its own post-pass
-     * ({@see applyClientLocation()}) and a command reply is bound to the connection this node is
-     * holding open.
+     * ({@see applyClientLocation()}) and a command reply goes back to the node holding the
+     * connection through the delivery path's command-origin memory.
      *
      * @param list<Destination> $destinations Resolved destinations before placement
      * @return list<Destination> Destinations with cross-node and unaddressable agents rewritten
@@ -1998,6 +1998,7 @@ class SignalRouter
             correlationId: $data->correlationId,
             command: $data->command,
             payload: $data->payload,
+            originNodeId: $data->originNodeId,
             parsedPayload: $parsed,
         );
     }

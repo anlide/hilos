@@ -228,13 +228,15 @@ export async function openProtectedModeIfAny(): Promise<void> {
  * mid-freeze — when every agent but the initiator is stopped.
  *
  * @param timeoutMs How long to wait for the master reply.
+ * @param host Node whose master snapshot to read.
  * @returns This node's protected-mode snapshot.
  */
 export async function inspectProtectedMode(
   timeoutMs = REPLY_TIMEOUT_MS,
+  host = COMMAND_HOST,
 ): Promise<ProtectedModeSnapshot> {
   const inspect = createCommandChannel({
-    host: COMMAND_HOST,
+    host,
     port: COMMAND_PORT,
     timeoutMs,
     refuse: (message) => new ProtectedModeCommandRefused(message),

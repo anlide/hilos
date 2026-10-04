@@ -473,7 +473,12 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
-        $leaderId = Hilos::$cluster?->leadership()->leaderId();
+        // Slaves have no consensus coordinator. Like locate(), they follow the leader that
+        // placed their work; a master's real consensus verdict must never fall back to it.
+        $leadership = Hilos::$cluster?->leadership();
+        $leaderId = $leadership instanceof PendingLeadership
+            ? $this->placingLeaderId
+            : $leadership?->leaderId();
         if ($leaderId === null) {
             Logger::info("No leader to ask for the placement of agent '{$agentId}'");
 

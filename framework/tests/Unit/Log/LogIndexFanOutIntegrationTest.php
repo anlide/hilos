@@ -16,6 +16,7 @@ use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Tests\Integration\BackupRestoreProgressSessionDeliveryIntegrationTest;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -62,6 +63,7 @@ final class LogIndexFanOutIntegrationTest extends TestCase
     {
         $this->emptyTheMirror();
         Hilos::$sr = null;
+        Hilos::$rt = null;
         Logger::resetLogFile();
 
         parent::tearDown();
@@ -123,6 +125,41 @@ final class LogIndexFanOutIntegrationTest extends TestCase
         $aggregator->fanOutIfDue($this->at(self::PAST_THE_WINDOW_SECONDS));
 
         $this->assertSame([], $this->queuedFrames(), 'And nothing follows it');
+    }
+
+    /** A subscriber absent from this worker's roster still claims the remote cluster picture. */
+    public function testAViewerNeverOnThisRosterKeepsWatchingUntilItsCloseArrives(): void
+    {
+        Hilos::$rt = new FollowRtContext();
+        Hilos::$rt->configure();
+        $aggregator = $this->subscribedAggregator($pages);
+
+        $pages->tickAt($this->at(self::PAST_THE_KEEPALIVE_SECONDS));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame(['ak-1'], ClusterLogIndexMirror::viewerKeys());
+
+        $pages->onSignalConnectionClose(new WebSocketCloseSignalDTO('ak-1'), 'websocket', 'connection_close');
+        $pages->tickAt($this->at(self::PAST_THE_KEEPALIVE_SECONDS + 1));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame([], ClusterLogIndexMirror::viewerKeys());
+    }
+
+    /** The silent-close sweep still removes a viewer whose row was here and has gone. */
+    public function testAViewerLostFromThisRosterCancelsItsClaim(): void
+    {
+        Hilos::$rt = new FollowRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->connectionsSource()->add(FollowConnection::create('ak-1', null));
+        $aggregator = $this->subscribedAggregator($pages);
+
+        Hilos::$rt->connectionsSource()->remove('ak-1');
+        $pages->tickAt($this->at(0.1));
+
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame([], ClusterLogIndexMirror::viewerKeys());
+        $aggregator->applyNodeIndex($this->nodeIndex('node-1', 100));
+        $aggregator->fanOutIfDue($this->at(self::PAST_THE_WINDOW_SECONDS));
+        $this->assertSame([], $this->queuedFrames());
     }
 
     /**

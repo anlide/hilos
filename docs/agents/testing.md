@@ -439,11 +439,22 @@ rest wait for it and find the level already there. A stand therefore has no
 one-shot rollout service in front of its nodes any more, and starts them all
 at once on an empty database — which is what scenario 21 reads.
 
-The Playwright suite of binance-btc-tracker drives the backup, logs and
-protected-mode specs against the multi-node binance stand, with the browser
-open on a node that does not hold the agent (not in the code yet — HIL-1232).
-The browser enters through the stand's one nginx entry, where the
-`hilos_stand_master` cookie selects a master (HIL-1304).
+The `binance-btc-tracker-cluster-e2e` step drives the cluster browser suite in
+`demo/binance-btc-tracker/tests/e2e/cluster/`, after the demo's single-node e2e.
+The browser enters through the stand's one nginx entry, where each context's
+`hilos_stand_master` cookie selects a master (HIL-1304). By default browsers and
+the protected-mode operator sit on a follower master, away from the page holder
+on the leader and the policy-placed agents on slaves. The live phase checks
+backup, logs, protected mode and one person's tabs across masters. The harness
+then stops the slave the backup spec names, waits for placement to move, and
+runs the after-loss phase: the archive is out of reach and the log node offline.
+`composer -d demo/binance-btc-tracker run test:cluster:e2e` runs that suite alone
+on a fresh stand; `-- --grep circle` points it. The scenario and browser steps
+share a group because both reset the same compose project (HIL-1232).
+Before the browser stand starts, its node log directories are emptied, including
+rotation archives, while tracked `.gitkeep` files stay. Save a failed run's logs
+before starting another. After node loss the wait checks only placements that
+host an agent (`placing` or `started`); a refused record is no running work.
 
 The full run carries three fleets now instead of one. An e2e step may stand
 beside any of them in the lane plan: nothing keeps them apart, and each fleet

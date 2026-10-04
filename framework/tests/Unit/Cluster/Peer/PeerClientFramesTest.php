@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
@@ -25,6 +26,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -390,6 +392,48 @@ final class PeerClientFramesTest extends TestCase
             PeerDTO::TYPE => PeerHttpReplyDTO::MESSAGE_TYPE,
             PeerHttpReplyDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
             PeerHttpReplyDTO::FIELD_TARGET_NODE_ID => 'node-B',
+        ]));
+    }
+
+    public function testACommandReplyRoundTripsWithItsRefusalIntact(): void
+    {
+        $reply = CommandReplyDTO::error('corr-1', 'No such user: 7');
+        $frame = new PeerCommandReplyDTO('node-A', 'node-B', new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::COMMAND_REPLY),
+            new SignalName('corr-1'),
+            $reply,
+        ));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerCommandReplyDTO::class, $parsed);
+        $this->assertSame('node-A', $parsed->originNodeId);
+        $this->assertSame('node-B', $parsed->targetNodeId);
+        $this->assertEquals($reply, $parsed->signal->data);
+    }
+
+    public function testACommandReplyRejectsAMissingTargetNodeId(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer command reply is missing the target node id');
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerCommandReplyDTO::MESSAGE_TYPE,
+            PeerCommandReplyDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerCommandReplyDTO::FIELD_SIGNAL => $this->innerSignal()->toArray(),
+        ]));
+    }
+
+    public function testACommandReplyRejectsAMissingInnerSignal(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer command reply is missing the inner signal payload');
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerCommandReplyDTO::MESSAGE_TYPE,
+            PeerCommandReplyDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerCommandReplyDTO::FIELD_TARGET_NODE_ID => 'node-B',
         ]));
     }
 

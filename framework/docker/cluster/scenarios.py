@@ -2179,18 +2179,19 @@ def scenario_23_verifier_circle_on_every_master():
     opens and every master still holds it; the system opens and every master has dropped it.
 
     Headless, so what is proved is the photograph on the rows, not a browser walking in: a
-    signed-in tab let in through a node that does not host the initiator is HIL-1232's. Slaves
+    signed-in tab let in through a node that does not host the initiator is checked by
+    demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts. Slaves
     are not asked: the freeze frames reach masters only.
 
-    The drive commands go to the leader, because that is where the index agent runs, and a reply
-    to a command answered by an agent on another node never makes it back to the node that asked.
-    So the initiator here is the leader; a follower or a slave initiating is covered by the unit
-    tests of ClusterProtectedMode.
+    The drive commands go to the leader because that is where the index agent runs and the
+    scenario initiator is the leader. A command answered by an agent on another node now
+    returns to its asking node (HIL-1232). A follower or a slave initiating is covered by the
+    unit tests of ClusterProtectedMode.
 
     Leadership must not move while the freeze holds. The right to the freeze is the agent's, and
-    the followers accept a lift from a new leader (HIL-1297), yet a re-election still breaks the
-    scenario: its drive commands are addressed to the original leader, and a reply answered by the
-    agent on another node never makes it back (HIL-1232). A stand raised a moment ago can re-elect
+    the followers accept a lift from a new leader (HIL-1297), but these assertions describe one
+    leadership term and explicitly refuse a re-election. Cross-node command replies return
+    to the asking node (HIL-1232). A stand raised a moment ago can re-elect
     on its own - its links flap once as late seed dials land (P-459) - which is why this runs last
     in the matrix rather than first. When it happens anyway, the failure says so instead of leaving
     only a timeout to read.
@@ -2248,15 +2249,15 @@ def scenario_25_freeze_settles_on_every_master():
     Headless, and on the masters only: the freeze frames reach masters only, and a slave holds no
     freeze row. A close asked for on a follower is covered by the unit tests of ClusterProtectedMode.
 
-    The drive commands go to the leader, because that is where the index agent runs, and a reply
-    to a command answered by an agent on another node never makes it back to the node that asked.
-    So the initiator here is the leader; a follower or a slave initiating is covered by the unit
-    tests of ClusterProtectedMode.
+    The drive commands go to the leader because that is where the index agent runs and the
+    scenario initiator is the leader. A command answered by an agent on another node now
+    returns to its asking node (HIL-1232). A follower or a slave initiating is covered by the
+    unit tests of ClusterProtectedMode.
 
     Leadership must not move while the freeze holds. The right to the freeze is the agent's, and
-    the followers accept a lift from a new leader (HIL-1297), yet a re-election still breaks the
-    scenario: its drive commands are addressed to the original leader, and a reply answered by the
-    agent on another node never makes it back (HIL-1232). A stand raised a moment ago can re-elect
+    the followers accept a lift from a new leader (HIL-1297), but these assertions describe one
+    leadership term and explicitly refuse a re-election. Cross-node command replies return
+    to the asking node (HIL-1232). A stand raised a moment ago can re-elect
     on its own - its links flap once as late seed dials land (P-459) - which is why this runs last
     in the matrix rather than first. When it happens anyway, the failure says so instead of leaving
     only a timeout to read.

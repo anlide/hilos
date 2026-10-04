@@ -26,6 +26,7 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
      * @param string $correlationId Correlation id echoed back on the reply
      * @param string $command Command name as it goes on the wire (e.g. CliCommands::CLUSTER_NODES)
      * @param array<string, mixed> $payload Command arguments
+     * @param ?string $originNodeId Node holding the console connection, null outside a cluster
      * @param ?SignalDataInterface $parsedPayload Topology-hydrated inner payload DTO, set by
      *     SignalRouter::createCommandPayloadDTO when the command declares a DTO; transient
      *     (not serialized in toArray()/fromArray()), so the receiving agent reads it in-process
@@ -34,6 +35,7 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
         public readonly string $correlationId,
         public readonly string $command,
         public readonly array $payload = [],
+        public readonly ?string $originNodeId = null,
         public readonly ?SignalDataInterface $parsedPayload = null,
     ) {
     }
@@ -49,6 +51,7 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
             CommandConstants::FIELD_CORRELATION_ID => $this->correlationId,
             CommandConstants::FIELD_COMMAND => $this->command,
             CommandConstants::FIELD_PAYLOAD => $this->payload,
+            CommandConstants::FIELD_ORIGIN_NODE_ID => $this->originNodeId,
         ];
     }
 
@@ -72,6 +75,18 @@ class CommandRequestDTO extends BaseDTO implements SignalDataInterface
             correlationId: self::requireString($data, CommandConstants::FIELD_CORRELATION_ID),
             command: self::requireString($data, CommandConstants::FIELD_COMMAND),
             payload: self::requireArray($data, CommandConstants::FIELD_PAYLOAD),
+            originNodeId: self::optionalString($data, CommandConstants::FIELD_ORIGIN_NODE_ID),
         );
+    }
+
+    /**
+     * Stamps the daemon's own node id on a request received from an untrusted CLI client.
+     *
+     * @param ?string $nodeId Node holding the console connection
+     * @return self Copy with the same command, arguments, and hydrated payload
+     */
+    public function withOriginNodeId(?string $nodeId): self
+    {
+        return new self($this->correlationId, $this->command, $this->payload, $nodeId, $this->parsedPayload);
     }
 }

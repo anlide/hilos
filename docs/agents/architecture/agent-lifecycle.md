@@ -97,6 +97,11 @@ anywhere, so the node that met the empty address asks for a placement first
 (`ClusterPlacement::requirePlacement()`): the leader places it itself, any other
 node asks the leader.
 
+Placement on that first frame applies to every indexed policy agent, including
+delivery pools with no idle window (HIL-1232). The window decides when an agent
+stops, not whether addressing it can start it. Unindexed agents still belong to
+the bootstrap placement pass, and leader-hosted agents to their leader.
+
 **The frame that starts an agent waits for it in the master** (HIL-629). It is
 not written behind the start, where a start that failed inside the worker would
 take it along: the master holds it until the worker reports `agent_started`, then

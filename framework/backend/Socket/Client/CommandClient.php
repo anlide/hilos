@@ -317,7 +317,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 signalSource: new SignalSource(SignalSource::DAEMON),
                 signalType: new SignalType(SignalTypeConstants::COMMAND_REQUEST),
                 signalName: new SignalName($request->command),
-                signalData: $request,
+                signalData: $request->withOriginNodeId(Hilos::$cluster?->localNodeId()),
             );
 
             return;

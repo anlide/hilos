@@ -15,6 +15,7 @@ of the same file:
       optional: a cluster directory of the stand's project, which scenario 29 gives one node a
       copy of its own and scenario 30 reads
     scenarios: [<numbers of the scenarios this stand carries>]
+    e2e: {runner: <the Playwright service, under profile e2e>} (optional; needs entry)
 
 The database the nodes share is found the way the tooling finds it on every stand: the service
 labelled `hilos.role: database`, with the credentials its image is started with (MYSQL_USER,
@@ -116,6 +117,15 @@ class Entry:
 
 
 @dataclass(frozen=True)
+class E2e:
+    """The optional browser profile of a cluster stand."""
+    runner_service: str
+    runner_container: str
+    # Profile services to raise before Playwright; the runner is a one-shot container.
+    services: tuple
+
+
+@dataclass(frozen=True)
 class Stand:
     """A cluster stand: its compose project, the nodes it starts, and what it carries."""
     compose: Path
@@ -141,6 +151,7 @@ class Stand:
     # The Database of every member of a clustered database, by service name; empty on a stand
     # whose database is one server.
     database_members: tuple
+    e2e: E2e | None = None
 
     @property
     def database_servers(self):
@@ -239,7 +250,27 @@ def stand_from_config(shown, compose, config):
         slave_work_grace_sec=_slave_work_grace_sec(shown, services, members),
         database=database,
         database_members=_database_members(shown, project, services, database),
+        e2e=_e2e(shown, project, block.get("e2e"), services, entry),
     )
+
+
+def _e2e(shown, project, block, services, entry):
+    """Read the optional browser profile, refusing any service the stand cannot start."""
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise StandRefused(f"{shown}: {BLOCK}.e2e must name a runner")
+    runner = block.get("runner")
+    if not isinstance(runner, str) or runner not in services:
+        raise StandRefused(f"{shown}: {BLOCK}.e2e.runner names {runner}, which is not a service")
+    if "e2e" not in (services[runner].get("profiles") or []):
+        raise StandRefused(f"{shown}: e2e runner {runner} is not under profile e2e")
+    if entry is None:
+        raise StandRefused(f"{shown}: {BLOCK}.e2e needs {BLOCK}.entry - the browser's way onto the stand")
+    profile_services = tuple(service for service, spec in services.items()
+                             if service != runner and "e2e" in (spec.get("profiles") or []))
+    return E2e(runner, services[runner].get("container_name") or f"{project}-{runner}-1",
+               profile_services)
 
 
 def _entry(shown, block, services, network_keys):

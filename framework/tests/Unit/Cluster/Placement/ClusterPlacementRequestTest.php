@@ -14,6 +14,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\PlacementVerdictSink;
+use Hilos\Cluster\PendingLeadership;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -124,6 +125,37 @@ final class ClusterPlacementRequestTest extends TestCase
         $placement = $this->follower($mesh, leaderId: null);
 
         $placement->requirePlacement('render', '9');
+
+        $this->assertSame([], $mesh->sent);
+    }
+
+    /** A slave requests delivery-pool placement from the leader that already placed its library. */
+    public function testASlaveAsksTheLeaderThatPlacedItsWork(): void
+    {
+        $mesh = $this->mesh();
+        $placement = $this->follower($mesh, leaderId: null);
+        Hilos::$cluster->registerLeadership(new PendingLeadership());
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $mesh->sent = [];
+
+        $placement->requirePlacement('mail', '1');
+
+        [$nodeId, $frame] = $this->lastSent($mesh);
+        $this->assertSame('node-b', $nodeId);
+        $this->assertInstanceOf(PeerPlacementRequestDTO::class, $frame);
+        $this->assertSame('mail', $frame->agentType);
+        $this->assertSame('1', $frame->agentIndex);
+    }
+
+    /** A master between terms must respect consensus even when an old placement names a leader. */
+    public function testAMasterDoesNotAskAnOldPlacerWhenConsensusNamesNobody(): void
+    {
+        $mesh = $this->mesh();
+        $placement = $this->follower($mesh, leaderId: null);
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $mesh->sent = [];
+
+        $placement->requirePlacement('mail', '1');
 
         $this->assertSame([], $mesh->sent);
     }

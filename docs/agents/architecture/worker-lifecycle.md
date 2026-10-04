@@ -13,6 +13,12 @@ are raised one per agent that finds none free.
 4. Worker sends `WORKERS_READY` signal when initialized
 5. Main loop starts: reads messages from daemon socket, ticks agents
 
+Initial process-wide source snapshots arrive before agent starts (HIL-1232).
+The worker holds starts and their addressed frames behind its registration-time
+source wait; snapshot and readiness frames pass through to release it. This keeps
+a late initial snapshot from replacing an index an owner's `onStart()` already
+rebuilt, including the backup index after placement moves to another node.
+
 ## Message types from daemon
 
 | Message | Handler |

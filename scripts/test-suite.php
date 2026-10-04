@@ -98,7 +98,8 @@ require_once __DIR__ . '/framework-pieces.php';
  * and both were green. Nor do the three fleets of the demos: in run 0747 on nova-de
  * (2026-10-02, HIL-1216) `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together for 1m21s,
- * and all were green.
+ * and all were green. Two steps of the same cluster stand share a group: each
+ * takes that compose project down before it runs (HIL-1232).
  */
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
@@ -248,7 +249,8 @@ $steps = array_merge($steps, [
     ],
     // The fleet of binance-btc-tracker (HIL-1215): five nodes of the whole demo on one database,
     // and a stranger scenario 17 raises. It may run beside `cluster` and beside any e2e step - no
-    // group and no edge keep it apart from them (the head of this file). Takes its stand down
+    // edge keeps it apart from them (the head of this file). It shares a group only with its
+    // own browser step: both reset the same compose project (HIL-1232). Takes its stand down
     // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
     // here but in binance-btc-tracker-php. Scenarios 23 and 25 freeze the masters last (HIL-1125,
     // HIL-1128). Scenarios 29 and 30 recreate and kill a slave (HIL-1243). The seconds are
@@ -261,9 +263,24 @@ $steps = array_merge($steps, [
         'cwd' => 'demo/binance-btc-tracker',
         'stand' => 'binance-btc-tracker-cluster',
         'deps' => [],
-        'group' => null,
+        'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'backend'],
         'seconds' => 175,
+        'downsStand' => true,
+    ],
+    // A browser on the cluster stand through its entry (HIL-1232, HIL-1304).
+    // Follows the demo's e2e: both use frontend/dist (also served by the entry),
+    // node_modules and the Playwright output folders. The group keeps the two
+    // cluster steps from taking the same compose project down beneath each other.
+    [
+        'id' => 'binance-btc-tracker-cluster-e2e',
+        'command' => 'composer run test:cluster:e2e',
+        'cwd' => 'demo/binance-btc-tracker',
+        'stand' => 'binance-btc-tracker-cluster',
+        'deps' => ['binance-btc-tracker-e2e'],
+        'group' => 'binance-btc-tracker-cluster',
+        'tags' => ['cluster', 'e2e'],
+        'seconds' => 84,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the whole

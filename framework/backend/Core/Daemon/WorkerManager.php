@@ -794,9 +794,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
             SourceChange::KIND_DB => SourceInterestRegistry::collections(SourceChange::KIND_DB),
         ];
         $this->notifySourceInterest();
-        // Held as a wait of the link's own and not in this call: nothing is addressed to a worker
-        // that has just registered, so no frame stands behind it, and the loop goes on ticking
-        // while the rows travel. Whether they came is said where the wait ends.
+        // Held as a wait of the link's own and not in this call. Agent starts and their addressed
+        // frames wait behind it; snapshots still pass, so the loop can receive what releases them.
         if ($this->waitsForSources(self::PARKED_LINK_KEY, $mounted)) {
             $this->waitForSources(self::PARKED_LINK_KEY, $mounted);
         }
@@ -2614,7 +2613,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /**
      * Names the waiting consumer a frame has to stand behind, if any.
      *
-     * A frame has at most two consumers: the agent it is addressed to, and the connection behind
+     * Initial worker sources come first: starting an owner before that snapshot arrives would
+     * let the snapshot overwrite the index its start hook just built. After that wait a frame
+     * has at most two consumers: the agent it is addressed to, and the connection behind
      * it when its signal carries one. Either is enough to hold it. A connection's close is the one
      * frame not held behind its own connection: there is nobody left to answer, and it is what
      * drops the wait ({@see dropParkedFrames()}).
@@ -2637,6 +2638,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
             || $data instanceof ProtectedModeRefusedDTO
         ) {
             $agentId = $data->agentId;
+        }
+        if ($agentId !== null && isset($this->parkedSources[self::PARKED_LINK_KEY])) {
+            return self::PARKED_LINK_KEY;
         }
         if ($agentId !== null && isset($this->parkedSources[SourceConsumer::agent($agentId)])) {
             return SourceConsumer::agent($agentId);

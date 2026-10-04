@@ -101,6 +101,9 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     /** @var bool Whether the wait for a first picture has already been written down */
     private bool $pictureComplained = false;
 
+    /** @var array<string, true> Current viewers whose connection this worker's roster has carried */
+    private array $rosteredViewers = [];
+
     /**
      * Claims the section's interest when it is due, then lets each page of the section have its tick.
      *
@@ -135,6 +138,7 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     public function onStop(): void
     {
         ClusterLogIndexMirror::forgetPicture();
+        $this->rosteredViewers = [];
     }
 
     /**
@@ -284,12 +288,16 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     }
 
     /**
-     * Stops counting viewers whose connection is no longer on the node's roster.
+     * Stops counting viewers whose connection disappeared from this worker's roster.
      *
      * A tab that closed cleanly is released by the page's own unsubscribe; this is what catches the
      * one that went without a word, the way {@see LogStoreAgent} catches an abandoned follow. Left
      * counted, such a viewer would hold the subscription open forever and keep an unwatched cluster
      * sending frames.
+     *
+     * An absent first observation is not a disconnect: a remote viewer may never be in this
+     * roster. Only a row seen here and then lost permits removal; unsubscribe and connection-close
+     * signals still release viewers this roster cannot account for.
      *
      * A project with no connections collection at all is left alone rather than emptied: there the
      * unanswerable question is "is this viewer still here", and answering it with "no" would strike
@@ -304,9 +312,14 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
             return;
         }
 
-        foreach (ClusterLogIndexMirror::viewerKeys() as $acceptKey) {
-            if ($connections->get($acceptKey) === null) {
+        $viewers = array_fill_keys(ClusterLogIndexMirror::viewerKeys(), true);
+        $this->rosteredViewers = array_intersect_key($this->rosteredViewers, $viewers);
+        foreach ($viewers as $acceptKey => $_) {
+            if ($connections->get($acceptKey) !== null) {
+                $this->rosteredViewers[$acceptKey] = true;
+            } elseif (isset($this->rosteredViewers[$acceptKey])) {
                 ClusterLogIndexMirror::removeViewer($acceptKey);
+                unset($this->rosteredViewers[$acceptKey]);
             }
         }
     }

@@ -156,6 +156,22 @@ final class DaemonManagerCommandRefusalTest extends TestCase
         $this->assertSame([], $manager->deliveredCorrelationIds());
     }
 
+    public function testAForwardedCommandReplyWritesToTheLocalHeldConnection(): void
+    {
+        $manager = new DaemonManagerCommandRefusalTestManager();
+        $reply = CommandReplyDTO::error(self::CORRELATION_ID, 'No such user: 7');
+
+        $manager->deliverCommandReply(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::COMMAND_REPLY),
+            new SignalName(self::CORRELATION_ID),
+            $reply,
+        ));
+
+        $this->assertSame([self::CORRELATION_ID], $manager->deliveredCorrelationIds());
+        $this->assertSame($reply, $manager->lastReply());
+    }
+
     /**
      * A parked HTTP request dies inside the master in the same three places a command does, and
      * gets the same answer from the same two methods: a 503, because nobody is there to decide.

@@ -42,6 +42,8 @@ directory; a demo calls this from its composer scripts)
                        reads and replaces the database marker, HIL-1206)
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's
+  e2e [-- Playwright args]  run the cluster browser suite on a fresh stand, with a live
+                       phase, then the spec-requested slave loss and after-loss phase
 
 Exit code: 0 done (a green matrix), 1 failed (a red matrix), 2 the stand or the call refused.
 """
@@ -52,6 +54,7 @@ import sys
 sys.dont_write_bytecode = True
 
 import control  # noqa: E402 - after the bytecode switch, which has to precede the import
+import browser  # noqa: E402
 import scenarios  # noqa: E402
 from stand import StandRefused, load_stand  # noqa: E402
 
@@ -60,7 +63,7 @@ REFUSED = 2
 COMMANDS = ("up", "down", "restart", "status", "status-json", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "scenarios")
+            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "scenarios", "e2e")
 
 
 def check_registry(stand, shown):
@@ -111,6 +114,24 @@ def run_scenarios(stand, args, prog):
     return scenarios.run_matrix(stand, numbers)
 
 
+def run_e2e(stand, args, prog):
+    """Refuse missing browser prerequisites before touching the stand, then run both phases."""
+    if stand.e2e is None:
+        raise StandRefused(f"{stand.compose}: no e2e block in x-hilos-cluster")
+    bundle = stand.demo_dir / "frontend" / "dist" / "index.html"
+    if not bundle.exists():
+        raise StandRefused(f"e2e: no frontend bundle at {bundle} - build it: composer run test:e2e-build")
+    code = control.down(stand, volumes=True)
+    if code == 0:
+        code = control.up(stand, prog, clean_logs=True)
+    if code == 0:
+        code = control.up_e2e(stand)
+    if code != 0:
+        print(f"cluster e2e: the stand did not come up (exit {code}); no browser ran", file=sys.stderr)
+        return 1
+    return browser.run(stand, args)
+
+
 def dispatch(stand, command, args, prog):
     if command == "up":
         return control.up(stand, prog)
@@ -129,6 +150,8 @@ def dispatch(stand, command, args, prog):
         return control.logs(stand, args[0] if args else "")
     if command == "scenarios":
         return run_scenarios(stand, args, prog)
+    if command == "e2e":
+        return run_e2e(stand, args, prog)
     outcome = control.execute(stand, command, *args)
     sys.stdout.write(outcome.out)
     sys.stderr.write(outcome.err)

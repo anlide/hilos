@@ -57,6 +57,13 @@ interface ClientSignalSink
     public function deliverHttpReply(SignalDTO $signal): void;
 
     /**
+     * Writes a forwarded command reply to the locally held console connection.
+     *
+     * @param SignalDTO $signal COMMAND_REPLY signal already addressed by correlation id
+     */
+    public function deliverCommandReply(SignalDTO $signal): void;
+
+    /**
      * Closes the sibling connections this node holds after another node rotates a session.
      *
      * @param string $originNodeId Id of the node that spent the rotation ticket

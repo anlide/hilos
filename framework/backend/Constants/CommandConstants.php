@@ -29,6 +29,9 @@ final class CommandConstants
     /** @var string Wire key: request/reply correlation id */
     public const string FIELD_CORRELATION_ID = 'correlationId';
 
+    /** @var string Wire key: node holding the console connection; null outside a cluster */
+    public const string FIELD_ORIGIN_NODE_ID = 'originNodeId';
+
     /** @var string Wire key: request command name */
     public const string FIELD_COMMAND = 'command';
 

@@ -191,8 +191,22 @@ production the rows are carried and nothing is run.
 | `composer run test:cluster:up` | build the images and start the database, the five nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 17 20` runs only the ones named |
+| `composer run test:cluster:e2e` | the browser suite on a fresh stand in live and after-loss phases; `-- --grep circle` points it |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
+
+The e2e profile adds Mailpit and a Playwright runner. The browser enters through
+one stand entry; every context selects a master with `hilos_stand_master` before
+its first navigation. Browsers, including the protected-mode operator, start
+on a follower master. In `tests/e2e/cluster/live`, backup checks a completed
+archive, logs checks the overview and a slave's live file, protected-mode checks
+the stub, the verifier circle and admission across masters, and sessions checks
+sign-in, sign-out and access re-decisions across masters. The backup spec asks
+the harness to stop the slave holding its archive; after placement moves,
+`cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.
+The stand remains up after this command, as it does after `test:cluster:scenarios`.
+Every browser run starts with empty node log directories, rotation archives
+included; copy the previous run's logs before starting the next one.
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`,
 `stranger up`, `own-directory s1 on` and the rest — are called on the module

@@ -330,8 +330,9 @@ DB nor a runtime source, and it raises none
 page of the section also counts the connection as a viewer of the **section**;
 without that the aggregator would send nothing and the screens would be empty
 forever rather than merely new. Viewers are reconciled against the connection
-roster on the agent's tick, so a tab that went without a word stops holding the
-subscription open.
+roster on the agent's tick: only a connection that this worker's roster carried
+and then lost is removed (HIL-1232). Absence alone cannot disqualify a viewer on
+another node. Unsubscribe and connection-close signals release those viewers.
 
 The six pages are `hilos_logs`, `hilos_logs_keys`, `hilos_logs_workers`,
 `hilos_logs_rotations`, `hilos_logs_view` and `hilos_logs_settings`. Their

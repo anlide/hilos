@@ -560,8 +560,11 @@ The marker lives in the master's memory from here on; the handshake touches no d
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
 markers by kind: `database`, and `directory:<name>` for every cluster directory of `$fs`
 (*Cluster directories* below). The field is required, and `PeerProtocol::VERSION` was
-raised to `9` for these markers, to `10` when HIL-1297 added initiator identity, and to
-`11` when HIL-1304 added WebSocket readiness to the leader heartbeat. A node of the
+raised to `9` for these markers, to `10` when HIL-1297 added initiator identity, to
+`11` when HIL-1304 added WebSocket readiness to the leader heartbeat, to `12` when HIL-1305
+spread operator identity and code admission, to `13` when HIL-1306 added sibling
+drops and page re-decision announcements, and to `14` when HIL-1232 added the
+cross-node command reply ([command-server.md](command-server.md)). A node of the
 previous protocol and a node of this one do not link, with the line about the version.
 The accepting side on a hello and the dialing side on a welcome check, in order: the
 protocol version, the certificate name, the markers. The rule

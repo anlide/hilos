@@ -11,6 +11,7 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
@@ -221,6 +222,27 @@ final class PeerServerClientDeliveryTest extends TestCase
         $this->assertSame([], $sink->httpReplies);
     }
 
+    public function testAForwardedCommandReplyIsHandedToTheLocalConnection(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onCommandReplyReceived($this->makeLink($server), new PeerCommandReplyDTO('node-b', 'node-a', $this->innerSignal()));
+
+        $this->assertSame(['room_renamed'], $sink->commandReplies);
+        $this->assertSame([], $sink->delivered);
+    }
+
+    public function testACommandReplyAddressedToAnotherNodeIsDropped(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onCommandReplyReceived($this->makeLink($server), new PeerCommandReplyDTO('node-b', 'node-c', $this->innerSignal()));
+
+        $this->assertSame([], $sink->commandReplies);
+    }
+
     /**
      * A fan-out arrives undecided on purpose — the sending node could not know who here is
      * subscribed — so the receiving side is where it is expanded, against this node's own
@@ -362,6 +384,9 @@ final class PeerServerClientDeliveryTest extends TestCase
             /** @var list<string> Signal name of each HTTP reply written here, in order */
             public array $httpReplies = [];
 
+            /** @var list<string> Signal name of each command reply written here, in order */
+            public array $commandReplies = [];
+
             /** @var list<array{0: string, 1: list<string>}> Received sibling drops */
             public array $drops = [];
 
@@ -392,6 +417,12 @@ final class PeerServerClientDeliveryTest extends TestCase
             public function deliverHttpReply(SignalDTO $signal): void
             {
                 $this->httpReplies[] = $signal->signalName->getName();
+            }
+
+            /** @param SignalDTO $signal COMMAND_REPLY signal to write */
+            public function deliverCommandReply(SignalDTO $signal): void
+            {
+                $this->commandReplies[] = $signal->signalName->getName();
             }
 
             /**

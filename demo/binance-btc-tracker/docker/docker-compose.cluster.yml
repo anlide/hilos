@@ -19,6 +19,9 @@
 # serves all masters on the stand network; hilos_stand_master selects a master,
 # while a request without that cookie rotates through them.
 # The cluster-directory key below names the demo's shared $fs directory on this stand.
+# The e2e profile adds Mailpit and a one-shot Playwright runner; `cluster.py e2e`
+# raises them, and the browser enters through the one entry above, naming its
+# master by the cookie (HIL-1232).
 
 name: hilos-binance-btc-tracker-cluster
 
@@ -34,6 +37,8 @@ x-hilos-cluster:
     name: data_export
     path: /app/data/data_export
   scenarios: [1, 2, 5, 7, 8, 10, 13, 17, 20, 23, 25, 29, 30, 33, 34]
+  e2e:
+    runner: binance-btc-tracker-cluster-e2e-runner
 
 x-node-base: &node-base
   build: .
@@ -65,6 +70,12 @@ x-node-env: &node-env
   WORKER_COMM_PORT: "8091"
   COMMAND_HOST: 0.0.0.0
   COMMAND_PORT: "8094"
+  MAIL_TRANSPORT: smtp
+  MAIL_SMTP_HOST: binance-btc-tracker-cluster-mailpit
+  MAIL_SMTP_PORT: "1025"
+  MAIL_SMTP_SECURITY: none
+  MAIL_FROM_ADDRESS: notifications@binance-btc-tracker.test
+  MAIL_FROM_NAME: BTC Tracker
   # The demo has pages, so a node refuses to start without its WebSocket listener; bound in the
   # container at the port every demo uses, and published nowhere on the host. Browsers
   # enter through the one nginx entry; scenario 10 attaches through the CLI.
@@ -74,6 +85,7 @@ x-node-env: &node-env
   # any node's container (admin:create / admin:grant / admin:revoke /
   # protected-mode:open, and the harness's test:cluster:inspect) reaches that
   # node's command channel over loopback.
+  # A command answered by an agent on another node returns to this asking node (HIL-1232).
   HILOS_DAEMON_HOST: 127.0.0.1
   CLUSTER_ENABLED: "true"
   CLUSTER_PEER_HOST: 0.0.0.0
@@ -156,6 +168,9 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m1
+      # All nodes bind one demo tree at /app, so a shared backup directory would make an
+      # archive visible everywhere. Production keeps each node's archive directory local.
+      BACKUP_DIR: /app/data/backup-cluster/m1
       HILOS_TRUSTED_PROXIES: 10.221.0.30/32
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m1.pem
       CLUSTER_NODE_ROLE: master
@@ -188,6 +203,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m2
+      BACKUP_DIR: /app/data/backup-cluster/m2
       HILOS_TRUSTED_PROXIES: 10.221.0.30/32
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m2.pem
       CLUSTER_NODE_ROLE: master
@@ -213,6 +229,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: m3
+      BACKUP_DIR: /app/data/backup-cluster/m3
       HILOS_TRUSTED_PROXIES: 10.221.0.30/32
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/m3.pem
       CLUSTER_NODE_ROLE: master
@@ -238,6 +255,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s1
+      BACKUP_DIR: /app/data/backup-cluster/s1
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s1.pem
       CLUSTER_NODE_ROLE: slave
       # `worker` is the tag the probe fleet asks of its host. The ram is there so the node
@@ -270,6 +288,7 @@ services:
     environment:
       <<: *node-env
       CLUSTER_NODE_ID: s2
+      BACKUP_DIR: /app/data/backup-cluster/s2
       CLUSTER_TLS_CERT_FILE: /app/docker/tls/s2.pem
       CLUSTER_NODE_ROLE: slave
       # The same as s1's, and for the same reasons; see the comment there.
@@ -351,6 +370,40 @@ services:
         condition: service_healthy
     profiles:
       - cli
+    networks:
+      - cluster-net
+
+  binance-btc-tracker-cluster-mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: binance-btc-tracker-cluster-mailpit
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    profiles: [e2e]
+    networks:
+      cluster-net:
+        ipv4_address: 10.221.0.20
+
+  binance-btc-tracker-cluster-e2e-runner:
+    image: mcr.microsoft.com/playwright:v1.60.0-noble
+    container_name: binance-btc-tracker-cluster-e2e-runner
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/binance-btc-tracker/tests/e2e
+    environment:
+      CI: "1"
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      COMMAND_PORT: "8094"
+      MAILPIT_URL: http://binance-btc-tracker-cluster-mailpit:8025
+      HILOS_E2E_TIMEOUT_SCALE: ${HILOS_E2E_TIMEOUT_SCALE:-}
+    profiles: [e2e]
     networks:
       - cluster-net
 

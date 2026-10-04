@@ -84,6 +84,37 @@ final class DaemonManagerPolicyPlacementTest extends TestCase
         $this->assertCount(1, $executor->executed, 'A record in a live state must suppress re-placing.');
     }
 
+    /** An indexed delivery pool without an idle window still starts on its first addressed frame. */
+    public function testAddressingAnIndexedPolicyAgentPlacesItWithOrWithoutAnIdleWindow(): void
+    {
+        $manager = new PolicyPlacementTestManager();
+        $executor = $this->installPlacement();
+        Hilos::$cluster->placement()->onBecameLeader(microtime(true));
+
+        $require = new ReflectionMethod(DaemonManager::class, 'requireOnDemandPlacement');
+        $require->invoke($manager, 'mail', '1');
+        $require->invoke($manager, 'document', '7');
+        $require->invoke($manager, 'mail', '1');
+
+        $this->assertSame([['mail', '1'], ['document', '7']], $executor->executed);
+    }
+
+    /** Bootstrap agents and leader-hosted instances do not acquire policy placement on demand. */
+    public function testAddressingOtherAgentKindsDoesNotPlaceThem(): void
+    {
+        $manager = new PolicyPlacementTestManager();
+        $executor = $this->installPlacement();
+        Hilos::$cluster->placement()->onBecameLeader(microtime(true));
+
+        $require = new ReflectionMethod(DaemonManager::class, 'requireOnDemandPlacement');
+        $require->invoke($manager, 'library', null);
+        $require->invoke($manager, 'chat', null);
+        $require->invoke($manager, 'presence', null);
+        $require->invoke($manager, 'leader_instance', '1');
+
+        $this->assertSame([], $executor->executed);
+    }
+
     public function testAFailedPlacementIsRetriedOncePerInterval(): void
     {
         $manager = new PolicyPlacementTestManager();
@@ -268,5 +299,11 @@ abstract class PolicyPlacementTestHilos extends Hilos
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        'document' => [
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => 60,
+        ],
+        'leader_instance' => [AgentRegistryKey::INDEXED => true],
     ];
 }

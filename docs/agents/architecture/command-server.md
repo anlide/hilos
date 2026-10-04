@@ -106,7 +106,8 @@ second status and no second key: `STATUS_ERROR` with the sentence under `FIELD_M
 4. **Agent** does the work and calls the `replyToCommand(CommandReplyDTO)` seam,
    which queues a `COMMAND_REPLY` (signal name = the `correlationId`).
 5. **Master** routes `COMMAND_REPLY` to a `CommandReplyDestination{correlationId}`
-   → delivers to the held client → the CLI's `hasResult()` turns true.
+   → delivers to the held client, or sends `peer_command_reply` to the node holding it
+   → the CLI's `hasResult()` turns true.
 
 **Steps 3 and 4 can fail, and when they do the master answers instead of the agent**
 (HIL-730). An empty destination list, an agent nothing placed, a node with no live link —
@@ -118,6 +119,20 @@ line: the operator has a terminal, operations has a journal.
 A parked command still times out (the client returns no reply) when the agent neither
 threw nor answered — the one silence nothing on the path can see. The held connection is
 forgotten on close.
+
+## Across nodes
+
+The daemon that accepts a command stamps its own node id on the request, replacing any
+value the caller sent. If placement sends the command to an agent on another node, that
+node remembers which node holds the console connection under the correlation id. The
+answer returns over `peer_command_reply` and is written straight to the held connection;
+the receiving node does not route it again. Refusals written by the answering daemon
+take the same path. The origin entry leaves when the reply is sent, when the requesting
+node leaves the cluster, or after `CommandChannelWindows::CHANNEL_HELD_SECONDS`.
+
+The frame is best effort. If the link to the asking node is gone, the answering node
+logs a WARNING and drops the reply; the caller waits out its own window. The new frame
+requires peer protocol version 14, so older nodes are refused on handshake.
 
 ## Wiring a command
 

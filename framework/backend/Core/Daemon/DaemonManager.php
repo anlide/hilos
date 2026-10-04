@@ -158,6 +158,7 @@ use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\CommandReplyOrigins;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Server\CommandServer;
@@ -429,6 +430,9 @@ abstract class DaemonManager extends BaseManager implements
      */
     private RtClusterClaimRegistry $rtClaimRegistry;
 
+    /** @var CommandReplyOrigins Node holding each console connection answered on this node */
+    private readonly CommandReplyOrigins $commandReplyOrigins;
+
     /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
     protected ?float $readinessTimeout = null;
 
@@ -486,6 +490,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->protectedModeEntryGate = new ProtectedModeEntryGate();
         $this->probeFleetSupervisor = new ProbeFleetSupervisor();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
+        $this->commandReplyOrigins = new CommandReplyOrigins();
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
         // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
@@ -1680,9 +1685,8 @@ abstract class DaemonManager extends BaseManager implements
      * A frame this door HOLDS is marked with the same rule, so the release cannot reopen the
      * question either - see {@see ParkedAgentSignal}.
      *
-     * Held is silence - the frame goes out when the start ends. Anything else is a line and
-     * nothing more: the one who asked sits on another node, and the frame carries nothing to
-     * answer them by. Telling them is the next leaf of this theme.
+     * Held is silence - the frame goes out when the start ends. A command remembers its
+     * asking node here, so its later reply can return there; other failed frames log a line.
      *
      * @param string $agentType Target agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -1693,6 +1697,12 @@ abstract class DaemonManager extends BaseManager implements
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
         $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
+
+        $request = $signal->data;
+        // This door receives only peer-forwarded frames; locally queued requests never enter it.
+        if ($request instanceof CommandRequestDTO && $request->originNodeId !== null) {
+            $this->commandReplyOrigins->note($request->correlationId, $request->originNodeId, microtime(true));
+        }
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
@@ -2737,7 +2747,17 @@ abstract class DaemonManager extends BaseManager implements
                         $destination->sessionTokenHash,
                     );
                 } elseif ($destination instanceof CommandReplyDestination) {
-                    // Write the agent reply back to the held CLI command connection
+                    // The answering node remembers which node parked the console connection.
+                    $originNodeId = $this->commandReplyOrigins->take($destination->correlationId, microtime(true));
+                    if ($originNodeId !== null) {
+                        if ($peerServer === null) {
+                            Logger::error("Peer command reply dropped: {$signalName} -> node {$originNodeId} - no peer server");
+                        } elseif (!$peerServer->sendCommandReplyToNode($originNodeId, $signal)) {
+                            Logger::warning("Peer command reply dropped: {$signalName} -> node {$originNodeId} - no live link");
+                        }
+                        continue;
+                    }
+
                     if ($commandServer === null) {
                         continue;
                     }
@@ -4299,6 +4319,28 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Writes a forwarded command reply to this node's held console connection.
+     *
+     * @param SignalDTO $signal COMMAND_REPLY signal already addressed by correlation id
+     */
+    public function deliverCommandReply(SignalDTO $signal): void
+    {
+        $reply = $signal->data;
+        if (!$reply instanceof CommandReplyDTO) {
+            Logger::warning('Forwarded command reply dropped: the frame carries ' . get_debug_type($reply) . ', not a reply');
+            return;
+        }
+
+        $commandServer = $this->findCommandServer();
+        if ($commandServer === null) {
+            Logger::warning("Forwarded command reply to #{$reply->correlationId} dropped: this node serves no commands");
+            return;
+        }
+
+        $commandServer->deliver($reply->correlationId, $reply);
+    }
+
+    /**
      * Asks the cluster to place an agent nobody could address, when the agent is one that starts
      * by being addressed (HIL-628).
      *
@@ -4308,11 +4350,10 @@ abstract class DaemonManager extends BaseManager implements
      * first address is answered before the agent exists anywhere, and without this the answer
      * would never change.
      *
-     * The three keys are asked together because each rules out a different agent that must NOT be
-     * placed on demand: an unindexed one has no instance to place, one with no declared window
-     * lives forever and so was already started by something else, and a leader-hosted one runs
-     * wherever leadership sits rather than where a policy puts it. An agent failing any of them is
-     * unreachable for an ordinary reason, and the branch's log line is the whole of the answer.
+     * Indexed policy agents start on demand whether or not they declare an idle window: delivery
+     * pools have no window and live until stopped, but still need their first addressed frame to
+     * place them. Unindexed agents belong to the bootstrap pass; leader-hosted agents belong to
+     * the node holding leadership rather than to the placement policy.
      *
      * Protected rather than private so a subclass can observe the asks the release repeats
      * while a frame waits on a placement verdict (HIL-1041).
@@ -4325,7 +4366,6 @@ abstract class DaemonManager extends BaseManager implements
     {
         $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
         if (!AgentRegistry::requiresIndex($registryEntry)
-            || AgentRegistry::idleTimeout($registryEntry) === null
             || AgentRegistry::placement($registryEntry) !== AgentPlacement::POLICY) {
             return;
         }
@@ -5028,6 +5068,12 @@ abstract class DaemonManager extends BaseManager implements
     private function findHttpServer(): ?HttpServer
     {
         return array_find($this->servers, fn($server) => $server instanceof HttpServer);
+    }
+
+    /** @return ?CommandServer Registered command server, or null when this daemon serves no commands */
+    private function findCommandServer(): ?CommandServer
+    {
+        return array_find($this->servers, fn($server) => $server instanceof CommandServer);
     }
 
     /**
@@ -6776,6 +6822,7 @@ abstract class DaemonManager extends BaseManager implements
         // rather than by the link dropping, because a dropped link is re-dialed and forgetting
         // its clients meanwhile would blind this node to every browser attached there.
         Hilos::$cluster?->clientConnections()?->forgetNode($node->nodeId);
+        $this->commandReplyOrigins->forgetNode($node->nodeId);
         // And so do the RT rights its agents held (HIL-696). Without this the leader would go on
         // holding a claim for a node that is gone, and failover - which re-places that very agent
         // on a surviving node - would have its new host refused in favour of the dead one. A
