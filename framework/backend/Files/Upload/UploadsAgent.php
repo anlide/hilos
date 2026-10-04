@@ -12,6 +12,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\HilosFeature;
@@ -27,6 +28,9 @@ use Hilos\Files\ContentHash;
 use Hilos\Files\DTO\FilePublishItemData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
+use Hilos\Files\Metadata\ImageMetadataOutcome;
+use Hilos\Files\Metadata\ImageMetadataStripResult;
+use Hilos\Files\Metadata\ImageMetadataStripper;
 use Hilos\Files\Upload\Check\AllowedContentCheck;
 use Hilos\Files\Upload\Check\DeclaredMimeCheck;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
@@ -444,7 +448,6 @@ final class UploadsAgent extends AbstractAgent
                 tmpIndex: $upload->tmpIndex,
                 filename: $upload->filename,
                 mimeType: $upload->detectedMimeType ?? $upload->mimeType,
-                size: $upload->declaredSize,
                 ownerUserId: $ownerUserId,
                 contentHash: $upload->contentHash,
             );
@@ -604,7 +607,8 @@ final class UploadsAgent extends AbstractAgent
     /**
      * Judges the whole received file and completes or fails the upload.
      *
-     * The fingerprint and the sniffed type are written onto the row before the checks run, so
+     * Picture metadata is stripped before fingerprinting and sniffing. The fingerprint and the
+     * sniffed type are written onto the row before the checks run, so
      * every check - a project's included - reads them there; the row does not become complete
      * until they all let it through.
      *
@@ -613,7 +617,22 @@ final class UploadsAgent extends AbstractAgent
      */
     private function finish(HilosUpload $upload): void
     {
-        $hash = $this->fingerprint($upload);
+        try {
+            // TODO: the framework decides for every project that a received picture loses its
+            // metadata (owner, HIL-1171). Stripping stays the default, but a project must be able
+            // to keep it - a photo gallery whose value is the camera data - for instance per upload target.
+            $metadata = $this->stripMetadata($upload);
+        } catch (FsException $failure) {
+            $this->logAgentError(
+                "Cannot strip upload {$upload->clientUploadId} of {$upload->acceptKey}: {$failure->getMessage()}",
+            );
+            $this->fail($upload, UploadFailureCode::STORAGE_ERROR, self::MESSAGE_CANNOT_FINISH);
+
+            return;
+        }
+        $hash = $metadata->outcome === ImageMetadataOutcome::STRIPPED
+            ? ($metadata->contentHash ?? throw new LogicException('Stripped picture has no fingerprint'))
+            : $this->fingerprint($upload);
         if ($hash === null) {
             $this->fail($upload, UploadFailureCode::STORAGE_ERROR, self::MESSAGE_CANNOT_FINISH);
 
@@ -643,6 +662,44 @@ final class UploadsAgent extends AbstractAgent
         $upload->actions->complete();
         $this->forgetMemory($upload);
         $this->sendState($upload->acceptKey, UploadStateSignalData::fromUpload($upload));
+    }
+
+    /**
+     * Strips private picture metadata on arrival so the stored bytes, content hash, and duplicate
+     * check agree even when someone downloads an original and uploads it again. This keeps the
+     * work off the files library (docs/agents/architecture/uploads.md, "Picture Metadata").
+     *
+     * @param HilosUpload $upload Upload whose declared bytes have all arrived
+     * @return ImageMetadataStripResult Cleaned bytes or a reason to keep the original
+     * @throws FsException When reading, writing, replacing, or cleaning a temporary file fails
+     * @throws LogicException When the output digest has already been finalized
+     */
+    private function stripMetadata(HilosUpload $upload): ImageMetadataStripResult
+    {
+        $tmp = $this->tmp();
+        $source = $tmp[$upload->tmpIndex ?? throw new DirectoryNotFoundException('The upload has no temporary file')]->getPath();
+        $result = ImageMetadataStripper::strip($source, $tmp);
+        if ($result->outcome === ImageMetadataOutcome::MALFORMED) {
+            $this->logAgentWarning(
+                "Upload {$upload->clientUploadId} of {$upload->acceptKey} keeps its metadata: {$result->reason}",
+            );
+        }
+        if ($result->outcome === ImageMetadataOutcome::STRIPPED) {
+            $cleaned = $tmp[$result->tmpIndex ?? throw new LogicException('Stripped picture has no temporary file')];
+            try {
+                FsPath::move($cleaned->getPath(), $source);
+            } catch (FsException $failure) {
+                try {
+                    $cleaned->unlink();
+                } catch (FsException) {
+                    // Keep the original replacement failure as the refusal.
+                }
+                throw $failure;
+            }
+            unset($this->hashes[StateHilosUpload::keyFor($upload->acceptKey, $upload->clientUploadId)]);
+        }
+
+        return $result;
     }
 
     /**

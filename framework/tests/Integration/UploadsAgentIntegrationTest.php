@@ -22,6 +22,7 @@ use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Files\FileVisibility;
+use Hilos\Files\Image\JpegOrientation;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
@@ -32,6 +33,7 @@ use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
+use Hilos\Log\AgentLogStream;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
@@ -39,6 +41,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosUpload;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -73,6 +76,8 @@ final class UploadsAgentIntegrationTest extends TestCase
 
     private string $tmpPath = '';
 
+    private string $logPath = '';
+
     private UploadsAgent $agent;
 
     private UploadsTestRtContext $rt;
@@ -88,6 +93,9 @@ final class UploadsAgentIntegrationTest extends TestCase
         $this->previousAppClass = Hilos::appClass();
 
         $this->tmpPath = sys_get_temp_dir() . '/hilos-uploads-' . bin2hex(random_bytes(6));
+        $this->logPath = $this->tmpPath . '-logs';
+        mkdir($this->logPath);
+        Logger::setLogFile($this->logPath . '/main.log');
         Hilos::$fs = new UploadsTestFsContext($this->tmpPath);
         Hilos::$fs->configure();
         Hilos::$sr = new SignalRouter();
@@ -116,12 +124,15 @@ final class UploadsAgentIntegrationTest extends TestCase
         RtTruthSourceRegistry::unregister(StateHilosUpload::RT_COLLECTION, HilosAgentType::HILOS_UPLOADS);
         ExecutionContext::clear();
         SourceChangeBus::reset();
+        Logger::resetLogFile();
 
-        foreach (glob($this->tmpPath . '/*') ?: [] as $file) {
-            unlink($file);
-        }
-        if (is_dir($this->tmpPath)) {
-            rmdir($this->tmpPath);
+        foreach ([$this->tmpPath, $this->logPath] as $directory) {
+            foreach (glob($directory . '/*') ?: [] as $file) {
+                unlink($file);
+            }
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
         }
 
         self::bindAppClass($this->previousAppClass);
@@ -294,6 +305,38 @@ final class UploadsAgentIntegrationTest extends TestCase
         $upload = $this->upload(self::GUEST, 'u1');
         $this->assertSame(UploadPhase::COMPLETE, $upload->phase);
         $this->assertSame(hash('sha256', 'abcdef'), $upload->contentHash);
+    }
+
+    public function testJpegMetadataIsStrippedBeforeTheFingerprintEvenWithoutContentSniffing(): void
+    {
+        $jpeg = self::jpegWithGps();
+        $this->declare(self::GUEST, 'u1', mimeType: 'image/jpeg', size: strlen($jpeg));
+        $this->chunk(self::GUEST, 'u1', substr($jpeg, 0, 17));
+        $this->chunk(self::GUEST, 'u1', substr($jpeg, 17));
+
+        $upload = $this->upload(self::GUEST, 'u1');
+        $stored = (string)file_get_contents($this->path($upload));
+        self::assertSame(UploadPhase::COMPLETE, $upload->phase);
+        self::assertSame(strlen($jpeg), $upload->declaredSize);
+        self::assertSame(strlen($jpeg), $upload->receivedBytes);
+        self::assertStringNotContainsString('GPS-SECRET', $stored);
+        self::assertSame(6, JpegOrientation::read($stored));
+        self::assertSame(hash('sha256', $stored), $upload->contentHash);
+        self::assertLessThan(strlen($jpeg), strlen($stored));
+    }
+
+    public function testMalformedJpegCompletesUnchangedAndWritesAWarning(): void
+    {
+        $jpeg = "\xff\xd8\xff\xe1\xff\xffbroken";
+        $this->declare(self::GUEST, 'u1', mimeType: 'image/jpeg', size: strlen($jpeg));
+        $this->chunk(self::GUEST, 'u1', $jpeg);
+
+        $upload = $this->upload(self::GUEST, 'u1');
+        self::assertSame(UploadPhase::COMPLETE, $upload->phase);
+        self::assertSame($jpeg, file_get_contents($this->path($upload)));
+        self::assertSame(hash('sha256', $jpeg), $upload->contentHash);
+        $log = AgentLogStream::pathFor($this->logPath, $this->agent->getId(), false);
+        self::assertStringContainsString('Upload u1 of ak-guest keeps its metadata:', (string)file_get_contents($log));
     }
 
     public function testASniffedPngCompletesWithItsDetectedType(): void
@@ -513,6 +556,18 @@ final class UploadsAgentIntegrationTest extends TestCase
         $this->assertNotNull($upload->tmpIndex);
 
         return $this->tmpPath . '/' . $upload->tmpIndex;
+    }
+
+    /** @return string JPEG with a GPS IFD and a scan */
+    private static function jpegWithGps(): string
+    {
+        $ifd = pack('v', 2) . pack('vvVvv', 0x0112, 3, 1, 6, 0)
+            . pack('vvVV', 0x8825, 4, 1, 38) . pack('V', 0);
+        $gps = pack('v', 1) . pack('vvVV', 1, 2, 11, 56) . pack('V', 0) . 'GPS-SECRET';
+        $exif = "Exif\0\0II" . pack('vV', 42, 8) . $ifd . $gps;
+
+        return "\xff\xd8\xff\xe1" . pack('n', strlen($exif) + 2) . $exif
+            . "\xff\xda\x00\x02pixels\xff\xd9";
     }
 
     /**

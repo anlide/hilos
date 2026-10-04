@@ -268,6 +268,25 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame(hash('sha256', $png), $row['content_hash']);
     }
 
+    public function testPublicationKeepsCleanJpegBytesAndMeasuresTheirStoredSize(): void
+    {
+        $original = self::jpegWithGps();
+        $this->complete(self::SIGNED_IN, 'u1', $original, mimeType: 'image/jpeg');
+        $upload = Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u1');
+        self::assertSame(strlen($original), $upload?->declaredSize);
+
+        $answer = $this->publish(self::SIGNED_IN, ['u1']);
+
+        self::assertNull($answer->error);
+        $row = self::row($answer->fileIds[0]);
+        $stored = (string)file_get_contents($this->filesPath . '/' . $row['stored_name']);
+        self::assertStringNotContainsString('GPS-SECRET', $stored);
+        self::assertStringNotContainsString('PRIVATE-TAIL', $stored);
+        self::assertLessThan(strlen($original), strlen($stored));
+        self::assertSame(strlen($stored), (int)$row['size']);
+        self::assertSame(hash('sha256', $stored), $row['content_hash']);
+    }
+
     public function testSeveralUploadsArePublishedTogetherInTheOrderTheyAreNamed(): void
     {
         $this->complete(self::SIGNED_IN, 'u1', 'first');
@@ -490,6 +509,20 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->declare(self::SIGNED_IN, 'u2', FilePublishTestHilos::DEDUP, size: strlen('same bytes'));
         $this->chunk(self::SIGNED_IN, 'u2', 'same bytes');
+
+        $this->assertFailedAsDuplicate(self::SIGNED_IN, 'u2');
+    }
+
+    public function testTheDownloadedCleanOriginalIsAContentDuplicate(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', self::jpegWithGps(), mimeType: 'image/jpeg');
+        $answer = $this->publish(self::SIGNED_IN, ['u1']);
+        $this->bind($answer->fileIds[0]);
+        $row = self::row($answer->fileIds[0]);
+        $stored = (string)file_get_contents($this->filesPath . '/' . $row['stored_name']);
+
+        $this->declare(self::SIGNED_IN, 'u2', FilePublishTestHilos::DEDUP, 'image/jpeg', strlen($stored));
+        $this->chunk(self::SIGNED_IN, 'u2', $stored);
 
         $this->assertFailedAsDuplicate(self::SIGNED_IN, 'u2');
     }
@@ -757,6 +790,18 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertNotNull($upload->tmpIndex);
 
         return $this->tmpPath . '/' . $upload->tmpIndex;
+    }
+
+    /** @return string JPEG with a GPS IFD, a scan, and trailing private data */
+    private static function jpegWithGps(): string
+    {
+        $ifd = pack('v', 2) . pack('vvVvv', 0x0112, 3, 1, 6, 0)
+            . pack('vvVV', 0x8825, 4, 1, 38) . pack('V', 0);
+        $gps = pack('v', 1) . pack('vvVV', 1, 2, 11, 56) . pack('V', 0) . 'GPS-SECRET';
+        $exif = "Exif\0\0II" . pack('vV', 42, 8) . $ifd . $gps;
+
+        return "\xff\xd8\xff\xe1" . pack('n', strlen($exif) + 2) . $exif
+            . "\xff\xda\x00\x02pixels\xff\xd9PRIVATE-TAIL";
     }
 
     /**

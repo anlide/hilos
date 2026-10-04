@@ -86,7 +86,6 @@ final class FilesPublishDtoTest extends TestCase
         yield 'no owner' => [[FilePublishItemData::ownerUserId => 0] + self::item('u1')];
         yield 'a fingerprint in upper case' => [[FilePublishItemData::contentHash => strtoupper(hash('sha256', 'u1'))] + self::item('u1')];
         yield 'a fingerprint too short' => [[FilePublishItemData::contentHash => 'abc'] + self::item('u1')];
-        yield 'no size' => [array_diff_key(self::item('u1'), [FilePublishItemData::size => true])];
     }
 
     /**
@@ -186,7 +185,6 @@ final class FilesPublishDtoTest extends TestCase
             FilePublishItemData::tmpIndex => 'tmp-' . $clientUploadId,
             FilePublishItemData::filename => $clientUploadId . '.png',
             FilePublishItemData::mimeType => 'image/png',
-            FilePublishItemData::size => 10,
             FilePublishItemData::ownerUserId => 7,
             FilePublishItemData::contentHash => hash('sha256', $clientUploadId),
         ];

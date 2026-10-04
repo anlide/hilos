@@ -149,10 +149,11 @@ Every chunk is a signed `frame_binary` frame (`UploadFrame`):
 A frame without a readable signature, or naming no ready/uploading upload of
 its connection, is dropped with a debug line and creates nothing. More bytes
 than declared fail the upload `size_overflow`; an append that fails,
-`write_error`. Exactly the declared size first writes onto the row, in one
-write, the fingerprint of the whole file (`contentHash`, sha256 counted while
-the chunks arrived) and, for a sniffing target, the type read from the head of
-the file with libmagic; then the received checks run, and the upload completes
+`write_error`. Exactly the declared size first strips supported picture
+metadata (below), then writes onto the row, in one write, the fingerprint of
+the bytes that remain (`contentHash`, sha256 counted while the chunks arrived
+if no bytes changed) and, for a sniffing target, the type read from the head
+of the file with libmagic; then the received checks run, and the upload completes
 or fails with the refusing check's code (`content_mismatch`,
 `duplicate_content`, `storage_error` when the file cannot be read back, or a
 project check's own).
@@ -160,6 +161,37 @@ project check's own).
 Phases: `ready → uploading → complete | failed` (`UploadPhase`). A failed upload
 keeps its row to say why and has no file; a complete one keeps its file in the
 tmp directory until it is published into the files registry or goes.
+
+## Picture Metadata
+
+On the last byte, before type sniffing and the target's checks, the uploads agent
+recognizes JPEG, PNG, and WebP by their content header. For these three formats
+it writes a cleaned temporary file in bounded chunks and hashes those written
+bytes. JPEG keeps image markers, JFIF, Adobe, each ICC profile part, and a
+minimal EXIF Orientation tag when rotation is 2–8. It drops other APP markers,
+comments, and everything after EOI, including a second frame or live-photo
+video. PNG keeps critical chunks and listed rendering and animation chunks;
+it replaces eXIf with only Orientation when needed and drops text, time,
+private ancillary chunks, and bytes after IEND. Extended WebP keeps its image,
+alpha, animation, and ICC chunks; it replaces EXIF with Orientation, drops XMP
+and other chunks, and updates VP8X flags and RIFF size. Simple WebP passes
+through. GIF, HEIC, AVIF, TIFF, PDF, and other formats pass through.
+
+If the file was already clean, its original temporary file and running digest
+stay. A malformed picture container also stays byte for byte, with an agent
+warning naming the upload and reason; there is no new browser refusal. A disk
+read, write, or replace failure yields `storage_error` and the existing
+"Cannot finish upload" message. The temporary index and the browser's
+declared size and progress do not change.
+
+The content hash is the sha256 of the bytes that will be stored. This happens
+at reception so the files library does not redo the work and a downloaded,
+cleaned original uploaded again has the same fingerprint for duplicate checks.
+Cleaned files are deterministic and a second pass changes nothing. The agent
+is one cluster singleton: a large picture holds its turn for tens of
+milliseconds per 10 MB. A project cannot opt out today; the owner-approved
+TODO at `UploadsAgent::finish()` calls for a way to keep camera metadata for a
+target such as a photo gallery, with stripping as the default (HIL-1171).
 
 ## What The Browser Sees
 
@@ -251,11 +283,16 @@ An upload goes with its file when:
 - Streaming a file without writing it to disk — HIL-142.
 - Placing the agent so chunks stay on one node: it runs as an ordinary cluster
   singleton — HIL-1241. Tmp files orphaned by a killed process are not swept.
+- Metadata in GIF, HEIC, AVIF, TIFF, PDF, and other formats is not stripped.
+  Letting a project keep picture metadata by choice is the TODO in
+  `UploadsAgent::finish()`.
 
 ## Validation
 
 `composer run test:framework:unit` (frame, MIME, checks, DTOs, activation,
-the frame route, the tmp refusal) and `composer run test:framework:integration`
+the frame route, the tmp refusal, picture container stripping and orientation)
+and `composer run test:framework:integration`
 (`UploadsAgentIntegrationTest`: every refusal, chunks, sniffing, the
-fingerprint, cancel, sweep, start and stop; `FilePublishIntegrationTest`: the
-storage limit and the duplicate check, beside publication itself).
+fingerprint, clean and malformed pictures, cancel, sweep, start and stop;
+`FilePublishIntegrationTest`: clean stored bytes, their measured size and
+fingerprint, the storage limit and duplicate check, beside publication itself).

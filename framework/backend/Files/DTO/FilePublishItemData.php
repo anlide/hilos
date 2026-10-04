@@ -10,14 +10,13 @@ use Hilos\Files\ContentHash;
 
 /**
  * One handed-over file inside {@see FilePublishSignalData}: where its temporary file is and what
- * its registry row will say (HIL-136).
+ * its registry row will say (HIL-136). Storage names the row's size after keeping the file.
  */
 final class FilePublishItemData extends BaseDTO
 {
     public const string tmpIndex = 'tmpIndex';
     public const string filename = 'filename';
     public const string mimeType = 'mimeType';
-    public const string size = 'size';
     public const string ownerUserId = 'ownerUserId';
     public const string contentHash = 'contentHash';
 
@@ -25,7 +24,6 @@ final class FilePublishItemData extends BaseDTO
      * @param string $tmpIndex Index of the temporary file in the tmp directory
      * @param string $filename Name the uploader gave the file
      * @param string $mimeType Type read from the content when the target read it, the declared one otherwise
-     * @param int $size Size of the file in bytes
      * @param int $ownerUserId Person signed in on the connection when the file was published
      * @param string $contentHash Fingerprint of the file's content ({@see ContentHash})
      */
@@ -33,14 +31,13 @@ final class FilePublishItemData extends BaseDTO
         public readonly string $tmpIndex,
         public readonly string $filename,
         public readonly string $mimeType,
-        public readonly int $size,
         public readonly int $ownerUserId,
         public readonly string $contentHash,
     ) {
     }
 
     /**
-     * @return array{tmpIndex: string, filename: string, mimeType: string, size: int, ownerUserId: int, contentHash: string}
+     * @return array{tmpIndex: string, filename: string, mimeType: string, ownerUserId: int, contentHash: string}
      *     DTO payload for transport
      */
     public function toArray(): array
@@ -49,7 +46,6 @@ final class FilePublishItemData extends BaseDTO
             self::tmpIndex => $this->tmpIndex,
             self::filename => $this->filename,
             self::mimeType => $this->mimeType,
-            self::size => $this->size,
             self::ownerUserId => $this->ownerUserId,
             self::contentHash => $this->contentHash,
         ];
@@ -75,7 +71,6 @@ final class FilePublishItemData extends BaseDTO
             tmpIndex: self::requireString($data, self::tmpIndex),
             filename: self::requireString($data, self::filename),
             mimeType: self::requireString($data, self::mimeType),
-            size: self::requireInt($data, self::size),
             ownerUserId: $ownerUserId,
             contentHash: $contentHash,
         );

@@ -46,6 +46,7 @@ use Hilos\Files\Storage\FilesStorageInterface;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Fs\Exception\FileNotFoundException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
 use Hilos\Hilos;
@@ -609,6 +610,7 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
      * no and will link nothing, and an unbound row would hold its place in the storage limit for
      * a day. Only those three failures are caught; anything else - a collection the process may
      * not read, an ownership refusal - leaves the handler (docs/agents/code-style/wiring-refusals.md).
+     * The registry size is measured by storage after it keeps the file.
      *
      * @param FilePublishSignalData $request Files handed over by the uploads agent
      * @throws HilosException When a row of the registry cannot be read or written past the three failures caught
@@ -628,11 +630,13 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         foreach ($request->files as $index => $item) {
             try {
                 $storage->storeFromTmp($storedNames[$index], $item->tmpIndex);
+                $size = $storage->size($storedNames[$index])
+                    ?? throw new FileNotFoundException("Stored upload {$storedNames[$index]} is missing");
                 $published[] = Hilos::$db->files->actions->create(
                     $storedNames[$index],
                     $item->filename,
                     $item->mimeType,
-                    $item->size,
+                    $size,
                     $item->contentHash,
                     $item->ownerUserId,
                     $visibility,

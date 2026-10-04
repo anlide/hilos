@@ -195,8 +195,9 @@ cropped profile photo; its upload and row are in [profile-photo.md](profile-phot
 
 ## What Is Not Here
 
-- Original metadata removal — HIL-1171. Copies carry no source metadata; the
-  original is unchanged. GD does not preserve color profiles.
+- The original is stripped on reception ([uploads.md](uploads.md), "Picture
+  Metadata"); its EXIF orientation is kept, so rendering still applies the
+  rotation. Copies carry no source metadata. GD does not preserve color profiles.
 - HEIC, TIFF, AVIF, BMP or SVG decoding in GD; those originals are served as
   fallbacks. The HTTP source-type gate currently admits only JPEG, PNG, WEBP
   and GIF, even with a replaced engine.

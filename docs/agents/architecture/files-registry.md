@@ -114,8 +114,9 @@ a moderation verdict. Declare that name in the consuming agent's
 - When all pass, each upload row goes and its temporary file stays, handed
   over; its connection gets the usual `gone` state frame. One frame carries the
   files to the library: temporary file, name, type — the one read from the
-  content where the target sniffs, the declared one otherwise — declared size,
-  owner and fingerprint. The owner is the person signed in at publication, not
+  content where the target sniffs, the declared one otherwise — owner and
+  fingerprint. Storage names the registry row's size after it keeps the file.
+  The owner is the person signed in at publication, not
   at the declaration. Between the upload row going and the registry row being
   written nobody counts the file in the storage limit — a known limit
   ([uploads.md](uploads.md), *Targets And Checks*).
@@ -173,8 +174,10 @@ storages and Azure Blob wait as a TODO at this seam —
 
 ## The Content Fingerprint
 
-`content_hash` is the sha256 of the file's bytes, lowercase hex (`ContentHash`).
-The uploads agent counts it while the chunks arrive and writes it onto the
+`content_hash` is the sha256 of the stored file's bytes, lowercase hex
+(`ContentHash`). For a picture, these are the bytes after reception strips
+metadata ([uploads.md](uploads.md), "Picture Metadata"). The uploads agent
+counts unchanged bytes while the chunks arrive and writes the result onto the
 complete upload; the library copies it onto the row. The duplicate check
 ([uploads.md](uploads.md)) looks it up among the same owner's bound rows
 through the index `idx_file_owner_hash (owner_user_id, content_hash)`; a row
