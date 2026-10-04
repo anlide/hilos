@@ -979,10 +979,10 @@ final class ClusterProtectedMode implements
      * Starts a quiesce round for the freeze already held: this node plus every follower.
      *
      * Shared by the first entry, a repeat enable from the verification window (HIL-1057) and the
-     * close back from it (HIL-1128). The leader waits for itself as it waits for any follower: its own roster stops over several
-     * master passes, and a follower with a shorter one reports back before it has. Counted only
-     * among the followers, that report would activate a freeze the leader's own node was still
-     * serving clients under (HIL-1012).
+     * close back from it (HIL-1128). The leader waits for itself as it waits for any follower:
+     * its own roster stops over several master passes, and a follower with a shorter one reports
+     * back before it has. Counted only among the followers, that report would activate a freeze
+     * the leader's own node was still serving clients under (HIL-1012).
      *
      * @param ProtectedModeQuiesceData $freeze Freeze this round is entering
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
