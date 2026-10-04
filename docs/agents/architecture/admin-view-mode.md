@@ -348,23 +348,31 @@ nobody is asked*).
   variable turned on in production (HIL-1249) opens nothing until the verdict
   (HIL-1251), and the verdict stands on the bridge (HIL-1250) — at no step is
   there a window in which a viewer sees anything personal.
-- The owner's decisions per surface. The values of ALL settings are hidden
-  while keys, types and captions are shown; there is no marking by key —
-  `Setting.value` is `AnonymizationStrategy::MASK` whole, because the
-  framework does not know what the project put there. On every settings screen,
-  a viewer sees the key, type, caption, source, and presence of a value; the
-  value itself, the default value, and the key of a referenced default are
-  hidden; a switch-value is rendered as a hidden mark; log modes — card titles
-  are shown, the applied mode, mode values, and drift are hidden; the set of
-  enabled sign-in methods is hidden on the screen even though sent to every
-  session — one rule for setting values; OAuth providers are shown according to
-  the entity's verdict (HIL-1255). A log line shows its time, level and
-  node, and its text is hidden; there is no marking at write time
-  (not in the code yet — HIL-1257). A person's name is hidden (HIL-1254).
-  Rows assembled by hand past the marking are classified by the leaves of
-  their sections: the people rows and the merge candidates (HIL-1254); the
-  verifier circle, the deliveries, the free text of backup refusals and the
-  maintenance texts (HIL-1256).
+- The owner's decisions per surface. The values of ALL settings are hidden while
+  keys, types and captions are shown; there is no marking by key —
+  `Setting.value` is `AnonymizationStrategy::MASK` whole, because the framework
+  does not know what the project put there. On every settings screen, a viewer
+  sees the key, type, caption, source, and presence of a value; the value
+  itself, the default value, and the key of a referenced default are hidden; a
+  switch-value is rendered as a hidden mark; log modes — card titles are shown,
+  the applied mode, mode values, and drift are hidden; the set of enabled
+  sign-in methods is hidden on the screen even though sent to every session —
+  one rule for setting values; OAuth providers are shown according to the
+  entity's verdict (HIL-1255). A log line shows its time, level and node, and
+  its text is hidden; there is no marking at write time
+  (not in the code yet — HIL-1257). A person's name is hidden (HIL-1254). Rows
+  assembled by hand past the marking are classified by the leaves of their
+  sections: the people rows and the merge candidates (HIL-1254). The verifier
+  circle shows a viewer the sign-in type and whether a member is online, the
+  address hidden; the deliveries show everything but the notification's title,
+  the error and the recipient's signature; the backup history shows everything
+  but the three refusal texts — of the copy, of the copying and of the restore —
+  while the migration note the code writes out of connection numbers and levels
+  is shown, as are the restore sections and the check windows on the page and
+  the phase with the time left on the bar (HIL-1256). The maintenance phrases
+  that carry an address are marked by nothing: the answer and the refusal of an
+  action go only to the acting connection, and a viewer's action is refused
+  before its handler.
 - The people (HIL-1254). The list, the card of one person and the merge
   candidates show a viewer the id, the admin and block flags and the last
   activity by their column verdicts, the name hidden by its own; presence and
