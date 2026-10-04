@@ -36,9 +36,9 @@ use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
  * the person's sections the root's rows summarize - notifications, two-step verification,
  * agreements, the data copy - and the account deletion's danger zone at its bottom. The
  * project binds its agent and the framework identities list, plus any project browser lists
- * and data for the name and summaries only it knows. Each profile section has its own page (HIL-493); the
- * provider-link start belongs to AbstractHilosProfileSignInPage and account writes belong to
- * the users library.
+ * and data for the name and summaries only it knows. Each profile section has its own page
+ * (HIL-493); the provider-link start belongs to AbstractHilosProfileSignInPage and account
+ * writes belong to the users library.
  *
  * It is a READING surface. After the answer the connection joins the person's deletion,
  * agreements, second-factor and data-copy groups, so a change made in another tab reaches
