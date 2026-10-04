@@ -257,7 +257,7 @@ const CONTAINER_STATE_RUNNING = 'running';
  *
  * @param string $root Repository root; the step's `cwd` is relative to it.
  * @param string $id The step the snapshot is about.
- * @param array{cwd: string, stand?: string} $step Its manifest entry.
+ * @param array{cwd: string, stand?: string, database?: string} $step Its manifest entry.
  * @param array{rc: int, at: string, seconds: float,
  *     unstable: array{count: int, tests: array<int, string>}} $finished How the step went.
  * @param array{lanes: int, logPath: string, neighborsAtStart: array<int, string>,
@@ -315,7 +315,14 @@ function collectStepArtifacts(
     if ($stand !== null && standKeepsContainers($probe['state'])) {
         $missing = [...$missing, ...collectDockerArtifacts($root, $stand, $probe, $path, $deadline)];
         if (standAnswersDatabase($probe['state'], $stand)) {
-            $missing = [...$missing, ...collectDatabaseArtifacts($root, $stand, $probe, $path, $deadline)];
+            $missing = [...$missing, ...collectDatabaseArtifacts(
+                $root,
+                $stand,
+                $probe,
+                $path,
+                $deadline,
+                $step['database'] ?? null,
+            )];
         }
     }
 
@@ -956,6 +963,12 @@ function standAnswersDatabase(string $state, ?array $stand): bool
     return $state === STAND_STATE_UP && standHoldsDatabase($stand);
 }
 
+/** Use a step's own database for its snapshot when the stand holds several databases. */
+function databaseQuery(string $query, ?string $database): string
+{
+    return $database === null ? $query : 'MYSQL_DATABASE=' . escapeshellarg($database) . "\n" . $query;
+}
+
 /**
  * Keep what the database says about itself: its schema, an exact count of every
  * table's rows, the demo's own view of its migrations, and — only when this run was
@@ -972,6 +985,7 @@ function standAnswersDatabase(string $state, ?array $stand): bool
  * @param array{containers: array<int, array<string, mixed>>} $probe What {@see probeStand()} found.
  * @param string $path The step's snapshot directory.
  * @param float $deadline When the whole snapshot's budget runs out.
+ * @param string|null $selectedDatabase The step's database, or the stand's default.
  * @return array<int, string> What could not be collected, with the reason.
  */
 function collectDatabaseArtifacts(
@@ -980,6 +994,7 @@ function collectDatabaseArtifacts(
     array $probe,
     string $path,
     float $deadline,
+    ?string $selectedDatabase,
 ): array {
     $database = labelledStandService($probe['containers'], STAND_DATABASE_LABEL);
     if ($database === null) {
@@ -1000,7 +1015,7 @@ function collectDatabaseArtifacts(
             $root,
             $stand,
             $database,
-            'sh -c ' . escapeshellarg($query),
+            'sh -c ' . escapeshellarg(databaseQuery($query, $selectedDatabase)),
             $path . '/db/' . $file,
             $deadline,
         )];

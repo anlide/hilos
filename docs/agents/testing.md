@@ -28,11 +28,13 @@ Composer scripts live in the repo-root `composer.json`:
 | Script | What it does |
 |---|---|
 | `composer run test:framework:install-deps` | Install PHPUnit & framework dev deps inside the test container. |
-| `composer run test:framework:up` | Start `mysql-framework-test`. |
+| `composer run test:framework:up` | Start `mysql-framework-test` and the backup receiver, and wait until both are healthy. |
+| `composer run test:framework:databases` | Recreate the databases of the integration pieces, `hilos-framework-test-1`…`4`, as root inside the database container. Needs `up`. |
+| `composer run test:framework:piece -- <K>` | Run integration piece K on its own database: the classes whose crc32 of the short name lands on K, as defined in `scripts/framework-pieces.php`. Needs `up` and `databases`. |
 | `composer run test:framework:unit` | Run framework unit tests (`framework/tests/Unit`). |
 | `composer run test:framework:integration` | Run framework integration tests (`framework/tests/Integration`). Requires DB. |
 | `composer run test:framework:phpunit` | Run both PHPUnit suites. |
-| `composer run test:framework:all` | `install-deps` → `up` → `phpunit` → `down`. Runs every available test type for the framework. |
+| `composer run test:framework:all` | Run the framework backend steps of the graph, tag `framework-php`: `framework-unit` beside the integration pieces, each on its own database; the stand comes up before them and goes down after a green finish. |
 | `composer run test:framework:down[-volumes]` | Stop (and optionally wipe volumes). |
 
 ---
@@ -231,6 +233,7 @@ Everything the project can be tested with is one graph in
 ```
 composer run test:suite                       every step
 composer run test:frontend:all                the `frontend` tag, plus its dependencies
+composer run test:framework:all                the `framework-php` tag, plus its dependencies
 php scripts/run-test-suite.php chat-e2e       one step, plus its dependencies
 php scripts/run-test-suite.php --list         the plan, without running it
 ```
@@ -267,6 +270,12 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   `test:e2e-full` starts by taking that project down. Group members never run at the
   same time, but a red one does not skip the others: `<demo>-php` is backend-only
   and keeps its own verdict when `<demo>-check` fails.
+
+**A database per piece.** Framework integration runs as four graph steps against
+one database container. `framework-up` recreates their separate databases; each
+test class belongs to one piece in full. Shared stand resources, such as the backup
+receiver or MariaDB server settings, may therefore be touched by only one class.
+The pieces need no edge or group between them.
 
 Neither the order nor the lane count is the lever it looks like. The three steps of
 the `chat` demo share a group — one stand — so 106 + 1227 + 6 = 1339s of them can

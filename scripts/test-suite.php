@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/framework-pieces.php';
+
 /**
  * The full test run, as a graph instead of a script.
  *
@@ -31,6 +33,9 @@ declare(strict_types=1);
  *   downsStand  whether this step takes its stand down the moment it ends, at any
  *            outcome. Separate from `stand` because twelve steps drive one and
  *            deliberately leave it standing.
+ *   database  the database inside the stand this step works in, when it is not
+ *            the one the stand's database container names as MYSQL_DATABASE;
+ *            the step's snapshot reads this one.
  *   seconds  the last measured duration (HIL-1227, 2026-09-29; the e2e of chat and
  *            binance-btc-tracker re-measured by HIL-1221 the same day, after the
  *            protected-mode spec moved between them, again by HIL-1220, after
@@ -66,6 +71,15 @@ declare(strict_types=1);
  * The next lever is an instance of the stand as a parameter, so that chat-e2e can
  * be cut by area across stands of its own (hilos-ops/proposals, P-452) — not the
  * order of the steps and not the lane count.
+ *
+ * THE FRAMEWORK SUITE IN PIECES (HIL-1328). The unit suite runs beside four
+ * integration pieces, each using its own database in one MariaDB container. A
+ * class belongs to one piece by the crc32 of its short name, as declared in
+ * scripts/framework-pieces.php. On nova-de at seven lanes, run 0789 (2026-10-04),
+ * framework-deps through the last integration piece took 7m38s, then down took
+ * 2s. Before the split, the `framework` step took 10m14s in green run 0788 on
+ * the parent base. Archived id `framework` meant both suites in one process;
+ * rc=1 there meant either unit or integration failed.
  *
  * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `binance-btc-tracker-cluster`,
  * `ecommerce-shop-cluster` and `online-testing-cluster`; `cluster` raises none since its
@@ -110,16 +124,71 @@ $steps = [
         'tags' => ['framework', 'backend'],
         'seconds' => 2,
     ],
+    // Install dependencies before raising the stand: both composer commands use the
+    // same Compose project, whose network the first command creates. Unit failures
+    // must not hide integration verdicts, so both branches depend on deps instead
+    // of making unit a gate. Down waits for unit too, because it removes the network
+    // the unit container uses. A red piece skips down and leaves the stand for triage.
     [
-        'id' => 'framework',
-        'command' => 'composer run test:framework:all',
+        'id' => 'framework-deps',
+        'command' => 'composer run test:framework:install-deps',
         'cwd' => '.',
         'stand' => 'framework',
         'deps' => ['framework-image'],
         'group' => null,
-        'tags' => ['framework', 'backend'],
-        'seconds' => 425,
+        'tags' => ['framework', 'backend', 'framework-php'],
+        'seconds' => 1,
     ],
+    [
+        'id' => 'framework-unit',
+        'command' => 'composer run test:framework:unit -- --do-not-cache-result',
+        'cwd' => '.',
+        'stand' => 'framework',
+        'deps' => ['framework-deps'],
+        'group' => null,
+        'tags' => ['framework', 'backend', 'framework-php'],
+        'seconds' => 24,
+    ],
+    [
+        'id' => 'framework-up',
+        'command' => 'composer run test:framework:up && composer run test:framework:databases',
+        'cwd' => '.',
+        'stand' => 'framework',
+        'deps' => ['framework-deps'],
+        'group' => null,
+        'tags' => ['framework', 'backend', 'framework-php'],
+        'seconds' => 6,
+    ],
+];
+
+$frameworkPieceIds = [];
+$frameworkPieceSeconds = [1 => 335, 2 => 394, 3 => 257, 4 => 358]; // Run 0789 on nova-de, seven lanes.
+for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
+    $frameworkPieceIds[] = frameworkPieceStepId($piece);
+    $steps[] = [
+        'id' => frameworkPieceStepId($piece),
+        'command' => 'composer run test:framework:piece -- ' . $piece,
+        'cwd' => '.',
+        'stand' => 'framework',
+        'database' => frameworkPieceDatabase($piece),
+        'deps' => ['framework-up'],
+        'group' => null,
+        'tags' => ['framework', 'backend', 'framework-php'],
+        'seconds' => $frameworkPieceSeconds[$piece],
+    ];
+}
+$steps[] = [
+    'id' => 'framework-down',
+    'command' => 'composer run test:framework:down',
+    'cwd' => '.',
+    'stand' => 'framework',
+    'deps' => ['framework-unit', ...$frameworkPieceIds],
+    'group' => null,
+    'tags' => ['framework', 'backend', 'framework-php'],
+    'seconds' => 2,
+];
+
+$steps = array_merge($steps, [
     [
         'id' => 'fe-install',
         'command' => 'composer run test:framework:frontend:install',
@@ -258,7 +327,7 @@ $steps = [
         'seconds' => 112,
         'downsStand' => true,
     ],
-];
+]);
 
 foreach ($demos as $demo => $seconds) {
     $steps[] = [

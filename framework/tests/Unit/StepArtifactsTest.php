@@ -60,6 +60,16 @@ final class StepArtifactsTest extends TestCase
      */
     private const array STEPS_WITHOUT_A_STAND = ['framework-image'];
 
+    /** A step without an override uses the stand's database; an override must stay shell quoted. */
+    public function testDatabaseQuerySelectsTheStepDatabase(): void
+    {
+        $query = "set -e\necho \"\$MYSQL_DATABASE\"";
+
+        $this->assertSame($query, databaseQuery($query, null));
+        $this->assertSame("MYSQL_DATABASE='hilos-framework-test-2'\n" . $query, databaseQuery($query, 'hilos-framework-test-2'));
+        $this->assertSame("MYSQL_DATABASE='a'\\''b'\n" . $query, databaseQuery($query, "a'b"));
+    }
+
     /** A green step is named green, so that the directory being full says nothing on its own. */
     public function testNamesAGreenStepGreen(): void
     {

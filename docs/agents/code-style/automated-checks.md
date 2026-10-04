@@ -422,7 +422,7 @@ the document first; the check follows.
 ## How to run it
 
 The guard lives in the ordinary framework unit suite, so it runs in the coding
-loop and inside `test:framework:all` on Verify without a target of its own:
+loop and inside the `framework-unit` step of every full run without a target of its own:
 
 ```bash
 composer run test:framework:unit
