@@ -7,7 +7,9 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -49,8 +51,15 @@ final class LogsViewPageReadLinesTest extends TestCase
     /** @var string Accept key of the connection waiting for the page of lines */
     private const string ACCEPT_KEY = 'ak-logs-view-1';
 
+    private ReadLinesTestBrowser $browser;
+
+    private ?BrowserContext $previousBrowser = null;
+
     protected function setUp(): void
     {
+        $this->previousBrowser = Hilos::$browser;
+        $this->browser = new ReadLinesTestBrowser();
+        Hilos::$browser = $this->browser;
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new LogsViewPageTestRtContext();
         Hilos::$rt->mountFeatureRuntime([]);
@@ -59,6 +68,7 @@ final class LogsViewPageReadLinesTest extends TestCase
 
     protected function tearDown(): void
     {
+        Hilos::$browser = $this->previousBrowser;
         RtTruthSourceRegistry::unregisterDaemon(StateHilosClusterNode::RT_COLLECTION);
         Hilos::$rt = null;
         Hilos::$sr = null;
@@ -88,6 +98,7 @@ final class LogsViewPageReadLinesTest extends TestCase
                 acceptKey: self::ACCEPT_KEY,
                 action: HilosSignalConstants::LOGS_READ_LINES,
                 requestId: self::REQUEST_ID,
+                hideText: false,
             ),
             $this->sentToOwner(),
         );
@@ -103,6 +114,19 @@ final class LogsViewPageReadLinesTest extends TestCase
 
         $this->assertSame('', $this->sentToOwner()->nodeId);
         $this->assertTrue($page->actionReplyDeferred());
+    }
+
+    public function testAViewerReadIsMarkedForHidingAndLosesItsSubstringBeforeForwarding(): void
+    {
+        $this->browser->viewer = true;
+        $this->publishNode(self::PEER, true);
+
+        $this->dispatchingPage()->onAction(self::ACCEPT_KEY, HilosSignalConstants::LOGS_READ_LINES, $this->request(self::PEER));
+
+        $forwarded = $this->sentToOwner();
+        $this->assertTrue($forwarded->hideText);
+        $this->assertNull($forwarded->substring);
+        $this->assertSame('ERROR', $forwarded->level);
     }
 
     public function testAReadNamingANodeThisClusterDoesNotHaveIsRefusedOnTheSpot(): void
@@ -241,6 +265,30 @@ final class LogsViewPageReadLinesTest extends TestCase
  */
 final class LogsViewTestPage extends AbstractHilosLogsViewPage
 {
+    /**
+     * Run the pre-response subscription hook, including its follow verdict check.
+     *
+     * @param string $acceptKey Connection being re-delivered
+     */
+    public function deliverSubscription(string $acceptKey): void
+    {
+        $this->onSubscribeBeforeResponse($acceptKey, new PageRouteParams([]));
+    }
+}
+
+final class ReadLinesTestBrowser extends BrowserContext
+{
+    public bool $viewer = false;
+
+    /**
+     * @param string $pageClass Page being served (unused in this double)
+     * @param string $acceptKey Connection being served (unused in this double)
+     * @return bool Injected view-mode verdict
+     */
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return $this->viewer;
+    }
 }
 
 /**

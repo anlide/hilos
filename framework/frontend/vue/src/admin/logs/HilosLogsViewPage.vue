@@ -26,6 +26,7 @@ HilosActionError). -->
 import {
   createHilosLogViewer,
   createSignal,
+  hilosAdminAccess,
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
@@ -34,6 +35,7 @@ import {
   logViewerPendingLabel,
   logViewerStreamsOf,
   HILOS_LOG_LEVEL_OPTIONS,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   LOG_SOURCE_LIVE,
   LOG_VIEWER_PENDING_WIDEST_LABEL,
@@ -54,6 +56,7 @@ import {
 } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -61,6 +64,11 @@ const props = defineProps<{
   /** The project context: the connection and the action lifecycle. */
   context: HilosLogViewerContext
 }>()
+
+// This page owns HilosAdminPage as a child, so its provider cannot be injected here.
+// Read the same source from which that child provides its view-mode verdict.
+const adminAccess = useSignal(hilosAdminAccess)
+const viewMode = computed(() => adminAccess.value === 'view')
 
 const router = inject(hilosRouterKey)
 // The address IS what this screen is showing, so the navigator is what it reads
@@ -360,6 +368,10 @@ function toggle(entry: HilosLogViewerEntry): void {
               placeholder="Search inside the lines"
               :value="substringDraft"
               data-id="hilos-log-substring"
+              :disabled="viewMode"
+              :aria-describedby="
+                viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined
+              "
               @input="onSubstringInput"
               @keydown.enter="applySubstring"
             />
@@ -368,6 +380,10 @@ function toggle(entry: HilosLogViewerEntry): void {
               class="btn"
               :class="substringDirty ? 'btn-primary' : 'btn-outline-secondary'"
               data-id="hilos-log-search"
+              :disabled="viewMode"
+              :aria-describedby="
+                viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined
+              "
               @click="applySubstring"
             >
               <i class="bi bi-search me-1" aria-hidden="true"></i>Search
@@ -565,7 +581,9 @@ function toggle(entry: HilosLogViewerEntry): void {
               <span class="text-body-secondary text-nowrap">{{
                 row.time
               }}</span>
-              <span class="flex-grow-1">{{ row.text }}</span>
+              <span class="flex-grow-1"
+                ><HilosHideable :value="row.text"
+              /></span>
               <button
                 v-if="row.frames.length > 0"
                 type="button"

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
+  HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ROTATIONS_HEADER_SIGNAL,
@@ -330,6 +331,24 @@ describe('HilosLogsRotationsPage', () => {
   // The takeout dialog is portalled to the document body, so a page left mounted
   // would leave its modal there for the next case to find.
   afterEach(cleanup)
+
+  it('draws each half of a partly hidden rule as its own mark', () => {
+    const { connection, pushHeader } = makeConnection()
+    const container = mountPage(connection)
+    pushHeader(
+      header({
+        rotationCron: HIDDEN_VALUE,
+        retentionKeepBatches: HIDDEN_VALUE,
+      }),
+    )
+
+    expect(container.querySelectorAll('[data-id="hilos-hidden"]')).toHaveLength(
+      2,
+    )
+    expect(byId(container, 'hilos-rotation-rule')?.textContent).not.toContain(
+      'Rotates only when the node restarts',
+    )
+  })
 
   it('waits rather than reporting a fault before any picture arrives', () => {
     const { connection, pushEmptyWindow } = makeConnection()

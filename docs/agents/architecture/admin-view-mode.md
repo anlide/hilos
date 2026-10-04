@@ -212,8 +212,9 @@ a page that is not `ADMIN` (`TopologyValidator`), because either is silent at
 run time — a typo quietly closes an action, or reads as opening one that no
 viewer will ever reach. Today there are three: `LOGS_READ_LINES`
 (`logs_read_lines`), `LOGS_FOLLOW_START` (`logs_follow_start`) and
-`LOGS_FOLLOW_STOP` (`logs_follow_stop`); the logs leaf declares them together
-with hiding the text of the lines (not in the code yet — HIL-1257).
+`LOGS_FOLLOW_STOP` (`logs_follow_stop`); the logs viewer page declares them in
+`AbstractHilosLogsViewPage::READING_ACTIONS` and sends its view-mode verdict to
+the file owner, which hides line text (HIL-1257).
 
 `COMMUNICATIONS_CHANNEL_TEST` (`communications_channel_test`) is not reading:
 it sends a real message. When in doubt, the action writes.
@@ -359,8 +360,14 @@ nobody is asked*).
   sign-in methods is hidden on the screen even though sent to every session —
   one rule for setting values; OAuth providers are shown according to the
   entity's verdict (HIL-1255). A log line shows its time, level and node, and
-  its text is hidden; there is no marking at write time
-  (not in the code yet — HIL-1257). A person's name is hidden (HIL-1254). Rows
+  its text is hidden; there is no marking at write time. The logs page asks
+  whether its connection is a viewer on each read or follow, forwards `hideText`
+  to the file owner and removes a viewer's substring filter before forwarding:
+  searching hidden text would reveal whether it contains the term. The owner
+  sends a hidden mark in `text`, while `time` and `level` stay visible. A change
+  of verdict during a follow stops it with a `stopped` frame. Values of log
+  settings on these screens remain hidden under the V1 decision until HIL-1298.
+  A person's name is hidden (HIL-1254). Rows
   assembled by hand past the marking are classified by the leaves of their
   sections: the people rows and the merge candidates (HIL-1254). The verifier
   circle shows a viewer the sign-in type and whether a member is online, the
@@ -590,7 +597,7 @@ carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
 | Demo | Kit | Side | Looks (mode on) | Refused (mode off) |
 |---|---|---|---|---|
 | chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/app/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `auth` (sign-in methods), `step-up`, `second-factor`, `legal-admin` (the Legal setting window), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
-| binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
+| binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
 | tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window) | `auth`, `a11y` (no gear) |
 | ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |
 | polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window) | `auth`, `a11y` (no gear) |

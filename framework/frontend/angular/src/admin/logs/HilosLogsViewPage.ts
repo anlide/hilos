@@ -41,6 +41,8 @@ import {
   LOG_VIEWER_PENDING_WIDEST_LABEL,
   createHilosLogViewer,
   createSignal,
+  hilosAdminAccess,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
@@ -65,7 +67,9 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
+import { hilosSignal } from '../../hilosSignal.js'
 
 /** The icon one note is drawn with; its wording belongs to the headless. */
 const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
@@ -80,7 +84,7 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
 @Component({
   selector: 'hilos-logs-view-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage],
+  imports: [HilosAdminPage, HilosHideable],
   template: `
     <hilos-admin-page [page]="page">
       <div class="border rounded-3 p-3 mb-3">
@@ -205,6 +209,10 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
                 placeholder="Search inside the lines"
                 [value]="substringDraft()"
                 data-id="hilos-log-substring"
+                [disabled]="viewMode()"
+                [attr.aria-describedby]="
+                  viewMode() ? viewModeStripTextId : null
+                "
                 (input)="onSubstringInput($event)"
                 (keydown.enter)="onSubstringApply()"
               />
@@ -214,6 +222,10 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
                 [class.btn-primary]="substringDirty()"
                 [class.btn-outline-secondary]="!substringDirty()"
                 data-id="hilos-log-search"
+                [disabled]="viewMode()"
+                [attr.aria-describedby]="
+                  viewMode() ? viewModeStripTextId : null
+                "
                 (click)="onSubstringApply()"
               >
                 <i class="bi bi-search me-1" aria-hidden="true"></i>Search
@@ -417,7 +429,9 @@ const NOTICE_ICONS: Record<HilosLogViewerNotice, string> = {
                   <span class="text-body-secondary text-nowrap">{{
                     row.time
                   }}</span>
-                  <span class="flex-grow-1">{{ row.text }}</span>
+                  <span class="flex-grow-1"
+                    ><hilos-hideable [value]="row.text"
+                  /></span>
                   @if (row.frames.length > 0) {
                     <button
                       type="button"
@@ -466,6 +480,10 @@ export class HilosLogsViewPage {
   protected readonly noticeIcons = NOTICE_ICONS
   protected readonly levelVariant = logLevelVariant
   protected readonly widestPendingLabel = LOG_VIEWER_PENDING_WIDEST_LABEL
+  protected readonly viewModeStripTextId = HILOS_VIEW_MODE_STRIP_TEXT_ID
+  // HilosAdminPage is this component's child; its provider is not visible here.
+  private readonly adminAccess = hilosSignal(hilosAdminAccess)
+  protected readonly viewMode = computed(() => this.adminAccess() === 'view')
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 

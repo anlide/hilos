@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tables\Logs;
 
 use DateTimeImmutable;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
@@ -160,6 +161,30 @@ final class HilosLogRotationsTable extends TableDefinition implements ViewportTa
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Batch rows come from the cluster mirror and carry no personal text. A viewer can see the
+     * batch address and takeout command, though the takeout action remains restricted.
+     *
+     * @return array<string, WireField> Row field origins for an admin view-mode viewer
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosLogRotationsTableRow::rowKey => WireField::notPersonal(),
+            HilosLogRotationsTableRow::batchAt => WireField::notPersonal(),
+            HilosLogRotationsTableRow::node => WireField::notPersonal(),
+            HilosLogRotationsTableRow::path => WireField::notPersonal(),
+            HilosLogRotationsTableRow::absolutePath => WireField::notPersonal(),
+            HilosLogRotationsTableRow::daemonFileCount => WireField::notPersonal(),
+            HilosLogRotationsTableRow::agentFileCount => WireField::notPersonal(),
+            HilosLogRotationsTableRow::workerFileCount => WireField::notPersonal(),
+            HilosLogRotationsTableRow::workerMonopolisticFileCount => WireField::notPersonal(),
+            HilosLogRotationsTableRow::bytes => WireField::notPersonal(),
+            HilosLogRotationsTableRow::retentionState => WireField::notPersonal(),
+            HilosLogRotationsTableRow::pruneNotBefore => WireField::notPersonal(),
         ];
     }
 

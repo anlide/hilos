@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   ActionLifecycle,
+  HIDDEN_VALUE,
+  ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   HilosPages,
   LOG_LINES_APPENDED_SIGNAL,
   LOG_VIEWER_CATALOG_SIGNAL,
@@ -13,6 +17,7 @@ import type {
   HilosLogViewerCatalog,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import { HilosLogsViewPage } from '../src/admin/logs/HilosLogsViewPage.js'
@@ -20,6 +25,34 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000
+
+const releases: (() => void)[] = []
+
+afterEach(() => {
+  for (const release of releases.splice(0)) release()
+})
+
+/** Bind the session and admin-access signal the application boot binds. */
+function bindViewerSession(): void {
+  const listeners: ((signal: ProjectSignal) => void)[] = []
+  const connection = {
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'projectSignal')
+        listeners.push(listener as (signal: ProjectSignal) => void)
+      return () => {}
+    },
+  } as unknown as HilosConnection
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  releases.push(bindAdminAccess(scopes))
+  const handshake = {
+    kind: 'project',
+    type: 'handshake_response',
+    data: { entities: { currentUser: null }, data: { adminViewMode: true } },
+    envelope: {},
+  } as unknown as ProjectSignal
+  for (const listener of listeners) listener(handshake)
+}
 
 /** A catalog as the page answers a subscription with it. */
 function catalog(
@@ -115,7 +148,12 @@ function router(params: Record<string, string> = {}): HilosRouter {
 /** One follow frame as the owner of the file pushes it. */
 interface AppendedFrame {
   followId: string
-  lines: { text: string; level: string; isContinuation: boolean }[]
+  lines: {
+    time: string | null
+    text: string
+    level: string
+    isContinuation: boolean
+  }[]
   rotated: boolean
   skippedBytes: number | null
   stopped: boolean
@@ -191,7 +229,21 @@ const LIVE_FILE = { nodeId: '-', source: 'live', stream: 'worker-0.log' }
 
 /** One line as it comes off the wire. */
 function wireLine(text: string, level = 'INFO', isContinuation = false) {
-  return { text, level, isContinuation }
+  const stamped = /^\[([^\]]+)\] /.exec(text)
+  return {
+    time: stamped?.[1] ?? null,
+    text:
+      stamped === null
+        ? text
+        : text
+            .slice(stamped[0].length)
+            .replace(
+              /^(?:\[(?:ERROR|WARNING|INFO|DEBUG)\] |(?:ERROR|WARNING|DEBUG): )/,
+              '',
+            ),
+    level,
+    isContinuation,
+  }
 }
 
 function mountPage(
@@ -288,6 +340,50 @@ function expectCountRoom(container: HTMLElement): HTMLElement {
 }
 
 describe('HilosLogsViewPage', () => {
+  it('shows a hidden line with clock and level and disables search for a viewer', async () => {
+    bindViewerSession()
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const container = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [
+        {
+          time: '2026-09-06 10:00:02.250',
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: false,
+        },
+        {
+          time: null,
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: true,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await settled()
+
+    const entry = byId(container, 'hilos-log-entry')
+    expect(entry?.textContent).toContain('10:00:02.250')
+    expect(entry?.textContent).toContain('ERROR')
+    expect(entry?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+    expect(
+      entry?.querySelector('[data-id="hilos-log-stack-toggle"]'),
+    ).toBeNull()
+    for (const id of ['hilos-log-substring', 'hilos-log-search']) {
+      expect(byId(container, id)?.hasAttribute('disabled')).toBe(true)
+      expect(byId(container, id)?.getAttribute('aria-describedby')).toBe(
+        'hilos-view-mode-strip-text',
+      )
+    }
+    expect(byId(container, 'hilos-log-follow')?.hasAttribute('disabled')).toBe(
+      false,
+    )
+  })
+
   afterEach(cleanup)
 
   it('waits rather than reporting a fault before any catalog arrives', () => {

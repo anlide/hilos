@@ -59,13 +59,14 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 
 /** The framework logs overview: tiles, the takeout banner and the per-node table. */
 @Component({
   selector: 'hilos-logs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosLink],
+  imports: [HilosAdminPage, HilosHideable, HilosLink],
   template: `
     <hilos-admin-page [page]="page">
       <div
@@ -119,7 +120,7 @@ import { HilosLink } from '../../HilosLink.js'
                 class="small text-body-secondary"
                 data-id="hilos-logs-growth-forecast"
               >
-                {{ forecast }}
+                <hilos-hideable [value]="forecast" />
               </div>
             }
           </div>
@@ -295,7 +296,7 @@ import { HilosLink } from '../../HilosLink.js'
                     {{ formatRecentAt(entry.at) }}
                   </span>
                   <span class="flex-grow-1 small">
-                    {{ entry.message }}
+                    <hilos-hideable [value]="entry.message" />
                     <span class="d-block text-body-secondary">
                       {{ recentOrigin(entry) }}
                     </span>

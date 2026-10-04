@@ -99,15 +99,17 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
     /**
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
-     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
-     * leaf that classifies the log rotations header opens it (HIL-1257), so a viewer sees none of it yet.
+     * Availability and nodes describe the cluster. The five rotation and retention settings stay
+     * hidden from a viewer until their catalog-based classification in HIL-1298.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
     public static function wireFields(): array
     {
-        return [];
+        return [
+            self::available => WireField::notPersonal(),
+            self::nodes => WireField::notPersonal(),
+        ];
     }
 
     /**

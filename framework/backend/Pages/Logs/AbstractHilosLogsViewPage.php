@@ -50,7 +50,9 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  * that leaves the owner reading, and from then on the owner sends the file's growth to the socket
  * itself. All the page keeps of it is which node each connection is following, because that is the
  * one thing the owner cannot be asked for later - a viewer that switches nodes, or leaves without
- * a word, must release the reader it left behind.
+ * a word, must release the reader it left behind. The page also decides whether this connection
+ * is a view-mode viewer when forwarding a read or follow. Only the owner can read the file, so it
+ * hides text on the page's instruction. A follow keeps that verdict until the page stops it.
  *
  * What the page DOES answer for is the catalog of readable sources (HIL-388): which nodes, batches
  * and streams exist to choose between. It is a projection of {@see ClusterLogIndexMirror}, sent on
@@ -81,6 +83,13 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
         HilosSignalConstants::LOGS_FOLLOW_STOP => LogsFollowStopActionDTO::class,
     ];
 
+    /** Reads of the file do not mutate it, so a view-mode viewer may issue them. */
+    public const array READING_ACTIONS = [
+        HilosSignalConstants::LOGS_READ_LINES,
+        HilosSignalConstants::LOGS_FOLLOW_START,
+        HilosSignalConstants::LOGS_FOLLOW_STOP,
+    ];
+
     /** Seconds between two tick refreshes, so a busy agent does not rebuild the catalog per loop pass. */
     private const float REFRESH_THROTTLE_SECONDS = 0.1;
 
@@ -94,6 +103,9 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * to any one dispatch of the page.
      */
     private static array $followNodeByAcceptKey = [];
+
+    /** @var array<string, bool> Accept key → view-mode verdict when its follow started */
+    private static array $followHiddenByAcceptKey = [];
 
     /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
     private static array $subscribers = [];
@@ -245,6 +257,15 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
+        // Every subscription delivery, including a permission recheck, passes here. Follow frames
+        // bypass this page, so a changed verdict must stop the old owner before the subscription
+        // answer lets the browser start a follow with the new verdict on the same channel.
+        if (isset(self::$followHiddenByAcceptKey[$acceptKey])
+            && self::$followHiddenByAcceptKey[$acceptKey] !== $this->viewerOf($acceptKey)
+        ) {
+            $this->stopFollow($acceptKey);
+        }
+
         $frame = static::frameForViewer($acceptKey, self::buildCatalog(), HilosLogsViewCatalogSignalData::wireFields());
         if ($frame === null) {
             return;
@@ -334,7 +355,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
         $requestId = $this->currentActionRequestId();
         $this->sendToAgent(
             HilosSignalConstants::LOGS_AGENT_READ_LINES,
-            LogsReadLinesSignalData::fromAction($dto, $acceptKey, $action, $requestId),
+            LogsReadLinesSignalData::fromAction($dto, $acceptKey, $action, $requestId, $this->viewerOf($acceptKey)),
         );
         if ($requestId !== null) {
             $this->deferActionReply();
@@ -378,10 +399,12 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
             $this->stopFollow($acceptKey);
         }
 
+        $hidden = $this->viewerOf($acceptKey);
         self::$followNodeByAcceptKey[$acceptKey] = $dto->nodeId;
+        self::$followHiddenByAcceptKey[$acceptKey] = $hidden;
         $this->sendToAgent(
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START,
-            LogsFollowStartSignalData::fromAction($dto, $acceptKey, $action, $requestId),
+            LogsFollowStartSignalData::fromAction($dto, $acceptKey, $action, $requestId, $hidden),
         );
         $this->deferActionReply();
 
@@ -407,10 +430,20 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
         }
 
         unset(self::$followNodeByAcceptKey[$acceptKey]);
+        unset(self::$followHiddenByAcceptKey[$acceptKey]);
         $this->sendToAgent(
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP,
             new LogsFollowStopSignalData($nodeId, $acceptKey),
         );
+    }
+
+    /**
+     * @param string $acceptKey Connection whose current view-mode verdict is needed
+     * @return bool Whether the owner must hide line text for this connection
+     */
+    private function viewerOf(string $acceptKey): bool
+    {
+        return Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Log;
 
 use DateTimeImmutable;
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
@@ -103,8 +104,12 @@ final class LogStoreAgentReadLinesTest extends TestCase
         $reply = $this->acked();
         $this->assertTrue($reply[LogsReadLinesReplyDTO::readable]);
         $this->assertSame(
-            ['[2026-08-01 00:00:00.000] first', '[2026-08-01 00:00:01.000] ERROR: second'],
+            ['first', 'second'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
+        );
+        $this->assertSame(
+            ['2026-08-01 00:00:00.000', '2026-08-01 00:00:01.000'],
+            array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::time),
         );
     }
 
@@ -134,7 +139,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
         $reply = $this->acked();
         $this->assertTrue($reply[LogsReadLinesReplyDTO::anchorFound]);
         $this->assertSame(
-            array_slice($lines, 2),
+            ['the entry the row names', '#0 /app/a.php(7): a()', 'served again'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
         $this->assertSame(strlen($lines[0]) + strlen($lines[1]) + 2, $reply[LogsReadLinesReplyDTO::nextCursor]);
@@ -149,7 +154,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
         $earlier = $this->acked();
         $this->assertSame(
-            array_slice($lines, 0, 2),
+            ['booted', 'served'],
             array_column($earlier[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
         $this->assertNull($earlier[LogsReadLinesReplyDTO::anchorFound]);
@@ -194,7 +199,10 @@ final class LogStoreAgentReadLinesTest extends TestCase
         $reply = $this->acked();
         $this->assertFalse($reply[LogsReadLinesReplyDTO::anchorFound]);
         $this->assertTrue($reply[LogsReadLinesReplyDTO::readable]);
-        $this->assertSame($lines, array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text));
+        $this->assertSame(
+            ['first after the rotation', 'next'],
+            array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
+        );
     }
 
     /**
@@ -225,7 +233,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
         $reply = $this->acked();
         $this->assertFalse($reply[LogsReadLinesReplyDTO::anchorFound]);
         $texts = array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text);
-        $this->assertSame($last, $texts[count($texts) - 1]);
+        $this->assertSame('the last line', $texts[count($texts) - 1]);
     }
 
     /**
@@ -245,7 +253,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
         $reply = $this->acked();
         $this->assertSame(
-            array_slice($lines, $firstShown),
+            array_map(static fn(int $index): string => "line {$index}", range($firstShown, self::ONE_PAST_A_PAGE_LINES - 1)),
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
         $this->assertTrue($reply[LogsReadLinesReplyDTO::hasMore]);
@@ -273,7 +281,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
         $reply = $this->acked();
         $this->assertTrue($reply[LogsReadLinesReplyDTO::readable]);
         $this->assertSame(
-            ['[2026-08-01 00:00:00.000] archived'],
+            ['archived'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
     }
@@ -302,13 +310,63 @@ final class LogStoreAgentReadLinesTest extends TestCase
 
         $reply = $this->acked();
         $this->assertSame(
-            ['[2026-08-01 00:00:01.000] ERROR: boom', '    #0 somewhere.php'],
+            ['boom', '    #0 somewhere.php'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
+        );
+        $this->assertSame(
+            ['2026-08-01 00:00:01.000', null],
+            array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::time),
         );
         $this->assertSame(
             [false, true],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::isContinuation),
         );
+    }
+
+    public function testAViewerReadsTimesAndLevelsButNoTextEvenOnAContinuation(): void
+    {
+        $this->write('worker-0.log', "[2026-08-01 00:00:01.000] ERROR: private text\nprivate continuation\n");
+
+        $this->read($this->request(LogsReadLinesActionDTO::SOURCE_LIVE, null, 'worker-0.log', hideText: true));
+
+        $lines = $this->acked()[LogsReadLinesReplyDTO::lines];
+        $this->assertSame([HiddenValue::mark(), HiddenValue::mark()], array_column($lines, LogsReadLinesReplyDTO::text));
+        $this->assertSame(['2026-08-01 00:00:01.000', null], array_column($lines, LogsReadLinesReplyDTO::time));
+        $this->assertSame([Logger::LEVEL_ERROR, Logger::LEVEL_ERROR], array_column($lines, LogsReadLinesReplyDTO::level));
+        $this->assertSame([false, true], array_column($lines, LogsReadLinesReplyDTO::isContinuation));
+    }
+
+    public function testAnAnchoredReadAndAnAnchorMissBothHideTheirPages(): void
+    {
+        $this->write('worker-0.log', "[2026-08-01 00:00:01.000] first\n[2026-08-01 00:00:02.000] second\n");
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'worker-0.log',
+            anchorAtMs: $this->milliseconds('2026-08-01 00:00:01', 0),
+            hideText: true,
+        ));
+        $found = $this->acked();
+        $this->assertTrue($found[LogsReadLinesReplyDTO::anchorFound]);
+        $this->assertSame([HiddenValue::mark(), HiddenValue::mark()], array_column(
+            $found[LogsReadLinesReplyDTO::lines],
+            LogsReadLinesReplyDTO::text,
+        ));
+
+        $this->read($this->request(
+            LogsReadLinesActionDTO::SOURCE_LIVE,
+            null,
+            'worker-0.log',
+            anchorAtMs: $this->milliseconds('2026-07-31 00:00:00', 0),
+            hideText: true,
+        ));
+        $missed = $this->acked();
+        $this->assertFalse($missed[LogsReadLinesReplyDTO::anchorFound]);
+        $this->assertSame([HiddenValue::mark(), HiddenValue::mark()], array_column(
+            $missed[LogsReadLinesReplyDTO::lines],
+            LogsReadLinesReplyDTO::text,
+        ));
     }
 
     public function testAFileThatIsNotThereIsAnAnswerAndNotAFailure(): void
@@ -383,6 +441,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
      * @param ?string $requestId Request id to answer on, or null for an untracked read
      * @param ?int $cursor Byte offset to continue from, or null for the first page
      * @param ?int $anchorAtMs Unix milliseconds of the entry to open the file on, or null for a read from the tail
+     * @param bool $hideText Whether the answer must hide line text
      * @return LogsReadLinesSignalData Frame the owner receives
      */
     private function request(
@@ -393,6 +452,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
         ?string $requestId = self::REQUEST_ID,
         ?int $cursor = null,
         ?int $anchorAtMs = null,
+        bool $hideText = false,
     ): LogsReadLinesSignalData {
         return new LogsReadLinesSignalData(
             nodeId: '',
@@ -406,6 +466,7 @@ final class LogStoreAgentReadLinesTest extends TestCase
             acceptKey: self::ACCEPT_KEY,
             action: HilosSignalConstants::LOGS_READ_LINES,
             requestId: $requestId,
+            hideText: $hideText,
         );
     }
 

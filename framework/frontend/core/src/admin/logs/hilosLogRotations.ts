@@ -27,6 +27,12 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { formatDurationInWords } from '../../format/duration.js'
+import { hideable } from '../../state/hideableSchema.js'
+import {
+  HIDDEN_VALUE,
+  isHiddenValue,
+  type Hideable,
+} from '../../state/hiddenValue.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
@@ -210,11 +216,11 @@ const logsTakeoutConfirmReplySchema = z.looseObject({
 const rotationsHeaderSchema = z.looseObject({
   available: z.boolean().nullable(),
   nodes: z.array(z.string()),
-  rotationCron: z.string().nullable(),
-  rotationMaxAgeSeconds: z.number(),
-  rotationMaxLiveSizeBytes: z.number(),
-  retentionKeepBatches: z.number(),
-  retentionMaxAgeSeconds: z.number(),
+  rotationCron: hideable(z.string().nullable()),
+  rotationMaxAgeSeconds: hideable(z.number()),
+  rotationMaxLiveSizeBytes: hideable(z.number()),
+  retentionKeepBatches: hideable(z.number()),
+  retentionMaxAgeSeconds: hideable(z.number()),
 })
 
 /** The screen header as the page answers a subscription with it. */
@@ -797,7 +803,17 @@ export function formatRotationFileCounts(row: HilosLogRotationRow): string {
  *
  * @param header The latest header.
  */
-export function formatRotationRule(header: HilosLogRotationsHeader): string {
+export function formatRotationRule(
+  header: HilosLogRotationsHeader,
+): Hideable<string> {
+  if (
+    isHiddenValue(header.rotationCron) ||
+    isHiddenValue(header.rotationMaxAgeSeconds) ||
+    isHiddenValue(header.rotationMaxLiveSizeBytes)
+  ) {
+    return HIDDEN_VALUE
+  }
+
   const axes: string[] = []
   if (header.rotationCron !== null && header.rotationCron !== '') {
     axes.push(formatLogRotationSchedule(header.rotationCron))
@@ -832,7 +848,16 @@ export function formatRotationRule(header: HilosLogRotationsHeader): string {
  *
  * @param header The latest header.
  */
-export function formatRetentionRule(header: HilosLogRotationsHeader): string {
+export function formatRetentionRule(
+  header: HilosLogRotationsHeader,
+): Hideable<string> {
+  if (
+    isHiddenValue(header.retentionKeepBatches) ||
+    isHiddenValue(header.retentionMaxAgeSeconds)
+  ) {
+    return HIDDEN_VALUE
+  }
+
   const criteria: string[] = []
   if (header.retentionKeepBatches > 0) {
     criteria.push(`outside the newest ${header.retentionKeepBatches}`)

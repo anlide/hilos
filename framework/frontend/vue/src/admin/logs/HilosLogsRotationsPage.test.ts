@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  HIDDEN_VALUE,
   HilosPages,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   ScopeManager,
@@ -335,6 +336,23 @@ function bindSession() {
 }
 
 describe('HilosLogsRotationsPage', () => {
+  it('draws each half of a partly hidden rule as its own mark', async () => {
+    const { connection, pushHeader } = makeConnection()
+    const wrapper = mountPage(connection)
+    pushHeader(
+      header({
+        rotationCron: HIDDEN_VALUE,
+        retentionKeepBatches: HIDDEN_VALUE,
+      }),
+    )
+    await nextTick()
+
+    expect(wrapper.findAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    expect(wrapper.get('[data-id="hilos-rotation-rule"]').text()).not.toContain(
+      'Rotates only when the node restarts',
+    )
+  })
+
   it('waits rather than reporting a fault before any picture arrives', async () => {
     const { connection, pushEmptyWindow } = makeConnection()
     const wrapper = mountPage(connection)

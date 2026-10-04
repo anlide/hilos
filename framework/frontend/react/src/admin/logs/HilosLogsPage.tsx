@@ -46,6 +46,7 @@ import {
 import type { HilosLogsOverviewContext, HilosLogsRecentTab } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -160,7 +161,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                 className="small text-body-secondary"
                 data-id="hilos-logs-growth-forecast"
               >
-                {growthForecast}
+                <HilosHideable value={growthForecast} />
               </div>
             ) : null}
           </div>
@@ -334,7 +335,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
                       {formatLogsOverviewRecentAt(entry.at)}
                     </span>
                     <span className="flex-grow-1 small">
-                      {entry.message}
+                      <HilosHideable value={entry.message} />
                       <span className="d-block text-body-secondary">
                         {logsOverviewRecentOrigin(overview, entry)}
                       </span>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Log;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -107,7 +108,7 @@ final class LogStoreAgentFollowTest extends TestCase
         $reply = $this->acked(self::REQUEST_ID);
         $this->assertTrue($reply[LogsReadLinesReplyDTO::readable]);
         $this->assertSame(
-            ['[2026-08-01 00:00:00.000] before the follow'],
+            ['before the follow'],
             array_column($reply[LogsReadLinesReplyDTO::lines], LogsReadLinesReplyDTO::text),
         );
 
@@ -117,12 +118,32 @@ final class LogStoreAgentFollowTest extends TestCase
         $frame = $this->frame(self::ACCEPT_KEY);
         $this->assertSame(self::REQUEST_ID, $frame->followId, 'A frame is stamped with the id of its follow');
         $this->assertSame(
-            ['[2026-08-01 00:00:01.000] after the follow'],
+            ['after the follow'],
             array_column($frame->lines, LogsReadLinesReplyDTO::text),
         );
         $this->assertFalse($frame->rotated);
         $this->assertNull($frame->skippedBytes);
         $this->assertFalse($frame->stopped);
+    }
+
+    public function testAViewerFollowHidesTheFirstPageAndEachAppendedLine(): void
+    {
+        $this->write("[2026-08-01 00:00:00.000] private before\n");
+        $agent = $this->following(hideText: true);
+
+        $first = $this->acked(self::REQUEST_ID)[LogsReadLinesReplyDTO::lines];
+        $this->assertSame(HiddenValue::mark(), $first[0][LogsReadLinesReplyDTO::text]);
+        $this->assertSame('2026-08-01 00:00:00.000', $first[0][LogsReadLinesReplyDTO::time]);
+
+        $this->append("[2026-08-01 00:00:01.000] WARNING: private after\nprivate continuation\n");
+        $agent->pushAppendedLines();
+
+        $frame = $this->frame(self::ACCEPT_KEY);
+        $this->assertSame([HiddenValue::mark(), HiddenValue::mark()], array_column($frame->lines, LogsReadLinesReplyDTO::text));
+        $this->assertSame(['2026-08-01 00:00:01.000', null], array_column($frame->lines, LogsReadLinesReplyDTO::time));
+        $this->assertSame([Logger::LEVEL_WARNING, Logger::LEVEL_WARNING], array_column($frame->lines, LogsReadLinesReplyDTO::level));
+        $this->assertFalse($frame->rotated);
+        $this->assertNull($frame->skippedBytes);
     }
 
     public function testAFollowStartedInsideAnEntryGivesItsTailTheLevelOfItsHead(): void
@@ -187,7 +208,7 @@ final class LogStoreAgentFollowTest extends TestCase
 
         $agent->pushAppendedLines();
         $this->assertSame(
-            ['[2026-08-01 00:00:02.000] after rotation'],
+            ['after rotation'],
             array_column($this->frame(self::ACCEPT_KEY)->lines, LogsReadLinesReplyDTO::text),
         );
     }
@@ -221,7 +242,7 @@ final class LogStoreAgentFollowTest extends TestCase
         $agent->pushAppendedLines();
 
         $this->assertSame(
-            ['[2026-08-01 00:00:00.000] the worker finally started'],
+            ['the worker finally started'],
             array_column($this->frame(self::ACCEPT_KEY)->lines, LogsReadLinesReplyDTO::text),
         );
     }
@@ -267,7 +288,7 @@ final class LogStoreAgentFollowTest extends TestCase
         $agent->pushAppendedLines();
 
         $this->assertSame(
-            ['[2026-08-01 00:00:03.000] ERROR: there it is'],
+            ['there it is'],
             array_column($this->frame(self::ACCEPT_KEY)->lines, LogsReadLinesReplyDTO::text),
         );
     }
@@ -306,8 +327,23 @@ final class LogStoreAgentFollowTest extends TestCase
             'agent',
             HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP,
         );
+        $stopped = $this->frame(self::ACCEPT_KEY);
+        $this->assertTrue($stopped->stopped);
+        $this->assertSame(self::REQUEST_ID, $stopped->followId);
         $this->append("[2026-08-01 00:00:01.000] after the stop\n");
         $agent->pushAppendedLines();
+
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testStoppingAConnectionWithNoFollowSendsNoFrame(): void
+    {
+        $agent = new LogStoreAgent();
+        $agent->onSignalAgent(
+            new AgentSignalData(new LogsFollowStopSignalData('', self::ACCEPT_KEY)),
+            'agent',
+            HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP,
+        );
 
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
@@ -331,6 +367,7 @@ final class LogStoreAgentFollowTest extends TestCase
                 acceptKey: self::OTHER_ACCEPT_KEY,
                 action: HilosSignalConstants::LOGS_FOLLOW_START,
                 requestId: self::OTHER_REQUEST_ID,
+                hideText: false,
             )),
             'agent',
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START,
@@ -343,14 +380,14 @@ final class LogStoreAgentFollowTest extends TestCase
         $filtered = $this->frame(self::ACCEPT_KEY);
         $this->assertSame(self::REQUEST_ID, $filtered->followId);
         $this->assertSame(
-            ['[2026-08-01 00:00:02.000] ERROR: not routine'],
+            ['not routine'],
             array_column($filtered->lines, LogsReadLinesReplyDTO::text),
         );
 
         $unfiltered = $this->frame(self::OTHER_ACCEPT_KEY);
         $this->assertSame(self::OTHER_REQUEST_ID, $unfiltered->followId);
         $this->assertSame(
-            ['[2026-08-01 00:00:01.000] routine', '[2026-08-01 00:00:02.000] ERROR: not routine'],
+            ['routine', 'not routine'],
             array_column($unfiltered->lines, LogsReadLinesReplyDTO::text),
         );
     }
@@ -360,9 +397,10 @@ final class LogStoreAgentFollowTest extends TestCase
      *
      * @param ?string $level Level filter, or null for any level
      * @param string $stream File name of the live stream to follow
+     * @param bool $hideText Whether the owner must hide line text
      * @return LogStoreAgent Agent already following, its ack still queued
      */
-    private function following(?string $level = null, string $stream = self::STREAM): LogStoreAgent
+    private function following(?string $level = null, string $stream = self::STREAM, bool $hideText = false): LogStoreAgent
     {
         $agent = new LogStoreAgent();
         $agent->onSignalAgent(
@@ -374,6 +412,7 @@ final class LogStoreAgentFollowTest extends TestCase
                 acceptKey: self::ACCEPT_KEY,
                 action: HilosSignalConstants::LOGS_FOLLOW_START,
                 requestId: self::REQUEST_ID,
+                hideText: $hideText,
             )),
             'agent',
             HilosSignalConstants::LOGS_AGENT_FOLLOW_START,

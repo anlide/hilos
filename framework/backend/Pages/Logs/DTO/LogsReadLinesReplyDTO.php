@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Logs\DTO;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Log\DTO\LogsLinesAppendedSignalData;
 use Hilos\Log\LogLine;
 use Hilos\Log\LogLinePage;
+use Hilos\Log\LogLineReader;
 
 /**
  * Reply to logs_read_lines: one page of lines, and where the page before it ends.
@@ -21,8 +23,9 @@ use Hilos\Log\LogLinePage;
  *
  * A line is a flat array rather than an object because this reply rides the action ack as it is:
  * the receiver never rebuilds a class from it, so a nested DTO would be typing nobody reads.
- * Nothing derived travels either - no line numbers, no parsed time - because the reader does not
- * count them, and a number computed on this side would disagree with the file.
+ * The stamp travels separately from the entry text: a viewer receives a hidden mark in place of
+ * text but may still read its time, and the file format is parsed in one place on the server.
+ * The mark is a line field value, not a read failure.
  *
  * A read opened on an anchor says whether the anchor was found ({@see $anchorFound}, HIL-868).
  * Not finding it is a state as well, and the page is then the ordinary one from the tail: the
@@ -46,7 +49,10 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
     /** Reply key: whether the anchor the read asked for was found; null when it asked for none (HIL-868). */
     public const string anchorFound = 'anchorFound';
 
-    /** Line key: the line text, without its trailing newline. */
+    /** Line key: the local timestamp opening an entry, or null for an unstamped line. */
+    public const string time = 'time';
+
+    /** Line key: entry text after the stamp and level, or the hidden mark. */
     public const string text = 'text';
 
     /** Line key: the level the reader recognized, inherited by a continuation. */
@@ -57,7 +63,7 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
 
     /**
      * @param bool $readable Whether the named file could be read
-     * @param list<array{text: string, level: string, isContinuation: bool}> $lines Matched lines, oldest first
+     * @param list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}> $lines Matched lines
      * @param ?int $nextCursor Byte offset of the page before this one, or null when none remains
      * @param bool $hasMore Whether older matching lines remain beyond this page
      * @param ?bool $anchorFound Whether the anchor the read asked for was found, or null when it asked for none
@@ -75,13 +81,14 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
      * Builds the reply from the page the reader returned.
      *
      * @param LogLinePage $page Page the reader produced, unavailable one included
+     * @param bool $hideText Whether line text must be hidden from this viewer
      * @return self Reply carrying that page
      */
-    public static function fromPage(LogLinePage $page): self
+    public static function fromPage(LogLinePage $page, bool $hideText): self
     {
         return new self(
             readable: $page->readable,
-            lines: self::linesFromPage($page),
+            lines: self::linesFromPage($page, $hideText),
             nextCursor: $page->nextCursor,
             hasMore: $page->hasMore,
         );
@@ -98,13 +105,14 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
      *
      * @param LogLinePage $page Page read forward from the anchor, the anchor's own line first
      * @param int $anchorOffset Byte offset of the line the anchor was found on
+     * @param bool $hideText Whether line text must be hidden from this viewer
      * @return self Reply carrying that page, found
      */
-    public static function fromAnchoredPage(LogLinePage $page, int $anchorOffset): self
+    public static function fromAnchoredPage(LogLinePage $page, int $anchorOffset, bool $hideText): self
     {
         return new self(
             readable: $page->readable,
-            lines: self::linesFromPage($page),
+            lines: self::linesFromPage($page, $hideText),
             nextCursor: $anchorOffset > 0 ? $anchorOffset : null,
             hasMore: $anchorOffset > 0,
             anchorFound: true,
@@ -118,13 +126,14 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
      * moment is newer than the file: all three answer alike, with the tail and the flag down.
      *
      * @param LogLinePage $page Page read backwards from the tail, unavailable one included
+     * @param bool $hideText Whether line text must be hidden from this viewer
      * @return self Reply carrying that page, not found
      */
-    public static function fromMissedAnchor(LogLinePage $page): self
+    public static function fromMissedAnchor(LogLinePage $page, bool $hideText): self
     {
         return new self(
             readable: $page->readable,
-            lines: self::linesFromPage($page),
+            lines: self::linesFromPage($page, $hideText),
             nextCursor: $page->nextCursor,
             hasMore: $page->hasMore,
             anchorFound: false,
@@ -136,16 +145,18 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
      *
      * Public because the live tail sends the same lines in its own frame
      * ({@see LogsLinesAppendedSignalData}, HIL-389) and the browser draws both with one renderer:
-     * a second copy of these three keys would be a second shape for the same thing, free to drift.
+     * a second copy of these four keys would be a second shape for the same thing, free to drift.
      *
      * @param LogLinePage $page Page the reader produced
-     * @return list<array{text: string, level: string, isContinuation: bool}> Lines, oldest first
+     * @param bool $hideText Whether line text must be replaced by the hidden mark
+     * @return list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}> Lines, oldest first
      */
-    public static function linesFromPage(LogLinePage $page): array
+    public static function linesFromPage(LogLinePage $page, bool $hideText): array
     {
         return array_map(
             static fn(LogLine $line): array => [
-                self::text => $line->text,
+                self::time => LogLineReader::stampText($line->text),
+                self::text => $hideText ? HiddenValue::mark() : LogLineReader::entryText($line->text),
                 self::level => $line->detectedLevel,
                 self::isContinuation => $line->isContinuation,
             ],
@@ -175,7 +186,10 @@ final class LogsReadLinesReplyDTO extends ActionReplyDTO
             }
 
             $lines[] = [
-                self::text => self::requireString($line, self::text),
+                self::time => self::optionalString($line, self::time),
+                self::text => HiddenValue::isMark($line[self::text] ?? null)
+                    ? HiddenValue::mark()
+                    : self::requireString($line, self::text),
                 self::level => self::requireString($line, self::level),
                 self::isContinuation => self::requireBool($line, self::isContinuation),
             ];

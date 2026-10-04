@@ -25,6 +25,7 @@ final class LogFollowWatcher
      * @param string $stream File name of the live stream being followed
      * @param ?string $level Level filter, or null for any level
      * @param ?string $substring Substring filter, or null for no substring filter
+     * @param bool $hideText Whether text in frames must be hidden
      * @param int $offset Byte offset reading has reached
      * @param ?string $inheritedLevel Entry level a line at {@see $offset} inherits, or null for the reader to detect it
      */
@@ -34,6 +35,7 @@ final class LogFollowWatcher
         public readonly string $stream,
         public readonly ?string $level,
         public readonly ?string $substring,
+        public readonly bool $hideText,
         private int $offset,
         private ?string $inheritedLevel = null,
     ) {

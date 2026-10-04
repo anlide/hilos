@@ -19,6 +19,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   bindAdminAccess,
+  HIDDEN_VALUE,
   bindSessionScope,
   createSignal,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
@@ -428,6 +429,24 @@ function bindSession(): {
 }
 
 describe('HilosLogsRotationsPage', () => {
+  it('draws each half of a partly hidden rule as its own mark', () => {
+    const { connection, pushHeader } = makeConnection()
+    const fixture = mountPage(connection)
+    pushHeader(
+      header({
+        rotationCron: HIDDEN_VALUE,
+        retentionKeepBatches: HIDDEN_VALUE,
+      }),
+    )
+    fixture.detectChanges()
+
+    const root = fixture.nativeElement as HTMLElement
+    expect(root.querySelectorAll('[data-id="hilos-hidden"]')).toHaveLength(2)
+    expect(byId(fixture, 'hilos-rotation-rule')?.textContent).not.toContain(
+      'Rotates only when the node restarts',
+    )
+  })
+
   it("points the Log settings button at the section's own settings screen", () => {
     const { connection } = makeConnection()
     const fixture = mountPage(connection)

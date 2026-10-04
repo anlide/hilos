@@ -35,6 +35,9 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
     /** Payload key: request id the browser minted, quoted back on the ack, absent when untracked. */
     public const string requestId = 'requestId';
 
+    /** Payload key: whether the owner's reply must hide line text. */
+    public const string hideText = 'hideText';
+
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $source Which half of the store to read
@@ -47,6 +50,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
      * @param string $acceptKey Accept key of the connection waiting for the answer
      * @param string $action Action name the reply acknowledges
      * @param ?string $requestId Request id the browser minted, or null when the read was not tracked
+     * @param bool $hideText Whether the owner must hide line text
      */
     public function __construct(
         public readonly string $nodeId,
@@ -60,6 +64,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
         public readonly string $acceptKey,
         public readonly string $action,
         public readonly ?string $requestId,
+        public readonly bool $hideText,
     ) {
     }
 
@@ -70,6 +75,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
      * @param string $acceptKey Accept key of the connection waiting for the answer
      * @param string $action Action name the reply acknowledges
      * @param ?string $requestId Request id the browser minted, or null when the read was not tracked
+     * @param bool $hideText Whether the owner must hide line text
      * @return self Frame addressed to the node named in the request
      */
     public static function fromAction(
@@ -77,6 +83,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
         string $acceptKey,
         string $action,
         ?string $requestId,
+        bool $hideText,
     ): self {
         return new self(
             nodeId: $dto->nodeId,
@@ -84,12 +91,13 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
             batchTimestamp: $dto->batchTimestamp,
             stream: $dto->stream,
             level: $dto->level,
-            substring: $dto->substring,
+            substring: $hideText ? null : $dto->substring,
             cursor: $dto->cursor,
             anchorAtMs: $dto->anchorAtMs,
             acceptKey: $acceptKey,
             action: $action,
             requestId: $requestId,
+            hideText: $hideText,
         );
     }
 
@@ -110,6 +118,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
             self::acceptKey => $this->acceptKey,
             self::action => $this->action,
             self::requestId => $this->requestId,
+            self::hideText => $this->hideText,
         ];
     }
 
@@ -133,6 +142,7 @@ final class LogsReadLinesSignalData extends BaseDTO implements SignalDataInterfa
             acceptKey: self::requireString($data, self::acceptKey),
             action: self::requireString($data, self::action),
             requestId: self::optionalString($data, self::requestId),
+            hideText: self::requireBool($data, self::hideText),
         );
     }
 }

@@ -19,6 +19,8 @@ use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableProgressScope;
+use Hilos\Log\DTO\LogsLinesAppendedSignalData;
+use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -88,6 +90,30 @@ final class AdminViewModeWireRoundTripTest extends TestCase
                 'keys' => [['key' => 'daemon', 'size' => HiddenValue::mark()]],
                 'node' => HiddenValue::mark(),
             ])],
+            'log follow with hidden text' => [new LogsLinesAppendedSignalData(
+                'follow-1',
+                [[
+                    LogsReadLinesReplyDTO::time => '2026-09-01 01:02:03.004',
+                    LogsReadLinesReplyDTO::text => HiddenValue::mark(),
+                    LogsReadLinesReplyDTO::level => 'INFO',
+                    LogsReadLinesReplyDTO::isContinuation => false,
+                ]],
+                false,
+                null,
+                false,
+            )],
+            'log follow with visible text' => [new LogsLinesAppendedSignalData(
+                'follow-2',
+                [[
+                    LogsReadLinesReplyDTO::time => null,
+                    LogsReadLinesReplyDTO::text => 'visible continuation',
+                    LogsReadLinesReplyDTO::level => 'INFO',
+                    LogsReadLinesReplyDTO::isContinuation => true,
+                ]],
+                false,
+                null,
+                false,
+            )],
         ];
     }
 
@@ -104,5 +130,19 @@ final class AdminViewModeWireRoundTripTest extends TestCase
 
         $this->assertInstanceOf($frame::class, $rebuilt);
         $this->assertSame($frame->toArray(), $rebuilt->toArray());
+    }
+
+    public function testTheLogReadReplyKeepsHiddenAndVisibleTextInTheirOwnShape(): void
+    {
+        foreach ([HiddenValue::mark(), 'visible'] as $text) {
+            $reply = new LogsReadLinesReplyDTO(true, [[
+                LogsReadLinesReplyDTO::time => '2026-09-01 01:02:03.004',
+                LogsReadLinesReplyDTO::text => $text,
+                LogsReadLinesReplyDTO::level => 'INFO',
+                LogsReadLinesReplyDTO::isContinuation => false,
+            ]], null, false);
+
+            $this->assertSame($reply->toArray(), LogsReadLinesReplyDTO::fromArray($reply->toArray())->toArray());
+        }
     }
 }

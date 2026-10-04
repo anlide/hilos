@@ -162,6 +162,41 @@ final class LogLineReader
     }
 
     /**
+     * Read the stamp that opens a new log entry, without its brackets.
+     *
+     * A line without this prefix is a continuation or output outside the logger. The viewer and
+     * the anchor search use this same answer to decide whether a line starts an entry.
+     *
+     * @param string $text Line text as read from the file
+     * @return ?string Local file timestamp, or null when the line has none
+     */
+    public static function stampText(string $text): ?string
+    {
+        return preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) === 1
+            ? substr($match[0], 1, -2)
+            : null;
+    }
+
+    /**
+     * Take the stamp and level prefix off an entry, leaving what it says.
+     *
+     * An unstamped line stays whole, including any text that resembles a level: it does not
+     * start an entry. This is the one server-side answer to where display text begins.
+     *
+     * @param string $text Line text as read from the file
+     * @return string Entry text, or the original unstamped line
+     */
+    public static function entryText(string $text): string
+    {
+        $stamp = self::stampText($text);
+        if ($stamp === null) {
+            return $text;
+        }
+
+        return self::textAfterLevel(substr($text, strlen($stamp) + 3));
+    }
+
+    /**
      * Read the stamp a line opens with as unix milliseconds.
      *
      * The stamp names no zone — the file carries the local time of the node that wrote it — so it is
@@ -177,11 +212,12 @@ final class LogLineReader
      */
     public static function stampMilliseconds(string $text): ?int
     {
-        if (preg_match(self::TIMESTAMP_PREFIX_PATTERN, $text, $match) !== 1) {
+        $stamp = self::stampText($text);
+        if ($stamp === null) {
             return null;
         }
 
-        $parsed = DateTimeImmutable::createFromFormat(self::TIMESTAMP_FORMAT, substr($match[0], 1, -2));
+        $parsed = DateTimeImmutable::createFromFormat(self::TIMESTAMP_FORMAT, $stamp);
 
         return $parsed === false ? null : (int)$parsed->format(self::UNIX_MILLISECONDS_FORMAT);
     }

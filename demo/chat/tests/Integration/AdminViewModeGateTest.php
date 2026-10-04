@@ -41,6 +41,7 @@ use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
+use Hilos\Pages\Logs\DTO\HilosLogsKeysSignalData;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -117,9 +118,6 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_user_update',
         'legal_acceptances_export',
         'legal_setting_set',
-        'logs_follow_start',
-        'logs_follow_stop',
-        'logs_read_lines',
         'logs_takeout_confirm',
         'logs_takeout_undo',
         'maintenance_circle_add',
@@ -359,9 +357,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         $frame = $this->frameTo(self::ADMIN_KEY, HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_KEYS);
         self::assertInstanceOf(SignalData::class, $frame);
         self::assertNotSame([], $frame->toArray());
-        foreach ($frame->toArray() as $field => $value) {
-            self::assertTrue(HiddenValue::isMark($value), "field {$field}");
-        }
+        self::assertFalse(HiddenValue::isMark($frame->toArray()[HilosLogsKeysSignalData::available]));
+        self::assertFalse(HiddenValue::isMark($frame->toArray()[HilosLogsKeysSignalData::nodes]));
     }
 
     /**

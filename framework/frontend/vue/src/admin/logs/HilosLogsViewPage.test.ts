@@ -1,8 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionLifecycle,
+  HIDDEN_VALUE,
+  ScopeManager,
+  bindAdminAccess,
+  bindSessionScope,
   createSignal,
   HilosPages,
   LOGS_FOLLOW_START_ACTION,
@@ -14,6 +18,7 @@ import type {
   HilosLogViewerCatalog,
   HilosRouter,
   PageRouteMatch,
+  ProjectSignal,
 } from '@hilos/core'
 
 import HilosLogsViewPage from './HilosLogsViewPage.vue'
@@ -21,6 +26,34 @@ import { hilosRouterKey } from '../../hilosRouterKey.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000
+
+const releases: (() => void)[] = []
+
+afterEach(() => {
+  for (const release of releases.splice(0)) release()
+})
+
+/** Bind the same session and admin-access signal the application boot binds. */
+function bindViewerSession(): void {
+  const listeners: ((signal: ProjectSignal) => void)[] = []
+  const connection = {
+    on(event: string, listener: (signal: never) => void): () => void {
+      if (event === 'projectSignal')
+        listeners.push(listener as (signal: ProjectSignal) => void)
+      return () => {}
+    },
+  } as unknown as HilosConnection
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  releases.push(bindAdminAccess(scopes))
+  const handshake = {
+    kind: 'project',
+    type: 'handshake_response',
+    data: { entities: { currentUser: null }, data: { adminViewMode: true } },
+    envelope: {},
+  } as unknown as ProjectSignal
+  for (const listener of listeners) listener(handshake)
+}
 
 /** A catalog as the page answers a subscription with it. */
 function catalog(
@@ -116,7 +149,12 @@ function router(params: Record<string, string> = {}): HilosRouter {
 /** One follow frame as the owner of the file pushes it. */
 interface AppendedFrame {
   followId: string
-  lines: { text: string; level: string; isContinuation: boolean }[]
+  lines: {
+    time: string | null
+    text: string
+    level: string
+    isContinuation: boolean
+  }[]
   rotated: boolean
   skippedBytes: number | null
   stopped: boolean
@@ -190,7 +228,21 @@ const LIVE_FILE = { nodeId: '-', source: 'live', stream: 'worker-0.log' }
 
 /** One line as it comes off the wire. */
 function wireLine(text: string, level = 'INFO', isContinuation = false) {
-  return { text, level, isContinuation }
+  const stamped = /^\[([^\]]+)\] /.exec(text)
+  return {
+    time: stamped?.[1] ?? null,
+    text:
+      stamped === null
+        ? text
+        : text
+            .slice(stamped[0].length)
+            .replace(
+              /^(?:\[(?:ERROR|WARNING|INFO|DEBUG)\] |(?:ERROR|WARNING|DEBUG): )/,
+              '',
+            ),
+    level,
+    isContinuation,
+  }
 }
 
 function mountPage(
@@ -213,6 +265,52 @@ function mountPage(
 }
 
 describe('HilosLogsViewPage', () => {
+  it('shows a hidden line with its clock and level while keeping search disabled', async () => {
+    bindViewerSession()
+    const { connection, pushCatalog, sent, answer } = makeConnection()
+    const wrapper = mountPage(connection, LIVE_FILE)
+    pushCatalog(catalog())
+    await nextTick()
+    answer(sent.at(-1)?.requestId, {
+      readable: true,
+      lines: [
+        {
+          time: '2026-09-06 10:00:02.250',
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: false,
+        },
+        {
+          time: null,
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: true,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    })
+    await flushPromises()
+
+    const entry = wrapper.get('[data-id="hilos-log-entry"]')
+    expect(entry.text()).toContain('10:00:02.250')
+    expect(entry.text()).toContain('ERROR')
+    expect(entry.find('[data-id="hilos-hidden"]').exists()).toBe(true)
+    expect(entry.find('[data-id="hilos-log-stack-toggle"]').exists()).toBe(
+      false,
+    )
+    for (const id of ['hilos-log-substring', 'hilos-log-search']) {
+      const control = wrapper.get(`[data-id="${id}"]`)
+      expect(control.attributes('disabled')).toBeDefined()
+      expect(control.attributes('aria-describedby')).toBe(
+        'hilos-view-mode-strip-text',
+      )
+    }
+    expect(
+      wrapper.get('[data-id="hilos-log-follow"]').attributes('disabled'),
+    ).toBeUndefined()
+  })
+
   it('waits rather than reporting a fault before any catalog arrives', () => {
     const { connection } = makeConnection()
     const wrapper = mountPage(connection)

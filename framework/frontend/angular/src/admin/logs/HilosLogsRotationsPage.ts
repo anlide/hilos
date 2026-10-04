@@ -64,6 +64,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -92,6 +93,7 @@ const RETENTION_CLASS: Record<string, string> = {
   imports: [
     HilosActionError,
     HilosAdminPage,
+    HilosHideable,
     HilosLink,
     HilosLongText,
     HilosModal,
@@ -107,10 +109,10 @@ const RETENTION_CLASS: Record<string, string> = {
         <div class="flex-grow-1">
           @if (header(); as rule) {
             <div class="fw-semibold small" data-id="hilos-rotation-rule">
-              {{ formatRule(rule) }}
+              <hilos-hideable [value]="formatRule(rule)" />
             </div>
             <div class="small text-body-secondary">
-              {{ formatRetention(rule) }}
+              <hilos-hideable [value]="formatRetention(rule)" />
             </div>
           } @else {
             <div class="small text-body-secondary">

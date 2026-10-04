@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tables\Logs;
 
+use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -119,6 +120,25 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
             BrowserPageSignalData::sources => [
                 self::ROW_SLOT => $row->toArray(),
             ],
+        ];
+    }
+
+    /**
+     * Worker stream rows come from the cluster mirror and carry no personal text.
+     *
+     * @return array<string, WireField> Row field origins for an admin view-mode viewer
+     */
+    public function wireFields(): array
+    {
+        return [
+            HilosLogWorkersTableRow::rowKey => WireField::notPersonal(),
+            HilosLogWorkersTableRow::key => WireField::notPersonal(),
+            HilosLogWorkersTableRow::node => WireField::notPersonal(),
+            HilosLogWorkersTableRow::type => WireField::notPersonal(),
+            HilosLogWorkersTableRow::live => WireField::notPersonal(),
+            HilosLogWorkersTableRow::batchCount => WireField::notPersonal(),
+            HilosLogWorkersTableRow::lastBatchAt => WireField::notPersonal(),
+            HilosLogWorkersTableRow::bytes => WireField::notPersonal(),
         ];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Log\DTO;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -25,7 +26,7 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
  * level or node recognizes and drops the frames of the follow it left behind - they may still be
  * in flight when the new one begins.
  *
- * A line is a flat array of the same three keys the read reply uses
+ * A line is a flat array of the same four keys the read reply uses
  * ({@see LogsReadLinesReplyDTO::linesFromPage()}): the browser draws the first page and every
  * frame after it with one renderer, so a second shape here would be a second renderer.
  */
@@ -48,7 +49,7 @@ final class LogsLinesAppendedSignalData extends BaseDTO implements SignalDataInt
 
     /**
      * @param string $followId Request id of the start this frame belongs to
-     * @param list<array{text: string, level: string, isContinuation: bool}> $lines Appended lines, oldest first
+     * @param list<array{time: ?string, text: string|array{_hidden: true}, level: string, isContinuation: bool}> $lines Appended lines
      * @param bool $rotated Whether the file was replaced and reading restarted at the start of the new one
      * @param ?int $skippedBytes Bytes jumped over to catch up, or null when nothing was skipped
      * @param bool $stopped Whether the follow has ended on the owner's side
@@ -67,11 +68,12 @@ final class LogsLinesAppendedSignalData extends BaseDTO implements SignalDataInt
      *
      * @param string $followId Request id of the start this frame belongs to
      * @param LogLinePage $page Page the forward read produced
+     * @param bool $hideText Whether line text must be hidden from this viewer
      * @return self Frame carrying those lines and nothing else
      */
-    public static function appended(string $followId, LogLinePage $page): self
+    public static function appended(string $followId, LogLinePage $page, bool $hideText): self
     {
-        return new self($followId, LogsReadLinesReplyDTO::linesFromPage($page), false, null, false);
+        return new self($followId, LogsReadLinesReplyDTO::linesFromPage($page, $hideText), false, null, false);
     }
 
     /**
@@ -144,7 +146,10 @@ final class LogsLinesAppendedSignalData extends BaseDTO implements SignalDataInt
             }
 
             $lines[] = [
-                LogsReadLinesReplyDTO::text => self::requireString($line, LogsReadLinesReplyDTO::text),
+                LogsReadLinesReplyDTO::time => self::optionalString($line, LogsReadLinesReplyDTO::time),
+                LogsReadLinesReplyDTO::text => HiddenValue::isMark($line[LogsReadLinesReplyDTO::text] ?? null)
+                    ? HiddenValue::mark()
+                    : self::requireString($line, LogsReadLinesReplyDTO::text),
                 LogsReadLinesReplyDTO::level => self::requireString($line, LogsReadLinesReplyDTO::level),
                 LogsReadLinesReplyDTO::isContinuation => self::requireBool($line, LogsReadLinesReplyDTO::isContinuation),
             ];

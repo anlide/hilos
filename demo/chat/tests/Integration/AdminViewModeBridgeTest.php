@@ -215,7 +215,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode($frame, JSON_THROW_ON_ERROR));
     }
 
-    public function testAViewerIsSentTheLogKeysFrameUntypedAndHidden(): void
+    public function testAViewerIsSentTheLogKeysFrameUntypedWithClusterFieldsVisible(): void
     {
         $this->connect(admin: false);
 
@@ -223,9 +223,8 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
 
         self::assertInstanceOf(SignalData::class, $frame);
         self::assertNotSame([], $frame->toArray());
-        foreach ($frame->toArray() as $field => $value) {
-            self::assertTrue(HiddenValue::isMark($value), "field {$field}");
-        }
+        self::assertFalse(HiddenValue::isMark($frame->toArray()[HilosLogsKeysSignalData::available]));
+        self::assertFalse(HiddenValue::isMark($frame->toArray()[HilosLogsKeysSignalData::nodes]));
     }
 
     public function testAViewerSeesTheSectionsOfTheDashboard(): void

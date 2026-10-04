@@ -31,6 +31,7 @@ import {
   type HilosLogsOverviewNode,
   type HilosLogsOverviewRecentEntry,
 } from '../../../src/admin/logs/hilosLogsOverview.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
 function node(
   overrides: Partial<HilosLogsOverviewNode> = {},
@@ -90,6 +91,35 @@ function failure(
     ...overrides,
   }
 }
+
+describe('view-mode fields', () => {
+  it('keeps a hidden recent message as a mark', () => {
+    const parsed = LOGS_OVERVIEW_SIGNAL_SCHEMAS[OVERVIEW_SIGNAL].parse(
+      overview({ recentErrors: [failure({ message: HIDDEN_VALUE })] }),
+    )
+
+    expect(parsed.recentErrors[0].message).toBe(HIDDEN_VALUE)
+  })
+
+  it('hides a single-node forecast when its threshold is hidden', () => {
+    expect(
+      logsOverviewForecastNote(
+        overview({ freeSpaceThresholdPercent: HIDDEN_VALUE }),
+      ),
+    ).toBe(HIDDEN_VALUE)
+  })
+
+  it('hides a cluster forecast when any node threshold is hidden', () => {
+    const screen = overview({
+      nodes: [
+        node({ freeSpaceThresholdPercent: 10 }),
+        node({ nodeId: 'node-2', freeSpaceThresholdPercent: HIDDEN_VALUE }),
+      ],
+    })
+
+    expect(logsOverviewForecastNote(screen)).toBe(HIDDEN_VALUE)
+  })
+})
 
 describe('LOGS_OVERVIEW_SIGNAL_SCHEMAS', () => {
   it('is a set of its own, so no neighbouring screen has to land first', () => {

@@ -16,6 +16,12 @@
 import { z } from 'zod'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { hideable } from '../../state/hideableSchema.js'
+import {
+  HIDDEN_VALUE,
+  isHiddenValue,
+  type Hideable,
+} from '../../state/hiddenValue.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
 
@@ -111,7 +117,7 @@ const overviewNodeSchema = z.looseObject({
   [OVERVIEW_NODE_DUE_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_FREE_BYTES_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_TOTAL_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_THRESHOLD_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_THRESHOLD_FIELD]: hideable(z.number().nullable()),
 })
 
 /**
@@ -126,7 +132,7 @@ const recentEntrySchema = z.looseObject({
   [OVERVIEW_RECENT_NODE_ID_FIELD]: z.string(),
   [OVERVIEW_RECENT_STREAM_FIELD]: z.string(),
   [OVERVIEW_RECENT_AT_FIELD]: z.string(),
-  [OVERVIEW_RECENT_MESSAGE_FIELD]: z.string(),
+  [OVERVIEW_RECENT_MESSAGE_FIELD]: hideable(z.string()),
   [OVERVIEW_RECENT_TRACE_FRAMES_FIELD]: z.number().nullable(),
 })
 
@@ -157,7 +163,7 @@ const overviewSchema = z.looseObject({
   // answers per node. Exactly one half is ever filled.
   [OVERVIEW_NODE_FREE_BYTES_FIELD]: z.number().nullable(),
   [OVERVIEW_NODE_TOTAL_BYTES_FIELD]: z.number().nullable(),
-  [OVERVIEW_NODE_THRESHOLD_FIELD]: z.number().nullable(),
+  [OVERVIEW_NODE_THRESHOLD_FIELD]: hideable(z.number().nullable()),
 })
 
 /** One node's row of the per-node table. */
@@ -526,6 +532,9 @@ function logsOverviewWorstForecast(
   }
 
   if (!hasLogsOverviewNodes(overview)) {
+    if (isHiddenValue(overview[OVERVIEW_NODE_THRESHOLD_FIELD])) {
+      return null
+    }
     return logsOverviewForecastOf(
       null,
       overview[OVERVIEW_NODE_FREE_BYTES_FIELD],
@@ -538,6 +547,9 @@ function logsOverviewWorstForecast(
   let worst: LogsOverviewForecast | null = null
   for (const node of overview.nodes) {
     if (!node[OVERVIEW_NODE_AVAILABLE_FIELD]) {
+      continue
+    }
+    if (isHiddenValue(node[OVERVIEW_NODE_THRESHOLD_FIELD])) {
       continue
     }
     const forecast = logsOverviewForecastOf(
@@ -610,7 +622,17 @@ function logsOverviewForecastWhen(daysAway: number): string {
  */
 export function logsOverviewForecastNote(
   overview: HilosLogsOverview | null,
-): string | null {
+): Hideable<string> | null {
+  if (
+    overview !== null &&
+    (isHiddenValue(overview[OVERVIEW_NODE_THRESHOLD_FIELD]) ||
+      overview.nodes.some((node) =>
+        isHiddenValue(node[OVERVIEW_NODE_THRESHOLD_FIELD]),
+      ))
+  ) {
+    return HIDDEN_VALUE
+  }
+
   const forecast = logsOverviewWorstForecast(overview)
   if (forecast === null) {
     return null

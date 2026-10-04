@@ -127,15 +127,27 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     /**
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
-     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
-     * leaf that classifies the log view catalog opens it (HIL-1257), so a viewer sees none of it yet.
+     * The catalog names files and batches in the cluster, without log line text. A viewer receives
+     * those names unchanged through {@see AbstractPage::frameForViewer()}.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
     public static function wireFields(): array
     {
-        return [];
+        return [
+            self::available => WireField::notPersonal(),
+            self::nodes => WireField::each([
+                self::nodeId => WireField::notPersonal(),
+                self::available => WireField::notPersonal(),
+                self::batches => WireField::notPersonal(),
+                self::streams => WireField::each([
+                    self::key => WireField::notPersonal(),
+                    self::streamClass => WireField::notPersonal(),
+                    self::live => WireField::notPersonal(),
+                    self::batchTimestamps => WireField::notPersonal(),
+                ]),
+            ]),
+        ];
     }
 
     /**

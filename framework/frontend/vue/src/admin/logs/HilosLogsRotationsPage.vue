@@ -53,6 +53,7 @@ import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
 import HilosModal from '../../HilosModal.vue'
@@ -302,10 +303,10 @@ const legendOpen = ref(false)
           class="fw-semibold small"
           data-id="hilos-rotation-rule"
         >
-          {{ formatRotationRule(header) }}
+          <HilosHideable :value="formatRotationRule(header)" />
         </div>
         <div v-if="header" class="small text-body-secondary">
-          {{ formatRetentionRule(header) }}
+          <HilosHideable :value="formatRetentionRule(header)" />
         </div>
         <div v-else class="small text-body-secondary">
           The rule in force is not known yet.

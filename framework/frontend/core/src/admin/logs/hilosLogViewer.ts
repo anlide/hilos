@@ -11,12 +11,9 @@
 // asked for only once a file is fully named. One frame carrying both would make
 // every page of lines re-deliver the catalog.
 //
-// Nothing is filtered here: the level and the substring are fields of the read
-// request, and the server answers with the lines that matched. What IS done here
-// is presentation-only cutting — the `[timestamp] ` and `LEVEL: ` prefixes come
-// off so the pane can lay a line out in columns — and the grouping of an entry
-// with its continuation lines, so a twenty-frame stack does not push its
-// neighbours out of sight.
+// The owner filters lines and cuts their timestamp and level prefixes. This
+// module lays those fields out in columns and groups an entry with its
+// continuation lines, so a twenty-frame stack stays behind one marker.
 //
 // Following the live tail is here too, and there is no Refresh button on
 // purpose: freshness arrives as a push, not as a re-request. Scrolling up
@@ -43,6 +40,8 @@ import { formatBytes } from '../../format/bytes.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
+import { hideable } from '../../state/hideableSchema.js'
+import { isHiddenValue, type Hideable } from '../../state/hiddenValue.js'
 import {
   computedSignal,
   createSignal,
@@ -169,7 +168,8 @@ export type HilosLogViewerStream = z.infer<typeof logViewerStreamSchema>
  * after it with one renderer; a second shape here would be a second renderer.
  */
 const logViewerLineSchema = z.looseObject({
-  text: z.string(),
+  time: z.string().nullable(),
+  text: hideable(z.string()),
   level: z.string(),
   isContinuation: z.boolean(),
 })
@@ -268,13 +268,20 @@ export interface HilosLogViewerSelection {
   readonly anchorAtMs: number | null
 }
 
-/** One line as the pane lays it out: the cut-off time, the level, and what is left. */
+/** One line as the pane lays it out: the clock, level, and entry text or hidden mark. */
 export interface HilosLogViewerLine {
   /** The `HH:MM:SS.mmm` the line began with, or empty when it began with no timestamp. */
   readonly time: string
   /** The level the reader recognized; a continuation inherits its entry's. */
   readonly level: string
-  /** The line without the prefixes the two columns beside it now carry. */
+  /** Entry text after its prefixes, or the hidden mark. */
+  readonly text: Hideable<string>
+}
+
+/** A visible frame in the stack under an entry. */
+export interface HilosLogViewerFrame {
+  readonly time: string
+  readonly level: string
   readonly text: string
 }
 
@@ -287,7 +294,7 @@ export interface HilosLogViewerEntry extends HilosLogViewerLine {
    * the frames of the trace in its structured context, its continuation lines,
    * or the one followed by the other.
    */
-  readonly frames: readonly HilosLogViewerLine[]
+  readonly frames: readonly HilosLogViewerFrame[]
   /**
    * Whether this is a continuation whose own start line was never read.
    *
@@ -304,8 +311,10 @@ export interface HilosLogViewerEntry extends HilosLogViewerLine {
 export interface HilosLogViewerReadLine {
   /** Stable for the life of the pane, so an opened stack survives a page above it. */
   readonly id: string
-  /** The line as the file holds it, prefixes included. */
-  readonly text: string
+  /** Timestamp in the file, without brackets, or null for an unstamped line. */
+  readonly time: string | null
+  /** Entry text after its prefixes, or the hidden mark. */
+  readonly text: Hideable<string>
   /** The level the reader recognized for it. */
   readonly level: string
   /** Whether the line continues the entry above it instead of starting one. */
@@ -451,26 +460,12 @@ export function logViewerPath(selection: HilosLogViewerSelection): string {
 }
 
 /**
- * Cuts the prefixes the pane's own columns now carry off one line.
+ * Takes the clock portion of the stamp the server read from the file.
  *
- * A line matching neither shape is drawn whole with an empty time column: the
- * text belongs to whoever wrote it, and a viewer that guessed at its shape would
- * hide the part it guessed wrong about.
- *
- * @param text The line as the file holds it.
- * @param level The level the reader recognized for it.
+ * @param time Local file timestamp, or null for an unstamped line.
  */
-export function splitLogLine(text: string, level: string): HilosLogViewerLine {
-  const stamped = TIMESTAMP_PREFIX_PATTERN.exec(text)
-  if (stamped === null) {
-    return { time: '', level, text }
-  }
-
-  return {
-    time: stamped[1],
-    level,
-    text: cutLevelPrefix(text.slice(stamped[0].length)),
-  }
+export function logLineClock(time: string | null): string {
+  return time === null ? '' : time.slice(time.indexOf(' ') + 1)
 }
 
 /**
@@ -956,6 +951,7 @@ export function createHilosLogViewer(
       kind: 'line',
       line: {
         id: `${page}:${index}`,
+        time: line.time,
         text: line.text,
         level: line.level,
         isContinuation: line.isContinuation,
@@ -1470,16 +1466,22 @@ export function toLogViewerRows(
     }
 
     const line = item.line
-    const split = splitLogLine(line.text, line.level)
+    const split: HilosLogViewerLine = {
+      time: logLineClock(line.time),
+      level: line.level,
+      text: line.text,
+    }
     if (line.isContinuation && open !== null && !open.orphan) {
-      open.frames.push(split)
+      if (!isHiddenValue(open.text) && !isHiddenValue(split.text)) {
+        open.frames.push({ ...split, text: split.text })
+      }
       continue
     }
 
     // Only a line that starts an entry is read for context: a continuation never
     // carries one, so an orphan is left exactly as it was written.
-    const traced: { text: string; frames: readonly string[] } =
-      line.isContinuation
+    const traced: { text: Hideable<string>; frames: readonly string[] } =
+      line.isContinuation || isHiddenValue(split.text)
         ? { text: split.text, frames: [] }
         : splitLogTrace(split.text)
 
@@ -1508,8 +1510,8 @@ interface EntryDraft {
   key: string
   time: string
   level: string
-  text: string
-  frames: HilosLogViewerLine[]
+  text: Hideable<string>
+  frames: HilosLogViewerFrame[]
   orphan: boolean
   anchored: boolean
 }
@@ -1553,30 +1555,11 @@ function trimFeedItems(
   return items.slice(cut)
 }
 
-/** Matches the `[YYYY-MM-DD HH:MM:SS.mmm] ` prefix, capturing the clock time. */
-const TIMESTAMP_PREFIX_PATTERN =
-  /^\[\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2}\.\d{3})\] /
-
 /** The context key a stack is written under (PHP `ErrorConstants::CONTEXT_KEY_TRACE`). */
 const LOG_CONTEXT_TRACE_KEY = 'trace'
 
 /** What a line must hold before its tail is worth parsing as context at all. */
 const LOG_CONTEXT_TRACE_MARKER = '"trace":"'
-
-/** The level prefixes the writer emits, in both its modes (PHP `LogLineReader`). */
-const LEVEL_PREFIX_PATTERN =
-  /^(?:\[(?:ERROR|WARNING|INFO|DEBUG)\] |(?:ERROR|WARNING|DEBUG): )/
-
-/**
- * Cuts the level prefix off a timestamped line, when it carries one.
- *
- * @param text The line with its timestamp already cut.
- */
-function cutLevelPrefix(text: string): string {
-  const level = LEVEL_PREFIX_PATTERN.exec(text)
-
-  return level === null ? text : text.slice(level[0].length)
-}
 
 /**
  * Reads a source address segment: all digits is an archived batch, anything else

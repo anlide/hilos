@@ -48,6 +48,7 @@ import {
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import { useSignal } from '../../useSignal.js'
 
@@ -148,7 +149,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
             class="small text-body-secondary"
             data-id="hilos-logs-growth-forecast"
           >
-            {{ logsOverviewForecastNote(overview) }}
+            <HilosHideable :value="logsOverviewForecastNote(overview)" />
           </div>
         </div>
       </div>
@@ -329,7 +330,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
                 {{ formatLogsOverviewRecentAt(entry.at) }}
               </span>
               <span class="flex-grow-1 small">
-                {{ entry.message }}
+                <HilosHideable :value="entry.message" />
                 <span class="d-block text-body-secondary">
                   {{ logsOverviewRecentOrigin(overview, entry) }}
                 </span>

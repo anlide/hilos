@@ -719,7 +719,11 @@ final class LogStoreAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, LogsFollowStopSignalData::class, $stop);
                 }
 
+                $watcher = $this->followers[$stop->acceptKey] ?? null;
                 unset($this->followers[$stop->acceptKey]);
+                if ($watcher !== null) {
+                    $this->sendFrame($watcher, LogsLinesAppendedSignalData::stopped($watcher->requestId));
+                }
 
                 return;
 
@@ -940,7 +944,7 @@ final class LogStoreAgent extends AbstractAgent
         if ($relativePath === null) {
             $this->logAgentWarning("Ignoring a log read that names no file: source '{$request->source}'");
 
-            return LogsReadLinesReplyDTO::fromPage(LogLinePage::unavailable());
+            return LogsReadLinesReplyDTO::fromPage(LogLinePage::unavailable(), $request->hideText);
         }
 
         $reader = LogLineReader::fromEnv();
@@ -951,6 +955,7 @@ final class LogStoreAgent extends AbstractAgent
             return LogsReadLinesReplyDTO::fromAnchoredPage(
                 $reader->read($relativePath, new LogReadQuery(LogReadQuery::ANCHOR_HEAD, $anchorOffset, self::READ_PAGE_LINES)),
                 $anchorOffset,
+                $request->hideText,
             );
         }
 
@@ -963,8 +968,8 @@ final class LogStoreAgent extends AbstractAgent
         ));
 
         return $request->anchorAtMs === null
-            ? LogsReadLinesReplyDTO::fromPage($page)
-            : LogsReadLinesReplyDTO::fromMissedAnchor($page);
+            ? LogsReadLinesReplyDTO::fromPage($page, $request->hideText)
+            : LogsReadLinesReplyDTO::fromMissedAnchor($page, $request->hideText);
     }
 
     /**
@@ -1000,13 +1005,14 @@ final class LogStoreAgent extends AbstractAgent
                 stream: $request->stream,
                 level: $request->level,
                 substring: $request->substring,
+                hideText: $request->hideText,
                 offset: $size ?? 0,
             );
             $this->sendActionSuccess(
                 $request->acceptKey,
                 $request->action,
                 $request->requestId,
-                LogsReadLinesReplyDTO::fromPage($page),
+                LogsReadLinesReplyDTO::fromPage($page, $request->hideText),
             );
         } catch (Throwable $e) {
             unset($this->followers[$request->acceptKey]);
@@ -1386,7 +1392,7 @@ final class LogStoreAgent extends AbstractAgent
             return;
         }
 
-        $this->sendFrame($watcher, LogsLinesAppendedSignalData::appended($watcher->requestId, $page));
+        $this->sendFrame($watcher, LogsLinesAppendedSignalData::appended($watcher->requestId, $page, $watcher->hideText));
     }
 
     /**

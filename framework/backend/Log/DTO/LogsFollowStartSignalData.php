@@ -38,6 +38,9 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
     /** Payload key: request id the browser minted, quoted back on the ack and on every frame. */
     public const string requestId = 'requestId';
 
+    /** Payload key: whether the owner's first page and later frames must hide line text. */
+    public const string hideText = 'hideText';
+
     /**
      * @param string $nodeId Id of the node owning the file, empty for this node
      * @param string $stream File name of the live stream to follow
@@ -46,6 +49,7 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
      * @param string $acceptKey Accept key of the connection that will receive the appended lines
      * @param string $action Action name the reply acknowledges
      * @param string $requestId Request id the browser minted, and the id of this follow
+     * @param bool $hideText Whether the owner must hide line text
      */
     public function __construct(
         public readonly string $nodeId,
@@ -55,6 +59,7 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
         public readonly string $acceptKey,
         public readonly string $action,
         public readonly string $requestId,
+        public readonly bool $hideText,
     ) {
     }
 
@@ -65,6 +70,7 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
      * @param string $acceptKey Accept key of the connection that will receive the appended lines
      * @param string $action Action name the reply acknowledges
      * @param string $requestId Request id the browser minted, and the id of this follow
+     * @param bool $hideText Whether the owner must hide line text
      * @return self Frame addressed to the node named in the request
      */
     public static function fromAction(
@@ -72,15 +78,17 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
         string $acceptKey,
         string $action,
         string $requestId,
+        bool $hideText,
     ): self {
         return new self(
             nodeId: $dto->nodeId,
             stream: $dto->stream,
             level: $dto->level,
-            substring: $dto->substring,
+            substring: $hideText ? null : $dto->substring,
             acceptKey: $acceptKey,
             action: $action,
             requestId: $requestId,
+            hideText: $hideText,
         );
     }
 
@@ -97,6 +105,7 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
             self::acceptKey => $this->acceptKey,
             self::action => $this->action,
             self::requestId => $this->requestId,
+            self::hideText => $this->hideText,
         ];
     }
 
@@ -116,6 +125,7 @@ final class LogsFollowStartSignalData extends BaseDTO implements SignalDataInter
             acceptKey: self::requireString($data, self::acceptKey),
             action: self::requireString($data, self::action),
             requestId: self::requireString($data, self::requestId),
+            hideText: self::requireBool($data, self::hideText),
         );
     }
 }

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -47,8 +48,15 @@ final class LogsViewPageFollowTest extends TestCase
     /** @var string Accept key of the connection that will receive the appended lines */
     private const string ACCEPT_KEY = 'ak-logs-follow-1';
 
+    private FollowTestBrowser $browser;
+
+    private ?BrowserContext $previousBrowser = null;
+
     protected function setUp(): void
     {
+        $this->previousBrowser = Hilos::$browser;
+        $this->browser = new FollowTestBrowser();
+        Hilos::$browser = $this->browser;
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new LogsViewPageTestRtContext();
         Hilos::$rt->mountFeatureRuntime([]);
@@ -57,6 +65,7 @@ final class LogsViewPageFollowTest extends TestCase
 
     protected function tearDown(): void
     {
+        Hilos::$browser = $this->previousBrowser;
         // The page keeps its follows per worker, not per dispatch, so a case that started one and
         // never stopped it would hand it to the next case. Released the same way a closing tab
         // releases it.
@@ -86,6 +95,7 @@ final class LogsViewPageFollowTest extends TestCase
                 acceptKey: self::ACCEPT_KEY,
                 action: HilosSignalConstants::LOGS_FOLLOW_START,
                 requestId: self::REQUEST_ID,
+                hideText: false,
             ),
             $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_START),
         );
@@ -102,6 +112,41 @@ final class LogsViewPageFollowTest extends TestCase
 
         $this->assertSame('', $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_START)->nodeId);
         $this->assertTrue($page->actionReplyDeferred());
+    }
+
+    public function testAViewerFollowHidesTextAndLosesItsSubstring(): void
+    {
+        $this->browser->viewer = true;
+        $this->publishNode(self::PEER, true);
+
+        $this->dispatchingPage()->onAction(self::ACCEPT_KEY, HilosSignalConstants::LOGS_FOLLOW_START, $this->request(self::PEER));
+
+        $forwarded = $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_START);
+        $this->assertTrue($forwarded->hideText);
+        $this->assertNull($forwarded->substring);
+        $this->assertSame('ERROR', $forwarded->level);
+    }
+
+    public function testAChangedViewerVerdictStopsTheFollowBeforeTheNextSubscriptionAnswer(): void
+    {
+        $this->browser->viewer = true;
+        $this->publishNode(self::PEER, true);
+        $page = $this->dispatchingPage();
+        $page->onAction(self::ACCEPT_KEY, HilosSignalConstants::LOGS_FOLLOW_START, $this->request(self::PEER));
+        $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_START);
+
+        $page->deliverSubscription(self::ACCEPT_KEY);
+        $catalog = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW, $catalog?->signalName->getName());
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'The same verdict keeps the follow');
+
+        $this->browser->viewer = false;
+        $page->deliverSubscription(self::ACCEPT_KEY);
+        $this->assertEquals(
+            new LogsFollowStopSignalData(self::PEER, self::ACCEPT_KEY),
+            $this->nextFrame(HilosSignalConstants::LOGS_AGENT_FOLLOW_STOP),
+        );
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testAFollowNamingANodeThisClusterDoesNotHaveIsRefusedOnTheSpot(): void
@@ -331,5 +376,20 @@ final class LogsViewPageFollowTest extends TestCase
         );
 
         return $payload;
+    }
+}
+
+final class FollowTestBrowser extends BrowserContext
+{
+    public bool $viewer = false;
+
+    /**
+     * @param string $pageClass Page being served (unused in this double)
+     * @param string $acceptKey Connection being served (unused in this double)
+     * @return bool Injected view-mode verdict
+     */
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return $this->viewer;
     }
 }

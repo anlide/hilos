@@ -4,13 +4,13 @@ import {
   createHilosLogViewer,
   hasLogViewerNodes,
   isLogViewerPinned,
+  logLineClock,
   logViewerNodeOf,
   logViewerPendingLabel,
   logViewerPaneState,
   logViewerPath,
   logViewerStreamsOf,
   readLogViewerAddress,
-  splitLogLine,
   splitLogTrace,
   toLogViewerRows,
   LOGS_FOLLOW_START_ACTION,
@@ -38,6 +38,7 @@ import { type HilosConnection } from '../../../src/connection/HilosConnection.js
 import { type ConnectionState } from '../../../src/connection/HilosConnection.js'
 import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
 import { createSignal } from '../../../src/state/signal.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000
@@ -47,7 +48,21 @@ const FEED_MAX_LINES = 2000
 
 /** One line of a read reply or a follow frame, as it comes off the wire. */
 function wireLine(text: string, level = 'INFO', isContinuation = false) {
-  return { text, level, isContinuation }
+  const stamped = /^\[([^\]]+)\] /.exec(text)
+  return {
+    time: stamped?.[1] ?? null,
+    text:
+      stamped === null
+        ? text
+        : text
+            .slice(stamped[0].length)
+            .replace(
+              /^(?:\[(?:ERROR|WARNING|INFO|DEBUG)\] |(?:ERROR|WARNING|DEBUG): )/,
+              '',
+            ),
+    level,
+    isContinuation,
+  }
 }
 
 /** One item of an already-keyed feed, for the grouping tests. */
@@ -57,7 +72,10 @@ function feedLine(
   level = 'INFO',
   isContinuation = false,
 ): HilosLogViewerFeedItem {
-  return { kind: 'line', line: { id, text, level, isContinuation } }
+  return {
+    kind: 'line',
+    line: { id, ...wireLine(text, level, isContinuation) },
+  }
 }
 
 /** The row as an entry, so a test can read the frames folded under it. */
@@ -394,36 +412,10 @@ describe('logViewerPath', () => {
   })
 })
 
-describe('splitLogLine', () => {
-  it('cuts the timestamp and the level prefix off a line', () => {
-    expect(
-      splitLogLine(
-        '[2027-01-15 03:12:19.907] ERROR: Deadlock detected',
-        'ERROR',
-      ),
-    ).toEqual({
-      time: '03:12:19.907',
-      level: 'ERROR',
-      text: 'Deadlock detected',
-    })
-  })
-
-  it('cuts the bracketed level form too', () => {
-    expect(
-      splitLogLine('[2027-01-15 03:00:01.482] [INFO] Rotation done', 'INFO'),
-    ).toEqual({ time: '03:00:01.482', level: 'INFO', text: 'Rotation done' })
-  })
-
-  it('draws a line it does not recognize whole', () => {
-    // The text belongs to whoever wrote it; a viewer that guessed at its shape
-    // would hide the part it guessed wrong about.
-    expect(
-      splitLogLine('#0 /app/framework/backend/Db.php(214)', 'ERROR'),
-    ).toEqual({
-      time: '',
-      level: 'ERROR',
-      text: '#0 /app/framework/backend/Db.php(214)',
-    })
+describe('logLineClock', () => {
+  it('takes the clock from the server timestamp and leaves an unstamped line empty', () => {
+    expect(logLineClock('2027-01-15 03:12:19.907')).toBe('03:12:19.907')
+    expect(logLineClock(null)).toBe('')
   })
 })
 
@@ -492,6 +484,61 @@ describe('splitLogTrace', () => {
 })
 
 describe('toLogViewerRows', () => {
+  it('keeps a hidden entry visible by time and level without forming a stack', () => {
+    const rows = toLogViewerRows([
+      {
+        kind: 'line',
+        line: {
+          id: '1:0',
+          time: '2027-01-15 03:12:19.907',
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: false,
+        },
+      },
+      {
+        kind: 'line',
+        line: {
+          id: '1:1',
+          time: null,
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: true,
+        },
+      },
+    ])
+
+    expect(rows).toHaveLength(1)
+    expect(asEntry(rows[0])).toMatchObject({
+      time: '03:12:19.907',
+      level: 'ERROR',
+      text: HIDDEN_VALUE,
+      frames: [],
+    })
+  })
+
+  it('draws a hidden continuation without a preceding entry as its own dimmed row', () => {
+    const rows = toLogViewerRows([
+      {
+        kind: 'line',
+        line: {
+          id: '1:0',
+          time: null,
+          text: HIDDEN_VALUE,
+          level: 'ERROR',
+          isContinuation: true,
+        },
+      },
+    ])
+
+    expect(asEntry(rows[0])).toMatchObject({
+      orphan: true,
+      time: '',
+      text: HIDDEN_VALUE,
+      frames: [],
+    })
+  })
+
   it('folds continuations under the line that started them', () => {
     const rows = toLogViewerRows([
       feedLine('1:0', '[2027-01-15 03:12:19.907] ERROR: Deadlock', 'ERROR'),

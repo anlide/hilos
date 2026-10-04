@@ -37,6 +37,8 @@ import {
   LOG_VIEWER_PENDING_WIDEST_LABEL,
   createHilosLogViewer,
   createSignal,
+  hilosAdminAccess,
+  HILOS_VIEW_MODE_STRIP_TEXT_ID,
   hasLogViewerNodes,
   isLogViewerPinned,
   logLevelVariant,
@@ -54,6 +56,7 @@ import type {
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 
@@ -97,6 +100,8 @@ function batchLabel(batch: number): string {
  * @param props The project context (the connection and the action lifecycle).
  */
 export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
+  // HilosAdminPage provides the context to its children, not to this parent.
+  const viewMode = useSignal(hilosAdminAccess) === 'view'
   const router = useContext(HilosRouterContext)
   // The address IS what this screen is showing, so the navigator is what it reads
   // and writes. A router-less mount (none in practice) still reads files — it just
@@ -373,6 +378,10 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                 placeholder="Search inside the lines"
                 value={substringDraft}
                 data-id="hilos-log-substring"
+                disabled={viewMode}
+                aria-describedby={
+                  viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined
+                }
                 onChange={(event) => viewer.editSubstring(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
@@ -384,6 +393,10 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                 type="button"
                 className={`btn ${substringDirty ? 'btn-primary' : 'btn-outline-secondary'}`}
                 data-id="hilos-log-search"
+                disabled={viewMode}
+                aria-describedby={
+                  viewMode ? HILOS_VIEW_MODE_STRIP_TEXT_ID : undefined
+                }
                 onClick={() => viewer.applySubstring()}
               >
                 <i className="bi bi-search me-1" aria-hidden="true" />
@@ -595,7 +608,9 @@ export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
                   <span className="text-body-secondary text-nowrap">
                     {row.time}
                   </span>
-                  <span className="flex-grow-1">{row.text}</span>
+                  <span className="flex-grow-1">
+                    <HilosHideable value={row.text} />
+                  </span>
                   {row.frames.length > 0 ? (
                     <button
                       type="button"

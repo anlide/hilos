@@ -218,15 +218,55 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     /**
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
-     * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. The map is empty until the
-     * leaf that classifies the logs overview opens it (HIL-1257), so a viewer sees none of it yet.
+     * A viewer is sent the frame untyped, with fields absent from this map replaced by the hidden
+     * mark ({@see AbstractPage::frameForViewer()}). Recent message is log text with no classification
+     * at write time; freeSpaceThresholdPercent is a setting value and stays hidden until HIL-1298.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
     public static function wireFields(): array
     {
-        return [];
+        return [
+            self::available => WireField::notPersonal(),
+            self::totalRotationsAllTime => WireField::notPersonal(),
+            self::lastRotationAt => WireField::notPersonal(),
+            self::logKeysPerDaemon => WireField::notPersonal(),
+            self::totalWeightDaemonKeysBytes => WireField::notPersonal(),
+            self::logKeysPerAgent => WireField::notPersonal(),
+            self::totalWeightAgentKeysBytes => WireField::notPersonal(),
+            self::logKeysPerWorker => WireField::notPersonal(),
+            self::totalWeightWorkerKeysBytes => WireField::notPersonal(),
+            self::growthBytesPerDay => WireField::notPersonal(),
+            self::keysWithoutGrowthWindow => WireField::notPersonal(),
+            self::batchesDueForTakeout => WireField::notPersonal(),
+            self::nodes => WireField::each([
+                self::nodeId => WireField::notPersonal(),
+                self::available => WireField::notPersonal(),
+                self::lastRotationAt => WireField::notPersonal(),
+                self::liveBytes => WireField::notPersonal(),
+                self::archiveBytes => WireField::notPersonal(),
+                self::growthBytesPerDay => WireField::notPersonal(),
+                self::batchesDueForTakeout => WireField::notPersonal(),
+                self::filesystemFreeBytes => WireField::notPersonal(),
+                self::filesystemTotalBytes => WireField::notPersonal(),
+            ]),
+            self::recentErrors => WireField::each([
+                self::nodeId => WireField::notPersonal(),
+                self::stream => WireField::notPersonal(),
+                self::at => WireField::notPersonal(),
+                self::traceFrames => WireField::notPersonal(),
+            ]),
+            self::recentErrorsCapped => WireField::notPersonal(),
+            self::recentWarnings => WireField::each([
+                self::nodeId => WireField::notPersonal(),
+                self::stream => WireField::notPersonal(),
+                self::at => WireField::notPersonal(),
+                self::traceFrames => WireField::notPersonal(),
+            ]),
+            self::recentWarningsCapped => WireField::notPersonal(),
+            self::filesystemFreeBytes => WireField::notPersonal(),
+            self::filesystemTotalBytes => WireField::notPersonal(),
+        ];
     }
 
     /**

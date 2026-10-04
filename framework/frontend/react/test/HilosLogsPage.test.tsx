@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { HilosPages, OVERVIEW_SIGNAL, createSignal } from '@hilos/core'
+import {
+  HIDDEN_VALUE,
+  HilosPages,
+  OVERVIEW_SIGNAL,
+  createSignal,
+} from '@hilos/core'
 import type {
   HilosConnection,
   HilosLogsOverview,
@@ -184,6 +189,30 @@ function textOf(container: HTMLElement, id: string): string {
 
 describe('HilosLogsPage', () => {
   afterEach(cleanup)
+
+  it('draws a hidden recent message and forecast as separate marks', () => {
+    const { connection, push } = makeConnection()
+    const container = mountPage(connection)
+    push(
+      overview({
+        filesystemFreeBytes: 1_000_000,
+        filesystemTotalBytes: 2_000_000,
+        freeSpaceThresholdPercent: HIDDEN_VALUE,
+        recentErrors: [failure({ message: HIDDEN_VALUE })],
+      }),
+    )
+
+    expect(
+      byId(container, 'hilos-logs-growth-forecast')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      byId(container, 'hilos-logs-recent-row')?.querySelector(
+        '[data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+  })
 
   it('keeps the cards to its child screens and puts its own figures under them', () => {
     // The section root is the one place both are needed: without the cards the

@@ -38,6 +38,7 @@ import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
 import { type ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
 function row(
   overrides: Partial<HilosLogRotationRow> = {},
@@ -305,6 +306,14 @@ describe('formatRotationState', () => {
 })
 
 describe('formatRotationRule', () => {
+  it('hides the rotation half when any of its axes is hidden', () => {
+    expect(formatRotationRule(header({ rotationCron: HIDDEN_VALUE }))).toBe(
+      HIDDEN_VALUE,
+    )
+    expect(
+      formatRotationRule(header({ rotationMaxAgeSeconds: HIDDEN_VALUE })),
+    ).toBe(HIDDEN_VALUE)
+  })
   it('lists every axis that is on, and joins them as alternatives', () => {
     expect(
       formatRotationRule(
@@ -348,6 +357,11 @@ describe('formatRotationRule', () => {
 })
 
 describe('formatRetentionRule', () => {
+  it('hides the retention half when any of its axes is hidden', () => {
+    expect(
+      formatRetentionRule(header({ retentionKeepBatches: HIDDEN_VALUE })),
+    ).toBe(HIDDEN_VALUE)
+  })
   it('joins the two criteria with "and", because both hold at once', () => {
     expect(
       formatRetentionRule(

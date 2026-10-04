@@ -389,6 +389,15 @@ The anchor is a time and not a byte offset because an offset stops meaning
 anything at the next rotation, and a cursor and an anchor never travel together:
 one continues a page, the other starts one. Following is a different mechanism:
 
+Each returned line, in a read reply, the first follow page and an appended frame,
+has `{time, text, level, isContinuation}`. `time` is the file's local stamp without
+brackets, or null for an unstamped line; `text` starts after the stamp and level
+prefix, or is the whole unstamped line. `LogLineReader` alone decides those
+boundaries. Under the admin view mode the page forwards `hideText` to the owner;
+the owner sends the hidden mark in `text` and leaves time, level and continuation
+visible. The page removes a viewer's substring before forwarding it, since a
+search result would reveal something about hidden text (HIL-1257).
+
 - `logs_follow_start` is one action, not two, because "show me the end, now
   follow it" as two calls would lose whatever was written between them. The
   owner takes the file size **before** the first read and continues from there;
@@ -411,7 +420,11 @@ one continues a page, the other starts one. Following is a different mechanism:
   behind. A follow is also dropped when the page unsubscribes, when the socket
   closes, and — checked before the file is touched — when the connection is no
   longer on the node's roster, which is the only thing that catches a viewer who
-  left without a word.
+  left without a word. A changed answer to "is this connection a view-mode
+  viewer?" during subscription delivery stops the old follow before the new
+  answer leaves the page. Whenever the owner removes a follow it still holds,
+  it sends `stopped` with that follow's id; the browser drops frames of a follow
+  it has already left (HIL-1257).
 - A stack trace cut by a tick boundary keeps the level of its entry: the reader
   carries the running level across the cut (`inheritedLevel`), so an `ERROR`
   filter still shows the trace that belongs to the error. When a read opens

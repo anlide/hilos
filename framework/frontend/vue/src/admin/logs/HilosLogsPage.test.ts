@@ -1,7 +1,12 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
-import { HilosPages, createSignal, OVERVIEW_SIGNAL } from '@hilos/core'
+import {
+  HIDDEN_VALUE,
+  HilosPages,
+  createSignal,
+  OVERVIEW_SIGNAL,
+} from '@hilos/core'
 import type {
   HilosConnection,
   HilosLogsOverview,
@@ -144,6 +149,31 @@ function mountPage(connection: HilosConnection) {
 }
 
 describe('HilosLogsPage', () => {
+  it('draws a hidden recent message and forecast as separate marks', async () => {
+    const { connection, push } = makeConnection()
+    const wrapper = mountPage(connection)
+    push(
+      overview({
+        filesystemFreeBytes: 1_000_000,
+        filesystemTotalBytes: 2_000_000,
+        freeSpaceThresholdPercent: HIDDEN_VALUE,
+        recentErrors: [failure({ message: HIDDEN_VALUE })],
+      }),
+    )
+    await nextTick()
+
+    expect(
+      wrapper
+        .find('[data-id="hilos-logs-growth-forecast"] [data-id="hilos-hidden"]')
+        .exists(),
+    ).toBe(true)
+    expect(
+      wrapper
+        .find('[data-id="hilos-logs-recent-row"] [data-id="hilos-hidden"]')
+        .exists(),
+    ).toBe(true)
+  })
+
   it('keeps the tiles empty rather than zero before any picture arrives', () => {
     const { connection } = makeConnection()
     const wrapper = mountPage(connection)

@@ -6,6 +6,7 @@ import {
   watchTopWithin,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
+import { setAdminViewMode } from '../helpers/adminViewMode'
 import {
   appendLogLines,
   FOLLOWED_STREAM,
@@ -182,4 +183,88 @@ test('follows a live log file: an appended line arrives on its own, and one appe
   await expect(page.getByTestId('hilos-log-count')).toBeVisible()
   await paneInPage.unchanged()
   await page.setViewportSize(desktop)
+})
+
+// HIL-1257: the text must be absent from the guest's socket frames, not merely
+// hidden by the view. An admin in another context witnesses that the line exists.
+test.describe('the log viewer in the admin view mode', () => {
+  test.afterEach(async () => {
+    await setAdminViewMode(false)
+  })
+
+  test("a guest follows a live log and reads each line's time and level with its text hidden", async ({
+    browser,
+    page,
+  }) => {
+    test.slow()
+
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const adminContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+    })
+    const adminPage = await adminContext.newPage()
+    const frames: string[] = []
+
+    try {
+      await grantAdminToSelf(adminPage)
+      await gotoPage(adminPage, VIEWER_PATH, PAGE_READY)
+      await expect(adminPage.getByTestId('hilos-log-tail-badge')).toBeVisible()
+
+      await setAdminViewMode(true)
+      page.on('websocket', (socket) => {
+        socket.on('framereceived', (frame) =>
+          frames.push(String(frame.payload)),
+        )
+      })
+      await gotoPage(page, VIEWER_PATH, PAGE_READY)
+      await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
+      await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible({
+        timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+      })
+
+      const substring = page.getByTestId('hilos-log-substring')
+      const search = page.getByTestId('hilos-log-search')
+      await expect(substring).toBeDisabled()
+      await expect(search).toBeDisabled()
+      await expect(substring).toHaveAttribute(
+        'aria-describedby',
+        /(^| )hilos-view-mode-strip-text( |$)/,
+      )
+      await expect(search).toHaveAttribute(
+        'aria-describedby',
+        /(^| )hilos-view-mode-strip-text( |$)/,
+      )
+
+      const before = await page.getByTestId('hilos-log-entry').count()
+      const marker = logMarker('e2e-viewer-follow')
+      expect(await appendLogLines(marker, 1)).toBe(1)
+
+      await expect(
+        adminPage
+          .getByTestId('hilos-log-entry')
+          .filter({ hasText: `${marker} #1` }),
+      ).toBeVisible({
+        timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+      })
+      await expect
+        .poll(() => page.getByTestId('hilos-log-entry').count(), {
+          timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+        })
+        .toBeGreaterThan(before)
+
+      const newest = page.getByTestId('hilos-log-entry').last()
+      await expect(newest.getByTestId('hilos-hidden')).toBeVisible()
+      await expect(newest).toContainText(/\d{2}:\d{2}:\d{2}\.\d{3}/)
+      await expect(newest).toContainText('INFO')
+
+      await gotoPage(page, VIEWER_PATH, PAGE_READY)
+      await expect(page.getByTestId('hilos-log-entry').first()).toBeVisible()
+      expect(frames.join('\n')).not.toContain(marker)
+      await expect(page.locator('body')).not.toContainText(marker)
+    } finally {
+      await adminContext.close()
+    }
+  })
 })

@@ -54,6 +54,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -317,10 +318,10 @@ export function HilosLogsRotationsPage({
           {header ? (
             <>
               <div className="fw-semibold small" data-id="hilos-rotation-rule">
-                {formatRotationRule(header)}
+                <HilosHideable value={formatRotationRule(header)} />
               </div>
               <div className="small text-body-secondary">
-                {formatRetentionRule(header)}
+                <HilosHideable value={formatRetentionRule(header)} />
               </div>
             </>
           ) : (

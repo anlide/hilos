@@ -14,6 +14,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
   createSignal,
+  HIDDEN_VALUE,
   HilosPages,
   OVERVIEW_SIGNAL,
   type HilosConnection,
@@ -171,6 +172,40 @@ function textOf(fixture: ComponentFixture<HilosLogsPage>, id: string): string {
 }
 
 describe('HilosLogsPage', () => {
+  it('draws a hidden recent message and forecast as separate marks', () => {
+    const { connection, push } = makeConnection()
+    const fixture = mountPage(connection)
+    push(
+      overview({
+        filesystemFreeBytes: 1_000_000,
+        filesystemTotalBytes: 2_000_000,
+        freeSpaceThresholdPercent: HIDDEN_VALUE,
+        recentErrors: [
+          {
+            nodeId: '',
+            stream: 'worker-0.log',
+            at: '2026-09-02T03:00:00+00:00',
+            message: HIDDEN_VALUE,
+            traceFrames: 2,
+          },
+        ],
+      }),
+    )
+    fixture.detectChanges()
+
+    const root = fixture.nativeElement as HTMLElement
+    expect(
+      root.querySelector(
+        '[data-id="hilos-logs-growth-forecast"] [data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+    expect(
+      root.querySelector(
+        '[data-id="hilos-logs-recent-row"] [data-id="hilos-hidden"]',
+      ),
+    ).not.toBeNull()
+  })
+
   it('draws the daemon streams as a class of their own, count and weight together', () => {
     const { connection, push } = makeConnection()
     const fixture = mountPage(connection)

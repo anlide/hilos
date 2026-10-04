@@ -1582,7 +1582,7 @@ export {
   logViewerPaneState,
   logLevelVariant,
   hasLogViewerNodes,
-  splitLogLine,
+  logLineClock,
   splitLogTrace,
   toLogViewerRows,
   isLogViewerPinned,

@@ -72,6 +72,19 @@ final class LogLineReaderTest extends TestCase
         $this->removeTree($this->root);
     }
 
+    public function testEntryStampAndTextUseOneServerSideReadingOfBothLevelPrefixes(): void
+    {
+        $this->assertSame('2026-07-28 12:00:00.003', LogLineReader::stampText('[2026-07-28 12:00:00.003] [WARNING] retrying'));
+        $this->assertSame('retrying', LogLineReader::entryText('[2026-07-28 12:00:00.003] [WARNING] retrying'));
+        $this->assertSame('retrying', LogLineReader::entryText('[2026-07-28 12:00:00.003] WARNING: retrying'));
+        $this->assertSame('failure', LogLineReader::entryText('[2026-07-28 12:00:00.003] failure'));
+        $this->assertNull(LogLineReader::stampText('#0 /app/foo.php(10): bar()'));
+        $this->assertSame('#0 /app/foo.php(10): bar()', LogLineReader::entryText('#0 /app/foo.php(10): bar()'));
+        $agentLine = '[AGENT_LOG]agent-7|ERROR|[2026-07-28 12:00:00.005] agent boom';
+        $this->assertNull(LogLineReader::stampText($agentLine));
+        $this->assertSame($agentLine, LogLineReader::entryText($agentLine));
+    }
+
     public function testHeadReadsFirstLinesAndReportsMore(): void
     {
         $this->writeFixture('worker-1.log');
