@@ -17,7 +17,7 @@ database nor the files
 ([../antipatterns/heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md)).
 An address that has to look up a row or a session is therefore answered by an
 agent in its worker, the way a CLI command is
-([command-server.md](command-server.md), «Flow» — this is the same mechanism
+([command-server.md](command-server.md), "Flow" — this is the same mechanism
 over HTTP).
 
 ## Declaring An Address
@@ -42,7 +42,7 @@ final class CatalogAgent extends AbstractAgent
 ```
 
 The key is `GET`, the one method an agent may declare: the request carries
-neither a body nor headers («What Is Not Here»), so a `POST` address would start
+neither a body nor headers ("What Is Not Here"), so a `POST` address would start
 and read nothing, and any other key refuses the start and names the key. The
 value is a list of exact paths: starting with `/`, no query string, no
 `{placeholder}` — parameters ride the query, which the agent reads by name. One
@@ -114,7 +114,7 @@ browser's — whose close is the event above.
   queue). A large file is nginx's to send — `X-Accel-Redirect` in the reply.
   The files library and the data export never send their own body to a browser on another node:
   without X-Accel such a request is a 500 whose line names the node and the env
-  ([files-registry.md](files-registry.md), «Serving A File»).
+  ([files-registry.md](files-registry.md), "Serving A File").
 - Request bodies and headers other than the session token — a webhook's POST
   body among them: no address that needs them is built yet. Until then an agent
   declares only `GET` (HIL-204).
