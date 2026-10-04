@@ -21,8 +21,8 @@ use Hilos\Core\Table\TableConstants;
  * place cannot be read at all, travels as a count instead. The frontend applies the append
  * immediately instead of queuing a pending change and sets the carried counts
  * authoritatively. The row rides the same `{rowKey, slots}` wire fragment as the window
- * snapshot. The frame also carries the window's boundaries after the append.
- * Addressed per accept key.
+ * snapshot. The frame also carries the window's boundaries after the append. Addressed per
+ * accept key.
  *
  * The row arrives whatever the counts say: delivery does not depend on how well the set is
  * counted. The page count, though, travels only while the total is exact — past

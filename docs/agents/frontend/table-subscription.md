@@ -652,23 +652,23 @@ count that moved, a row appended at the tail — none of them rewrite `rowsBefor
 An announcement or count does not move the boundary anchors either; an append and
 an own create do move them, and none of these frames moves the delivered place.
 Otherwise the footer would travel under a reader who pressed nothing. The next
-window is what makes the place true again. **Next reads the server's word on the edge**, not that delivered
-place against a live count (HIL-1153): those numbers describe different moments.
-An exact, nonempty, bounded, ordered window establishes `hasRowsAfter` from its
-own `rowsBefore + rows.length < totalCount`. A live count replaces it only when
-it carries the key. An announcement above or inside, an append, and an in-window
-delete leave it alone; an own create that pushes a row out below the window sets it
-to true. An own create on a full Back window instead pushes its top row out, leaves Next alone,
-and enables Back to reach that row while the delivered place stays put. This is
-the same side Show uses for a window taken before a key.
-Both live row frames carry `firstAnchor` and `lastAnchor` after the change; the
-keys are present even when their values are null.
-An inexact total clears it, whichever frame carried the total, as do a refusal,
-convergence to an empty set, and resetting the address. With no edge known, Next
-uses the page count, or the full-window rule when the count is inexact. An
-unordered window has no edge to read. The server holds the same word on each
-window and moves it by these rules; an edit that carries a row the window does
-not hold across that window moves the word too (HIL-1160).
+window is what makes the place true again. **Next reads the server's word on the
+edge**, not that delivered place against a live count (HIL-1153): those numbers
+describe different moments. An exact, nonempty, bounded, ordered window
+establishes `hasRowsAfter` from its own `rowsBefore + rows.length < totalCount`.
+A live count replaces it only when it carries the key. An announcement above or
+inside, an append, and an in-window delete leave it alone; an own create that
+pushes a row out below the window sets it to true. An own create on a full Back
+window instead pushes its top row out, leaves Next alone, and enables Back to
+reach that row while the delivered place stays put. This is the same side Show
+uses for a window taken before a key. Both live row frames carry `firstAnchor`
+and `lastAnchor` after the change; the keys are present even when their values
+are null. An inexact total clears it, whichever frame carried the total, as do a
+refusal, convergence to an empty set, and resetting the address. With no edge
+known, Next uses the page count, or the full-window rule when the count is
+inexact. An unordered window has no edge to read. The server holds the same word
+on each window and moves it by these rules; an edit that carries a row the window
+does not hold across that window moves the word too (HIL-1160).
 
 On the wire this is `table_viewport_announce` (page, tableKey, rowKey, placement,
 totalCount, totalExact, pageCount), where `placement` is `above` or `inside`.

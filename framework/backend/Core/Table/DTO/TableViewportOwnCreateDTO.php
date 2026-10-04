@@ -19,9 +19,8 @@ use Hilos\Core\Table\TableConstants;
  * live filter, sort and page, so the author sees what a reload would show. The
  * window keeps its size: an after-anchor or page-number window drops its last row,
  * while a before-anchor window drops its first row. The row rides the same
- * `{rowKey, slots}` wire fragment as the window
- * snapshot. The frame also carries the re-selected window's boundaries.
- * Addressed per accept key.
+ * `{rowKey, slots}` wire fragment as the window snapshot. The frame also carries
+ * the re-selected window's boundaries. Addressed per accept key.
  *
  * The two signals are separate names rather than one name with an optional
  * position, because they carry different rules — "at the end whatever the sort"

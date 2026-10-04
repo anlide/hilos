@@ -4089,10 +4089,10 @@ abstract class BrowserContext
      * stands where it stands now, and the window is judged by its boundaries, not by the row's past.
      *
      * The place is read off the two boundaries the window holds, in the order that window asked
-     * for: a build sets them and a tail append moves the last. The table does the comparing because the boundaries are written in
-     * its own names ({@see ViewportTable::placeRowAgainst()}). Nothing here asks the row source
-     * where the row goes: this runs once per window per foreign write, and every window of every
-     * connection watching the table runs it.
+     * for: a build sets them and a tail append moves the last. The table does the comparing because
+     * the boundaries are written in its own names ({@see ViewportTable::placeRowAgainst()}).
+     * Nothing here asks the row source where the row goes: this runs once per window per foreign
+     * write, and every window of every connection watching the table runs it.
      *
      * A window with a filter map — a search, or a table's own filters — is first a question of
      * whether the row is in its SET, and that question belongs to the source rather than to the
