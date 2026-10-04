@@ -208,11 +208,11 @@ final class PageAccessReassessment
      *
      * The third criterion, and the one only the master can resolve: which sockets carry a session
      * is known where the sockets are accepted, so this is queued by the daemon and consumed by the
-     * daemon, which hands every worker of the cluster the by-connection announcement for the keys it found
-     * ({@see self::forConnections()} explains why that criterion is the one a worker can answer
-     * blind). Queued rather than resolved on the spot for the reason {@see self::forUser()} gives:
-     * the runtime write of the phase rides the same queue ahead of it, so every worker re-judges
-     * against the phase it has just been told about.
+     * daemon, which hands every worker of the cluster the by-connection announcement for the keys
+     * it found ({@see self::forConnections()} explains why that criterion is the one a worker can
+     * answer blind). Queued rather than resolved on the spot for the reason {@see self::forUser()}
+     * gives: the runtime write of the phase rides the same queue ahead of it, so every worker
+     * re-judges against the phase it has just been told about.
      *
      * The callers are the two ways into the verification window: the protected-mode executor
      * opening it for the operator and the circle (HIL-911, HIL-912), and the admission of a browser
