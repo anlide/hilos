@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# The shared cluster harness (framework/docker/cluster) run on this demo's stand. Kept only because the
-# preview control panel calls this path (framework/docker/control/server.py:32); it goes with
-# demo/cluster (HIL-1218). Everything else calls the module through composer.
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec python3 "$here/../../../framework/docker/cluster/cluster.py" "$here/docker-compose.cluster.yml" "$@"

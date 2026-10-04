@@ -251,9 +251,9 @@ const CONTAINER_STATE_RUNNING = 'running';
  *
  * The stand is resolved once, at the top, out of the registry the step names — never
  * out of the shape of the step's own directory. Both halves of the answer travel
- * together that way: the cluster's compose file is spelled relative to `demo/cluster`
- * while the step itself runs from the repository root, and a resolution that carried
- * only the file would look right and snapshot nothing.
+ * together that way: log-streams runs from the repository root while its stand lives in
+ * `demo/tasks`, and a resolution that carried only the file would look right and snapshot
+ * nothing.
  *
  * @param string $root Repository root; the step's `cwd` is relative to it.
  * @param string $id The step the snapshot is about.
@@ -1186,9 +1186,9 @@ function runArtifactCommand(string $label, string $command, string $cwd, int $ti
  * stand directory copies nothing and says nothing about it: having no daemon is not
  * a failure to collect one.
  *
- * Read from the STAND's directory rather than the step's. For every demo the two are the
- * same place; for the cluster step, which runs from the repository root against a stand
- * living in `demo/cluster`, they are not.
+ * Read from the STAND's directory rather than the step's. For every demo step the two are
+ * the same place; for log-streams, which runs from the repository root against the stand
+ * of `demo/tasks`, they are not.
  *
  * @param string $root Repository root.
  * @param array{cwd: string}|null $stand The record of the stand the step named, or null.

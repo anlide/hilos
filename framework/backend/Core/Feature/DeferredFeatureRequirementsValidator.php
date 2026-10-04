@@ -38,8 +38,8 @@ use Hilos\Runtime\View\Context\RtContext;
  * One invariant checked here belongs to no feature (HIL-509): a project whose PAGES are not empty
  * accepts browser subscriptions, and therefore has WebSocket connections, and therefore must keep
  * them on the framework connection base. It is not in the registry because it is not optional and
- * has nothing to declare - the non-empty PAGES is the declaration. A headless project (demo
- * cluster, PAGES = []) legitimately has no connections and is not asked for any.
+ * has nothing to declare - the non-empty PAGES is the declaration. A headless project
+ * (PAGES = []) legitimately has no connections and is not asked for any.
  *
  * A second one belongs to no feature either (HIL-1118): a project that builds a runtime context
  * carries the freeze row, and therefore can freeze, and therefore must migrate the verifier circle

@@ -305,7 +305,8 @@ without one stays without one ([orm/migrations.md](orm/migrations.md)).
     changes** — this is a shared, cross-ticket guard, not optional cleanup. Each
     demo has a `*TopologyRegistryTest` (`ChatTopologyRegistryTest`,
     `TasksTopologyRegistryTest`, `PollsTopologyRegistryTest`,
-    `ClusterTopologyRegistryTest`) whose hardcoded snapshots — e.g.
+    `BinanceBtcTrackerTopologyRegistryTest`, `EcommerceShopTopologyRegistryTest`,
+    `OnlineTestingTopologyRegistryTest`) whose hardcoded snapshots — e.g.
     `testComputedPageActionRoutesMatchChatActionOwnership`,
     `testComputedActionAgentRoutesUseOwningPageSubscriptionAgents`,
     `testComputedAgentSignalRoutesMatchChatAgentOwnership`,

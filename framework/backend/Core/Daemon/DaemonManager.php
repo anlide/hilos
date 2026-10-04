@@ -4277,7 +4277,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         // Counted on acceptance, before the socket is looked for: what this records is that the
         // mesh reached this node, which is what a cluster scenario asserts on and what the
-        // headless demo has no other way of seeing.
+        // scenario, which opens no browser, has no other way of seeing.
         Hilos::$cluster?->clientConnections()?->noteAddressedDelivery($acceptKey);
 
         $webSocketServer = $this->findWebSocketServer();

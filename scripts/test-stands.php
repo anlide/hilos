@@ -147,14 +147,4 @@ return [
         'networks' => [],
         'holdsDatabase' => true,
     ],
-    [
-        'id' => 'cluster',
-        'cwd' => 'demo/cluster',
-        'composeFile' => 'docker/docker-compose.cluster.yml',
-        'project' => 'hilos-cluster',
-        'mode' => 'project',
-        'profiles' => [],
-        'networks' => [],
-        'holdsDatabase' => true,
-    ],
 ];

@@ -84,22 +84,23 @@ require_once __DIR__ . '/framework-pieces.php';
  * rc=1 there meant either unit or integration failed.
  *
  * WHO MAY RUN BESIDE WHOM. Any cluster fleet — `binance-btc-tracker-cluster`,
- * `ecommerce-shop-cluster` and `online-testing-cluster`; `cluster` raises none since its
- * matrix left for them — may run beside any e2e step. Neither an edge nor the order keeps
- * them apart, and a fleet leaves with its own step (`downsStand`), which is hygiene
+ * `ecommerce-shop-cluster` and `online-testing-cluster` — may run beside any e2e step.
+ * Neither an edge nor the order keeps them apart, and a fleet leaves with its own step
+ * (`downsStand`), which is hygiene
  * rather than separation. Decided by the owner on 2026-09-29 on 43 full runs on
  * nova-de (27–29.09), where cluster overlapped chat-e2e for 1.5–6 minutes and
  * every one was green; run 0659 added three more e2e suites beside them. A red
  * step beside a fleet is read like any other: the neighbours in the step's
  * SNAPSHOT.txt, then a re-run alone. Keeping the fleets apart from EACH OTHER,
- * should that be needed, belongs to the leaves that add them. The first two need
- * nothing of the kind: in run 0684 on nova-de (2026-09-30, HIL-1215) `cluster` and
- * `binance-btc-tracker-cluster` started in the same second, overlapped for 1m45s,
- * and both were green. Nor do the three fleets of the demos: in run 0747 on nova-de
- * (2026-10-02, HIL-1216) `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
+ * should that be needed, belongs to the leaves that add them. The three fleets need
+ * nothing of the kind: in run 0747 on nova-de (2026-10-02, HIL-1216),
+ * `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together for 1m21s,
- * and all were green. Two steps of the same cluster stand share a group: each
- * takes that compose project down before it runs (HIL-1232).
+ * and all were green. Log-streams may run beside any fleet too: in 23 full runs on
+ * nova-de (2026-10-02/03, runs 0748–0773) it overlapped ecommerce-shop-cluster,
+ * which carries scenario 9, for 113–136s, and every run was green (HIL-1218).
+ * Two steps of the same cluster stand share a group: each takes that compose project
+ * down before it runs (HIL-1232).
  */
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
@@ -223,36 +224,17 @@ $steps = array_merge($steps, [
         'tags' => ['framework', 'frontend'],
         'seconds' => 87,
     ],
-    // demo/cluster's unit suite and nothing more: its scenario matrix has left whole for the
-    // stands of the demos - 1, 2, 5, 7, 8, 10, 13, 17, 20, 23 and 25 run on
-    // binance-btc-tracker-cluster, 3, 4, 6, 9, 12, 14, 16, 18 and 19 on ecommerce-shop-cluster,
-    // 11, 15, 21 and 22 on online-testing-cluster - so the step raises no fleet, only the
-    // database and the cli container its units run in, and stays until HIL-1218 takes
-    // demo/cluster away. The seconds below are measured in run 0747, beside the three fleets.
-    [
-        'id' => 'cluster',
-        'command' => 'composer run test:cluster:all',
-        'cwd' => '.',
-        'stand' => 'cluster',
-        'deps' => [],
-        'group' => null,
-        'tags' => ['cluster', 'backend'],
-        'seconds' => 8,
-        // Takes its stand down with it, at any outcome. This is hygiene: a fleet has no reason
-        // to outlive its step, and one that was FORGOTTEN kept eating cores for the rest of the
-        // run — on nova-lt that turned chat-e2e into 16m10s against 9m36s with fourteen failures
-        // that were only the leak (HIL-752). It is not what lets the step stand beside an e2e:
-        // the head of this file says they may overlap. Declared here rather than appended to
-        // the composer chain because that chain breaks at the first red, and the runner is the
-        // one that holds the outcome.
-        'downsStand' => true,
-    ],
     // The fleet of binance-btc-tracker (HIL-1215): five nodes of the whole demo on one database,
-    // and a stranger scenario 17 raises. It may run beside `cluster` and beside any e2e step - no
-    // edge keeps it apart from them (the head of this file). It shares a group only with its
-    // own browser step: both reset the same compose project (HIL-1232). Takes its stand down
-    // with it, at any outcome, for the reason `cluster` does. The demo's unit suite is not run
-    // here but in binance-btc-tracker-php. Scenarios 23 and 25 freeze the masters last (HIL-1125,
+    // and a stranger scenario 17 raises. It may run beside the other fleets and any e2e step -
+    // no edge keeps them apart (the head of this file). It shares a group only with its own
+    // browser step: both reset the same compose project (HIL-1232). Takes its stand down at any
+    // outcome: a fleet has no reason to outlive its step, and one forgotten on nova-lt kept
+    // eating cores for the rest of the run, turning chat-e2e into 16m10s against 9m36s with
+    // fourteen failures that were only the leak (HIL-752). This is hygiene, not what lets the
+    // step run beside an e2e (the head of this file). It is declared here instead of appended
+    // to the composer chain because that chain breaks at the first red, while the runner holds
+    // the outcome. The demo's unit suite runs in binance-btc-tracker-php. Scenarios 23 and 25
+    // freeze the masters last (HIL-1125,
     // HIL-1128). Scenarios 29 and 30 recreate and kill a slave (HIL-1243). The seconds are
     // measured alone on nova-de after the database moved into host memory (2026-10-04,
     // HIL-1327), with scenarios 13, 20 and 25 parked (P-169, P-456); returning one
@@ -285,8 +267,9 @@ $steps = array_merge($steps, [
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the whole
     // demo on one database. Beside the other fleets and any e2e step, no group and no edge (the
-    // head of this file); takes its stand down with it, at any outcome, for the reason `cluster`
-    // does. The demo's unit suite runs in ecommerce-shop-php. The seconds are measured alone
+    // head of this file); takes its stand down with it, at any outcome, for the reason
+    // binance-btc-tracker-cluster does. The demo's unit suite runs in ecommerce-shop-php.
+    // The seconds are measured alone
     // on nova-de after the database moved into host memory (2026-10-04, HIL-1327), with
     // scenarios 16 and 19 parked (P-441/2, P-441/1); returning one moves the number.
     [
@@ -303,8 +286,8 @@ $steps = array_merge($steps, [
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
     // the whole demo on a MariaDB Galera of three members behind one proxy (HIL-1230). Beside
     // the other fleets and any e2e step, no group and no edge (the head of this file); takes its
-    // stand down with it, at any outcome, for the reason `cluster` does. The demo's unit suite
-    // runs in online-testing-php. The seconds are measured alone on nova-de after the
+    // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does.
+    // The demo's unit suite runs in online-testing-php. The seconds are measured alone on nova-de after the
     // database moved into host memory (2026-10-04, HIL-1327), with a fresh stand.
     [
         'id' => 'online-testing-cluster',
@@ -324,24 +307,18 @@ $steps = array_merge($steps, [
     // (1339s end to end) and this step would lift it; the tasks group has the room. Takes its
     // stand down at any outcome, standalone as well as here.
     //
-    // The edge to `cluster` is an ORDER, not a need: this step wants nothing the cluster
-    // produced (no SDK, no built frontend either). Without the edge the two are the longest
-    // steps ready at t=0, so at two lanes the longest-first order put them side by side — a
-    // five-node fleet next to a 28-worker daemon being killed and restarted — and cluster's
-    // liveness scenario 9 ("s1 seen offline after its daemon died") timed out twice after
-    // twelve green runs in a row, then passed alone on the same HEAD (2026-09-17, runs
-    // 0350/0351, nova-lt; not re-measured on nova-de). The graph has no other lever to keep
-    // two steps apart: a group is a shared stand, and these two share none. The edge costs
-    // nothing — the tasks group is not the floor of the run. The price is paid knowingly: a
-    // red cluster skips this step, in a run that is red already; and
-    // `run-test-suite.php log-streams` runs cluster first, so the step alone is
-    // `composer run test:log-streams`.
+    // No ordering edge: the old cluster step held back log-streams after scenario 9 ("s1 seen
+    // offline after its daemon died") timed out beside it twice on nova-lt (2026-09-17, runs
+    // 0350/0351). On nova-de, ecommerce-shop-cluster carries that scenario and overlapped
+    // log-streams for 113–136s in 23 full runs (2026-10-02/03, runs 0748–0773), all green.
+    // Like any fleet it may run beside this step (the head of this file); a red beside a fleet
+    // is read by its SNAPSHOT.txt and a re-run alone.
     [
         'id' => 'log-streams',
         'command' => 'composer run test:log-streams',
         'cwd' => '.',
         'stand' => 'tasks',
-        'deps' => ['cluster'],
+        'deps' => [],
         'group' => 'tasks',
         'tags' => ['backend', 'demo'],
         'seconds' => 112,

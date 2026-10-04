@@ -55,8 +55,7 @@ declare(strict_types=1);
  *
  * Usage:
  *   composer run test:log-streams                      from the repository root, alone
- *   php scripts/run-test-suite.php log-streams         the step of the full run, after the
- *                                                      cluster step its ordering edge names
+ *   php scripts/run-test-suite.php log-streams         the step of the full run, alone
  *
  * Exit codes: 0 every expectation held; 1 at least one was disappointed; 2 the check could not
  * do its job (the table is broken, or the harness failed).

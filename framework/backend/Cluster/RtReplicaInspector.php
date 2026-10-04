@@ -10,7 +10,7 @@ use Hilos\Core\Daemon\DaemonManager;
  * Local port the command channel reads this node's RT replication state through.
  *
  * What a scenario can otherwise see of cross-node RT is nothing at all: the copy a node holds
- * lives in the master's memory, and `demo/cluster` runs headless with no browser to render it.
+ * lives in the master's memory, and a scenario opens no browser to render it.
  * So the inspect command asks here, and the answer says what this node owns, how completely,
  * which rows it holds, and how the frames from other nodes were judged — including the count of
  * frames refused as a two-owner split, which a scenario asserts is zero.

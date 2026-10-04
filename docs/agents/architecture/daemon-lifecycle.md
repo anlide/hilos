@@ -750,7 +750,7 @@ statements; the mechanism they govern is built by HIL-447 and HIL-448.
    online-testing stand. A replica is not
    placed by the policy and needs no declared capacity. The masters of
    binance-btc-tracker and ecommerce-shop take no placed work, and by rule 4:
-   they declare no capacity (not in the code yet — HIL-1218).
+   they declare no capacity.
 3. **The leader carries work by construction, and is a legal placement target — last
    among equals.** A `CLUSTER`+`LEADER` singleton runs where leadership sits (see *The
    placement gate* above). For policy placement, among otherwise equal candidates the

@@ -81,9 +81,6 @@
         "test:log-streams": "@php scripts/check-log-streams.php",
         "test:stands:down": "@php scripts/down-stands.php",
         "test:frontend:all": "@php scripts/run-test-suite.php frontend",
-        "test:cluster:unit": "cd demo/cluster && composer run test:unit",
-        "test:cluster:scenarios": "cd demo/cluster && composer run test:cluster:scenarios",
-        "test:cluster:all": "cd demo/cluster && composer run test:cluster:all",
         "ai:install": "@php scripts/install-ai-tooling.php",
         "ai:install:check": "@php scripts/install-ai-tooling.php --check"
     }

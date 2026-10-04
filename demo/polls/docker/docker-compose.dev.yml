@@ -203,5 +203,5 @@ networks:
         # whose network came up first may already hold the range, and then the stand
         # fails to start with "Pool overlaps with other one on this address space".
         # 10.0.0.0/8 is never auto-assigned
-        # (demo/cluster/docker/docker-compose.cluster.yml).
+        # (docs/new-project/README.md).
         - subnet: ${DOCKER_NETWORK_SUBNET:-10.198.0.0/16}

@@ -205,8 +205,8 @@ def inspect_local(stand, node_id):
 
 
 def client(stand, node_id, *args):
-    """Run one of the test-only client commands against a node (HIL-668). The cluster demo is
-    headless, so a browser is attached through the CLI rather than by a socket, and the
+    """Run one of the test-only client commands against a node (HIL-668). A scenario opens no
+    browser, so one is attached through the CLI rather than by a socket, and the
     addressed/fan-out signals are raised the same way -- everything past that point is the
     production path."""
     node = stand.member(node_id)
@@ -417,40 +417,6 @@ def status(stand):
             node_id, reply.get("lifecycleState"), str(reply.get("leaderId")), reply.get("term"),
             reply.get("hasQuorum"), ",".join(_placements(reply)) or "-"))
     return 0
-
-
-def status_json(stand):
-    """The per-node cluster view as JSON for the preview control panel:
-    {"nodes":[{node,reachable,enabled,role,phase,leader,term,quorum,placements}]}.
-    Empty {"nodes":[]} when the stand is down (one cheap check, no per-node execs).
-    One json.dumps over the whole view, so the output is always valid JSON."""
-    running = _run(["docker", "inspect", "-f", "{{.State.Running}}", stand.cli_container])
-    if running.code != 0 or running.out.strip() != "true":
-        return json.dumps({"nodes": []})
-    out = []
-    for node_id, node in stand.members.items():
-        try:
-            proc = subprocess.run(
-                ["docker", "exec", "-e", "HILOS_DAEMON_HOST=" + node.ip, stand.cli_container,
-                 *CLI_ENTRY, "test:cluster:inspect"],
-                capture_output=True, text=True, timeout=15)
-            reply = _json_reply(proc.stdout)
-        except (subprocess.TimeoutExpired, OSError):
-            reply = None
-        if reply is None:
-            out.append({"node": node_id, "reachable": False})
-            continue
-        if not reply.get("enabled"):
-            out.append({"node": node_id, "reachable": True, "enabled": False})
-            continue
-        out.append({
-            "node": node_id, "reachable": True, "enabled": True,
-            "role": next((x["role"] for x in reply.get("nodes", []) if x["nodeId"] == node_id), None),
-            "phase": reply.get("lifecycleState"), "leader": reply.get("leaderId"),
-            "term": reply.get("term"), "quorum": reply.get("hasQuorum"),
-            "placements": _placements(reply),
-        })
-    return json.dumps({"nodes": out})
 
 
 # ------------------------------------------------------------------ fault switches

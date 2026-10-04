@@ -348,7 +348,7 @@ The framework's multi-node behavior is proved on the cluster stands of three
 empty demos, each with its own shape of Hilos cluster and its own MySQL
 topology. All of it runs in docker on one machine: a multi-machine stand does
 not exist, and HIL-348 closed without one. The one stand that carried every
-scenario on a single shape retires (not in the code yet — HIL-1218).
+scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MySQL | Scenarios |
 |---|---|---|---|---|

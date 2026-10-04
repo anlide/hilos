@@ -1017,7 +1017,7 @@ final class ClusterContext
      * It also reports the browser side of the mesh (HIL-668): how many connections this node's
      * index holds for each node, and how many cross-node deliveries it has accepted for its own
      * browsers. Those two are what a scenario asserts on, because the delivery itself ends at a
-     * socket — and `demo/cluster` runs headless, with no socket to watch.
+     * socket — and a scenario opens no browser, so there is no socket to watch.
      *
      * The database collections this node reads travel out the same way (HIL-750), and for the
      * same want of anything else to watch: what a DB frame is matched against before it takes a

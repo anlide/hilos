@@ -267,8 +267,8 @@ contracts were declared. Every one of them is paid, and none owns a baseline
 record.
 
 What the demos owe is what the last phase turned up, and it is frozen rather than
-paid: 127 lines in 51 files — 107 in 39 for `demo/chat`, 9 in 5 each for
-`demo/polls` and `demo/tasks`, 2 in 2 for `demo/cluster`. Freezing
+paid: 62 lines in 27 files — 54 in 23 for `demo/chat`, 4 in 2 each for
+`demo/polls` and `demo/tasks`. Freezing
 is what stops the debt growing, since a new unpropagated `@throws` fails the
 guard on the spot, and the records name HIL-449 as the leaf that pays it. What
 is left is the demos' own form, a call inside the showcase that does not

@@ -110,7 +110,7 @@ signature with the token, and a `final` method cannot be overridden. It is
 **A project that serves pages must stand on the base.** Non-empty `PAGES` means
 browsers subscribe, which means there are connections; the deferred activation
 check refuses a runtime context that answers `connectionsSource()` with null.
-A headless project (`PAGES = []`, demo cluster) is asked for none.
+A headless project (`PAGES = []`) is asked for none.
 
 ## Writing to state
 

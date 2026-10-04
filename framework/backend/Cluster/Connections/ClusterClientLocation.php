@@ -152,8 +152,8 @@ final class ClusterClientLocation implements ClientLocation
     /**
      * Records that a signal addressed to one browser here arrived from another node.
      *
-     * The harness's window onto the receiving end, and the only one there is on
-     * `demo/cluster`: that demo runs headless, so the write itself lands nowhere and a
+     * The harness's window onto the receiving end, and the only one a scenario has:
+     * it opens no browser, so the write itself lands nowhere and a
      * scenario asserting on delivery has nothing else to read. Counted the moment the frame is
      * accepted, before the socket is looked for, which is exactly what "this node was asked"
      * means — whether a socket was there to write to is the local path's business.
@@ -202,8 +202,8 @@ final class ClusterClientLocation implements ClientLocation
     /**
      * Adds a browser connection to this node's own set without a socket behind it.
      *
-     * The test door, and the only way `demo/cluster` can be driven at all: that demo runs
-     * headless, with no WebSocket server and so no sockets to diff, yet the whole point of the
+     * The test door is how a scenario gives the mesh a browser without opening one. It has
+     * no socket to diff, yet the whole point of the
      * index is what happens between nodes. An attached key is announced, resolved and
      * delivered to through the same path a real one is — everything downstream of the socket
      * itself is the production path, which is what makes the scenario worth running.

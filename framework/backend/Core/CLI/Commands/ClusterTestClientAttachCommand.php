@@ -16,8 +16,8 @@ use Hilos\Environment\Exception\EnvException;
  * A test-only driver (extends {@see TestOnlyCommand} via
  * {@see AbstractCommandChannelTestCommand}, so it refuses on a production-like env): it puts an
  * accept key into this node's own half of the cluster connection index, with no socket behind
- * it. That is the only way `demo/cluster` can be driven at all, since it runs headless and has
- * no WebSocket server to accept a browser with — and everything downstream of the socket is the
+ * it. That is how a scenario gives the mesh a browser without opening one — and everything
+ * downstream of the socket is the
  * production path, which is what makes the scenario worth running. The key is announced to the
  * other nodes by the ordinary per-tick diff, so it becomes addressable exactly as a real one
  * does (HIL-668).

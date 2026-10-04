@@ -148,7 +148,7 @@ final class ProtectedModeLockdownTestRtContext extends RtContext
     }
 
     /**
-     * Mounts the injected protected-mode runtime singleton flat, as ClusterRtContext does.
+     * Mounts the injected protected-mode runtime singleton flat, as RtContext::mountFeatureRuntime() does for every project.
      */
     public function configure(): void
     {

@@ -202,7 +202,7 @@ final class DeferredFeatureRequirementsValidatorTest extends TestCase
 
     public function testHeadlessProjectIsAskedForNoConnectionsAtAll(): void
     {
-        // demo/cluster: PAGES = [], no WebSocket, no connections. The invariant reads the empty
+        // A headless project: PAGES = [], no WebSocket, no connections. The invariant reads the empty
         // PAGES as the project saying it serves no browsers, and asks it for nothing.
         DeferredRequirementsValidHilos::validateDeferredFeatureRequirements(
             $this->migrationsPath([...self::CIRCLE_MIGRATION, '001_create_deferred.sql' => 'CREATE TABLE `deferred_test_table` (`id` INT);']),

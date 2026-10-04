@@ -1002,7 +1002,7 @@ def scenario_10_cross_node_browser():
     every node instead. The sender is the exception on purpose: it expands its own fan-out
     locally, and the counter here is of frames that came off the mesh.
 
-    The demo is headless, so the browser is attached through the CLI and the delivery is read
+    The scenario opens no browser, so one is attached through the CLI and delivery is read
     from the inspect reply rather than from a socket. Everything between those two ends - the
     per-tick announcement, the index, the routing pass, the peer frame - is the production path.
     """

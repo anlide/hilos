@@ -203,7 +203,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 || $request->command === CliCommands::CLUSTER_TEST_CLIENT_DETACH
             ) {
                 // Test-only: put an accept key in this node's own set, or take it back out,
-                // with no socket behind it (HIL-668). The cluster demo runs headless, so this
+                // with no socket behind it (HIL-668). A scenario opens no browser, so this
                 // is the only way to give the mesh a browser to argue about; everything past
                 // the socket - the announcement, the lookup, the forward - is the real path.
                 $reply = $this->answerClientAttachment($request);
@@ -217,7 +217,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // Test-only: raise the signal an agent would raise for a browser - addressed at
                 // one, or fanned out to all - and let the ordinary routing pass decide which
                 // node it belongs to. Answered here rather than parked, because the point is the
-                // master's own routing and the demo registers no agent to park it at.
+                // master's own routing and no agent stands behind these commands to park them at.
                 $reply = $this->answerClientSignal($request);
                 $this->writeBuffer .= $reply->toJson() . "\n";
                 continue;
@@ -227,7 +227,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 // Test-only: raise the DB sync fact a worker raises after writing a row, and let
                 // the dispatch pass carry it to the mesh (HIL-670). Answered here for the same
                 // reason the client signals above are - what is being exercised is the master's
-                // own dispatch, and the cluster demo registers no agent to park it at.
+                // own dispatch, and no agent stands behind these commands to park them at.
                 $reply = $this->answerDbAnnounce($request);
                 $this->writeBuffer .= $reply->toJson() . "\n";
                 continue;

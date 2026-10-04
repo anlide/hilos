@@ -176,7 +176,7 @@ registry of taken host ports:
 | online-testing local | 33071 | 8150/8151/8152 | 8159 | 8160 | https 8156 | 5178 | 10.203 |
 | online-testing test | 33072 | 8153/8154/8155 | — | — | http 8157 / https 8158 | — | 10.213 |
 | online-testing cluster | — | — | — | — | — | — | 10.223 |
-| demo/cluster — retires, and 10.185 stays unassigned (not in the code yet — HIL-1218) | — | — | — | — | — | — | 10.185 |
+| retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults
 of `demo/<demo>/docker/docker-compose.{local,dev,test}.yml` and of

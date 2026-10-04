@@ -13,7 +13,6 @@ directory; a demo calls this from its composer scripts)
   down [--volumes]     stop and remove the stack (add --volumes to wipe the DB)
   restart              down, then up
   status               docker ps for the stack + a one-line inspect per node
-  status-json          the same per-node view as JSON, for the preview control panel
   inspect <node>       print a node's test:cluster:inspect JSON
   inspect-local <node> the same, asked from inside the node's own container
   client <node> <cmd> [args]  run a test:cluster:client:* command on a node
@@ -60,7 +59,7 @@ from stand import StandRefused, load_stand  # noqa: E402
 
 REFUSED = 2
 
-COMMANDS = ("up", "down", "restart", "status", "status-json", "inspect", "inspect-local", "client",
+COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
             "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "scenarios", "e2e")
@@ -143,9 +142,6 @@ def dispatch(stand, command, args, prog):
         return control.restart(stand, prog)
     if command == "status":
         return control.status(stand)
-    if command == "status-json":
-        print(control.status_json(stand))
-        return 0
     if command == "logs":
         return control.logs(stand, args[0] if args else "")
     if command == "scenarios":

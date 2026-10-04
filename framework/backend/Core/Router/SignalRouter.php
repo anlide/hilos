@@ -333,7 +333,7 @@ class SignalRouter
      *
      * Asked of the registry rather than of a project hook, because registering the sessions
      * library IS the declaration (HIL-710): a project that has one wants its handshakes
-     * resolved there, and one that has none - the cluster demo - keeps the lifecycle owner
+     * resolved there, and one that has none - a headless project - keeps the lifecycle owner
      * it always had. A second place to say so could only ever disagree with the first.
      *
      * Addressing the handshake to the library is also what keeps the move free: the session

@@ -503,8 +503,8 @@ function sweepStands(string $root): array
 /**
  * Drop the stand a step declared it takes down with it, if it declared one.
  *
- * A cluster step does. This is hygiene: its fleet is five PHP daemons, a database and a cli
- * container with no reason to outlive the step, and a fleet that was forgotten for the rest of a
+ * A cluster step does. This is hygiene: its fleet is three to five PHP daemons, a database
+ * and a cli container with no reason to outlive the step, and a fleet forgotten for the rest of a
  * run once cost chat-e2e 16m10s against 9m36s plus fourteen failures that were nothing but the
  * leak (HIL-752). It is not what lets a fleet run beside an e2e step — they may overlap, as the
  * head of `scripts/test-suite.php` says. The demo stands cost nothing like that and deliberately

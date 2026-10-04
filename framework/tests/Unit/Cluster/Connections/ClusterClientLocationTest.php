@@ -225,7 +225,7 @@ final class ClusterClientLocationTest extends TestCase
 
     /**
      * The test door announces exactly like a socket does - that is the whole point of it, since
-     * `demo/cluster` runs headless and has no sockets to announce.
+     * a scenario opens no browser and has no sockets to announce.
      */
     public function testAnAttachedKeyIsAnnouncedLikeAConnectedOne(): void
     {
@@ -309,7 +309,7 @@ final class ClusterClientLocationTest extends TestCase
 
     /**
      * The tally is what a cluster scenario asserts on, because the delivery itself ends at a
-     * socket — and the cluster demo runs headless, so there is no socket to watch.
+     * socket — and a scenario opens no browser, so there is no socket to watch.
      */
     public function testAnAddressedDeliveryIsCountedAndNamed(): void
     {
