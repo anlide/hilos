@@ -15,12 +15,12 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
  * Node-local handler for the protected-mode frames the peer transport delivers.
  *
  * The initiator↔leader hand-off rides the peer channel, not the agent-signal fabric — a
- * worker-sent agent signal only ever lands on another worker, never on the leader daemon. The
- * {@see PeerServer} unwraps each arriving envelope and calls the method for
- * its kind here, so this seam receives the domain payload and never the wire frame: enable carries
- * the {@see ProtectedModeEnableSignalData} contract fields. Disable and verification frames carry
- * the initiator agent identity; ready is a bare signal. Refused carries
- * the reason the leader gives (HIL-909).
+ * worker-sent agent signal only ever lands on another worker, never on the leader daemon.
+ * The {@see PeerServer} unwraps each arriving envelope and calls the method for its kind
+ * here, so this seam receives the domain payload and never the wire frame: enable carries
+ * the {@see ProtectedModeEnableSignalData} contract fields. Disable and verification
+ * frames carry the initiator agent identity; ready is a bare signal. Refused carries the
+ * reason the leader gives (HIL-909).
  *
  * The initiator↔leader half (enable/ready/refused/disable) is mirrored by the cluster-wide half
  * the leader drives against its followers: quiesce carries the {@see ProtectedModeQuiesceData}
@@ -151,7 +151,7 @@ interface ProtectedModeCoordinator
     public function onVerify(string $fromNodeId, string $agentType, ?int $agentIndex): void;
 
     /**
-     * Handles a progress mark from the node that initiated the freeze.
+     * Handles a progress mark from the agent that initiated the freeze.
      *
      * Arrives on the leader only, and travels in that one direction: the mark is read by the
      * watchdog, which runs on the leader, so no follower has any use for it. The frame carries

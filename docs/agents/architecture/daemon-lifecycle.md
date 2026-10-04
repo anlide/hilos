@@ -559,15 +559,14 @@ The marker lives in the master's memory from here on; the handshake touches no d
 
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
 markers by kind: `database`, and `directory:<name>` for every cluster directory of `$fs`
-(*Cluster directories* below). The field is required, and
-`PeerProtocol::VERSION` was raised to `9` for these markers, to `10` when HIL-1297
-added initiator identity, and to `11` when HIL-1304 added WebSocket readiness to
-the leader heartbeat. A node of the previous
-protocol and a node of this one do not link, with the line about the version.
-The accepting side on a hello and the dialing side on a welcome check, in order:
-the protocol version, the certificate name,
-the markers. The rule (`PeerMarkers::refusalFor()`): a kind named by either side is named
-by the other with the same value. A breach drops the link through the existing branch —
+(*Cluster directories* below). The field is required, and `PeerProtocol::VERSION` was
+raised to `9` for these markers, to `10` when HIL-1297 added initiator identity, and to
+`11` when HIL-1304 added WebSocket readiness to the leader heartbeat. A node of the
+previous protocol and a node of this one do not link, with the line about the version.
+The accepting side on a hello and the dialing side on a welcome check, in order: the
+protocol version, the certificate name, the markers. The rule
+(`PeerMarkers::refusalFor()`): a kind named by either side is named by the other with
+the same value. A breach drops the link through the existing branch —
 `Peer link dropped: …` at WARNING — before the link remembers the peer or tells the
 server; the accepting side sends no welcome, and the dialing side writes its own line
 about a link closed before the welcome. The refusals, literally:

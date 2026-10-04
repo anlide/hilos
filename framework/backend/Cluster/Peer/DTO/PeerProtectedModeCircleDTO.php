@@ -82,6 +82,10 @@ final class PeerProtectedModeCircleDTO extends PeerDTO
     /**
      * Restores a circle frame from its wire array.
      *
+     * A hash list with anything but non-empty strings in it is refused whole rather than thinned:
+     * the hashes are who the window lets in, and a list read without one of them would lock out a
+     * person the photograph named.
+     *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
      * @throws PeerTransportException When the initiator identity or payload is malformed

@@ -563,9 +563,9 @@ row. A follower initiator writes its own row before it sends, so with no leader
 known that row still holds it and the rest of the cluster lets the circle in by
 code alone. An initiator on a slave has no freeze row to write — the freeze
 frames reach masters only — and sends the photograph to the leader all the same:
-the leader authorizes it by the agent type and index carried in the frame, as it does
-every frame of the window, and that authorization is all either half checks:
-neither reads the phase.
+the leader authorizes it by the agent type and index carried in the frame, as it
+does every frame of the window, and that authorization is all either half
+checks: neither reads the phase.
 
 Whatever the operation, the photograph is taken for the initiator of the
 freeze, on the freeze's own ready path; a restore is today's only destructive

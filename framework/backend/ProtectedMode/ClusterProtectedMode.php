@@ -48,13 +48,13 @@ use Hilos\Utils\Logger;
  *   while their link node id supplies log context. Ready finds the agent's current placement.
  * - Follower side: {@see onQuiesce()} freezes this node and, once its roster has stopped
  *   ({@see onRosterStopped()}), reports quiesced; {@see onSettled()} writes active once the leader
- *   says every node has stopped, and {@see onLift()} releases it. A frozen follower, former leader,
- *   or node restored from a freeze file follows the current leader when that leader sends a frame.
- *   The initiator's own node relays the leader's {@see onReady()} to its agent. The verifier circle
- *   photographed at the freeze is
- *   written on a follower's row from the leader's frame ({@see onCircle()}), as a pass is.
- *   A code admission follows that pass from its 101 master through the leader to every follower
- *   ({@see onAdmit()}), so each master's row gives the same browser the same verdict (HIL-1305).
+ *   says every node has stopped, and {@see onLift()} releases it. A frozen follower, former
+ *   leader, or node restored from a freeze file follows the current leader when that leader sends
+ *   a frame. The initiator's own node relays the leader's {@see onReady()} to its agent. The
+ *   verifier circle photographed at the freeze is written on a follower's row from the leader's
+ *   frame ({@see onCircle()}), as a pass is. A code admission follows that pass from its 101
+ *   master through the leader to every follower ({@see onAdmit()}), so each master's row gives the
+ *   same browser the same verdict (HIL-1305).
  *
  * A single-node cluster has no followers, so the leader activates the moment its own roster has
  * stopped. An installation with cluster mode off has no coordinator at all and freezes through
@@ -584,7 +584,7 @@ final class ClusterProtectedMode implements
      * Says this node is frozen, to whoever is owed it, now that its roster has stopped.
      *
      * The leader counts itself quiesced and activates if no follower is outstanding; a follower
-     * reports quiesced to the leader that froze it. A node is only ever one of the two for a given
+     * reports quiesced to the leader it follows. A node is only ever one of the two for a given
      * freeze, so what the class already holds decides which. Every walk that enters a freeze sits
      * on activating and is reported - the first entry, a repeat from the verification window
      * (HIL-1057) and the close back from it (HIL-1128). The close owes the initiator no ready, and
@@ -1132,7 +1132,7 @@ final class ClusterProtectedMode implements
     }
 
     /**
-     * Whether this node leads the freeze the sending node initiated.
+     * Whether this node leads the freeze the sending agent initiated.
      *
      * The leader half of every verification frame shares this authorization with
      * {@see onDisable()}: only the agent that asked for the freeze may drive it.
