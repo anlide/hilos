@@ -232,6 +232,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             'hilos_analytics_ws_connection' => ['id', 'browser_session_id', 'opened_ts', 'closed_ts'],
             'hilos_analytics_ws_connection_ipv4_change' => ['id', 'ws_connection_id', 'changed_ts'],
             'hilos_analytics_ws_connection_ipv6_change' => ['id', 'ws_connection_id', 'changed_ts'],
+            // `session_key` is a random name a process drew in memory for one page session, nothing more.
             'hilos_analytics_page_session' => [
                 'id',
                 'session_key',
@@ -259,6 +260,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'started_ts',
                 'stopped_ts',
             ],
+            // `action_key` is a random name a process drew in memory for one action, nothing more.
             'hilos_analytics_user_action' => [
                 'id',
                 'action_key',
@@ -268,6 +270,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'payload_json_id',
                 'created_ts',
             ],
+            // `user_action_key` repeats the random name of the action it answers, nothing more.
             'hilos_analytics_agent_user_action' => [
                 'id',
                 'agent_session_id',
@@ -298,6 +301,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'payload_json_id',
                 'created_ts',
             ],
+            // `request_key` is a random name a process drew in memory for one request, nothing more.
             // `path` is the route a request took, not who took it; the caller is known
             // through `browser_session_id`.
             'hilos_analytics_api_request' => [
@@ -312,6 +316,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'started_ts',
                 'finished_ts',
             ],
+            // `api_request_key` repeats the random name of the request it served, nothing more.
             'hilos_analytics_api_agent_action' => [
                 'id',
                 'api_request_id',

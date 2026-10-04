@@ -1009,19 +1009,19 @@ abstract class WorkerServer extends AbstractServer implements
     /**
      * Moves the second wave of a stop one step on, once per pass; nothing while no stop holds a worker.
      *
-     * At least three passes, because each step needs the one before it to have reached the wire. The first
-     * wave is gone when its processes are gone AND their connections are closed: the master reads a
-     * connection a buffer at a time, so the last batch of a worker that has exited may still be in
-     * its socket for a few passes. The pass that sees the first wave gone only notes it: what the
-     * last of it sent is read on this pass and dispatched at its end, into the connection of the
-     * held worker. On this pass the master also records closures of its remaining connections;
+     * At least three passes, because each step needs the one before it to have reached the wire. The
+     * first wave is gone when its processes are gone AND their connections are closed: the master reads
+     * a connection a buffer at a time, so the last batch of a worker that has exited may still be in
+     * its socket for a few passes. The pass that sees the first wave gone only notes it: what the last
+     * of it sent is read on this pass and dispatched at its end, into the connection of the held
+     * worker. On this pass the master also records closures of its remaining connections;
      * dispatchSignals() sends that batch. The next pass stops every held agent with an ordinary
-     * agent_stop over that connection, which carries frames in order - so the stop lands behind everything sent to the
-     * agent before it. SIGTERM goes to the held workers once each has reported its held agents stopped:
-     * a worker reads its link a buffer at a time and handles frames in order, so the report means
-     * everything sent to the agent before the stop was handled - a SIGTERM sent on a count of passes
-     * cut off the last batches still unread behind it (HIL-1314). A held worker whose link is gone
-     * is not waited for, and the master's shutdown ceiling covers the wait.
+     * agent_stop over that connection, which carries frames in order - so the stop lands behind
+     * everything sent to the agent before it. SIGTERM goes to the held workers once each has reported
+     * its held agents stopped: a worker reads its link a buffer at a time and handles frames in order,
+     * so the report means everything sent to the agent before the stop was handled - a SIGTERM sent on
+     * a count of passes cut off the last batches still unread behind it (HIL-1314). A held worker whose
+     * link is gone is not waited for, and the master's shutdown ceiling covers the wait.
      */
     protected function advanceSecondStopWave(): void
     {
