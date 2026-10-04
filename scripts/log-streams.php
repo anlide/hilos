@@ -222,7 +222,13 @@ return [
         // Anchored: the watchdog quotes daemon-error.log's tail into the container log mid-line.
         'pattern' => '/^\[[^\]]+\] (ERROR: )?WARNING in hilos-log-stream-probe\.php:\d+ - fopen\(\/nonexistent\/hilos-log-stream-probe-warning\)/',
         'lands' => ['daemon.log', 'daemon-error.log'],
-        'never' => ['container-log', 'container-log-stderr', 'daemon-raw.log'],
+        // FIXME(P-481): 'container-log' is out of `never` until P-481 is cured, and goes back with
+        // the cure. Run 0794 (7 lanes) found the probe warning at line 3 of the docker log, run
+        // 0795 (one lane) passed: the master wrote two errors of its own before the probe
+        // ("No suitable regular worker available"), so the watchdog's multi-line quote of
+        // daemon-error.log's tail ("Last daemon output: daemon-error.log: ...") put the warning
+        // at the start of a docker-log line, where the anchor matches. The stream did not move.
+        'never' => ['container-log-stderr', 'daemon-raw.log'],
         'nowhere' => false,
         'empty' => [],
     ],
