@@ -2861,13 +2861,11 @@ FLAKY_SKIP = {
     # fleet host, and a partitioned fleet host has its members re-placed onto its neighbour,
     # so the rows it is judged by must be the ones it does NOT own.
     "13 rt partition converges": "P-169: an owner with no claim hands over nothing",
-    # The two below run on the ecommerce-shop stand now, and both are still parked. The owner's
-    # review of P-441 (2026-09-28) gave paying them off to two pending hotfixes: P-441/1 returns
-    # 19 (every retry it was parked on predates HIL-1162, which fixed exactly that), P-441/2
-    # finds why a recreated node keeps a copy of the fleet statuses it no longer reads and
-    # returns 16. Each is paid off by its line removed and `-- 16` / `-- 19` green on the
-    # ecommerce-shop stand; until then 16 no longer guards HIL-719 and 19 no longer guards
-    # HIL-440.
+    # The one below runs on the ecommerce-shop stand now and is still parked. The owner's
+    # review of P-441 (2026-09-28) gave paying it off to a pending hotfix, P-441/2: find why a
+    # recreated node keeps a copy of the fleet statuses it no longer reads, and return 16. It
+    # is paid off by its line removed and `-- 16` green on the ecommerce-shop stand; until then
+    # 16 no longer guards HIL-719.
     #
     # 16 waits for the fleet rows after a recreate and times out at 180s: red in five full
     # runs over two days and retried in two more, and the snapshot after the timeout is one and
@@ -2875,10 +2873,6 @@ FLAKY_SKIP = {
     # rows.
     "16 recreated node leaves no phantom fleet":
         "P-441/2: a recreated node keeps a copy of the fleet rows it no longer reads",
-    # 19 waits for the victim to name the agents it lost with the killed worker: retried three
-    # times in the same two days, green each time on the second attempt, never red.
-    "19 worker death on a live node":
-        "P-441/1: parked on retries that all predate HIL-1162",
     # 20 is red on the binance-btc-tracker stand - the first stand of a whole demo - for a defect
     # of the demo, not of the scenario: the auth throttle (AuthThrottleAgent, SCOPE NODE) claims
     # hilosAuthAttempts whole on every node, the leader refuses all of them but one, and which
