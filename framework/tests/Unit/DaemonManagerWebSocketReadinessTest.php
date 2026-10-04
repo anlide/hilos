@@ -85,6 +85,12 @@ final class DaemonManagerWebSocketReadinessTest extends TestCase
 
     public function testFollowerOpensDegradedAfterTheSharedTimeout(): void
     {
+        // FIXME(2026-10-04): parked on the owner's word ahead of the HIL-1186 and HIL-1232 full runs,
+        // a flake foreign to both. Red once in a full run (0783, on HIL-1304's own branch) with
+        // "Failed asserting that 0 is identical to 1" at the start count below, and green on the
+        // rerun of the same sha. Paid off by finding what the tick waits on besides the timeout,
+        // this skip removed, and the test green in test:framework:unit.
+        $this->markTestSkipped('FIXME(2026-10-04): flaky - the follower once did not open after the shared timeout (run 0783)');
         $this->cluster('master');
         [$manager, $server] = $this->readyManager();
         $manager->setTimeout(self::READINESS_TIMEOUT_SECONDS);

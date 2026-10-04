@@ -462,6 +462,13 @@ final class SessionToastDeliveryIntegrationTest extends FrameworkIntegrationTest
 
     public function testTheTickTakesTheRowOfASessionWhoseTabsAllClosed(): void
     {
+        // FIXME(2026-10-04): parked on the owner's word ahead of the HIL-1186 and HIL-1232 full runs,
+        // a flake foreign to both. Red once in a full run (0675, 2026-09-30) on "Table
+        // 'hilos-framework-test.hilos_account_deletion' doesn't exist" in the standing read, and
+        // green on the rerun of the same sha - the test database was not all there yet. Paid off by
+        // finding which setup races the schema, this skip removed, and the test green in
+        // test:framework:phpunit.
+        $this->markTestSkipped('FIXME(2026-10-04): flaky - once read a table the test database did not have yet (run 0675)');
         $agent = new SessionToastDeliveryTestAgent();
         $agent->onSignalAgent(
             new AgentSignalData(data: $this->raise()),

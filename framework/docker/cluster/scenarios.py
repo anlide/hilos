@@ -2891,6 +2891,23 @@ FLAKY_SKIP = {
     # this line and run -- 25 on the binance stand to pay off the loan.
     "25 freeze settles on every master":
         "P-456: m2 does not stop hilos_auth_throttle again after the freeze closes",
+    # The three below were parked on the owner's word on 2026-10-04, ahead of the HIL-1186 and
+    # HIL-1232 full runs: timing flakes foreign to both, each red in full runs and green on the
+    # rerun of the same sha. Each is paid off by finding the cause, its line removed, and
+    # `-- <number>` green on the stand it failed on.
+    #
+    # 5, on the binance-btc-tracker stand: red three times (0699, 0726, 0737; last 2026-10-02),
+    # every time with m1's log holding no candidacy line since the leader was killed.
+    "5 leader-kill re-election":
+        "flake: m1 shows no candidacy after the leader is killed (red 3x, last 2026-10-02)",
+    # 8, on the cluster stand: red eleven times (0418 to 0567; last 2026-09-26), every time timed
+    # out at 180s waiting for the majority {m1,m2} to keep one leader while m3 steps down.
+    "8 split-brain prevention":
+        "flake: the majority keeps no single leader within 180s (red 11x, last 2026-09-26)",
+    # 9, on the cluster stand: red once (0350, 2026-09-17), timed out at 120s waiting for s1 to
+    # be seen offline after its daemon died.
+    "9 daemon-crash self-heal":
+        "flake: s1 not seen offline within 120s after its daemon died (red 1x, 2026-09-17)",
 }
 
 
