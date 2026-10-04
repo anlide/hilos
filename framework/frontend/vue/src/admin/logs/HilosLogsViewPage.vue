@@ -12,12 +12,12 @@ reader is up waits beside the pane, and the return control carries its count.
 That control stands in the strip above the pane, in a room taken always (HIL-1024),
 so neither its arrival nor its count moves the pane (styling-rules.md, "The room a
 live message takes"); so nothing ever moves under the reader's eyes, and nothing is
-lost without saying so. The note that a typed search is not applied yet stands
-in the place of the line count, in a cell held at its width always (HIL-1152),
-so it does not move the pane either. The catalog, the address, the read, the buffer and the row
-view-model are the core headless's (hilosLogViewer), including the threshold that
-decides "at the tail" and the wording of the notes — this view owns only the
-markup and the scrolling, so a project mounts it by passing its
+lost without saying so. The note that a typed search is not applied yet stands in
+the place of the line count, in a cell held at its width always (HIL-1152), so it
+does not move the pane either. The catalog, the address, the read, the buffer and
+the row view-model are the core headless's (hilosLogViewer), including the
+threshold that decides "at the tail" and the wording of the notes — this view
+owns only the markup and the scrolling, so a project mounts it by passing its
 HilosLogViewerContext and the React and Angular ports measure the same edge.
 Bootstrap classes only, save the one pre-wrap declaration the pane calls for
 because Bootstrap has no utility for it (styling-rules.md, same exception as
