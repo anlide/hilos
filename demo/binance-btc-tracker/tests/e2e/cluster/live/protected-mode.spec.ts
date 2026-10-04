@@ -71,7 +71,13 @@ async function presentCode(page: Page, code: string): Promise<void> {
   await expect(page.getByTestId('maintenance-pass-form')).toHaveCount(0)
 }
 
-test('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
+// Red on every attempt in run 0806 (HIL-1218, 7 lanes), green alone in one
+// lane (0807) on the same HEAD. The harness recorded leader m3 at term 1; by
+// the time the test began m1 led at term 2, so expectLeaderUnmoved() refused
+// it before its first step - the extra election seconds after the cluster
+// starts (P-459). Parked by the owner on 04.10.2026 (HOTFIX); HIL-1286 pays
+// it off.
+test.fixme('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.
@@ -115,7 +121,13 @@ test('every master shows the stub while the mode is on, and a person signed in o
   }
 })
 
-test("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
+// Red on every attempt in run 0806 (HIL-1218, 7 lanes), green alone in one
+// lane (0807) on the same HEAD. The harness recorded leader m3 at term 1; by
+// the time the test began m1 led at term 2, so expectLeaderUnmoved() refused
+// it before its first step - the extra election seconds after the cluster
+// starts (P-459). Parked by the owner on 04.10.2026 (HOTFIX); HIL-1286 pays
+// it off.
+test.fixme("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.
@@ -180,7 +192,13 @@ test("the named circle walks in on a follower master with the tab it already had
   }
 })
 
-test('a minted code lets a tab on a follower master in, it stays in after a reload onto another master, and a bystander there keeps the form', async ({
+// Red on every attempt in run 0806 (HIL-1218, 7 lanes), green alone in one
+// lane (0807) on the same HEAD. The harness recorded leader m3 at term 1; by
+// the time the test began m1 led at term 2, so expectLeaderUnmoved() refused
+// it before its first step - the extra election seconds after the cluster
+// starts (P-459). Parked by the owner on 04.10.2026 (HOTFIX); HIL-1286 pays
+// it off.
+test.fixme('a minted code lets a tab on a follower master in, it stays in after a reload onto another master, and a bystander there keeps the form', async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.
