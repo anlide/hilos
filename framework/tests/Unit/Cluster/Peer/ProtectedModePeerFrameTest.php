@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
@@ -160,6 +161,7 @@ final class ProtectedModePeerFrameTest extends TestCase
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 3,
             initiatorNodeId: 'node-a',
+            initiatorSessionTokenHash: 'operator-hash',
         ));
 
         $restored = PeerProtectedModeQuiesceDTO::fromJson($frame->toJson());
@@ -169,6 +171,7 @@ final class ProtectedModePeerFrameTest extends TestCase
         $this->assertSame('backup', $restored->data->initiatorAgentType);
         $this->assertSame(3, $restored->data->initiatorAgentIndex);
         $this->assertSame('node-a', $restored->data->initiatorNodeId);
+        $this->assertSame('operator-hash', $restored->data->initiatorSessionTokenHash);
     }
 
     public function testQuiesceFrameKeepsNullAgentIndex(): void
@@ -178,11 +181,42 @@ final class ProtectedModePeerFrameTest extends TestCase
             initiatorAgentType: 'backup',
             initiatorAgentIndex: null,
             initiatorNodeId: 'node-a',
+            initiatorSessionTokenHash: null,
         ));
 
         $restored = PeerProtectedModeQuiesceDTO::fromArray($frame->toArray());
 
         $this->assertNull($restored->data->initiatorAgentIndex);
+        $this->assertNull($restored->data->initiatorSessionTokenHash);
+    }
+
+    public function testAdmissionFrameRoundTripsAndDispatchesThroughTheWireParser(): void
+    {
+        $frame = new PeerProtectedModeAdmitDTO('pass-hash', 'session-hash');
+
+        $restored = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerProtectedModeAdmitDTO::class, $restored);
+        $this->assertSame('pass-hash', $restored->passHash);
+        $this->assertSame('session-hash', $restored->sessionTokenHash);
+    }
+
+    public function testAdmissionFrameRejectsMissingOrEmptyHashes(): void
+    {
+        foreach ([
+            [PeerProtectedModeAdmitDTO::TYPE => PeerProtectedModeAdmitDTO::MESSAGE_TYPE,
+                PeerProtectedModeAdmitDTO::FIELD_PASS_HASH => 'pass-hash'],
+            [PeerProtectedModeAdmitDTO::TYPE => PeerProtectedModeAdmitDTO::MESSAGE_TYPE,
+                PeerProtectedModeAdmitDTO::FIELD_PASS_HASH => 'pass-hash',
+                PeerProtectedModeAdmitDTO::FIELD_SESSION_TOKEN_HASH => ''],
+        ] as $frame) {
+            try {
+                PeerProtectedModeAdmitDTO::fromArray($frame);
+                $this->fail('Malformed admission frame was accepted.');
+            } catch (PeerTransportException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     public function testQuiesceFrameRejectsNonObjectPayload(): void
@@ -222,6 +256,7 @@ final class ProtectedModePeerFrameTest extends TestCase
             initiatorAgentType: 'backup',
             initiatorAgentIndex: 1,
             initiatorNodeId: 'node-a',
+            initiatorSessionTokenHash: null,
         ));
 
         $parsed = PeerDTO::fromWire($frame->toJson());

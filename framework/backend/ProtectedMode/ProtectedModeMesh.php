@@ -157,6 +157,23 @@ interface ProtectedModeMesh
     public function broadcastPass(string $agentType, ?int $agentIndex, string $passHash): void;
 
     /**
+     * Forwards a code admission from the 101 master to the leader (HIL-1305).
+     *
+     * @param string $leaderNodeId Node id of the current leader
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     */
+    public function sendAdmit(string $leaderNodeId, string $passHash, string $sessionTokenHash): void;
+
+    /**
+     * Broadcasts a code admission from the leader to every follower master (HIL-1305).
+     *
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     */
+    public function broadcastAdmit(string $passHash, string $sessionTokenHash): void;
+
+    /**
      * Forwards the circle photographed on this initiator node to the leader.
      *
      * @param string $leaderNodeId Node id of the current leader

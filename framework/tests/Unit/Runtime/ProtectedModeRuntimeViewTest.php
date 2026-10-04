@@ -91,7 +91,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH);
+        $view->actions->enterActivating($this->freeze()->withInitiatorSessionTokenHash(self::INITIATOR_SESSION_HASH), self::INITIATOR_KEY);
 
         $view->actions->enterInactive();
 
@@ -107,7 +107,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
 
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, self::INITIATOR_SESSION_HASH);
+        $view->actions->enterActivating($this->freeze()->withInitiatorSessionTokenHash(self::INITIATOR_SESSION_HASH), self::INITIATOR_KEY);
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $view->phase);
         $this->assertSame(self::INITIATOR_SESSION_HASH, $view->initiatorSessionTokenHash);
@@ -125,7 +125,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
 
         $view->actions->enterActive();
 
@@ -138,7 +138,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
 
         $view->actions->enterDeactivating();
 
@@ -154,7 +154,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
 
         $view->actions->enterInactive();
@@ -176,7 +176,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
 
         $view->actions->enterVerifying();
@@ -197,7 +197,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
 
@@ -217,7 +217,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->admitCircle(new VerifierCircleSnapshot(2, ['session-hash-circle']));
         $view->actions->enterVerifying();
 
@@ -234,7 +234,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->admitCircle(new VerifierCircleSnapshot(2, ['session-hash-circle']));
         $view->actions->enterVerifying();
 
@@ -254,7 +254,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
 
@@ -272,7 +272,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
 
@@ -291,7 +291,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
@@ -314,13 +314,13 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
         $view->actions->admitSession('session-hash-1');
 
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
 
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $view->phase);
         $this->assertSame([], $view->passHashes);
@@ -332,7 +332,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
         $state = StateProtectedModeRuntime::create();
         $view = $this->viewWithActions($state);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
         $view->actions->enterActive();
         $view->actions->enterVerifying();
         $view->actions->issuePass('hash-a');
@@ -351,7 +351,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $view = $this->viewWithActions($state);
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
-        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY, null);
+        $view->actions->enterActivating($this->freeze(), self::INITIATOR_KEY);
     }
 
     /**
@@ -398,7 +398,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
      */
     private function freeze(): ProtectedModeQuiesceData
     {
-        return new ProtectedModeQuiesceData('restore', 'backup', 2, 'node-a');
+        return new ProtectedModeQuiesceData('restore', 'backup', 2, 'node-a', null);
     }
 
     /**

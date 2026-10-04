@@ -53,6 +53,8 @@ use Hilos\Utils\Logger;
  *   The initiator's own node relays the leader's {@see onReady()} to its agent. The verifier circle
  *   photographed at the freeze is
  *   written on a follower's row from the leader's frame ({@see onCircle()}), as a pass is.
+ *   A code admission follows that pass from its 101 master through the leader to every follower
+ *   ({@see onAdmit()}), so each master's row gives the same browser the same verdict (HIL-1305).
  *
  * A single-node cluster has no followers, so the leader activates the moment its own roster has
  * stopped. An installation with cluster mode off has no coordinator at all and freezes through
@@ -337,6 +339,30 @@ final class ClusterProtectedMode implements
     }
 
     /**
+     * Records on the 101 master first, then sends the earned admission through the leader.
+     *
+     * @param string $passHash Hash of the pass accepted at 101
+     * @param string $sessionTokenHash Hash of the verifier session
+     * @throws EnvException When leader lookup is unavailable
+     */
+    public function requestAdmit(string $passHash, string $sessionTokenHash): void
+    {
+        if ($this->isLeader) {
+            $this->onAdmit($this->selfNodeId, $passHash, $sessionTokenHash);
+            return;
+        }
+
+        $this->executor->admitVerifier($sessionTokenHash);
+        $leaderNodeId = $this->mesh->leaderNodeId();
+        if ($leaderNodeId === null) {
+            Logger::warning("Protected mode: the admission of a verifier stays on node '{$this->selfNodeId}' — no leader is known");
+            return;
+        }
+
+        $this->mesh->sendAdmit($leaderNodeId, $passHash, $sessionTokenHash);
+    }
+
+    /**
      * Entry point on the initiator's own node: routes the photographed circle to every master.
      *
      * The photograph is fanned the way a pass is - this node to the leader, the leader to every
@@ -457,9 +483,10 @@ final class ClusterProtectedMode implements
             $data->initiatorAgentType,
             $data->initiatorAgentIndex,
             $data->initiatorNodeId,
+            $data->initiatorSessionTokenHash,
         );
         $this->readyOwed = true;
-        $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
+        $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey);
     }
 
     /**
@@ -547,12 +574,10 @@ final class ClusterProtectedMode implements
 
         $this->freezingLeaderId = $fromNodeId;
         $this->readyRelayed = false;
-        // The follower is handed neither half of the initiator identity: the accept key is a
-        // welcome-path concern of the node that minted it, and the session hash is deliberately
-        // recorded on one node only, so a browser reaching another node of the cluster meets the
-        // stub exactly as it does today. The quiesced report waits for the roster this starts
-        // stopping, and leaves from onRosterStopped().
-        $this->executor->enterActivating($data, null, null);
+        // The descriptor carries the operator's session hash to this master, where its next tab
+        // may connect (HIL-1305). The accept key remains on the node of its socket. The quiesced
+        // report waits for this roster to stop and leaves from onRosterStopped().
+        $this->executor->enterActivating($data, null);
     }
 
     /**
@@ -824,6 +849,63 @@ final class ClusterProtectedMode implements
     }
 
     /**
+     * Admits only a pass minted in the current verification window, then forwards the verdict.
+     *
+     * @param string $fromNodeId Node id that sent the admission
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     * @throws EnvException When leader lookup is unavailable
+     */
+    public function onAdmit(string $fromNodeId, string $passHash, string $sessionTokenHash): void
+    {
+        if ($this->obeysLeader($fromNodeId)) {
+            $this->followLeader($fromNodeId);
+            if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+                Logger::warning("Protected mode: dropping admission from '{$fromNodeId}' — node '{$this->selfNodeId}' is not verifying");
+                return;
+            }
+            if (!$this->passStandsOnRow($passHash)) {
+                Logger::warning("Protected mode: dropping admission from '{$fromNodeId}' — its code was not minted in this window");
+                return;
+            }
+
+            $this->executor->admitVerifier($sessionTokenHash);
+            return;
+        }
+
+        if (!$this->isLeader || $this->activeFreeze === null) {
+            Logger::warning("Protected mode: dropping admission from '{$fromNodeId}' — no freeze is being led here");
+            return;
+        }
+        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
+            Logger::warning("Protected mode: dropping admission from '{$fromNodeId}' — the mode is not verifying");
+            return;
+        }
+        if (!$this->passStandsOnRow($passHash)) {
+            Logger::warning("Protected mode: dropping admission from '{$fromNodeId}' — its code was not minted in this window");
+            return;
+        }
+
+        $this->executor->admitVerifier($sessionTokenHash);
+        $this->mesh->broadcastAdmit($passHash, $sessionTokenHash);
+    }
+
+    /**
+     * @param string $passHash Hash of the pass to find on this master's row
+     * @return bool Whether this window minted that pass
+     */
+    private function passStandsOnRow(string $passHash): bool
+    {
+        foreach ($this->runtimeView()?->passHashes ?? [] as $minted) {
+            if (hash_equals($minted, $passHash)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Records the photographed circle on this node's row, and on the leader fans it to every master.
      *
      * The phase is checked on neither half. A follower reaches `active` only on its leader's settled
@@ -889,7 +971,8 @@ final class ClusterProtectedMode implements
         }
 
         $this->readyOwed = false;
-        $this->enterRound($this->activeFreeze, $view->initiatorAcceptKey, $view->initiatorSessionTokenHash);
+        $this->activeFreeze = $this->activeFreeze->withInitiatorSessionTokenHash($view->initiatorSessionTokenHash);
+        $this->enterRound($this->activeFreeze, $view->initiatorAcceptKey);
     }
 
     /**
@@ -904,19 +987,17 @@ final class ClusterProtectedMode implements
      * @param ProtectedModeQuiesceData $freeze Freeze this round is entering
      * @param ?string $initiatorAcceptKey Accept key of the initiator connection when the leader
      *                                    freezes itself; null when the initiator sits on another node
-     * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     private function enterRound(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
-        ?string $initiatorSessionTokenHash,
     ): void {
         $this->pendingNodes = array_fill_keys([...$this->mesh->followerMasterNodeIds(), $this->selfNodeId], true);
         $this->active = false;
 
-        $this->executor->enterActivating($freeze, $initiatorAcceptKey, $initiatorSessionTokenHash);
+        $this->executor->enterActivating($freeze, $initiatorAcceptKey);
         $this->mesh->broadcastQuiesce($freeze);
     }
 
@@ -976,7 +1057,8 @@ final class ClusterProtectedMode implements
 
         if ($this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING)) {
             $this->readyOwed = true;
-            $this->enterRound($freeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
+            $this->activeFreeze = $freeze->withInitiatorSessionTokenHash($data->initiatorSessionTokenHash);
+            $this->enterRound($this->activeFreeze, $data->initiatorAcceptKey);
             return;
         }
 
@@ -1215,6 +1297,7 @@ final class ClusterProtectedMode implements
             $initiatorAgentType,
             $view->initiatorAgentIndex,
             $view->initiatorNodeId,
+            $view->initiatorSessionTokenHash,
         );
         // A row past activating means the round closed under the previous leader: the freeze is
         // established and the initiator has been told so. Re-collecting there would hand out a

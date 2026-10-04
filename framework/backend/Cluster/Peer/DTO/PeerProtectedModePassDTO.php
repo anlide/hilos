@@ -15,9 +15,8 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
  * key: the clear value exists in the operator's terminal and in the verifier's browser and nowhere
  * else. Like {@see PeerProtectedModeVerifyDTO} it travels both ways - initiator to leader, then
  * leader to every follower - so each node holds the same {@see ProtectedModeRuntime::$passHashes}
- * and a verifier may present its key to whichever node it lands on. What is deliberately NOT fanned
- * is the admission the pass later earns: an accept key means something only on the node holding
- * that connection.
+ * and a verifier may present its key to whichever node it lands on. The resulting admission
+ * travels in its own {@see PeerProtectedModeAdmitDTO} frame (HIL-1305).
  */
 final class PeerProtectedModePassDTO extends PeerDTO
 {

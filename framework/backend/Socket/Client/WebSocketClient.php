@@ -892,7 +892,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $presented = hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass);
         foreach ($freeze->passHashes as $minted) {
             if (hash_equals($minted, $presented)) {
-                $this->protectedModeAdmissionRecorder?->admitProtectedModeSession($this->sessionTokenHash);
+                $this->protectedModeAdmissionRecorder?->admitProtectedModeSession($minted, $this->sessionTokenHash);
                 return;
             }
         }

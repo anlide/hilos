@@ -203,6 +203,108 @@ def entry_upgrade(stand, master=None):
     return Outcome(0, f"{status} {node}\n", "")
 
 
+# Read the 101 and its first, unmasked WebSocket text frame inside the stand's CLI container.
+# PHP is already in that image; this uses the same TLS entry and cookie as a browser without
+# adding a one-off script to the mounted repository (HIL-1305).
+ENTRY_WELCOME_PHP = r'''
+$entry = $argv[1];
+$master = $argv[2];
+$cookieName = $argv[3];
+$token = $argv[4];
+$pass = $argv[5];
+$context = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+$socket = stream_socket_client("tls://{$entry}:443", $number, $error, 5, STREAM_CLIENT_CONNECT, $context);
+if ($socket === false) { fwrite(STDERR, "entry welcome: {$error}\n"); exit(1); }
+stream_set_timeout($socket, 5);
+$path = '/ws' . ($pass === '' ? '' : '?hilosPass=' . rawurlencode($pass));
+$cookies = 'hilos_stand_master=' . $master . ($token === '' ? '' : '; ' . $cookieName . '=' . $token);
+$request = "GET {$path} HTTP/1.1\r\nHost: {$entry}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+    . "Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nCookie: {$cookies}\r\n\r\n";
+fwrite($socket, $request);
+$raw = '';
+while (($boundary = strpos($raw, "\r\n\r\n")) === false) {
+    $piece = fread($socket, 4096);
+    if ($piece === false || $piece === '') { fwrite(STDERR, "entry welcome: no 101 response\n"); exit(1); }
+    $raw .= $piece;
+}
+$headers = substr($raw, 0, $boundary);
+$buffer = substr($raw, $boundary + 4);
+if (!preg_match('/^HTTP\/1\.[01] 101/m', $headers)) {
+    fwrite(STDERR, "entry welcome: upgrade refused: " . strtok($headers, "\r\n") . "\n"); exit(1);
+}
+$read = static function (int $length) use ($socket, &$buffer): string {
+    while (strlen($buffer) < $length) {
+        $piece = fread($socket, $length - strlen($buffer));
+        if ($piece === false || $piece === '') { fwrite(STDERR, "entry welcome: incomplete frame\n"); exit(1); }
+        $buffer .= $piece;
+    }
+    $part = substr($buffer, 0, $length);
+    $buffer = substr($buffer, $length);
+    return $part;
+};
+$first = ord($read(1));
+$second = ord($read(1));
+if (($first & 15) !== 1 || ($second & 128) !== 0) {
+    fwrite(STDERR, "entry welcome: first frame is not unmasked text\n"); exit(1);
+}
+$length = $second & 127;
+if ($length === 126) { $length = unpack('n', $read(2))[1]; }
+if ($length === 127) {
+    $words = unpack('N2', $read(8));
+    $length = $words[1] * 4294967296 + $words[2];
+}
+$frame = json_decode($read($length), true);
+if (!is_array($frame) || ($frame['type'] ?? null) !== 'handshake'
+    || !is_array($frame['data'] ?? null) || !is_array($frame['data']['protectedMode'] ?? null)) {
+    fwrite(STDERR, "entry welcome: malformed handshake frame\n"); exit(1);
+}
+$cookieName = $frame['data']['sessionCookieName'] ?? null;
+if (!is_string($cookieName) || $cookieName === '') {
+    fwrite(STDERR, "entry welcome: no session cookie name\n"); exit(1);
+}
+if ($token === '') {
+    $pattern = '/^Set-Cookie:\s*' . preg_quote($cookieName, '/') . '=([^;\r\n]+)/im';
+    if (!preg_match($pattern, $headers, $match)) {
+        fwrite(STDERR, "entry welcome: no session cookie\n"); exit(1);
+    }
+    $token = $match[1];
+}
+preg_match('/^X-Hilos-Stand-Master:\s*([^\r\n]+)/im', $headers, $upstream);
+echo json_encode(['active' => $frame['data']['protectedMode']['active'] ?? null,
+    'cookieName' => $cookieName, 'token' => $token, 'upstream' => $upstream[1] ?? '']);
+'''
+
+_session_cookie_names = {}
+
+
+def entry_welcome(stand, master, token=None, pass_code=None):
+    """Read the real 101 welcome through the entry and report this master's verdict (HIL-1305)."""
+    if stand.entry is None:
+        raise StandRefused(f"{stand.project} has no browser entry (x-hilos-cluster.entry)")
+    if master not in stand.masters:
+        raise StandRefused("usage: cluster entry-welcome <master> [<session-token>] [<pass>]")
+    cookie_name = _session_cookie_names.get(stand.project, "")
+    if token is not None and not cookie_name:
+        probe = entry_welcome(stand, master)
+        if probe.code != 0:
+            return probe
+        cookie_name = _session_cookie_names[stand.project]
+    answer = _run(["docker", "exec", stand.cli_container, "php", "-r", ENTRY_WELCOME_PHP,
+                   stand.entry.ip, master, cookie_name, token or "", pass_code or ""])
+    if answer.code != 0:
+        return Outcome(answer.code, "", answer.err or "entry welcome failed")
+    try:
+        data = json.loads(answer.out)
+    except json.JSONDecodeError:
+        return Outcome(1, "", f"entry welcome gave malformed JSON: {answer.out!r}")
+    responder = next((node_id for node_id in stand.masters
+                      if data.get("upstream", "").startswith(stand.member(node_id).ip + ":")), None)
+    if responder != master or not isinstance(data.get("active"), bool) or not data.get("token"):
+        return Outcome(1, "", f"entry welcome from {master} gave an invalid verdict: {data!r}")
+    _session_cookie_names[stand.project] = data["cookieName"]
+    return Outcome(0, f"{master} {'stub' if data['active'] else 'inside'} {data['token']}\n", "")
+
+
 def direct_upgrade(stand, node_id):
     """Try a node's WebSocket port directly, reporting its status or refusal."""
     node = stand.member(node_id)
@@ -540,6 +642,7 @@ NODE_COMMANDS = {
     "partition": partition,
     "heal": heal,
     "entry-upgrade": entry_upgrade,
+    "entry-welcome": entry_welcome,
     "direct-upgrade": direct_upgrade,
     "entry-hold": entry_hold,
 }
@@ -559,6 +662,10 @@ def execute(stand, command, *args):
         if len(args) > 1:
             raise StandRefused("usage: cluster entry-upgrade [<master>]")
         return entry_upgrade(stand, *args)
+    if command == "entry-welcome":
+        if not 1 <= len(args) <= 3:
+            raise StandRefused("usage: cluster entry-welcome <master> [<session-token>] [<pass>]")
+        return entry_welcome(stand, *args)
     if command == "direct-upgrade":
         if len(args) != 1:
             raise StandRefused("usage: cluster direct-upgrade <node>")

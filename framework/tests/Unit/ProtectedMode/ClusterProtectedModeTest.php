@@ -204,7 +204,7 @@ final class ClusterProtectedModeTest extends TestCase
     public function testAFollowerIgnoresARefreezeFromItsLeader(): void
     {
         // The leader closes the window with its quiesce round, and sends no follower this frame.
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->stopTheRoster();
         $this->openTheVerificationWindowOnTheRuntimeRow();
         $this->executor->calls = [];
@@ -218,7 +218,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerWritesActiveOnItsLeadersSettled(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->stopTheRoster();
         $this->executor->calls = [];
 
@@ -229,7 +229,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerIgnoresASettledFromAnotherNode(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->stopTheRoster();
         $this->executor->calls = [];
 
@@ -242,7 +242,7 @@ final class ClusterProtectedModeTest extends TestCase
     {
         // The frame rides every link to the node: a copy over the second link arrives on active,
         // with the circle already on the row, and writing active again would clear it.
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->stopTheRoster();
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->executor->calls = [];
@@ -600,7 +600,7 @@ final class ClusterProtectedModeTest extends TestCase
         // a freeze that already stands sends no second quiesce, which is the other place the
         // guard is cleared, so the answer to the next operation would be swallowed.
         $this->mesh->leader = 'node-x';
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF, null));
         $this->coordinator->onReady('node-x');
         $this->executor->calls = [];
         $this->mesh->calls = [];
@@ -629,7 +629,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testFollowerFreezesLocallyAndReportsQuiescedOnceItsRosterHasStopped(): void
     {
-        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
 
         $this->coordinator->onQuiesce('node-x', $freeze);
 
@@ -645,7 +645,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testFollowerReleasesOnLift(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
@@ -663,7 +663,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testFollowerIgnoresLiftFromANodeOtherThanItsFreezingLeader(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
@@ -674,7 +674,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testFollowerFollowsNewLeaderForRepeatRoundAndLift(): void
     {
-        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
         $this->coordinator->onQuiesce('node-x', $freeze);
         $this->stopTheRoster();
         $this->openTheVerificationWindowOnTheRuntimeRow();
@@ -698,7 +698,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testFollowerAcceptsWindowFramesAndReadyFromNewLeader(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF, null));
         $this->stopTheRoster();
         $this->mesh->leader = 'node-y';
         $this->executor->calls = [];
@@ -738,7 +738,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->mesh->leader = 'node-y';
 
-        $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->assertSame([], $this->executor->calls);
 
         $this->coordinator->onLift('node-y');
@@ -756,7 +756,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testFollowerIgnoresARepeatQuiesceWhileAlreadyFrozen(): void
     {
-        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
         $this->coordinator->onQuiesce('node-x', $freeze);
         $this->executor->calls = [];
         $this->mesh->calls = [];
@@ -769,7 +769,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerInsideTheWindowEntersAgainOnItsLeadersQuiesceAndReportsOnceStopped(): void
     {
-        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
         $this->coordinator->onQuiesce('node-x', $freeze);
         $this->stopTheRoster();
         $this->openTheVerificationWindowOnTheRuntimeRow();
@@ -788,7 +788,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerInsideTheWindowIgnoresAQuiesceFromAnotherNode(): void
     {
-        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
         $this->coordinator->onQuiesce('node-x', $freeze);
         $this->stopTheRoster();
         $this->openTheVerificationWindowOnTheRuntimeRow();
@@ -803,7 +803,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerClosedBackIgnoresARepeatQuiesceFromItsLeader(): void
     {
-        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b');
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null);
         $this->coordinator->onQuiesce('node-x', $freeze);
         $this->stopTheRoster();
         $this->settleTheFreezeOnTheRuntimeRow();
@@ -818,7 +818,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testInitiatorNodeRelaysReadyToItsAgentOnceItsFreezingLeaderConfirms(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF, null));
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
@@ -829,7 +829,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testInitiatorNodeIgnoresReadyFromANodeOtherThanItsFreezingLeader(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF, null));
         $this->executor->calls = [];
 
         $this->coordinator->onReady('node-y');
@@ -839,7 +839,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testInitiatorNodeRelaysReadyOnlyOnceForRepeatedConfirmations(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, self::SELF, null));
         $this->executor->calls = [];
 
         $this->coordinator->onReady('node-x');
@@ -971,7 +971,7 @@ final class ClusterProtectedModeTest extends TestCase
     {
         // The other end of the same broadcast: a follower records what the leader minted and owes
         // its own frozen browsers the same one announcement, but has nobody to pass it to.
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->openTheVerificationWindowOnTheRuntimeRow();
         $this->executor->calls = [];
@@ -984,6 +984,126 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->assertSame(['hash-a', 'hash-b'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
         $this->assertSame(['announcePassIssued'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testQuiesceCarriesTheOperatorSessionHashToTheFollower(): void
+    {
+        $freeze = new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', 'operator-hash');
+
+        $this->coordinator->onQuiesce('node-x', $freeze);
+
+        $this->assertSame('operator-hash', $this->executor->freeze?->initiatorSessionTokenHash);
+        $this->assertNull($this->executor->activatingAcceptKey);
+    }
+
+    public function testLeaderBroadcastsTheOperatorsSessionHashWithTheFreeze(): void
+    {
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', new ProtectedModeEnableSignalData(
+            'restore', 'accept-9', 'operator-hash', 'backup', 0, 'node-b',
+        ));
+
+        $this->assertSame('operator-hash', $this->mesh->lastQuiesce?->initiatorSessionTokenHash);
+        $this->assertSame('operator-hash', $this->executor->activatingSessionTokenHash);
+    }
+
+    public function testRepeatEntryCarriesTheNewOperatorSessionHash(): void
+    {
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->stopTheRoster();
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+
+        $this->coordinator->onEnable('node-b', new ProtectedModeEnableSignalData(
+            'restore', 'accept-new', 'new-operator-hash', 'backup', 0, 'node-b',
+        ));
+
+        $this->assertSame('new-operator-hash', $this->mesh->lastQuiesce?->initiatorSessionTokenHash);
+        $this->assertSame('new-operator-hash', $this->executor->activatingSessionTokenHash);
+    }
+
+    public function testPromotedLeaderClosesTheWindowWithTheOperatorFromItsRow(): void
+    {
+        $this->settleTheFreezeOnTheRuntimeRow('accept-9', 'operator-hash');
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->coordinator->onBecameLeader();
+
+        $this->coordinator->onRefreeze('node-b', 'backup', 0);
+
+        $this->assertSame('operator-hash', $this->mesh->lastQuiesce?->initiatorSessionTokenHash);
+    }
+
+    public function testLeaderAdmissionChecksTheCurrentPassAndBroadcasts(): void
+    {
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->mintPassOnRuntimeRow('pass-hash');
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->requestAdmit('pass-hash', 'verifier-hash');
+
+        $this->assertSame(['admitVerifier'], $this->executor->calls);
+        $this->assertSame([['broadcastAdmit', 'pass-hash']], $this->mesh->calls);
+
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+        $this->coordinator->onAdmit('node-b', 'old-pass', 'other-session');
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testFollowerRecordsAdmissionLocallyThenForwardsItToLeader(): void
+    {
+        $this->mesh->leader = 'node-x';
+
+        $this->coordinator->requestAdmit('pass-hash', 'verifier-hash');
+
+        $this->assertSame(['admitVerifier'], $this->executor->calls);
+        $this->assertSame([['sendAdmit', 'node-x']], $this->mesh->calls);
+    }
+
+    public function testAdmissionStaysOnThePresentingMasterWithoutALeader(): void
+    {
+        $this->coordinator->requestAdmit('pass-hash', 'verifier-hash');
+
+        $this->assertSame(['admitVerifier'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testFollowerAcceptsOnlyItsLeadersAdmissionForACurrentPass(): void
+    {
+        $this->mesh->leader = 'node-x';
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->openTheVerificationWindowOnTheRuntimeRow();
+        $this->mintPassOnRuntimeRow('pass-hash');
+        $this->executor->calls = [];
+
+        $this->coordinator->onAdmit('node-y', 'pass-hash', 'wrong-leader');
+        $this->coordinator->onAdmit('node-x', 'old-pass', 'old-code');
+        $this->assertSame([], $this->executor->calls);
+
+        $this->coordinator->onAdmit('node-x', 'pass-hash', 'verifier-hash');
+        $this->assertSame(['admitVerifier'], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+    }
+
+    public function testAdmissionOutsideTheVerificationWindowIsDropped(): void
+    {
+        $this->coordinator->onBecameLeader();
+        $this->coordinator->onEnable('node-b', $this->enableData());
+        $this->settleTheFreezeOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->mesh->calls = [];
+
+        $this->coordinator->onAdmit('node-b', 'pass-hash', 'verifier-hash');
+
+        $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
     }
 
@@ -1028,7 +1148,7 @@ final class ClusterProtectedModeTest extends TestCase
         // the topology that has one. The own row is written before the leader is asked to fan it,
         // so the node the initiator sits on does not wait on a round trip.
         $this->mesh->leader = 'node-x';
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a', null));
         $this->mesh->calls = [];
 
         $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle($this->circleData()));
@@ -1041,7 +1161,7 @@ final class ClusterProtectedModeTest extends TestCase
     {
         // Nobody to fan it: the rest of the cluster lets the circle in by code alone, but the node
         // the initiator sits on still recognizes the members already attached to it.
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-a', null));
         $this->mesh->calls = [];
 
         $this->withDaemonTruthSource(fn() => $this->coordinator->requestCircle($this->circleData()));
@@ -1074,7 +1194,7 @@ final class ClusterProtectedModeTest extends TestCase
 
     public function testAFollowerWritesTheCircleItsFreezingLeaderFansAndPassesItNowhere(): void
     {
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->mesh->calls = [];
 
         $this->withDaemonTruthSource(fn() => $this->coordinator->onCircle('node-x', 'backup', 0, $this->circleSnapshot()));
@@ -1119,7 +1239,7 @@ final class ClusterProtectedModeTest extends TestCase
     {
         // A frame that outlived its freeze: this node is no longer frozen and leads nothing. Run
         // without the truth source on purpose: reaching the row here would throw.
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->coordinator->onLift('node-x');
         $this->mesh->calls = [];
 
@@ -1227,7 +1347,7 @@ final class ClusterProtectedModeTest extends TestCase
         // to the initiator and run the destructive operation across a node still serving clients.
         Hilos::$rt = null;
 
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
 
         $this->assertSame([], $this->executor->calls);
         $this->assertSame([], $this->mesh->calls);
@@ -1241,7 +1361,7 @@ final class ClusterProtectedModeTest extends TestCase
         $followerMesh = new FakeProtectedModeMesh();
         $followerExecutor = new FakeProtectedModeExecutor();
         $follower = new ClusterProtectedMode('node-b', $followerMesh, $followerExecutor);
-        $follower->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $follower->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $followerExecutor->calls = [];
         $followerMesh->leader = self::SELF;
 
@@ -1280,8 +1400,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b', 'node-c'];
         $this->withDaemonTruthSource(function (): void {
             Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterActivating(
-                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
-                null,
+                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null),
                 null,
             );
         });
@@ -1298,8 +1417,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->mesh->followers = ['node-b'];
         $this->withDaemonTruthSource(function (): void {
             Hilos::$rt?->hilosProtectedModeRuntime?->actions->enterActivating(
-                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
-                null,
+                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null),
                 null,
             );
         });
@@ -1333,7 +1451,7 @@ final class ClusterProtectedModeTest extends TestCase
         // follower-side marker would outlive the lift - only a lift from the same leader clears it,
         // and a leader sends itself none - and the next freeze would find this node "already
         // frozen" and leave it serving clients through somebody else's restore.
-        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'));
+        $this->coordinator->onQuiesce('node-x', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null));
         $this->settleTheFreezeOnTheRuntimeRow();
         $this->coordinator->onBecameLeader();
         $this->coordinator->onDisable('node-b', 'backup', 0);
@@ -1342,7 +1460,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->executor->calls = [];
         $this->mesh->calls = [];
 
-        $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-c'));
+        $this->coordinator->onQuiesce('node-y', new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-c', null));
         $this->stopTheRoster();
 
         $this->assertSame(['enterActivating'], $this->executor->calls);
@@ -1384,9 +1502,8 @@ final class ClusterProtectedModeTest extends TestCase
 
         $this->withDaemonTruthSource(static function () use ($view, $acceptKey, $sessionTokenHash): void {
             $view->actions->enterActivating(
-                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'),
+                new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', $sessionTokenHash),
                 $acceptKey,
-                $sessionTokenHash,
             );
             $view->actions->enterActive();
         });
@@ -1431,7 +1548,7 @@ final class ClusterProtectedModeTest extends TestCase
         }
 
         $this->withDaemonTruthSource(static function () use ($view): void {
-            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b'), null, null);
+            $view->actions->enterActivating(new ProtectedModeQuiesceData('restore', 'backup', 0, 'node-b', null), null);
         });
         $this->coordinator->onRosterStopped();
     }
@@ -1447,6 +1564,19 @@ final class ClusterProtectedModeTest extends TestCase
         }
 
         $this->withDaemonTruthSource(static fn() => $view->actions->enterVerifying());
+    }
+
+    /**
+     * @param string $passHash Pass hash minted in the open window
+     */
+    private function mintPassOnRuntimeRow(string $passHash): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        $this->withDaemonTruthSource(static fn() => $view->actions->issuePass($passHash));
     }
 
     /**
@@ -1561,6 +1691,8 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
     /** @var array<array{0: string, 1: ?string}> Ordered [method, argument] pairs sent */
     public array $calls = [];
 
+    public ?ProtectedModeQuiesceData $lastQuiesce = null;
+
     public function __construct()
     {
         $this->location = AgentLocation::onNode('node-b');
@@ -1593,6 +1725,7 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
 
     public function broadcastQuiesce(ProtectedModeQuiesceData $data): void
     {
+        $this->lastQuiesce = $data;
         $this->calls[] = ['broadcastQuiesce', $data->operation];
     }
 
@@ -1641,6 +1774,16 @@ final class FakeProtectedModeMesh implements ProtectedModeMesh
         $this->calls[] = ['broadcastPass', $passHash];
     }
 
+    public function sendAdmit(string $leaderNodeId, string $passHash, string $sessionTokenHash): void
+    {
+        $this->calls[] = ['sendAdmit', $leaderNodeId];
+    }
+
+    public function broadcastAdmit(string $passHash, string $sessionTokenHash): void
+    {
+        $this->calls[] = ['broadcastAdmit', $passHash];
+    }
+
     public function sendCircle(string $leaderNodeId, string $agentType, ?int $agentIndex, VerifierCircleSnapshot $snapshot): void
     {
         $this->calls[] = ['sendCircle', $leaderNodeId];
@@ -1676,14 +1819,16 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     /** @var ?string Session token hash passed to the most recent enterActivating call */
     public ?string $activatingSessionTokenHash = null;
 
+    public ?ProtectedModeQuiesceData $freeze = null;
+
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
-        ?string $initiatorSessionTokenHash,
     ): void {
         $this->calls[] = 'enterActivating';
         $this->activatingAcceptKey = $initiatorAcceptKey;
-        $this->activatingSessionTokenHash = $initiatorSessionTokenHash;
+        $this->activatingSessionTokenHash = $freeze->initiatorSessionTokenHash;
+        $this->freeze = $freeze;
     }
 
     public function enterActive(): void
@@ -1709,6 +1854,11 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
     public function announcePassIssued(): void
     {
         $this->calls[] = 'announcePassIssued';
+    }
+
+    public function admitVerifier(string $sessionTokenHash): void
+    {
+        $this->calls[] = 'admitVerifier';
     }
 
     public function enterInactive(): void

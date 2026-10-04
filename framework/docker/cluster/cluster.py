@@ -21,6 +21,7 @@ directory; a demo calls this from its composer scripts)
   inspect-local <node> the same, asked from inside the node's own container
   client <node> <cmd> [args]  run a test:cluster:client:* command on a node
   entry-upgrade [<master>]  upgrade through the stand entry (scenario 33, HIL-1304)
+  entry-welcome <master> [<token>] [<pass>]  welcome verdict through the stand entry (scenario 34, HIL-1305)
   direct-upgrade <node>    upgrade directly on a node (scenario 33, HIL-1304)
   entry-hold <master> up|down  keep or close a socket through the entry (scenario 33, HIL-1304)
   kill <node>          docker kill -9 a node container (simulate node-down)
@@ -60,7 +61,7 @@ from stand import StandRefused, load_stand  # noqa: E402
 REFUSED = 2
 
 COMMANDS = ("up", "down", "restart", "status", "status-json", "inspect", "inspect-local", "client",
-            "entry-upgrade", "direct-upgrade", "entry-hold",
+            "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
             "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "scenarios")
 

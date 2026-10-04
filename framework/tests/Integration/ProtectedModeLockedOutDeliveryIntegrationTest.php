@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Hilos\Cluster\ClientLocation;
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -12,6 +14,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
@@ -84,6 +87,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
     {
         RtTruthSourceRegistry::unregisterDaemon(StateProtectedModeRuntime::RT_ITEM);
         Hilos::$sr = $this->previousSignalRouter;
+        Hilos::$cluster = null;
         Hilos::$env = $this->previousEnv;
         Hilos::$rt = null;
         putenv('HILOS_BUILD_TIMESTAMP');
@@ -128,6 +132,77 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
         foreach ([$operatorTab, $operatorSecondTab, $member, $passHolder, $handshaking] as $silent) {
             $this->assertSame('', $silent->outboundBytes());
         }
+    }
+
+    public function testStateAnnouncementUsesOnlyLocalSocketAddressesAndHonorsExclusions(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $operatorTab = $server->connect(self::OPERATOR_SESSION_TOKEN);
+        $operatorSecondTab = $server->connect(self::OPERATOR_SESSION_TOKEN);
+        $stranger = $server->connect(self::STRANGER_SESSION_TOKEN);
+        $cookieless = $server->connect(null);
+        $server->forgetHandshakeBytes();
+
+        $manager->notifyProtectedModeState(
+            $this->announcement(),
+            $operatorTab->acceptKey,
+            self::sessionHash(self::OPERATOR_SESSION_TOKEN),
+        );
+        $manager->dispatch();
+
+        $this->assertSame('', $operatorTab->outboundBytes());
+        $this->assertSame('', $operatorSecondTab->outboundBytes());
+        foreach ([$stranger, $cookieless] as $recipient) {
+            $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($recipient)['type'] ?? null);
+        }
+    }
+
+    public function testSessionAnnouncementReachesOnlyThisMastersTabsOfThatSession(): void
+    {
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $memberTab = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $memberSecondTab = $server->connect(self::MEMBER_SESSION_TOKEN);
+        $stranger = $server->connect(self::STRANGER_SESSION_TOKEN);
+        $server->forgetHandshakeBytes();
+
+        $manager->notifyProtectedModeSessionState(
+            new ProtectedModeStateSignalData(active: false),
+            self::sessionHash(self::MEMBER_SESSION_TOKEN),
+        );
+        $manager->dispatch();
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($memberTab)['type'] ?? null);
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE, $this->deliveredFrame($memberSecondTab)['type'] ?? null);
+        $this->assertSame('', $stranger->outboundBytes());
+    }
+
+    public function testProtectedModePushHasOneLocalDestinationEvenWithClusterRoutingEnabled(): void
+    {
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerClientLocation(new class implements ClientLocation {
+            public function nodeFor(string $acceptKey): ?string
+            {
+                return null;
+            }
+        });
+        $manager = new LockedOutDeliveryTestManager();
+        $server = $manager->addWebSocketServer();
+        $server->connect(self::STRANGER_SESSION_TOKEN);
+        $server->forgetHandshakeBytes();
+        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
+            // The 101's own handshake signal predates the mode push under test.
+        }
+
+        $manager->notifyProtectedModeState($this->announcement(), null, null);
+
+        $signal = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $destinations = Hilos::$sr?->getDestinations($signal);
+        $this->assertCount(1, $destinations);
+        $this->assertInstanceOf(WebSocketDestination::class, $destinations[0]);
     }
 
     /**

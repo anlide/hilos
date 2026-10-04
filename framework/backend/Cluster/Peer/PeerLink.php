@@ -31,6 +31,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
@@ -396,6 +397,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerProtectedModeVerifyDTO => $this->onProtectedModeVerify($frame),
             $frame instanceof PeerProtectedModeProgressDTO => $this->onProtectedModeProgress($frame),
             $frame instanceof PeerProtectedModePassDTO => $this->onProtectedModePass($frame),
+            $frame instanceof PeerProtectedModeAdmitDTO => $this->onProtectedModeAdmit($frame),
             $frame instanceof PeerProtectedModeCircleDTO => $this->onProtectedModeCircle($frame),
             $frame instanceof PeerProtectedModeRefreezeDTO => $this->onProtectedModeRefreeze($frame),
             $frame instanceof PeerPingDTO => $this->onPing($frame),
@@ -965,6 +967,16 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('protected-mode pass');
         $this->server->onProtectedModePassReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerProtectedModeAdmitDTO $frame Incoming verifier admission
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onProtectedModeAdmit(PeerProtectedModeAdmitDTO $frame): void
+    {
+        $this->requireHandshaked('protected-mode admit');
+        $this->server->onProtectedModeAdmitReceived($this, $frame);
     }
 
     /**

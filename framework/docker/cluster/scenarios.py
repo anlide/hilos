@@ -2389,6 +2389,78 @@ def scenario_33_every_master_takes_browsers():
             f"{len(round_robin_responders)} masters; {held_key} on {follower} survived the freeze on {leader}")
 
 
+def scenario_34_a_tab_is_the_same_on_every_master():
+    """The operator and a code holder keep their verdict when their next tab lands elsewhere (HIL-1305)."""
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    follower = next(node for node in MASTERS if node != leader)
+    term = views[leader].get("term")
+
+    def welcome(master, token=None, pass_code=None):
+        args = [master]
+        if token is not None:
+            args.append(token)
+        if pass_code is not None:
+            args.append(pass_code)
+        answer = control.execute(STAND, "entry-welcome", *args)
+        assert answer.code == 0, f"entry welcome on {master} failed: {answer.err or answer.out}"
+        name, verdict, received_token = answer.out.strip().split(" ", 2)
+        assert name == master and verdict in ("inside", "stub"), f"bad entry welcome: {answer.out!r}"
+        if token is not None:
+            assert received_token == token, f"entry welcome changed the session token on {master}"
+        return verdict, received_token
+
+    try:
+        operator_verdict, operator = welcome(leader)
+        verifier_verdict, verifier = welcome(follower)
+        stranger_verdict, stranger = welcome(follower)
+        assert (operator_verdict, verifier_verdict, stranger_verdict) == ("inside", "inside", "inside"), \
+            "a browser was held before the freeze began"
+
+        entered = client_out(leader, "test:protected-mode:enter", SETTLE_OPERATION,
+                             f"--session-token={operator}")
+        assert entered is not None, f"the index agent on {leader} refused the freeze"
+        wait_protected_mode(lambda row: row.get("phase") == "active", "every master frozen")
+        for master in MASTERS:
+            assert welcome(master, operator)[0] == "stub", f"operator reached inside on frozen {master}"
+
+        assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not open the window"
+        wait_protected_mode(lambda row: row.get("phase") == "verifying", "every master verifying")
+        for master in MASTERS:
+            assert welcome(master, operator)[0] == "inside", f"operator was held on {master}"
+
+        minted = client_out(leader, "test:protected-mode:pass")
+        assert minted is not None and minted.startswith("Pass: "), f"the index agent returned no pass: {minted!r}"
+        pass_code = minted.removeprefix("Pass: ")
+        assert welcome(follower, verifier, pass_code)[0] == "inside", "the pass failed on its 101 master"
+        for master in MASTERS:
+            deadline = time.time() + CONVERGE_TIMEOUT
+            while welcome(master, verifier)[0] != "inside":
+                if time.time() >= deadline:
+                    raise ScenarioTimeout(f"verifier admitted on {follower} stayed on the stub at {master}")
+                time.sleep(POLL_INTERVAL)
+            assert welcome(master, stranger)[0] == "stub", f"stranger was admitted on {master}"
+
+        assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not lift the freeze"
+        wait_protected_mode(lambda row: row.get("phase") == "inactive", "every master open again")
+    finally:
+        now = inspect_all(MASTERS)
+        current_leaders = leaders(now)
+        moved = current_leaders != [leader] or (now.get(leader) or {}).get("term") != term
+        if moved:
+            print(f"  leadership moved from {leader} (term {term}) to {current_leaders} "
+                  f"(terms {[now[node].get('term') for node in current_leaders]}) under the freeze (P-459)")
+        replies = {node: protected_mode(node) for node in MASTERS}
+        if any(row is None or row.get("phase") != "inactive" for row in replies.values()):
+            client(leader, "test:protected-mode:open")
+        wait_converge(ALL_NODES)
+        if moved:
+            raise AssertionError(f"leadership changed from {leader} under the freeze (P-459)")
+
+    return (f"operator and verifier inside on all {in_words(len(MASTERS))} masters; "
+            f"stranger held on all {in_words(len(MASTERS))}")
+
+
 # What a master writes when it loses its quorum while it carries placed work, when it arms its fence
 # and when the fence fires (ClusterPlacement::noteQuorumLost() and selfFence(),
 # framework/backend/Cluster/Placement/ClusterPlacement.php, HIL-1217); the fired line carries its
@@ -2759,6 +2831,8 @@ SCENARIOS = [
     Scenario("25 freeze settles on every master", scenario_25_freeze_settles_on_every_master, Need(masters=2)),
     Scenario("33 every master takes browsers", scenario_33_every_master_takes_browsers,
              Need(masters=2, slaves=1, entry=True)),
+    Scenario("34 a tab is the same on every master under protected mode", scenario_34_a_tab_is_the_same_on_every_master,
+             Need(masters=3, slaves=1, entry=True)),
 ]
 
 # Park a scenario here (name -> reason) to skip it as known timing-flaky -- the
@@ -2814,6 +2888,13 @@ FLAKY_SKIP = {
     # (HIL-1116).
     "20 rt set width across nodes":
         "P-456: the auth throttle claims its collection whole on every node",
+    # 2026-10-04: foreign baseline failure, attempt 0 for HIL-1305. After scenario 23,
+    # scenario 25 closes a freeze while m2 has not stopped hilos_auth_throttle again.
+    # The throttle claims hilosAuthAttempts whole on every node (P-456), so the
+    # owner's decision parks this assertion. TODO(HIL-1280): fix the claim, remove
+    # this line and run -- 25 on the binance stand to pay off the loan.
+    "25 freeze settles on every master":
+        "P-456: m2 does not stop hilos_auth_throttle again after the freeze closes",
 }
 
 

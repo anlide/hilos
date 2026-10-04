@@ -34,16 +34,12 @@ interface ProtectedModeExecutor
      *                                    freezes itself, recorded for the verification window rather
      *                                    than let through this phase; null on a follower, which has
      *                                    no initiator connection to name
-     * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection, on the
-     *                                           same terms; null on a follower and whenever the freeze
-     *                                           was asked for by something without a browser
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
-        ?string $initiatorSessionTokenHash,
     ): void;
 
     /**
@@ -107,6 +103,13 @@ interface ProtectedModeExecutor
      * row already holds the hash by the time this runs.
      */
     public function announcePassIssued(): void;
+
+    /**
+     * Records a code admission on this master's row and tells its tabs on the first crossing.
+     *
+     * @param string $sessionTokenHash Hash of the verifier session
+     */
+    public function admitVerifier(string $sessionTokenHash): void;
 
     /**
      * Releases this node: writes phase inactive locally and asks for the agents that were stopped.

@@ -291,8 +291,8 @@ final class ProtectedModeRuntime extends RtState
      * that asked, and the session token hash of the browser behind it ({@see belongsToInitiator()}).
      * The second is what a reload and a second tab arrive with - they carry the same cookie and a
      * brand new accept key - and without it the person who asked would come back from an F5 as a
-     * stranger once the window opened (HIL-655). The accept key is recorded only on the node that
-     * froze itself with it, so on every other node that half never matches.
+     * stranger once the window opened (HIL-655). The accept key stays on the node of its socket;
+     * the operator session hash and code admissions stand on every master's row (HIL-1305).
      *
      * @param ?string $acceptKey Connection accept key to test, or null when none is known
      * @param ?string $sessionTokenHash Hash of the connection's session token, or null when it carries no session

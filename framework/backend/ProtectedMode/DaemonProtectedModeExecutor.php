@@ -13,6 +13,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
@@ -69,23 +70,19 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key recorded when the leader freezes itself, admitted once the
      *                                    verification window opens and not before; null on a follower
-     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, recorded and
-     *                                           admitted on the same terms; null on a follower and when nobody
-     *                                           with a browser asked
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
-        ?string $initiatorSessionTokenHash,
     ): void {
         $view = $this->runtimeView();
         if ($view === null) {
             return;
         }
 
-        $view->actions->enterActivating($freeze, $initiatorAcceptKey, $initiatorSessionTokenHash);
+        $view->actions->enterActivating($freeze, $initiatorAcceptKey);
         $this->persistFreeze($view);
 
         // Stop this node's own agents so no application work runs against the destructive
@@ -282,6 +279,67 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 passIssued: true,
             ),
         );
+    }
+
+    /**
+     * Records a verifier on this master's row, then announces only the first crossing to its tabs.
+     *
+     * @param string $sessionTokenHash Hash of the admitted browser session
+     */
+    public function admitVerifier(string $sessionTokenHash): void
+    {
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            return;
+        }
+
+        // Asked before the write, because after it the answer is yes whatever happened. The frame
+        // below announces the crossing rather than the state, and a verifier presenting its code
+        // from a third tab has crossed nothing: the tabs already inside would be told what they
+        // are looking at.
+        $wasAdmitted = $view->admits($sessionTokenHash);
+
+        try {
+            $view->actions->admitSession($sessionTokenHash);
+        } catch (RtBaseException $exception) {
+            Logger::error('Protected mode: failed to admit a verifier: ' . $exception->getMessage());
+
+            return;
+        }
+
+        if ($wasAdmitted) {
+            return;
+        }
+
+        // `active: false` is the personalized verdict, the same one the welcome hands a connection
+        // that presented the code; `acceptsPass: true` is the row's own bit and is what keeps the
+        // client from reading this as a lift - it calls the mode over only when both are false, and
+        // would reload the tab out of the window instead of into it. The surface copy stays null
+        // because an admitted browser renders no stub - what it does render is the banner over the
+        // running application, and that one sentence it gets (HIL-736). `passIssued` is true by the
+        // fact that got us here.
+        try {
+            Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeSessionState(
+                new ProtectedModeStateSignalData(
+                    active: false,
+                    operation: $view->operation,
+                    acceptsPass: true,
+                    passIssued: true,
+                    bannerMessage: ProtectedModeStubCopy::forOperation($view->operation)->bannerMessage,
+                ),
+                $sessionTokenHash,
+            );
+
+            // The frame moves the stub, not what stands behind it: the tabs come out onto pages
+            // answered before the phase moved (HIL-912). They are answered again, behind the frame
+            // and under the same try - the safe reading of a failure is the same one, the verifier
+            // stays where they are and presents the code again. A tab opened under the freeze holds
+            // no subscription here to answer: its subscribe was refused on the client, and the tab
+            // sends it itself on this frame.
+            Hilos::$cluster?->protectedModeClientNotifier()?->reassessPagesOfSession($sessionTokenHash);
+        } catch (InvalidArgumentException $exception) {
+            Logger::error('Protected mode: failed to tell an admitted verifier: ' . $exception->getMessage());
+        }
     }
 
     /**

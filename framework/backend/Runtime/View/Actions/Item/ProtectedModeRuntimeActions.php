@@ -79,12 +79,8 @@ final class ProtectedModeRuntimeActions extends RtActions
     /**
      * Records the freeze this node is entering and the identity allowed through it.
      *
-     * The initiator's accept key and session hash are recorded only on the node that froze itself
-     * with them; elsewhere they stay null, which is what keeps the verification window shut to
-     * that browser on the other nodes. A browser that reconnects to another node of a cluster is
-     * therefore locked out there for the whole operation - deliberately, and it is the cluster
-     * epic that widens it. Neither name buys anything while the freeze holds: under the frozen
-     * phases the row refuses every connection, this one included.
+     * The descriptor carries the operator's session hash to every master (HIL-1305), while the
+     * accept key stays on the node of its socket. Neither admits anyone during frozen phases.
      *
      * A new freeze starts with no passes, nobody admitted and nobody named, and that is written
      * rather than assumed: {@see ViewProtectedModeRuntime::admits()} reads the frozen phases as
@@ -98,23 +94,19 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param ProtectedModeQuiesceData $freeze Operation and initiator identity the freeze protects
      * @param ?string $initiatorAcceptKey Accept key recorded here and admitted once the verification
      *                                    window opens; null on a follower node
-     * @param ?string $initiatorSessionTokenHash Hash of the initiator browser's session token, recorded
-     *                                           and admitted on the same terms; null on a follower
-     *                                           node and whenever nothing with a browser asked
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
-        ?string $initiatorSessionTokenHash,
     ): void {
         $this->ensureCanWrite();
 
         $this->state->phase = StateProtectedModeRuntime::PHASE_ACTIVATING;
         $this->state->operation = $freeze->operation;
         $this->state->initiatorAcceptKey = $initiatorAcceptKey;
-        $this->state->initiatorSessionTokenHash = $initiatorSessionTokenHash;
+        $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
         $this->state->initiatorAgentType = $freeze->initiatorAgentType;
         $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
         $this->state->initiatorNodeId = $freeze->initiatorNodeId;

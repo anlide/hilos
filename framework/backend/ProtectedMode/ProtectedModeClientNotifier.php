@@ -12,6 +12,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 /**
  * Local port the daemon uses to tell the open browser connections on this node what protected
  * mode holds for them - everybody at once, one browser session, or whoever the freeze still holds.
+ * Each address reaches only this master's sockets by accept key (HIL-1305).
  *
  * A connection opened after the freeze learns the state from the welcome frame; one that was
  * already open learns it only if somebody pushes, and that push is what this seam is. The

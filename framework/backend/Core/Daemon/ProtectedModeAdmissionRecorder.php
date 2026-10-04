@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\WebSocketServer;
 
@@ -27,16 +26,14 @@ interface ProtectedModeAdmissionRecorder
     /**
      * Records the browser session behind this connection as admitted for the verification in flight.
      *
-     * Writes {@see ProtectedModeRuntime::$admittedSessionTokenHashes} through the daemon's runtime
-     * actions, which is an in-memory write plus the RT sync that carries it to this node's workers -
-     * no database, no file and no socket I/O, because it runs on the master's connection-accept
-     * path. A session already recorded is ignored, so a verifier that reconnects or opens a second
-     * tab costs nothing.
+     * Passes the code hash and session hash to the protected-mode switch on this master. The
+     * switch writes this node's row and routes admission through the leader (HIL-1305).
      *
      * The caller has already checked the pass ({@see WebSocketClient}); this seam records a
      * decision, it does not make one.
      *
-     * @param string $sessionTokenHash Hash of the session token of the admitted browser
+     * @param string $passHash Hash of the pass that admitted the browser
+     * @param string $sessionTokenHash Hash of the admitted browser session
      */
-    public function admitProtectedModeSession(string $sessionTokenHash): void;
+    public function admitProtectedModeSession(string $passHash, string $sessionTokenHash): void;
 }

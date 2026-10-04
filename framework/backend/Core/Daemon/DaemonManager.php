@@ -135,7 +135,6 @@ use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
@@ -1837,93 +1836,27 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Records the browser session behind this connection as admitted for the verification in flight.
+     * Hands a code admission from the 101 master to its protected-mode switch (HIL-1305).
+     * A refused route is logged because the handshake must still finish.
      *
-     * The master half of the admission: {@see WebSocketClient} has already matched the presented
-     * pass against the row, and this writes the verdict where the workers can read it. A process
-     * holding no runtime row records nothing - there is no freeze there to be let into.
-     *
-     * On the crossing - and only on it - the whole session is told and its open pages are answered
-     * again, because the tab that typed the code is rarely the only one open and nothing tears the
-     * others down: they would stand on the stub, or on a page answered under the old phase, for the
-     * rest of the window waiting for a reload nobody asked them for.
-     *
-     * A refused write is logged and swallowed rather than raised, because the caller is the
-     * connection-accept path: an exception there tears down a handshake that was otherwise fine,
-     * and the failure it would report has a safe reading already - the verifier stays on the
-     * maintenance stub and can present the code again. A frame that cannot be queued is swallowed
-     * for the same reason and leaves the same way out: this connection's own welcome still says it
-     * is inside, so the tab that typed the code works, and a reload brings the others in.
-     *
-     * @param string $sessionTokenHash Hash of the session token of the admitted browser
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the admitted browser session
      */
-    public function admitProtectedModeSession(string $sessionTokenHash): void
+    public function admitProtectedModeSession(string $passHash, string $sessionTokenHash): void
     {
-        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
-        if ($freeze === null) {
-            return;
-        }
-
-        // Asked before the write, because after it the answer is yes whatever happened. The frame
-        // below announces the crossing rather than the state, and a verifier presenting its code
-        // from a third tab has crossed nothing: the tabs already inside would be told what they
-        // are looking at.
-        $wasAdmitted = $freeze->admits($sessionTokenHash);
-
         try {
-            $freeze->actions->admitSession($sessionTokenHash);
-        } catch (RtBaseException $exception) {
+            Hilos::$cluster?->protectedMode()?->requestAdmit($passHash, $sessionTokenHash);
+        } catch (EnvException $exception) {
             Logger::error('Protected mode: failed to admit a verifier: ' . $exception->getMessage());
-
-            return;
-        }
-
-        if ($wasAdmitted) {
-            return;
-        }
-
-        // `active: false` is the personalized verdict, the same one the welcome hands a connection
-        // that presented the code; `acceptsPass: true` is the row's own bit and is what keeps the
-        // client from reading this as a lift - it calls the mode over only when both are false, and
-        // would reload the tab out of the window instead of into it. The surface copy stays null
-        // because an admitted browser renders no stub - what it does render is the banner over the
-        // running application, and that one sentence it gets (HIL-736). `passIssued` is true by the
-        // fact that got us here.
-        try {
-            $this->notifyProtectedModeSessionState(
-                new ProtectedModeStateSignalData(
-                    active: false,
-                    operation: $freeze->operation,
-                    acceptsPass: true,
-                    passIssued: true,
-                    bannerMessage: ProtectedModeStubCopy::forOperation($freeze->operation)->bannerMessage,
-                ),
-                $sessionTokenHash,
-            );
-
-            // The frame moves the stub, not what stands behind it: the tabs come out onto pages
-            // answered before the phase moved (HIL-912). They are answered again, behind the frame
-            // and under the same try - the safe reading of a failure is the same one, the verifier
-            // stays where they are and presents the code again. A tab opened under the freeze holds
-            // no subscription here to answer: its subscribe was refused on the client, and the tab
-            // sends it itself on this frame.
-            $this->reassessPagesOfSession($sessionTokenHash);
-        } catch (InvalidArgumentException $exception) {
-            Logger::error('Protected mode: failed to tell an admitted verifier: ' . $exception->getMessage());
         }
     }
 
     /**
      * Tells every open browser connection on this node that protected mode turned on or off.
      *
-     * Queues the state as a broadcast signal rather than writing to the sockets here: the
-     * WS_ALL_CONNECTED type resolves to {@see AllClientsDestination} and the routing pass
-     * of the same loop fans it out through {@see sendToAllClients()}, so the freeze frame
-     * leaves the daemon by the one path every other broadcast uses. Both exclusions, when a caller
-     * names them, are the initiator's — the tab it started from and the ones it already had open.
-     * Whether that is worth doing belongs to the caller and to the phase it announces: while the
-     * node is frozen the operator is behind the stub with everybody else, and only the verification
-     * window leaves them out, to address them by session with the opposite verdict.
+     * Queues one addressed frame per local socket. Every master speaks only to its own tabs,
+     * judged by its own row (HIL-1305); a cluster-wide broadcast would duplicate every frame.
+     * The exclusions still spare the operator's socket and other tabs when the window opens.
      *
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
      * @param ?string $excludeAcceptKey Accept key kept out of the broadcast, or null to tell everyone
@@ -1936,25 +1869,19 @@ abstract class DaemonManager extends BaseManager implements
         ?string $excludeAcceptKey,
         ?string $excludeSessionTokenHash,
     ): void {
-        Hilos::$sr?->queueSignal(
-            new SignalSource(SignalSource::DAEMON),
-            new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
-            new SignalName(SignalTypeConstants::PROTECTED_MODE),
-            new WebSocketSignalData(
-                data: $state,
-                excludeAcceptKey: $excludeAcceptKey,
-                excludeSessionTokenHash: $excludeSessionTokenHash,
-            ),
+        $this->queueProtectedModeForLocalClients(
+            $state,
+            static fn (WebSocketClient $client): bool =>
+                ($excludeAcceptKey === null || $client->acceptKey !== $excludeAcceptKey)
+                && ($excludeSessionTokenHash === null || $client->sessionTokenHash === null
+                    || !hash_equals($excludeSessionTokenHash, $client->sessionTokenHash)),
         );
     }
 
     /**
      * Tells every connection of one browser session on this node what the mode holds for it.
      *
-     * The same frame and the same queue as the broadcast above, addressed by WS_SESSION instead:
-     * the routing pass resolves it to {@see SessionClientsDestination} and the fan-out walks the
-     * connections carrying that session hash. Nothing of that delivery is written here - it was
-     * built for the initiator's own tabs (HIL-655) and this is its second caller.
+     * Queues one addressed frame for each of this master's sockets in the session (HIL-1305).
      *
      * @param ProtectedModeStateSignalData $state State to announce, with the copy already resolved
      * @param string $sessionTokenHash Hash of the session token whose connections receive the frame
@@ -1964,11 +1891,10 @@ abstract class DaemonManager extends BaseManager implements
         ProtectedModeStateSignalData $state,
         string $sessionTokenHash,
     ): void {
-        Hilos::$sr?->queueSignal(
-            new SignalSource(SignalSource::DAEMON),
-            new SignalType(SignalTypeConstants::WS_SESSION),
-            new SignalName(SignalTypeConstants::PROTECTED_MODE),
-            new WebSocketSignalData(data: $state, targetSessionTokenHash: $sessionTokenHash),
+        $this->queueProtectedModeForLocalClients(
+            $state,
+            static fn (WebSocketClient $client): bool => $client->sessionTokenHash !== null
+                && hash_equals($sessionTokenHash, $client->sessionTokenHash),
         );
     }
 
@@ -1993,19 +1919,34 @@ abstract class DaemonManager extends BaseManager implements
     public function notifyProtectedModeLockedOutState(ProtectedModeStateSignalData $state): void
     {
         $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze === null) {
+            return;
+        }
+
+        $this->queueProtectedModeForLocalClients(
+            $state,
+            static fn (WebSocketClient $client): bool => $freeze->locksOut($client->acceptKey, $client->sessionTokenHash),
+        );
+    }
+
+    /**
+     * Each protected-mode push stays on this master and is queued after earlier frames.
+     *
+     * @param ProtectedModeStateSignalData $state State to send to matching tabs
+     * @param callable(WebSocketClient): bool $include Whether a local connection receives it
+     * @throws InvalidArgumentException When the protected-mode signal cannot be named
+     */
+    private function queueProtectedModeForLocalClients(ProtectedModeStateSignalData $state, callable $include): void
+    {
         $webSocketServer = $this->findWebSocketServer();
-        if ($freeze === null || $webSocketServer === null) {
+        if ($webSocketServer === null) {
             return;
         }
 
         foreach ($webSocketServer->getClients() as $client) {
-            if (!$client instanceof WebSocketClient || $client->acceptKey === '') {
+            if (!$client instanceof WebSocketClient || $client->acceptKey === '' || !$include($client)) {
                 continue;
             }
-            if (!$freeze->locksOut($client->acceptKey, $client->sessionTokenHash)) {
-                continue;
-            }
-
             Hilos::$sr?->queueSignal(
                 new SignalSource(SignalSource::DAEMON),
                 new SignalType(SignalTypeConstants::WS_USER),

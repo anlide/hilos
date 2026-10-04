@@ -66,7 +66,7 @@ class ProtectedModeTestEnterCommand extends AbstractCommandChannelTestCommand im
         $leave = CliCommands::PROTECTED_MODE_TEST_LEAVE;
 
         return <<<HELP
-Command: {$this->getName()} <operation> [--accept-key=<k>]
+Command: {$this->getName()} <operation> [--accept-key=<k>] [--session-token=<t>]
 
 Description:
   Ask the live initiator agent to take this installation into protected mode for the
@@ -81,17 +81,20 @@ Arguments:
 Options:
   --accept-key=<k>  Connection accept key that stays live through the lockdown
                     (default: none, so every browser connection is locked out)
+  --session-token=<t>  Session cookie of the browser that asked for the freeze
+                       (default: none, so no browser is named as the operator)
 
 Usage:
   php cli.php {$this->getName()} restore
   php cli.php {$this->getName()} restore --accept-key=abc123
+  php cli.php {$this->getName()} restore --session-token=abc123
 HELP;
     }
 
     /**
      * Validates the operation name, asks the agent to enter, and prints the outcome.
      *
-     * @param array<string, mixed> $options Parsed options: --accept-key
+     * @param array<string, mixed> $options Parsed options: --accept-key and --session-token
      * @param list<string> $args Positional args: [0] operation name
      * @return int Exit code (0 on success)
      * @throws CommandException When the command name is not registered as test-only
@@ -101,14 +104,14 @@ HELP;
         // external-boundary: the operator's command line, checked on the very next line
         $operation = $args[0] ?? '';
         if ($operation === '') {
-            echo "Usage: {$this->getName()} <operation> [--accept-key=<k>]  (operation: non-empty name)\n";
+            echo "Usage: {$this->getName()} <operation> [--accept-key=<k>] [--session-token=<t>]  (operation: non-empty name)\n";
 
             return ExitCode::INVALID_ARGUMENT;
         }
 
         // Empty by default, exactly as BackupAgent enters for a CLI initiator: a freeze asked
-        // for from a terminal has no browser connection to keep alive, so no window passes the
-        // lockout. A key is passed only when the test is about the initiator's own window.
+        // for from a terminal has no browser connection to name. A key or session cookie is
+        // passed only when the test is about the initiator's own window.
         $acceptKey = '';
         if (isset($options['accept-key'])) {
             $acceptKey = $options['accept-key'];
@@ -119,11 +122,25 @@ HELP;
             }
         }
 
+        $sessionToken = null;
+        if (isset($options['session-token'])) {
+            $sessionToken = $options['session-token'];
+            if (!is_string($sessionToken) || $sessionToken === '') {
+                echo "Option --session-token must be a non-empty session token.\n";
+
+                return ExitCode::INVALID_ARGUMENT;
+            }
+        }
+
         try {
-            $result = $this->sendCommand($this->getName(), [
+            $payload = [
                 ProtectedModeCommandConstants::FIELD_OPERATION => $operation,
                 CommandConstants::FIELD_ACCEPT_KEY => $acceptKey,
-            ]);
+            ];
+            if ($sessionToken !== null) {
+                $payload[ProtectedModeCommandConstants::FIELD_SESSION_TOKEN] = $sessionToken;
+            }
+            $result = $this->sendCommand($this->getName(), $payload);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
 

@@ -84,7 +84,7 @@ Five test-only commands, and the split between them is the whole design:
 
 | Command | Answered by | Why there |
 |---|---|---|
-| `test:protected-mode:enter <operation> [--accept-key=<k>]` | the initiator agent | it calls `requestProtectedModeEnable()` — the one entry, unchanged |
+| `test:protected-mode:enter <operation> [--accept-key=<k>] [--session-token=<t>]` | the initiator agent | it calls `requestProtectedModeEnable()`; the optional cookie names the browser asking for the freeze (HIL-1305) |
 | `test:protected-mode:leave` | the initiator agent | the driven operation is over: it calls `requestProtectedModeVerify()` and lands in the verification window, where a real one lands too |
 | `test:protected-mode:open` | the initiator agent | the explicit lift, authorized by initiator identity exactly as in production |
 | `test:protected-mode:pass` | the initiator agent | mints one code into the driven window and prints it, so a test has something to type into the verifier's field (HIL-616) |
@@ -455,6 +455,8 @@ automatically, the human path out has to actually work.
   row, or a promotion in the middle of a healthy hour-long restore would report
   it stuck in the same second. Frozen followers and the former leader follow the
   current leader when it sends a frame, and send the next `quiesced` to it.
+  The successor already knows the operator: the session hash stands on every
+  master's row and is restored with the freeze descriptor (HIL-1305).
 - **Initiator moves.** The leader checks the initiator agent type and index in
   disable, verify, progress, pass, circle, and refreeze frames, not the sending
   node. It locates the agent for `ready` through the same placement lookup used
@@ -490,6 +492,16 @@ behind it holds no admitted pass (`admittedSessionTokenHashes`, matched by
 (`circleSessionTokenHashes`, matched by `admitsCircle()` — HIL-643). Any one of
 the last three failing serves that connection the real application, and there is
 no fourth way in.
+
+**On a cluster every master's row says the same about a browser (HIL-1305).**
+The browser's own master decides its 101 welcome; the node holding its page
+agent decides the subscription, so their rows must agree. The operator session
+hash travels in `peer_protected_mode_quiesce` with the freeze descriptor. A code
+admission travels from the 101 master to the leader and then every master in
+`peer_protected_mode_admit`; each receiver checks that the verification window
+is open and the code was minted in it. The accept key stays on the node of its
+socket. If no leader is known, an admission remains on the 101 master and is
+logged.
 
 **The third door opens on a photograph rather than on a presentation
 (HIL-643).** The other two are earned at the door — the initiator by having
@@ -612,7 +624,7 @@ that answers to a list is not one.
 **The record is idempotent, and the frame is not.** `admitSession()` refuses to
 add a hash it already carries, so a browser is one entry however many of its tabs
 present the code. Whether this presentation was a *crossing* is asked separately,
-by the caller, before the write: `DaemonManager::admitProtectedModeSession()`
+by the executor, before the write: `DaemonProtectedModeExecutor::admitVerifier()`
 reads `admits()` first, and only a false there earns the announcement below.
 
 **The initiator is recognized by two halves because one of them does not survive
@@ -663,9 +675,10 @@ exclusions and not one: `excludeAcceptKey` keeps the socket that asked out of th
 broadcast, and `excludeSessionTokenHash` keeps every other tab of that same
 browser out with it (HIL-666, absorbing HIL-748). They stay two arguments rather
 than one because an initiator with no browser behind it — a CLI trigger, a
-scheduled run — leaves the hash null. The exclusion rides the wire on
-`WebSocketSignalData` and reaches the sockets through `AllClientsDestination`, so
-a fan-out forwarded from another node spares the same browser this one does.
+scheduled run — leaves the hash null. The exclusion is applied to this master's
+local connection list before one `WS_USER` is queued per matching accept key.
+Every address of this port stays on its master; no frame crosses to another
+master, so a tab receives the phase once (HIL-1305).
 The port has a third address beside those two,
 `notifyProtectedModeLockedOutState()`, which names no exclusion at all: the
 master walks this node's connections once and asks the row about each one with
@@ -693,12 +706,12 @@ announcement no longer crosses nodes.
 connection down when the mode turns on (`ConnectionDropper` is called only by a
 session rotation and by `test:connection:drop`), so a tab that was standing on
 the stub when its owner typed the code in another tab would stand there for the
-rest of the window. On the crossing the master therefore sends every connection
-of the admitted session a frame of its own, over the `WS_SESSION` delivery built
-for the initiator in HIL-655: `active: false` with `acceptsPass: true`. The
+rest of the window. On the crossing each master sends its own connections of
+the admitted session one addressed `WS_USER` frame each: `active: false` with
+`acceptsPass: true`. The
 second bit is load-bearing — the client calls the mode over only when both are
 false, and a frame without it would reload the tab out of the window instead of
-into it. The same crossing, in `DaemonManager::admitProtectedModeSession()`, then
+into it. The same crossing, in `DaemonProtectedModeExecutor::admitVerifier()`, then
 has the session's open pages answered again (see below, HIL-912).
 
 **The operator and the circle are carried back in the same way, and by the same
@@ -828,6 +841,11 @@ if ($this->runtimeView() === null) {
 Refuse loudly and before any trace of entry, as above.
 
 ## Validation
+
+- Binance cluster scenario 34 reads the first WebSocket welcome through the
+  shared entry with `entry-welcome <master> [<token>] [<pass>]`. It verifies that
+  the operator and a code holder are inside on every master while a stranger
+  sees the stub on each, after the normal enter → leave → open drive (HIL-1305).
 
 - `composer run test:framework:unit` — covers the entry guards
   (`ClusterProtectedModeTest`, `StandaloneProtectedModeTest`), initiator placement

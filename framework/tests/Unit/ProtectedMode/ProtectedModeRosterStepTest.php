@@ -343,6 +343,10 @@ final class RosterStepTestSwitch implements ProtectedModeSwitch
     {
     }
 
+    public function requestAdmit(string $passHash, string $sessionTokenHash): void
+    {
+    }
+
     public function requestCircle(ProtectedModeCircleSignalData $data): void
     {
     }

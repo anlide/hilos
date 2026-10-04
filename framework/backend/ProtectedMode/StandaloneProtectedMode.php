@@ -106,10 +106,11 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             $data->initiatorAgentType,
             $data->initiatorAgentIndex,
             null,
+            $data->initiatorSessionTokenHash,
         );
 
         $this->readyOwed = true;
-        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
+        $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey);
     }
 
     /**
@@ -211,6 +212,15 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     }
 
     /**
+     * @param string $passHash Hash of the presented pass, checked at 101
+     * @param string $sessionTokenHash Hash of the verifier session
+     */
+    public function requestAdmit(string $passHash, string $sessionTokenHash): void
+    {
+        $this->executor->admitVerifier($sessionTokenHash);
+    }
+
+    /**
      * Records the verifier circle photographed for this node's initiator under the freeze (HIL-643).
      *
      * Authorized by the recorded initiator like every other request here, and for a sharper reason
@@ -267,7 +277,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         }
 
         $this->readyOwed = false;
-        $this->executor->enterActivating($this->activeFreeze, $view->initiatorAcceptKey, $view->initiatorSessionTokenHash);
+        $this->activeFreeze = $this->activeFreeze->withInitiatorSessionTokenHash($view->initiatorSessionTokenHash);
+        $this->executor->enterActivating($this->activeFreeze, $view->initiatorAcceptKey);
     }
 
     /**
@@ -374,7 +385,8 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
                 );
             }
             $this->readyOwed = true;
-            $this->executor->enterActivating($freeze, $data->initiatorAcceptKey, $data->initiatorSessionTokenHash);
+            $this->activeFreeze = $freeze->withInitiatorSessionTokenHash($data->initiatorSessionTokenHash);
+            $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey);
             return;
         }
 

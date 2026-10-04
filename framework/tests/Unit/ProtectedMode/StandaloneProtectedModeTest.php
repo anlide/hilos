@@ -403,6 +403,13 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
     }
 
+    public function testCodeAdmissionUsesTheLocalExecutor(): void
+    {
+        $this->mode->requestAdmit('pass-hash', 'verifier-hash');
+
+        $this->assertSame(['admitVerifier'], $this->executor->calls);
+    }
+
     public function testOnlyTheFirstPassIsAnnouncedToTheFrozenBrowsers(): void
     {
         // Zero-to-one is the only step that changes anything on a stub: it swaps the sentence
@@ -635,9 +642,8 @@ final class StandaloneProtectedModeTest extends TestCase
 
         $this->withDaemonTruthSource(function () use ($view, $agentType, $agentIndex, $activate, $acceptKey, $sessionTokenHash): void {
             $view->actions->enterActivating(
-                new ProtectedModeQuiesceData('restore', $agentType, $agentIndex, null),
+                new ProtectedModeQuiesceData('restore', $agentType, $agentIndex, null, $sessionTokenHash),
                 $acceptKey,
-                $sessionTokenHash,
             );
             if ($activate) {
                 $view->actions->enterActive();
@@ -782,11 +788,10 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,
         ?string $initiatorAcceptKey,
-        ?string $initiatorSessionTokenHash,
     ): void {
         $this->calls[] = 'enterActivating';
         $this->activatingAcceptKey = $initiatorAcceptKey;
-        $this->activatingSessionTokenHash = $initiatorSessionTokenHash;
+        $this->activatingSessionTokenHash = $freeze->initiatorSessionTokenHash;
         $this->freeze = $freeze;
     }
 
@@ -813,6 +818,11 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
     public function announcePassIssued(): void
     {
         $this->calls[] = 'announcePassIssued';
+    }
+
+    public function admitVerifier(string $sessionTokenHash): void
+    {
+        $this->calls[] = 'admitVerifier';
     }
 
     public function enterInactive(): void

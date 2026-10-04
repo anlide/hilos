@@ -169,8 +169,8 @@ interface ProtectedModeCoordinator
     /**
      * Handles one minted pass, either asked for by the initiator or fanned out by the leader.
      *
-     * Carries the hash only, and the admission it later earns is deliberately not fanned: an
-     * accept key means something only on the node holding that connection.
+     * Carries the hash only. The admission it later earns travels on its own frame (HIL-1305);
+     * an accept key still means something only on the node holding that connection.
      *
      * @param string $fromNodeId Node id the frame came from
      * @param string $agentType Initiator agent type
@@ -179,6 +179,16 @@ interface ProtectedModeCoordinator
      * @throws EnvException When the cluster-enabled flag value is invalid during leader lookup
      */
     public function onPass(string $fromNodeId, string $agentType, ?int $agentIndex, string $passHash): void;
+
+    /**
+     * Handles a code admission from a 101 master or the leader (HIL-1305).
+     *
+     * @param string $fromNodeId Node id that sent the admission
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     * @throws EnvException When cluster leader lookup is unavailable
+     */
+    public function onAdmit(string $fromNodeId, string $passHash, string $sessionTokenHash): void;
 
     /**
      * Handles the verifier circle photographed at the freeze, either sent by the initiator's node

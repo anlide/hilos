@@ -123,6 +123,7 @@ final class ProtectedModeTestCommandsTest extends TestCase
     {
         self::assertStringContainsString('<operation>', new ProtectedModeTestEnterCommand()->getHelp());
         self::assertStringContainsString('--accept-key', new ProtectedModeTestEnterCommand()->getHelp());
+        self::assertStringContainsString('--session-token', new ProtectedModeTestEnterCommand()->getHelp());
         // Everything after enter takes nothing: those are authorized by initiator identity,
         // not by an argument.
         self::assertStringNotContainsString('--', new ProtectedModeTestLeaveCommand()->getHelp());
@@ -159,6 +160,15 @@ final class ProtectedModeTestCommandsTest extends TestCase
         self::assertSame(
             ExitCode::INVALID_ARGUMENT,
             new ProtectedModeTestEnterCommand()->execute(['accept-key' => ''], ['restore']),
+        );
+    }
+
+    public function testEnterRejectsAnEmptySessionTokenOption(): void
+    {
+        $this->expectOutputRegex('/--session-token/');
+        self::assertSame(
+            ExitCode::INVALID_ARGUMENT,
+            new ProtectedModeTestEnterCommand()->execute(['session-token' => ''], ['restore']),
         );
     }
 

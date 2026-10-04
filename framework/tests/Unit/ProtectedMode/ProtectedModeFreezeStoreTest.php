@@ -181,7 +181,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     {
         $executor = $this->executorOnAMountedNode();
 
-        $executor->enterActivating($this->freeze(), 'accept-7', null);
+        $executor->enterActivating($this->freeze(), 'accept-7');
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $this->persistedPhase());
 
         $executor->enterActive();
@@ -191,7 +191,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $this->persistedPhase());
 
         // The close back from the window is an entry (HIL-1128): activating, then active.
-        $executor->enterActivating($this->freeze(), 'accept-7', null);
+        $executor->enterActivating($this->freeze(), 'accept-7');
         $this->assertSame(StateProtectedModeRuntime::PHASE_ACTIVATING, $this->persistedPhase());
 
         $executor->enterActive();
@@ -204,7 +204,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     public function testTheLiftTakesTheFreezeOffDisk(): void
     {
         $executor = $this->executorOnAMountedNode();
-        $executor->enterActivating($this->freeze(), 'accept-7', null);
+        $executor->enterActivating($this->freeze(), 'accept-7');
 
         $executor->enterInactive();
 
@@ -335,6 +335,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             initiatorAgentType: self::INITIATOR_TYPE,
             initiatorAgentIndex: 2,
             initiatorNodeId: 'node-a',
+            initiatorSessionTokenHash: null,
         );
     }
 

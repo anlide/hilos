@@ -101,6 +101,15 @@ interface ProtectedModeSwitch
     public function requestPass(ProtectedModePassSignalData $data): void;
 
     /**
+     * Requests the admission earned by a pass presented on this master's 101 path (HIL-1305).
+     *
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     * @throws EnvException When cluster leader lookup is unavailable
+     */
+    public function requestAdmit(string $passHash, string $sessionTokenHash): void;
+
+    /**
      * Hands over the verifier circle photographed under the freeze, whole (HIL-643).
      *
      * The one request here that carries a reading rather than a decision: the circle table and the

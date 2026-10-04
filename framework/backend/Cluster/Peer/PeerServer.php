@@ -39,6 +39,7 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeDisableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeEnableDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeLiftDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModePassDTO;
+use Hilos\Cluster\Peer\DTO\PeerProtectedModeAdmitDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeProgressDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiesceDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeQuiescedDTO;
@@ -1450,6 +1451,19 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * @param PeerLink $link Link the admission arrived on
+     * @param PeerProtectedModeAdmitDTO $frame Code admission for one verifier session
+     * @throws EnvException When leader lookup is unavailable
+     */
+    public function onProtectedModeAdmitReceived(PeerLink $link, PeerProtectedModeAdmitDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->protectedMode?->onAdmit($from, $frame->passHash, $frame->sessionTokenHash);
+        }
+    }
+
+    /**
      * Routes a received protected-mode circle frame to the local handler.
      *
      * @param PeerLink $link Link the frame arrived on
@@ -1688,6 +1702,25 @@ final class PeerServer extends AbstractTlsServer implements
     public function broadcastPass(string $agentType, ?int $agentIndex, string $passHash): void
     {
         $this->broadcastToMasters(new PeerProtectedModePassDTO($agentType, $agentIndex, $passHash));
+    }
+
+    /**
+     * @param string $leaderNodeId Node id of the leader
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     */
+    public function sendAdmit(string $leaderNodeId, string $passHash, string $sessionTokenHash): void
+    {
+        $this->sendToMaster($leaderNodeId, new PeerProtectedModeAdmitDTO($passHash, $sessionTokenHash));
+    }
+
+    /**
+     * @param string $passHash Hash of the presented pass
+     * @param string $sessionTokenHash Hash of the verifier session
+     */
+    public function broadcastAdmit(string $passHash, string $sessionTokenHash): void
+    {
+        $this->broadcastToMasters(new PeerProtectedModeAdmitDTO($passHash, $sessionTokenHash));
     }
 
     /**

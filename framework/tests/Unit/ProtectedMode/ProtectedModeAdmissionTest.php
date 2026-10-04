@@ -85,6 +85,8 @@ final class ProtectedModeAdmissionTest extends TestCase
         $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, [hash('sha256', self::PASS)]);
         $this->handshake(self::PASS, admitOnTheRow: true, sessionToken: self::VERIFIER_SESSION_TOKEN);
 
+        $this->assertSame([hash('sha256', self::PASS)], $this->recorder->presentedPassHashes);
+
         $block = $this->protectedModeBlock($this->handshake(null, sessionToken: self::VERIFIER_SESSION_TOKEN));
 
         $this->assertFalse($block['active']);
@@ -469,11 +471,15 @@ final class RecordingAdmissionRecorder implements ProtectedModeAdmissionRecorder
     /** @var list<string> Session token hashes the master was asked to admit, in order */
     public array $admitted = [];
 
+    /** @var list<string> Pass hashes accepted on the connection path */
+    public array $presentedPassHashes = [];
+
     /** @var bool Whether to record the admission on the freeze row as well */
     public bool $writeThrough = false;
 
-    public function admitProtectedModeSession(string $sessionTokenHash): void
+    public function admitProtectedModeSession(string $passHash, string $sessionTokenHash): void
     {
+        $this->presentedPassHashes[] = $passHash;
         $this->admitted[] = $sessionTokenHash;
         if (!$this->writeThrough) {
             return;
