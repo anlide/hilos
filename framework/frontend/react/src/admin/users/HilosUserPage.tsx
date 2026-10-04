@@ -146,6 +146,10 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const rename = useMemo(() => createHilosUserRename(context), [context])
 
   const detail = useSignal(userDetail)
+  const detailRef = useRef(detail)
+  useEffect(() => {
+    detailRef.current = detail
+  }, [detail])
   const photo = useSignal(userPhoto)
   const error = useSignal(rename.renameError)
   const lifecycle = useMemo(() => createHilosUserLifecycle(context), [context])
@@ -190,7 +194,13 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   // The confirmation step the window opens with (HIL-1275): `ask` draws it,
   // `refused` draws its refusal, `skip` the window's own content.
   const lifecycleStepUp = useMemo(
-    () => createHilosUserCardStepUp(context),
+    () =>
+      createHilosUserCardStepUp(context, () => {
+        if (lifecycleProofRef.current === 'ask') {
+          lifecycleProofRef.current = 'skip'
+          setLifecycleProof('skip')
+        }
+      }),
     [context],
   )
   const lifecycleStepUpBusy = useSignal(lifecycleStepUp.step.busy)
@@ -261,7 +271,16 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const impersonate = useMemo(() => createHilosImpersonate(context), [context])
   const impersonateAction = useTrackedAction()
   const impersonateStepUp = useMemo(
-    () => createHilosUserCardStepUp(context),
+    () =>
+      createHilosUserCardStepUp(context, () => {
+        if (
+          impersonateProofRef.current === 'ask' &&
+          impersonateTargetRef.current !== null
+        ) {
+          impersonateProofRef.current = 'skip'
+          setImpersonateProof('skip')
+        }
+      }),
     [context],
   )
   const impersonateStepUpBusy = useSignal(impersonateStepUp.step.busy)
@@ -369,7 +388,19 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     setMergeOpen(open)
   }
   const mergeStepUp = useMemo(
-    () => createHilosUserCardStepUp(context),
+    () =>
+      createHilosUserCardStepUp(context, () => {
+        const survivor = detailRef.current
+        if (
+          survivor &&
+          mergeProofRef.current === 'ask' &&
+          mergeOpenRef.current
+        ) {
+          mergeProofRef.current = 'skip'
+          setMergeProof('skip')
+          mergeCandidates.start(survivor.id)
+        }
+      }),
     [context],
   )
   const mergeStepUpBusy = useSignal(mergeStepUp.step.busy)

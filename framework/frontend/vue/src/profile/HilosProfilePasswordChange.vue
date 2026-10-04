@@ -4,11 +4,15 @@ import {
   focusInitial,
   HILOS_PROFILE_PASSWORD_CHANGE_COPY as COPY,
   HILOS_STEP_UP_COPY,
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
   type HilosProfilePasswordChangeFlow,
 } from '@hilos/core'
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
+import HilosSendProgress from '../HilosSendProgress.vue'
 import LoadingButton from '../LoadingButton.vue'
 import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import { useSignal } from '../useSignal.js'
@@ -22,6 +26,8 @@ const signOutOthers = useSignal(props.flow.signOutOthers)
 const signedOutOthers = useSignal(props.flow.signedOutOthers)
 const busy = useSignal(props.flow.busy)
 const refusal = useSignal(props.flow.refusal)
+const sendProgress = useSignal(props.flow.sendProgress)
+const resendAt = useSignal(props.flow.resendAt)
 const stepUpRefusal = useSignal(props.flow.stepUp.refusal)
 const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const body = ref<HTMLElement | null>(null)
@@ -93,6 +99,35 @@ watch(step, () => {
               ><span>{{ label }}</span>
             </li>
           </ol>
+          <div :class="SEND_PROGRESS_ROW_CLASS">
+            <i
+              class="bi bi-hourglass-split flex-shrink-0"
+              aria-hidden="true"
+            ></i>
+            <span class="flex-grow-1 text-truncate">&nbsp;</span>
+            <span :class="SEND_PROGRESS_DETAILS_CLASS"
+              ><i class="bi bi-info-circle" aria-hidden="true"></i
+            ></span>
+          </div>
+          <div class="mb-3">
+            <span class="btn btn-link btn-sm p-0">{{ SEND_AGAIN_LABEL }}</span>
+          </div>
+          <div class="form-label">{{ COPY.code }}</div>
+          <div class="form-control">&nbsp;</div>
+        </div>
+        <div class="invisible" aria-hidden="true" inert>
+          <ol class="list-unstyled d-flex flex-column gap-1 mb-3 small">
+            <li
+              v-for="(label, index) in COPY.steps"
+              :key="label"
+              class="d-flex align-items-center gap-2"
+            >
+              <span class="badge rounded-pill text-bg-secondary">{{
+                index + 1
+              }}</span
+              ><span>{{ label }}</span>
+            </li>
+          </ol>
           <div class="form-label">{{ COPY.newPassword }}</div>
           <div class="form-control">&nbsp;</div>
           <div class="form-text">{{ COPY.newPasswordHint }}</div>
@@ -149,6 +184,14 @@ watch(step, () => {
               :id="`${id}-code-form`"
               @submit.prevent="flow.confirmCode()"
             >
+              <HilosSendProgress
+                :progress="sendProgress"
+                :to="opening?.destination ?? ''"
+                :resend-at="resendAt"
+                :busy="busy"
+                data-id="profile-password-send"
+                @send-again="void flow.sendAgain()"
+              />
               <label :for="`${id}-code`" class="form-label">{{
                 COPY.code
               }}</label>
@@ -160,14 +203,10 @@ watch(step, () => {
                 data-autofocus
                 data-id="profile-password-code"
                 :value="code"
-                :aria-describedby="`${id}-code-hint`"
                 @input="
                   flow.code.set(($event.target as HTMLInputElement).value)
                 "
               />
-              <div :id="`${id}-code-hint`" class="form-text text-break">
-                {{ fill(COPY.codeHint) }}
-              </div>
             </form>
             <form
               v-else-if="step === 'password'"

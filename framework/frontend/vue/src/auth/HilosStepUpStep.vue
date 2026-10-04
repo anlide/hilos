@@ -2,6 +2,7 @@
 import { HILOS_STEP_UP_COPY, type HilosStepUpStep } from '@hilos/core'
 
 import HilosFormError from '../HilosFormError.vue'
+import HilosSendProgress from '../HilosSendProgress.vue'
 import { useSignal } from '../useSignal.js'
 
 const props = defineProps<{ controller: HilosStepUpStep }>()
@@ -10,6 +11,9 @@ const code = useSignal(props.controller.code)
 const password = useSignal(props.controller.password)
 const backupCode = useSignal(props.controller.backupCode)
 const refusal = useSignal(props.controller.refusal)
+const sendProgress = useSignal(props.controller.sendProgress)
+const resendAt = useSignal(props.controller.resendAt)
+const busy = useSignal(props.controller.busy)
 
 function copy(template: string): string {
   return template
@@ -41,6 +45,17 @@ function copy(template: string): string {
         opening?.method === 'sms_code'
       "
     >
+      <HilosSendProgress
+        v-if="
+          opening?.method === 'email_code' || opening?.method === 'sms_code'
+        "
+        :progress="sendProgress"
+        :to="opening.destination ?? ''"
+        :resend-at="resendAt"
+        :busy="busy"
+        data-id="step-up-send"
+        @send-again="void controller.sendAgain()"
+      />
       <label class="form-label" for="hilos-step-up-code">Code</label>
       <input
         id="hilos-step-up-code"

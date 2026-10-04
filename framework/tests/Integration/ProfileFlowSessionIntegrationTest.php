@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
@@ -24,6 +25,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
@@ -66,6 +68,9 @@ final class ProfileFlowSessionIntegrationTest extends HilosSessionIntegrationTes
 
     private const string REQUEST_ID = 'request-1182';
 
+    /** Ticket of the profile code send whose line a change of person takes away. */
+    private const string TICKET = 'ticket-1186';
+
     private const string CURRENT = 'current@example.test';
 
     private const string CREATED_AT = '2026-10-01 10:00:00';
@@ -98,6 +103,7 @@ final class ProfileFlowSessionIntegrationTest extends HilosSessionIntegrationTes
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         RtTruthSourceRegistry::registerDaemon(StateHilosProfileFlow::RT_COLLECTION);
+        RtTruthSourceRegistry::registerDaemon(StateHilosCodeSendAttempt::RT_COLLECTION);
         // A sign-out rotates the token and forgets the toast stack; the library claims both at start.
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionRotation::RT_COLLECTION);
         RtTruthSourceRegistry::registerDaemon(StateHilosSessionToastStack::RT_COLLECTION);
@@ -115,6 +121,7 @@ final class ProfileFlowSessionIntegrationTest extends HilosSessionIntegrationTes
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosCodeSendAttempt::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosProfileFlow::RT_COLLECTION);
         SourceChangeBus::reset();
         Hilos::$rt = $this->previousRt;
@@ -233,6 +240,39 @@ final class ProfileFlowSessionIntegrationTest extends HilosSessionIntegrationTes
     }
 
     /**
+     * A profile window's send line belongs to the person who asked, so a sign-out takes it with the flows (HIL-1186).
+     *
+     * @throws HilosException When the seed, the frame or the sign-out fails
+     */
+    public function testSigningOutTakesTheSessionsSendLineAway(): void
+    {
+        self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null);
+        $holder = new ProfileFlowSessionTestHolder();
+        $this->openSendLine($holder);
+        self::assertNotNull($this->sendLineOf(self::SESSION_TOKEN));
+
+        $holder->onAgentAction(self::TAB_A, HilosSignalConstants::HILOS_LOGOUT, LogoutActionDTO::fromArray([]));
+
+        self::assertNull($this->sendLineOf(self::SESSION_TOKEN));
+    }
+
+    /**
+     * Ending a takeover gives the session back to the administrator, who asked for no code.
+     *
+     * @throws HilosException When the seed, the frame or the stop fails
+     */
+    public function testEndingATakeoverTakesTheSessionsSendLineAway(): void
+    {
+        self::seedSession(self::SESSION_TOKEN, self::USER_ID, self::CREATED_AT, null, self::ADMINISTRATOR);
+        $holder = new ProfileFlowSessionTestHolder();
+        $this->openSendLine($holder);
+
+        $holder->onAgentAction(self::TAB_A, HilosSignalConstants::HILOS_IMPERSONATE_STOP, new ImpersonateStopActionDTO());
+
+        self::assertNull($this->sendLineOf(self::SESSION_TOKEN));
+    }
+
+    /**
      * Reports one step of the email window of a session, as the users library does.
      *
      * @param ProfileFlowSessionTestHolder $holder Holder under test
@@ -322,6 +362,36 @@ final class ProfileFlowSessionIntegrationTest extends HilosSessionIntegrationTes
         }
 
         return $last;
+    }
+
+    /**
+     * Opens the password window's send line of the session, as the users library does when it orders a code.
+     *
+     * @param ProfileFlowSessionTestHolder $holder Holder under test
+     * @throws HilosException When the holder fails to write the line
+     */
+    private function openSendLine(ProfileFlowSessionTestHolder $holder): void
+    {
+        $holder->onSignalAgent(
+            new AgentSignalData(data: CodeSendStepSignalData::queued(
+                self::TICKET,
+                ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+                StateHilosCodeSendAttempt::CHANNEL_EMAIL,
+                StepUpOperationKey::CHANGE_PASSWORD,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_CODE_SEND_STEP,
+        );
+    }
+
+    /**
+     * @param string $sessionToken Session cookie token
+     * @return ?string Ticket of the session's send line, or null when it has none
+     * @throws HilosException When the runtime cannot be read
+     */
+    private function sendLineOf(string $sessionToken): ?string
+    {
+        return Hilos::$rt->hilosCodeSendAttempts[ProtectedModeRuntime::hashSessionToken($sessionToken)]?->ticket;
     }
 
     /**

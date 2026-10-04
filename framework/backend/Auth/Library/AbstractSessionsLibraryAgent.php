@@ -2312,6 +2312,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->forgetSessionToasts($sessionToken);
         $this->forgetProfileFlows($sessionToken);
+        $this->dropCodeSendProgress($sessionToken);
         Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
@@ -2779,6 +2780,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->forgetSessionToasts($sessionToken);
         $this->forgetProfileFlows($sessionToken);
+        $this->dropCodeSendProgress($sessionToken);
         Hilos::$ac?->renameBrowserSession($sessionToken, $newToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
@@ -2854,6 +2856,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $session->actions->unbindUser();
         $this->forgetSessionToasts($sessionToken);
         $this->forgetProfileFlows($sessionToken);
+        $this->dropCodeSendProgress($sessionToken);
         if ($impersonatorId !== null) {
             $this->logAgentInfo('impersonate_stop ' . json_encode([
                 'event' => 'impersonate_stop',
@@ -3991,7 +3994,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         if ($frame->sessionTokenHash !== null && $frame->channel !== null) {
-            $attempts->actions->start($frame->sessionTokenHash, $frame->ticket, $frame->channel);
+            $attempts->actions->start($frame->sessionTokenHash, $frame->ticket, $frame->channel, $frame->purpose);
             $this->publishCodeSendProgress($frame->sessionTokenHash);
 
             return;
@@ -4086,16 +4089,22 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Called wherever the registration wait it belongs to is let go - the hold expiring and the
      * person cancelling - because the line describes a code that the same movement has just
-     * made pointless. The empty frame goes out to the tabs that are still there; a session with
-     * none loses the row to {@see self::sweepCodeSendAttempts()} instead, with nobody to tell.
+     * made pointless. Called too wherever the person behind the session changes - a sign-out, a
+     * vacated or deauthenticated session, a takeover begun or ended (HIL-1186) - beside
+     * {@see self::forgetProfileFlows()}: a profile window's line belongs to the person who asked.
+     * The empty frame goes out to the tabs that are still there; a session with none loses the
+     * row to {@see self::sweepCodeSendAttempts()} instead, with nobody to tell.
      *
-     * @param string $sessionToken Session cookie token whose wait is over
+     * Only the sign-in feature mounts the line ({@see AuthFeature::mount()}), so a project without
+     * the surface has none to drop - and the sign-out paths that call this run there too.
+     *
+     * @param string $sessionToken Session cookie token whose line is over
      * @throws HilosException On runtime failure
      * @throws InvalidArgumentException When the progress frame cannot be named or queued
      */
     private function dropCodeSendProgress(string $sessionToken): void
     {
-        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        $attempts = $this->hasSignInSurface() ? Hilos::$rt?->hilosCodeSendAttempts : null;
         if ($attempts === null) {
             return;
         }
@@ -4152,7 +4161,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->sessionToken,
             $frame->action,
             $frame->requestId,
-            null,
+            $frame->reply,
         );
     }
 
@@ -4847,6 +4856,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             correlationId: $correlationId,
         ));
         $this->forgetProfileFlows($sessionToken);
+        $this->dropCodeSendProgress($sessionToken);
 
         $this->logAgentInfo('impersonate_start ' . json_encode([
             'event' => 'impersonate_start',
@@ -4910,6 +4920,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             correlationId: $correlationId,
         ), $requestId, $action);
         $this->forgetProfileFlows($sessionToken);
+        $this->dropCodeSendProgress($sessionToken);
 
         $this->logAgentInfo('impersonate_stop ' . json_encode([
             'event' => 'impersonate_stop',
@@ -6957,10 +6968,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * A provider sign-in goes through the OAuth agent, and a login also through the users library
      * that turns the answer into an account; a link settles in the OAuth agent alone. A code send
-     * not yet over is carried by the code agent - unless it is a letter carried by a mail shard.
-     * This library cannot tell whether that shard is alive, so it says nothing about the letter;
-     * if the shard died, the raw letter died with it and the wait ends at code expiry or resend
-     * (HIL-1135).
+     * not yet over is carried by the code agent - unless it is a letter carried by a mail shard,
+     * or a profile code (HIL-1186), which goes through the delivery channels - a mail or an SMS
+     * shard - whatever its channel. This library cannot tell whether that shard is alive, so it
+     * says nothing about either; if the shard died, the raw send died with it and the wait ends
+     * at code expiry or resend (HIL-1135).
      *
      * Null stands for "all of them": the start of this library, which cannot tell what went with
      * its predecessor and knows only that nothing it left open will be answered, and its stop,
@@ -7031,7 +7043,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         foreach ($attempts as $attempt) {
             $open = $attempt->state === StateHilosCodeSendAttempt::STATE_QUEUED
                 || $attempt->state === StateHilosCodeSendAttempt::STATE_SENDING;
-            if ($open && $attempt->channel !== StateHilosCodeSendAttempt::CHANNEL_EMAIL) {
+            if ($open && $attempt->channel !== StateHilosCodeSendAttempt::CHANNEL_EMAIL && $attempt->purpose === null) {
                 $tickets[] = $attempt->ticket;
             }
         }
@@ -7343,7 +7355,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Answers the sign-in action a frame finished, when there is a caller waiting on it.
+     * Answers the sign-in or profile action a frame finished, when there is a caller waiting on it.
      *
      * The users library deferred its own reply so that the answer would leave from behind
      * the identity it announces (HIL-622), and since HIL-710 that identity is sent by the
@@ -7351,6 +7363,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * and names the one socket that asked. Nothing is sent when the frame carries no
      * request id: the session grant is also the ending of an OAuth login, whose action was
      * acked as "accepted, working on it" the moment the browser was sent to the provider.
+     * A profile window's step is answered the same way (HIL-1182), and its code request carries
+     * its send reply in the outcome slot (HIL-1186) - the project relays the slot as it is.
      *
      * The frame restates an identity that has not changed, which is the price of having one
      * frame rather than two: the alternative is a second kind of frame whose only content
@@ -7360,7 +7374,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param string $sessionToken Session cookie token the answering socket belongs to
      * @param ?string $action Action name the frame finished, or null when it finished none
      * @param ?string $requestId Request id of the waiting caller, or null when nobody waits
-     * @param ?array<string, mixed> $outcome Where the surface goes next, or null for no domain reply
+     * @param ?array<string, mixed> $outcome Domain reply in its wire form - where a sign-in surface goes next, or a
+     *     profile code request's send reply - or null for none
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException When the session or its unfinished registration cannot be read
      */

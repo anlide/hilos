@@ -35,6 +35,11 @@ afterEach(() => {
 })
 
 const STEP_UP_START = 'hilos_step_up_start'
+const SEND_REPLY = {
+  sent: true,
+  resendAt: 1_900_000_000_000,
+  expiresAt: 1_900_000_600_000,
+}
 const NO_STEP: HilosStepUpOpening = {
   required: false,
   purpose: 'add a way to sign in',
@@ -48,7 +53,14 @@ const PASSWORD_STEP: HilosStepUpOpening = {
 function setup(verifiedEmail = false, opening: HilosStepUpOpening = NO_STEP) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const dispatch = vi.fn((action: string) => ({
-    done: Promise.resolve(action === STEP_UP_START ? { reply: opening } : {}),
+    done: Promise.resolve(
+      action === STEP_UP_START
+        ? { reply: opening }
+        : action === 'profile_add_sms_request' ||
+            action === 'profile_add_password_request'
+          ? { reply: SEND_REPLY }
+          : {},
+    ),
   }))
   const context = {
     connection: {
@@ -209,6 +221,26 @@ describe('add sign-in method flow', () => {
     expect(world.flow.phone.get()).toBe('+15551234567')
     await world.flow.submitPhoneCode('123456')
     expect(world.flow.step.get()).toBe('closed')
+  })
+
+  it('orders another phone code to the same number on the code step', async () => {
+    const world = setup()
+    await world.flow.open()
+    world.flow.choosePhone()
+    await world.flow.submitPhone('+15551234567')
+    await world.flow.sendAgain()
+
+    expect(world.flow.step.get()).toBe('phone-code')
+    expect(
+      world.dispatch.mock.calls.filter(
+        ([name]) => name === 'profile_add_sms_request',
+      ),
+    ).toHaveLength(2)
+    expect(world.dispatch).toHaveBeenLastCalledWith(
+      'profile_add_sms_request',
+      { phone: '+15551234567' },
+      expect.anything(),
+    )
   })
   it('does not apply a late rejection to a reopened dialog', async () => {
     const world = setup()

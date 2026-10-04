@@ -81,7 +81,15 @@ function scriptedLifecycle(answers: Record<string, unknown>) {
       options: { replySchema?: { parse(value: unknown): unknown } } = {},
     ) => {
       sent.push({ name, payload })
-      const answer = answers[name] ?? []
+      const answer =
+        answers[name] ??
+        (name === 'hilos_account_deletion_code'
+          ? {
+              sent: true,
+              resendAt: 1_900_000_000_000,
+              expiresAt: 1_900_000_600_000,
+            }
+          : [])
       if (typeof answer === 'string') {
         return { done: Promise.reject(new ActionError(name, 'fail', answer)) }
       }
@@ -201,6 +209,29 @@ describe('the four actions', () => {
 })
 
 describe('the window', () => {
+  it('repeats a held code request without leaving the code step', async () => {
+    const { flow, sent } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+      hilos_account_deletion_code: {
+        sent: false,
+        resendAt: LOCAL_NOW + 60_000,
+        expiresAt: null,
+      },
+    })
+    await flow.open()
+    await flow.next()
+    expect(flow.step.get()).toBe('code')
+    flow.code.set('123456')
+    await flow.sendAgain()
+
+    expect(flow.code.get()).toBe('')
+    expect(flow.step.get()).toBe('code')
+    expect(
+      sent.filter((entry) => entry.name === 'hilos_account_deletion_code'),
+    ).toHaveLength(2)
+  })
+
   it('skips the confirmation it is not asked for and lands on step 1', async () => {
     const { flow, sent } = flowSetup({
       hilos_step_up_start: SKIP,

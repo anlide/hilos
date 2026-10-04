@@ -30,6 +30,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosLink from '../HilosLink.vue'
 import HilosModal from '../HilosModal.vue'
+import HilosSendProgress from '../HilosSendProgress.vue'
 import LoadingButton from '../LoadingButton.vue'
 import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import { useSignal } from '../useSignal.js'
@@ -49,6 +50,8 @@ const opening = useSignal(flow.opening)
 const code = useSignal(flow.code)
 const busy = useSignal(flow.busy)
 const refusal = useSignal(flow.refusal)
+const sendProgress = useSignal(flow.sendProgress)
+const resendAt = useSignal(flow.resendAt)
 const stepUpOpening = useSignal(flow.stepUp.opening)
 const stepUpRefusal = useSignal(flow.stepUp.refusal)
 const now = ref(Date.now())
@@ -252,6 +255,14 @@ function fill(template: string): string {
             <p class="small text-body-secondary mb-3">
               {{ fill(COPY.codeSent) }}
             </p>
+            <HilosSendProgress
+              :progress="sendProgress"
+              :to="opening?.destination ?? ''"
+              :resend-at="resendAt"
+              :busy="busy"
+              data-id="account-deletion-send"
+              @send-again="void flow.sendAgain()"
+            />
             <label class="form-label" for="hilos-account-deletion-code">{{
               COPY.codeLabel
             }}</label>

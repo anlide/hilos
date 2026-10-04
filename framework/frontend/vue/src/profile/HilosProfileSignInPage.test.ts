@@ -87,16 +87,36 @@ function setMethods(
   })
 }
 
+/**
+ * A mounted page over a fake server.
+ *
+ * @param opening The answer to the confirmation start.
+ * @param initial The ways in the account already has.
+ * @param offered The methods the session offers.
+ * @param resendAt The moment a code request's answer opens the resend gate.
+ */
 function setup(
   opening: object = NO_STEP,
   initial = methods,
   offered: readonly object[] = OFFERED,
+  resendAt = 1_900_000_000_000,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
     done: Promise.resolve(
-      action === 'hilos_step_up_start' ? { reply: opening } : {},
+      action === 'hilos_step_up_start'
+        ? { reply: opening }
+        : action === 'profile_add_sms_request' ||
+            action === 'profile_add_password_request'
+          ? {
+              reply: {
+                sent: true,
+                resendAt,
+                expiresAt: resendAt + 600_000,
+              },
+            }
+          : {},
     ),
   }))
   const scopes = new ScopeManager()
@@ -221,6 +241,56 @@ describe('profile sign-in page dialogs', () => {
     expect(
       document.querySelector('[data-id="profile-sign-in-add-modal"]'),
     ).toBeNull()
+  })
+  it.each([
+    {
+      initial: methods,
+      choose: 'profile-sign-in-choose-phone',
+      address: 'profile-add-sms-phone',
+      value: '+15557654321',
+      request: 'profile-add-sms-request',
+      code: 'profile-add-sms-code',
+      send: 'profile-add-sms-send',
+      action: 'profile_add_sms_request',
+      payload: { phone: '+15557654321' },
+    },
+    {
+      initial: passkeyOnly,
+      choose: 'profile-sign-in-choose-password',
+      address: 'profile-add-password-email',
+      value: 'me@example.test',
+      request: 'profile-add-password-request',
+      code: 'profile-add-password-code',
+      send: 'profile-add-password-send',
+      action: 'profile_add_password_request',
+      payload: { email: 'me@example.test' },
+    },
+  ])('empties the typed code as $send asks for another one', async (way) => {
+    const world = setup(NO_STEP, way.initial, OFFERED, Date.now() - 60_000)
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    byId(way.choose).click()
+    await flushPromises()
+    await fill(way.address, way.value)
+    byId(way.request).click()
+    await flushPromises()
+    expect(byId(way.send)).toBeDefined()
+    await fill(way.code, '123456')
+
+    // The resend stays unanswered: the field is emptied by the press, not by
+    // the answer.
+    world.dispatch.mockImplementationOnce(() => ({
+      loading: createSignal(false),
+      done: new Promise<never>(() => undefined),
+    }))
+    byId(`${way.send}-again`).click()
+    await flushPromises()
+    expect(world.dispatch).toHaveBeenLastCalledWith(
+      way.action,
+      way.payload,
+      expect.anything(),
+    )
+    expect((byId(way.code) as HTMLInputElement).value).toBe('')
   })
   it('asks the server before opening and starts at the chooser when no step is needed', async () => {
     const world = setup()

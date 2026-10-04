@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeNewConfirmActionDTO;
@@ -68,14 +69,15 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      * Proving the current mailbox comes first because the flow runs inside a signed-in
      * session, and a session left open is exactly where somebody who is not the owner could
      * start it. The address is read from the account, never from the client. The send gate's
-     * cooldown is a silent success - the code already waiting in the mailbox is the one to
-     * type - while the window cap is refused out loud, because the surface has a place for it.
+     * cooldown answers with the earlier code's lifetime and the next send moment, while the
+     * window cap is refused out loud.
      *
      * The step lands on the session's record with the moment the live code dies - the new one,
      * or the one the cooldown left in play. A cooldown with no live code behind it leaves the
-     * record as it was: there is no code to enter, so the window has no step to move to.
+     * record as it was; the action reply still names the step's send pause.
      *
      * @param string $acceptKey Accept key the action arrived on
+     * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the confirmation is missing, the account has no verified email, or the send cap is reached
      * @throws EmptyValueException When the current address is empty
@@ -83,20 +85,15 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When a confirmation, verification or identity query fails
      */
-    public function requestCurrentCode(string $acceptKey): void
+    public function requestCurrentCode(string $acceptKey): CodeSendReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($acting->userId);
 
-        $verifications = new VerificationService();
-        if ($verifications->issue(VerificationType::EMAIL_CHANGE_CURRENT, $current, $acting->userId)->capReached) {
-            throw new ValidationException(AuthMessages::SEND_CAP);
-        }
-
-        $expiresAt = $verifications->activeExpiresAt(VerificationType::EMAIL_CHANGE_CURRENT, $current);
-        if ($expiresAt === null) {
-            return;
+        $reply = $this->sendProfileCode($acting, StepUpOperationKey::CHANGE_EMAIL, VerificationType::EMAIL_CHANGE_CURRENT, $current);
+        if ($reply->expiresAt === null) {
+            return $reply;
         }
 
         $this->library->announceProfileFlowStep(
@@ -105,8 +102,10 @@ final class EmailChangeCommands extends AbstractLibraryCommands
             HilosProfileFlow::STEP_CURRENT_SENT,
             $current,
             null,
-            $expiresAt,
+            $reply->expiresAt,
+            $reply,
         );
+        return $reply;
     }
 
     /**
@@ -161,6 +160,7 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileEmailChangeNewRequestActionDTO $dto New address
+     * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the confirmation is missing, the address is refused, the proof is gone,
      *     or the send cap is reached
@@ -169,7 +169,7 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When a confirmation, verification or identity query fails
      */
-    public function requestNewCode(string $acceptKey, ProfileEmailChangeNewRequestActionDTO $dto): void
+    public function requestNewCode(string $acceptKey, ProfileEmailChangeNewRequestActionDTO $dto): CodeSendReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
@@ -183,9 +183,7 @@ final class EmailChangeCommands extends AbstractLibraryCommands
             $current,
         );
 
-        if (new VerificationService()->issue(VerificationType::EMAIL_CHANGE, $email, $acting->userId)->capReached) {
-            throw new ValidationException(AuthMessages::SEND_CAP);
-        }
+        $reply = $this->sendProfileCode($acting, StepUpOperationKey::CHANGE_EMAIL, VerificationType::EMAIL_CHANGE, $email);
 
         $this->library->announceProfileFlowStep(
             $acting,
@@ -194,7 +192,9 @@ final class EmailChangeCommands extends AbstractLibraryCommands
             $current,
             $email,
             $flow->expiresAt,
+            $reply,
         );
+        return $reply;
     }
 
     /**

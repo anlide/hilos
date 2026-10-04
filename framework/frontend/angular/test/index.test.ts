@@ -15,6 +15,7 @@ import {
   HilosDashboardPage,
   HilosDropdown,
   HilosFormError,
+  HilosSendProgress,
   HilosLayout,
   HilosLink,
   HilosMagicLinkPage,
@@ -65,6 +66,7 @@ it('exports the @hilos/angular public surface', () => {
   expect(HilosDashboardPage).toBeTypeOf('function')
   expect(HilosModal).toBeTypeOf('function')
   expect(HilosFormError).toBeTypeOf('function')
+  expect(HilosSendProgress).toBeTypeOf('function')
   expect(HilosViewportTable).toBeTypeOf('function')
   expect(HilosDropdown).toBeTypeOf('function')
   expect(HilosSettingsPage).toBeTypeOf('function')

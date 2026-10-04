@@ -44,6 +44,9 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
     /** Payload key: pool shard key derived from the recipient number. */
     public const string shardKey = 'shardKey';
 
+    /** Payload key: send-progress ticket reported by the SMS agent, when watched. */
+    public const string progressTicket = 'progressTicket';
+
     /**
      * @param string $to Recipient number in E.164
      * @param int $shardKey Pool shard key derived from the recipient number
@@ -54,6 +57,7 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
      *                        caller that orders the send and never re-resolved in delivery,
      *                        by the rule on MailTemplate
      *                        (framework/backend/Mail/Template/MailTemplate.php)
+     * @param ?string $progressTicket Ticket of the watched code send, or null
      * @throws ValidationException When the recipient number is blank, or the payload names
      *                             neither a template nor an inline text
      */
@@ -64,6 +68,7 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
         public readonly ?string $templateKey = null,
         public readonly array $params = [],
         public readonly ?string $locale = null,
+        public readonly ?string $progressTicket = null,
     ) {
         // A blank number is a filled-in field, so the payload reader passes it by
         // contract; refused here instead, because the agent hands it to the driver as
@@ -89,6 +94,7 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
             self::templateKey => $this->templateKey,
             self::params => $this->params,
             self::locale => $this->locale,
+            self::progressTicket => $this->progressTicket,
         ];
     }
 
@@ -108,6 +114,7 @@ final class SmsSendSignalData extends BaseDTO implements SignalDataInterface
             templateKey: self::optionalString($data, self::templateKey),
             params: self::requireArray($data, self::params),
             locale: self::optionalString($data, self::locale),
+            progressTicket: self::optionalString($data, self::progressTicket),
         );
     }
 }

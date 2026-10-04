@@ -8,7 +8,7 @@ import {
   type HilosConnection,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosProfilePasswordChange from './HilosProfilePasswordChange.vue'
 
 afterEach(() => {
@@ -52,6 +52,13 @@ function tell(step: string | null): void {
       type: SIGNAL_PROFILE_FLOWS,
       data: profileFlowsSchema.parse({ flows }),
     })
+}
+
+/** A code request's answer whose resend gate is already open. */
+const SENT_RESEND_OPEN = {
+  sent: true,
+  resendAt: Date.now() - 60_000,
+  expiresAt: Date.now() + 600_000,
 }
 
 const FRAME_AFTER: Record<string, string | null> = {
@@ -161,6 +168,23 @@ describe('password change modal', () => {
       'short',
     )
     expect(byId('profile-password-error-slot')).toBeDefined()
+  })
+  it('draws the send block on the code step and sends again from it', async () => {
+    const { flow, answers } = setup()
+    answers.profile_change_password_code_request = SENT_RESEND_OPEN
+    await flow.open()
+    await flow.sendCode()
+    await flushPromises()
+    expect(byId('profile-password-send')).toBeDefined()
+    expect(byId('profile-password-code').hasAttribute('aria-describedby')).toBe(
+      false,
+    )
+    const sendAgain = vi.spyOn(flow, 'sendAgain')
+    const again = byId('profile-password-send-again') as HTMLButtonElement
+    expect(again.disabled).toBe(false)
+    again.click()
+    await flushPromises()
+    expect(sendAgain).toHaveBeenCalledOnce()
   })
   it('opens a step-up refusal with Cancel alone', async () => {
     const { flow, answers } = setup()

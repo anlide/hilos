@@ -3,8 +3,11 @@ import {
   createHilosProfilePasswordChangeFlow,
   type ActionLifecycle,
 } from '@hilos/core'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosProfilePasswordChange } from '../src/profile/HilosProfilePasswordChange.js'
+
+/** A send gate that reopened long ago: another code may be asked for at once. */
+const PAST = 1_000_000_000_000
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -49,7 +52,7 @@ function setup() {
   const node = (id: string) =>
     document.querySelector<HTMLElement>(`[data-id="${id}"]`)!
 
-  return { flow, dispatched, fixture, node }
+  return { flow, answers, dispatched, fixture, node }
 }
 
 describe('HilosProfilePasswordChange', () => {
@@ -83,6 +86,54 @@ describe('HilosProfilePasswordChange', () => {
     expect(call?.payload).toMatchObject({
       password: 'secret',
     })
+
+    flow.dispose()
+    fixture.destroy()
+  })
+
+  it('holds the room with twins a locator, a focus trap and a screen reader pass by', async () => {
+    const { flow, fixture, node } = setup()
+    await flow.open()
+    await settle(fixture)
+
+    const twins = node('profile-password-modal').querySelectorAll('[inert]')
+    expect(twins).toHaveLength(2)
+    for (const twin of twins) {
+      expect(twin.classList.contains('invisible')).toBe(true)
+      expect(twin.getAttribute('aria-hidden')).toBe('true')
+      expect(
+        twin.querySelector(
+          '[data-id], [data-autofocus], form, input, select, textarea, button',
+        ),
+      ).toBeNull()
+    }
+
+    flow.dispose()
+    fixture.destroy()
+  })
+
+  it('draws the send block on the code step and asks the flow for another code from it', async () => {
+    const { flow, answers, fixture, node } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'change your password',
+    }
+    answers.profile_change_password_code_request = {
+      sent: false,
+      resendAt: PAST,
+      expiresAt: null,
+    }
+    await flow.open()
+    await flow.sendCode()
+    await settle(fixture)
+
+    expect(node('profile-password-send')).not.toBeNull()
+    const again = node('profile-password-send-again') as HTMLButtonElement
+    expect(again.disabled).toBe(false)
+    const sendAgain = vi.spyOn(flow, 'sendAgain')
+    again.click()
+    await settle(fixture)
+    expect(sendAgain).toHaveBeenCalledOnce()
 
     flow.dispose()
     fixture.destroy()

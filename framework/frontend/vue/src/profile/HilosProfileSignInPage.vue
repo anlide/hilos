@@ -15,6 +15,9 @@ import {
   isHilosProfilePasskeyOnly,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
   sessionAuthMethods,
   watchHilosProfilePasswordUpdated,
   type HilosAuthContext,
@@ -28,6 +31,7 @@ import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import HilosActionError from '../HilosActionError.vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
+import HilosSendProgress from '../HilosSendProgress.vue'
 import HilosPageHeading from '../HilosPageHeading.vue'
 import LoadingButton from '../LoadingButton.vue'
 import { useSignal } from '../useSignal.js'
@@ -133,6 +137,10 @@ const flow = createHilosProfileAddSignInFlow(props.context, methodsSignal)
 const step = useSignal(flow.step)
 const busy = useSignal(flow.busy)
 const refusal = useSignal(flow.refusal)
+const sendProgress = useSignal(flow.sendProgress)
+const resendAt = useSignal(flow.resendAt)
+const sentEmail = useSignal(flow.email)
+const sentPhone = useSignal(flow.phone)
 const stepUpRefusal = useSignal(flow.stepUp.refusal)
 const stepUpBusy = useSignal(flow.stepUp.busy)
 const pendingProvider = useSignal(flow.provider)
@@ -299,6 +307,11 @@ async function submitAdd(): Promise<void> {
       await flow.submitPhoneCode(addDraft.value.code.trim())
       break
   }
+}
+
+function sendAgainAdd(): void {
+  addDraft.value.code = ''
+  void flow.sendAgain()
 }
 onUnmounted(() => {
   stopPassword()
@@ -476,6 +489,21 @@ onUnmounted(() => {
         </div>
         <div class="hilos-stack">
           <div class="invisible" aria-hidden="true" inert>
+            <div :class="SEND_PROGRESS_ROW_CLASS">
+              <i
+                class="bi bi-hourglass-split flex-shrink-0"
+                aria-hidden="true"
+              ></i>
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span :class="SEND_PROGRESS_DETAILS_CLASS"
+                ><i class="bi bi-info-circle" aria-hidden="true"></i
+              ></span>
+            </div>
+            <div class="mb-3">
+              <span class="btn btn-link btn-sm p-0">{{
+                SEND_AGAIN_LABEL
+              }}</span>
+            </div>
             <div
               v-for="label in ['Code', 'New password', 'Confirm new password']"
               :key="label"
@@ -654,6 +682,19 @@ onUnmounted(() => {
               :key="field.key"
               class="mb-3"
             >
+              <HilosSendProgress
+                v-if="field.key === 'code'"
+                :progress="sendProgress"
+                :to="step === 'phone-code' ? sentPhone : sentEmail"
+                :resend-at="resendAt"
+                :busy="busy"
+                :data-id="
+                  step === 'phone-code'
+                    ? 'profile-add-sms-send'
+                    : 'profile-add-password-send'
+                "
+                @send-again="sendAgainAdd"
+              />
               <label :for="`${baseId}-add-${field.key}`" class="form-label">{{
                 field.label
               }}</label>

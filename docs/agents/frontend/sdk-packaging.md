@@ -238,6 +238,16 @@ default when nothing is customized.
 
 Several tier-1 components are part of the contract, so pages never reinvent them:
 
+- **`HilosFormError`** keeps a form refusal to one line with a details panel and
+  holds its room with an invisible twin before any refusal exists;
+- **`HilosSendProgress`** draws one session code-send line and the timed Send again
+  control above a profile code field (HIL-1186). Its text and lock rules come from
+  `@hilos/core` `primitives/sendProgress`; Vue, React, and Angular only render
+  them. It reserves the line and repeat row before the first send, opens the
+  complete line in `HilosModal`, and carries no live region of its own, so the
+  changing line is never read twice. The profile windows' regions voice their
+  refusals only, so the line itself is not announced yet (P-486);
+
 - the **`HilosLayout`** application shell — the navbar (project brand and nav
   slots, the admin gear, the live connection indicator, and, last, the sign-out
   control), a full-width banner region below the nav — empty and zero-height

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import {
@@ -7,11 +7,15 @@ import {
   CODE_SEND_STATE_NOT_SENT,
   CODE_SEND_STATE_QUEUED,
   CODE_SEND_STATE_SENT,
+  CODE_SEND_STATE_HELD,
+  codeSendReplySchema,
   codeSendProgressSchema,
   hilosCodeSendProgress,
+  hilosCodeSendProgressFor,
   SIGNAL_CODE_SEND_PROGRESS,
 } from '../../src/auth/authSendProgress.js'
 import { SESSION_SIGNAL_SCHEMAS } from '../../src/session/sessionScope.js'
+import { applyServerTime } from '../../src/session/serverClock.js'
 
 describe('code send progress frame', () => {
   it('parses a reported step with the provider sentence', () => {
@@ -128,7 +132,12 @@ describe('code send progress frame', () => {
     expect(hilosCodeSendProgress.get()).toEqual({
       state: CODE_SEND_STATE_SENT,
       channel: 'email',
+      purpose: null,
       detail: null,
+      ticket: null,
+      reason: null,
+      resendAt: null,
+      expiresAt: null,
     })
 
     for (const listener of listeners) {
@@ -140,6 +149,83 @@ describe('code send progress frame', () => {
 
     // And the empty frame is held as the absence it means, not ignored.
     expect(hilosCodeSendProgress.get()).toBeNull()
+  })
+
+  it('keeps profile progress only for the operation that ordered it', () => {
+    const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+    const connection = {
+      on: (_event: string, listener: (signal: never) => void) => {
+        listeners.push(
+          listener as (signal: { type: string; data: unknown }) => void,
+        )
+        return () => undefined
+      },
+    } as unknown as HilosConnection
+    bindCodeSendProgress(connection)
+
+    for (const listener of listeners) {
+      listener({
+        type: SIGNAL_CODE_SEND_PROGRESS,
+        data: {
+          state: CODE_SEND_STATE_HELD,
+          channel: 'email',
+          purpose: 'change_password',
+        },
+      })
+    }
+
+    expect(hilosCodeSendProgressFor('change_password').get()?.state).toBe(
+      CODE_SEND_STATE_HELD,
+    )
+    expect(hilosCodeSendProgressFor('change_email').get()).toBeNull()
+    expect(
+      codeSendReplySchema.parse({
+        sent: false,
+        resendAt: 123,
+        expiresAt: null,
+      }),
+    ).toEqual({
+      sent: false,
+      resendAt: 123,
+      expiresAt: null,
+    })
+  })
+
+  it('stores send moments on the local clock used by countdowns', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_900_000_000_000)
+    applyServerTime(Date.now() + 5_000)
+    try {
+      const listeners: ((signal: { type: string; data: unknown }) => void)[] =
+        []
+      const connection = {
+        on: (_event: string, listener: (signal: never) => void) => {
+          listeners.push(
+            listener as (signal: { type: string; data: unknown }) => void,
+          )
+          return () => undefined
+        },
+      } as unknown as HilosConnection
+      bindCodeSendProgress(connection)
+
+      for (const listener of listeners) {
+        listener({
+          type: SIGNAL_CODE_SEND_PROGRESS,
+          data: {
+            state: CODE_SEND_STATE_SENT,
+            purpose: 'change_password',
+            resendAt: Date.now() + 47_000,
+            expiresAt: Date.now() + 65_000,
+          },
+        })
+      }
+
+      expect(hilosCodeSendProgress.get()?.resendAt).toBe(Date.now() + 42_000)
+      expect(hilosCodeSendProgress.get()?.expiresAt).toBe(Date.now() + 60_000)
+    } finally {
+      applyServerTime(Date.now())
+      vi.useRealTimers()
+    }
   })
 
   it('is merged into every connection rather than one project at a time', () => {

@@ -10,6 +10,7 @@ import {
 import { computed, nextTick, ref, watch } from 'vue'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
+import HilosSendProgress from '../HilosSendProgress.vue'
 import LoadingButton from '../LoadingButton.vue'
 import HilosStepUpStep from '../auth/HilosStepUpStep.vue'
 import { useSignal } from '../useSignal.js'
@@ -23,6 +24,8 @@ const newCode = useSignal(props.flow.newCode)
 const now = useSignal(props.flow.now)
 const busy = useSignal(props.flow.busy)
 const refusal = useSignal(props.flow.refusal)
+const sendProgress = useSignal(props.flow.sendProgress)
+const resendAt = useSignal(props.flow.resendAt)
 const canSubmit = useSignal(props.flow.canSubmit)
 const asksBeforeClosing = useSignal(props.flow.asksBeforeClosing)
 const stepUpOpening = useSignal(props.flow.stepUp.opening)
@@ -137,6 +140,14 @@ watch(step, (next, previous) => {
         v-else-if="step === 'confirm-current'"
         @submit.prevent="flow.submit()"
       >
+        <HilosSendProgress
+          :progress="sendProgress"
+          :to="was"
+          :resend-at="resendAt"
+          :busy="busy"
+          data-id="profile-email-current-send"
+          @send-again="void flow.sendAgain()"
+        />
         <label class="form-label" for="profile-email-code-current">{{
           COPY.code
         }}</label>
@@ -151,7 +162,6 @@ watch(step, (next, previous) => {
           :value="currentCode"
           @input="typed($event, flow.currentCode)"
         />
-        <div class="form-text">{{ COPY.sentTo.replace('{address}', was) }}</div>
         <HilosFormError :message="refusal" data-id="profile-email-error" />
       </form>
 
@@ -174,6 +184,14 @@ watch(step, (next, previous) => {
       </form>
 
       <form v-else-if="step === 'confirm-new'" @submit.prevent="flow.submit()">
+        <HilosSendProgress
+          :progress="sendProgress"
+          :to="newEmail.trim()"
+          :resend-at="resendAt"
+          :busy="busy"
+          data-id="profile-email-new-send"
+          @send-again="void flow.sendAgain()"
+        />
         <label class="form-label" for="profile-email-code-new">{{
           COPY.code
         }}</label>
@@ -188,9 +206,6 @@ watch(step, (next, previous) => {
           :value="newCode"
           @input="typed($event, flow.newCode)"
         />
-        <div class="form-text">
-          {{ COPY.sentTo.replace('{address}', newEmail.trim()) }}
-        </div>
         <HilosFormError :message="refusal" data-id="profile-email-error" />
       </form>
 

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Sms\Delivery;
 
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\DatabaseException;
@@ -18,6 +20,7 @@ use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\HilosException;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Notification\Delivery\AbstractDeliveryChannel;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
 use Hilos\Notification\Delivery\DeliveryAttempt;
@@ -251,7 +254,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
      * @param float $nowMs Current time in milliseconds
      * @return SmsSendAttempt The started attempt (HTTP, stub, or a permanent failure)
      */
-    private function buildAttempt(SmsMessage $message, float $nowMs): SmsSendAttempt
+    protected function buildAttempt(SmsMessage $message, float $nowMs): SmsSendAttempt
     {
         $this->resolveConfig();
         if ($this->config === null || $this->providers === null) {
@@ -337,7 +340,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
             return;
         }
 
-        $this->rawSends[$this->rawNextId++] = new RawSmsSend($message, $signal->templateKey);
+        $this->rawSends[$this->rawNextId++] = new RawSmsSend($message, $signal->templateKey, $signal->progressTicket);
     }
 
     /**
@@ -383,6 +386,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             if ($attempt->isDelivered()) {
                 $attempt->close();
+                $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_SENT, null);
                 unset($this->rawSends[$id]);
                 continue;
             }
@@ -394,10 +398,12 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             if ($permanent || $send->attempts >= $this->maxAttempts()) {
                 $this->logRawFailure($send, $error);
+                $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_FAILED, $error);
                 unset($this->rawSends[$id]);
                 continue;
             }
             $send->nextAttemptMs = $nowMs + $this->rawBackoffMs($send->attempts);
+            $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_QUEUED, null);
         }
     }
 
@@ -418,6 +424,7 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
 
             $send->attempts++;
             $send->attempt = $this->buildAttempt($send->message, $nowMs);
+            $this->reportCodeSendStep($send, HilosCodeSendAttempt::STATE_SENDING, null);
         }
     }
 
@@ -460,5 +467,28 @@ class SmsDeliveryChannelAgent extends AbstractDeliveryChannelAgent
         $template = $send->templateKey ?? 'inline';
         $masked = SmsText::maskNumber($send->message->to);
         $this->logAgentWarning("raw send to {$masked} (template '{$template}') failed: {$error}");
+    }
+
+    /**
+     * Reports a watched raw send's transport state to the session holder.
+     *
+     * @param RawSmsSend $send Raw send whose state changed
+     * @param string $state New send state
+     * @param ?string $detail Provider refusal sentence, or null
+     */
+    private function reportCodeSendStep(RawSmsSend $send, string $state, ?string $detail): void
+    {
+        if ($send->progressTicket === null) {
+            return;
+        }
+
+        try {
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_CODE_SEND_STEP,
+                CodeSendStepSignalData::step($send->progressTicket, $state, $detail),
+            );
+        } catch (InvalidArgumentException $failure) {
+            $this->logAgentWarning('code send step could not be reported: ' . $failure->getMessage());
+        }
     }
 }

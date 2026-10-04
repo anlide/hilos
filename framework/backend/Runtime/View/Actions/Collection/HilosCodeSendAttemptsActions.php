@@ -10,6 +10,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
@@ -40,41 +41,50 @@ final class HilosCodeSendAttemptsActions extends RtActions
      *
      * A resend REPLACES rather than adds: the screen shows one line, about the code the person
      * is waiting for now. The row is born queued, which is the truth at this moment - the order
-     * is placed and no transport has picked it up yet. Replacing is what the store does with a
-     * second row under one id anyway, and it announces the new membership as a creation, so the
-     * previous line needs no removal of its own.
+     * is placed and no transport has picked it up yet.
+     *
+     * The previous line is removed first, although the store would replace a second row under one
+     * id by itself. Its creation reaches this process only: a copy in another worker that already
+     * holds the id does not apply a creation for it ({@see RtSyncApplicator::applyCreated()}), so
+     * it would keep the old ticket under the steps of the new send - and a reader there, the test
+     * command ending the resend pause, would stamp a ticket no row carries (HIL-1186). A removal
+     * and a creation are two events every copy applies.
      *
      * @param string $sessionTokenHash Hash of the session cookie token the line is addressed to
      * @param string $ticket Ticket of the send this line follows
      * @param string $channel Channel the code travels over - `email` or a code channel key
+     * @param ?string $purpose Profile operation, or null for a guest send
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws HilosException Whatever the row's read of the written fields raises
      */
-    public function start(string $sessionTokenHash, string $ticket, string $channel): void
+    public function start(string $sessionTokenHash, string $ticket, string $channel, ?string $purpose = null): void
     {
         $this->ensureCanWrite();
 
+        if ($this->stateCollection->has($sessionTokenHash)) {
+            $this->removeStateFromCollection($sessionTokenHash);
+        }
         $this->addStateToCollection(StateHilosCodeSendAttempt::create(
             $sessionTokenHash,
             $ticket,
             $channel,
             TimeHelper::nowMs(),
+            $purpose,
         ));
     }
 
     /**
      * Moves the line one step, if the step belongs to the send the line is following.
      *
-     * The detail - and the outcome beside it - is written on every accepted step rather than only
-     * on the one that carries it, because the two emptinesses differ: a send that goes back to queued after a retryable refusal has to
-     * LOSE the sentence it was carrying, or the screen would show yesterday's reason under
-     * today's state.
+     * A transport state change clears the previous detail and reason when it carries none:
+     * retrying from a refusal must lose the old sentence. A gate stamp with no state changes
+     * only the moments, even if it arrives after the transport's final report.
      *
      * @param string $ticket Ticket the reporting transport was given
-     * @param string $state One of the five states on {@see StateHilosCodeSendAttempt}
+     * @param ?string $state State to write, or null to keep the current state
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
      * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
@@ -89,7 +99,7 @@ final class HilosCodeSendAttemptsActions extends RtActions
      */
     public function advance(
         string $ticket,
-        string $state,
+        ?string $state,
         ?string $detail,
         ?string $reason = null,
         ?int $resendAt = null,
@@ -102,14 +112,19 @@ final class HilosCodeSendAttemptsActions extends RtActions
                 continue;
             }
 
-            $this->applyDiffToState($attempt, [
-                StateHilosCodeSendAttempt::state => $state,
-                StateHilosCodeSendAttempt::detail => $detail,
-                StateHilosCodeSendAttempt::reason => $reason,
-                StateHilosCodeSendAttempt::resendAt => $resendAt,
-                StateHilosCodeSendAttempt::expiresAt => $expiresAt,
-                StateHilosCodeSendAttempt::updatedAt => TimeHelper::nowMs(),
-            ]);
+            $diff = [StateHilosCodeSendAttempt::updatedAt => TimeHelper::nowMs()];
+            if ($state !== null) {
+                $diff[StateHilosCodeSendAttempt::state] = $state;
+                $diff[StateHilosCodeSendAttempt::detail] = $detail;
+                $diff[StateHilosCodeSendAttempt::reason] = $reason;
+            }
+            if ($resendAt !== null) {
+                $diff[StateHilosCodeSendAttempt::resendAt] = $resendAt;
+            }
+            if ($expiresAt !== null) {
+                $diff[StateHilosCodeSendAttempt::expiresAt] = $expiresAt;
+            }
+            $this->applyDiffToState($attempt, $diff);
 
             return $attempt->getId();
         }

@@ -92,6 +92,7 @@ final class SmsVerificationDelivererTest extends TestCase
             '+15551234567',
             VerificationType::SMS_ADD,
             VerificationDeliverable::code('111222'),
+            'a1b2c3d4e5f60718',
         );
 
         self::assertCount(1, $router->captured);
@@ -99,6 +100,7 @@ final class SmsVerificationDelivererTest extends TestCase
             SmsTemplateCatalogConstants::AUTH_SMS_ADD,
             $router->captured[0]['data']->data->templateKey,
         );
+        self::assertSame('a1b2c3d4e5f60718', $router->captured[0]['data']->data->progressTicket);
     }
 
     public function testStepUpSmsTypeMapsToItsTemplateKey(): void

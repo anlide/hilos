@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
@@ -35,9 +36,9 @@ use Random\RandomException;
  *
  * The profile's half of the sign-in methods. Every command here acts on the account behind
  * the acting session and on nobody else: the person is resolved from the session, never
- * named by the client, and each command answers with nothing - the identities projection
- * re-emits what changed, and a password, which nothing projects, is confirmed by its own
- * signal to every tab the person has open.
+ * named by the client. Code requests answer with their send gate's outcome; the other writes
+ * re-emit the identities projection, and a password, which nothing projects, is confirmed by
+ * its own signal to every tab the person has open.
  *
  * The group began with the unlink alone, because unlinking a passkey is not one write: the
  * anchor row and the crypto sidecar are two tables, and only the sign-in commands are allowed
@@ -94,35 +95,29 @@ final class IdentityCommands extends AbstractLibraryCommands
      *
      * The owning user is carried on the challenge so step 2 can assert the code was minted
      * for this person. The phone is normalized to E.164 (a malformed number is refused
-     * synchronously); the code is issued through the send gate, which can drop the request
-     * silently - the resend cooldown for a repeat pressed too soon, and the per-window cap
-     * once too many codes have gone to that number (HIL-421). Either way the step answers a
-     * plain success and the surface advances to the code step, so a capped number reaches a
-     * code screen for a message that is not coming until the window turns over; there is no
-     * resend control on the profile to say so. No duplicate-phone check here: a number is
-     * not tested for an owner until the code proves possession of it.
+     * synchronously); the send gate returns the cooldown and the earlier code's lifetime on a
+     * held request, and refuses the per-window cap (HIL-421). No duplicate-phone check here:
+     * a number is not tested for an owner until the code proves possession of it.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddSmsRequestActionDTO $dto Phone to send the code to
+     * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the add is not confirmed, or the phone is not a valid number
      * @throws EmptyValueException When the normalized identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When the verification query fails
      */
-    public function requestSmsAdd(string $acceptKey, ProfileAddSmsRequestActionDTO $dto): void
+    public function requestSmsAdd(string $acceptKey, ProfileAddSmsRequestActionDTO $dto): CodeSendReplyDTO
     {
-        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null) {
             throw new ValidationException(AuthMessages::INVALID_PHONE);
         }
 
-        // The send gate's verdict - cooldown hold, cap refusal or a real send - is
-        // deliberately dropped: the profile has no resend control to hand a countdown
-        // or a refusal to, and a repeat here is a repeated modal submit (HIL-421).
-        new VerificationService()->issue(VerificationType::SMS_ADD, $phone, $userId);
+        return $this->sendProfileCode($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, VerificationType::SMS_ADD, $phone);
     }
 
     /**
@@ -171,20 +166,21 @@ final class IdentityCommands extends AbstractLibraryCommands
      * mailed to the entered address, so an email already verified by ANOTHER account is
      * refused without sending anything - a stranger's verified address is never mailed. A
      * free email, or one already the person's own, is issued a code through the send gate,
-     * whose cooldown and cap can drop the request silently (HIL-421); either way the step
-     * answers a plain success, with no resend control on the profile to report the difference.
+     * which answers with the cooldown timing or refuses the cap (HIL-421).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddPasswordRequestActionDTO $dto Address to send the code to
+     * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the add is not confirmed, or the email is malformed or already verified by another account
      * @throws EmptyValueException When the normalized identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When a verification or identity query fails
      */
-    public function requestPasswordAdd(string $acceptKey, ProfileAddPasswordRequestActionDTO $dto): void
+    public function requestPasswordAdd(string $acceptKey, ProfileAddPasswordRequestActionDTO $dto): CodeSendReplyDTO
     {
-        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        $userId = $acting->userId;
 
         $email = strtolower($dto->email);
         if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
@@ -196,9 +192,7 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         }
 
-        // Same as the phone step: no resend control on the profile, so neither the
-        // countdown nor the cap refusal has anywhere to go (HIL-421).
-        new VerificationService()->issue(VerificationType::EMAIL_ADD, $email, $userId);
+        return $this->sendProfileCode($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, VerificationType::EMAIL_ADD, $email);
     }
 
     /**

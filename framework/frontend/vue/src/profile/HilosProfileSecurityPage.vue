@@ -126,6 +126,9 @@ type EnrollStep =
   | 'more'
 const enrollStepUp = createHilosStepUpStep(
   createHilosStepUpActions(props.context.actions),
+  () => {
+    if (enrollStep.value === 'step-up') enrollStep.value = 'name'
+  },
 )
 const enrollStepUpRefusal = useSignal(enrollStepUp.refusal)
 const enrollStepUpBusy = useSignal(enrollStepUp.busy)

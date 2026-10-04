@@ -14,6 +14,12 @@ import {
 
 const SKIP = { required: false, purpose: 'change your email' }
 const ASK = { required: true, purpose: 'change your email', method: 'password' }
+const SEND_REPLY = {
+  sent: true,
+  resendAt: 1_900_000_000_000,
+  expiresAt: 1_900_000_600_000,
+}
+const HELD_REPLY = { sent: false, resendAt: 1_900_000_000_000, expiresAt: null }
 
 /** The session's record of the email change at one step. */
 function record(step: string, target: string | null = null) {
@@ -49,10 +55,16 @@ const tell = bound()
  * The list the server tells every tab of the session when a step lands - before
  * it answers the tab that submitted, as the session holder does.
  */
-function frameAfter(name: string, payload: unknown): unknown[] | undefined {
+function frameAfter(
+  name: string,
+  payload: unknown,
+  answer: unknown,
+): unknown[] | undefined {
   switch (name) {
     case 'profile_change_email_current_request':
-      return [record('current_sent')]
+      return (answer as { expiresAt?: number | null }).expiresAt === null
+        ? undefined
+        : [record('current_sent')]
     case 'profile_change_email_current_confirm':
       return [record('current_proven')]
     case 'profile_change_email_new_request':
@@ -77,6 +89,8 @@ function setup(extra: Record<string, unknown> = {}) {
   tell([])
   const answers: Record<string, unknown> = {
     hilos_step_up_start: SKIP,
+    profile_change_email_current_request: SEND_REPLY,
+    profile_change_email_new_request: SEND_REPLY,
     ...extra,
   }
   const dispatch = vi.fn(
@@ -91,7 +105,7 @@ function setup(extra: Record<string, unknown> = {}) {
         return { done: answer as Promise<{ reply: unknown }> }
       if (typeof answer === 'string')
         return { done: Promise.reject(new ActionError(name, 'fail', answer)) }
-      const frame = frameAfter(name, payload)
+      const frame = frameAfter(name, payload, answer)
       if (frame !== undefined) tell(frame)
       return {
         done: Promise.resolve({
@@ -119,6 +133,26 @@ function settled(): Promise<void> {
 }
 
 describe('profile email change', () => {
+  it('stays on the code step when cooldown holds a spent code and repeats to the same address', async () => {
+    const { flow, dispatch } = setup({
+      profile_change_email_current_request: HELD_REPLY,
+    })
+    await flow.open('old@example.com')
+    await flow.submit()
+    expect(flow.step.get()).toBe('confirm-current')
+    tell([])
+    expect(flow.step.get()).toBe('confirm-current')
+
+    flow.currentCode.set('123456')
+    await flow.sendAgain()
+    expect(flow.currentCode.get()).toBe('')
+    expect(
+      dispatch.mock.calls.filter(
+        ([name]) => name === 'profile_change_email_current_request',
+      ),
+    ).toHaveLength(2)
+  })
+
   it('dispatches the four steps under their wire names with their payloads', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
     const handle = {} as ActionHandle
@@ -401,7 +435,7 @@ describe('profile email change window', () => {
     await flow.open('old@example.com')
     const submitting = flow.submit()
     flow.close()
-    answer({ reply: [] })
+    answer({ reply: SEND_REPLY })
     await submitting
     expect(flow.step.get()).toBe('closed')
     expect(flow.busy.get()).toBe(false)

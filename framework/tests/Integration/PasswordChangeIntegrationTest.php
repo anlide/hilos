@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
+use Hilos\Auth\Verification\VerificationEndPauseCommandConstants;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Auth\Exception\PasswordTooCommonException;
@@ -23,6 +25,7 @@ use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
@@ -40,6 +43,10 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Existing-password change through the users library, including proof order and all-address recovery invalidation.
@@ -125,8 +132,18 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     public function testCodeRequestMailsItsOwnTypeAndCooldownDoesNotSendTwice(): void
     {
         $this->prepareChange();
-        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
-        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        $sent = $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        self::assertInstanceOf(CodeSendReplyDTO::class, $sent);
+        self::assertTrue($sent->sent);
+        self::assertSame(StepUpOperationKey::CHANGE_PASSWORD, $this->codeSendLine()?->purpose);
+        self::assertSame($sent->resendAt, $this->codeSendLine()?->resendAt);
+        $held = $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        self::assertInstanceOf(CodeSendReplyDTO::class, $held);
+        self::assertFalse($held->sent);
+        self::assertNotNull($held->expiresAt);
+        self::assertSame(HilosCodeSendAttempt::STATE_SENT, $this->codeSendLine()?->state);
+        self::assertSame(HilosCodeSendAttempt::REASON_RATE_LIMITED, $this->codeSendLine()?->reason);
+        self::assertSame($held->resendAt, $this->codeSendLine()?->resendAt);
         self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
         self::assertSame(
             self::USER_ID,
@@ -136,6 +153,59 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
             [[self::EMAIL, MailTemplateCatalogConstants::AUTH_PASSWORD_CHANGE]],
             $this->mailer->sentTo(MailTemplateCatalogConstants::AUTH_PASSWORD_CHANGE),
         );
+    }
+
+    /** @throws HilosException When the code or session line cannot be written */
+    public function testCooldownAfterTheCodeWasSpentReportsNoLiveCode(): void
+    {
+        $this->prepareChange();
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        $this->verifications()->findActive(VerificationType::PASSWORD_CHANGE, self::EMAIL, self::MAX_ATTEMPTS)?->consume();
+
+        $reply = $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertFalse($reply->sent);
+        self::assertNull($reply->expiresAt);
+        self::assertSame(HilosCodeSendAttempt::STATE_HELD, $this->codeSendLine()?->state);
+        self::assertSame(HilosCodeSendAttempt::REASON_RATE_LIMITED, $this->codeSendLine()?->reason);
+        self::assertSame($reply->resendAt, $this->codeSendLine()?->resendAt);
+        self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::CHANGE_PASSWORD));
+    }
+
+    /** @throws HilosException When the code request or command cannot be completed */
+    public function testEndPauseCommandMovesTheLineAndAllowsAnotherSend(): void
+    {
+        $this->prepareChange();
+        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        $this->drainSignals();
+
+        $this->library->onSignalCommand(new CommandRequestDTO(
+            'end-pause',
+            CliCommands::VERIFICATION_TEST_END_PAUSE,
+            [
+                VerificationEndPauseCommandConstants::FIELD_ADDRESS => self::EMAIL,
+                VerificationEndPauseCommandConstants::FIELD_SESSION_TOKEN => self::SESSION_TOKEN,
+            ],
+        ), '', '');
+
+        $replies = [];
+        foreach ($this->drainSignals() as $signal) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+            }
+        }
+        self::assertCount(1, $replies);
+        self::assertTrue($replies[0]->isOk());
+        self::assertSame(self::EMAIL, $replies[0]->payload[VerificationEndPauseCommandConstants::FIELD_ADDRESS]);
+        self::assertGreaterThanOrEqual(1, $replies[0]->payload[VerificationEndPauseCommandConstants::FIELD_AGED]);
+        self::assertNotNull($this->codeSendLine()?->resendAt);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), $this->codeSendLine()?->resendAt);
+
+        $reply = $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST, new ProfileChangePasswordCodeRequestActionDTO());
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertTrue($reply->sent);
+        self::assertCount(2, $this->mailer->sentTo(MailTemplateCatalogConstants::AUTH_PASSWORD_CHANGE));
     }
 
     /** @throws HilosException When the seed or command fails */

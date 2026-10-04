@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\Code;
 
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -31,6 +33,7 @@ final class CodeSendSignalDataTest extends TestCase
         $original = new CodeSendProgressSignalData(
             state: StateHilosCodeSendAttempt::STATE_FAILED,
             channel: StateHilosCodeSendAttempt::CHANNEL_EMAIL,
+            purpose: StepUpOperationKey::CHANGE_EMAIL,
             detail: self::REFUSAL,
         );
 
@@ -64,10 +67,12 @@ final class CodeSendSignalDataTest extends TestCase
             self::TICKET,
             self::SESSION_HASH,
             StateHilosCodeSendAttempt::CHANNEL_EMAIL,
+            StepUpOperationKey::CHANGE_EMAIL,
         );
 
         $this->assertSame(self::SESSION_HASH, $queued->sessionTokenHash);
         $this->assertSame(StateHilosCodeSendAttempt::CHANNEL_EMAIL, $queued->channel);
+        $this->assertSame(StepUpOperationKey::CHANGE_EMAIL, $queued->purpose);
         $this->assertSame(StateHilosCodeSendAttempt::STATE_QUEUED, $queued->state);
         $this->assertEquals($queued, CodeSendStepSignalData::fromArray($queued->toArray()));
     }
@@ -95,5 +100,22 @@ final class CodeSendSignalDataTest extends TestCase
         // A step that names no send names no line either, and guessing which one it meant is
         // exactly the mistake the ticket exists to prevent.
         CodeSendStepSignalData::fromArray(['state' => StateHilosCodeSendAttempt::STATE_SENT]);
+    }
+
+    public function testStampCarriesTimingWithoutReplacingTransportState(): void
+    {
+        $stamp = CodeSendStepSignalData::stamp(self::TICKET, null, null, 1_900_000_000_000, null);
+
+        self::assertNull($stamp->state);
+        self::assertSame(1_900_000_000_000, $stamp->resendAt);
+        self::assertEquals($stamp, CodeSendStepSignalData::fromArray($stamp->toArray()));
+    }
+
+    public function testProfileSendReplyAlwaysCarriesTheLiveCodeMomentEvenWhenNull(): void
+    {
+        $reply = new CodeSendReplyDTO(false, 1_900_000_000_000, null);
+
+        self::assertArrayHasKey(CodeSendReplyDTO::expiresAt, $reply->toArray());
+        self::assertEquals($reply, CodeSendReplyDTO::fromArray($reply->toArray()));
     }
 }

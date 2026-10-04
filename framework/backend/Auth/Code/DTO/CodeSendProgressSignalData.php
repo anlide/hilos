@@ -32,8 +32,9 @@ use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
-     * @param ?string $state One of the five states of the send, or null when there is no line
+     * @param ?string $state One of the send states, or null when there is no line
      * @param ?string $channel Channel the code travels over, or null when there is no line
+     * @param ?string $purpose Profile operation, or null for a guest line
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      * @param ?string $ticket Send the line follows, which is how a tab tells its own send from a replayed one
      * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
@@ -43,6 +44,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
     public function __construct(
         public readonly ?string $state = null,
         public readonly ?string $channel = null,
+        public readonly ?string $purpose = null,
         public readonly ?string $detail = null,
         public readonly ?string $ticket = null,
         public readonly ?string $reason = null,
@@ -70,6 +72,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
         return new self(
             state: $attempt->state,
             channel: $attempt->channel,
+            purpose: $attempt->purpose,
             detail: $attempt->detail,
             ticket: $attempt->ticket,
             reason: $attempt->reason,
@@ -86,6 +89,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
         return [
             'state' => $this->state,
             'channel' => $this->channel,
+            'purpose' => $this->purpose,
             'detail' => $this->detail,
             'ticket' => $this->ticket,
             'reason' => $this->reason,
@@ -110,6 +114,7 @@ final class CodeSendProgressSignalData extends BaseDTO implements SignalDataInte
         return new static(
             state: self::optionalString($data, 'state'),
             channel: self::optionalString($data, 'channel'),
+            purpose: self::optionalString($data, 'purpose'),
             detail: self::optionalString($data, 'detail'),
             ticket: self::optionalString($data, 'ticket'),
             reason: self::optionalString($data, 'reason'),

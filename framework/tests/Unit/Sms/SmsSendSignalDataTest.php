@@ -26,6 +26,7 @@ final class SmsSendSignalDataTest extends TestCase
             templateKey: 'auth.sms_login',
             params: ['code' => '123456'],
             locale: 'en',
+            progressTicket: 'a1b2c3d4e5f60718',
         );
 
         $restored = SmsSendSignalData::fromArray($original->toArray());
@@ -36,6 +37,7 @@ final class SmsSendSignalDataTest extends TestCase
         self::assertSame('auth.sms_login', $restored->templateKey);
         self::assertSame(['code' => '123456'], $restored->params);
         self::assertSame('en', $restored->locale);
+        self::assertSame('a1b2c3d4e5f60718', $restored->progressTicket);
     }
 
     public function testInlineTextPayloadRoundtrips(): void
@@ -54,6 +56,7 @@ final class SmsSendSignalDataTest extends TestCase
         self::assertNull($restored->templateKey);
         self::assertSame([], $restored->params);
         self::assertNull($restored->locale);
+        self::assertNull($restored->progressTicket);
     }
 
     public function testAPayloadWhoseParamsAreNotASectionIsRefused(): void

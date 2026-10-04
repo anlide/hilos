@@ -10,6 +10,12 @@
 // whole session.
 import { z } from 'zod'
 import {
+  codeSendReplySchema,
+  hilosCodeSendProgressFor,
+  type CodeSendProgress,
+  type HilosCodeSendReply,
+} from '../auth/authSendProgress.js'
+import {
   createHilosStepUpActions,
   createHilosStepUpStep,
   type HilosStepUpStep,
@@ -19,6 +25,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../connection/actionLifecycle.js'
+import { toLocal } from '../session/serverClock.js'
 import {
   computedSignal,
   createSignal,
@@ -55,7 +62,7 @@ export type HilosProfilePasswordChangeOpening = z.infer<
 /** The four server actions, bound to one browser's action lifecycle. */
 export interface HilosProfilePasswordChangeActions {
   open(): ActionHandle<HilosProfilePasswordChangeOpening>
-  requestCode(): ActionHandle
+  requestCode(): ActionHandle<HilosCodeSendReply>
   confirmCode(code: string): ActionHandle
   change(newPassword: string, signOutOthers: boolean): ActionHandle
 }
@@ -72,7 +79,11 @@ export function createHilosProfilePasswordChangeActions(context: {
         { replySchema: openingReplySchema },
       ),
     requestCode: () =>
-      context.actions.dispatch(PROFILE_CHANGE_PASSWORD_CODE_REQUEST_ACTION, {}),
+      context.actions.dispatch(
+        PROFILE_CHANGE_PASSWORD_CODE_REQUEST_ACTION,
+        {},
+        { replySchema: codeSendReplySchema },
+      ),
     confirmCode: (code) =>
       context.actions.dispatch(PROFILE_CHANGE_PASSWORD_CODE_CONFIRM_ACTION, {
         code,
@@ -107,10 +118,16 @@ export interface HilosProfilePasswordChangeFlow {
   readonly signedOutOthers: ReadonlySignal<boolean>
   readonly busy: ReadonlySignal<boolean>
   readonly refusal: ReadonlySignal<string | null>
+  /** The send line of this window, hidden while this window orders another code. */
+  readonly sendProgress: ReadonlySignal<CodeSendProgress | null>
+  /** Local-scale moment another send is allowed, from the line or the action reply. */
+  readonly resendAt: ReadonlySignal<number | null>
   readonly asksBeforeClosing: ReadonlySignal<boolean>
   open(): Promise<void>
   confirmStepUp(): Promise<void>
   sendCode(): Promise<void>
+  /** Clear the code and request another one on the same address. */
+  sendAgain(): Promise<void>
   confirmCode(): Promise<void>
   save(): Promise<void>
   again(): Promise<void>
@@ -128,9 +145,12 @@ export interface HilosProfilePasswordChangeFlow {
  * The step a window with a code to send stands on for the session's record.
  *
  * @param record The session's record of the password change, or null when it has none.
+ * @param heldWithoutCode Whether the pause held this window's send with no live code to enter,
+ *   which stands the window on the code step although no record was written.
  */
 function stepOfRecord(
   record: HilosProfileFlowState | null,
+  heldWithoutCode = false,
 ): HilosProfilePasswordChangeStep {
   switch (record?.step) {
     case PROFILE_FLOW_STEP_CODE_SENT:
@@ -138,7 +158,7 @@ function stepOfRecord(
     case PROFILE_FLOW_STEP_CODE_PROVEN:
       return 'password'
     default:
-      return 'start'
+      return heldWithoutCode ? 'code' : 'start'
   }
 }
 
@@ -149,6 +169,9 @@ export function createHilosProfilePasswordChangeFlow(context: {
   const actions = createHilosProfilePasswordChangeActions(context)
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
+    async () => {
+      if (step.get() === 'step-up') await openSteps()
+    },
   )
   const step = createSignal<HilosProfilePasswordChangeStep>('closed')
   const opening = createSignal<HilosProfilePasswordChangeOpening | null>(null)
@@ -159,6 +182,19 @@ export function createHilosProfilePasswordChangeFlow(context: {
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
   const record = hilosProfileFlowFor(PASSWORD_CHANGE_OPERATION)
+  const reportedProgress = hilosCodeSendProgressFor(PASSWORD_CHANGE_OPERATION)
+  const hiddenTicket = createSignal<string | null>(null)
+  const replyResendAt = createSignal<number | null>(null)
+  const sendProgress = computedSignal(() => {
+    const progress = reportedProgress.get()
+    return progress !== null && progress.ticket === hiddenTicket.get()
+      ? null
+      : progress
+  })
+  const resendAt = computedSignal(
+    () => sendProgress.get()?.resendAt ?? replyResendAt.get(),
+  )
+  let heldWithoutCode = false
   let round = 0
   // Actions of this window still waiting for their answer: while one is, the
   // record going away is its own ending, and the answer says how it ended.
@@ -211,9 +247,10 @@ export function createHilosProfilePasswordChangeFlow(context: {
     if (flow === null) {
       // Finished or discarded elsewhere; this window's own action, if one is
       // waiting, ends the flow itself and its answer says how.
-      if (pending === 0 && current !== 'start') finish()
+      if (pending === 0 && current !== 'start' && !heldWithoutCode) finish()
       return
     }
+    heldWithoutCode = false
     const next = stepOfRecord(flow)
     if (next === current) return
     refusal.set(null)
@@ -238,7 +275,7 @@ export function createHilosProfilePasswordChangeFlow(context: {
       step.set('password')
       return
     }
-    step.set(stepOfRecord(record.get()))
+    step.set(stepOfRecord(record.get(), heldWithoutCode))
     following ??= subscribeSignal(record, follow)
   }
 
@@ -273,6 +310,26 @@ export function createHilosProfilePasswordChangeFlow(context: {
     newPassword.set('')
     signOutOthers.set(true)
     refusal.set(null)
+    hiddenTicket.set(null)
+    replyResendAt.set(null)
+    heldWithoutCode = false
+  }
+
+  async function requestCode(): Promise<void> {
+    const started = round
+    let reply: HilosCodeSendReply | undefined
+    if (
+      await run(async () => {
+        reply = (await actions.requestCode().done).reply
+      })
+    ) {
+      if (round !== started || reply === undefined) return
+      replyResendAt.set(toLocal(reply.resendAt))
+      // Only a window with no record stands on the code step by its own word:
+      // where a record exists, it decides, and its going away still closes the window.
+      heldWithoutCode = reply.expiresAt === null && record.get() === null
+      step.set(stepOfRecord(record.get(), heldWithoutCode))
+    }
   }
 
   return {
@@ -285,6 +342,8 @@ export function createHilosProfilePasswordChangeFlow(context: {
     signedOutOthers,
     busy,
     refusal,
+    sendProgress,
+    resendAt,
     asksBeforeClosing,
     async open() {
       if (busy.get()) return
@@ -311,14 +370,16 @@ export function createHilosProfilePasswordChangeFlow(context: {
     },
     async sendCode() {
       if (busy.get() || step.get() !== 'start') return
-      if (
-        await run(async () => {
-          await actions.requestCode().done
-        })
-      )
-        // The frame naming the new step arrived before this answer; a send the
-        // server had nothing to stand on leaves the window where it was.
-        step.set(stepOfRecord(record.get()))
+      // A line of an earlier window stays hidden until this send's own replaces it.
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      await requestCode()
+    },
+    async sendAgain() {
+      if (busy.get() || step.get() !== 'code') return
+      code.set('')
+      refusal.set(null)
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      await requestCode()
     },
     async confirmCode() {
       if (busy.get() || step.get() !== 'code' || code.get().trim() === '')
@@ -366,7 +427,6 @@ export const HILOS_PROFILE_PASSWORD_CHANGE_COPY = {
     "We'll send a code to {destination}. Your password changes only after you confirm.",
   sendCode: 'Send code',
   code: 'Code',
-  codeHint: 'Sent to {destination}.',
   continue: 'Continue',
   newPassword: 'New password',
   newPasswordHint: 'At least 8 characters.',

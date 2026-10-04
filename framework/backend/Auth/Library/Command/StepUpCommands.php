@@ -19,6 +19,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Random\RandomException;
 
@@ -79,14 +80,12 @@ final class StepUpCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::NOTHING_TO_CONFIRM_WITH);
         }
 
+        $send = null;
         if ($target->method === StepUpMethod::EMAIL_CODE || $target->method === StepUpMethod::SMS_CODE) {
             $type = $target->method === StepUpMethod::EMAIL_CODE
                 ? VerificationType::STEP_UP
                 : VerificationType::STEP_UP_SMS;
-            $outcome = new VerificationService()->issue($type, (string)$target->destination, $acting->userId);
-            if ($outcome->capReached) {
-                throw new ValidationException(AuthMessages::SEND_CAP);
-            }
+            $send = $this->sendProfileCode($acting, HilosCodeSendAttempt::PURPOSE_STEP_UP, $type, (string)$target->destination);
         }
 
         $signedChallenge = null;
@@ -104,6 +103,7 @@ final class StepUpCommands extends AbstractLibraryCommands
             destination: $target->destination,
             signedChallenge: $signedChallenge,
             publicKeyOptions: $publicKeyOptions,
+            send: $send,
         );
     }
 

@@ -20,7 +20,7 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
  * rather than drawing a first state of its own in the action reply. One path and one place
  * that fans out; two sources of truth on the first frame is what that avoids.
  *
- * {@see sessionTokenHash} and {@see channel} ride on the `queued` report and on no other,
+ * {@see sessionTokenHash}, {@see channel} and {@see purpose} ride on the opening `queued` report,
  * because that is the one that CREATES the row. Every later step carries the ticket alone,
  * plus its state and, on a refusal, the sentence - which is what keeps the mail subsystem from
  * learning who the session is: it was handed an opaque {@see CodeSendTicket} and hands it back.
@@ -38,9 +38,10 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
 
     /**
      * @param string $ticket Ticket of the send this step belongs to
-     * @param string $state One of the five states on {@see HilosCodeSendAttempt}
+     * @param ?string $state State to write, or null to keep the current state
      * @param ?string $sessionTokenHash Hash of the session cookie token, on the `queued` report and no other
      * @param ?string $channel Channel the code travels over, on the `queued` report and no other
+     * @param ?string $purpose Profile operation, on the `queued` report and no other
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
      * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
@@ -48,9 +49,10 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      */
     public function __construct(
         public readonly string $ticket,
-        public readonly string $state,
+        public readonly ?string $state,
         public readonly ?string $sessionTokenHash = null,
         public readonly ?string $channel = null,
+        public readonly ?string $purpose = null,
         public readonly ?string $detail = null,
         public readonly ?string $reason = null,
         public readonly ?int $resendAt = null,
@@ -64,15 +66,17 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      * @param string $ticket Ticket minted for this send
      * @param string $sessionTokenHash Hash of the session cookie token ordering the code
      * @param string $channel Channel the code travels over
+     * @param ?string $purpose Profile operation, or null for a guest send
      * @return self Frame carrying the birth of the line
      */
-    public static function queued(string $ticket, string $sessionTokenHash, string $channel): self
+    public static function queued(string $ticket, string $sessionTokenHash, string $channel, ?string $purpose = null): self
     {
         return new self(
             ticket: $ticket,
             state: HilosCodeSendAttempt::STATE_QUEUED,
             sessionTokenHash: $sessionTokenHash,
             channel: $channel,
+            purpose: $purpose,
         );
     }
 
@@ -83,7 +87,7 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
      * is found by the ticket it was given.
      *
      * @param string $ticket Ticket the transport was handed with the order
-     * @param string $state One of the five states on {@see HilosCodeSendAttempt}
+     * @param string $state One of the send states on {@see HilosCodeSendAttempt}
      * @param ?string $detail Provider's sentence, on a refusal and nowhere else
      * @param ?string $reason How the code agent's send ended, on its closing step alone (HIL-1044)
      * @param ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
@@ -109,6 +113,21 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
+     * Reports the send gate's timing verdict without overriding a transport's state.
+     *
+     * @param string $ticket Ticket of the send
+     * @param ?string $state State to write, or null to keep the transport's state
+     * @param ?string $reason Reason for a held send, or null
+     * @param int $resendAt Server moment another send is allowed, in epoch ms
+     * @param ?int $expiresAt Server moment the earlier live code dies, or null
+     * @return self Frame carrying the gate verdict
+     */
+    public static function stamp(string $ticket, ?string $state, ?string $reason, int $resendAt, ?int $expiresAt): self
+    {
+        return new self(ticket: $ticket, state: $state, reason: $reason, resendAt: $resendAt, expiresAt: $expiresAt);
+    }
+
+    /**
      * @return array<string, mixed> DTO payload for transport
      */
     public function toArray(): array
@@ -118,6 +137,7 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
             'state' => $this->state,
             'sessionTokenHash' => $this->sessionTokenHash,
             'channel' => $this->channel,
+            'purpose' => $this->purpose,
             'detail' => $this->detail,
             'reason' => $this->reason,
             'resendAt' => $this->resendAt,
@@ -128,20 +148,21 @@ final class CodeSendStepSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * Rebuilds one reported step.
      *
-     * The ticket and the state are required: a step with no ticket names no line, and one with
-     * no state has nothing to say about it. The others are the fields only some steps carry.
+     * The ticket is required. A null state is a gate stamp that only changes the moments;
+     * the other optional fields ride only on the steps that know them.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no ticket or no state
+     * @throws InvalidFormatException When the payload carries no ticket or mistypes a present field
      */
     public static function fromArray(array $data): static
     {
         return new static(
             ticket: self::requireString($data, 'ticket'),
-            state: self::requireString($data, 'state'),
+            state: self::optionalString($data, 'state'),
             sessionTokenHash: self::optionalString($data, 'sessionTokenHash'),
             channel: self::optionalString($data, 'channel'),
+            purpose: self::optionalString($data, 'purpose'),
             detail: self::optionalString($data, 'detail'),
             reason: self::optionalString($data, 'reason'),
             resendAt: self::optionalInt($data, 'resendAt'),

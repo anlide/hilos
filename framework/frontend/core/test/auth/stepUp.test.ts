@@ -13,6 +13,86 @@ function handle(reply: unknown = {}): ReturnType<HilosStepUpActions['start']> {
 }
 
 describe('createHilosStepUpStep', () => {
+  it('restarts a code send without leaving the step and passes an already confirmed operation', async () => {
+    const passed = vi.fn()
+    const start = vi
+      .fn()
+      .mockReturnValueOnce(
+        handle({
+          required: true,
+          purpose: 'change your email',
+          method: 'email_code',
+          destination: 'person@example.test',
+          send: {
+            sent: true,
+            resendAt: 1_900_000_000_000,
+            expiresAt: 1_900_000_600_000,
+          },
+        }),
+      )
+      .mockReturnValueOnce(
+        handle({ required: false, purpose: 'change your email' }),
+      )
+    const step = createHilosStepUpStep(
+      { start, confirm: () => handle() },
+      passed,
+    )
+
+    expect(await step.open('change_email')).toBe('ask')
+    step.code.set('123456')
+    await step.sendAgain()
+
+    expect(step.code.get()).toBe('')
+    expect(start).toHaveBeenCalledTimes(2)
+    expect(start).toHaveBeenLastCalledWith('change_email')
+    expect(passed).toHaveBeenCalledOnce()
+    expect(step.opening.get()?.required).toBe(false)
+  })
+
+  it('lets a repeated send answered after the step reopened write nothing over it', async () => {
+    const passed = vi.fn()
+    let answerRepeat: (value: { reply: unknown }) => void = () => undefined
+    const start = vi
+      .fn()
+      .mockReturnValueOnce(
+        handle({
+          required: true,
+          purpose: 'block this account',
+          method: 'email_code',
+          destination: 'first@example.test',
+        }),
+      )
+      .mockReturnValueOnce({
+        done: new Promise((resolve) => {
+          answerRepeat = resolve
+        }),
+      })
+      .mockReturnValueOnce(
+        handle({
+          required: true,
+          purpose: 'merge these accounts',
+          method: 'email_code',
+          destination: 'second@example.test',
+        }),
+      )
+    const step = createHilosStepUpStep(
+      { start, confirm: () => handle() },
+      passed,
+    )
+
+    await step.open('block_account')
+    const repeat = step.sendAgain()
+    expect(await step.open('merge_accounts')).toBe('ask')
+    // The first window's repeat comes back after the step was opened again for
+    // another operation, saying that operation needs no confirmation any more.
+    answerRepeat({ reply: { required: false, purpose: 'block this account' } })
+    await repeat
+
+    expect(step.opening.get()?.destination).toBe('second@example.test')
+    expect(step.busy.get()).toBe(false)
+    expect(passed).not.toHaveBeenCalled()
+  })
+
   it('opens on skip or ask from the server reply', async () => {
     const skip = createHilosStepUpStep({
       start: () => handle({ required: false, purpose: 'change your email' }),

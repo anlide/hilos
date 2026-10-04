@@ -114,6 +114,9 @@ final class CliCommands
     /** @var string Command: Age every code of one address past retention and sweep now (test-only) */
     public const string VERIFICATION_TEST_SWEEP = 'test:verification:sweep';
 
+    /** @var string Command: End one address's resend pause and move a browser line's countdown to now (test-only) */
+    public const string VERIFICATION_TEST_END_PAUSE = 'test:verification:end-pause';
+
     /** @var string Command: Age a live session's expiry into the past by its cookie token (test-only) */
     public const string SESSION_TEST_EXPIRE = 'test:session:expire';
 

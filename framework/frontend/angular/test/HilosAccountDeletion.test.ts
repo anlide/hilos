@@ -9,6 +9,9 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosAccountDeletion } from '../src/profile/HilosAccountDeletion.js'
 
+/** A send gate that reopened long ago: another code may be asked for at once. */
+const PAST = 1_000_000_000_000
+
 afterEach(() => {
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
@@ -67,6 +70,7 @@ function setup() {
     document.querySelector<HTMLElement>(`[data-id="${id}"]`)!
 
   return {
+    answers,
     dispatch,
     dispatched,
     fixture,
@@ -118,6 +122,37 @@ describe('HilosAccountDeletion', () => {
     expect(call?.payload).toMatchObject({
       password: 'secret',
     })
+
+    fixture.destroy()
+  })
+
+  it('draws the send block on the code step and asks the flow for another code from it', async () => {
+    const { answers, node, dispatched, fixture, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    answers.hilos_account_deletion_code = {
+      sent: true,
+      resendAt: PAST,
+      expiresAt: 1_900_000_600_000,
+    }
+    state({ deletion: null })
+    await settle(fixture)
+    node('account-deletion-open').click()
+    await settle(fixture)
+    node('account-deletion-continue').click()
+    await settle(fixture)
+
+    expect(node('account-deletion-send')).not.toBeNull()
+    const again = node('account-deletion-send-again') as HTMLButtonElement
+    expect(again.disabled).toBe(false)
+    again.click()
+    await settle(fixture)
+    // The flow is the window's own; another code is what its sendAgain() asks for.
+    expect(
+      dispatched.filter((d) => d.action === 'hilos_account_deletion_code'),
+    ).toHaveLength(2)
 
     fixture.destroy()
   })

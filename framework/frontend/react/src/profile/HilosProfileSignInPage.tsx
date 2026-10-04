@@ -14,6 +14,9 @@ import {
   isHilosProfilePasskeyOnly,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
   sessionAuthMethods,
   watchHilosProfilePasswordUpdated,
   type HilosAuthContext,
@@ -25,6 +28,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { useSignal } from '../useSignal.js'
@@ -147,6 +151,10 @@ export function HilosProfileSignInPage({
   const step = useSignal(flow.step)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
+  const sendProgress = useSignal(flow.sendProgress)
+  const resendAt = useSignal(flow.resendAt)
+  const sentEmail = useSignal(flow.email)
+  const sentPhone = useSignal(flow.phone)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
   const stepUpBusy = useSignal(flow.stepUp.busy)
   const pendingProvider = useSignal(flow.provider)
@@ -263,6 +271,11 @@ export function HilosProfileSignInPage({
         await flow.submitPhoneCode(draft.code.trim())
         break
     }
+  }
+
+  function sendAgainAdd(): void {
+    setDraft({ ...draft, code: '' })
+    void flow.sendAgain()
   }
 
   return (
@@ -506,6 +519,21 @@ export function HilosProfileSignInPage({
           </div>
           <div className="hilos-stack">
             <div className="invisible" aria-hidden="true" inert>
+              <div className={SEND_PROGRESS_ROW_CLASS}>
+                <i
+                  className="bi bi-hourglass-split flex-shrink-0"
+                  aria-hidden="true"
+                ></i>
+                <span className="flex-grow-1 text-truncate">&nbsp;</span>
+                <span className={SEND_PROGRESS_DETAILS_CLASS}>
+                  <i className="bi bi-info-circle" aria-hidden="true"></i>
+                </span>
+              </div>
+              <div className="mb-3">
+                <span className="btn btn-link btn-sm p-0">
+                  {SEND_AGAIN_LABEL}
+                </span>
+              </div>
               {['Code', 'New password', 'Confirm new password'].map((label) => (
                 <div key={label} className="mb-3">
                   <div className="form-label">{label}</div>
@@ -706,6 +734,20 @@ export function HilosProfileSignInPage({
               >
                 {fields.map((field, index) => (
                   <div key={field.key} className="mb-3">
+                    {field.key === 'code' ? (
+                      <HilosSendProgress
+                        progress={sendProgress}
+                        to={step === 'phone-code' ? sentPhone : sentEmail}
+                        resendAt={resendAt}
+                        busy={busy}
+                        dataId={
+                          step === 'phone-code'
+                            ? 'profile-add-sms-send'
+                            : 'profile-add-password-send'
+                        }
+                        onSendAgain={sendAgainAdd}
+                      />
+                    ) : null}
                     <label
                       htmlFor={`${baseId}-add-${field.key}`}
                       className="form-label"

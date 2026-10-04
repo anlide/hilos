@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Session\DTO;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\SessionAck;
@@ -66,7 +67,9 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $rotationTicket Ticket the named socket trades for the rotated cookie, or null when nothing rotated
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name to answer, or null when this ending finished none
-     * @param ?array<string, mixed> $outcome Reply the answer carries ({@see AuthFlowOutcome::toArray()}), or null
+     * @param ?array<string, mixed> $outcome Reply the answer carries in its wire form - a sign-in outcome
+     *     ({@see AuthFlowOutcome::toArray()}) or a profile window's code-send reply ({@see CodeSendReplyDTO::toArray()}) -
+     *     or null
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked Blocked account the session lost, named by its confirmed
      *     address or not at all, or null when the session holds no such card
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,

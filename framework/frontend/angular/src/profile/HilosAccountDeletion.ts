@@ -38,11 +38,13 @@ import type {
   HilosAccountDeletionState,
   HilosAccountDeletionStep,
   HilosSecondFactorContext,
+  CodeSendProgress,
 } from '@hilos/core'
 
 import { HilosLink } from '../HilosLink.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 
@@ -52,6 +54,7 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
   imports: [
     HilosFormError,
     HilosModal,
+    HilosSendProgress,
     HilosStepUpStep,
     LoadingButton,
     HilosLink,
@@ -178,6 +181,14 @@ import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
                 <p class="small text-body-secondary mb-3">
                   {{ fill(copy.codeSent) }}
                 </p>
+                <hilos-send-progress
+                  [progress]="sendProgress()"
+                  [to]="opening()?.destination ?? ''"
+                  [resendAt]="resendAt()"
+                  [busy]="busy()"
+                  dataId="account-deletion-send"
+                  (sendAgain)="flow().sendAgain()"
+                />
                 <label class="form-label" for="hilos-account-deletion-code">{{
                   copy.codeLabel
                 }}</label>
@@ -288,6 +299,8 @@ export class HilosAccountDeletion {
   protected readonly code = signal('')
   protected readonly busy = signal(false)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly sendProgress = signal<CodeSendProgress | null>(null)
+  protected readonly resendAt = signal<number | null>(null)
   protected readonly stepUpOpening = signal<unknown>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
   private readonly now = signal(Date.now())
@@ -324,6 +337,10 @@ export class HilosAccountDeletion {
         subscribeSignal(flow.code, (value) => this.code.set(value)),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
+        subscribeSignal(flow.sendProgress, (value) =>
+          this.sendProgress.set(value),
+        ),
+        subscribeSignal(flow.resendAt, (value) => this.resendAt.set(value)),
         subscribeSignal(flow.stepUp.opening, (value) =>
           this.stepUpOpening.set(value),
         ),

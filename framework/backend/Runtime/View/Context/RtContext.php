@@ -97,7 +97,7 @@ use OutOfBoundsException;
  * @property-read HilosSessionToastStacks $hilosSessionToastStacks Toasts a browser session is being shown, mounted for every project
  * @property-read RegistrationWaiters $hilosRegistrationWaiters Browser sessions parked on a pending registration, mounted for every project
  * @property-read RecoveryWaiters $hilosRecoveryWaiters Browser sessions parked on a pending password recovery, mounted for every project
- * @property-read HilosCodeSendAttempts $hilosCodeSendAttempts Per-identifier code send attempts, mounted for every project
+ * @property-read HilosCodeSendAttempts $hilosCodeSendAttempts Per-session code send attempts, mounted for a project that declares HilosFeature::AUTH
  * @property-read HilosOAuthTrips $hilosOAuthTrips Provider sign-ins tabs are waiting on, mounted for a project that declares HilosFeature::AUTH
  * @property-read HilosProfileFlows $hilosProfileFlows Profile windows half-way through, mounted for a project that declares HilosFeature::AUTH
  * @property-read AuthAttempts $hilosAuthAttempts Sign-in attempt counters, mounted for a project that declares HilosFeature::AUTH_THROTTLE

@@ -14,13 +14,18 @@
 // same sentence — and a frame with a null `state` is the legal one that takes the
 // line away.
 //
-// The name and the five state values are byte-equal to the backend
+// The name and the six state values are byte-equal to the backend
 // `HilosSignalConstants` / `HilosCodeSendAttempt` constants.
 import { z } from 'zod'
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
-import { createSignal, type ReadonlySignal } from '../state/signal.js'
+import { toLocal } from '../session/serverClock.js'
+import {
+  computedSignal,
+  createSignal,
+  type ReadonlySignal,
+} from '../state/signal.js'
 
 /** Signal `type` for the line (PHP `HilosSignalConstants::HILOS_CODE_SEND_PROGRESS`). */
 export const SIGNAL_CODE_SEND_PROGRESS = 'hilos_code_send_progress'
@@ -56,6 +61,12 @@ export const CODE_SEND_STATE_FAILED = 'failed'
  */
 export const CODE_SEND_STATE_NOT_SENT = 'not_sent'
 
+/** A profile send held by the cooldown after its previous code was used. */
+export const CODE_SEND_STATE_HELD = 'held'
+
+/** Purpose of a code sent for operation-level identity confirmation. */
+export const CODE_SEND_PURPOSE_STEP_UP = 'step_up'
+
 /**
  * The frame: the whole line, every field nullable.
  *
@@ -67,16 +78,15 @@ export const CODE_SEND_STATE_NOT_SENT = 'not_sent'
  * rather than "something went wrong", and no key of ours can hold words we did
  * not write.
  *
- * The rest is the OUTCOME of a phone code (HIL-1044): `ticket` names the send the
- * line follows, and the code agent's closing step adds `reason` (one of the
- * `AUTH_CODE_REASON_*` values) and the two moments the code screen counts down
- * to. The outcome rides the line rather than a signal to one socket because the
- * line is replayed on every handshake, so a tab back from a dropped connection
- * reads the ending too.
+ * The rest is the send outcome: `ticket` names the send, `purpose` names a
+ * profile window when one ordered it, and `reason` plus the two moments carry
+ * the gate's verdict. The line is replayed on every handshake, so a tab back
+ * from a dropped connection reads the ending too.
  */
 export const codeSendProgressSchema = z.looseObject({
   state: z.string().nullable().default(null),
   channel: z.string().nullable().default(null),
+  purpose: z.string().nullable().default(null),
   detail: z.string().nullable().default(null),
   ticket: z.string().nullable().default(null),
   reason: z.string().nullable().default(null),
@@ -90,19 +100,39 @@ export type CodeSendProgressSignalData = z.infer<typeof codeSendProgressSchema>
 /**
  * One reported step of the send behind the code screen (HIL-826).
  *
- * `state` is one of the five `CODE_SEND_STATE_*` values. `detail` carries the
+ * `state` is one of the six `CODE_SEND_STATE_*` values. `detail` carries the
  * provider's own sentence and only on a refusal — untranslated, because the whole
  * point of it is that a person is told "mailbox unavailable (550)" rather than
  * "something went wrong".
  */
 export interface CodeSendProgress {
-  /** One of the five `CODE_SEND_STATE_*` values. */
+  /** One of the six `CODE_SEND_STATE_*` values. */
   readonly state: string
   /** The channel the code travels over, or `null` when the server named none. */
   readonly channel: string | null
+  /** Profile operation owning this line, or null for a guest send. */
+  readonly purpose: string | null
   /** The provider's own sentence on a refusal, `null` otherwise. */
   readonly detail: string | null
+  /** Ticket of the send this line follows. */
+  readonly ticket: string | null
+  /** Send gate outcome on a held code, or null. */
+  readonly reason: string | null
+  /** Local-scale moment another send is allowed, or null. */
+  readonly resendAt: number | null
+  /** Local-scale moment the live code dies, or null. */
+  readonly expiresAt: number | null
 }
+
+/** Server reply to a profile code request, before its moments are made local. */
+export const codeSendReplySchema = z.object({
+  sent: z.boolean(),
+  resendAt: z.number(),
+  expiresAt: z.number().nullable(),
+})
+
+/** Send gate outcome carried by a profile code request. */
+export type HilosCodeSendReply = z.infer<typeof codeSendReplySchema>
 
 const codeSendProgress = createSignal<CodeSendProgress | null>(null)
 
@@ -121,6 +151,20 @@ export const hilosCodeSendProgress: ReadonlySignal<CodeSendProgress | null> =
   codeSendProgress
 
 /**
+ * The session line only while it belongs to the given profile operation.
+ *
+ * @param purpose Profile operation key.
+ */
+export function hilosCodeSendProgressFor(
+  purpose: string,
+): ReadonlySignal<CodeSendProgress | null> {
+  return computedSignal(() => {
+    const progress = codeSendProgress.get()
+    return progress?.purpose === purpose ? progress : null
+  })
+}
+
+/**
  * Route the session's send-progress frames into {@link hilosCodeSendProgress}.
  *
  * Bound by `bootHilos` before the socket opens, the way the toast stack is bound,
@@ -136,11 +180,20 @@ export function bindCodeSendProgress(connection: HilosConnection): () => void {
     if (signal.type !== SIGNAL_CODE_SEND_PROGRESS) {
       return
     }
-    const data = signal.data as ReturnType<typeof codeSendProgressSchema.parse>
+    const data = codeSendProgressSchema.parse(signal.data)
     codeSendProgress.set(
       data.state === null
         ? null
-        : { state: data.state, channel: data.channel, detail: data.detail },
+        : {
+            state: data.state,
+            channel: data.channel,
+            purpose: data.purpose,
+            detail: data.detail,
+            ticket: data.ticket,
+            reason: data.reason,
+            resendAt: data.resendAt === null ? null : toLocal(data.resendAt),
+            expiresAt: data.expiresAt === null ? null : toLocal(data.expiresAt),
+          },
     )
   })
 }

@@ -9,6 +9,7 @@ import {
 } from '@hilos/core'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { useSignal } from '../useSignal.js'
@@ -44,6 +45,8 @@ export function HilosProfileEmailChange({
   const now = useSignal(flow.now)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
+  const sendProgress = useSignal(flow.sendProgress)
+  const resendAt = useSignal(flow.resendAt)
   const canSubmit = useSignal(flow.canSubmit)
   const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
   const stepUpOpening = useSignal(flow.stepUp.opening)
@@ -239,6 +242,14 @@ export function HilosProfileEmailChange({
           </form>
         ) : step === 'confirm-current' ? (
           <form onSubmit={submit}>
+            <HilosSendProgress
+              progress={sendProgress}
+              to={was}
+              resendAt={resendAt}
+              busy={busy}
+              dataId="profile-email-current-send"
+              onSendAgain={() => void flow.sendAgain()}
+            />
             <label className="form-label" htmlFor="profile-email-code-current">
               {COPY.code}
             </label>
@@ -253,9 +264,6 @@ export function HilosProfileEmailChange({
               value={currentCode}
               onChange={typed(flow.currentCode)}
             />
-            <div className="form-text">
-              {COPY.sentTo.replace('{address}', was)}
-            </div>
             <HilosFormError message={refusal} dataId="profile-email-error" />
           </form>
         ) : step === 'new-address' ? (
@@ -278,6 +286,14 @@ export function HilosProfileEmailChange({
           </form>
         ) : step === 'confirm-new' ? (
           <form onSubmit={submit}>
+            <HilosSendProgress
+              progress={sendProgress}
+              to={newEmail.trim()}
+              resendAt={resendAt}
+              busy={busy}
+              dataId="profile-email-new-send"
+              onSendAgain={() => void flow.sendAgain()}
+            />
             <label className="form-label" htmlFor="profile-email-code-new">
               {COPY.code}
             </label>
@@ -292,9 +308,6 @@ export function HilosProfileEmailChange({
               value={newCode}
               onChange={typed(flow.newCode)}
             />
-            <div className="form-text">
-              {COPY.sentTo.replace('{address}', newEmail.trim())}
-            </div>
             <HilosFormError message={refusal} dataId="profile-email-error" />
           </form>
         ) : step === 'done' ? (

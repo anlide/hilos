@@ -2,6 +2,7 @@ import { HILOS_STEP_UP_COPY } from '@hilos/core'
 import type { HilosStepUpStep as HilosStepUpController } from '@hilos/core'
 
 import { HilosFormError } from '../HilosFormError.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { useSignal } from '../useSignal.js'
 
 export interface HilosStepUpStepProps {
@@ -14,6 +15,9 @@ export function HilosStepUpStep({ controller }: HilosStepUpStepProps) {
   const password = useSignal(controller.password)
   const backupCode = useSignal(controller.backupCode)
   const refusal = useSignal(controller.refusal)
+  const sendProgress = useSignal(controller.sendProgress)
+  const resendAt = useSignal(controller.resendAt)
+  const busy = useSignal(controller.busy)
   const copy = (template: string) =>
     template
       .replace('{purpose}', opening?.purpose ?? '')
@@ -39,6 +43,17 @@ export function HilosStepUpStep({ controller }: HilosStepUpStepProps) {
       </p>
       {codeMethod ? (
         <>
+          {(opening?.method === 'email_code' ||
+            opening?.method === 'sms_code') && (
+            <HilosSendProgress
+              progress={sendProgress}
+              to={opening.destination ?? ''}
+              resendAt={resendAt}
+              busy={busy}
+              dataId="step-up-send"
+              onSendAgain={() => void controller.sendAgain()}
+            />
+          )}
           <label className="form-label" htmlFor="hilos-step-up-code">
             Code
           </label>

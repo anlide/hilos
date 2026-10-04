@@ -14,6 +14,12 @@
 // backend's word only, and a refusal stays on the step with the typed values
 // intact. Discarding the window ends the flow for the whole session.
 import {
+  codeSendReplySchema,
+  hilosCodeSendProgressFor,
+  type CodeSendProgress,
+  type HilosCodeSendReply,
+} from '../auth/authSendProgress.js'
+import {
   createHilosStepUpActions,
   createHilosStepUpStep,
   type HilosStepUpStep,
@@ -23,6 +29,7 @@ import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../connection/actionLifecycle.js'
+import { toLocal } from '../session/serverClock.js'
 import {
   computedSignal,
   createSignal,
@@ -79,7 +86,7 @@ export interface HilosProfileEmailChangeActionContext {
 /** The four actions of the profile's email change. */
 export interface HilosProfileEmailChangeActions {
   /** Send a code to the address the account holds now; the server reads it from the account. */
-  requestCurrentCode(): ActionHandle
+  requestCurrentCode(): ActionHandle<HilosCodeSendReply>
   /**
    * Check the current address's code without spending it.
    *
@@ -91,7 +98,7 @@ export interface HilosProfileEmailChangeActions {
    *
    * @param email The new address.
    */
-  requestNewCode(email: string): ActionHandle
+  requestNewCode(email: string): ActionHandle<HilosCodeSendReply>
   /**
    * Prove the new address and move the account onto it; the address is the one
    * the session's record names.
@@ -114,6 +121,7 @@ export function createHilosProfileEmailChangeActions(
       return context.actions.dispatch(
         PROFILE_CHANGE_EMAIL_CURRENT_REQUEST_ACTION,
         {},
+        { replySchema: codeSendReplySchema },
       )
     },
     confirmCurrentCode(code) {
@@ -123,9 +131,11 @@ export function createHilosProfileEmailChangeActions(
       )
     },
     requestNewCode(email) {
-      return context.actions.dispatch(PROFILE_CHANGE_EMAIL_NEW_REQUEST_ACTION, {
-        email,
-      })
+      return context.actions.dispatch(
+        PROFILE_CHANGE_EMAIL_NEW_REQUEST_ACTION,
+        { email },
+        { replySchema: codeSendReplySchema },
+      )
     },
     confirmNewCode(code) {
       return context.actions.dispatch(PROFILE_CHANGE_EMAIL_NEW_CONFIRM_ACTION, {
@@ -167,6 +177,10 @@ export interface HilosProfileEmailChangeFlow {
   readonly busy: ReadonlySignal<boolean>
   /** The refusal of the step on screen, or null. */
   readonly refusal: ReadonlySignal<string | null>
+  /** This window's send line, hidden while it orders another code. */
+  readonly sendProgress: ReadonlySignal<CodeSendProgress | null>
+  /** Local-scale moment another code may be requested. */
+  readonly resendAt: ReadonlySignal<number | null>
   /** Whether the step's own field is filled enough to submit. */
   readonly canSubmit: ReadonlySignal<boolean>
   /** Whether closing asks first: a code is already out on steps 2 to 4. */
@@ -180,6 +194,8 @@ export interface HilosProfileEmailChangeFlow {
   open(address: string): Promise<void>
   /** Submit the step on screen. */
   submit(): Promise<void>
+  /** Clear the code and order another one to the address of this step. */
+  sendAgain(): Promise<void>
   /** Walk the window again from step 1, the address just set being the current one. */
   again(): Promise<void>
   /**
@@ -215,7 +231,6 @@ export const HILOS_PROFILE_EMAIL_CHANGE_COPY = {
   sendCurrentLead: 'We will send a code to',
   sendCurrentTail: 'to make sure it is you.',
   code: 'Code',
-  sentTo: 'Sent to {address}.',
   newEmail: 'New email',
   newEmailHint: 'A notice of the change will go to your old address.',
   changed: 'Address changed',
@@ -243,9 +258,12 @@ const RECORD_STEPS: ReadonlySet<HilosProfileEmailChangeStep> = new Set([
  * The step a window stands on for the session's record of its flow.
  *
  * @param record The session's record of the email change, or null when it has none.
+ * @param heldWithoutCode The code step the pause held this window on with no live code to enter,
+ *   or null; it stands in for a record that was never written.
  */
 function stepOfRecord(
   record: HilosProfileFlowState | null,
+  heldWithoutCode: HilosProfileEmailChangeStep | null = null,
 ): HilosProfileEmailChangeStep {
   switch (record?.step) {
     case PROFILE_FLOW_STEP_CURRENT_SENT:
@@ -255,7 +273,7 @@ function stepOfRecord(
     case PROFILE_FLOW_STEP_NEW_SENT:
       return 'confirm-new'
     default:
-      return 'send-current'
+      return heldWithoutCode ?? 'send-current'
   }
 }
 
@@ -270,6 +288,9 @@ export function createHilosProfileEmailChangeFlow(
   const actions = createHilosProfileEmailChangeActions(context)
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
+    () => {
+      if (step.get() === 'step-up') enterFlow()
+    },
   )
   const step = createSignal<HilosProfileEmailChangeStep>('closed')
   const was = createSignal('')
@@ -280,6 +301,19 @@ export function createHilosProfileEmailChangeFlow(
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
   const record = hilosProfileFlowFor(EMAIL_CHANGE_OPERATION)
+  const reportedProgress = hilosCodeSendProgressFor(EMAIL_CHANGE_OPERATION)
+  const hiddenTicket = createSignal<string | null>(null)
+  const replyResendAt = createSignal<number | null>(null)
+  const sendProgress = computedSignal(() => {
+    const progress = reportedProgress.get()
+    return progress !== null && progress.ticket === hiddenTicket.get()
+      ? null
+      : progress
+  })
+  const resendAt = computedSignal(
+    () => sendProgress.get()?.resendAt ?? replyResendAt.get(),
+  )
+  let heldWithoutCode: HilosProfileEmailChangeStep | null = null
   let round = 0
   // Actions of this window still waiting for their answer: while one is, the
   // record going away is its own ending, and the answer says how it ended.
@@ -331,7 +365,7 @@ export function createHilosProfileEmailChangeFlow(
       was.set(flow.address)
       if (flow.target !== null) newEmail.set(flow.target)
     }
-    step.set(stepOfRecord(flow))
+    step.set(stepOfRecord(flow, heldWithoutCode))
   }
 
   /**
@@ -346,9 +380,15 @@ export function createHilosProfileEmailChangeFlow(
     if (flow === null) {
       // Finished or discarded elsewhere; this window's own action, if one is
       // waiting, ends the flow itself and its answer says how.
-      if (pending === 0 && current !== 'send-current') finish()
+      if (
+        pending === 0 &&
+        current !== 'send-current' &&
+        heldWithoutCode === null
+      )
+        finish()
       return
     }
+    heldWithoutCode = null
     const next = stepOfRecord(flow)
     if (
       next === current &&
@@ -356,6 +396,9 @@ export function createHilosProfileEmailChangeFlow(
     )
       return
     refusal.set(null)
+    hiddenTicket.set(null)
+    replyResendAt.set(null)
+    heldWithoutCode = null
     if (next === 'confirm-current') currentCode.set('')
     if (next === 'new-address') newEmail.set('')
     if (next === 'confirm-new') newCode.set('')
@@ -374,6 +417,9 @@ export function createHilosProfileEmailChangeFlow(
     step.set('closed')
     busy.set(false)
     refusal.set(null)
+    hiddenTicket.set(null)
+    replyResendAt.set(null)
+    heldWithoutCode = null
     stepUp.password.set('')
     stepUp.code.set('')
     following?.()
@@ -413,6 +459,9 @@ export function createHilosProfileEmailChangeFlow(
     newCode.set('')
     now.set('')
     refusal.set(null)
+    hiddenTicket.set(null)
+    replyResendAt.set(null)
+    heldWithoutCode = null
     busy.set(true)
     const started = ++round
     const verdict = await stepUp.open(EMAIL_CHANGE_OPERATION)
@@ -432,6 +481,8 @@ export function createHilosProfileEmailChangeFlow(
     now,
     busy,
     refusal,
+    sendProgress,
+    resendAt,
     canSubmit,
     asksBeforeClosing,
     open,
@@ -454,9 +505,18 @@ export function createHilosProfileEmailChangeFlow(
         if (confirmed) enterFlow()
         return
       }
+      // A first send hides the line of an earlier send of this window's purpose
+      // until its own line replaces it.
+      if (current === 'send-current' || current === 'new-address') {
+        hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      }
       pending += 1
+      let sendReply: HilosCodeSendReply | null = null
       try {
-        await dispatchStep().done
+        const result = await dispatchStep().done
+        if (current === 'send-current' || current === 'new-address') {
+          sendReply = codeSendReplySchema.parse(result.reply)
+        }
       } catch (error) {
         if (round !== started) return
         busy.set(false)
@@ -471,6 +531,16 @@ export function createHilosProfileEmailChangeFlow(
       }
       if (round !== started) return
       busy.set(false)
+      if (sendReply !== null) {
+        replyResendAt.set(toLocal(sendReply.resendAt))
+        if (
+          current === 'send-current' &&
+          sendReply.expiresAt === null &&
+          record.get() === null
+        ) {
+          heldWithoutCode = 'confirm-current'
+        }
+      }
       if (current === 'confirm-new') {
         // The server stores the address lowercased; the outcome names what was set.
         now.set(newEmail.get().trim().toLowerCase())
@@ -480,6 +550,50 @@ export function createHilosProfileEmailChangeFlow(
       // The frame naming the new step arrived before this answer; a send the
       // server had nothing to stand on leaves the window where it was.
       standOn(record.get())
+    },
+    async sendAgain() {
+      const current = step.get()
+      if (
+        busy.get() ||
+        (current !== 'confirm-current' && current !== 'confirm-new')
+      )
+        return
+      if (current === 'confirm-current') currentCode.set('')
+      else newCode.set('')
+      refusal.set(null)
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      const started = round
+      busy.set(true)
+      pending += 1
+      try {
+        const result = await (
+          current === 'confirm-current'
+            ? actions.requestCurrentCode()
+            : actions.requestNewCode(newEmail.get())
+        ).done
+        if (round !== started) return
+        const reply = codeSendReplySchema.parse(result.reply)
+        replyResendAt.set(toLocal(reply.resendAt))
+        if (current === 'confirm-current') {
+          // A record that exists decides the step, and its going away still closes the window.
+          heldWithoutCode =
+            reply.expiresAt === null && record.get() === null
+              ? 'confirm-current'
+              : null
+        }
+        standOn(record.get())
+      } catch (error) {
+        if (round === started) {
+          refusal.set(
+            error instanceof ActionError && error.outcome === 'fail'
+              ? error.message
+              : HILOS_PROFILE_EMAIL_CHANGE_COPY.unreached,
+          )
+        }
+      } finally {
+        pending -= 1
+        if (round === started) busy.set(false)
+      }
     },
     async again() {
       if (step.get() !== 'done') return

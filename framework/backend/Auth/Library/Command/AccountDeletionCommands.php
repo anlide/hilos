@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\AccountDeletion\AccountDeletionMessages;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
@@ -85,18 +86,20 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
      * Sends the code that confirms the deletion to the account's address.
      *
      * The address is derived again; one that vanished since the window opened asks the person
-     * to start over. The send gate's cooldown is a silent success - the code already waiting
-     * is the one to type - while the window cap is refused out loud.
+     * to start over. The answer carries the cooldown and whether the earlier code remains
+     * live; the window cap is refused out loud.
      *
      * @param string $acceptKey Accept key the action arrived on
+     * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the confirmation is missing, a deletion is scheduled, no address is left, or the send cap is reached
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When a confirmation, identity, verification or request lookup fails
      */
-    public function sendCode(string $acceptKey): void
+    public function sendCode(string $acceptKey): CodeSendReplyDTO
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $acting = $this->actingUser($acceptKey);
+        $userId = $acting->userId;
         $this->stepUp->require($acceptKey, StepUpOperationKey::DELETE_ACCOUNT);
         $this->refuseScheduled($userId);
         $target = new StepUpMethodResolver()->resolveAddress($userId);
@@ -104,10 +107,12 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
-        $outcome = new VerificationService()->issue($this->codeTypeOf($target), (string)$target->destination, $userId);
-        if ($outcome->capReached) {
-            throw new ValidationException(AuthMessages::SEND_CAP);
-        }
+        return $this->sendProfileCode(
+            $acting,
+            StepUpOperationKey::DELETE_ACCOUNT,
+            $this->codeTypeOf($target),
+            (string)$target->destination,
+        );
     }
 
     /**

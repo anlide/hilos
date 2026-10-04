@@ -9,7 +9,6 @@ use Demo\BinanceBtcTracker\Constants\AgentType;
 use Demo\BinanceBtcTracker\Constants\BinanceBtcTrackerSignalConstants;
 use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Runtime\View\Context\BinanceBtcTrackerRtContext;
-use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
@@ -17,10 +16,10 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\HilosException;
@@ -70,7 +69,6 @@ final class BinanceBtcTrackerAgent extends AbstractAgent
      *
      * @param SessionStateSignalData $frame What the session is now, and whom to answer
      * @throws InvalidArgumentException When a signal of the answer cannot be named
-     * @throws InvalidFormatException When the frame's outcome cannot be read back
      * @throws HilosException On database or runtime failure
      */
     private function applySessionState(SessionStateSignalData $frame): void
@@ -174,9 +172,11 @@ final class BinanceBtcTrackerAgent extends AbstractAgent
      * identity it announces (HIL-622), and since the split that identity is sent from here -
      * so the answer is sent from here too.
      *
+     * The reply goes on exactly as the library serialized it ({@see RelayedActionReplyDTO}): a
+     * sign-in outcome, or the code-send reply of a profile window (HIL-1186), which is not one.
+     *
      * @param SessionStateSignalData $frame Session state that may end a tracked action
      * @throws InvalidArgumentException When the reply signal cannot be named
-     * @throws InvalidFormatException When the outcome the frame carries cannot be read back
      */
     private function answerLibraryAction(SessionStateSignalData $frame): void
     {
@@ -192,7 +192,7 @@ final class BinanceBtcTrackerAgent extends AbstractAgent
             $acceptKey,
             $action,
             $requestId,
-            $outcome === null ? null : AuthFlowOutcome::fromArray($outcome),
+            $outcome === null ? null : new RelayedActionReplyDTO($outcome),
         );
     }
 
@@ -204,7 +204,6 @@ final class BinanceBtcTrackerAgent extends AbstractAgent
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws InvalidArgumentException When a signal of the answer cannot be named
-     * @throws InvalidFormatException When a session-state outcome cannot be read back
      * @throws LogicException On payload type mismatch
      * @throws HilosException On database or runtime failure
      */

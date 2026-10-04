@@ -8,6 +8,8 @@ use Closure;
 use Hilos\Auth\Code\CodeSendTicket;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
+use Hilos\Auth\CodeChannel\SmsCodeChannel;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -31,6 +33,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
+use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
@@ -112,11 +115,12 @@ abstract class AbstractLibraryCommands
      *
      * @param ActingSession $acting Browser that is about to be sent a code
      * @param string $channel Channel the code travels over - `email` or a code channel key
+     * @param ?string $purpose Profile operation, or null for a guest send
      * @return string Ticket of this send, to be handed to whoever carries it
      * @throws RandomException When the platform CSPRNG cannot mint the ticket
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      */
-    protected function openCodeSendLine(ActingSession $acting, string $channel): string
+    protected function openCodeSendLine(ActingSession $acting, string $channel, ?string $purpose = null): string
     {
         $ticket = CodeSendTicket::mint();
 
@@ -126,10 +130,65 @@ abstract class AbstractLibraryCommands
                 $ticket,
                 StateProtectedModeRuntime::hashSessionToken($acting->sessionToken),
                 $channel,
+                $purpose,
             ),
         );
 
         return $ticket;
+    }
+
+    /**
+     * Orders a profile code and carries the gate's timing into the session's send line.
+     *
+     * The gate stamps the line even when a transport reports its state later. Keeping the
+     * moments there lets another tab and a reloaded tab read the same resend countdown.
+     *
+     * @param ActingSession $acting Browser and person requesting the code
+     * @param string $purpose Profile operation owning the line
+     * @param string $type Verification type to issue
+     * @param string $address Normalized email address or phone number
+     * @return CodeSendReplyDTO Gate outcome and server moments
+     * @throws ValidationException When the send cap is reached or delivery refuses the target
+     * @throws EmptyValueException When the identifier is empty
+     * @throws RandomException When the platform CSPRNG cannot mint a ticket or code
+     * @throws InvalidArgumentException When a step or transport frame cannot be queued
+     * @throws HilosException When a verification query or delivery fails
+     */
+    protected function sendProfileCode(ActingSession $acting, string $purpose, string $type, string $address): CodeSendReplyDTO
+    {
+        $channel = match ($type) {
+            VerificationType::SMS_LOGIN,
+            VerificationType::SMS_ADD,
+            VerificationType::STEP_UP_SMS,
+            VerificationType::ACCOUNT_DELETION_SMS,
+            VerificationType::PASSWORD_CHANGE_SMS => SmsCodeChannel::NAME,
+            default => HilosCodeSendAttempt::CHANNEL_EMAIL,
+        };
+        $ticket = $this->openCodeSendLine($acting, $channel, $purpose);
+        $verifications = new VerificationService();
+        $outcome = $verifications->issue($type, $address, $acting->userId, $ticket);
+        if ($outcome->capReached) {
+            $this->closeRefusedCodeSendLine($ticket, $channel, $outcome);
+            throw new ValidationException(AuthMessages::SEND_CAP);
+        }
+
+        $expiresAt = $verifications->activeExpiresAt($type, $address);
+        $resendAt = $outcome->resendAt();
+        $state = $outcome->sent
+            ? null
+            : ($expiresAt === null ? HilosCodeSendAttempt::STATE_HELD : $this->refusedLineState($channel, $outcome));
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_CODE_SEND_STEP,
+            CodeSendStepSignalData::stamp(
+                $ticket,
+                $state,
+                $outcome->sent ? null : HilosCodeSendAttempt::REASON_RATE_LIMITED,
+                $resendAt,
+                $expiresAt,
+            ),
+        );
+
+        return new CodeSendReplyDTO($outcome->sent, $resendAt, $expiresAt);
     }
 
     /**

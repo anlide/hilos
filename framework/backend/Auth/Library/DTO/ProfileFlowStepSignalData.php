@@ -37,6 +37,7 @@ final class ProfileFlowStepSignalData extends BaseDTO implements SignalDataInter
      * @param string $initiatorAcceptKey Accept key of the connection that submitted
      * @param ?string $requestId Request id of the action to answer, or null when it was untracked
      * @param ?string $action Action name to answer, or null when nothing is waiting on an answer
+     * @param ?array<string, mixed> $reply Action reply returned after the holder publishes the step
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -49,6 +50,7 @@ final class ProfileFlowStepSignalData extends BaseDTO implements SignalDataInter
         public readonly string $initiatorAcceptKey,
         public readonly ?string $requestId = null,
         public readonly ?string $action = null,
+        public readonly ?array $reply = null,
     ) {
     }
 
@@ -68,6 +70,7 @@ final class ProfileFlowStepSignalData extends BaseDTO implements SignalDataInter
             'initiatorAcceptKey' => $this->initiatorAcceptKey,
             'requestId' => $this->requestId,
             'action' => $this->action,
+            'reply' => $this->reply,
         ];
     }
 
@@ -97,6 +100,7 @@ final class ProfileFlowStepSignalData extends BaseDTO implements SignalDataInter
             initiatorAcceptKey: self::requireString($data, 'initiatorAcceptKey'),
             requestId: self::optionalString($data, 'requestId'),
             action: self::optionalString($data, 'action'),
+            reply: self::optionalArray($data, 'reply'),
         );
     }
 }

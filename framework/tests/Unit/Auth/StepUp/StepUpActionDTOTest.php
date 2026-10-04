@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\StepUp;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpPasskeyAnswer;
@@ -80,6 +81,20 @@ final class StepUpActionDTOTest extends TestCase
         );
 
         self::assertSame($reply->toArray(), StepUpOpeningReplyDTO::fromArray($reply->toArray())->toArray());
+    }
+
+    public function testOpeningReplyCarriesCodeSendOutcomeOnlyForACodeMethod(): void
+    {
+        $reply = new StepUpOpeningReplyDTO(
+            required: true,
+            purpose: 'change your name',
+            method: StepUpMethod::EMAIL_CODE,
+            destination: 'person@example.test',
+            send: new CodeSendReplyDTO(false, 1_900_000_000_000, null),
+        );
+
+        self::assertSame($reply->toArray(), StepUpOpeningReplyDTO::fromArray($reply->toArray())->toArray());
+        self::assertArrayHasKey(StepUpOpeningReplyDTO::send, $reply->toArray());
     }
 
     public function testPasskeyAnswerRejectsMissingAssertionFields(): void

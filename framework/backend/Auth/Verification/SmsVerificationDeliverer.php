@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Verification;
 
-use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
@@ -36,15 +35,13 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
      * Only the code half is read: an SMS type never carries a link, and the only types
      * routed here are the SMS ones.
      *
-     * The progress ticket is accepted and goes no further (HIL-826). A code travelling over a
-     * phone channel has its steps reported by {@see AuthCodeAgent}, which is where the send
-     * actually happens; this deliverer only hands the message to the SMS pool and would have
-     * nothing to say about it afterwards.
+     * A profile code's progress ticket goes to the SMS pool, which reports transport steps
+     * to the session holder. Guest phone codes use the auth code agent instead of this path.
      *
      * @param string $identifier Normalized target E.164 number the challenge was issued for
      * @param string $type Verification type (see VerificationType)
      * @param VerificationDeliverable $deliverable Plaintext content of the message
-     * @param ?string $progressTicket Unused here - the code agent reports a phone send's steps
+     * @param ?string $progressTicket Ticket of the watched profile send, or null
      * @throws EnvException When the SMS worker count is unreadable while sharding the number
      * @throws ValidationException When the challenge was issued for a blank number
      * @throws InvalidArgumentException When the SMS send signal cannot be named or queued
@@ -66,6 +63,7 @@ final class SmsVerificationDeliverer implements VerificationDeliverer
             shardKey: HilosSmsSender::shardKeyForNumber($identifier),
             templateKey: $templateKey,
             params: [SmsVerificationCodeTemplate::PARAM_CODE => $deliverable->code],
+            progressTicket: $progressTicket,
         ));
     }
 

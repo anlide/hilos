@@ -3018,6 +3018,9 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       moveFlow({ ...flow.get(), step: 'set_password', intent: 'register' })
     },
     reportSendProgress(progress: CodeSendProgress | null): void {
+      if (progress !== null && progress.purpose !== null) {
+        return
+      }
       moveFlow({ ...flow.get(), sendProgress: progress })
     },
     cancelMethod(): void {

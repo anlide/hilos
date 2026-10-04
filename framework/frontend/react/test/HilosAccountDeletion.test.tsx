@@ -14,6 +14,13 @@ import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
 afterEach(cleanup)
 
+/** The answer to a code request: the code is out, and another may follow at once. */
+const SENT = {
+  sent: true,
+  resendAt: Date.now() - 1_000,
+  expiresAt: Date.now() + 600_000,
+}
+
 function setup() {
   const listeners = new Set<(signal: ProjectSignal) => void>()
   const dispatched: Array<{ action: string; payload?: unknown }> = []
@@ -28,6 +35,7 @@ function setup() {
       channel: 'email',
       destination: 'me@example.test',
     },
+    hilos_account_deletion_code: SENT,
   }
   const dispatch = vi.fn((action: string, payload?: unknown) => {
     dispatched.push({ action, payload })
@@ -69,6 +77,7 @@ function setup() {
     document.querySelector(`[data-id="${id}"]`) as HTMLElement
 
   return {
+    answers,
     dispatch,
     dispatched,
     node,
@@ -118,5 +127,34 @@ describe('HilosAccountDeletion', () => {
     expect(call?.payload).toMatchObject({
       password: 'secret',
     })
+  })
+
+  it('draws the send block on the code step and asks for another code from it', async () => {
+    const { answers, node, dispatched, state } = setup()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'delete your account',
+    }
+    state({ deletion: null })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-open'))
+    })
+    await act(async () => {
+      fireEvent.click(node('account-deletion-continue'))
+    })
+
+    expect(node('account-deletion-send')).not.toBeNull()
+    fireEvent.change(node('account-deletion-code'), {
+      target: { value: '123456' },
+    })
+    const again = node('account-deletion-send-again') as HTMLButtonElement
+    expect(again.disabled).toBe(false)
+    await act(async () => {
+      fireEvent.click(again)
+    })
+    expect(
+      dispatched.filter((d) => d.action === 'hilos_account_deletion_code'),
+    ).toHaveLength(2)
+    expect((node('account-deletion-code') as HTMLInputElement).value).toBe('')
   })
 })

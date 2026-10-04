@@ -23,7 +23,8 @@ use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
  * stack, the freeze and {@see AbstractAgent::resolveInitiatorSessionTokenHash()} use, so a
  * sender that knows who asked can name the row without ever holding the token itself. Being
  * the session's rather than the socket's is what makes a reload and a second tab read the same
- * line, and another browser read nothing.
+ * line, and another browser read nothing. The purpose distinguishes a guest send from the
+ * profile operation whose window ordered it.
  *
  * Framework-owned runtime state mounted by the sign-in feature ({@see HilosCodeSendAttempts}),
  * written by the agent that owns the session seam and by nobody else. Runtime rather than
@@ -43,6 +44,7 @@ final class HilosCodeSendAttempt extends RtState
     public const string sessionTokenHash = 'sessionTokenHash';
     public const string ticket = 'ticket';
     public const string channel = 'channel';
+    public const string purpose = 'purpose';
     public const string state = 'state';
     public const string detail = 'detail';
     public const string reason = 'reason';
@@ -103,8 +105,14 @@ final class HilosCodeSendAttempt extends RtState
      */
     public const string STATE_NOT_SENT = 'not_sent';
 
+    /** A profile send is held by the cooldown and no earlier code remains live. */
+    public const string STATE_HELD = 'held';
+
     /** The channel of a code that travels as a letter; every other value is a code channel key. */
     public const string CHANNEL_EMAIL = 'email';
+
+    /** The identity confirmation step, shared by protected operations. */
+    public const string PURPOSE_STEP_UP = 'step_up';
 
     /** Hash of the session cookie token this line is addressed to; also the row id. */
     private(set) string $sessionTokenHash = '';
@@ -115,7 +123,10 @@ final class HilosCodeSendAttempt extends RtState
     /** {@see self::CHANNEL_EMAIL}, or the key of the code channel carrying it. */
     private(set) string $channel = '';
 
-    /** One of the five states above. */
+    /** Profile operation owning the line, or null for a guest send. */
+    private(set) ?string $purpose = null;
+
+    /** One of the six send states above. */
     private(set) string $state = '';
 
     /** The provider's own sentence, on {@see self::STATE_FAILED} and nowhere else. */
@@ -152,6 +163,7 @@ final class HilosCodeSendAttempt extends RtState
      * @param string $ticket Ticket of the send this line follows
      * @param string $channel {@see self::CHANNEL_EMAIL} or a code channel key
      * @param int $updatedAt Epoch milliseconds of this write
+     * @param ?string $purpose Profile operation, or null for a guest send
      * @return static Fresh attempt row, queued
      */
     public static function create(
@@ -159,11 +171,13 @@ final class HilosCodeSendAttempt extends RtState
         string $ticket,
         string $channel,
         int $updatedAt,
+        ?string $purpose = null,
     ): static {
         $instance = new static();
         $instance->sessionTokenHash = $sessionTokenHash;
         $instance->ticket = $ticket;
         $instance->channel = $channel;
+        $instance->purpose = $purpose;
         $instance->state = self::STATE_QUEUED;
         $instance->updatedAt = $updatedAt;
         $instance->markRtSyncBaseline();
@@ -182,6 +196,7 @@ final class HilosCodeSendAttempt extends RtState
         $instance->sessionTokenHash = self::requireString($row, self::sessionTokenHash);
         $instance->ticket = self::requireString($row, self::ticket);
         $instance->channel = self::requireString($row, self::channel);
+        $instance->purpose = self::optionalString($row, self::purpose);
         $instance->state = self::requireString($row, self::state);
         $instance->detail = self::optionalString($row, self::detail);
         $instance->reason = self::optionalString($row, self::reason);
@@ -207,6 +222,7 @@ final class HilosCodeSendAttempt extends RtState
     public function applyDiff(array $diff): void
     {
         $this->channel = self::patchString($diff, self::channel, $this->channel);
+        $this->purpose = self::patchOptionalString($diff, self::purpose, $this->purpose);
         $this->state = self::patchString($diff, self::state, $this->state);
         $this->detail = self::patchOptionalString($diff, self::detail, $this->detail);
         $this->reason = self::patchOptionalString($diff, self::reason, $this->reason);
@@ -240,6 +256,7 @@ final class HilosCodeSendAttempt extends RtState
             self::sessionTokenHash => $this->sessionTokenHash,
             self::ticket => $this->ticket,
             self::channel => $this->channel,
+            self::purpose => $this->purpose,
             self::state => $this->state,
             self::detail => $this->detail,
             self::reason => $this->reason,

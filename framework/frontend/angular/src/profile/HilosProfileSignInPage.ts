@@ -24,6 +24,9 @@ import {
   isHilosProfilePasskeyOnly,
   isPasskeySupported,
   PROFILE_PASSWORD_MODE_ADDED,
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
   sessionAuthMethods,
   subscribeSignal,
   watchHilosProfilePasswordUpdated,
@@ -33,12 +36,14 @@ import {
   type HilosProfileAddableWay,
   type HilosProfilePasswordChangeStep,
   type HilosProfileSignInMethod,
+  type CodeSendProgress,
 } from '@hilos/core'
 import { HilosProfilePasswordChange } from './HilosProfilePasswordChange.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { HilosActionError } from '../HilosActionError.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { HilosPageHeading } from '../HilosPageHeading.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
@@ -62,6 +67,7 @@ let signInSequence = 0
     HilosActionError,
     HilosFormError,
     HilosModal,
+    HilosSendProgress,
     HilosPageHeading,
     HilosStepUpStep,
     LoadingButton,
@@ -249,6 +255,21 @@ let signInSequence = 0
           </div>
           <div class="hilos-stack">
             <div class="invisible" aria-hidden="true" inert>
+              <div [class]="sendProgressRowClass">
+                <i
+                  class="bi bi-hourglass-split flex-shrink-0"
+                  aria-hidden="true"
+                ></i>
+                <span class="flex-grow-1 text-truncate">&nbsp;</span>
+                <span [class]="sendProgressDetailsClass"
+                  ><i class="bi bi-info-circle" aria-hidden="true"></i
+                ></span>
+              </div>
+              <div class="mb-3">
+                <span class="btn btn-link btn-sm p-0">{{
+                  sendAgainLabel
+                }}</span>
+              </div>
               @for (
                 label of ['Code', 'New password', 'Confirm new password'];
                 track label
@@ -430,6 +451,22 @@ let signInSequence = 0
               >
                 @for (field of fields(); track field.key; let first = $first) {
                   <div class="mb-3">
+                    @if (field.key === 'code') {
+                      <hilos-send-progress
+                        [progress]="sendProgress()"
+                        [to]="
+                          step() === 'phone-code' ? sentPhone() : sentEmail()
+                        "
+                        [resendAt]="resendAt()"
+                        [busy]="busy()"
+                        [dataId]="
+                          step() === 'phone-code'
+                            ? 'profile-add-sms-send'
+                            : 'profile-add-password-send'
+                        "
+                        (sendAgain)="sendAgainAdd()"
+                      />
+                    }
                     <label
                       [attr.for]="baseId + '-add-' + field.key"
                       class="form-label"
@@ -548,6 +585,9 @@ export class HilosProfileSignInPage {
   protected readonly baseId = `hilos-profile-sign-in-${signInSequence++}`
   protected readonly copy = HILOS_PROFILE_SIGN_IN_COPY
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
+  protected readonly sendProgressRowClass = SEND_PROGRESS_ROW_CLASS
+  protected readonly sendProgressDetailsClass = SEND_PROGRESS_DETAILS_CLASS
+  protected readonly sendAgainLabel = SEND_AGAIN_LABEL
   protected readonly subtitle = hilosProfileSignInSubtitle
   protected readonly unlinkKey = signal<string | null>(null)
   protected readonly unlinkMethod = computed(() =>
@@ -578,6 +618,10 @@ export class HilosProfileSignInPage {
   protected readonly step = signal<HilosProfileAddSignInStep>('closed')
   protected readonly busy = signal(false)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly sendProgress = signal<CodeSendProgress | null>(null)
+  protected readonly resendAt = signal<number | null>(null)
+  protected readonly sentEmail = signal('')
+  protected readonly sentPhone = signal('')
   protected readonly stepUpRefusal = signal<string | null>(null)
   protected readonly stepUpBusy = signal(false)
   protected readonly pendingProvider = signal<string | null>(null)
@@ -709,6 +753,10 @@ export class HilosProfileSignInPage {
       this.step.set(flow.step.get())
       this.busy.set(flow.busy.get())
       this.refusal.set(flow.refusal.get())
+      this.sendProgress.set(flow.sendProgress.get())
+      this.resendAt.set(flow.resendAt.get())
+      this.sentEmail.set(flow.email.get())
+      this.sentPhone.set(flow.phone.get())
       this.stepUpRefusal.set(flow.stepUp.refusal.get())
       this.stepUpBusy.set(flow.stepUp.busy.get())
       this.pendingProvider.set(flow.provider.get())
@@ -716,6 +764,12 @@ export class HilosProfileSignInPage {
         subscribeSignal(flow.step, (value) => this.step.set(value)),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
+        subscribeSignal(flow.sendProgress, (value) =>
+          this.sendProgress.set(value),
+        ),
+        subscribeSignal(flow.resendAt, (value) => this.resendAt.set(value)),
+        subscribeSignal(flow.email, (value) => this.sentEmail.set(value)),
+        subscribeSignal(flow.phone, (value) => this.sentPhone.set(value)),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepUpRefusal.set(value),
         ),
@@ -828,5 +882,9 @@ export class HilosProfileSignInPage {
         await this.flow().submitPhoneCode(draft.code.trim())
         break
     }
+  }
+  protected sendAgainAdd(): void {
+    this.draft.update((draft) => ({ ...draft, code: '' }))
+    void this.flow().sendAgain()
   }
 }

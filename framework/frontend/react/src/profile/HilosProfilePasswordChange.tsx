@@ -3,10 +3,14 @@ import {
   focusInitial,
   HILOS_PROFILE_PASSWORD_CHANGE_COPY as COPY,
   HILOS_STEP_UP_COPY,
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
   type HilosProfilePasswordChangeFlow,
 } from '@hilos/core'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { useSignal } from '../useSignal.js'
@@ -27,6 +31,8 @@ export function HilosProfilePasswordChange({
   const signedOutOthers = useSignal(flow.signedOutOthers)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
+  const sendProgress = useSignal(flow.sendProgress)
+  const resendAt = useSignal(flow.resendAt)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
   const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
   const body = useRef<HTMLDivElement | null>(null)
@@ -154,6 +160,35 @@ export function HilosProfilePasswordChange({
                 </li>
               ))}
             </ol>
+            <div className={SEND_PROGRESS_ROW_CLASS}>
+              <i
+                className="bi bi-hourglass-split flex-shrink-0"
+                aria-hidden="true"
+              ></i>
+              <span className="flex-grow-1 text-truncate">&nbsp;</span>
+              <span className={SEND_PROGRESS_DETAILS_CLASS}>
+                <i className="bi bi-info-circle" aria-hidden="true"></i>
+              </span>
+            </div>
+            <div className="mb-3">
+              <span className="btn btn-link btn-sm p-0">
+                {SEND_AGAIN_LABEL}
+              </span>
+            </div>
+            <div className="form-label">{COPY.code}</div>
+            <div className="form-control">&nbsp;</div>
+          </div>
+          <div className="invisible" aria-hidden="true" inert>
+            <ol className="list-unstyled d-flex flex-column gap-1 mb-3 small">
+              {COPY.steps.map((label, index) => (
+                <li key={label} className="d-flex align-items-center gap-2">
+                  <span className="badge rounded-pill text-bg-secondary">
+                    {index + 1}
+                  </span>
+                  <span>{label}</span>
+                </li>
+              ))}
+            </ol>
             <div className="form-label">{COPY.newPassword}</div>
             <div className="form-control">&nbsp;</div>
             <div className="form-text">{COPY.newPasswordHint}</div>
@@ -214,6 +249,14 @@ export function HilosProfilePasswordChange({
                       void flow.confirmCode()
                     }}
                   >
+                    <HilosSendProgress
+                      progress={sendProgress}
+                      to={opening?.destination ?? ''}
+                      resendAt={resendAt}
+                      busy={busy}
+                      dataId="profile-password-send"
+                      onSendAgain={() => void flow.sendAgain()}
+                    />
                     <label htmlFor={`${id}-code`} className="form-label">
                       {COPY.code}
                     </label>
@@ -225,15 +268,8 @@ export function HilosProfilePasswordChange({
                       data-autofocus
                       data-id="profile-password-code"
                       value={code}
-                      aria-describedby={`${id}-code-hint`}
                       onChange={(event) => flow.code.set(event.target.value)}
                     />
-                    <div
-                      id={`${id}-code-hint`}
-                      className="form-text text-break"
-                    >
-                      {fill(COPY.codeHint)}
-                    </div>
                   </form>
                 ) : null}
                 {step === 'password' ? (

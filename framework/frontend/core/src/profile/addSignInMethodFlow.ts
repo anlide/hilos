@@ -4,6 +4,12 @@
 // server's word, at the confirmation step or straight at the chooser — or, when
 // it was opened for one way (HIL-1166), straight at that way's first step.
 import { type HilosAuthContext } from '../auth/authContext.js'
+import {
+  codeSendReplySchema,
+  hilosCodeSendProgressFor,
+  type CodeSendProgress,
+  type HilosCodeSendReply,
+} from '../auth/authSendProgress.js'
 import { createOAuthLogin, describeOAuthError } from '../auth/oauthLogin.js'
 import { createPasskeyCeremony } from '../auth/passkeyCeremony.js'
 import {
@@ -15,7 +21,12 @@ import {
   ActionError,
   type ActionHandle,
 } from '../connection/actionLifecycle.js'
-import { createSignal, type ReadonlySignal } from '../state/signal.js'
+import { toLocal } from '../session/serverClock.js'
+import {
+  computedSignal,
+  createSignal,
+  type ReadonlySignal,
+} from '../state/signal.js'
 import { hilosToasts } from '../state/toasts.js'
 import {
   hilosProfilePasswordState,
@@ -52,6 +63,10 @@ export interface HilosProfileAddSignInFlow {
   readonly stepUp: HilosStepUpStep
   readonly busy: ReadonlySignal<boolean>
   readonly refusal: ReadonlySignal<string | null>
+  /** This dialog's send line, hidden while another code is ordered. */
+  readonly sendProgress: ReadonlySignal<CodeSendProgress | null>
+  /** Local-scale moment another code may be requested. */
+  readonly resendAt: ReadonlySignal<number | null>
   readonly provider: ReadonlySignal<string | null>
   readonly email: ReadonlySignal<string>
   readonly phone: ReadonlySignal<string>
@@ -73,6 +88,8 @@ export interface HilosProfileAddSignInFlow {
   submitPasswordCode(code: string, newPassword: string): Promise<void>
   submitPhone(phone: string): Promise<void>
   submitPhoneCode(code: string): Promise<void>
+  /** Order another code for the address or number of the current code step. */
+  sendAgain(): Promise<void>
   back(): void
   close(): void
   dispose(): void
@@ -116,6 +133,9 @@ export function createHilosProfileAddSignInFlow(
   const passkeys = createPasskeyCeremony(context)
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
+    () => {
+      if (step.get() === 'step-up') enterChooser()
+    },
   )
   const step = createSignal<HilosProfileAddSignInStep>('closed')
   const busy = createSignal(false)
@@ -123,6 +143,20 @@ export function createHilosProfileAddSignInFlow(
   const provider = createSignal<string | null>(null)
   const email = createSignal('')
   const phone = createSignal('')
+  const reportedProgress = hilosCodeSendProgressFor(
+    ADD_SIGN_IN_METHOD_OPERATION,
+  )
+  const hiddenTicket = createSignal<string | null>(null)
+  const replyResendAt = createSignal<number | null>(null)
+  const sendProgress = computedSignal(() => {
+    const progress = reportedProgress.get()
+    return progress !== null && progress.ticket === hiddenTicket.get()
+      ? null
+      : progress
+  })
+  const resendAt = computedSignal(
+    () => sendProgress.get()?.resendAt ?? replyResendAt.get(),
+  )
   let round = 0
   let stopPassword: (() => void) | null = null
   let stopTrip: (() => void) | null = null
@@ -144,6 +178,20 @@ export function createHilosProfileAddSignInFlow(
     provider.set(null)
     email.set('')
     phone.set('')
+    hiddenTicket.set(null)
+    replyResendAt.set(null)
+  }
+
+  /**
+   * Hide the line of an earlier send of this dialog's purpose - the other way's
+   * code, or an earlier dialog's - until the send about to go out replaces it.
+   *
+   * @param expected The step the send goes out from; on any other step, or
+   *   while the dialog is busy, the send will not go out and nothing is hidden.
+   */
+  function hideEarlierLine(expected: HilosProfileAddSignInStep): void {
+    if (busy.get() || step.get() !== expected) return
+    hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
   }
 
   function choose(next: HilosProfileAddSignInStep): void {
@@ -183,14 +231,19 @@ export function createHilosProfileAddSignInFlow(
     send: () => ActionHandle,
     accepted: () => void,
     waitForPassword = false,
+    onReply?: (reply: HilosCodeSendReply) => void,
   ): Promise<void> {
     if (busy.get() || step.get() !== expected) return
     const started = round
     busy.set(true)
     refusal.set(null)
     try {
-      await send().done
-      if (round === started) accepted()
+      const result = await send().done
+      if (round === started) {
+        if (onReply !== undefined)
+          onReply(codeSendReplySchema.parse(result.reply))
+        accepted()
+      }
     } catch (error) {
       if (round === started) {
         refusal.set(
@@ -210,6 +263,8 @@ export function createHilosProfileAddSignInFlow(
     stepUp,
     busy,
     refusal,
+    sendProgress,
+    resendAt,
     provider,
     email,
     phone,
@@ -323,6 +378,7 @@ export function createHilosProfileAddSignInFlow(
       )
     },
     submitPasswordEmail(address) {
+      hideEarlierLine('password-email')
       return submit(
         'password-email',
         () => actions.requestPasswordAdd(address),
@@ -330,6 +386,8 @@ export function createHilosProfileAddSignInFlow(
           email.set(address)
           step.set('password-code')
         },
+        false,
+        (reply) => replyResendAt.set(toLocal(reply.resendAt)),
       )
     },
     submitPasswordCode(code, newPassword) {
@@ -341,6 +399,7 @@ export function createHilosProfileAddSignInFlow(
       )
     },
     submitPhone(number) {
+      hideEarlierLine('phone-number')
       return submit(
         'phone-number',
         () => actions.requestSmsAdd(number),
@@ -348,6 +407,8 @@ export function createHilosProfileAddSignInFlow(
           phone.set(number)
           step.set('phone-code')
         },
+        false,
+        (reply) => replyResendAt.set(toLocal(reply.resendAt)),
       )
     },
     submitPhoneCode(code) {
@@ -355,6 +416,26 @@ export function createHilosProfileAddSignInFlow(
         'phone-code',
         () => actions.confirmSmsAdd(phone.get(), code),
         close,
+      )
+    },
+    async sendAgain() {
+      const current = step.get()
+      if (
+        busy.get() ||
+        (current !== 'password-code' && current !== 'phone-code')
+      )
+        return
+      refusal.set(null)
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      await submit(
+        current,
+        () =>
+          current === 'phone-code'
+            ? actions.requestSmsAdd(phone.get())
+            : actions.requestPasswordAdd(email.get()),
+        () => {},
+        false,
+        (reply) => replyResendAt.set(toLocal(reply.resendAt)),
       )
     },
     back() {
@@ -369,6 +450,8 @@ export function createHilosProfileAddSignInFlow(
         return
       round += 1
       refusal.set(null)
+      hiddenTicket.set(null)
+      replyResendAt.set(null)
       step.set(
         step.get() === 'phone-code'
           ? 'phone-number'

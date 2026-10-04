@@ -2826,6 +2826,14 @@ describe('resuming an unfinished auth step', () => {
 })
 
 describe('the send-progress line (HIL-826)', () => {
+  const guest = {
+    purpose: null,
+    ticket: null,
+    reason: null,
+    resendAt: null,
+    expiresAt: null,
+  }
+
   it('holds the step the server reported', () => {
     const flow = setup()
 
@@ -2833,18 +2841,25 @@ describe('the send-progress line (HIL-826)', () => {
       state: 'sending',
       channel: 'email',
       detail: null,
+      ...guest,
     })
 
     expect(flow.flow.get().sendProgress).toEqual({
       state: 'sending',
       channel: 'email',
       detail: null,
+      ...guest,
     })
   })
 
   it('takes the line away on an empty frame', () => {
     const flow = setup()
-    flow.reportSendProgress({ state: 'sent', channel: 'email', detail: null })
+    flow.reportSendProgress({
+      state: 'sent',
+      channel: 'email',
+      detail: null,
+      ...guest,
+    })
 
     flow.reportSendProgress(null)
 
@@ -2855,7 +2870,12 @@ describe('the send-progress line (HIL-826)', () => {
 
   it('forgets the old line the moment a new ask goes out', async () => {
     const flow = setup()
-    flow.reportSendProgress({ state: 'failed', channel: 'email', detail: 'no' })
+    flow.reportSendProgress({
+      state: 'failed',
+      channel: 'email',
+      detail: 'no',
+      ...guest,
+    })
 
     await flow.submit()
 
@@ -2867,9 +2887,27 @@ describe('the send-progress line (HIL-826)', () => {
 
   it('forgets the line when the person walks back to the field', () => {
     const flow = setup()
-    flow.reportSendProgress({ state: 'sent', channel: 'email', detail: null })
+    flow.reportSendProgress({
+      state: 'sent',
+      channel: 'email',
+      detail: null,
+      ...guest,
+    })
 
     flow.backToIdentifier()
+
+    expect(flow.flow.get().sendProgress).toBeNull()
+  })
+
+  it('ignores a profile window line on the guest screen', () => {
+    const flow = setup()
+    flow.reportSendProgress({
+      state: 'held',
+      channel: 'email',
+      detail: null,
+      ...guest,
+      purpose: 'change_password',
+    })
 
     expect(flow.flow.get().sendProgress).toBeNull()
   })

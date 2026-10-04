@@ -145,6 +145,9 @@ export function createHilosProfileRenameFlow(
 ): HilosProfileRenameFlow {
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
+    () => {
+      if (step.get() === 'step-up') showForm()
+    },
   )
   const step = createSignal<HilosProfileRenameStep>('closed')
   const draft = createSignal('')

@@ -1722,11 +1722,16 @@ function cardOperation(window: HilosUserCardWindow): string | undefined {
  * their unconfirmed address.
  *
  * @param context The project context whose action lifecycle carries the step.
+ * @param onPassed Continuation when a repeat finds the operation already confirmed.
  */
 export function createHilosUserCardStepUp(
   context: HilosUsersContext,
+  onPassed?: () => void | Promise<void>,
 ): HilosUserCardStepUp {
-  const step = createHilosStepUpStep(createHilosStepUpActions(context.actions))
+  const step = createHilosStepUpStep(
+    createHilosStepUpActions(context.actions),
+    onPassed,
+  )
 
   return {
     step,

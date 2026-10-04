@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\StepUp\DTO;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 
@@ -18,6 +19,7 @@ final class StepUpOpeningReplyDTO extends ActionReplyDTO
     public const string destination = 'destination';
     public const string signedChallenge = 'signedChallenge';
     public const string publicKeyOptions = 'publicKeyOptions';
+    public const string send = 'send';
 
     /**
      * @param bool $required Whether the operation must show the confirmation step
@@ -26,6 +28,7 @@ final class StepUpOpeningReplyDTO extends ActionReplyDTO
      * @param ?string $destination Email address or phone number receiving a code, or null
      * @param ?string $signedChallenge Signed WebAuthn challenge token, or null
      * @param ?array<string, mixed> $publicKeyOptions WebAuthn request options, or null
+     * @param ?CodeSendReplyDTO $send Code request outcome, or null for a non-code method
      */
     public function __construct(
         public readonly bool $required,
@@ -34,6 +37,7 @@ final class StepUpOpeningReplyDTO extends ActionReplyDTO
         public readonly ?string $destination = null,
         public readonly ?string $signedChallenge = null,
         public readonly ?array $publicKeyOptions = null,
+        public readonly ?CodeSendReplyDTO $send = null,
     ) {
     }
 
@@ -55,6 +59,9 @@ final class StepUpOpeningReplyDTO extends ActionReplyDTO
         if ($this->publicKeyOptions !== null) {
             $data[self::publicKeyOptions] = $this->publicKeyOptions;
         }
+        if ($this->send !== null) {
+            $data[self::send] = $this->send->toArray();
+        }
 
         return $data;
     }
@@ -73,6 +80,7 @@ final class StepUpOpeningReplyDTO extends ActionReplyDTO
             destination: self::optionalString($data, self::destination),
             signedChallenge: self::optionalString($data, self::signedChallenge),
             publicKeyOptions: self::optionalArray($data, self::publicKeyOptions),
+            send: isset($data[self::send]) ? CodeSendReplyDTO::fromArray(self::requireArray($data, self::send)) : null,
         );
     }
 }

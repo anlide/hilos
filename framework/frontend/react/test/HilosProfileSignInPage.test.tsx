@@ -24,6 +24,17 @@ const PASSWORD_STEP = {
   method: 'password',
 }
 
+/** The answer to a code request: the code is out, and another may follow at once. */
+const SENT = {
+  sent: true,
+  resendAt: Date.now() - 1_000,
+  expiresAt: Date.now() + 600_000,
+}
+const CODE_REQUESTS = [
+  'profile_add_sms_request',
+  'profile_add_password_request',
+]
+
 /** The methods the session offers: on, ready, in button order. */
 const OFFERED = [
   { key: 'password', name: null },
@@ -88,7 +99,11 @@ function setup(
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
     done: Promise.resolve(
-      action === 'hilos_step_up_start' ? { reply: opening } : {},
+      action === 'hilos_step_up_start'
+        ? { reply: opening }
+        : CODE_REQUESTS.includes(action)
+          ? { reply: SENT }
+          : {},
     ),
   }))
   const context = {
@@ -242,3 +257,63 @@ it('opens the dialog straight at the pressed way, and leaves a switched-off meth
   expect(node('profile-sign-in-choose-password')).not.toBeNull()
   expect(node('profile-sign-in-choose-phone')).toBeNull()
 })
+
+it.each([
+  {
+    way: 'phone',
+    methods: MAGIC_LINK,
+    choose: 'profile-sign-in-choose-phone',
+    address: 'profile-add-sms-phone',
+    value: '+48600000000',
+    request: 'profile-add-sms-request',
+    send: 'profile-add-sms-send',
+    code: 'profile-add-sms-code',
+    action: 'profile_add_sms_request',
+    payload: { phone: '+48600000000' },
+  },
+  {
+    way: 'password',
+    methods: PASSKEY_ONLY,
+    choose: 'profile-sign-in-choose-password',
+    address: 'profile-add-password-email',
+    value: 'b@example.test',
+    request: 'profile-add-password-request',
+    send: 'profile-add-password-send',
+    code: 'profile-add-password-code',
+    action: 'profile_add_password_request',
+    payload: { email: 'b@example.test' },
+  },
+])(
+  'empties the code and asks for another one from the $way send block',
+  async (row) => {
+    const { dispatch, node } = setup(NO_STEP, row.methods)
+    await act(async () => {
+      fireEvent.click(node('profile-sign-in-add'))
+    })
+    fireEvent.click(node(row.choose))
+    fireEvent.change(node(row.address), {
+      target: { value: row.value },
+    })
+    await act(async () => {
+      fireEvent.click(node(row.request))
+    })
+
+    expect(node(row.send)).not.toBeNull()
+    expect(document.querySelectorAll('[inert] [data-id]')).toHaveLength(0)
+    fireEvent.change(node(row.code), { target: { value: '123456' } })
+    const again = node(`${row.send}-again`) as HTMLButtonElement
+    expect(again.disabled).toBe(false)
+    await act(async () => {
+      fireEvent.click(again)
+    })
+    expect((node(row.code) as HTMLInputElement).value).toBe('')
+    expect(
+      dispatch.mock.calls.filter(([action]) => action === row.action),
+    ).toHaveLength(2)
+    expect(dispatch).toHaveBeenLastCalledWith(
+      row.action,
+      row.payload,
+      expect.anything(),
+    )
+  },
+)

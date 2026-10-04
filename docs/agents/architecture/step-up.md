@@ -130,6 +130,14 @@ Another browser of the same person sees nothing. The account-deletion window and
 "Add a way to sign in" join the same record in their own leaves (HIL-1183,
 HIL-1184).
 
+A code request held by the resend cooldown after its earlier code was spent
+returns `expiresAt: null` (HIL-1186). The email/password window still stands on
+the code step locally and offers Send again once `resendAt` passes, but no
+session flow row is invented for a code that is not live. Another tab reaches
+that step only after a real send writes the row. Reopening an identity-confirmation
+step uses the same send outcome; if another tab has already confirmed the
+operation, the window continues through its existing post-confirmation path.
+
 ## Adding a way in
 
 Every action that adds the signed-in person a way into their OWN account, or

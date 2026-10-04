@@ -18,10 +18,15 @@ use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -106,6 +111,84 @@ final class CodeSendProgressLineTest extends TestCase
         $this->assertSame(StateHilosCodeSendAttempt::STATE_QUEUED, $attempts[self::SESSION_HASH]?->state);
         $this->assertSame(StateHilosCodeSendAttempt::CHANNEL_EMAIL, $attempts[self::SESSION_HASH]?->channel);
         $this->assertNull($attempts[self::SESSION_HASH]?->detail);
+    }
+
+    public function testAResendRemovesTheOldLineBeforeItCreatesTheNewOne(): void
+    {
+        $attempts = $this->attempts();
+        $attempts->actions->start(self::SESSION_HASH, self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $recorder = new CodeSendProgressTestChangeRecorder();
+        SourceChangeBus::subscribe($recorder);
+
+        $attempts->actions->start(self::SESSION_HASH, self::OTHER_TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+
+        // A copy in another worker does not apply a creation for an id it already holds, so a
+        // replacement announced as one creation would leave it on the old ticket (HIL-1186).
+        self::assertSame(
+            [TableMutationType::Delete, TableMutationType::Create],
+            $recorder->mutations(self::SESSION_HASH),
+        );
+        self::assertSame(self::OTHER_TICKET, $attempts[self::SESSION_HASH]?->ticket);
+    }
+
+    public function testTheProfilePurposeAndGateMomentsSurviveTransportSteps(): void
+    {
+        $attempts = $this->attempts();
+        $attempts->actions->start(
+            self::SESSION_HASH,
+            self::TICKET,
+            StateHilosCodeSendAttempt::CHANNEL_EMAIL,
+            StepUpOperationKey::CHANGE_PASSWORD,
+        );
+        $resendAt = 1_900_000_000_000;
+        $expiresAt = $resendAt + self::WHOLE_CODE_LIFETIME_MS;
+
+        $attempts->actions->advance(self::TICKET, null, null, null, $resendAt, $expiresAt);
+        $attempts->actions->advance(self::TICKET, StateHilosCodeSendAttempt::STATE_SENDING, null);
+        $attempts->actions->advance(self::TICKET, StateHilosCodeSendAttempt::STATE_SENT, null);
+
+        $line = $attempts[self::SESSION_HASH];
+        self::assertSame(StepUpOperationKey::CHANGE_PASSWORD, $line?->purpose);
+        self::assertSame($resendAt, $line?->resendAt);
+        self::assertSame($expiresAt, $line?->expiresAt);
+        self::assertSame(StateHilosCodeSendAttempt::STATE_SENT, $line?->state);
+        self::assertSame(StepUpOperationKey::CHANGE_PASSWORD, CodeSendProgressSignalData::fromAttempt($line)->purpose);
+    }
+
+    public function testAHeldProfileSendKeepsItsReasonAndMoment(): void
+    {
+        $attempts = $this->attempts();
+        $attempts->actions->start(
+            self::SESSION_HASH,
+            self::TICKET,
+            StateHilosCodeSendAttempt::CHANNEL_EMAIL,
+            StepUpOperationKey::CHANGE_EMAIL,
+        );
+        $resendAt = 1_900_000_000_000;
+        $attempts->actions->advance(
+            self::TICKET,
+            StateHilosCodeSendAttempt::STATE_HELD,
+            null,
+            StateHilosCodeSendAttempt::REASON_RATE_LIMITED,
+            $resendAt,
+        );
+
+        self::assertSame(StateHilosCodeSendAttempt::STATE_HELD, $attempts[self::SESSION_HASH]?->state);
+        self::assertSame(StateHilosCodeSendAttempt::REASON_RATE_LIMITED, $attempts[self::SESSION_HASH]?->reason);
+        self::assertSame($resendAt, $attempts[self::SESSION_HASH]?->resendAt);
+        self::assertNull($attempts[self::SESSION_HASH]?->expiresAt);
+    }
+
+    public function testAGateStampAfterTransportFailureKeepsTheFailureSentence(): void
+    {
+        $attempts = $this->attempts();
+        $attempts->actions->start(self::SESSION_HASH, self::TICKET, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
+        $attempts->actions->advance(self::TICKET, StateHilosCodeSendAttempt::STATE_FAILED, self::REFUSAL);
+
+        $attempts->actions->advance(self::TICKET, null, null, null, 1_900_000_000_000);
+
+        self::assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $attempts[self::SESSION_HASH]?->state);
+        self::assertSame(self::REFUSAL, $attempts[self::SESSION_HASH]?->detail);
     }
 
     public function testAResendReplacesTheLineRatherThanStandingBesideIt(): void
@@ -463,5 +546,31 @@ final class CodeSendProgressTestCommands extends AbstractLibraryCommands
     public function close(string $ticket, string $channel, VerificationSendOutcome $outcome): void
     {
         $this->closeRefusedCodeSendLine($ticket, $channel, $outcome);
+    }
+}
+
+/** Records the runtime announcements of the code send line, in the order they were made. */
+final class CodeSendProgressTestChangeRecorder implements SourceChangeSubscriberInterface
+{
+    /** @var list<SourceChange> */
+    private array $changes = [];
+
+    public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+    {
+        if ($change->kind === SourceChange::KIND_RT && $change->sourceKey === StateHilosCodeSendAttempt::RT_COLLECTION) {
+            $this->changes[] = $change;
+        }
+    }
+
+    /**
+     * @param string $id Id of the line
+     * @return list<TableMutationType> What was announced for that line, in order
+     */
+    public function mutations(string $id): array
+    {
+        return array_values(array_map(
+            static fn(SourceChange $change): TableMutationType => $change->mutationType,
+            array_filter($this->changes, static fn(SourceChange $change): bool => $change->sourceId === $id),
+        ));
     }
 }

@@ -1,7 +1,8 @@
 // Covers what the account deletion view owns rather than the core flow
 // (HIL-302): the zone turning into the warning and back from the person's
-// state, the refusal drawn in the room kept above the buttons, and the code
-// field taking the focus on step 2.
+// state, the refusal drawn in the room kept above the buttons, the code field
+// taking the focus on step 2, and the send block of step 2 asking for another
+// code.
 import {
   ActionError,
   createSignal,
@@ -29,6 +30,13 @@ enableAutoUnmount(afterEach)
 
 /** One day, in ms. */
 const DAY = 86_400_000
+
+/** A code request's answer whose resend gate is already open. */
+const SENT_RESEND_OPEN = {
+  sent: true,
+  resendAt: Date.now() - 60_000,
+  expiresAt: Date.now() + 600_000,
+}
 
 /**
  * A mounted zone over an action lifecycle that answers by name — a reply, or a
@@ -184,6 +192,32 @@ describe('HilosAccountDeletion', () => {
       'me@example.test',
     )
     expect(document.activeElement).toBe(byId('account-deletion-code'))
+  })
+
+  it('draws the send block on step 2 and sends the code again from it', async () => {
+    const world = zoneWorld({
+      hilos_step_up_start: { required: false, purpose: 'delete your account' },
+      hilos_account_deletion_open: {
+        graceDays: 30,
+        channel: 'email',
+        destination: 'me@example.test',
+      },
+      hilos_account_deletion_code: SENT_RESEND_OPEN,
+    })
+    world.state({ deletion: null })
+    await nextTick()
+
+    byId('account-deletion-open').click()
+    await flushPromises()
+    byId('account-deletion-continue').click()
+    await flushPromises()
+    expect(byId('account-deletion-send')).toBeDefined()
+    byId('account-deletion-send-again').click()
+    await flushPromises()
+
+    expect(
+      world.sent.filter((action) => action === 'hilos_account_deletion_code'),
+    ).toHaveLength(2)
   })
 })
 

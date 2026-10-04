@@ -13,13 +13,18 @@ import {
   focusInitial,
   HILOS_PROFILE_PASSWORD_CHANGE_COPY,
   HILOS_STEP_UP_COPY,
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
   subscribeSignal,
   type HilosProfilePasswordChangeFlow,
   type HilosProfilePasswordChangeStep,
   type HilosProfilePasswordChangeOpening,
+  type CodeSendProgress,
 } from '@hilos/core'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 
@@ -29,7 +34,13 @@ let passwordChangeSequence = 0
 @Component({
   selector: 'hilos-profile-password-change',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosFormError, HilosModal, HilosStepUpStep, LoadingButton],
+  imports: [
+    HilosFormError,
+    HilosModal,
+    HilosSendProgress,
+    HilosStepUpStep,
+    LoadingButton,
+  ],
   template: `
     <hilos-modal
       [open]="open()"
@@ -49,6 +60,33 @@ let passwordChangeSequence = 0
       </div>
       <div #body data-id="profile-password-modal">
         <div class="hilos-stack">
+          <div class="invisible" aria-hidden="true" inert>
+            <ol class="list-unstyled d-flex flex-column gap-1 mb-3 small">
+              @for (label of copy.steps; track label; let index = $index) {
+                <li class="d-flex align-items-center gap-2">
+                  <span class="badge rounded-pill text-bg-secondary">{{
+                    index + 1
+                  }}</span
+                  ><span>{{ label }}</span>
+                </li>
+              }
+            </ol>
+            <div [class]="sendProgressRowClass">
+              <i
+                class="bi bi-hourglass-split flex-shrink-0"
+                aria-hidden="true"
+              ></i>
+              <span class="flex-grow-1 text-truncate">&nbsp;</span>
+              <span [class]="sendProgressDetailsClass"
+                ><i class="bi bi-info-circle" aria-hidden="true"></i
+              ></span>
+            </div>
+            <div class="mb-3">
+              <span class="btn btn-link btn-sm p-0">{{ sendAgainLabel }}</span>
+            </div>
+            <div class="form-label">{{ copy.code }}</div>
+            <div class="form-control">&nbsp;</div>
+          </div>
           <div class="invisible" aria-hidden="true" inert>
             <ol class="list-unstyled d-flex flex-column gap-1 mb-3 small">
               @for (label of copy.steps; track label; let index = $index) {
@@ -114,6 +152,14 @@ let passwordChangeSequence = 0
                   [id]="id + '-code-form'"
                   (submit)="$event.preventDefault(); flow().confirmCode()"
                 >
+                  <hilos-send-progress
+                    [progress]="sendProgress()"
+                    [to]="opening()?.destination ?? ''"
+                    [resendAt]="resendAt()"
+                    [busy]="busy()"
+                    dataId="profile-password-send"
+                    (sendAgain)="flow().sendAgain()"
+                  />
                   <label [for]="id + '-code'" class="form-label">{{
                     copy.code
                   }}</label>
@@ -125,12 +171,8 @@ let passwordChangeSequence = 0
                     data-autofocus
                     data-id="profile-password-code"
                     [value]="code()"
-                    [attr.aria-describedby]="id + '-code-hint'"
                     (input)="flow().code.set(valueOf($event))"
                   />
-                  <div [id]="id + '-code-hint'" class="form-text text-break">
-                    {{ fill(copy.codeHint) }}
-                  </div>
                 </form>
               }
               @if (step() === 'password') {
@@ -285,6 +327,9 @@ export class HilosProfilePasswordChange {
   readonly flow = input.required<HilosProfilePasswordChangeFlow>()
   protected readonly copy = HILOS_PROFILE_PASSWORD_CHANGE_COPY
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
+  protected readonly sendProgressRowClass = SEND_PROGRESS_ROW_CLASS
+  protected readonly sendProgressDetailsClass = SEND_PROGRESS_DETAILS_CLASS
+  protected readonly sendAgainLabel = SEND_AGAIN_LABEL
   protected readonly id = `hilos-password-change-${passwordChangeSequence++}`
   protected readonly step = signal<HilosProfilePasswordChangeStep>('closed')
   protected readonly opening = signal<HilosProfilePasswordChangeOpening | null>(
@@ -296,6 +341,8 @@ export class HilosProfilePasswordChange {
   protected readonly signedOutOthers = signal(true)
   protected readonly busy = signal(false)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly sendProgress = signal<CodeSendProgress | null>(null)
+  protected readonly resendAt = signal<number | null>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
   protected readonly asksBeforeClosing = signal(false)
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
@@ -330,6 +377,8 @@ export class HilosProfilePasswordChange {
       this.signedOutOthers.set(flow.signedOutOthers.get())
       this.busy.set(flow.busy.get())
       this.refusal.set(flow.refusal.get())
+      this.sendProgress.set(flow.sendProgress.get())
+      this.resendAt.set(flow.resendAt.get())
       this.stepUpRefusal.set(flow.stepUp.refusal.get())
       this.asksBeforeClosing.set(flow.asksBeforeClosing.get())
       const off = [
@@ -347,6 +396,10 @@ export class HilosProfilePasswordChange {
         ),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
+        subscribeSignal(flow.sendProgress, (value) =>
+          this.sendProgress.set(value),
+        ),
+        subscribeSignal(flow.resendAt, (value) => this.resendAt.set(value)),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepUpRefusal.set(value),
         ),

@@ -200,6 +200,7 @@ final class ProfileFlowHolderTest extends TestCase
             self::ACCEPT_KEY,
             'request-1',
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
+            ['sent' => false, 'resendAt' => 1_900_000_000_000, 'expiresAt' => null],
         );
 
         $this->assertEquals($frame, ProfileFlowStepSignalData::fromArray($frame->toArray()));

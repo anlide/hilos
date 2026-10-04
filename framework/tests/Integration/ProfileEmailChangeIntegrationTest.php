@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentRequestActionDTO;
@@ -63,7 +64,11 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
 
-        $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST, new ProfileEmailChangeCurrentRequestActionDTO());
+        $reply = $this->submitStep(HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST, new ProfileEmailChangeCurrentRequestActionDTO());
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertTrue($reply->sent);
+        self::assertSame(StepUpOperationKey::CHANGE_EMAIL, $this->codeSendLine()?->purpose);
+        self::assertSame($reply->resendAt, $this->codeSendLine()?->resendAt);
 
         self::assertSame(
             self::USER_ID,
@@ -318,10 +323,14 @@ final class ProfileEmailChangeIntegrationTest extends ProfileIntegrationTestCase
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::CURRENT);
         $this->seedProvenCurrentAddress();
 
-        $this->submitStep(
+        $reply = $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
             new ProfileEmailChangeNewRequestActionDTO(strtoupper(self::NEW_EMAIL)),
         );
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertTrue($reply->sent);
+        self::assertSame(StepUpOperationKey::CHANGE_EMAIL, $this->codeSendLine()?->purpose);
+        self::assertSame($reply->resendAt, $this->codeSendLine()?->resendAt);
 
         self::assertSame(
             self::USER_ID,

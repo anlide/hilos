@@ -688,7 +688,12 @@ export class HilosProfileSecurityPage {
 
   // Connect an app.
   protected readonly enrollStepUp = computed(() =>
-    createHilosStepUpStep(createHilosStepUpActions(this.context().actions)),
+    createHilosStepUpStep(
+      createHilosStepUpActions(this.context().actions),
+      () => {
+        if (this.enrollStep() === 'step-up') this.enrollStep.set('name')
+      },
+    ),
   )
   protected readonly enrollStepUpRefusal = signal<string | null>(null)
   protected readonly enrollStepUpBusy = signal(false)

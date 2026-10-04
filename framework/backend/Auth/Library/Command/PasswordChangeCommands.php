@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
@@ -65,18 +66,19 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
     }
 
     /**
-     * The resend cooldown is a silent success; the send cap refuses the request.
+     * The resend cooldown returns the earlier code's lifetime; the send cap refuses the request.
      *
      * The step lands on the session's record with the moment the live code dies. A cooldown with
-     * no live code behind it leaves the record as it was: there is no code to enter.
+     * no live code behind it leaves the record as it was and returns the pause timing.
      *
      * @param string $acceptKey Accept key the action arrived on
+     * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ValidationException When confirmation, password or address is missing, or the send cap is reached
      * @throws RandomException When the platform cannot produce a verification code
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When the session, confirmation, identity or verification operation fails
      */
-    public function requestCode(string $acceptKey): void
+    public function requestCode(string $acceptKey): CodeSendReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_PASSWORD);
@@ -88,14 +90,9 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
 
         $codeType = $this->codeTypeOf($target);
         $destination = (string)$target->destination;
-        $verifications = new VerificationService();
-        if ($verifications->issue($codeType, $destination, $acting->userId)->capReached) {
-            throw new ValidationException(AuthMessages::SEND_CAP);
-        }
-
-        $expiresAt = $verifications->activeExpiresAt($codeType, $destination);
-        if ($expiresAt === null) {
-            return;
+        $reply = $this->sendProfileCode($acting, StepUpOperationKey::CHANGE_PASSWORD, $codeType, $destination);
+        if ($reply->expiresAt === null) {
+            return $reply;
         }
 
         $this->library->announceProfileFlowStep(
@@ -104,8 +101,10 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
             HilosProfileFlow::STEP_CODE_SENT,
             $destination,
             null,
-            $expiresAt,
+            $reply->expiresAt,
+            $reply,
         );
+        return $reply;
     }
 
     /**

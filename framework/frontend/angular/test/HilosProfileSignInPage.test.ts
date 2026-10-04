@@ -9,7 +9,7 @@ import {
   type HilosRouter,
   type ProjectSignal,
 } from '@hilos/core'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { HilosProfileSignInPage } from '../src/profile/HilosProfileSignInPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 
@@ -20,6 +20,32 @@ const PASSWORD_STEP = {
   purpose: 'add a way to sign in',
   method: 'password',
 }
+
+/** The two ways that ask for a code, and what each step of theirs is called. */
+const CODE_WAYS = [
+  {
+    way: 'phone',
+    choose: 'profile-sign-in-choose-phone',
+    address: 'profile-add-sms-phone',
+    value: '+15551234567',
+    payload: { phone: '+15551234567' },
+    submit: 'profile-add-sms-request',
+    action: 'profile_add_sms_request',
+    code: 'profile-add-sms-code',
+    send: 'profile-add-sms-send',
+  },
+  {
+    way: 'password',
+    choose: 'profile-sign-in-choose-password',
+    address: 'profile-add-password-email',
+    value: 'me@example.test',
+    payload: { email: 'me@example.test' },
+    submit: 'profile-add-password-request',
+    action: 'profile_add_password_request',
+    code: 'profile-add-password-code',
+    send: 'profile-add-password-send',
+  },
+]
 
 /** The methods the session offers: on, ready, in button order. */
 const OFFERED = [
@@ -73,7 +99,18 @@ function setup(
   const dispatch = vi.fn((action: string) => ({
     loading: createSignal(false),
     done: Promise.resolve(
-      action === 'hilos_step_up_start' ? { reply: opening } : {},
+      action === 'hilos_step_up_start'
+        ? { reply: opening }
+        : action === 'profile_add_sms_request' ||
+            action === 'profile_add_password_request'
+          ? {
+              reply: {
+                sent: true,
+                resendAt: 1_900_000_000_000,
+                expiresAt: 1_900_000_600_000,
+              },
+            }
+          : {},
     ),
   }))
   const context = {
@@ -125,6 +162,10 @@ function setup(
     },
   }
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 /**
  * Let the answers the page awaits arrive, and draw what they changed.
@@ -255,3 +296,47 @@ it('opens the dialog straight at the pressed way, and leaves a switched-off meth
   expect(node('profile-sign-in-choose-password')).not.toBeNull()
   expect(node('profile-sign-in-choose-phone')).toBeNull()
 })
+
+it.each(CODE_WAYS)(
+  'draws the $way send block on the code step and empties the code before it asks for another one',
+  async (way) => {
+    // The send gate of the code request has reopened: Send again is allowed.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_900_000_001_000)
+    const { dispatch, fill, fixture, node } = setup()
+    node('profile-sign-in-add').click()
+    await settle(fixture)
+    node(way.choose).click()
+    fixture.detectChanges()
+    fill(way.address, way.value)
+    node(way.submit).click()
+    await settle(fixture)
+    fill(way.code, '123456')
+
+    expect(node(way.send)).not.toBeNull()
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[inert] [data-id]'),
+    ).toBeNull()
+    const again = node(`${way.send}-again`) as HTMLButtonElement
+    expect(again.disabled).toBe(false)
+    const answer = dispatch.getMockImplementation()!
+    const codeAtSend: string[] = []
+    dispatch.mockImplementation((action: string) => {
+      if (action === way.action) {
+        // Draw the page as the request leaves: its code field is empty already.
+        fixture.detectChanges()
+        codeAtSend.push((node(way.code) as HTMLInputElement).value)
+      }
+      return answer(action)
+    })
+    again.click()
+    await settle(fixture)
+    expect(codeAtSend).toEqual([''])
+    expect(dispatch).toHaveBeenLastCalledWith(
+      way.action,
+      way.payload,
+      expect.anything(),
+    )
+    fixture.destroy()
+  },
+)

@@ -180,7 +180,12 @@ export function createHilosDataExportFlow(
   actions: ActionLifecycle,
   store: HilosDataExportStore,
 ): HilosDataExportFlow {
-  const stepUp = createHilosStepUpStep(createHilosStepUpActions(actions))
+  const stepUp = createHilosStepUpStep(
+    createHilosStepUpActions(actions),
+    async () => {
+      if (open.get()) await order(round)
+    },
+  )
   const open = createSignal(false)
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)

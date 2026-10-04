@@ -901,7 +901,9 @@ export class HilosUserPage {
   // The confirmation step each window opens with (HIL-1275): `ask` draws it,
   // `refused` draws its refusal, `skip` the window's own content.
   protected readonly lifecycleStepUp = computed(() =>
-    createHilosUserCardStepUp(this.context()),
+    createHilosUserCardStepUp(this.context(), () => {
+      if (this.lifecycleProof() === 'ask') this.lifecycleProof.set('skip')
+    }),
   )
   protected readonly lifecycleStepUpBusy = signal(false)
   protected readonly lifecycleStepUpRefusal = signal<string | null>(null)
@@ -943,7 +945,13 @@ export class HilosUserPage {
   )
   protected readonly impersonateAction = createHilosTrackedAction()
   protected readonly impersonateStepUp = computed(() =>
-    createHilosUserCardStepUp(this.context()),
+    createHilosUserCardStepUp(this.context(), () => {
+      if (
+        this.impersonateProof() === 'ask' &&
+        this.impersonateTarget() !== null
+      )
+        this.impersonateProof.set('skip')
+    }),
   )
   protected readonly impersonateStepUpBusy = signal(false)
   protected readonly impersonateStepUpRefusal = signal<string | null>(null)
@@ -985,7 +993,13 @@ export class HilosUserPage {
   protected readonly passwordFate = signal<HilosPasswordFate | null>(null)
   protected readonly mergeAction = createHilosTrackedAction()
   protected readonly mergeStepUp = computed(() =>
-    createHilosUserCardStepUp(this.context()),
+    createHilosUserCardStepUp(this.context(), () => {
+      const survivor = this.detail()
+      if (survivor && this.mergeProof() === 'ask' && this.mergeOpen()) {
+        this.mergeProof.set('skip')
+        this.mergeCandidates?.start(survivor.id)
+      }
+    }),
   )
   protected readonly mergeStepUpBusy = signal(false)
   protected readonly mergeStepUpRefusal = signal<string | null>(null)

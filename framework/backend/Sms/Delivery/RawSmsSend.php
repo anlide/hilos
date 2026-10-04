@@ -31,10 +31,12 @@ final class RawSmsSend
     /**
      * @param SmsMessage $message The rendered recipient message to send
      * @param ?string $templateKey Template key for the failure log, or null for an inline message
+     * @param ?string $progressTicket Ticket of the watched code send, or null
      */
     public function __construct(
         public readonly SmsMessage $message,
         public readonly ?string $templateKey,
+        public readonly ?string $progressTicket = null,
     ) {
     }
 }

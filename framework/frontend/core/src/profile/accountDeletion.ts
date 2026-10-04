@@ -17,6 +17,12 @@
 import { z } from 'zod'
 
 import {
+  codeSendReplySchema,
+  hilosCodeSendProgressFor,
+  type CodeSendProgress,
+  type HilosCodeSendReply,
+} from '../auth/authSendProgress.js'
+import {
   ActionError,
   type ActionHandle,
   type ActionLifecycle,
@@ -32,6 +38,7 @@ import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { toLocal } from '../session/serverClock.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import {
+  computedSignal,
   createSignal,
   subscribeSignal,
   type ReadonlySignal,
@@ -264,7 +271,7 @@ export interface HilosAccountDeletionActions {
   /** Open the window: the grace period and where the code goes. */
   open(): ActionHandle<HilosAccountDeletionOpening>
   /** Send the code to the account's address. */
-  sendCode(): ActionHandle
+  sendCode(): ActionHandle<HilosCodeSendReply>
   /**
    * Start the deletion.
    *
@@ -294,7 +301,11 @@ export function createHilosAccountDeletionActions(
       )
     },
     sendCode() {
-      return actions.dispatch(HILOS_ACCOUNT_DELETION_CODE_ACTION, {})
+      return actions.dispatch(
+        HILOS_ACCOUNT_DELETION_CODE_ACTION,
+        {},
+        { replySchema: codeSendReplySchema },
+      )
     },
     start(code) {
       return actions.dispatch(HILOS_ACCOUNT_DELETION_START_ACTION, { code })
@@ -335,12 +346,18 @@ export interface HilosAccountDeletionFlow {
   readonly busy: ReadonlySignal<boolean>
   /** The server's sentence above the buttons, or `null`. */
   readonly refusal: ReadonlySignal<string | null>
+  /** This window's send line, hidden while another code is ordered. */
+  readonly sendProgress: ReadonlySignal<CodeSendProgress | null>
+  /** Local-scale moment another send is allowed. */
+  readonly resendAt: ReadonlySignal<number | null>
   /** Open the window from the zone: "in progress" when a deletion stands, the steps otherwise. */
   open(): Promise<void>
   /** Submit the operation's confirmation, then open the steps. */
   confirmStepUp(): Promise<void>
   /** Leave step 1: send the code, or start at once when no code can reach the account. */
   next(): Promise<void>
+  /** Clear the typed code and order another one on the same address. */
+  sendAgain(): Promise<void>
   /** Start the deletion with the typed code. */
   start(): Promise<void>
   /** Call the scheduled deletion off. */
@@ -381,12 +398,27 @@ export function createHilosAccountDeletionFlow(
   const actions = createHilosAccountDeletionActions(context)
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
+    async () => {
+      if (step.get() === 'step-up') await openSteps(round)
+    },
   )
   const step = createSignal<HilosAccountDeletionStep>('closed')
   const opening = createSignal<HilosAccountDeletionOpening | null>(null)
   const code = createSignal('')
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
+  const reportedProgress = hilosCodeSendProgressFor(ACCOUNT_DELETION_OPERATION)
+  const hiddenTicket = createSignal<string | null>(null)
+  const replyResendAt = createSignal<number | null>(null)
+  const sendProgress = computedSignal(() => {
+    const progress = reportedProgress.get()
+    return progress !== null && progress.ticket === hiddenTicket.get()
+      ? null
+      : progress
+  })
+  const resendAt = computedSignal(
+    () => sendProgress.get()?.resendAt ?? replyResendAt.get(),
+  )
   // Counts the closes: a submit remembers the round it was sent in, and its
   // reply moves the window only while that round is still the current one.
   let round = 0
@@ -451,6 +483,8 @@ export function createHilosAccountDeletionFlow(
     opening.set(null)
     code.set('')
     refusal.set(null)
+    hiddenTicket.set(null)
+    replyResendAt.set(null)
   }
 
   return {
@@ -460,6 +494,8 @@ export function createHilosAccountDeletionFlow(
     code,
     busy,
     refusal,
+    sendProgress,
+    resendAt,
     async open() {
       if (busy.get()) {
         return
@@ -472,6 +508,8 @@ export function createHilosAccountDeletionFlow(
       opening.set(null)
       code.set('')
       refusal.set(null)
+      hiddenTicket.set(null)
+      replyResendAt.set(null)
       step.set('opening')
       busy.set(true)
       const started = round
@@ -506,14 +544,27 @@ export function createHilosAccountDeletionFlow(
         return
       }
       const started = round
+      // A line of an earlier deletion window stays hidden until this send's own replaces it.
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
       if (
         (await run(async () => {
-          await actions.sendCode().done
+          const reply = (await actions.sendCode().done).reply
+          if (reply !== undefined) replyResendAt.set(toLocal(reply.resendAt))
         })) &&
         round === started
       ) {
         step.set('code')
       }
+    },
+    async sendAgain() {
+      if (busy.get() || step.get() !== 'code') return
+      code.set('')
+      refusal.set(null)
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      await run(async () => {
+        const reply = (await actions.sendCode().done).reply
+        if (reply !== undefined) replyResendAt.set(toLocal(reply.resendAt))
+      })
     },
     async start() {
       if (busy.get() || step.get() !== 'code') {

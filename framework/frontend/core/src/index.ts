@@ -198,6 +198,15 @@ export {
   type SpinnerDelay,
 } from './primitives/loadingButton.js'
 export {
+  SEND_AGAIN_LABEL,
+  SEND_PROGRESS_DETAILS_CLASS,
+  SEND_PROGRESS_ROW_CLASS,
+  sendAgainIn,
+  sendAgainLocked,
+  sendProgressLine,
+  type SendProgressLine,
+} from './primitives/sendProgress.js'
+export {
   DEFAULT_SKELETON_DELAY_MS,
   HILOS_SKELETON_LINES,
 } from './primitives/skeleton.js'
@@ -676,6 +685,8 @@ export {
   AUTH_CODE_REASON_SEND_FAILED,
 } from './auth/authCodeSignals.js'
 export {
+  CODE_SEND_PURPOSE_STEP_UP,
+  CODE_SEND_STATE_HELD,
   SIGNAL_CODE_SEND_PROGRESS,
   CODE_SEND_STATE_QUEUED,
   CODE_SEND_STATE_SENDING,
@@ -683,10 +694,13 @@ export {
   CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
   codeSendProgressSchema,
+  codeSendReplySchema,
   bindCodeSendProgress,
   hilosCodeSendProgress,
+  hilosCodeSendProgressFor,
   type CodeSendProgress,
   type CodeSendProgressSignalData,
+  type HilosCodeSendReply,
 } from './auth/authSendProgress.js'
 export { formatCountdown } from './format/duration.js'
 export { formatCalendarDate } from './format/date.js'

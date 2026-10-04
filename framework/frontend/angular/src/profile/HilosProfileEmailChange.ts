@@ -17,12 +17,14 @@ import {
   subscribeSignal,
   type HilosProfileEmailChangeFlow,
   type HilosProfileEmailChangeStep,
+  type CodeSendProgress,
   type HilosStepUpOpening,
   type ReadonlySignal,
   type Unsubscribe,
 } from '@hilos/core'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 
@@ -49,7 +51,13 @@ function mirror<T>(
 @Component({
   selector: 'hilos-profile-email-change',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosFormError, HilosModal, HilosStepUpStep, LoadingButton],
+  imports: [
+    HilosFormError,
+    HilosModal,
+    HilosSendProgress,
+    HilosStepUpStep,
+    LoadingButton,
+  ],
   template: `
     <hilos-modal
       [open]="step() !== 'closed'"
@@ -116,6 +124,14 @@ function mirror<T>(
           }
           @case ('confirm-current') {
             <form (submit)="$event.preventDefault(); flow().submit()">
+              <hilos-send-progress
+                [progress]="sendProgress()"
+                [to]="was()"
+                [resendAt]="resendAt()"
+                [busy]="busy()"
+                dataId="profile-email-current-send"
+                (sendAgain)="flow().sendAgain()"
+              />
               <label class="form-label" for="profile-email-code-current">{{
                 copy.code
               }}</label>
@@ -130,7 +146,6 @@ function mirror<T>(
                 [value]="currentCode()"
                 (input)="flow().currentCode.set(valueOf($event))"
               />
-              <div class="form-text">{{ sentTo(was()) }}</div>
               <hilos-form-error
                 [message]="refusal()"
                 dataId="profile-email-error"
@@ -161,6 +176,14 @@ function mirror<T>(
           }
           @case ('confirm-new') {
             <form (submit)="$event.preventDefault(); flow().submit()">
+              <hilos-send-progress
+                [progress]="sendProgress()"
+                [to]="newEmail().trim()"
+                [resendAt]="resendAt()"
+                [busy]="busy()"
+                dataId="profile-email-new-send"
+                (sendAgain)="flow().sendAgain()"
+              />
               <label class="form-label" for="profile-email-code-new">{{
                 copy.code
               }}</label>
@@ -175,7 +198,6 @@ function mirror<T>(
                 [value]="newCode()"
                 (input)="flow().newCode.set(valueOf($event))"
               />
-              <div class="form-text">{{ sentTo(newEmail().trim()) }}</div>
               <hilos-form-error
                 [message]="refusal()"
                 dataId="profile-email-error"
@@ -316,6 +338,8 @@ export class HilosProfileEmailChange {
   protected readonly now = signal('')
   protected readonly busy = signal(false)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly sendProgress = signal<CodeSendProgress | null>(null)
+  protected readonly resendAt = signal<number | null>(null)
   protected readonly canSubmit = signal(false)
   protected readonly asksBeforeClosing = signal(false)
   protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
@@ -349,6 +373,8 @@ export class HilosProfileEmailChange {
         mirror(flow.now, this.now),
         mirror(flow.busy, this.busy),
         mirror(flow.refusal, this.refusal),
+        mirror(flow.sendProgress, this.sendProgress),
+        mirror(flow.resendAt, this.resendAt),
         mirror(flow.canSubmit, this.canSubmit),
         mirror(flow.asksBeforeClosing, this.asksBeforeClosing),
         mirror(flow.stepUp.opening, this.stepUpOpening),
@@ -366,9 +392,6 @@ export class HilosProfileEmailChange {
         this.body()?.nativeElement.closest<HTMLElement>('[role="dialog"]')
       if (dialog) focusInitial(dialog)
     })
-  }
-  protected sentTo(address: string): string {
-    return this.copy.sentTo.replace('{address}', address)
   }
   protected onOpenChange(open: boolean): void {
     if (!open) this.flow().close()

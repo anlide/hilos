@@ -24,7 +24,8 @@ use Hilos\HilosException;
  * @property-read string $sessionTokenHash Hash of the session cookie token this line is addressed to
  * @property-read string $ticket Send this line is about
  * @property-read string $channel Channel the code is travelling over
- * @property-read string $state One of the five states of the send
+ * @property-read ?string $purpose Profile operation, or null for a guest send
+ * @property-read string $state One of the six states of the send
  * @property-read ?string $detail Provider's sentence, on a refusal and nowhere else
  * @property-read ?string $reason How the code agent's send ended, on its closing step alone
  * @property-read ?int $resendAt Server moment a send is allowed again, in epoch ms, or null
@@ -54,6 +55,7 @@ final class HilosCodeSendAttempt extends RtItem
             StateHilosCodeSendAttempt::sessionTokenHash => $this->_state->sessionTokenHash,
             StateHilosCodeSendAttempt::ticket => $this->_state->ticket,
             StateHilosCodeSendAttempt::channel => $this->_state->channel,
+            StateHilosCodeSendAttempt::purpose => $this->_state->purpose,
             StateHilosCodeSendAttempt::state => $this->_state->state,
             StateHilosCodeSendAttempt::detail => $this->_state->detail,
             StateHilosCodeSendAttempt::reason => $this->_state->reason,

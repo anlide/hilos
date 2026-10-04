@@ -185,7 +185,13 @@ export function HilosProfileSecurityPage({
 
   // Connect an app.
   const enrollStepUp = useMemo(
-    () => createHilosStepUpStep(createHilosStepUpActions(context.actions)),
+    () =>
+      createHilosStepUpStep(createHilosStepUpActions(context.actions), () => {
+        if (enrollStepRef.current === 'step-up') {
+          enrollStepRef.current = 'name'
+          setEnrollStep('name')
+        }
+      }),
     [context],
   )
   const enrollStepUpRefusal = useSignal(enrollStepUp.refusal)

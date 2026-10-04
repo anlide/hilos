@@ -148,7 +148,9 @@ const lifecycleAction = useTrackedAction()
 const lifecyclePrompt = ref<HilosUserLifecyclePrompt | null>(null)
 // The confirmation step the window opens with (HIL-1275): `ask` draws it,
 // `refused` draws its refusal, `skip` the window's own content.
-const lifecycleStepUp = createHilosUserCardStepUp(props.context)
+const lifecycleStepUp = createHilosUserCardStepUp(props.context, () => {
+  if (lifecycleProof.value === 'ask') lifecycleProof.value = 'skip'
+})
 const lifecycleStepUpBusy = useSignal(lifecycleStepUp.step.busy)
 const lifecycleStepUpRefusal = useSignal(lifecycleStepUp.step.refusal)
 const lifecycleProof = ref<HilosStepUpOpenOutcome>('skip')
@@ -252,7 +254,10 @@ async function submitLifecycle(): Promise<void> {
 // who stands behind this session. The window keeps the words it opened with.
 const impersonate = createHilosImpersonate(props.context)
 const impersonateAction = useTrackedAction()
-const impersonateStepUp = createHilosUserCardStepUp(props.context)
+const impersonateStepUp = createHilosUserCardStepUp(props.context, () => {
+  if (impersonateProof.value === 'ask' && impersonateTarget.value !== null)
+    impersonateProof.value = 'skip'
+})
 const impersonateStepUpBusy = useSignal(impersonateStepUp.step.busy)
 const impersonateStepUpRefusal = useSignal(impersonateStepUp.step.refusal)
 const impersonateProof = ref<HilosStepUpOpenOutcome>('skip')
@@ -330,7 +335,13 @@ const mergeCandidates = createHilosMergeCandidates(props.context)
 const mergeRows = useSignal(mergeCandidates.controller.rows)
 const accountMerge = createHilosAccountMerge(props.context)
 const mergeAction = useTrackedAction()
-const mergeStepUp = createHilosUserCardStepUp(props.context)
+const mergeStepUp = createHilosUserCardStepUp(props.context, () => {
+  const survivor = detail.value
+  if (survivor && mergeProof.value === 'ask' && mergeOpen.value) {
+    mergeProof.value = 'skip'
+    mergeCandidates.start(survivor.id)
+  }
+})
 const mergeStepUpBusy = useSignal(mergeStepUp.step.busy)
 const mergeStepUpRefusal = useSignal(mergeStepUp.step.refusal)
 const mergeProof = ref<HilosStepUpOpenOutcome>('skip')

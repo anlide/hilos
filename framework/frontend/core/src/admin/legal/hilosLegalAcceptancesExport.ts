@@ -331,6 +331,10 @@ export function createHilosLegalAcceptancesExport(
   const store = createHilosLegalAcceptancesExportStore(context)
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
+    async () => {
+      const payload = filters
+      if (open.get() && payload !== null) await order(round, payload)
+    },
   )
   const open = createSignal(false)
   const busy = createSignal(false)

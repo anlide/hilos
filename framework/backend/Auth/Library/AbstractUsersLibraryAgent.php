@@ -8,6 +8,7 @@ use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStartActionDTO;
+use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\Command\AbstractLibraryCommands;
@@ -127,9 +128,11 @@ use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Verification\VerificationSweepCommandConstants;
+use Hilos\Auth\Verification\VerificationEndPauseCommandConstants;
 use Hilos\Auth\Verification\VerificationSweepSettings;
 use Hilos\Auth\Verification\VerificationSweeper;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -139,6 +142,7 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -151,6 +155,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Database\Schema\EntitySchemaAxis;
 use Hilos\Database\Settings\Exception\SettingException;
@@ -161,6 +166,7 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -171,6 +177,7 @@ use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -510,7 +517,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     ];
 
     /**
-     * The two commands answered by the users library (both test-only).
+     * The test-only commands answered by the users library.
      *
      * The test: prefix enforces the production ban via NonProductionGate. Routed here because
      * this library owns both acceptance records and verification rows ({@see self::OWNS_DB}).
@@ -518,6 +525,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public const array AGENT_COMMANDS = [
         CliCommands::LEGAL_TEST_HOLD,
         CliCommands::VERIFICATION_TEST_SWEEP,
+        CliCommands::VERIFICATION_TEST_END_PAUSE,
     ];
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
@@ -819,6 +827,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             return;
         }
 
+        if ($data->command === CliCommands::VERIFICATION_TEST_END_PAUSE) {
+            $this->handleVerificationEndPauseCommand($data);
+
+            return;
+        }
+
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
     }
 
@@ -896,6 +910,55 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             VerificationSweepCommandConstants::FIELD_IDENTIFIER => $identifier,
             VerificationSweepCommandConstants::FIELD_REMOVED => $removed,
             VerificationSweepCommandConstants::FIELD_KEPT => $kept,
+        ]));
+    }
+
+    /**
+     * Ages one address past the resend cooldown and moves this browser's line to now.
+     *
+     * @param CommandRequestDTO $data Address and session cookie token from the test command
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleVerificationEndPauseCommand(CommandRequestDTO $data): void
+    {
+        $address = $data->payload[VerificationEndPauseCommandConstants::FIELD_ADDRESS] ?? null;
+        $sessionToken = $data->payload[VerificationEndPauseCommandConstants::FIELD_SESSION_TOKEN] ?? null;
+        if (!is_string($address) || trim($address) === '' || !is_string($sessionToken) || trim($sessionToken) === '') {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Address and session token are required'));
+
+            return;
+        }
+
+        try {
+            $collection = Hilos::$db?->getObjectCollection(HilosDbContext::verifications);
+            if (!$collection instanceof ObjectUserVerifications) {
+                throw new LogicException('Verifications collection is unavailable');
+            }
+            $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
+            $aged = $collection->backdateIdentifier($address, date('Y-m-d H:i:s', time() - $cooldown - 1));
+
+            $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+            $line = $attempts === null ? null : $attempts[ProtectedModeRuntime::hashSessionToken($sessionToken)];
+            if ($line !== null) {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_CODE_SEND_STEP,
+                    CodeSendStepSignalData::stamp($line->ticket, null, $line->reason, TimeHelper::nowMs(), $line->expiresAt),
+                );
+            }
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError('Verification end-pause is not wired: ' . $refusal->getMessage());
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Verification end-pause is not wired'));
+
+            return;
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            VerificationEndPauseCommandConstants::FIELD_ADDRESS => $address,
+            VerificationEndPauseCommandConstants::FIELD_AGED => $aged,
         ]));
     }
 
@@ -1371,6 +1434,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param ?string $address The account's address the proof stands on, or null when the flow is over
      * @param ?string $target New address of an email change, on its last step alone
      * @param ?int $expiresAt Epoch milliseconds the code of the proof dies at, or null when the flow is over
+     * @param ?ActionReplyDTO $reply Answer to return after the holder publishes the step
      * @throws InvalidArgumentException When the frame cannot be named or queued
      */
     public function announceProfileFlowStep(
@@ -1380,6 +1444,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         ?string $address = null,
         ?string $target = null,
         ?int $expiresAt = null,
+        ?ActionReplyDTO $reply = null,
     ): void {
         $this->handOff(
             HilosSignalConstants::HILOS_PROFILE_FLOW_STEP,
@@ -1394,6 +1459,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $acting->acceptKey,
                 $this->currentActionRequestId(),
                 $this->currentAction,
+                $reply?->toArray(),
             ),
         );
     }
@@ -1839,7 +1905,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO Opening answer for password change, null for writes, or a delegated command reply
+     * @return ?ActionReplyDTO Opening or code-send answer, null for other writes, or a delegated reply
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
      * @throws ValidationException When the command refuses what was submitted
@@ -1888,9 +1954,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileAddSmsRequestActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileAddSmsRequestActionDTO::class, $dto);
                 }
-                $this->identityCommands()->requestSmsAdd($acceptKey, $dto);
-
-                return null;
+                return $this->identityCommands()->requestSmsAdd($acceptKey, $dto);
 
             case HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM:
                 if (!$dto instanceof ProfileAddSmsConfirmActionDTO) {
@@ -1904,9 +1968,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileAddPasswordRequestActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileAddPasswordRequestActionDTO::class, $dto);
                 }
-                $this->identityCommands()->requestPasswordAdd($acceptKey, $dto);
-
-                return null;
+                return $this->identityCommands()->requestPasswordAdd($acceptKey, $dto);
 
             case HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM:
                 if (!$dto instanceof ProfileAddPasswordConfirmActionDTO) {
@@ -1920,9 +1982,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileEmailChangeCurrentRequestActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileEmailChangeCurrentRequestActionDTO::class, $dto);
                 }
-                $this->emailChangeCommands()->requestCurrentCode($acceptKey);
-
-                return null;
+                return $this->emailChangeCommands()->requestCurrentCode($acceptKey);
 
             case HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_CONFIRM:
                 if (!$dto instanceof ProfileEmailChangeCurrentConfirmActionDTO) {
@@ -1936,9 +1996,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileEmailChangeNewRequestActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileEmailChangeNewRequestActionDTO::class, $dto);
                 }
-                $this->emailChangeCommands()->requestNewCode($acceptKey, $dto);
-
-                return null;
+                return $this->emailChangeCommands()->requestNewCode($acceptKey, $dto);
 
             case HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_CONFIRM:
                 if (!$dto instanceof ProfileEmailChangeNewConfirmActionDTO) {
@@ -1958,9 +2016,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileChangePasswordCodeRequestActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileChangePasswordCodeRequestActionDTO::class, $dto);
                 }
-                $this->passwordChangeCommands()->requestCode($acceptKey);
-
-                return null;
+                return $this->passwordChangeCommands()->requestCode($acceptKey);
 
             case HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_CONFIRM:
                 if (!$dto instanceof ProfileChangePasswordCodeConfirmActionDTO) {
@@ -1986,13 +2042,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * Runs one of the four submits of a person's own account deletion, or hands the name on (HIL-302).
      *
-     * Opening the window answers with a reply; the other three write, and every tab learns of
-     * a start or a cancel from the state fanned to the person's group.
+     * Opening the window and requesting its code answer with replies; a start or cancel also
+     * reaches every tab through the person's state.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO The opening reply, null for the other three, or what the second factor's command answered
+     * @return ?ActionReplyDTO Opening or code-send reply, null for the other writes, or a delegated reply
      * @throws AgentUnknownActionException When the action is not one this library owns
      * @throws InvalidActionPayloadException When the payload does not match the action name
      * @throws ValidationException When the command refuses what was submitted
@@ -2013,9 +2069,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof AccountDeletionCodeActionDTO) {
                     throw new InvalidActionPayloadException($action, AccountDeletionCodeActionDTO::class, $dto);
                 }
-                $this->accountDeletionCommands()->sendCode($acceptKey);
-
-                return null;
+                return $this->accountDeletionCommands()->sendCode($acceptKey);
 
             case HilosSignalConstants::HILOS_ACCOUNT_DELETION_START:
                 if (!$dto instanceof AccountDeletionStartActionDTO) {

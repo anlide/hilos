@@ -11,6 +11,7 @@ import {
   uniqueEmail,
 } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
+import { endResendPause } from '../helpers/resendPause'
 import { dictateModerationVerdict } from '../helpers/moderation'
 import {
   addVirtualAuthenticator,
@@ -326,6 +327,45 @@ test('keeps password-change input after a wrong code and a common password (HIL-
   await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
 })
 
+test('says the last code was used, and sends a new one once the pause is over (HIL-1186)', async ({
+  page,
+}) => {
+  const { email } = await signUp(page)
+  await changePassword(page, {
+    email,
+    currentPassword: PASSWORD,
+    newPassword: 'first-fresh-passphrase',
+  })
+
+  await clickSubmit(page.getByTestId('profile-password-again'))
+  await expect(page.getByTestId('profile-password-send-code')).toBeVisible()
+  await clickSubmit(page.getByTestId('profile-password-send-code'))
+  await expect(page.getByTestId('profile-password-code')).toBeVisible()
+  await expect(page.getByTestId('profile-password-send-line')).toContainText(
+    'already used',
+  )
+  await expect(page.getByTestId('profile-password-send-again-in')).toBeVisible()
+  await expect(page.getByTestId('profile-password-send-again')).toHaveCount(0)
+
+  await endResendPause(page, email)
+  await expect(page.getByTestId('profile-password-send-again')).toBeVisible()
+  await expect(page.getByTestId('profile-password-send-again')).toBeEnabled()
+  await clickSubmit(page.getByTestId('profile-password-send-again'))
+  await expect(page.getByTestId('profile-password-send-line')).toContainText(
+    'Sent to',
+  )
+  const code = await waitForMailCode(email, 'Confirm changing your password', 2)
+  await typeInto(page.getByTestId('profile-password-code'), code)
+  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await expect(page.getByTestId('profile-password-new')).toBeVisible()
+  await typeInto(
+    page.getByTestId('profile-password-new'),
+    'second-fresh-passphrase',
+  )
+  await clickSubmit(page.getByTestId('profile-password-save'))
+  await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
+})
+
 test('changes the account email in five steps (HIL-299)', async ({ page }) => {
   // Registration proves the address it was made with, so a fresh account has the
   // Email row and a current mailbox to prove. Both codes are read from the stand's
@@ -339,6 +379,9 @@ test('changes the account email in five steps (HIL-299)', async ({ page }) => {
   await page.getByTestId('profile-email-change').click()
   await confirmStepUp(page, 'profile-email-step-up-confirm')
   await clickSubmit(page.getByTestId('profile-email-send-current'))
+  await expect(
+    page.getByTestId('profile-email-current-send-line'),
+  ).toContainText('Sent to')
   const currentCode = await waitForMailCode(
     was,
     'Confirm it is you to change your email address',
@@ -350,6 +393,9 @@ test('changes the account email in five steps (HIL-299)', async ({ page }) => {
   const now = uniqueEmail()
   await typeInto(page.getByTestId('profile-email-new'), now)
   await clickSubmit(page.getByTestId('profile-email-send-new'))
+  await expect(page.getByTestId('profile-email-new-send-line')).toContainText(
+    'Sent to',
+  )
   const newCode = await waitForMailCode(now, 'Confirm your new email address')
   await typeInto(page.getByTestId('profile-email-code-new'), newCode)
   await clickSubmit(page.getByTestId('profile-email-confirm-new'))

@@ -1,11 +1,21 @@
 import { z } from 'zod'
 
 import {
+  CODE_SEND_PURPOSE_STEP_UP,
+  codeSendReplySchema,
+  hilosCodeSendProgressFor,
+  type CodeSendProgress,
+  type HilosCodeSendReply,
+} from './authSendProgress.js'
+import {
   ActionError,
+  type ActionHandle,
   type ActionLifecycle,
 } from '../connection/actionLifecycle.js'
+import { toLocal } from '../session/serverClock.js'
 import { getPasskey, type PasskeyRequestOptions } from './passkey.js'
 import {
+  computedSignal,
   createSignal,
   type ReadonlySignal,
   type WritableSignal,
@@ -28,6 +38,7 @@ export interface HilosStepUpOpening {
   readonly destination?: string
   readonly signedChallenge?: string
   readonly publicKeyOptions?: PasskeyRequestOptions
+  readonly send?: HilosCodeSendReply
 }
 
 const openingSchema = z.object({
@@ -39,6 +50,7 @@ const openingSchema = z.object({
   destination: z.string().optional(),
   signedChallenge: z.string().optional(),
   publicKeyOptions: z.custom<PasskeyRequestOptions>().optional(),
+  send: codeSendReplySchema.optional(),
 })
 
 export interface HilosStepUpAnswer {
@@ -50,7 +62,7 @@ export interface HilosStepUpAnswer {
 }
 
 export interface HilosStepUpActions {
-  start(operation: string): ReturnType<ActionLifecycle['dispatch']>
+  start(operation: string): ActionHandle<HilosStepUpOpening>
   confirm(
     operation: string,
     answer: HilosStepUpAnswer,
@@ -90,7 +102,13 @@ export interface HilosStepUpStep {
   readonly backupCode: WritableSignal<boolean>
   readonly busy: ReadonlySignal<boolean>
   readonly refusal: ReadonlySignal<string | null>
+  /** The session line of this identity confirmation, hidden while another code is ordered. */
+  readonly sendProgress: ReadonlySignal<CodeSendProgress | null>
+  /** Local-scale moment another code may be requested. */
+  readonly resendAt: ReadonlySignal<number | null>
   open(operation: string): Promise<HilosStepUpOpenOutcome>
+  /** Request the same operation's code again without resetting the confirmation step. */
+  sendAgain(): Promise<void>
   confirm(): Promise<boolean>
 }
 
@@ -114,6 +132,7 @@ function actionMessage(error: unknown): string {
 
 export function createHilosStepUpStep(
   actions: HilosStepUpActions,
+  onPassed?: () => void | Promise<void>,
 ): HilosStepUpStep {
   const opening = createSignal<HilosStepUpOpening | null>(null)
   const code = createSignal('')
@@ -121,7 +140,22 @@ export function createHilosStepUpStep(
   const backupCode = createSignal(false)
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
+  const reportedProgress = hilosCodeSendProgressFor(CODE_SEND_PURPOSE_STEP_UP)
+  const hiddenTicket = createSignal<string | null>(null)
+  const replyResendAt = createSignal<number | null>(null)
+  const sendProgress = computedSignal(() => {
+    const progress = reportedProgress.get()
+    return progress !== null && progress.ticket === hiddenTicket.get()
+      ? null
+      : progress
+  })
+  const resendAt = computedSignal(
+    () => sendProgress.get()?.resendAt ?? replyResendAt.get(),
+  )
   let operation: string | null = null
+  // Bumped by every open: a repeated send whose answer comes back after the
+  // step was opened again for another operation must not write over it.
+  let round = 0
 
   return {
     opening,
@@ -130,17 +164,26 @@ export function createHilosStepUpStep(
     backupCode,
     busy,
     refusal,
+    sendProgress,
+    resendAt,
     async open(nextOperation) {
+      round += 1
       operation = nextOperation
       code.set('')
       password.set('')
       backupCode.set(false)
       busy.set(true)
       refusal.set(null)
+      // The line of an earlier confirmation stays hidden until this one's own
+      // send replaces it; every operation shares the step-up purpose.
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      replyResendAt.set(null)
       try {
         const result = await actions.start(nextOperation).done
         const next = result.reply as HilosStepUpOpening
         opening.set(next)
+        if (next.send !== undefined)
+          replyResendAt.set(toLocal(next.send.resendAt))
 
         return next.required ? 'ask' : 'skip'
       } catch (error) {
@@ -151,6 +194,36 @@ export function createHilosStepUpStep(
       } finally {
         busy.set(false)
       }
+    },
+    async sendAgain() {
+      const current = opening.get()
+      if (
+        operation === null ||
+        busy.get() ||
+        (current?.method !== 'email_code' && current?.method !== 'sms_code')
+      )
+        return
+      const started = round
+      code.set('')
+      refusal.set(null)
+      hiddenTicket.set(reportedProgress.get()?.ticket ?? null)
+      busy.set(true)
+      let passed = false
+      try {
+        const result = await actions.start(operation).done
+        if (round !== started) return
+        const next = result.reply as HilosStepUpOpening
+        opening.set(next)
+        if (next.send !== undefined)
+          replyResendAt.set(toLocal(next.send.resendAt))
+        passed = !next.required
+      } catch (error) {
+        if (round !== started) return
+        refusal.set(actionMessage(error))
+      } finally {
+        if (round === started) busy.set(false)
+      }
+      if (passed) await onPassed?.()
     },
     async confirm() {
       const current = opening.get()

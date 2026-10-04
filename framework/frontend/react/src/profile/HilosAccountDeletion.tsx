@@ -27,6 +27,7 @@ import type { HilosSecondFactorContext } from '@hilos/core'
 import { HilosLink } from '../HilosLink.js'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
 import { useSignal } from '../useSignal.js'
@@ -57,6 +58,8 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
   const code = useSignal(flow.code)
   const busy = useSignal(flow.busy)
   const refusal = useSignal(flow.refusal)
+  const sendProgress = useSignal(flow.sendProgress)
+  const resendAt = useSignal(flow.resendAt)
   const stepUpOpening = useSignal(flow.stepUp.opening)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
   const [now, setNow] = useState(() => Date.now())
@@ -321,6 +324,14 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
                   <p className="small text-body-secondary mb-3">
                     {fill(COPY.codeSent)}
                   </p>
+                  <HilosSendProgress
+                    progress={sendProgress}
+                    to={opening?.destination ?? ''}
+                    resendAt={resendAt}
+                    busy={busy}
+                    dataId="account-deletion-send"
+                    onSendAgain={() => void flow.sendAgain()}
+                  />
                   <label
                     className="form-label"
                     htmlFor="hilos-account-deletion-code"

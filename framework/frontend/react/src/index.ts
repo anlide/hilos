@@ -214,6 +214,10 @@ export {
 } from './HilosActionError.js'
 export { HilosFormError, type HilosFormErrorProps } from './HilosFormError.js'
 export {
+  HilosSendProgress,
+  type HilosSendProgressProps,
+} from './HilosSendProgress.js'
+export {
   HilosStepUpStep,
   type HilosStepUpStepProps,
 } from './auth/HilosStepUpStep.js'

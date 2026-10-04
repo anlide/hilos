@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\AccountDeletion\AccountDeletionMessages;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
@@ -256,7 +257,12 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
 
-        $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE, new AccountDeletionCodeActionDTO());
+        $reply = $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE, new AccountDeletionCodeActionDTO());
+        $this->settleProfileFlows();
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertTrue($reply->sent);
+        self::assertSame(StepUpOperationKey::DELETE_ACCOUNT, $this->codeSendLine()?->purpose);
+        self::assertSame($reply->resendAt, $this->codeSendLine()?->resendAt);
 
         self::assertSame(
             self::USER_ID,

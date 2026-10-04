@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\ProfileAddPasswordConfirmActionDTO;
@@ -16,6 +17,7 @@ use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -27,6 +29,7 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 
 /**
  * Profile sign-in methods: first password, code-proven additions and unlink (HIL-1137, HIL-300).
@@ -152,7 +155,12 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
      */
     public function testAddPasswordRequestMailsACodeToAFreeAddress(): void
     {
-        $this->submit(HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST, new ProfileAddPasswordRequestActionDTO(strtoupper(self::EMAIL)));
+        $reply = $this->submit(HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST, new ProfileAddPasswordRequestActionDTO(strtoupper(self::EMAIL)));
+        $this->settleProfileFlows();
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertTrue($reply->sent);
+        self::assertSame(StepUpOperationKey::ADD_SIGN_IN_METHOD, $this->codeSendLine()?->purpose);
+        self::assertSame($reply->resendAt, $this->codeSendLine()?->resendAt);
 
         $challenge = $this->verifications()->findActive(VerificationType::EMAIL_ADD, self::EMAIL, self::MAX_ATTEMPTS);
         self::assertSame(self::USER_ID, $challenge?->userId);
@@ -326,12 +334,42 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
      */
     public function testAddSmsRequestIssuesACodeForTheNormalizedNumber(): void
     {
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO('+1 555 123 1137'));
+        $reply = $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO('+1 555 123 1137'));
+        $this->settleProfileFlows();
+        self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        self::assertTrue($reply->sent);
+        self::assertSame(StepUpOperationKey::ADD_SIGN_IN_METHOD, $this->codeSendLine()?->purpose);
+        self::assertSame($reply->resendAt, $this->codeSendLine()?->resendAt);
 
         self::assertSame(
             self::USER_ID,
             $this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS)?->userId,
         );
+    }
+
+    /** @throws HilosException When the code or its pause history cannot be written */
+    public function testAddSmsRequestRefusesTheSendCapAndClosesItsLine(): void
+    {
+        $key = EnvConstants::HILOS_VERIFICATION_SEND_CAP_SMS->name;
+        $previous = getenv($key);
+        putenv($key . '=1');
+        try {
+            $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+            $this->settleProfileFlows();
+            $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
+            $this->verifications()->backdateIdentifier(self::PHONE, date('Y-m-d H:i:s', time() - $cooldown - 1));
+
+            $this->assertRefused(
+                AuthMessages::SEND_CAP,
+                HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+                new ProfileAddSmsRequestActionDTO(self::PHONE),
+            );
+            $this->settleProfileFlows();
+
+            self::assertSame(HilosCodeSendAttempt::STATE_FAILED, $this->codeSendLine()?->state);
+        } finally {
+            putenv($previous === false ? $key : $key . '=' . $previous);
+        }
     }
 
     /**

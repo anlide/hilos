@@ -3,12 +3,15 @@
 // every tab of the person a password was added or changed. Framework-agnostic —
 // the windows and their steps are the project's, this module is only the wire.
 //
-// None of the actions answers with a reply: a way in that was added or taken off
-// arrives in the identities projection, and a password, which nothing projects,
-// arrives as `profile_password_updated` to every tab of the person. A refusal is
-// an ordinary action error.
+// Code requests answer with their send outcome. A way in that was added or
+// taken off arrives in the identities projection, and a password, which
+// nothing projects, arrives as `profile_password_updated` to every tab.
 import { z } from 'zod'
 
+import {
+  codeSendReplySchema,
+  type HilosCodeSendReply,
+} from '../auth/authSendProgress.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -102,7 +105,7 @@ export interface HilosProfileSignInActions {
    *
    * @param phone The phone number, in any common formatting.
    */
-  requestSmsAdd(phone: string): ActionHandle
+  requestSmsAdd(phone: string): ActionHandle<HilosCodeSendReply>
   /**
    * Add the phone with the code it received.
    *
@@ -115,7 +118,7 @@ export interface HilosProfileSignInActions {
    *
    * @param email The address to prove.
    */
-  requestPasswordAdd(email: string): ActionHandle
+  requestPasswordAdd(email: string): ActionHandle<HilosCodeSendReply>
   /**
    * Add the password on the proven address.
    *
@@ -150,7 +153,11 @@ export function createHilosProfileSignInActions(
       })
     },
     requestSmsAdd(phone) {
-      return context.actions.dispatch(PROFILE_ADD_SMS_REQUEST_ACTION, { phone })
+      return context.actions.dispatch(
+        PROFILE_ADD_SMS_REQUEST_ACTION,
+        { phone },
+        { replySchema: codeSendReplySchema },
+      )
     },
     confirmSmsAdd(phone, code) {
       return context.actions.dispatch(PROFILE_ADD_SMS_CONFIRM_ACTION, {
@@ -159,9 +166,11 @@ export function createHilosProfileSignInActions(
       })
     },
     requestPasswordAdd(email) {
-      return context.actions.dispatch(PROFILE_ADD_PASSWORD_REQUEST_ACTION, {
-        email,
-      })
+      return context.actions.dispatch(
+        PROFILE_ADD_PASSWORD_REQUEST_ACTION,
+        { email },
+        { replySchema: codeSendReplySchema },
+      )
     },
     confirmPasswordAdd(email, code, newPassword) {
       return context.actions.dispatch(PROFILE_ADD_PASSWORD_CONFIRM_ACTION, {

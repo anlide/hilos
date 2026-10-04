@@ -13,6 +13,10 @@ import {
   profileFlowsSchema,
   SIGNAL_PROFILE_FLOWS,
 } from '../../src/profile/profileFlows.js'
+import {
+  bindCodeSendProgress,
+  SIGNAL_CODE_SEND_PROGRESS,
+} from '../../src/auth/authSendProgress.js'
 
 const OPENING = { channel: 'email', destination: 'me@example.test' }
 const SKIP = { required: false, purpose: 'change your password' }
@@ -21,6 +25,12 @@ const ASK = {
   purpose: 'change your password',
   method: 'password',
 }
+const SEND_REPLY = {
+  sent: true,
+  resendAt: 1_900_000_000_000,
+  expiresAt: 1_900_000_600_000,
+}
+const HELD_REPLY = { sent: false, resendAt: 1_900_000_000_000, expiresAt: null }
 /** The session's record of the password change at one step. */
 function record(step: string) {
   return {
@@ -56,6 +66,38 @@ function bound(): (flows: unknown[]) => void {
 
 const tell = bound()
 
+/** Bind the session's send line to a fake connection and return what tells it a frame. */
+function boundLine(): (line: Record<string, unknown>) => void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  bindCodeSendProgress({
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+
+  return (line) => {
+    for (const listener of listeners) {
+      listener({ type: SIGNAL_CODE_SEND_PROGRESS, data: line })
+    }
+  }
+}
+
+const showLine = boundLine()
+
+/** The password window's line of one send, as the session holder publishes it. */
+function passwordLine(ticket: string, state: string) {
+  return {
+    state,
+    channel: 'email',
+    purpose: 'change_password',
+    ticket,
+  }
+}
+
 /** The list the server tells the session when a step lands, before it answers. */
 const FRAME_AFTER: Record<string, unknown[]> = {
   profile_change_password_code_request: [record('code_sent')],
@@ -69,6 +111,7 @@ function setup(extra: Record<string, unknown> = {}) {
   const answers: Record<string, unknown> = {
     hilos_step_up_start: SKIP,
     profile_change_password_open: OPENING,
+    profile_change_password_code_request: SEND_REPLY,
     ...extra,
   }
   const dispatch = vi.fn(
@@ -81,7 +124,11 @@ function setup(extra: Record<string, unknown> = {}) {
       const answer = answers[name] ?? []
       if (typeof answer === 'string')
         return { done: Promise.reject(new ActionError(name, 'fail', answer)) }
-      const frame = FRAME_AFTER[name]
+      const frame =
+        name === 'profile_change_password_code_request' &&
+        (answer as { expiresAt?: number | null }).expiresAt === null
+          ? undefined
+          : FRAME_AFTER[name]
       if (frame !== undefined) tell(frame)
       return {
         done: Promise.resolve({
@@ -105,6 +152,58 @@ function settled(): Promise<void> {
 }
 
 describe('password change', () => {
+  it('keeps a locally held code step and clears the field before requesting again', async () => {
+    const { flow, dispatch } = setup({
+      profile_change_password_code_request: HELD_REPLY,
+    })
+    await flow.open()
+    await flow.sendCode()
+    expect(flow.step.get()).toBe('code')
+    tell([])
+    expect(flow.step.get()).toBe('code')
+
+    flow.code.set('123456')
+    await flow.sendAgain()
+    expect(flow.code.get()).toBe('')
+    expect(
+      dispatch.mock.calls.filter(
+        ([name]) => name === 'profile_change_password_code_request',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('hides the line of an earlier window until its own send is told', async () => {
+    showLine(passwordLine('earlier-send', 'sent'))
+    const { flow } = setup()
+    await flow.open()
+
+    await flow.sendCode()
+
+    // The answer can land before the line of the new send does; until it does,
+    // the window must not draw the green line of the earlier window's code.
+    expect(flow.step.get()).toBe('code')
+    expect(flow.sendProgress.get()).toBeNull()
+    showLine(passwordLine('this-send', 'queued'))
+    expect(flow.sendProgress.get()?.ticket).toBe('this-send')
+    showLine({ state: null })
+  })
+
+  it('lets a record that exists close the window even after a held repeat', async () => {
+    const { flow } = setup({
+      profile_change_password_code_request: HELD_REPLY,
+    })
+    await flow.open()
+    await flow.sendCode()
+    tell([record('code_sent')])
+
+    await flow.sendAgain()
+    expect(flow.step.get()).toBe('code')
+    // Discarded in another tab: the record the window stood on is gone.
+    tell([])
+
+    expect(flow.step.get()).toBe('closed')
+  })
+
   it('carries exactly the four action payloads', async () => {
     const world = setup()
     const actions = createHilosProfilePasswordChangeActions(world)
@@ -310,7 +409,7 @@ describe('password change', () => {
               ? flow.confirmCode()
               : flow.save()
       flow.dispose()
-      resolve({ reply: at === 'open' ? SKIP : [] })
+      resolve({ reply: at === 'open' ? SKIP : at === 'send' ? SEND_REPLY : [] })
       await pending
       expect(flow.step.get()).toBe('closed')
       expect(flow.opening.get()).toBeNull()

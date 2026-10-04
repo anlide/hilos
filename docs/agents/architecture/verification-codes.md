@@ -281,6 +281,45 @@ not read as coverage: a stand cannot kill its mail transport until its emulated
 services can play a relay that refuses (HIL-918). It is proved by the mail
 agent's unit test.
 
+### Profile sends (HIL-1186)
+
+The same session row now carries `purpose`: `null` belongs to the guest code
+screen; `change_email`, `change_password`, `delete_account`, and
+`add_sign_in_method` belong to their profile windows; `step_up` belongs to the
+identity-confirmation step, including one opened from an admin page. Each window
+reads only its own purpose. A change of person in the browser session drops the
+line beside the session's profile-flow rows, so an address from the previous
+person cannot appear in the next person's window. A resend removes the previous
+line before it opens the new one: a creation under an id a copy in another worker
+already holds is not applied there, so a replacement made in one step would leave
+that copy on the old ticket.
+
+A profile code request answers with `CodeSendReplyDTO` (`sent`, `resendAt`,
+`expiresAt`). The moments are server epoch milliseconds. The send gate stamps
+them into the session line by ticket; transport steps then change its state
+without clearing moments they did not carry. A stamp with `state: null` changes
+only timing, preserving even a transport refusal that arrived before it. The
+window converts the moments to its local clock, so another tab or a reload sees
+the same countdown. Where a profile-flow step is written, its action reply rides
+`hilos_profile_flow_step` and the session holder answers after publishing the
+new step; the project agent holding the sockets relays that reply exactly as it
+came (`RelayedActionReplyDTO`), never rebuilding it as a sign-in outcome.
+
+On a cooldown with a live earlier code, the line says `sent` (or `not_sent` for
+mail deliberately kept at home), reason `code_rate_limited`, and carries that
+code's expiry. When the earlier code has been used, the line says `held`, carries
+the same reason and `resendAt`, and has no `expiresAt`. The window still opens
+its code step locally; without a live code the server writes no new profile-flow
+row for that first step. A send cap remains a validation refusal and closes the
+new line as `failed`.
+
+The SMS delivery agent reports `sending`, `sent`, retryable `queued`, and terminal
+`failed` with the provider's short reason against the same opaque ticket as the
+mail agent. Guest phone sends still go through the auth code agent. The test-only
+`test:verification:end-pause <address> <sessionToken>` asks the users library to
+age the address's resend gate and stamp that browser's line at now. It changes
+neither the production cooldown nor the cap.
+
 ## Where a Code Is Read on a Stand
 
 A stand delivers nothing to the outside world: every channel ends in the stand's
@@ -418,6 +457,9 @@ same questions again, because seconds pass between the two.
   `CodeSendStepSignalData::step()`; the dialogue stays in the agent log.
 - Do not report `sent` for a letter a transport only wrote. That is `not_sent`,
   and the difference is a person waiting for a message that is not coming.
+- Do not clear `resendAt` or `expiresAt` with a transport step that did not
+  carry them, or clear state and provider detail with a timing-only stamp. A
+  transport state change still clears an earlier refusal's detail on retry.
 
 ## Validation
 

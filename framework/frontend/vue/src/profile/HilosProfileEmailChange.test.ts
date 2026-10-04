@@ -1,6 +1,7 @@
 // Covers what the email window's view owns (HIL-1169): the step list marking
 // the step on screen, the address in the text of step one, a refusal kept on
-// its step, and the outcome naming what the address was and is now. The steps
+// its step, the send block of each code step asking for another code, and the
+// outcome naming what the address was and is now. The steps
 // are the session's record (HIL-1182), so the fake server tells it before it
 // answers, as the session holder does.
 import {
@@ -13,7 +14,7 @@ import {
   type HilosConnection,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosProfileEmailChange from './HilosProfileEmailChange.vue'
@@ -46,6 +47,13 @@ bindProfileFlows({
     return () => undefined
   },
 } as unknown as HilosConnection)
+
+/** A code request's answer whose resend gate is already open. */
+const SENT_RESEND_OPEN = {
+  sent: true,
+  resendAt: Date.now() - 60_000,
+  expiresAt: Date.now() + 600_000,
+}
 
 /** Tell the session's record of the email change, as the frame carries it. */
 function tell(step: string | null, target: string | null = null): void {
@@ -167,6 +175,35 @@ describe('HilosProfileEmailChange', () => {
     expect((byId('profile-email-code-current') as HTMLInputElement).value).toBe(
       '000000',
     )
+  })
+
+  it('draws the send block on both code steps and sends again from each', async () => {
+    const { flow } = setup({
+      profile_change_email_current_request: SENT_RESEND_OPEN,
+      profile_change_email_new_request: SENT_RESEND_OPEN,
+    })
+    const sendAgain = vi.spyOn(flow, 'sendAgain')
+    await flow.open('old@example.test')
+    await settle()
+    byId('profile-email-send-current').click()
+    await settle()
+    expect(byId('profile-email-current-send')).toBeDefined()
+    byId('profile-email-current-send-again').click()
+    await settle()
+    expect(sendAgain).toHaveBeenCalledTimes(1)
+
+    typeInto('profile-email-code-current', '111111')
+    await nextTick()
+    byId('profile-email-confirm-current').click()
+    await settle()
+    typeInto('profile-email-new', 'new@example.test')
+    await nextTick()
+    byId('profile-email-send-new').click()
+    await settle()
+    expect(byId('profile-email-new-send')).toBeDefined()
+    byId('profile-email-new-send-again').click()
+    await settle()
+    expect(sendAgain).toHaveBeenCalledTimes(2)
   })
 
   it('confirms step-up via form submit when credential is typed, ignores empty submit, and binds confirm button to form', async () => {

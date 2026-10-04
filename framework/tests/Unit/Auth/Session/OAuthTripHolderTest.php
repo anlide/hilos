@@ -14,6 +14,7 @@ use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
@@ -356,6 +357,23 @@ final class OAuthTripHolderTest extends TestCase
                 && $payload->data instanceof CodeSendProgressSignalData,
         ));
         $this->assertCount(1, $published);
+    }
+
+    public function testAGoneCodeAgentLeavesTheProfileSmsTheSmsShardCarries(): void
+    {
+        $this->declareSignInSurface();
+        $agent = new OAuthTripHolderTestAgent();
+        $attempts = Hilos::$rt?->hilosCodeSendAttempts;
+        $this->assertNotNull($attempts);
+        $attempts->actions->start('hash-phone', 'ticket-phone', 'telegram');
+        $attempts->actions->start('hash-profile-sms', 'ticket-profile-sms', 'sms', StepUpOperationKey::CHANGE_PASSWORD);
+
+        $this->gone($agent, HilosAgentType::HILOS_AUTH_CODE);
+
+        // A profile code goes through the SMS shard, not the code agent, so the code agent's
+        // fall says nothing about it (HIL-1186).
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_FAILED, $attempts['hash-phone']?->state);
+        $this->assertSame(StateHilosCodeSendAttempt::STATE_QUEUED, $attempts['hash-profile-sms']?->state);
     }
 
     public function testAnAgentUnrelatedToSigningInEndsNothing(): void

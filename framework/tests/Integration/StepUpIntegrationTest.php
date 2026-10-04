@@ -30,6 +30,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
@@ -73,6 +74,8 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     private ?RtContext $previousRt = null;
     private ?SettingsAccessor $previousSetting = null;
 
+    private ?SignalRouter $previousSignalRouter = null;
+
     private StepUpIntegrationLibrary $library;
 
     /**
@@ -91,6 +94,8 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
 
         $this->previousRt = Hilos::$rt;
         $this->previousSetting = Hilos::$setting;
+        $this->previousSignalRouter = Hilos::$sr;
+        Hilos::$sr = new SignalRouter();
         StepUpIntegrationHilos::mount();
         Hilos::$setting = new SettingsAccessor(StepUpIntegrationSettingsCatalog::class);
         putenv(EnvConstants::MAIL_SMTP_HOST->name . '=smtp.example.test');
@@ -115,6 +120,7 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         SourceChangeBus::reset();
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
         Hilos::$setting = $this->previousSetting;
+        Hilos::$sr = $this->previousSignalRouter;
         Hilos::$rt = $this->previousRt;
         StepUpIntegrationHilos::unmount();
         self::runExtraStubs(down: true);
@@ -191,6 +197,32 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
 
         self::assertSame(StepUpMethod::SMS_CODE, $target?->method);
         self::assertSame(self::PHONE, $target?->destination);
+    }
+
+    /** @throws HilosException When a code request or identity write fails */
+    public function testEmailCodeOpeningReportsTheSendAndItsCooldown(): void
+    {
+        Hilos::$db->identities->createMagicLinkIdentity(self::USER_ID, self::EMAIL);
+
+        $sent = $this->start(self::OPERATION);
+        self::assertSame(StepUpMethod::EMAIL_CODE, $sent->method);
+        self::assertTrue($sent->send?->sent);
+        self::assertNotNull($sent->send?->expiresAt);
+
+        $held = $this->start(self::OPERATION);
+        self::assertFalse($held->send?->sent);
+        self::assertSame($sent->send?->expiresAt, $held->send?->expiresAt);
+    }
+
+    /** @throws HilosException When a phone code request or identity write fails */
+    public function testSmsCodeOpeningReportsTheSend(): void
+    {
+        Hilos::$db->identities->createSmsIdentity(self::USER_ID, self::PHONE);
+
+        $opening = $this->start(self::OPERATION);
+
+        self::assertSame(StepUpMethod::SMS_CODE, $opening->method);
+        self::assertTrue($opening->send?->sent);
     }
 
     /**

@@ -7,22 +7,36 @@ import {
 } from '@angular/core'
 import { HILOS_STEP_UP_COPY, subscribeSignal } from '@hilos/core'
 import type {
+  CodeSendProgress,
   HilosStepUpOpening,
   HilosStepUpStep as HilosStepUpController,
 } from '@hilos/core'
 
 import { HilosFormError } from '../HilosFormError.js'
+import { HilosSendProgress } from '../HilosSendProgress.js'
 
 @Component({
   selector: 'hilos-step-up-step',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosFormError],
+  imports: [HilosFormError, HilosSendProgress],
   template: `
     <div data-id="step-up">
       <p class="small text-body-secondary" data-id="step-up-text">
         {{ text() }}
       </p>
       @if (isCodeMethod()) {
+        @if (
+          opening()?.method === 'email_code' || opening()?.method === 'sms_code'
+        ) {
+          <hilos-send-progress
+            [progress]="sendProgress()"
+            [to]="opening()?.destination ?? ''"
+            [resendAt]="resendAt()"
+            [busy]="busy()"
+            dataId="step-up-send"
+            (sendAgain)="resend()"
+          />
+        }
         <label class="form-label" for="hilos-step-up-code">Code</label>
         <input
           id="hilos-step-up-code"
@@ -72,6 +86,9 @@ export class HilosStepUpStep {
   protected readonly password = signal('')
   protected readonly backupCode = signal(false)
   protected readonly refusal = signal<string | null>(null)
+  protected readonly sendProgress = signal<CodeSendProgress | null>(null)
+  protected readonly resendAt = signal<number | null>(null)
+  protected readonly busy = signal(false)
 
   constructor() {
     effect((onCleanup) => {
@@ -81,6 +98,9 @@ export class HilosStepUpStep {
       this.password.set(controller.password.get())
       this.backupCode.set(controller.backupCode.get())
       this.refusal.set(controller.refusal.get())
+      this.sendProgress.set(controller.sendProgress.get())
+      this.resendAt.set(controller.resendAt.get())
+      this.busy.set(controller.busy.get())
       const off = [
         subscribeSignal(controller.opening, (value) => this.opening.set(value)),
         subscribeSignal(controller.code, (value) => this.code.set(value)),
@@ -91,9 +111,20 @@ export class HilosStepUpStep {
           this.backupCode.set(value),
         ),
         subscribeSignal(controller.refusal, (value) => this.refusal.set(value)),
+        subscribeSignal(controller.sendProgress, (value) =>
+          this.sendProgress.set(value),
+        ),
+        subscribeSignal(controller.resendAt, (value) =>
+          this.resendAt.set(value),
+        ),
+        subscribeSignal(controller.busy, (value) => this.busy.set(value)),
       ]
       onCleanup(() => off.forEach((unsubscribe) => unsubscribe()))
     })
+  }
+
+  protected resend(): void {
+    void this.controller().sendAgain()
   }
 
   protected isCodeMethod(): boolean {

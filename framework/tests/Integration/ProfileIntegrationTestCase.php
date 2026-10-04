@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
@@ -19,6 +20,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -36,11 +38,16 @@ use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
 use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
+use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Actions\Collection\HilosProfileFlowsActions;
+use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
+use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
+use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 use Hilos\Runtime\View\Collection\HilosProfileFlows;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\HilosSmsSender;
@@ -139,6 +146,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
         RtTruthSourceRegistry::registerDaemon(StateHilosProfileFlow::RT_COLLECTION);
+        RtTruthSourceRegistry::registerDaemon(StateHilosCodeSendAttempt::RT_COLLECTION);
 
         Database::sqlRun(
             "INSERT INTO `hilos_user` (`id`, `name`, `admin`) "
@@ -166,6 +174,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregisterDaemon(StateHilosProfileFlow::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(StateHilosCodeSendAttempt::RT_COLLECTION);
         SourceChangeBus::reset();
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
         Hilos::$sms = $this->previousSms;
@@ -184,11 +193,26 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
      * @param string $action Action wire name
      * @param ActionPayloadDTO $dto Action payload
      * @param string $acceptKey Tab that submits
+     * @return ?ActionReplyDTO Send outcome on a code request, null for other submits
      * @throws HilosException When the command refuses or fails
      */
-    protected function submit(string $action, ActionPayloadDTO $dto, string $acceptKey = self::ACCEPT_KEY): void
+    protected function submit(string $action, ActionPayloadDTO $dto, string $acceptKey = self::ACCEPT_KEY): ?ActionReplyDTO
     {
-        self::assertNull($this->library->onAgentAction($acceptKey, $action, $dto), 'A profile submit answers with no reply');
+        $reply = $this->library->onAgentAction($acceptKey, $action, $dto);
+        if (in_array($action, [
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST,
+            HilosSignalConstants::PROFILE_CHANGE_EMAIL_NEW_REQUEST,
+            HilosSignalConstants::PROFILE_CHANGE_PASSWORD_CODE_REQUEST,
+            HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE,
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,
+        ], true)) {
+            self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
+        } else {
+            self::assertNull($reply, 'A profile submit without a code order answers with no reply');
+        }
+
+        return $reply;
     }
 
     /**
@@ -197,12 +221,15 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
      * @param string $action Action wire name
      * @param ActionPayloadDTO $dto Action payload
      * @param string $acceptKey Tab that submits
+     * @return ?ActionReplyDTO Send outcome on a code request, null for other submits
      * @throws HilosException When the command refuses or fails
      */
-    protected function submitStep(string $action, ActionPayloadDTO $dto, string $acceptKey = self::ACCEPT_KEY): void
+    protected function submitStep(string $action, ActionPayloadDTO $dto, string $acceptKey = self::ACCEPT_KEY): ?ActionReplyDTO
     {
-        $this->submit($action, $dto, $acceptKey);
+        $reply = $this->submit($action, $dto, $acceptKey);
         $this->settleProfileFlows();
+
+        return $reply;
     }
 
     /**
@@ -214,12 +241,15 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $this->drained[] = $signal;
-            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_PROFILE_FLOW_STEP) {
+            if (!in_array($signal->signalName->getName(), [
+                HilosSignalConstants::HILOS_PROFILE_FLOW_STEP,
+                HilosSignalConstants::HILOS_CODE_SEND_STEP,
+            ], true)) {
                 continue;
             }
 
             self::assertInstanceOf(AgentSignalData::class, $signal->data);
-            $this->holder->onSignalAgent($signal->data, 'test', HilosSignalConstants::HILOS_PROFILE_FLOW_STEP);
+            $this->holder->onSignalAgent($signal->data, 'test', $signal->signalName->getName());
         }
     }
 
@@ -296,6 +326,15 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         self::assertInstanceOf(HilosProfileFlows::class, $flows);
 
         return $flows;
+    }
+
+    /**
+     * @return ?HilosCodeSendAttempt Send line of the acting browser, or null before any send
+     * @throws HilosException When the runtime collection cannot be read
+     */
+    protected function codeSendLine(): ?HilosCodeSendAttempt
+    {
+        return Hilos::$rt->hilosCodeSendAttempts[ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN)];
     }
 
     /**
@@ -468,6 +507,12 @@ class ProfileIntegrationRtContext extends RtContext
     {
         $this->mountFeatureCollection(StateHilosProfileFlow::RT_COLLECTION, StateHilosProfileFlows::init());
         $this->setRepresent(StateHilosProfileFlow::RT_COLLECTION, HilosProfileFlows::class, HilosProfileFlowsActions::class);
+        $this->mountFeatureCollection(StateHilosCodeSendAttempt::RT_COLLECTION, StateHilosCodeSendAttempts::init());
+        $this->setRepresent(
+            StateHilosCodeSendAttempt::RT_COLLECTION,
+            HilosCodeSendAttempts::class,
+            HilosCodeSendAttemptsActions::class,
+        );
 
         $connections = ProfileIntegrationConnections::init();
         $connections->add(ProfileIntegrationConnection::create(
