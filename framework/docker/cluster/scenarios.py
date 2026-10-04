@@ -2356,8 +2356,7 @@ def scenario_33_every_master_takes_browsers():
                    CONVERGE_TIMEOUT, f"the connection owner on {leader} stopped under the freeze")
 
         # The test driver uses the same three-step contract as production: enter freezes,
-        # leave reaches the verification window, and open lifts it (HIL-1304 Data Result
-        # abbreviates this drive to enter -> open, which the driver refuses).
+        # leave reaches the verification window, and open lifts it.
         assert client(leader, "test:protected-mode:leave"), f"the index agent on {leader} did not leave the freeze"
         wait_protected_mode(lambda row: row.get("phase") == "verifying", "every master verifying")
         assert client(leader, "test:protected-mode:open"), f"the index agent on {leader} did not lift the freeze"
@@ -2767,11 +2766,10 @@ def scenario_26_database_is_one_cluster():
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
                      "cluster_directory entry", defaults=(0, 0, False, False, 0, False, 0, False, False))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
-    slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every
-    master declaring ram - masters that carry placed work themselves - and a database of at
-    least `database_members` members, a cluster directory, and a browser entry the stand names.
-    What a scenario
-    names by role - the third master, the second slave - is what it needs."""
+    slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every master
+    declaring ram - masters that carry placed work themselves - and a database of at least
+    `database_members` members, a cluster directory, and a browser entry the stand names. What a
+    scenario names by role - the third master, the second slave - is what it needs."""
 
 
 class Scenario(namedtuple("Scenario", "name run need")):

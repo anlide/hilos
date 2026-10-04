@@ -27,10 +27,9 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * The cure is at the other end of the window rather than inside it: the master hands each agent
  * start its local socket keys and keys other nodes hold according to the cluster index.
- * Everything the collection has that the
- * roster does not is struck out here. That makes the thaw, the restart and the first start one
- * behavior - on a first start the roster is empty and there is nothing to strike, which is the
- * same answer for the same reason.
+ * Everything the collection has that the roster does not is struck out here. That makes the
+ * thaw, the restart and the first start one behavior - on a first start the roster is empty and
+ * there is nothing to strike, which is the same answer for the same reason.
  *
  * It is a class of its own rather than a method on the worker manager because its whole input is
  * a list of strings, and a test of it should not have to raise a worker.

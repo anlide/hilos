@@ -244,7 +244,7 @@ dispatchRoleTick()     ← per-iteration hook for the current node lifecycle pha
 if amLeader():         ← leader (or standalone); a follower skips both singleton start and cron
   ensureSingletonsStarted()  ← start cluster-singleton agents once per term, and again after a worker dies with agents
   checkCronJobs()            ← once per minute, after workers ready
-tickReadiness()       ← every node; a slave never opens, a follower waits for its leader's word
+tickReadiness()        ← every node; a slave never opens, a follower waits for its leader's word
 dispatchSignals()      ← drain SignalRouter queue → workers / WS clients
 Hilos::$ac->tick()     ← analytics flush
 pcntl_signal_dispatch()
