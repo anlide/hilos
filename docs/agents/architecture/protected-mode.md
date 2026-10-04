@@ -707,13 +707,13 @@ announcement no longer crosses nodes.
 connection down when the mode turns on (`ConnectionDropper` is called only by a
 session rotation and by `test:connection:drop`), so a tab that was standing on
 the stub when its owner typed the code in another tab would stand there for the
-rest of the window. On the crossing each master sends its own connections of
-the admitted session one addressed `WS_USER` frame each: `active: false` with
-`acceptsPass: true`. The
-second bit is load-bearing — the client calls the mode over only when both are
-false, and a frame without it would reload the tab out of the window instead of
-into it. The same crossing, in `DaemonProtectedModeExecutor::admitVerifier()`, then
-has the session's open pages answered again (see below, HIL-912).
+rest of the window. On the crossing each master sends its own connections of the
+admitted session one addressed `WS_USER` frame each: `active: false` with
+`acceptsPass: true`. The second bit is load-bearing — the client calls the mode
+over only when both are false, and a frame without it would reload the tab out
+of the window instead of into it. The same crossing, in
+`DaemonProtectedModeExecutor::admitVerifier()`, then has the session's open
+pages answered again (see below, HIL-912).
 
 **The operator and the circle are carried back in the same way, and by the same
 delivery (HIL-718, HIL-912).** Once the roster is back, `finishVerifying()` sends a
