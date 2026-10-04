@@ -2187,12 +2187,13 @@ def scenario_23_verifier_circle_on_every_master():
     So the initiator here is the leader; a follower or a slave initiating is covered by the unit
     tests of ClusterProtectedMode.
 
-    Leadership must not move while the freeze holds. The index agent follows leadership, while the
-    freeze stays authorized by the node that asked for it, so a re-election strands the freeze:
-    the agent answers on the new leader, and the new leader refuses its lift as coming from the
-    wrong node. A stand raised a moment ago can re-elect on its own - its links flap once as late
-    seed dials land (P-459) - which is why this runs last in the matrix rather than first. When
-    it happens anyway, the failure says so instead of leaving only a timeout to read.
+    Leadership must not move while the freeze holds. The right to the freeze is the agent's, and
+    the followers accept a lift from a new leader (HIL-1297), yet a re-election still breaks the
+    scenario: its drive commands are addressed to the original leader, and a reply answered by the
+    agent on another node never makes it back (HIL-1232). A stand raised a moment ago can re-elect
+    on its own - its links flap once as late seed dials land (P-459) - which is why this runs last
+    in the matrix rather than first. When it happens anyway, the failure says so instead of leaving
+    only a timeout to read.
     """
     views = wait_converge(ALL_NODES)
     leader = leaders(views)[0]
@@ -2220,7 +2221,8 @@ def scenario_23_verifier_circle_on_every_master():
         moved = [n for n in leaders(now) if n != leader or now[n].get("term") != term]
         if moved:
             print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
-                  f"(term {now[moved[0]].get('term')}) under the freeze; its lift is refused there (P-459)")
+                  f"(term {now[moved[0]].get('term')}) under the freeze; "
+                  f"the drive commands still go to {leader} (HIL-1232, P-459)")
         replies = {n: protected_mode(n) for n in MASTERS}
         if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
             client(leader, "test:protected-mode:open")
@@ -2251,12 +2253,13 @@ def scenario_25_freeze_settles_on_every_master():
     So the initiator here is the leader; a follower or a slave initiating is covered by the unit
     tests of ClusterProtectedMode.
 
-    Leadership must not move while the freeze holds. The index agent follows leadership, while the
-    freeze stays authorized by the node that asked for it, so a re-election strands the freeze:
-    the agent answers on the new leader, and the new leader refuses its lift as coming from the
-    wrong node. A stand raised a moment ago can re-elect on its own - its links flap once as late
-    seed dials land (P-459) - which is why this runs last in the matrix rather than first. When
-    it happens anyway, the failure says so instead of leaving only a timeout to read.
+    Leadership must not move while the freeze holds. The right to the freeze is the agent's, and
+    the followers accept a lift from a new leader (HIL-1297), yet a re-election still breaks the
+    scenario: its drive commands are addressed to the original leader, and a reply answered by the
+    agent on another node never makes it back (HIL-1232). A stand raised a moment ago can re-elect
+    on its own - its links flap once as late seed dials land (P-459) - which is why this runs last
+    in the matrix rather than first. When it happens anyway, the failure says so instead of leaving
+    only a timeout to read.
     """
     views = wait_converge(ALL_NODES)
     leader = leaders(views)[0]
@@ -2290,7 +2293,8 @@ def scenario_25_freeze_settles_on_every_master():
         moved = [n for n in leaders(now) if n != leader or now[n].get("term") != term]
         if moved:
             print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
-                  f"(term {now[moved[0]].get('term')}) under the freeze; its lift is refused there (P-459)")
+                  f"(term {now[moved[0]].get('term')}) under the freeze; "
+                  f"the drive commands still go to {leader} (HIL-1232, P-459)")
         replies = {n: protected_mode(n) for n in MASTERS}
         if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
             client(leader, "test:protected-mode:open")
