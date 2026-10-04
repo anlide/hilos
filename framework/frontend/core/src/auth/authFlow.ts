@@ -63,6 +63,7 @@ import {
   type ReadonlySignal,
 } from '../state/signal.js'
 import { type CodeSendProgress } from './authSendProgress.js'
+import { dropOAuthAccount } from './oauthLogin.js'
 
 /**
  * What an identifier looks like. Drives which icon methods and code channels
@@ -775,6 +776,8 @@ export interface AuthFlow {
   finishWithPasskey(): Promise<void>
   /** Enter consent for an account without an address, without sending anything. */
   createWithPasskey(): void
+  /** Enter consent after a provider proved a new account, keeping its method key. */
+  awaitProviderConsent(): void
   /**
    * Re-send the active code. Blocked (a silent no-op) until
    * {@link resendAvailableAt}; the backend re-arms the gate via
@@ -2017,8 +2020,12 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
 
   /** Move the screen and start or abandon its consent read in the same turn. */
   function moveFlow(next: AuthFlowState): void {
-    const previous = flow.get().step
+    const leaving = flow.get()
+    const previous = leaving.step
     if (previous === 'consent' && next.step !== 'consent') {
+      if (leaving.methodKey?.startsWith(OAUTH_METHOD_PREFIX)) {
+        dropOAuthAccount()
+      }
       consentSeq += 1
       consent.set({ status: 'loading', terms: null })
       consentFormForVisit = null
@@ -2664,6 +2671,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
 
         return
       }
+      if (
+        state.step === 'consent' &&
+        state.intent === 'register' &&
+        methodKey?.startsWith(OAUTH_METHOD_PREFIX)
+      ) {
+        await dispatch(() => options.onSubmit('submit', flow.get(), form.get()))
+
+        return
+      }
       if (state.step === 'consent' && methodKey !== null) {
         // A method chosen BEFORE the terms starts here, not where it was picked
         // (HIL-417): accepting the terms is what sends the magic link. Parking in
@@ -2747,6 +2763,34 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
         step: 'consent',
         intent: 'register',
         methodKey: PASSKEY_METHOD_KEY,
+      })
+    },
+    awaitProviderConsent(): void {
+      const state = flow.get()
+      if (
+        state.step !== 'external' ||
+        !state.methodKey?.startsWith(OAUTH_METHOD_PREFIX)
+      ) {
+        return
+      }
+      ceremony?.controller.abort()
+      ceremony = null
+      dispatchSeq += 1
+      pending.set(false)
+      error.set(null)
+      form.set({
+        ...form.get(),
+        identifier: '',
+        consentAccepted: false,
+        acceptedRevisions: null,
+      })
+      moveFlow({
+        step: 'consent',
+        intent: 'register',
+        methodKey: state.methodKey,
+        identifierKind: 'unknown',
+        channelKey: null,
+        sendProgress: null,
       })
     },
     async resend(): Promise<void> {

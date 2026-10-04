@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
+use Hilos\Auth\OAuth\OAuthAccountTokenSigner;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
@@ -53,7 +54,28 @@ final class OAuthServiceTest extends TestCase
             600,
             new OAuthLinkTokenSigner('unit-secret'),
             600,
+            new OAuthAccountTokenSigner('unit-secret'),
+            1800,
         );
+    }
+
+    /** @throws EnvException When OAUTH_ENDPOINT_URL cannot be read */
+    public function testAccountTokenRoundTripsThroughService(): void
+    {
+        $service = $this->service();
+        $token = $service->issueAccountToken(
+            OAuthProviderPreset::GITHUB->value,
+            'subject-123',
+            'user@example.test',
+            'Provider Name',
+            self::SESSION,
+        );
+
+        $data = $service->verifyAccountToken($token, self::SESSION);
+        self::assertNotNull($data);
+        self::assertSame('subject-123', $data->subject);
+        self::assertSame('Provider Name', $data->displayName);
+        self::assertNull($service->verifyAccountToken($token, 'other-session'));
     }
 
     /**

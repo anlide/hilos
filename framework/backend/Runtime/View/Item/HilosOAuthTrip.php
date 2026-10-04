@@ -24,8 +24,9 @@ use Hilos\HilosException;
  * @property-read string $mode Flow mode of the exchange
  * @property-read string $provider Provider key
  * @property-read ?string $ending How the trip ended, or null while it is still going
- * @property-read ?string $email Colliding address, on the re-authentication ending alone
+ * @property-read ?string $email Provider address on a re-authentication or consent ending
  * @property-read ?string $linkToken Signed link capability, on the re-authentication ending alone
+ * @property-read ?string $accountToken Signed first sign-in capability, on the consent-required ending alone
  * @property-read ?int $userId User a held grant signs in
  * @property-read ?int $sessionId Session row an applied grant signed in
  * @property-read int $updatedAt Epoch milliseconds of the last write
@@ -59,6 +60,7 @@ final class HilosOAuthTrip extends RtItem
             StateHilosOAuthTrip::ending => $this->_state->ending,
             StateHilosOAuthTrip::email => $this->_state->email,
             StateHilosOAuthTrip::linkToken => $this->_state->linkToken,
+            StateHilosOAuthTrip::accountToken => $this->_state->accountToken,
             StateHilosOAuthTrip::userId => $this->_state->userId,
             StateHilosOAuthTrip::sessionId => $this->_state->sessionId,
             StateHilosOAuthTrip::updatedAt => $this->_state->updatedAt,

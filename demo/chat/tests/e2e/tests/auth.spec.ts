@@ -4,6 +4,7 @@ import {
   abandonConsent,
   denyConsent,
   signInAs,
+  signUpAs,
   waitForProviderWindow,
   watchHeight,
   watchTop,
@@ -148,8 +149,8 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   // redirects that window back to /auth/callback with a real code. The monopolistic
   // OAuth agent (a separate, leader-pinned process) exchanges the code for a token
   // and reads userinfo over HTTPS, resolves the (provider, subject) to a fresh
-  // account, and the bound session rides the current-user fan-out (HIL-161) that
-  // signs the visitor in. This is the login-path e2e that was missing while the
+  // account after consent, and the bound session rides the current-user fan-out
+  // (HIL-161) that signs the visitor in. This is the login-path e2e that was missing while the
   // callback handed the pending op to the agent through a never-synced runtime
   // collection — the copy the agent read stayed empty.
   //
@@ -158,8 +159,8 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   // and this flow was taken off quarantine on the first run against a fresh stand.
   //
   // The account is declared fresh — an id and an address no other test holds — so
-  // the sign-in mints a new account instead of resolving somebody else's or landing
-  // in linking by address (HIL-282).
+  // the sign-in asks for consent before minting an account instead of resolving
+  // somebody else's or landing in linking by address (HIL-282).
   const account = await declareOAuthAccount('google', { email: uniqueEmail() })
 
   await gotoPage(page, '/profile')
@@ -172,7 +173,7 @@ test('signs in by OAuth provider redirect and callback (HIL-281)', async ({
   // started from, and the address never leaves it. The wait for that window starts
   // BEFORE the click: the click handler opens it synchronously, and a wait begun
   // after the click would miss the event.
-  const signingIn = signInAs(page, account)
+  const signingIn = signUpAs(page, account)
   await page.getByTestId('auth-icon-oauth-google').click()
   await signingIn
   await expect(page.getByTestId('profile-name')).toBeVisible()
@@ -216,15 +217,19 @@ const PROVIDER_HOLD_PAST_DEADLINE_MS = 6000
  *
  * @param page The product's page.
  * @param account The account the person picks and confirms.
+ * @param newAccount Whether this successful exchange must finish consent.
  */
 async function signInThroughProvider(
   page: Page,
   account: StandOAuthAccount,
+  newAccount = false,
 ): Promise<void> {
   await gotoPage(page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  const signingIn = signInAs(page, account)
+  const signingIn = newAccount
+    ? signUpAs(page, account)
+    : signInAs(page, account)
   await page.getByTestId(`auth-icon-oauth-${account.profile}`).click()
   await signingIn
 }
@@ -380,7 +385,7 @@ test('signs in when the provider keeps the connection open after its answer (HIL
     holdMs: PROVIDER_HOLD_MS,
   })
 
-  await signInThroughProvider(page, account)
+  await signInThroughProvider(page, account, true)
 
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)
@@ -402,7 +407,7 @@ test('signs in when the provider holds the connection past the request deadline 
     holdMs: PROVIDER_HOLD_PAST_DEADLINE_MS,
   })
 
-  await signInThroughProvider(page, account)
+  await signInThroughProvider(page, account, true)
 
   await expect(page.getByTestId('profile-name')).toBeVisible()
   await expect(page.getByTestId('auth-surface')).toHaveCount(0)

@@ -10,6 +10,7 @@ use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
 use Hilos\Auth\OAuth\GenericOAuthProvider;
+use Hilos\Auth\OAuth\OAuthAccountTokenSigner;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
@@ -73,6 +74,8 @@ final class StepUpAddSignInIntegrationTest extends ProfileIntegrationTestCase
             self::STATE_TTL_SECONDS,
             new OAuthLinkTokenSigner(self::OAUTH_SECRET),
             self::STATE_TTL_SECONDS,
+            new OAuthAccountTokenSigner(self::OAUTH_SECRET),
+            1800,
         );
         $this->library->oauthService = $this->oauth;
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);

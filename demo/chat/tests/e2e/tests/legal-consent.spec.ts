@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   clickSubmit,
   continueFromDone,
+  logout,
   PASSWORD,
   submitFirstPassword,
   submitRegistrationCode,
@@ -11,7 +12,12 @@ import {
 import { readRegisterCode } from '../helpers/mail.js'
 import { gotoPage } from '../helpers/page.js'
 import { signUpAdmin } from '../helpers/adminGrant.js'
-import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  acceptTermsAsNewAccount,
+  sidewaysOverflow,
+  signInAs,
+} from '../../../../../framework/frontend/e2e/index.js'
+import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 
 test('reads the current documents before registration and records both accepted revisions', async ({
   page,
@@ -90,4 +96,89 @@ test('previews the same complete consent body from a legal document', async ({
   await expect(preview.getByTestId('auth-submit')).toHaveCount(0)
   await clickSubmit(page.getByTestId('legal-consent-preview-close'))
   await expect(preview).toBeHidden()
+})
+
+test('creates a new provider account only after consent and records both agreements', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+  const account = await declareOAuthAccount('github', {
+    email,
+    name: 'Provider Newcomer',
+  })
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+
+  const signingIn = signInAs(page, account)
+  await clickSubmit(page.getByTestId('auth-icon-oauth-github'))
+  await signingIn
+  await expect(page.getByTestId('legal-consent')).toBeVisible()
+  const plaque = page.getByTestId('auth-consent-provider')
+  await expect(plaque).toHaveAttribute('data-provider', 'oauth:github')
+  await expect(plaque).toHaveText(email)
+  await expect(page.getByTestId('auth-consent-identifier')).toHaveCount(0)
+
+  await acceptTermsAsNewAccount(page)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('profile-agreements-summary')).toHaveText(
+    'Terms and privacy accepted',
+  )
+  await clickSubmit(page.getByTestId('profile-agreements-open'))
+  const terms = page.locator(
+    '[data-id="legal-agreement-row"][data-document="terms"]',
+  )
+  const privacy = page.locator(
+    '[data-id="legal-agreement-row"][data-document="privacy"]',
+  )
+  await expect(terms.getByTestId('legal-agreement-state')).toContainText(
+    'accepted',
+  )
+  await expect(privacy.getByTestId('legal-agreement-state')).toContainText(
+    'accepted',
+  )
+
+  await logout(page)
+  await gotoPage(page, '/profile')
+  const returning = signInAs(page, account)
+  await clickSubmit(page.getByTestId('auth-icon-oauth-github'))
+  await returning
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(page.getByTestId('legal-consent')).toHaveCount(0)
+})
+
+test('Back from provider consent creates nothing and the next sign-in asks again', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('github', { email: uniqueEmail() })
+  await gotoPage(page, '/profile')
+
+  const first = signInAs(page, account)
+  await clickSubmit(page.getByTestId('auth-icon-oauth-github'))
+  await first
+  await expect(page.getByTestId('legal-consent')).toBeVisible()
+  await clickSubmit(page.getByTestId('auth-restart'))
+  await expect(page.getByTestId('auth-identifier')).toBeVisible()
+  await expect(page.getByTestId('auth-identifier')).toHaveValue('')
+  await expect(page.getByTestId('auth-consent-provider')).toHaveCount(0)
+
+  const second = signInAs(page, account)
+  await clickSubmit(page.getByTestId('auth-icon-oauth-github'))
+  await second
+  await expect(page.getByTestId('legal-consent')).toBeVisible()
+  await expect(page.getByTestId('auth-consent-provider')).toBeVisible()
+})
+
+test('provider consent names GitHub when it reports no email', async ({
+  page,
+}) => {
+  const account = await declareOAuthAccount('github', { name: 'No Mail' })
+  await gotoPage(page, '/profile')
+
+  const signingIn = signInAs(page, account)
+  await clickSubmit(page.getByTestId('auth-icon-oauth-github'))
+  await signingIn
+  await expect(page.getByTestId('legal-consent')).toBeVisible()
+  const plaque = page.getByTestId('auth-consent-provider')
+  await expect(plaque).toHaveAttribute('data-provider', 'oauth:github')
+  await expect(plaque).toHaveText('GitHub')
 })

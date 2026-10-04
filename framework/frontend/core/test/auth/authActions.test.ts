@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import * as oauthLogin from '../../src/auth/oauthLogin.js'
 import { createAuthActions } from '../../src/auth/authActions.js'
 import { createHilosAuthContext } from '../../src/auth/authContext.js'
 import {
@@ -32,7 +33,10 @@ const FLOW: AuthFlowState = {
 }
 
 /** A real action adapter over a wire that can deliver a phone outcome before its ack. */
-function world(phoneReason = 'code_sent') {
+function world(
+  phoneReason = 'code_sent',
+  replies: Record<string, unknown> = {},
+) {
   const listeners = new Map<string, Set<(value: unknown) => void>>()
   const sent: Array<{ action: string; payload: Record<string, unknown> }> = []
   const connection = {
@@ -68,7 +72,8 @@ function world(phoneReason = 'code_sent') {
       }
       return {
         done: Promise.resolve({
-          reply: action === 'hilos_legal_consent' ? consentTerms() : undefined,
+          reply:
+            action === 'hilos_legal_consent' ? consentTerms() : replies[action],
         }),
       }
     },
@@ -225,5 +230,82 @@ describe('registration consent on the wire', () => {
     stop()
     emit('handshake', {})
     expect(restored).toBe(1)
+  })
+})
+
+describe('provider first sign-in consent on the wire (HIL-1235)', () => {
+  const providerFlow: AuthFlowState = {
+    ...FLOW,
+    identifierKind: 'unknown',
+    methodKey: 'oauth:github',
+  }
+
+  it('submits the signed proof and accepted revisions', async () => {
+    const pending = vi
+      .spyOn(oauthLogin, 'pendingOAuthAccount')
+      .mockReturnValue({
+        provider: 'oauth:github',
+        providerName: 'GitHub',
+        email: null,
+        accountToken: 'signed-account-token',
+      })
+    try {
+      const { actions, sent } = world()
+      await actions.onSubmit('submit', providerFlow, FORM)
+
+      expect(sent).toEqual([
+        {
+          action: 'hilos_oauth_create_account',
+          payload: {
+            accountToken: 'signed-account-token',
+            acceptedRevisions: FORM.acceptedRevisions,
+          },
+        },
+      ])
+    } finally {
+      pending.mockRestore()
+    }
+  })
+
+  it('returns to sign-in if this tab no longer holds the proof', async () => {
+    oauthLogin.dropOAuthAccount()
+    const { actions, sent } = world()
+
+    const outcome = await actions.onSubmit('submit', providerFlow, FORM)
+
+    expect(outcome).toMatchObject({
+      ok: false,
+      code: 'oauth_sign_in_expired',
+      next: { step: 'identifier', intent: 'login' },
+    })
+    expect(sent).toEqual([])
+  })
+
+  it('names the provider in an expired proof refusal', async () => {
+    const pending = vi
+      .spyOn(oauthLogin, 'pendingOAuthAccount')
+      .mockReturnValue({
+        provider: 'oauth:github',
+        providerName: 'GitHub',
+        email: 'new@example.test',
+        accountToken: 'expired-token',
+      })
+    try {
+      const { actions } = world('code_sent', {
+        hilos_oauth_create_account: {
+          ok: false,
+          code: 'oauth_sign_in_expired',
+          next: { step: 'identifier', intent: 'login' },
+        },
+      })
+      const outcome = await actions.onSubmit('submit', providerFlow, FORM)
+
+      expect(outcome.message).toBe(
+        'Your sign-in with GitHub has expired. Continue with GitHub again.',
+      )
+      expect(outcome.next).toEqual({ step: 'identifier', intent: 'login' })
+    } finally {
+      pending.mockRestore()
+    }
   })
 })

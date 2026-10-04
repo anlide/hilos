@@ -722,6 +722,9 @@ export {
   type OAuthTripOutcome,
   type OAuthTripPhase,
   type PendingOAuthLink,
+  type PendingOAuthAccount,
+  pendingOAuthAccount,
+  dropOAuthAccount,
 } from './auth/oauthLogin.js'
 export {
   OAUTH_AUTHORIZE_SIGNAL,
@@ -732,6 +735,7 @@ export {
   OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_SECOND_FACTOR,
   OAUTH_REASON_ACCOUNT_BLOCKED,
+  OAUTH_REASON_CONSENT_REQUIRED,
   oauthAuthorizeSignalSchema,
   oauthResultSignalSchema,
   OAUTH_SIGNAL_SCHEMAS,
@@ -782,6 +786,7 @@ export {
   AUTH_ACTION_REGISTRATION_PASSKEY_OPTIONS,
   AUTH_ACTION_LINK_OAUTH_START,
   AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
+  AUTH_ACTION_OAUTH_CREATE_ACCOUNT,
   AUTH_ACTION_CONFIRM_SECOND_FACTOR,
   AUTH_ACTION_CANCEL_SECOND_FACTOR,
   AUTH_ACTION_SECOND_FACTOR_SETUP_START,

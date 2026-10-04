@@ -70,6 +70,7 @@ use Hilos\Legal\LegalStandingResolver;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\LoginActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
+use Hilos\Auth\Library\DTO\OAuthCreateAccountActionDTO;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Library\DTO\OAuthStartActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyDiscoverableLoginOptionsActionDTO;
@@ -329,6 +330,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_OAUTH_START => OAuthStartActionDTO::class,
         HilosSignalConstants::HILOS_OAUTH_CALLBACK => OAuthCallbackActionDTO::class,
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH => LinkOAuthAfterReauthActionDTO::class,
+        HilosSignalConstants::HILOS_OAUTH_CREATE_ACCOUNT => OAuthCreateAccountActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS => PasskeyRegisterOptionsActionDTO::class,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM => PasskeyRegisterConfirmActionDTO::class,
         HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS => RegistrationPasskeyOptionsActionDTO::class,
@@ -421,6 +423,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS,
         HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
         HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY,
+        HilosSignalConstants::HILOS_OAUTH_CREATE_ACCOUNT,
         HilosSignalConstants::HILOS_REQUEST_PHONE_CODE,
         HilosSignalConstants::HILOS_CONFIRM_PHONE_CODE,
         HilosSignalConstants::HILOS_REQUEST_MAGIC_LINK,
@@ -1742,6 +1745,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $this->oauthCommands()->linkAfterReauth($acceptKey, $dto);
 
                 return null;
+
+            case HilosSignalConstants::HILOS_OAUTH_CREATE_ACCOUNT:
+                if (!$dto instanceof OAuthCreateAccountActionDTO) {
+                    throw new InvalidActionPayloadException($action, OAuthCreateAccountActionDTO::class, $dto);
+                }
+
+                return $this->oauthCommands()->createAccount($acceptKey, $dto);
 
             case HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS:
                 if (!$dto instanceof PasskeyRegisterOptionsActionDTO) {

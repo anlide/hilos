@@ -72,4 +72,5 @@ export {
   signInAs,
   waitForProviderWindow,
 } from './standOAuthUser.js'
+export { acceptTermsAsNewAccount, signUpAs } from './providerSignUp.js'
 export { downloadBytes } from './download.js'

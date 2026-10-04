@@ -1105,6 +1105,9 @@ final class HilosSignalConstants
     /** Client → server: redeem an OAuth link token after re-auth to link the account (authenticated, HIL-282). */
     public const string HILOS_LINK_OAUTH_AFTER_REAUTH = 'hilos_link_oauth_after_reauth';
 
+    /** Client → server: submit consent after a provider's first sign-in stopped before account creation (HIL-1235). */
+    public const string HILOS_OAUTH_CREATE_ACCOUNT = 'hilos_oauth_create_account';
+
     // ── Hilos sign-in surface: flow answers (server → client) ──
     /** Server → client: a parked sign-in surface moves because the identifier it waits on resolved (HIL-415). */
     public const string HILOS_AUTH_CONVERGE = 'hilos_auth_converge';

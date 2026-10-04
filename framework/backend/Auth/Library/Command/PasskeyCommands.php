@@ -315,7 +315,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * provider registration lands it (HIL-405), with the key written inside the same
      * transaction. The race between browsers proving one address is settled there, as for the
      * password. The road without a code lands through
-     * {@see AbstractLibraryCommands::landAccountWithoutAddress()}: the key and no address,
+     * {@see AbstractLibraryCommands::landAccountWithoutHold()}: the key and no address,
      * with the same generated name the options gave the authenticator.
      *
      * The key is stored under the handle the options were minted with - the challenge is the
@@ -410,7 +410,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
             );
         }
 
-        $this->landAccountWithoutAddress(
+        $this->landAccountWithoutHold(
             $acting,
             IdentityType::PASSKEY . ':' . $result->credentialId,
             $this->newAccountName($config, $claims->challenge),

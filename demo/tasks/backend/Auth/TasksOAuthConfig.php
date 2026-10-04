@@ -8,6 +8,7 @@ use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Constants\TasksEnvConstants;
 use Demo\Tasks\Hilos;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
+use Hilos\Auth\OAuth\OAuthAccountTokenSigner;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
@@ -37,6 +38,7 @@ final class TasksOAuthConfig
      * full re-authentication and redeem the link, short enough to bound replay.
      */
     private const int LINK_TOKEN_TTL_SECONDS = 600;
+    private const int ACCOUNT_TOKEN_TTL_SECONDS = 1800;
 
     /**
      * Builds the synchronous OAuth service the provider commands run on.
@@ -58,6 +60,8 @@ final class TasksOAuthConfig
             self::STATE_TTL_SECONDS,
             new OAuthLinkTokenSigner($appSecret),
             self::LINK_TOKEN_TTL_SECONDS,
+            new OAuthAccountTokenSigner($appSecret),
+            self::ACCOUNT_TOKEN_TTL_SECONDS,
         );
     }
 

@@ -64,6 +64,7 @@ import {
 import {
   OAUTH_AUTHORIZE_SIGNAL,
   OAUTH_REASON_ACCOUNT_BLOCKED,
+  OAUTH_REASON_CONSENT_REQUIRED,
   OAUTH_REASON_LINK_DUPLICATE,
   OAUTH_REASON_LINK_FAILED,
   OAUTH_REASON_LINK_OK,
@@ -114,6 +115,7 @@ export interface OAuthTripOutcome {
     | 'signed_in'
     | 'linked'
     | 'reauth_pending'
+    | 'consent_pending'
     | 'second_factor'
     | 'account_blocked'
     | 'canceled'
@@ -319,6 +321,8 @@ export interface HilosOAuthLogin {
   armOAuthLink(email: string, linkToken: string): void
   /** Read the armed pending link without consuming it, for the re-auth prompt. */
   peekOAuthLink(): PendingOAuthLink | null
+  /** Read the provider proof held for the first sign-in consent step. */
+  peekOAuthAccount(): PendingOAuthAccount | null
   /**
    * Register the replay that redeems an armed link when the session upgrades.
    *
@@ -602,6 +606,7 @@ export function startOAuthLogin(
   provider: string,
   signal?: AbortSignal,
 ): Promise<void> {
+  dropOAuthAccount()
   return startTrip(context, provider, 'login', AUTH_ACTION_OAUTH_START, signal)
 }
 
@@ -864,6 +869,7 @@ function runExchange(
         return
       }
       applyResult(
+        context,
         signal.data as ReturnType<typeof oauthResultSignalSchema.parse>,
       )
     },
@@ -1071,9 +1077,13 @@ function presentTripKey(
 /**
  * Turn an OAuth result signal into the trip's ending.
  *
+ * @param context The project auth context carrying the provider names.
  * @param data The result payload the daemon sent.
  */
-function applyResult(data: OAuthResultSignalData): void {
+function applyResult(
+  context: HilosAuthContext,
+  data: OAuthResultSignalData,
+): void {
   if (
     data.reason === OAUTH_REASON_REAUTH_REQUIRED &&
     data.email !== null &&
@@ -1085,6 +1095,21 @@ function applyResult(data: OAuthResultSignalData): void {
     // password. The token is redeemed by the replay once that re-auth lands.
     armOAuthLink(data.email, data.linkToken)
     finishTrip({ kind: 'reauth_pending', message: '' })
+
+    return
+  }
+  if (
+    data.reason === OAUTH_REASON_CONSENT_REQUIRED &&
+    data.accountToken !== null
+  ) {
+    pendingAccount = {
+      provider: data.provider,
+      providerName:
+        attempt?.providerName ?? providerNameOf(context, data.provider),
+      email: data.email,
+      accountToken: data.accountToken,
+    }
+    finishTrip({ kind: 'consent_pending', message: '' })
 
     return
   }
@@ -1253,6 +1278,31 @@ export interface PendingOAuthLink {
   linkToken: string
 }
 
+/** Provider facts held in this tab until its first sign-in consent is submitted (HIL-1235). */
+export interface PendingOAuthAccount {
+  provider: string
+  providerName: string
+  email: string | null
+  accountToken: string
+}
+
+let pendingAccount: PendingOAuthAccount | null = null
+
+/** @returns The first sign-in proof still held by this tab, or null. */
+export function pendingOAuthAccount(): PendingOAuthAccount | null {
+  return pendingAccount
+}
+
+/** Drop the first sign-in proof when its consent step is left. */
+export function dropOAuthAccount(): void {
+  pendingAccount = null
+}
+
+/** @returns The first sign-in proof still held by this tab, or null. */
+function peekOAuthAccount(): PendingOAuthAccount | null {
+  return pendingAccount
+}
+
 let pendingLink: PendingOAuthLink | null = null
 
 /**
@@ -1310,6 +1360,9 @@ function bindOAuthLinkReplay(
   userId: ReadonlySignal<number | null>,
 ): () => void {
   return subscribeSignal(userId, (id) => {
+    if (id !== null) {
+      dropOAuthAccount()
+    }
     if (id === null || pendingLink === null) {
       return
     }
@@ -1357,6 +1410,7 @@ export function createOAuthLogin(context: HilosAuthContext): HilosOAuthLogin {
     bindOAuthTrip: () => bindOAuthTrip(context),
     armOAuthLink,
     peekOAuthLink,
+    peekOAuthAccount,
     bindOAuthLinkReplay: (userId) => bindOAuthLinkReplay(context, userId),
   }
 }

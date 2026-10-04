@@ -24,6 +24,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  *   verified identity (HIL-282): the surface must re-authenticate the owner (with
  *   {@see email} pre-filled) and then redeem {@see linkToken} through the link
  *   action. No user was created and nobody was signed in.
+ * - {@see REASON_CONSENT_REQUIRED} — the provider proved a new person (HIL-1235):
+ *   {@see accountToken} holds the signed first sign-in capability until the tab
+ *   submits consent. {@see email} is the provider's address or null. No account exists yet.
  * - {@see REASON_LINK_OK} / {@see REASON_LINK_DUPLICATE} / {@see REASON_LINK_FAILED} —
  *   the terminal outcomes of a profile link-mode exchange (HIL-401), where the
  *   initiator is already signed in and the session is never touched, so every
@@ -41,6 +44,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
  * detail stays in the agent log, never on the wire. {@see linkToken} is a signed,
  * self-contained capability (not a secret about the matched account): it discloses
  * only that *some* account owns {@see email}, which the collision already implies.
+ * {@see accountToken} is a bearer capability for the first sign-in and is kept
+ * only for the tab that began the trip.
  */
 final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
@@ -49,6 +54,9 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
 
     /** Re-auth-to-link reason: the provider email collided with an existing verified identity (HIL-282). */
     public const string REASON_REAUTH_REQUIRED = 'reauth_required';
+
+    /** First sign-in paused before creating an account, awaiting consent (HIL-1235). */
+    public const string REASON_CONSENT_REQUIRED = 'consent_required';
 
     /** Profile link succeeded: the provider identity was bound to the initiating account (HIL-401). */
     public const string REASON_LINK_OK = 'oauth_link_ok';
@@ -69,9 +77,10 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
      * @param string $acceptKey Initiating connection accept key the signal targets
      * @param string $provider Provider key the login was attempted against
      * @param string $reason Stable, non-sensitive result reason code
-     * @param ?string $email Colliding email to pre-fill for re-auth, null for the arms that carry none
+     * @param ?string $email Provider email for re-auth or consent, null for the arms that carry none
      * @param ?string $linkToken Signed link-capability token to redeem after re-auth, null for the
      *                           arms that carry none
+     * @param ?string $accountToken Signed first sign-in capability, on consent_required alone
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -79,6 +88,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
         public readonly string $reason = self::REASON_LOGIN_FAILED,
         public readonly ?string $email = null,
         public readonly ?string $linkToken = null,
+        public readonly ?string $accountToken = null,
     ) {
     }
 
@@ -101,6 +111,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             'reason' => $this->reason,
             'email' => $this->email,
             'linkToken' => $this->linkToken,
+            'accountToken' => $this->accountToken,
         ];
     }
 
@@ -111,7 +122,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
      * default answers a call site that reports a plain failure, while
      * {@see toArray()} always writes the key, and a reason lost in transit read
      * as a failure would tell the surface an accomplished link went wrong.
-     * {@see email} and {@see linkToken} are the arm-specific fields the other
+     * {@see email}, {@see linkToken}, and {@see accountToken} are the arm-specific fields the other
      * reasons legitimately carry as null.
      *
      * @param array<string, mixed> $data Source data
@@ -126,6 +137,7 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
             reason: self::requireString($data, 'reason'),
             email: self::optionalString($data, 'email'),
             linkToken: self::optionalString($data, 'linkToken'),
+            accountToken: self::optionalString($data, 'accountToken'),
         );
     }
 }

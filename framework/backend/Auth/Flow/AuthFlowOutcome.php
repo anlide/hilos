@@ -39,6 +39,7 @@ final class AuthFlowOutcome extends ActionReplyDTO
 
     public const string CODE_CONSENT_REQUIRED = 'consent_required';
     public const string CODE_CONSENT_REVISED = 'consent_revised';
+    public const string CODE_OAUTH_SIGN_IN_EXPIRED = 'oauth_sign_in_expired';
     public const string CODE_TERMS_UNPUBLISHED = 'terms_unpublished';
 
     /**

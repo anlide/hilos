@@ -924,6 +924,12 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
   // number under an envelope said the wrong thing.
   const plaqueIcon =
     state.channelKey === null ? 'bi bi-envelope' : channelIcon(state.channelKey)
+  const pendingProviderConsent = oauth.peekOAuthAccount()
+  const providerConsent =
+    state.step === 'consent' &&
+    state.methodKey === pendingProviderConsent?.provider
+      ? pendingProviderConsent
+      : null
 
   const resendIn = formatCountdown(resendAvailableAt, now)
   const expiresIn = formatCountdown(expiresAt, now)
@@ -1323,6 +1329,11 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
         }
         if (outcome.kind === 'error') {
           auth.failMethod(outcome.message)
+
+          return
+        }
+        if (outcome.kind === 'consent_pending') {
+          auth.awaitProviderConsent()
 
           return
         }
@@ -1937,6 +1948,21 @@ export function HilosAuthSurface({ context }: HilosAuthSurfaceProps) {
                     />
                     <span className="small fw-semibold flex-grow-1 text-break">
                       {form.identifier}
+                    </span>
+                  </div>
+                )}
+                {!form.identifier && providerConsent && (
+                  <div
+                    className="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+                    data-id="auth-consent-provider"
+                    data-provider={providerConsent.provider}
+                  >
+                    <i
+                      className={`${methodIcon(providerConsent.provider)} text-body-secondary`}
+                      aria-hidden="true"
+                    />
+                    <span className="small fw-semibold flex-grow-1 text-break">
+                      {providerConsent.email ?? providerConsent.providerName}
                     </span>
                   </div>
                 )}

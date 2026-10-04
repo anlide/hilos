@@ -87,6 +87,7 @@ import {
   AUTH_ACTION_DETECT_IDENTIFIER,
   AUTH_ACTION_DISMISS_SESSION_ACK,
   AUTH_ACTION_LOGIN,
+  AUTH_ACTION_OAUTH_CREATE_ACCOUNT,
   AUTH_ACTION_REGISTER,
   AUTH_ACTION_REQUEST_MAGIC_LINK,
   AUTH_ACTION_REQUEST_PASSWORD_RESET,
@@ -98,7 +99,12 @@ import {
   AUTH_ACTION_SECOND_FACTOR_SETUP_FINISH,
   AUTH_ACTION_SECOND_FACTOR_SETUP_START,
 } from './authProtocol.js'
-import { describeOAuthError, startOAuthLogin } from './oauthLogin.js'
+import {
+  describeOAuthError,
+  dropOAuthAccount,
+  pendingOAuthAccount,
+  startOAuthLogin,
+} from './oauthLogin.js'
 import {
   runPasskeyDiscoverableLogin,
   runPasskeyNewAccount,
@@ -113,6 +119,9 @@ const CODE_SEND_CLOSING_STATES: readonly string[] = [
   CODE_SEND_STATE_FAILED,
   CODE_SEND_STATE_NOT_SENT,
 ]
+
+/** Backend refusal when a provider's first sign-in proof can no longer be used. */
+const OAUTH_SIGN_IN_EXPIRED_CODE = 'oauth_sign_in_expired'
 
 /** What the server answers an order for a phone code with: the ticket of the send it opened. */
 const codeSendOrderReplySchema = z.object({ ticket: z.string() })
@@ -338,6 +347,9 @@ function submitAuthFlow(
     case 'consent':
       // The terms screen is what sends: a registration dispatched NOTHING before
       // it, whichever way it is being made (HIL-417).
+      if (flow.methodKey?.startsWith(OAUTH_METHOD_PREFIX)) {
+        return createOAuthAccount(context, form)
+      }
       if (action === 'finish_with_passkey') {
         return runPasskeyNewAccount(context, null, form, signal)
       }
@@ -423,6 +435,45 @@ function submitAuthFlow(
       // a ceremony, which cancels rather than submits.
       return Promise.resolve({ ok: false })
   }
+}
+
+/**
+ * @param context The project auth context the action dispatches over.
+ * @param form Revisions accepted on the provider consent step.
+ * @returns The account creation outcome for the flow machine.
+ */
+async function createOAuthAccount(
+  context: HilosAuthContext,
+  form: AuthFlowForm,
+): Promise<AuthFlowSubmitOutcome> {
+  const pending = pendingOAuthAccount()
+  if (pending === null) {
+    return {
+      ok: false,
+      code: OAUTH_SIGN_IN_EXPIRED_CODE,
+      next: { step: 'identifier', intent: 'login' },
+      message: 'Your sign-in has expired. Continue with your provider again.',
+    }
+  }
+
+  const outcome = await dispatchFlow(
+    context,
+    AUTH_ACTION_OAUTH_CREATE_ACCOUNT,
+    {
+      accountToken: pending.accountToken,
+      acceptedRevisions: form.acceptedRevisions,
+    },
+  )
+  if (outcome.code === OAUTH_SIGN_IN_EXPIRED_CODE) {
+    dropOAuthAccount()
+
+    return {
+      ...outcome,
+      message: `Your sign-in with ${pending.providerName} has expired. Continue with ${pending.providerName} again.`,
+    }
+  }
+
+  return outcome
 }
 
 /**

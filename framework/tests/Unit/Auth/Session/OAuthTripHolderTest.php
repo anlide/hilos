@@ -126,6 +126,19 @@ final class OAuthTripHolderTest extends TestCase
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $this->trip()?->ending);
     }
 
+    public function testConsentEndingCarriesItsAccountTokenToTheLiveTab(): void
+    {
+        $agent = new OAuthTripHolderTestAgent();
+        $this->open($agent, self::LIVE_ACCEPT_KEY);
+
+        $this->end($agent, OAuthResultSignalData::REASON_CONSENT_REQUIRED, self::LIVE_ACCEPT_KEY, 'account.token');
+
+        $results = $this->drainResults();
+        $this->assertCount(1, $results);
+        $this->assertSame('account.token', $results[0]->accountToken);
+        $this->assertSame('account.token', $this->trip()?->accountToken);
+    }
+
     public function testTheFirstEndingWinsAndALateOneIsDropped(): void
     {
         $agent = new OAuthTripHolderTestAgent();
@@ -229,6 +242,19 @@ final class OAuthTripHolderTest extends TestCase
         $results = $this->drainResults();
         $this->assertCount(1, $results);
         $this->assertSame(self::LIVE_ACCEPT_KEY, $results[0]->acceptKey);
+    }
+
+    public function testConsentEndingIsDeliveredAfterTheTabReturnsByKey(): void
+    {
+        $agent = new OAuthTripHolderTestAgent();
+        $this->open($agent, self::DEAD_ACCEPT_KEY);
+        $this->end($agent, OAuthResultSignalData::REASON_CONSENT_REQUIRED, self::DEAD_ACCEPT_KEY, 'account.token');
+
+        $this->assertSame([], $this->drainResults());
+        $this->assertTrue($this->resume($agent, self::LIVE_ACCEPT_KEY)->known);
+        $results = $this->drainResults();
+        $this->assertCount(1, $results);
+        $this->assertSame('account.token', $results[0]->accountToken);
     }
 
     public function testAPresentedKeyMovesAnOutcomeStillComingToTheNewConnection(): void
@@ -437,11 +463,13 @@ final class OAuthTripHolderTest extends TestCase
      * @param OAuthTripHolderTestAgent $agent Holder under test
      * @param string $reason How it ended
      * @param string $acceptKey Connection the callback came from
+     * @param ?string $accountToken First sign-in capability on consent_required
      */
     private function end(
         OAuthTripHolderTestAgent $agent,
         string $reason,
         string $acceptKey = self::DEAD_ACCEPT_KEY,
+        ?string $accountToken = null,
     ): void {
         $agent->onSignalAgent(
             new AgentSignalData(data: new OAuthTripEndedSignalData(
@@ -449,6 +477,7 @@ final class OAuthTripHolderTest extends TestCase
                 $acceptKey,
                 self::PROVIDER,
                 $reason,
+                accountToken: $accountToken,
             )),
             'test',
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,

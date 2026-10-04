@@ -30,14 +30,21 @@ final class HilosOAuthTripActions extends RtActions
      * exactly one of them. A later one changes nothing and the caller logs it.
      *
      * @param string $ending An {@see OAuthResultSignalData} reason, or one of the two grant endings
-     * @param ?string $email Colliding address, on the re-authentication ending alone
+     * @param ?string $email Provider address on a re-authentication or consent ending
      * @param ?string $linkToken Signed link capability, on the re-authentication ending alone
+     * @param ?string $accountToken Signed first sign-in capability, on the consent-required ending alone
      * @param ?int $userId User a held grant signs in, on {@see StateHilosOAuthTrip::ENDING_GRANTED}
      * @return bool Whether this was the first ending
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
-    public function end(string $ending, ?string $email = null, ?string $linkToken = null, ?int $userId = null): bool
+    public function end(
+        string $ending,
+        ?string $email = null,
+        ?string $linkToken = null,
+        ?string $accountToken = null,
+        ?int $userId = null,
+    ): bool
     {
         if ($this->state->ending !== null) {
             return false;
@@ -47,6 +54,7 @@ final class HilosOAuthTripActions extends RtActions
             StateHilosOAuthTrip::ending => $ending,
             StateHilosOAuthTrip::email => $email,
             StateHilosOAuthTrip::linkToken => $linkToken,
+            StateHilosOAuthTrip::accountToken => $accountToken,
             StateHilosOAuthTrip::userId => $userId,
             StateHilosOAuthTrip::updatedAt => TimeHelper::nowMs(),
         ]);

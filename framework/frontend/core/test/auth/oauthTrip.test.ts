@@ -32,6 +32,7 @@ import {
   OAUTH_AUTHORIZE_SIGNAL,
   OAUTH_REASON_LINK_DUPLICATE,
   OAUTH_REASON_ACCOUNT_BLOCKED,
+  OAUTH_REASON_CONSENT_REQUIRED,
   OAUTH_REASON_LINK_OK,
   OAUTH_REASON_REAUTH_REQUIRED,
   OAUTH_RESULT_SIGNAL,
@@ -983,6 +984,51 @@ describe('the OAuth trip machine', () => {
       email: 'someone@example.test',
       linkToken: 'link-token-1',
     })
+  })
+
+  it('holds a first sign-in proof for consent and drops it on another trip', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+
+    world.emit(OAUTH_RESULT_SIGNAL, {
+      acceptKey: 'accept-1',
+      provider: GITHUB,
+      reason: OAUTH_REASON_CONSENT_REQUIRED,
+      email: 'new@example.test',
+      linkToken: null,
+      accountToken: 'account-token-1',
+    })
+
+    expect(world.outcomes).toEqual([{ kind: 'consent_pending', message: '' }])
+    expect(world.oauth.peekOAuthAccount()).toEqual({
+      provider: GITHUB,
+      providerName: 'GitHub',
+      email: 'new@example.test',
+      accountToken: 'account-token-1',
+    })
+
+    await world.oauth.startOAuthLogin(GITHUB)
+    expect(world.oauth.peekOAuthAccount()).toBeNull()
+  })
+
+  it('drops the pending first sign-in proof when the session signs in', async () => {
+    const world = tripWorld()
+    await reachExchange(world)
+    world.emit(OAUTH_RESULT_SIGNAL, {
+      acceptKey: 'accept-1',
+      provider: GITHUB,
+      reason: OAUTH_REASON_CONSENT_REQUIRED,
+      email: null,
+      linkToken: null,
+      accountToken: 'account-token-2',
+    })
+    const userId = createSignal<number | null>(null)
+    const stop = world.oauth.bindOAuthLinkReplay(userId)
+
+    expect(world.oauth.peekOAuthAccount()?.email).toBeNull()
+    userId.set(7)
+    expect(world.oauth.peekOAuthAccount()).toBeNull()
+    stop()
   })
 
   it('says nothing twice when a late arm fires after the trip ended', async () => {

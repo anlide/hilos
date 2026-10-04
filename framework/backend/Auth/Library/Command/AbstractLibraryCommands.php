@@ -496,10 +496,11 @@ abstract class AbstractLibraryCommands
     }
 
     /**
-     * Mints an account that holds no address at all, with the way in the caller writes (HIL-1104).
+     * Mints an account without landing an address hold, with the way in the caller writes (HIL-1104, HIL-1235).
      *
-     * The ending of the passkey door's road without a code. This road asks for no address;
-     * the caller supplies the generated account name and the identifier of its way in.
+     * The ending of the passkey door without a code or a provider's first sign-in.
+     * The passkey road has no address; the provider road may write its reported address
+     * through `$withAccount`, but neither road lands an address hold.
      *
      * So this is {@see landRegistration()} without the address. The mint and the way in go in ONE
      * transaction for the same reason the landing's do: an account without its key is an account
@@ -521,7 +522,7 @@ abstract class AbstractLibraryCommands
      * @throws HilosException When the account, project bookkeeping, or reservation write fails, or whatever
      *     `$withAccount` throws
      */
-    protected function landAccountWithoutAddress(
+    protected function landAccountWithoutHold(
         ActingSession $acting,
         string $identifier,
         string $displayName,
@@ -553,7 +554,7 @@ abstract class AbstractLibraryCommands
     /**
      * Ends the landing transaction after a failure, whichever failure it was.
      *
-     * Every way out of {@see landRegistration()} and {@see landAccountWithoutAddress()} that is
+     * Every way out of {@see landRegistration()} and {@see landAccountWithoutHold()} that is
      * not a commit goes through here, because the connection under it belongs to the WORKER and
      * outlives the action: the router answers the caller and keeps the worker running, so a
      * transaction left open

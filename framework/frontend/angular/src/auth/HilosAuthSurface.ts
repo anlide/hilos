@@ -104,6 +104,7 @@ import type {
   HilosAuthContext,
   HilosLegalDocumentKey,
   PendingAuthStep,
+  PendingOAuthAccount,
   ProjectSignal,
   ReadonlySignal,
   SecondFactorStepData,
@@ -984,6 +985,22 @@ const ERROR_DETAILS_TWIN_CLASS =
                   ></i>
                   <span class="small fw-semibold flex-grow-1 text-break">{{
                     form().identifier
+                  }}</span>
+                </div>
+              } @else if (providerConsent(); as account) {
+                <div
+                  class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+                  data-id="auth-consent-provider"
+                  [attr.data-provider]="account.provider"
+                >
+                  <i
+                    [class]="
+                      methodIcon(account.provider) + ' text-body-secondary'
+                    "
+                    aria-hidden="true"
+                  ></i>
+                  <span class="small fw-semibold flex-grow-1 text-break">{{
+                    account.email ?? account.providerName
                   }}</span>
                 </div>
               }
@@ -2086,6 +2103,16 @@ export class HilosAuthSurface {
 
   // The machine's signals mirrored into Angular signals by the effect below.
   protected readonly state = signal<AuthFlowState>(INITIAL_FLOW)
+  protected readonly providerConsent = computed<PendingOAuthAccount | null>(
+    () => {
+      const account = this.oauth().peekOAuthAccount()
+
+      return this.state().step === 'consent' &&
+        this.state().methodKey === account?.provider
+        ? account
+        : null
+    },
+  )
   protected readonly consent = signal<AuthConsentState>({
     status: 'loading',
     terms: null,
@@ -2795,6 +2822,11 @@ export class HilosAuthSurface {
         }
         if (outcome.kind === 'error') {
           auth.failMethod(outcome.message)
+
+          return
+        }
+        if (outcome.kind === 'consent_pending') {
+          auth.awaitProviderConsent()
 
           return
         }

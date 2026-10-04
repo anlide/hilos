@@ -102,11 +102,24 @@ addressless passkey door carry it too. An unknown address is checked before
 it is reserved or a code is minted; an existing account needs no consent to
 sign in. An installation with registration but no documents refuses registration.
 
+A provider's first sign-in (HIL-1235) stops before account creation and ends its
+OAuth trip with `consent_required` and an `accountToken`. This signed, session-bound
+token carries the provider, subject, optional address, and name for 30 minutes;
+the server stores no pending account. The tab submits
+`hilos_oauth_create_account` with `{accountToken, acceptedRevisions}`. The server
+checks the token, whether the provider is open, whether the provider identity
+already belongs to an account, whether its address became somebody else's, and
+then the current revisions, in that order. A known provider identity signs in
+without new acceptances. For a new identity, the user, OAuth and optional
+magic-link identities, and both acceptance records land in one transaction,
+without an address hold. A failed landing rolls them all back.
+
 | Refusal | Surface behavior |
 |---|---|
 | `consent_required` | Return to consent, without an error sentence |
 | `consent_revised` | Reload current documents, clear the checkbox and explain that the terms changed |
 | `terms_unpublished` | Explain that the project has not published terms; creating an account stays unavailable |
+| `oauth_sign_in_expired` | Return to the identifier field and ask for another provider sign-in; the frontend names that provider |
 
 The phone owner reports these same codes on the closing send-progress row and
 finishes the operation before minting or delivering a code.

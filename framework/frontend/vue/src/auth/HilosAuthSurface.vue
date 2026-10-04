@@ -772,6 +772,16 @@ const plaqueIcon = computed(() => {
   return key === null ? 'bi bi-envelope' : channelIcon(key)
 })
 
+/** The provider whose first sign-in this consent step will create. */
+const providerConsent = computed(() => {
+  const pending = oauth.peekOAuthAccount()
+
+  return state.value.step === 'consent' &&
+    state.value.methodKey === pending?.provider
+    ? pending
+    : null
+})
+
 const resendIn = computed(() =>
   formatCountdown(resendAvailableAt.value, now.value),
 )
@@ -1256,6 +1266,11 @@ function applyTripOutcome(outcome: OAuthTripOutcome): void {
   }
   if (outcome.kind === 'error') {
     auth.failMethod(outcome.message)
+
+    return
+  }
+  if (outcome.kind === 'consent_pending') {
+    auth.awaitProviderConsent()
 
     return
   }
@@ -1906,6 +1921,21 @@ onUnmounted(() => {
             />
             <span class="small fw-semibold flex-grow-1 text-break">{{
               form.identifier
+            }}</span>
+          </div>
+          <div
+            v-else-if="providerConsent"
+            class="d-flex align-items-center gap-2 mb-3 px-3 py-2 rounded bg-body-tertiary"
+            data-id="auth-consent-provider"
+            :data-provider="providerConsent.provider"
+          >
+            <i
+              :class="methodIcon(providerConsent.provider)"
+              class="text-body-secondary"
+              aria-hidden="true"
+            />
+            <span class="small fw-semibold flex-grow-1 text-break">{{
+              providerConsent.email ?? providerConsent.providerName
             }}</span>
           </div>
           <div

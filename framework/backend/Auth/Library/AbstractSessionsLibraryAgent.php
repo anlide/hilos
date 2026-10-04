@@ -6620,13 +6620,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     $frame->reason,
                     $frame->email,
                     $frame->linkToken,
+                    $frame->accountToken,
                 ),
             );
 
             return;
         }
 
-        if (!$trip->actions->end($frame->reason, $frame->email, $frame->linkToken)) {
+        if (!$trip->actions->end($frame->reason, $frame->email, $frame->linkToken, $frame->accountToken)) {
             $this->logAgentInfo("OAuth trip already ended ({$trip->ending}); late ending {$frame->reason} dropped");
 
             return;
@@ -6656,7 +6657,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sendToUser(
             HilosSignalConstants::HILOS_OAUTH_RESULT,
             $acceptKey,
-            new OAuthResultSignalData($acceptKey, $trip->provider, $reason, $trip->email, $trip->linkToken),
+            new OAuthResultSignalData(
+                $acceptKey,
+                $trip->provider,
+                $reason,
+                $trip->email,
+                $trip->linkToken,
+                $trip->accountToken,
+            ),
         );
     }
 

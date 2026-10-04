@@ -31,14 +31,16 @@ final class OAuthTripEndedSignalData extends BaseDTO implements SignalDataInterf
     public const string reason = 'reason';
     public const string email = 'email';
     public const string linkToken = 'linkToken';
+    public const string accountToken = 'accountToken';
 
     /**
      * @param string $tripKeyHash Hash of the key the tab minted
      * @param string $acceptKey Accept key of the connection that sent the callback
      * @param string $provider Provider key the sign-in went through
      * @param string $reason How it ended, one of the {@see OAuthResultSignalData} reasons
-     * @param ?string $email Colliding address to pre-fill, on the re-authentication ending alone
+     * @param ?string $email Provider address for re-authentication or consent
      * @param ?string $linkToken Signed link capability to redeem, on the re-authentication ending alone
+     * @param ?string $accountToken Signed first sign-in capability, on consent_required alone
      */
     public function __construct(
         public readonly string $tripKeyHash,
@@ -47,6 +49,7 @@ final class OAuthTripEndedSignalData extends BaseDTO implements SignalDataInterf
         public readonly string $reason,
         public readonly ?string $email = null,
         public readonly ?string $linkToken = null,
+        public readonly ?string $accountToken = null,
     ) {
     }
 
@@ -62,6 +65,7 @@ final class OAuthTripEndedSignalData extends BaseDTO implements SignalDataInterf
             self::reason => $this->reason,
             self::email => $this->email,
             self::linkToken => $this->linkToken,
+            self::accountToken => $this->accountToken,
         ];
     }
 
@@ -82,6 +86,7 @@ final class OAuthTripEndedSignalData extends BaseDTO implements SignalDataInterf
             reason: self::requireString($data, self::reason),
             email: self::optionalString($data, self::email),
             linkToken: self::optionalString($data, self::linkToken),
+            accountToken: self::optionalString($data, self::accountToken),
         );
     }
 }

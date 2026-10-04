@@ -68,6 +68,9 @@ export const OAUTH_REASON_SECOND_FACTOR = 'second_factor'
  */
 export const OAUTH_REASON_ACCOUNT_BLOCKED = 'account_blocked'
 
+/** First provider sign-in paused before account creation (PHP `OAuthResultSignalData::REASON_CONSENT_REQUIRED`, HIL-1235). */
+export const OAUTH_REASON_CONSENT_REQUIRED = 'consent_required'
+
 /**
  * The authorize-reply payload: the absolute provider URL to navigate to, and the
  * `tripId` the start named, echoed back so the reaction can tell an answer to the
@@ -97,6 +100,7 @@ export const oauthResultSignalSchema = z.object({
   reason: z.string(),
   email: z.string().nullable().default(null),
   linkToken: z.string().nullable().default(null),
+  accountToken: z.string().nullable().default(null),
 })
 
 /** Typed authorize-reply payload (the schema's output). */

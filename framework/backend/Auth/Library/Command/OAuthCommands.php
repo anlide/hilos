@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Flow\AuthFlowIntent;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\DTO\LinkOAuthAfterReauthActionDTO;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
+use Hilos\Auth\Library\DTO\OAuthCreateAccountActionDTO;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\Library\DTO\OAuthStartActionDTO;
 use Hilos\Auth\Method\AuthMethodGate;
@@ -19,6 +23,7 @@ use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Auth\OAuth\OAuthStateSigner;
+use Hilos\Auth\Registration\RegistrationConsent;
 use Hilos\Auth\StepUp\StepUpGate;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
@@ -33,6 +38,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -226,19 +232,14 @@ final class OAuthCommands extends AbstractLibraryCommands
      * match pauses for re-authentication instead of signing anybody in, so a shared email
      * cannot silently seize an account.
      *
-     * No match mints the account: a user under the name the exchange settled on, a verified
-     * oauth identity, whatever the project writes about a new member. When the provider
-     * reported an address it is ALSO kept as a verified magic-link identity (HIL-405) so the
-     * proven address resolves for the profile add-password flow; that write soft-degrades on
-     * a check-vs-insert race, because a completed sign-in must not abort over bookkeeping.
-     * A provider that withholds the address (HIL-573) skips both the collision check and
-     * that write.
+     * No match pauses for consent (HIL-1235), carrying a signed first sign-in token to the
+     * tab. The account and its identities are created only when the tab submits consent.
      *
      * @param OAuthLoginReadySignalData $data Provider facts the exchange settled on
-     * @throws EmptyValueException When the user create refuses an empty display name
      * @throws InvalidArgumentException When a frame this completion sends cannot be named or queued
-     * @throws ValidationException When the project has no OAuth wiring to mint a link token with
-     * @throws HilosException When the identity lookup, the account, or the project's bookkeeping fails
+     * @throws ValidationException When the project has no OAuth wiring to mint a token with
+     * @throws HilosException When the identity lookup fails
+     * @throws JsonException When provider facts cannot be encoded in the consent token
      */
     public function completeLogin(OAuthLoginReadySignalData $data): void
     {
@@ -261,20 +262,110 @@ final class OAuthCommands extends AbstractLibraryCommands
             return;
         }
 
-        $userId = $this->library->createUser($data->displayName);
-        Hilos::$db->identities->createOauthIdentity($userId, $data->provider, $data->subject);
-        if ($email !== null) {
-            try {
-                Hilos::$db->identities->createMagicLinkIdentity($userId, $email);
-            } catch (DuplicateValueException $e) {
-                Logger::logAgentWarning(
-                    $this->library->getId(),
-                    "OAuth email identity skipped for {$data->acceptKey} (race on {$email}): " . $e->getMessage(),
-                );
-            }
+        $this->pauseForConsent($data, $email);
+    }
+
+    /**
+     * Completes a first provider sign-in only after the current legal revisions are accepted.
+     *
+     * @param string $acceptKey Connection submitting consent
+     * @param OAuthCreateAccountActionDTO $dto Signed provider proof and accepted revisions
+     * @return ?AuthFlowOutcome Refusal, or null when the holder answers the sign-in
+     * @throws HilosException When the identity, account, or acceptance write fails
+     */
+    public function createAccount(string $acceptKey, OAuthCreateAccountActionDTO $dto): ?AuthFlowOutcome
+    {
+        $acting = $this->acting($acceptKey);
+        $pass = $this->oauthService()->verifyAccountToken($dto->accountToken, $acting->sessionToken);
+        if ($pass === null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_OAUTH_SIGN_IN_EXPIRED,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+            );
         }
-        $this->library->afterUserCreated($userId, $data->provider . ':' . $data->subject);
-        $this->library->grantSession($acting, $userId, tripKeyHash: $data->tripKeyHash);
+
+        AuthMethodGate::assertProviderOpen($pass->provider);
+        $identifier = $pass->provider . ':' . $pass->subject;
+        $identity = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, $identifier);
+        if ($identity !== null && $identity->userId !== null) {
+            $this->library->grantSession($acting, $identity->userId);
+
+            return null;
+        }
+
+        if ($pass->email !== null && Hilos::$db->identities->findUserIdByVerifiedEmail($pass->email) !== null) {
+            return AuthFlowOutcome::rejectTo(
+                AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                AuthFlowStep::IDENTIFIER,
+                AuthFlowIntent::LOGIN,
+                AuthMessages::IDENTIFIER_TAKEN,
+            );
+        }
+
+        $refusal = RegistrationConsent::refusal($dto->acceptedRevisions);
+        if ($refusal !== null) {
+            return $refusal;
+        }
+
+        try {
+            $this->landAccountWithoutHold(
+                $acting,
+                $identifier,
+                $pass->displayName,
+                function (int $userId) use ($pass, $acceptKey): void {
+                    Hilos::$db->identities->createOauthIdentity($userId, $pass->provider, $pass->subject);
+                    if ($pass->email !== null) {
+                        try {
+                            Hilos::$db->identities->createMagicLinkIdentity($userId, $pass->email);
+                        } catch (DuplicateValueException $e) {
+                            Logger::logAgentWarning(
+                                $this->library->getId(),
+                                "OAuth email identity skipped for {$acceptKey} (race on {$pass->email}): "
+                                    . $e->getMessage(),
+                            );
+                        }
+                    }
+                },
+                $dto->acceptedRevisions,
+            );
+        } catch (DuplicateValueException $e) {
+            $winner = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, $identifier);
+            if ($winner === null || $winner->userId === null) {
+                throw $e;
+            }
+            $this->library->grantSession($acting, $winner->userId);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param OAuthLoginReadySignalData $data Provider facts the exchange settled on
+     * @param ?string $email Provider-reported address
+     * @throws JsonException When provider facts cannot be encoded in the consent token
+     */
+    private function pauseForConsent(OAuthLoginReadySignalData $data, ?string $email): void
+    {
+        $token = $this->oauthService()->issueAccountToken(
+            $data->provider,
+            $data->subject,
+            $email,
+            $data->displayName,
+            $data->sessionToken,
+        );
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED,
+            new OAuthTripEndedSignalData(
+                $data->tripKeyHash,
+                $data->acceptKey,
+                $data->provider,
+                OAuthResultSignalData::REASON_CONSENT_REQUIRED,
+                $email,
+                null,
+                $token,
+            ),
+        );
     }
 
     /**

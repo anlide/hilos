@@ -6,6 +6,7 @@ namespace Hilos\Auth\OAuth;
 
 use Hilos\Auth\OAuth\Exception\OAuthStateException;
 use Hilos\Auth\OAuth\Exception\OAuthUnknownProviderException;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -20,10 +21,10 @@ use Random\RandomException;
  * facade is what lets the callback action stay synchronous while the network
  * round-trips run off the master.
  *
- * It also mints and verifies the stateless account-link token (HIL-282): the
- * email-collision branch issues one ({@see issueLinkToken()}) instead of creating
- * a user, and the re-auth link action verifies it ({@see verifyLinkToken()})
- * before binding the identity. Both delegate to the pure {@see OAuthLinkTokenSigner}.
+ * It also mints and verifies two stateless capabilities. The email-collision
+ * branch issues an account-link token (HIL-282) for re-authentication; a new
+ * provider account issues a session-bound first sign-in token (HIL-1235) for
+ * consent before account creation. Their different domain tags prevent reuse.
  */
 final class OAuthService
 {
@@ -33,6 +34,8 @@ final class OAuthService
      * @param int $stateTtlSeconds Lifetime of a minted state token in seconds
      * @param OAuthLinkTokenSigner $linkTokenSigner Signer for the stateless account-link token (HIL-282)
      * @param int $linkTokenTtlSeconds Lifetime of a minted link token in seconds
+     * @param OAuthAccountTokenSigner $accountTokenSigner Signer for the first sign-in token
+     * @param int $accountTokenTtlSeconds Lifetime of a first sign-in token in seconds
      */
     public function __construct(
         private readonly OAuthProviderRegistry $providers,
@@ -40,6 +43,8 @@ final class OAuthService
         private readonly int $stateTtlSeconds,
         private readonly OAuthLinkTokenSigner $linkTokenSigner,
         private readonly int $linkTokenTtlSeconds,
+        private readonly OAuthAccountTokenSigner $accountTokenSigner,
+        private readonly int $accountTokenTtlSeconds,
     ) {
     }
 
@@ -105,6 +110,42 @@ final class OAuthService
     public function verifyLinkToken(string $token): ?OAuthLinkTokenData
     {
         return $this->linkTokenSigner->verify($token);
+    }
+
+    /**
+     * @param string $providerKey Provider key
+     * @param string $subject Provider-immutable account id
+     * @param ?string $email Provider-reported address
+     * @param string $displayName Provider-reported name
+     * @param string $sessionToken Browser session token
+     * @return string Signed first sign-in token
+     * @throws JsonException When provider facts cannot be encoded
+     */
+    public function issueAccountToken(
+        string $providerKey,
+        string $subject,
+        ?string $email,
+        string $displayName,
+        string $sessionToken,
+    ): string {
+        return $this->accountTokenSigner->issue(
+            $providerKey,
+            $subject,
+            $email,
+            $displayName,
+            $sessionToken,
+            $this->accountTokenTtlSeconds,
+        );
+    }
+
+    /**
+     * @param string $token Signed first sign-in token
+     * @param string $sessionToken Browser session token
+     * @return ?OAuthAccountTokenData Provider facts, or null when the token is invalid
+     */
+    public function verifyAccountToken(string $token, string $sessionToken): ?OAuthAccountTokenData
+    {
+        return $this->accountTokenSigner->verify($token, $sessionToken);
     }
 
     /**

@@ -37,6 +37,7 @@ final class OAuthResultSignalDataTest extends TestCase
                 'reason' => 'oauth_login_failed',
                 'email' => null,
                 'linkToken' => null,
+                'accountToken' => null,
             ],
             $data->toArray(),
         );
@@ -59,6 +60,7 @@ final class OAuthResultSignalDataTest extends TestCase
                 'reason' => 'reauth_required',
                 'email' => 'user@example.com',
                 'linkToken' => 'link.token',
+                'accountToken' => null,
             ],
             $data->toArray(),
         );
@@ -70,6 +72,21 @@ final class OAuthResultSignalDataTest extends TestCase
         $array = new OAuthResultSignalData('accept-2', 'oauth:stub')->toArray();
 
         $this->assertSame($array, OAuthResultSignalData::fromArray($array)->toArray());
+    }
+
+    public function testConsentRequiredCarriesTheAccountToken(): void
+    {
+        $data = new OAuthResultSignalData(
+            'accept-4',
+            'oauth:github',
+            OAuthResultSignalData::REASON_CONSENT_REQUIRED,
+            'user@example.test',
+            null,
+            'signed.account.token',
+        );
+
+        self::assertSame('signed.account.token', $data->toArray()['accountToken']);
+        self::assertSame($data->toArray(), OAuthResultSignalData::fromArray($data->toArray())->toArray());
     }
 
     public function testFromArrayRefusesAPayloadCarryingNoReason(): void

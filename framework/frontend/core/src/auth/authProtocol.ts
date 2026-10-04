@@ -103,6 +103,9 @@ export const AUTH_ACTION_LINK_OAUTH_START = 'hilos_link_oauth_start'
 export const AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH =
   'hilos_link_oauth_after_reauth'
 
+/** Client→server: create a provider account after consent (PHP `HilosSignalConstants::HILOS_OAUTH_CREATE_ACCOUNT`, HIL-1235). */
+export const AUTH_ACTION_OAUTH_CREATE_ACCOUNT = 'hilos_oauth_create_account'
+
 /** Client→server: the code of a sign-in held on its second factor (PHP `HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR`). */
 export const AUTH_ACTION_CONFIRM_SECOND_FACTOR = 'hilos_confirm_second_factor'
 

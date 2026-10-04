@@ -7,7 +7,7 @@ import {
   readPasswordResetCode,
   readRegisterCode,
 } from '../helpers/mail'
-import { signInAs } from '../../../../../framework/frontend/e2e/index.js'
+import { signUpAs } from '../../../../../framework/frontend/e2e/index.js'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 import {
   uniquePhone,
@@ -460,7 +460,7 @@ test('signs in through every OAuth provider the demo offers', async ({
     const account = await declareOAuthAccount('github', {
       email: uniqueEmail(),
     })
-    const signingIn = signInAs(page, account)
+    const signingIn = signUpAs(page, account)
     await page.getByTestId('auth-icon-oauth-github').click()
     await signingIn
 
@@ -482,7 +482,7 @@ test('signs in through every OAuth provider the demo offers', async ({
     const account = await declareOAuthAccount('google', {
       email: uniqueEmail(),
     })
-    const signingIn = signInAs(page, account)
+    const signingIn = signUpAs(page, account)
     await page.getByTestId('auth-icon-oauth-google').click()
     await signingIn
 

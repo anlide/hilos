@@ -6,9 +6,13 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Database\Actions\Item\UserActions;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\OAuthUserInfo;
+use Hilos\Auth\Library\DTO\OAuthCreateAccountActionDTO;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -16,12 +20,15 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\HilosException;
+use Hilos\Legal\LegalConsentProjector;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use ReflectionMethod;
 
@@ -32,8 +39,8 @@ use ReflectionMethod;
  * Two surfaces: the framework write primitive
  * {@see Identities::createMagicLinkIdentity()}
  * (verified, lowercased, secret-less, duplicate-guarded), and the demo call site
- * {@see OAuthAgent::completeOAuthLogin()} which, on a new-user sign-up with a
- * provider email, persists that email as a verified `magic_link` identity
+ * {@see OAuthAgent::completeOAuthLogin()} which, after a new provider user's consent,
+ * persists their email as a verified `magic_link` identity
  * alongside the `oauth` identity so {@see findVerifiedEmailByUser()} resolves it.
  * A withheld email persists the oauth identity only; a colliding verified email
  * is diverted to the re-auth path before the create-path runs, so no email
@@ -48,6 +55,13 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
     private const string TEST_AGENT_ID = 'test-agent';
     private const string PROVIDER = 'oauth:github';
     private const string SECOND_PROVIDER = 'oauth:google';
+
+    /** Registers the connection writer the consent action needs in this test process. */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+    }
 
     /**
      * The primitive writes a verified, secret-less identity with a lowercased identifier.
@@ -295,7 +309,7 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
     }
 
     /**
-     * Drives a finished exchange through both halves of the login it ends in.
+     * Drives a finished exchange through the consent pause and account creation.
      *
      * The two halves are two agents since HIL-622: the OAuth agent names the account the
      * provider's way and hands the resolved subject over, the users library decides which
@@ -317,10 +331,45 @@ final class OAuthEmailIdentityTest extends IntegrationTestCase
         ?string $email,
         ?string $name,
     ): void {
-        $op = OAuthPendingLogin::create('ak-' . $subject, 'session-' . $subject, $provider, 'code', 'trip-' . $subject);
+        $acceptKey = 'ak-' . $subject;
+        $sessionToken = substr(hash('sha256', $subject), 0, 32);
+        $session = Hilos::$db->sessions->actions->createAnonymous($sessionToken);
+        Hilos::$rt->connections->actions->register($acceptKey, null, $sessionToken, (int)$session->id);
+        $usersBeforeReturn = count(Hilos::$db->users->listAll());
+        $op = OAuthPendingLogin::create($acceptKey, $sessionToken, $provider, 'code', 'trip-' . $subject);
         $method = new ReflectionMethod(OAuthAgent::class, 'completeOAuthLogin');
         $method->invoke($agent, $op, new OAuthUserInfo($subject, $email, $name));
         $this->resolveHandedOverLogin();
+
+        $rest = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            if ($signal->data instanceof AgentSignalData
+                && $signal->data->data instanceof OAuthTripEndedSignalData
+                && $signal->data->data->reason === OAuthResultSignalData::REASON_CONSENT_REQUIRED
+            ) {
+                $this->assertNotNull($signal->data->data->accountToken);
+                $this->assertCount($usersBeforeReturn, Hilos::$db->users->listAll());
+                $this->assertNull(Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, $provider . ':' . $subject));
+                $this->usersLibrary()->onAgentAction(
+                    $acceptKey,
+                    HilosSignalConstants::HILOS_OAUTH_CREATE_ACCOUNT,
+                    new OAuthCreateAccountActionDTO(
+                        $signal->data->data->accountToken,
+                        LegalConsentProjector::acceptance(),
+                    ),
+                );
+                $oauth = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, $provider . ':' . $subject);
+                $this->assertNotNull($oauth);
+                $this->assertNotNull($oauth->userId);
+                $this->assertCount(2, Hilos::$db->legalAcceptances->ofUser($oauth->userId));
+
+                continue;
+            }
+            $rest[] = $signal;
+        }
+        foreach ($rest as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
     }
 
     /**

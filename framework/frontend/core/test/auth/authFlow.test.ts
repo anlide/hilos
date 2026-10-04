@@ -230,6 +230,44 @@ describe('oauthFlowMethod — the shape every provider button shares', () => {
   })
 })
 
+describe('provider first sign-in consent (HIL-1235)', () => {
+  it('enters registration consent from the OAuth wait and submits through onSubmit', async () => {
+    const onSubmit = vi.fn(async () => ({ ok: true }))
+    const onMethodAction = vi.fn(async () => ({ ok: true }))
+    const flow = setup({ onSubmit, onMethodAction })
+    flow.setField('identifier', 'old@example.test')
+    flow.applyExternal({
+      step: 'external',
+      intent: 'login',
+      methodKey: 'oauth:github',
+    })
+
+    flow.awaitProviderConsent()
+    await Promise.resolve()
+
+    expect(flow.flow.get()).toMatchObject({
+      step: 'consent',
+      intent: 'register',
+      methodKey: 'oauth:github',
+      identifierKind: 'unknown',
+    })
+    expect(flow.form.get().identifier).toBe('')
+    expect(flow.form.get().acceptedRevisions).toEqual({
+      terms: 'terms-v1',
+      privacy: 'privacy-v1',
+    })
+    flow.setField('consentAccepted', true)
+    await flow.submit()
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      'submit',
+      flow.flow.get(),
+      flow.form.get(),
+    )
+    expect(onMethodAction).not.toHaveBeenCalled()
+  })
+})
+
 describe('visibleMethodIcons — the matrix on the four input states', () => {
   it('empty field: whenEmpty icons only (both providers, passkey); magic link hidden', () => {
     expect(

@@ -8,6 +8,7 @@ use Demo\Chat\Agents\OAuthAgent;
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
 use Hilos\Auth\OAuth\OAuthConfigResolver;
+use Hilos\Auth\OAuth\OAuthAccountTokenSigner;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthService;
@@ -37,6 +38,7 @@ final class ChatOAuthConfig
      * full re-authentication and redeem the link, short enough to bound replay.
      */
     private const int LINK_TOKEN_TTL_SECONDS = 600;
+    private const int ACCOUNT_TOKEN_TTL_SECONDS = 1800;
 
     /**
      * Builds the synchronous OAuth service for the page actions and the async agent.
@@ -58,6 +60,8 @@ final class ChatOAuthConfig
             self::STATE_TTL_SECONDS,
             new OAuthLinkTokenSigner($appSecret),
             self::LINK_TOKEN_TTL_SECONDS,
+            new OAuthAccountTokenSigner($appSecret),
+            self::ACCOUNT_TOKEN_TTL_SECONDS,
         );
     }
 

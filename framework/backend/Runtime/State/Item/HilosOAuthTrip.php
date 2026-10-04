@@ -69,6 +69,7 @@ final class HilosOAuthTrip extends RtState
     public const string ending = 'ending';
     public const string email = 'email';
     public const string linkToken = 'linkToken';
+    public const string accountToken = 'accountToken';
     public const string userId = 'userId';
     public const string sessionId = 'sessionId';
     public const string updatedAt = 'updatedAt';
@@ -99,11 +100,14 @@ final class HilosOAuthTrip extends RtState
      */
     private(set) ?string $ending = null;
 
-    /** Colliding address to pre-fill for the re-authentication, on that ending alone. */
+    /** Provider address on a re-authentication or consent ending, null when withheld. */
     private(set) ?string $email = null;
 
     /** Signed link capability to redeem after the re-authentication, on that ending alone. */
     private(set) ?string $linkToken = null;
+
+    /** Signed first sign-in capability, on the consent-required ending alone. */
+    private(set) ?string $accountToken = null;
 
     /** User the provider's answer resolved to, on {@see self::ENDING_GRANTED}. */
     private(set) ?int $userId = null;
@@ -161,6 +165,7 @@ final class HilosOAuthTrip extends RtState
         $instance->ending = self::optionalString($row, self::ending);
         $instance->email = self::optionalString($row, self::email);
         $instance->linkToken = self::optionalString($row, self::linkToken);
+        $instance->accountToken = self::optionalString($row, self::accountToken);
         $instance->userId = self::optionalInt($row, self::userId);
         $instance->sessionId = self::optionalInt($row, self::sessionId);
         $instance->updatedAt = self::requireInt($row, self::updatedAt);
@@ -214,6 +219,7 @@ final class HilosOAuthTrip extends RtState
         $this->ending = self::patchOptionalString($diff, self::ending, $this->ending);
         $this->email = self::patchOptionalString($diff, self::email, $this->email);
         $this->linkToken = self::patchOptionalString($diff, self::linkToken, $this->linkToken);
+        $this->accountToken = self::patchOptionalString($diff, self::accountToken, $this->accountToken);
         $this->userId = self::patchOptionalInt($diff, self::userId, $this->userId);
         $this->sessionId = self::patchOptionalInt($diff, self::sessionId, $this->sessionId);
         $this->updatedAt = self::patchInt($diff, self::updatedAt, $this->updatedAt);
@@ -249,6 +255,7 @@ final class HilosOAuthTrip extends RtState
             self::ending => $this->ending,
             self::email => $this->email,
             self::linkToken => $this->linkToken,
+            self::accountToken => $this->accountToken,
             self::userId => $this->userId,
             self::sessionId => $this->sessionId,
             self::updatedAt => $this->updatedAt,

@@ -40,6 +40,7 @@ import {
   DEFAULT_DETECT_DEBOUNCE_MS,
   MAGIC_LINK_METHOD_KEY,
   OAUTH_RESULT_SIGNAL,
+  OAUTH_REASON_CONSENT_REQUIRED,
   OAUTH_RETURN_MESSAGE_TYPE,
   PASSWORD_METHOD_KEY,
   ScopeManager,
@@ -1894,6 +1895,38 @@ describe('HilosAuthSurface', () => {
       OAUTH_FAILED_MESSAGE,
     )
   })
+
+  it.each([
+    ['new@example.test', 'new@example.test'],
+    [null, 'GitHub'],
+  ])(
+    'shows provider consent after a first sign-in with email %s',
+    async (email, label) => {
+      const world = oauthTripWorld()
+      const wrapper = mount(HilosAuthSurface, {
+        props: { context: world.context },
+      })
+      await wrapper.find('[data-id="auth-icon-oauth-github"]').trigger('click')
+      await flush(wrapper)
+
+      world.courier('')
+      world.emit(OAUTH_RESULT_SIGNAL, {
+        acceptKey: 'accept-1',
+        provider: GITHUB_PROVIDER,
+        reason: OAUTH_REASON_CONSENT_REQUIRED,
+        email,
+        linkToken: null,
+        accountToken: 'signed-account-token',
+      })
+      await flush(wrapper)
+
+      const plaque = wrapper.get('[data-id="auth-consent-provider"]')
+      expect(plaque.attributes('data-provider')).toBe(GITHUB_PROVIDER)
+      expect(plaque.text()).toBe(label)
+      await wrapper.get('[data-id="auth-restart"]').trigger('click')
+      expect(createOAuthLogin(world.context).peekOAuthAccount()).toBeNull()
+    },
+  )
 
   it('returns quietly when the person ends the trip', async () => {
     const world = oauthTripWorld()
