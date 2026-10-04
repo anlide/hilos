@@ -3029,23 +3029,18 @@ abstract class DaemonManager extends BaseManager implements
      * which is the very thing the map is here to prevent.
      *
      * What "the owner" covers is answered on both axes of the right. The whole owner offers the
-     * collection with no scope, and the frame is the collection. An owner of named rows offers
-     * those rows under their own scope: the collection around them is other nodes' to write, and
-     * claiming it would delete their rows on the receiver. An owner short of an OPERATION offers
-     * nothing at all, because even about the rows it writes, its copy may be missing what the
-     * co-owner wrote (that case belongs to HIL-696). And an owner of named rows holding none of
-     * them yet offers nothing either: a scope covering no row is an empty scope, which on the
-     * wire is the same frame as a claim on the whole collection ({@see applyRemoteRtSnapshot()}).
+     * collection with no scope. An owner of named rows sends its whole claim as the scope, even
+     * when it holds no row of it. An owner short of an OPERATION offers nothing at all, because
+     * its copy may be missing what its co-owner wrote (HIL-696).
      *
      * Without the scoped half of this, a fleet of one-row owners never converged: nothing was
      * ever handed over, delivery is best-effort with no retries (HIL-183), and so everything
      * written during a broken link was lost for good.
      *
-     * An owner of a set offers the rows of its set it holds right now, under their own scope
-     * (HIL-1116). The frame is the one named rows travel in, and the receiver does not tell the
-     * two apart. A row of the set deleted while the link was broken is not swept off the
-     * neighbour: the scope is built from the rows being sent, and sweeping by the set instead
-     * would erase a live row a co-owner with a receipt wrote, or one written a moment ago.
+     * An owner of a set sends its set keys as a separate scope (HIL-1116), even when it holds no
+     * rows. The receiver sweeps only missing rows it received from this sender. The scope of a
+     * partial owner is nonempty by construction, so an empty carried row map cannot be mistaken
+     * for a whole-collection frame.
      *
      * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
      * what this node hands over.
@@ -3074,26 +3069,13 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             $rows = array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys));
-            // Nothing to show for the claim, so nothing is said about it. An empty scope reads as
-            // the COLLECTION on the receiver ({@see applyRemoteRtSnapshot()}), which makes a frame
-            // with no rows under it not "empty" but ERASING: it would wipe the neighbour's whole
-            // copy, other nodes' rows and all.
-            if ($rows === []) {
-                continue;
-            }
-
-            // The scope is what this frame ANSWERS FOR, and the receiver deletes every key in it
-            // that the frame does not carry ({@see RtSnapshot::replaceScope()}). So it is built
-            // from the rows actually being sent, not from what this node claims: a claim is only
-            // the intent to write a row, and between the claim and the first write there is a
-            // window in which the row does not exist here yet. Answering for it in that window
-            // tells the receiver to delete a row that is alive - and it never comes back, because
-            // every write after the first is an UPDATE and a node without the row drops it.
+            // A declared claim speaks for the missing row too. The receiver only removes rows
+            // that arrived from this node, so a row still held from another owner survives.
             $mesh->sendRtSnapshotToNode(
                 $nodeId,
                 $collectionKey,
                 $rows,
-                array_map(strval(...), array_keys($rows)),
+                $scopeKeys,
             );
         }
 
@@ -3103,18 +3085,13 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             $rows = RtSnapshot::setRows($collectionKey, $setKeys);
-            // A set holding no row here yet is said nothing about, for the reason above: an
-            // empty scope would erase the neighbour's whole copy, the other nodes' sets with it.
-            if ($rows === []) {
-                continue;
-            }
-
-            // Scoped by the rows being sent and not by the set, for the reason the named rows are.
+            // The set keys delimit the claim even when this node holds no row under it.
             $mesh->sendRtSnapshotToNode(
                 $nodeId,
                 $collectionKey,
                 $rows,
-                array_map(strval(...), array_keys($rows)),
+                [],
+                $setKeys,
             );
         }
     }
@@ -3267,8 +3244,8 @@ abstract class DaemonManager extends BaseManager implements
         // And the arriving frame IS freshness, exactly as a snapshot is, so the mark comes off
         // whichever branch runs. Without that, a row whose owner was re-placed onto another node
         // would stay frozen for good: its new owner's deltas arrive and keep it current, while
-        // the only two things that lift the mark are a handshake with the node that is gone and
-        // a scoped hand-over. A deleted row is cleared for the plainer reason - what no longer
+        // a hand-over from the previous owner may never name it again. A deleted row is cleared
+        // for the plainer reason - what no longer
         // exists cannot be out of date, and nothing would ever reach the mark again.
         if ($stateId !== null) {
             $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
@@ -3391,32 +3368,21 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.
      *
-     * Implements {@see RtSyncSink}. Replacement, not merge: the owner's copy is the whole truth
-     * about what it sent, so what this node held there and the snapshot does not carry is gone.
-     * The workers are told the same thing the only way the wire says it — every row that goes is
-     * deleted, then every row the owner sent is created — because a create alone leaves a row a
-     * worker already has untouched, and this node's copy would then agree with the owner while
-     * its workers did not.
+     * Implements {@see RtSyncSink}. A whole-collection frame replaces the copy. A scoped frame
+     * replaces carried rows and sweeps missing rows of this sender in its named rows or sets.
+     * The workers delete affected old rows and create carried rows, so a changed row is replaced
+     * there as well as in the master's copy.
      *
-     * The scope says what "what it sent" covers. Empty, it is the collection, and this is the
-     * hand-over as it has always been. Named, the frame speaks for those rows only: they are
-     * swept and rewritten, and every other row of the collection — written by other nodes of a
-     * fleet, or by this one — is left untouched, workers and all. Replacing the collection on a
-     * scoped frame would delete exactly the rows the sender never claimed. The reverse of that
-     * reading is the addressed sender's contract: an owner of named rows sends no frame at all
-     * while it holds none of them ({@see sendRtSnapshotsToNode()}), because the two are one frame
-     * on the wire — a scope this node cannot tell from "nothing to say" is read here as the
-     * collection.
+     * Rows from another origin, unknown origins, and local claims survive a scoped frame even
+     * when absent from it. An empty row map under a nonempty scope is a valid hand-over that may
+     * sweep every missing row this sender wrote there.
      *
      * A row carried outside the declared scope is dropped before anything is written, here and
-     * not only in the runtime: the two-owner question below is asked of the SCOPE, so a row
-     * reaching past it would be one nobody judged - and this node's workers would be told to
-     * create it even where the row belongs to this node itself.
+     * not only in the runtime, so the workers are not told to create it either.
      *
      * A snapshot for what this node owns is refused exactly as a delta is, and for the same
-     * reason: two owners is the defect, not an input. Refused by the ROW where the frame names
-     * rows (HIL-589) — the question is whether this node owns any row the frame speaks for, so a
-     * fleet member accepts its neighbours' rows and still refuses a frame reaching for its own.
+     * reason: two owners is the defect, not an input. Refused by the rows the frame carries,
+     * rather than by a claim that may be moving between nodes (HIL-589).
      * The exemption a delta of the co-written collection gets ({@see isMasterCoWritten()}) has no
      * place here: a snapshot is only ever offered by the node whose own agent owns what it sends
      * ({@see sendRtSnapshotsToNode()}), so one arriving for what this node's agent owns is that
@@ -3425,7 +3391,8 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $originNodeId Id of the node that owns the collection
      * @param string $collectionKey RT collection being replaced
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @param list<string> $scopeKeys Rows the snapshot speaks for; empty for the whole collection
+     * @param list<string> $scopeKeys Named rows the snapshot speaks for; empty for other widths
+     * @param list<string> $scopeSetKeys Sets the snapshot speaks for; empty for other widths
      * @throws HilosException Whatever the applied write of the snapshot raises
      */
     public function applyRemoteRtSnapshot(
@@ -3433,8 +3400,26 @@ abstract class DaemonManager extends BaseManager implements
         string $collectionKey,
         array $rows,
         array $scopeKeys = [],
+        array $scopeSetKeys = [],
     ): void {
-        if ($this->ownsAnyOfSnapshotScope($collectionKey, $scopeKeys)) {
+        $wholeCollection = $scopeKeys === [] && $scopeSetKeys === [];
+        if (!$wholeCollection) {
+            if ($scopeKeys !== []) {
+                $rows = array_intersect_key($rows, array_flip($scopeKeys));
+            } else {
+                $rows = array_filter(
+                    $rows,
+                    static fn (array $row): bool => in_array(
+                        RtSnapshot::setKeyOfRow($collectionKey, $row),
+                        $scopeSetKeys,
+                        true,
+                    ),
+                );
+            }
+        }
+
+        $arrived = array_map(strval(...), array_keys($rows));
+        if (($wholeCollection || $arrived !== []) && $this->ownsAnyOfSnapshotScope($collectionKey, $arrived)) {
             Logger::warning(
                 "RT collection {$collectionKey} has truth sources on two nodes:"
                 . " local and {$originNodeId}",
@@ -3443,22 +3428,40 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        if ($scopeKeys === []) {
+        if ($wholeCollection) {
             $held = RtSnapshot::rows($collectionKey);
             RtSnapshot::replace($collectionKey, $rows);
+            $swept = array_map(strval(...), array_keys(array_diff_key($held, $rows)));
         } else {
-            $scope = array_flip($scopeKeys);
-            $held = array_intersect_key(RtSnapshot::rows($collectionKey), $scope);
-            $rows = array_intersect_key($rows, $scope);
-            RtSnapshot::replaceScope($collectionKey, $scopeKeys, $rows);
+            $withinScope = $scopeKeys !== []
+                ? array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys))
+                : RtSnapshot::setRows($collectionKey, $scopeSetKeys);
+            $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
+            $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
+            $ownSetKeys = $sourceMap->claimedSetKeys($collectionKey);
+            $swept = [];
+            foreach ($withinScope as $stateId => $heldRow) {
+                if (
+                    isset($rows[$stateId])
+                    || $originMap->nodeOfRow($collectionKey, (string)$stateId) !== $originNodeId
+                    || $sourceMap->owns($collectionKey, (string)$stateId)
+                    || in_array(RtSnapshot::setKeyOfRow($collectionKey, $heldRow), $ownSetKeys, true)
+                ) {
+                    continue;
+                }
+
+                $swept[] = (string)$stateId;
+            }
+
+            $affected = array_values(array_unique(array_merge($arrived, $swept)));
+            $held = array_intersect_key($withinScope, array_flip($affected));
+            RtSnapshot::replaceScope($collectionKey, $affected, $rows);
         }
 
         // What the snapshot carries is this node's replica of those rows, and it is current as of
         // now: an arriving hand-over IS freshness, which is why the mark needs no expiry of its
         // own (HIL-711). The rows it swept are gone, so what was known about them goes with them -
         // an origin left behind would freeze a row that no longer exists on the next dropped link.
-        $arrived = array_map(strval(...), array_keys($rows));
-        $swept = array_map(strval(...), array_keys(array_diff_key($held, $rows)));
         $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
         $originMap->note($originNodeId, $collectionKey, $arrived);
         foreach ($swept as $stateId) {
@@ -3907,12 +3910,12 @@ abstract class DaemonManager extends BaseManager implements
      * Whether a snapshot reaches for anything an agent of this node owns wholly.
      *
      * The two-owner question, asked of a hand-over. A frame naming no rows claims the collection,
-     * so the collection is what it is judged by; a frame naming rows is judged row by row, and
+     * so the collection is what it is judged by; a scoped frame is judged by rows it CARRIES, and
      * one row held here is enough to refuse the whole frame — the sender believes it owns what
      * this node writes, and no part of that belief is safe to act on.
      *
      * @param string $collectionKey RT collection the snapshot is for
-     * @param list<string> $scopeKeys Rows the snapshot speaks for; empty for the whole collection
+     * @param list<string> $scopeKeys Rows the snapshot carries; empty means whole collection
      * @return bool True when this node owns the collection, or any row the frame speaks for
      */
     private function ownsAnyOfSnapshotScope(string $collectionKey, array $scopeKeys): bool
@@ -4193,13 +4196,11 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Un-freezes this node's replicas of a node the peer transport has linked to again.
+     * Thaws the peer's router row when its link is restored.
      *
-     * Implements {@see RtSyncSink}. Called off the completed handshake beside
-     * {@see handOverRtSnapshots()}: deltas flow again the moment the link exists, so the copy is
-     * being kept current again from here on, and the hand-over that follows repairs whatever it
-     * missed while the link was down. The mark therefore needs no expiry, no tick and no poll of
-     * its own — the two cues it has are the two events that actually change the answer.
+     * Implements {@see RtSyncSink}. A link does not confirm each replica, so it leaves their
+     * stale marks in place. Snapshots, row deltas, and holder offers clear them when received.
+     * A row none of these paths sends remains marked until its next write (HIL-1178).
      *
      * The node's own router row thaws here too, the mirror of the freeze above (HIL-876).
      * {@see self::clearStaleness()} decides by itself whether a frame is owed, so there is no
@@ -4209,19 +4210,14 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function noteNodeReachable(string $nodeId): void
     {
-        foreach ($this->agentManagerDaemon->rtReplicaOriginMap()->rowsOfNode($nodeId) as $collectionKey => $stateIds) {
-            $this->clearStaleness($collectionKey, $stateIds);
-        }
-
         $this->clearStaleness(StateHilosClusterNode::RT_COLLECTION, [$nodeId]);
     }
 
     /**
      * Lifts the mark from some rows here and on the workers that read their collection.
      *
-     * The workers are told only when something was actually frozen. Both callers reach this on
-     * paths that run whether or not anything ever froze — a handshake with a node this one holds
-     * replicas of, a hand-over of rows another node has taken over — and a lift announcing that
+     * The workers are told only when something was actually frozen. Callers include a row delta,
+     * a hand-over, a holder offer, and the handshake's own router row. A lift announcing that
      * nothing changed is a socket write per worker for no reader at all.
      *
      * @param string $collectionKey RT collection the rows belong to

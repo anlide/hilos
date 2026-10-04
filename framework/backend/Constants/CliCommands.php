@@ -72,6 +72,9 @@ final class CliCommands
     /** @var string Command: Write a row of a runtime set on one node, through its truth-source door (test-only) */
     public const string CLUSTER_TEST_RT_WRITE = 'test:cluster:rt:write';
 
+    /** @var string Command: Delete a row of a runtime set on one node, through its truth-source door (test-only) */
+    public const string CLUSTER_TEST_RT_DELETE = 'test:cluster:rt:delete';
+
     /** @var string Command: Ask the leader to place an agent, as addressing one does (test-only) */
     public const string CLUSTER_TEST_AGENT_PLACE = 'test:cluster:agent:place';
 

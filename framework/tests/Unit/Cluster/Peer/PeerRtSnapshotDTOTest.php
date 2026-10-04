@@ -54,6 +54,60 @@ final class PeerRtSnapshotDTOTest extends TestCase
         $this->assertSame([], $parsed->rows);
     }
 
+    public function testSetScopeRoundTripsAndIsOptionalOnOldPayloads(): void
+    {
+        $frame = new PeerRtSnapshotDTO('node-A', 'notes', [], [], ['42']);
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerRtSnapshotDTO::class, $parsed);
+        $this->assertSame(['42'], $parsed->scopeSetKeys);
+
+        $withoutSetScope = $frame->toArray();
+        unset($withoutSetScope[PeerRtSnapshotDTO::FIELD_SCOPE_SET_KEYS]);
+        $this->assertSame([], PeerRtSnapshotDTO::fromArray($withoutSetScope)->scopeSetKeys);
+    }
+
+    public function testRejectsMalformedSetScope(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer RT snapshot carries a malformed set scope');
+
+        PeerRtSnapshotDTO::fromArray([
+            PeerRtSnapshotDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerRtSnapshotDTO::FIELD_COLLECTION_KEY => 'notes',
+            PeerRtSnapshotDTO::FIELD_ROWS => [],
+            PeerRtSnapshotDTO::FIELD_SCOPE_SET_KEYS => '42',
+        ]);
+    }
+
+    public function testRejectsMalformedSetKey(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer RT snapshot carries a malformed set key');
+
+        PeerRtSnapshotDTO::fromArray([
+            PeerRtSnapshotDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerRtSnapshotDTO::FIELD_COLLECTION_KEY => 'notes',
+            PeerRtSnapshotDTO::FIELD_ROWS => [],
+            PeerRtSnapshotDTO::FIELD_SCOPE_SET_KEYS => [false],
+        ]);
+    }
+
+    public function testRejectsTwoKindsOfScopeInOneFrame(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $this->expectExceptionMessage('Peer RT snapshot speaks for rows and for sets at once');
+
+        PeerRtSnapshotDTO::fromArray([
+            PeerRtSnapshotDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerRtSnapshotDTO::FIELD_COLLECTION_KEY => 'notes',
+            PeerRtSnapshotDTO::FIELD_ROWS => [],
+            PeerRtSnapshotDTO::FIELD_SCOPE_KEYS => ['7'],
+            PeerRtSnapshotDTO::FIELD_SCOPE_SET_KEYS => ['42'],
+        ]);
+    }
+
     public function testRejectsMissingOriginNodeId(): void
     {
         $this->expectException(PeerTransportException::class);

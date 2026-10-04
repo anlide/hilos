@@ -377,13 +377,14 @@ reaches the node map with no key, the rows of the set travel as deltas of a
 partial owner, and no foreign frame is refused — set keys are not compared at
 runtime (owner's decision, HIL-1114). The set key rides beside the claim in the
 worker's report to its master, and by it the node hands over the rows of its set
-it holds right now, under their own keys as the scope, at the moments named rows
-are handed over: the handshake, a neighbour's new reader interest, a change of
-ownership here. A query for missing rows it answers with them under its own
-name. Two limits are known and accepted: a row of the set deleted while a
-neighbour was cut off is not swept off that neighbour, and the birth of a row of
-the set hands nothing over out of turn — its delta carries it, and every moment
-a neighbour could miss it is a hand-over of its own.
+it holds right now, under the keys of those sets as the scope, at the moments
+named rows are handed over: the handshake, a neighbour's new reader interest, a
+change of ownership here. The frame is sent even when the set is empty, so a
+neighbour can sweep rows this owner deleted during a broken link. A query for
+missing rows it answers with the rows it holds under its own name. One limit is
+known and accepted: the birth of a row of the set hands nothing over out of
+turn — its delta carries it, and every moment a neighbour could miss it is a
+hand-over of its own.
 
 | Piece | Lands with |
 |---|---|
@@ -395,6 +396,7 @@ a neighbour could miss it is a hand-over of its own.
 | two owners of one set refused, and the receipt for a pair the project lives with | HIL-1114 |
 | the runtime half | HIL-1115 |
 | the width holding while its owners sit on different nodes | HIL-1116 |
+| a row of a set deleted while a neighbour was cut off, swept on the hand-over | HIL-1178 |
 
 ## Who Reads The Declaration, And When
 

@@ -173,6 +173,26 @@ final class PeerServerRtHandOverTest extends TestCase
     }
 
     /**
+     * The set scope reaches the apply port with the empty row map: this is how a sender says it
+     * deleted its last row while the neighbour was cut off.
+     *
+     * @throws SocketException When the pair under test refuses the queued frame
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testASetScopedSnapshotReachesTheDaemon(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+
+        $this->feed($link, $far, new PeerRtSnapshotDTO('node-b', 'unitRows', [], [], ['42']));
+
+        $this->assertSame([['node-b', 'unitRows', [], [], ['42']]], $sink->snapshots);
+    }
+
+    /**
      * The answer obeys the same reader filter the owner's hand-over does, and for the same
      * reason: a copy sent where no delta follows it stays as current as the second it landed.
      *
@@ -273,11 +293,10 @@ final class PeerServerRtHandOverTest extends TestCase
     }
 
     /**
-     * The handshake lifts the freeze, and it does so beside the hand-over rather than instead of
-     * it: deltas flow again the moment the link exists, and the hand-over that follows repairs
-     * whatever the break cost.
+     * The handshake tells the sink that the peer is reachable. The sink thaws its router row;
+     * individual replicas wait for the hand-over or another confirmation.
      */
-    public function testACompletedHandshakeMakesThatPeersReplicasCurrentAgain(): void
+    public function testACompletedHandshakeNotifiesTheSinkThatPeerIsReachable(): void
     {
         $sink = $this->registerSink();
         $local = NodeIdentity::of('node-a', NodeRole::Master, []);
@@ -738,6 +757,9 @@ final class PeerServerRtHandOverTest extends TestCase
             /** @var list<array{string, string, array<string, array<string, mixed>>}> Offers it was handed */
             public array $offered = [];
 
+            /** @var list<array{string, string, array<string, array<string, mixed>>, list<string>, list<string>}> Snapshots */
+            public array $snapshots = [];
+
             /** @var array<string, float> Nodes it was told had become unreachable, and when */
             public array $frozen = [];
 
@@ -763,13 +785,16 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param string $collectionKey RT collection being replaced
              * @param array<string, array<string, mixed>> $rows Rows by state id
              * @param list<string> $scopeKeys Rows the snapshot speaks for
+             * @param list<string> $scopeSetKeys Sets the snapshot speaks for
              */
             public function applyRemoteRtSnapshot(
                 string $originNodeId,
                 string $collectionKey,
                 array $rows,
                 array $scopeKeys = [],
+                array $scopeSetKeys = [],
             ): void {
+                $this->snapshots[] = [$originNodeId, $collectionKey, $rows, $scopeKeys, $scopeSetKeys];
             }
 
             /**

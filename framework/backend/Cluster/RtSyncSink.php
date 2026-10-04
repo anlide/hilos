@@ -43,15 +43,14 @@ interface RtSyncSink
     /**
      * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.
      *
-     * Replacement rather than merge: the owner's copy is the whole truth about what it sent, so
-     * a row the snapshot does not carry is a row that no longer exists. The scope says what "what
-     * it sent" covers — the collection when it is empty, and only the named rows otherwise, with
-     * everything outside them left as this node holds it.
+     * A whole-collection frame replaces the collection. A scoped frame replaces its carried
+     * rows and sweeps only missing rows from this sender within its named rows or sets.
      *
      * @param string $originNodeId Id of the node that owns the collection
      * @param string $collectionKey RT collection being replaced
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @param list<string> $scopeKeys Rows the snapshot speaks for; empty for the whole collection
+     * @param list<string> $scopeKeys Named rows the snapshot speaks for; empty for other widths
+     * @param list<string> $scopeSetKeys Sets the snapshot speaks for; empty for other widths
      * @throws HilosException Whatever the applied write of the snapshot raises
      */
     public function applyRemoteRtSnapshot(
@@ -59,6 +58,7 @@ interface RtSyncSink
         string $collectionKey,
         array $rows,
         array $scopeKeys = [],
+        array $scopeSetKeys = [],
     ): void;
 
     /**
@@ -141,12 +141,11 @@ interface RtSyncSink
     public function noteNodeUnreachable(string $nodeId, float $at): void;
 
     /**
-     * Tells the runtime that a node is reachable again, so its replicas are current once more.
+     * Tells the runtime that a node is reachable again, thawing its router row alone.
      *
      * Called off the completed handshake, beside {@see handOverRtSnapshots()} and for the same
-     * reason: the link is what carries deltas, so it is the link coming back — not the roster
-     * saying the node is a member — that makes the copy trustworthy again. It lifts the mark
-     * from everything the call above put it on, the node's own router row included.
+     * reason: the link carries the hand-over that confirms replicas. The handshake itself
+     * thaws only the node's router row; replicas wait for a snapshot, delta, or holder offer.
      *
      * @param string $nodeId Node this one can reach again
      */

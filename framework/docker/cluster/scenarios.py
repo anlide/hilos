@@ -81,6 +81,8 @@ Plus scenarios beyond that matrix:
                                the others (HIL-1231)
  28 database member comes      the member comes back, catches up, and is handed connections again
                                (HIL-1231)
+ 35 rt row deleted while cut    a cut-off neighbour sweeps rows deleted by each set owner on the
+    off is swept               hand-over and keeps rows written just after it (HIL-1178)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -157,6 +159,10 @@ NOTE_OWN = "set-note-own"
 NOTE_FOREIGN = "set-note-foreign"
 NOTE_PEER = "set-note-peer"
 NOTE_LATE = "set-note-late"
+NOTE_SWEPT_OWN = "set-note-swept-own"
+NOTE_SWEPT_PEER = "set-note-swept-peer"
+NOTE_KEPT = "set-note-kept"
+NOTE_BURST = "set-note-burst"
 
 # The probe that claims the WHOLE of the collection the fleet owns row by row, so the
 # cluster-wide guard has two whole rights to judge; mirrors HilosAgentType::HILOS_PROBE_CLAIMER
@@ -1906,6 +1912,108 @@ def scenario_20_rt_set_width_across_nodes():
         wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
 
 
+def scenario_35_rt_row_deleted_while_cut_off_is_swept():
+    """A set owner removes a row while a neighbour is cut off; its next hand-over sweeps the
+    neighbour's copy, even when the set is now empty (HIL-1178).
+
+    The victim is a non-leading master, so cutting it off does not move the set probes on the
+    slaves. After healing, a burst from the second set owner overlaps link convergence and
+    continues for three writes after it. Those later deltas must survive the snapshot sweep.
+    Before HIL-1178, the deleted rows remain on the victim. Recreate the master afterwards:
+    a healed interface may leave half-open links that would color the next scenario.
+    """
+    run = format(int(time.time() * 1000), "x")
+    swept_own = f"{NOTE_SWEPT_OWN}-{run}"
+    swept_peer = f"{NOTE_SWEPT_PEER}-{run}"
+    kept = f"{NOTE_KEPT}-{run}"
+
+    views = wait_converge(ALL_NODES)
+    refused_before = {n: rt_refused(views, n) for n in ALL_NODES}
+    victim = sorted(m for m in MASTERS if m not in leaders(views))[-1]
+    writer, peer_writer = SLAVES[0], SLAVES[1]
+
+    def every_node_claims_a_set(v):
+        return all(rt_collection(v, n, PROBE_NOTES).get("owned") is True
+                   and rt_collection(v, n, PROBE_NOTES).get("fullyOwned") is False
+                   for n in ALL_NODES)
+
+    wait_until(every_node_claims_a_set, CONVERGE_TIMEOUT,
+               f"every node owns its own set of '{PROBE_NOTES}', none owns the collection")
+
+    for node, note_id in ((writer, swept_own), (peer_writer, swept_peer), (peer_writer, kept)):
+        refusal = client_refusal(node, "test:cluster:rt:write", node, note_id, "before")
+        assert refusal is None, f"{node} was refused a write into its own set: {refusal}"
+
+    def starting_notes_arrived(v):
+        return all(all(note_id in rt_rows(v, n, PROBE_NOTES)
+                       for note_id in (swept_own, swept_peer, kept)) for n in ALL_NODES)
+
+    wait_until(starting_notes_arrived, CONVERGE_TIMEOUT, "the three starting notes reach every node")
+
+    print(f"    partitioning {victim} while {writer} and {peer_writer} remove notes")
+    ctl("partition", victim)
+    try:
+        wait_until(lambda v: all(note_id in rt_stale_rows(v, victim, PROBE_NOTES)
+                                 for note_id in (swept_own, swept_peer, kept)),
+                   CONVERGE_TIMEOUT, f"{victim} marks the three notes frozen", nodes=[victim], local=True)
+
+        for node, note_id in ((writer, swept_own), (peer_writer, swept_peer)):
+            refusal = client_refusal(node, "test:cluster:rt:delete", note_id)
+            assert refusal is None, f"{node} was refused removal of its own note {note_id}: {refusal}"
+
+        others = [n for n in ALL_NODES if n != victim]
+        wait_until(lambda v: all(swept_own not in rt_rows(v, n, PROBE_NOTES)
+                                 and swept_peer not in rt_rows(v, n, PROBE_NOTES)
+                                 and kept in rt_rows(v, n, PROBE_NOTES) for n in others),
+                   CONVERGE_TIMEOUT, "the linked nodes drop both deleted notes", nodes=others)
+        cut_off = rt_rows({victim: inspect_local(victim)}, victim, PROBE_NOTES)
+        assert swept_own in cut_off and swept_peer in cut_off, \
+            f"{victim} did not keep both deleted rows while cut off"
+
+        print(f"    healing {victim} while {peer_writer} writes a burst")
+        ctl("heal", victim)
+        deadline = time.time() + CONVERGE_TIMEOUT * 2
+        converged_at = None
+        burst_ids = []
+        while time.time() < deadline:
+            note_id = f"{NOTE_BURST}-{run}-{len(burst_ids)}"
+            refusal = client_refusal(peer_writer, "test:cluster:rt:write", peer_writer, note_id, "burst")
+            assert refusal is None, f"{peer_writer} was refused burst note {note_id}: {refusal}"
+            burst_ids.append(note_id)
+            views = inspect_all()
+            if converged_at is None and converged(ALL_NODES)(views):
+                converged_at = len(burst_ids)
+            elif converged_at is not None and len(burst_ids) >= converged_at + 3:
+                break
+        else:
+            raise ScenarioTimeout(f"{victim} did not converge while {peer_writer} wrote burst notes")
+
+        def caught_up(v):
+            victim_rows = rt_rows(v, victim, PROBE_NOTES)
+            peer_rows = rt_rows(v, peer_writer, PROBE_NOTES)
+            victim_peer_set = {key: row for key, row in victim_rows.items() if row.get("nodeId") == peer_writer}
+            owner_peer_set = {key: row for key, row in peer_rows.items() if row.get("nodeId") == peer_writer}
+            return (swept_own not in victim_rows and swept_peer not in victim_rows
+                    and kept in victim_rows and all(note_id in owner_peer_set for note_id in burst_ids)
+                    and victim_peer_set == owner_peer_set
+                    and rt_stale_rows(v, victim, PROBE_NOTES) == {})
+
+        wait_until(caught_up, CONVERGE_TIMEOUT,
+                   f"{victim} drops deleted notes, keeps every burst note, and thaws remaining notes",
+                   nodes=[victim, peer_writer])
+        views = inspect_all()
+        for n in ALL_NODES:
+            refused = rt_refused(views, n)
+            assert refused == refused_before[n], \
+                f"{n} refused RT frames as a split: {refused_before[n]} before, {refused} after"
+
+        return (f"{victim} swept notes deleted by {writer} and {peer_writer}, kept the other set "
+                f"and all {len(burst_ids)} burst notes, with no refused RT frames")
+    finally:
+        ctl("recreate", victim)
+        wait_converge(ALL_NODES, CONVERGE_TIMEOUT * 2)
+
+
 # The watchdog's line after it applied migrations on startup (DockerApplication), and the one a
 # node writes while another holds the rollout claim (MigrationClaim).
 APPLIED_ON_STARTUP = re.compile(r"Applied \d+ migration\(s\) on startup")
@@ -3172,6 +3280,8 @@ SCENARIOS = [
     Scenario("3 placement", scenario_3_placement, Need(slaves=1)),
     Scenario("12 rt replication", scenario_12_rt_replication, Need(slaves=1)),
     Scenario("20 rt set width across nodes", scenario_20_rt_set_width_across_nodes, Need(masters=2, slaves=2)),
+    Scenario("35 rt row deleted while cut off is swept", scenario_35_rt_row_deleted_while_cut_off_is_swept,
+             Need(masters=2, slaves=2)),
     Scenario("14 rt claim refused", scenario_14_rt_claim_refused, Need(slaves=1)),
     Scenario("13 rt partition converges", scenario_13_rt_partition_converges, Need(masters=3)),
     Scenario("19 worker death on a live node", scenario_19_worker_death_on_live_node, Need(slaves=1)),

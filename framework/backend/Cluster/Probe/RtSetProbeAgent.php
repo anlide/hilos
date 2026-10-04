@@ -48,13 +48,13 @@ final class RtSetProbeAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_PROBE_RT_SET;
 
     /**
-     * The one test-only command of the drill: write a note into a named set.
+     * Two test-only commands of the drill: write and delete a note in a named set.
      *
-     * No inner DTO: the payload is three strings, entered under the bare name, and the `test:`
-     * prefix keeps the socket from ever parking it on a production-like node. The master has no
-     * branch for it, so it is parked and routed here.
+     * No inner DTO: the write carries three strings and the delete carries one, entered under
+     * the bare name. The `test:` prefix keeps the socket from parking either command on a
+     * production-like node. The master has no branch for them, so both are routed here.
      */
-    public const array AGENT_COMMANDS = [CliCommands::CLUSTER_TEST_RT_WRITE];
+    public const array AGENT_COMMANDS = [CliCommands::CLUSTER_TEST_RT_WRITE, CliCommands::CLUSTER_TEST_RT_DELETE];
 
     /**
      * Names the set this replica owns: the node it runs on.
@@ -102,6 +102,7 @@ final class RtSetProbeAgent extends AbstractAgent
     {
         $reply = match ($data->command) {
             CliCommands::CLUSTER_TEST_RT_WRITE => $this->write($data),
+            CliCommands::CLUSTER_TEST_RT_DELETE => $this->erase($data),
             default => CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"),
         };
 
@@ -147,6 +148,36 @@ final class RtSetProbeAgent extends AbstractAgent
             CommandConstants::FIELD_RT_STATE_ID => $noteId,
             CommandConstants::FIELD_TEXT => $text,
         ]);
+    }
+
+    /**
+     * Deletes a note through its item action, so the set's Remove right is judged there.
+     *
+     * @param CommandRequestDTO $request Request naming the note to remove
+     * @return CommandReplyDTO Reply naming the note, or why it stayed
+     */
+    private function erase(CommandRequestDTO $request): CommandReplyDTO
+    {
+        $noteId = self::stringField($request, CommandConstants::FIELD_RT_STATE_ID);
+        if ($noteId === null) {
+            return CommandReplyDTO::error($request->correlationId, 'Missing ' . CommandConstants::FIELD_RT_STATE_ID);
+        }
+
+        $notes = Hilos::$rt?->hilosProbeNotes;
+        if ($notes === null) {
+            return CommandReplyDTO::error($request->correlationId, 'This project has no runtime context to delete a note from');
+        }
+
+        try {
+            if (!$notes->actions->erase($noteId)) {
+                return CommandReplyDTO::error($request->correlationId, "No note '{$noteId}' on this node");
+            }
+        // read-refusal-swallowed: this probe answers its caller with whatever failed, the refusal included
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
+        return CommandReplyDTO::ok($request->correlationId, [CommandConstants::FIELD_RT_STATE_ID => $noteId]);
     }
 
     /**

@@ -432,8 +432,10 @@ at the owning agent's `AgentRegistryKey::SCOPE` first. A frame about a row this
 node does not own is ordinary traffic (see the two axes below).
 
 A node joining the mesh is handed what each owner holds, because it has no history
-for the deltas to apply to. That hand-over **replaces** what it speaks for: a row
-inside its scope that the owner does not send is a row that no longer exists.
+for the deltas to apply to. That hand-over **replaces** the owner's rows within
+what it speaks for: a row previously received from this owner that lies in the
+scope but is not sent is removed. Rows from another node, of unknown origin, or
+owned by the receiver remain.
 
 **What travels is what an agent owns.** The node announces a write only for the
 collections its own agents registered, so a project's collection is replicated
@@ -478,17 +480,22 @@ is ownership of the collection itself.
 A frame is judged by what it carries. A delta naming a row is judged by that row,
 so a neighbour's rows are ordinary traffic and only a frame about a row this node
 owns is the split. A hand-over from an owner of named rows carries a SCOPE: it
-speaks for those rows alone, and the receiver replaces them and leaves the rest of
-the collection as it found it. An owner of the whole collection sends no scope,
+speaks for its whole claim, even when it currently holds no row under that claim.
+The receiver replaces carried rows and sweeps only missing rows that came from
+this sender within the claim. A hand-over with no carried rows and a nonempty
+scope is therefore meaningful. An owner of the whole collection sends no scope,
 and then the frame is the collection, as it has always been.
 
 A claim over a set (`OWNS_RT_SET`) reaches the node map as a claim naming no
 key, so judging frames the node speaks for no row of it: its writes travel as
 deltas of a partial owner, and it refuses no neighbour's frame. Its set key rides
-beside the claim, and by it the node hands over the rows of its set it holds,
-under their own keys, at the moments named rows are handed over, and answers a
-query for missing rows with them. A row of the set deleted while a neighbour was
-cut off is not swept off that neighbour.
+beside the claim and in the snapshot's set scope. The node hands over the rows
+of its set it holds, or an empty row map after deleting the last one, at the
+moments named rows are handed over. The receiver sweeps rows from that sender
+within the set. A node answering a query for missing rows sends the ones it holds.
+Rows from another origin or of unknown origin remain. A row whose claim moved
+to a different node and was deleted there during the break also remains: the new
+owner cannot sweep a copy still attributed to the old one.
 
 **A replica whose owner cannot be reached is still served — and says so.** Nothing
 refuses the reader and nothing sweeps the rows when the node that wrote them
@@ -502,11 +509,12 @@ row and every row off a cluster always are.
 The mark is uniform across every RT collection and enumerates none of them. It is
 kept BESIDE the rows (`RtStaleness`) rather than in them, because a row is the
 owner's copy byte for byte and a housekeeping field inside it would travel into
-the browser's projection and into every snapshot diff. Reachability is measured by
-the LINK, so the cues are the last link closing and a completed handshake. Since
-HIL-1059 membership's liveness comes from the same links, so the two agree; the mark
-still answers to the link, because a node whose leave frame has arrived is offline
-while its link is still up.
+the browser's projection and into every snapshot diff. A row is marked when the
+last link to its origin closes. Reopening a link does not by itself clear its mark:
+the owner confirms the row by snapshot or delta, or a holder confirms it by an
+offer. The cluster router's own node row is the exception; it thaws at the
+handshake (HIL-876). Since HIL-1059 membership's liveness comes from the same
+links, its view of which nodes can answer remains aligned with the mark's trigger.
 
 **What a reader does with the mark is the reader's own decision.** One reader in
 the framework fails closed on it: `HilosSessionRotations::claimable()` refuses a
@@ -517,10 +525,13 @@ reader goes on being served. Presence is the standing exception and a deliberate
 one: it still says "online" about a node that is gone, and closing that is not
 this mechanism's job.
 
-The mark needs no expiry, tick or poll: when the owner comes back, its hand-over
-brings the copy back in line and clears the mark by that very act — which is why a
-hand-over has to cover rows and not only whole collections, since delivery has no
-retries and everything written during the break is otherwise lost. The browser
+The mark needs no expiry, tick or poll: a confirming snapshot, row delta or
+holder offer clears it. A row that nobody sends in a snapshot remains marked
+after reconnection until its next write; a phantom missed by the sweep remains
+marked indefinitely rather than appearing current (HIL-1178). This is the
+accepted cost of waiting for its source to confirm it. A hand-over must cover
+rows and not only whole collections, since delivery has no retries and everything
+written during the break is otherwise lost. The browser
 sees the same state as one snowflake on the SDK shell's connection indicator,
 raised only when a collection the OPEN page reads is frozen. The snowflake is no
 longer the only surface: a table assembled out of a frozen source names the

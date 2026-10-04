@@ -14,7 +14,7 @@ final class PeerProtocolTest extends TestCase
 {
     public function testCurrentVersionIsCompatible(): void
     {
-        $this->assertSame(14, PeerProtocol::VERSION);
+        $this->assertSame(15, PeerProtocol::VERSION);
         $this->assertTrue(PeerProtocol::isCompatible(PeerProtocol::VERSION));
     }
 

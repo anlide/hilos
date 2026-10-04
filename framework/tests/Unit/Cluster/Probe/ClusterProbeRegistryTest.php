@@ -201,7 +201,10 @@ final class ClusterProbeRegistryTest extends TestCase
         $daemon = new RtSetProbeAgentDaemon();
         $this->assertSame([], $daemon->requiredCapabilities());
         $this->assertFalse($daemon->requiresMonopolisticProcess());
-        $this->assertSame([CliCommands::CLUSTER_TEST_RT_WRITE], RtSetProbeAgent::AGENT_COMMANDS);
+        $this->assertSame(
+            [CliCommands::CLUSTER_TEST_RT_WRITE, CliCommands::CLUSTER_TEST_RT_DELETE],
+            RtSetProbeAgent::AGENT_COMMANDS,
+        );
 
         // The claim the scenario stands on: the probe notes, by the set of this node, with every
         // operation - and the set is cut by the node a note belongs to.

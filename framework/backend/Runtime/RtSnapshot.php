@@ -179,16 +179,13 @@ final class RtSnapshot
      * Replaces only the named rows of an RT collection with the ones their owner handed over.
      *
      * The narrow twin of {@see replace()}, for a node that owns entities rather than the
-     * collection around them (HIL-589): what it knows to be the whole truth is those rows, so
-     * those rows are all it may speak for. Inside the scope the rule is the one above — a row
-     * of the scope the frame does not carry is a row that no longer exists — and outside it
-     * nothing is touched, because the rows another node writes are none of this frame's
-     * business and clearing them is exactly the split that would follow.
+     * collection around them (HIL-589). The daemon passes only affected row ids: every carried
+     * row and every missing row it proved came from this sender within the sender's claim
+     * (HIL-1178). This method replaces those ids and leaves every other row untouched.
      *
-     * A row the frame carries outside its own scope is DROPPED. The scope is the authority the
-     * sender claims, and a row beyond it is one the sender does not speak for - taking it would
-     * let a frame reach past the very thing the receiver judged it by, and overwrite a row this
-     * node owns. A malformed row inside the scope costs that row and is logged, the same bargain
+     * A row the frame carries outside these affected ids is DROPPED. The daemon filters them
+     * against the declared claim before calling here, so an extra row cannot reach past its
+     * ownership check. A malformed row inside the affected ids costs that row and is logged, the same bargain
      * {@see replace()} strikes and for the same reason.
      *
      * The deletions run inside the applied-remote window along with the writes, and unlike
@@ -202,7 +199,7 @@ final class RtSnapshot
      * DELETED, and those are precisely the keys nothing below walks.
      *
      * @param string $collectionKey RT collection to replace within
-     * @param list<string> $scopeKeys Rows this snapshot speaks for
+     * @param list<string> $scopeKeys Concrete row ids to replace or remove
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
      * @throws HilosException Whatever the applied write of the snapshot rows raises
      */

@@ -827,10 +827,8 @@ final class PeerServer extends AbstractTlsServer implements
         // member already, but this link is what lets anything reach it. What of it actually goes
         // out is what that peer reads ({@see sendRtSnapshotToNode()}), and a peer this node has
         // yet to hear from asks again with its own announcement a moment later.
-        // Its deltas reach this node again from this moment, so the copies of its rows held here
-        // are being kept current again (HIL-711). Before the hand-over rather than after it: the
-        // hand-over repairs what the break cost, and a row it rewrites is fresh by that very act,
-        // so lifting the mark first leaves nothing for the two steps to disagree about.
+        // Only the peer's router row thaws here. Its replicas remain marked until a snapshot,
+        // delta, or holder offer confirms them; the hand-over is requested just below.
         Hilos::$cluster?->rtSyncSink()?->noteNodeReachable($remote->nodeId);
 
         Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
@@ -2292,13 +2290,15 @@ final class PeerServer extends AbstractTlsServer implements
      * @param string $nodeId Node being handed the collection
      * @param string $collectionKey RT collection this node owns
      * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
-     * @param list<string> $scopeKeys Rows this node speaks for; empty when it owns the collection
+     * @param list<string> $scopeKeys Named rows this node speaks for; empty for other widths
+     * @param list<string> $scopeSetKeys Sets this node speaks for; empty for other widths
      */
     public function sendRtSnapshotToNode(
         string $nodeId,
         string $collectionKey,
         array $rows,
         array $scopeKeys = [],
+        array $scopeSetKeys = [],
     ): void {
         if (!$this->nodeReaderMap->holds($nodeId, SourceChange::KIND_RT, $collectionKey)) {
             return;
@@ -2306,7 +2306,7 @@ final class PeerServer extends AbstractTlsServer implements
 
         $this->sendToNode(
             $nodeId,
-            new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows, $scopeKeys),
+            new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows, $scopeKeys, $scopeSetKeys),
         );
     }
 
@@ -2495,6 +2495,7 @@ final class PeerServer extends AbstractTlsServer implements
                 $frame->collectionKey,
                 $frame->rows,
                 $frame->scopeKeys,
+                $frame->scopeSetKeys,
             );
         } catch (Throwable $e) {
             Logger::warning(

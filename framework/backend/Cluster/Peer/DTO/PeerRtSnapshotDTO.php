@@ -13,14 +13,14 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * A node that comes up has no history to apply deltas to, so the owner of a collection offers
  * it whole. Unlike {@see PeerRtSyncDTO} this frame is addressed: only the joining node is
  * behind on this collection, and telling the rest would replace copies that are already
- * current. What arrives replaces the receiver's copy — a row the snapshot does not carry is a
- * row that no longer exists, because the owner's copy is the whole truth about it.
+ * current. A whole-collection frame replaces the collection. A scoped frame replaces the
+ * sender's rows in the declared scope. A row from another origin or one this node owns remains,
+ * even if a scoped frame does not carry it.
  *
  * What "the receiver's copy" means is the scope (HIL-589). An owner of the whole collection
- * names none, and then the frame is the collection: everything the receiver held under that key
- * gives way to what the frame carries. An owner of named rows names them, and then the frame
- * speaks for those rows alone — they are what it holds the whole truth about, and the rest of
- * the collection, written by other nodes, is left exactly as the receiver found it.
+ * names none, and then the frame is the collection. An owner of named rows names its whole
+ * claim in scopeKeys. An owner of sets names their keys in scopeSetKeys. Either scoped owner
+ * sends a frame even when it holds no rows; the receiver sweeps only rows from that sender.
  *
  * The rows travel as the collection's own serialized rows, keyed by state id, so the receiver
  * builds them with the very reader a per-row create uses.
@@ -39,20 +39,25 @@ final class PeerRtSnapshotDTO extends PeerDTO
     /** @var string Payload key: the collection's rows, keyed by state id */
     public const string FIELD_ROWS = 'rows';
 
-    /** @var string Payload key: the rows this snapshot speaks for, or none for the whole collection */
+    /** @var string Payload key: named rows this snapshot speaks for */
     public const string FIELD_SCOPE_KEYS = 'scopeKeys';
+
+    /** @var string Payload key: the sets this snapshot speaks for, or none */
+    public const string FIELD_SCOPE_SET_KEYS = 'scopeSetKeys';
 
     /**
      * @param string $originNodeId Id of the node that owns the collection
      * @param string $collectionKey RT collection being handed over
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @param list<string> $scopeKeys Rows this snapshot speaks for; empty for the whole collection
+     * @param list<string> $scopeKeys Named rows this snapshot speaks for; empty for other widths
+     * @param list<string> $scopeSetKeys Set keys this snapshot speaks for; empty unless the sender owns sets
      */
     public function __construct(
         public readonly string $originNodeId,
         public readonly string $collectionKey,
         public readonly array $rows,
         public readonly array $scopeKeys = [],
+        public readonly array $scopeSetKeys = [],
     ) {
     }
 
@@ -79,6 +84,7 @@ final class PeerRtSnapshotDTO extends PeerDTO
             self::FIELD_COLLECTION_KEY => $this->collectionKey,
             self::FIELD_ROWS => $this->rows,
             self::FIELD_SCOPE_KEYS => $this->scopeKeys,
+            self::FIELD_SCOPE_SET_KEYS => $this->scopeSetKeys,
         ];
     }
 
@@ -90,9 +96,8 @@ final class PeerRtSnapshotDTO extends PeerDTO
      * either. State ids are read back as strings because JSON gives digit-like keys back as
      * integers.
      *
-     * The scope is optional on the wire, and its absence says the same thing an empty one does:
-     * the frame is the whole collection. That is what a node of an older build means by sending
-     * no scope at all — it only ever hands over collections it owns whole.
+     * Both scopes are optional on the wire. When both are empty, the frame speaks for the whole
+     * collection. Peers with an older frame format are refused during the handshake.
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored snapshot frame
@@ -137,11 +142,29 @@ final class PeerRtSnapshotDTO extends PeerDTO
             $scopeKeys[] = (string)$stateId;
         }
 
+        $scopeSetKeys = [];
+        $setScopeRaw = $data[self::FIELD_SCOPE_SET_KEYS] ?? [];
+        if (!is_array($setScopeRaw)) {
+            throw new PeerTransportException('Peer RT snapshot carries a malformed set scope');
+        }
+        foreach ($setScopeRaw as $setKey) {
+            if (!is_string($setKey) && !is_int($setKey)) {
+                throw new PeerTransportException('Peer RT snapshot carries a malformed set key');
+            }
+
+            $scopeSetKeys[] = (string)$setKey;
+        }
+
+        if ($scopeKeys !== [] && $scopeSetKeys !== []) {
+            throw new PeerTransportException('Peer RT snapshot speaks for rows and for sets at once');
+        }
+
         return new static(
             originNodeId: $originNodeId,
             collectionKey: $collectionKey,
             rows: $rows,
             scopeKeys: $scopeKeys,
+            scopeSetKeys: $scopeSetKeys,
         );
     }
 }

@@ -12,6 +12,7 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 
 /**
@@ -49,5 +50,28 @@ final class HilosProbeNotesActions extends RtActions
         }
 
         $this->addStateToCollection(StateHilosProbeNote::create($noteId, $nodeId, $text));
+    }
+
+    /**
+     * Finds a note and removes it through its item action when present.
+     *
+     * @param string $noteId Note to remove
+     * @return bool True when a note was removed, false when this node holds none by that id
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtItemParentCollectionNullException When the note is not attached to a collection
+     * @throws RtTruthSourceWriteNotAllowedException When this node does not hold the note's set
+     * @throws SourceChangeSubscriberException When a subscriber rejects the removal
+     */
+    public function erase(string $noteId): bool
+    {
+        $existing = $this->collection[$noteId] ?? null;
+        if (!$existing instanceof ViewHilosProbeNote) {
+            return false;
+        }
+
+        $existing->actions->erase();
+
+        return true;
     }
 }

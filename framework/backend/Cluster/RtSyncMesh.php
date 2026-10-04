@@ -50,13 +50,15 @@ interface RtSyncMesh
      * @param string $nodeId Node that joined
      * @param string $collectionKey RT collection this node owns
      * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
-     * @param list<string> $scopeKeys Rows this node speaks for; empty when it owns the collection
+     * @param list<string> $scopeKeys Named rows this node speaks for; empty for other widths
+     * @param list<string> $scopeSetKeys Sets this node speaks for; empty for other widths
      */
     public function sendRtSnapshotToNode(
         string $nodeId,
         string $collectionKey,
         array $rows,
         array $scopeKeys = [],
+        array $scopeSetKeys = [],
     ): void;
 
     /**
