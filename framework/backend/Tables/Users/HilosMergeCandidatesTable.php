@@ -387,8 +387,9 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
      * A merge does not always change the person's own row: it blocks the loser, and a loser that
      * was blocked before is not written again ({@see UserActions::setBlock()} writes nothing when
      * the flag does not change), so the people source may stay silent and the merge row is the
-     * one fact that the account left the set. Removing a merge row is not the other way round - it happens only when the folded
-     * account itself is erased, and its person row leaves through the people source right after.
+     * one fact that the account left the set. Removing a merge row is not the other way round -
+     * it happens only when the folded account itself is erased, and its person row leaves through
+     * the people source right after.
      *
      * @param SourceChange $change Framework merge source change
      * @return ?TableRowMutationDTO Removal of the folded account, or null for a removed merge row or an unknown account
