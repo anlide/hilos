@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AuthBlock as EntityAuthBlock;
+use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
 use Hilos\Database\Object\Collection\AuthBlocks;
 use Hilos\Database\Object\Item\Object_;
 
@@ -30,22 +30,13 @@ use Hilos\Database\Object\Item\Object_;
 class AuthBlock extends Object_
 {
     public const string ENTITY_CLASS = EntityAuthBlock::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectAuthBlocks::class;
     public const string id = 'id';
     public const string scope = 'scope';
     public const string identity = 'identity';
     public const string action = 'action';
     public const string level = 'level';
     public const string blockedUntil = 'blockedUntil';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::authBlocks)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::authBlocks;
-    }
 
     /**
      * Magic getter for entity properties.

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration as EntityEventUserRegistration;
+use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUserRegistrations;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -20,19 +20,10 @@ use Hilos\Database\Object\Item\Object_;
 final class EventUserRegistration extends Object_
 {
     public const string ENTITY_CLASS = EntityEventUserRegistration::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectEventUserRegistrations::class;
 
     public const string eventId = 'eventId';
     public const string targetUserId = 'targetUserId';
-
-    /**
-     * Returns the database collection key for registration event details.
-     *
-     * @return string Collection key (ChatDbContext::eventUserRegistrations)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return ChatDbContext::eventUserRegistrations;
-    }
 
     /**
      * Returns a registration detail property by name.

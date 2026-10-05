@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Notification\Delivery\DeliveryStatus;
 
@@ -32,6 +32,7 @@ use Hilos\Notification\Delivery\DeliveryStatus;
 class NotificationDelivery extends Object_
 {
     public const string ENTITY_CLASS = EntityNotificationDelivery::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectNotificationDeliveries::class;
     public const string id = 'id';
     public const string notificationId = 'notificationId';
     public const string channel = 'channel';
@@ -41,16 +42,6 @@ class NotificationDelivery extends Object_
     public const string createdAt = 'createdAt';
     public const string updatedAt = 'updatedAt';
     public const string deliveredAt = 'deliveredAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::notificationDeliveries)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::notificationDeliveries;
-    }
 
     /**
      * Magic getter for entity properties.

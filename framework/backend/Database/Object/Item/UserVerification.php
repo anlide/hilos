@@ -8,10 +8,10 @@ use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
+use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\Object\Collection\UserVerifications;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
@@ -42,6 +42,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 class UserVerification extends Object_
 {
     public const string ENTITY_CLASS = EntityUserVerification::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectUserVerifications::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string type = 'type';
@@ -51,16 +52,6 @@ class UserVerification extends Object_
     public const string createdAt = 'createdAt';
     public const string expiresAt = 'expiresAt';
     public const string consumedAt = 'consumedAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::verifications)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::verifications;
-    }
 
     /**
      * Magic getter for entity properties.

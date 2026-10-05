@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\NotificationPreference as EntityNotificationPreference;
+use Hilos\Database\Object\Collection\NotificationPreferences as ObjectNotificationPreferences;
 use Hilos\Database\Object\Collection\NotificationPreferences;
 use Hilos\Database\Object\Item\Object_;
 
@@ -30,22 +30,13 @@ use Hilos\Database\Object\Item\Object_;
 class NotificationPreference extends Object_
 {
     public const string ENTITY_CLASS = EntityNotificationPreference::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectNotificationPreferences::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string channel = 'channel';
     public const string enabled = 'enabled';
     public const string createdAt = 'createdAt';
     public const string updatedAt = 'updatedAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::notificationPreferences)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::notificationPreferences;
-    }
 
     /**
      * Magic getter for entity properties.

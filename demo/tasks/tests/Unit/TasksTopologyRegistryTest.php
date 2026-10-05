@@ -96,6 +96,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -735,7 +736,7 @@ final class TasksTopologyRegistryTest extends TestCase
     /**
      * @throws HilosException When the context refuses to configure, or the guard refuses a chain under a framework key
      */
-    public function testFrameworkExtensionsAreWhole(): void
+    public function testDatabaseMountsAreWhole(): void
     {
         // The question the daemon asks first on its start, over this project's context and
         // without a database: configure() reads nothing. No framework key is extended here
@@ -746,6 +747,7 @@ final class TasksTopologyRegistryTest extends TestCase
             Hilos::$db = new TasksDbContext();
             Hilos::$db->configure();
             FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            MountedCollectionKeyGuard::assertMountedKeysAgree();
         } finally {
             Hilos::$db = $previous;
         }

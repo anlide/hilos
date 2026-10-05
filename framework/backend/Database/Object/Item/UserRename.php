@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
+use Hilos\Database\Object\Collection\UserRenames as ObjectUserRenames;
 
 /**
  * UserRename - Object wrapper for one row of the framework rename journal.
@@ -25,6 +25,7 @@ use Hilos\Database\Entity\Item\UserRename as EntityUserRename;
 class UserRename extends Object_
 {
     public const string ENTITY_CLASS = EntityUserRename::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectUserRenames::class;
 
     public const string id = 'id';
     public const string userId = 'userId';
@@ -87,15 +88,5 @@ class UserRename extends Object_
             self::newName => $this->entity->new_name,
             self::renamedAt => $this->entity->renamed_at,
         ];
-    }
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (HilosDbContext::userRenames)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::userRenames;
     }
 }

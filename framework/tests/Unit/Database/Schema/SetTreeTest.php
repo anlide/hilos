@@ -82,6 +82,13 @@ final class SetTreeTest extends TestCase
         $this->assertSame([self::OWN_TOP], $credential->touchedSetKeys());
     }
 
+    public function testWalkNamesTheActualMountKey(): void
+    {
+        Hilos::$db->remount(SetTreeMiddles::COLLECTION_KEY, 'actual_middle');
+
+        $this->assertSame(['set_tree_middle' => 'actual_middle'], SetTree::walkOf(SetTreeBottomEntity::class));
+    }
+
     public function testARowThreeFloorsDownReachesTheSameTop(): void
     {
         $this->assertSame(self::OWN_TOP, SetTree::topOfSetKey(SetTreeLeafEntity::class, '30'));
@@ -293,6 +300,16 @@ final class SetTreeDbContext extends HilosDbContext
         foreach ($this->collectionClasses as $collectionClass) {
             $this->_objectCollections[$collectionClass::COLLECTION_KEY] = $collectionClass::initEmpty();
         }
+    }
+
+    /**
+     * @param string $oldKey Existing mount key
+     * @param string $newKey Key to register the same collection under
+     */
+    public function remount(string $oldKey, string $newKey): void
+    {
+        $this->_objectCollections[$newKey] = $this->_objectCollections[$oldKey];
+        unset($this->_objectCollections[$oldKey]);
     }
 }
 

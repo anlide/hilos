@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\LegalAcceptance as EntityLegalAcceptance;
+use Hilos\Database\Object\Collection\LegalAcceptances as ObjectLegalAcceptances;
 
 /**
  * Scalar acceptance record. There is no operation that rewrites a stored acceptance.
@@ -21,6 +21,7 @@ use Hilos\Database\Entity\Item\LegalAcceptance as EntityLegalAcceptance;
 class LegalAcceptance extends Object_
 {
     public const string ENTITY_CLASS = EntityLegalAcceptance::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectLegalAcceptances::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string document = 'document';
@@ -75,11 +76,5 @@ class LegalAcceptance extends Object_
             self::revisionId => $this->entity->revision_id,
             self::acceptedAt => $this->entity->accepted_at,
         ];
-    }
-
-    /** @return string Collection owning acceptance records */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::legalAcceptances;
     }
 }

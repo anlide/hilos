@@ -22,19 +22,30 @@ new collection, helper, table method, or page-level query.
 ```php
 final class ChatDbContext extends HilosDbContext
 {
-    public const string users = 'users';
+    public const string events = 'events';
 
     public function configure(): void
     {
         parent::configure();
 
-        $this->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->setRepresent(self::users, Users::class, UsersActions::class, UserActions::class);
+        $this->mountObjectCollection(ObjectEvents::class, Objects::LAZY_STRATEGY_KEY);
+        $this->setRepresent(self::events, Events::class, EventsActions::class);
     }
 }
 ```
 
-`Hilos::$db->users` calls the context magic getter and returns the registered
+The mount method uses `ObjectEvents::COLLECTION_KEY` as the actual key and refuses
+an empty or occupied key. `setRepresent()` remains a separate call under that
+same key. Framework collections are registered under their framework keys by
+`HilosDbContext::configure()`; projects extend their whole chain through
+`frameworkExtensions()`.
+
+`DbContext::getMountedEntities()` returns the mounted key to Entity class map in
+registration order. It reads class constants without a database query or a
+reader-interest check and refuses any collection whose Object, Entity, or table
+cannot be resolved.
+
+`Hilos::$db->events` calls the context magic getter and returns the registered
 `DbCollection` wrapper.
 
 The layers are:

@@ -10,10 +10,10 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\SecondFactorReset as EntitySecondFactorReset;
+use Hilos\Database\Object\Collection\SecondFactorResets as ObjectSecondFactorResets;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
@@ -42,6 +42,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 class SecondFactorReset extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorReset::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorResets::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string requestedAt = 'requestedAt';
@@ -50,16 +51,6 @@ class SecondFactorReset extends Object_
     public const string notifiedAt = 'notifiedAt';
     public const string canceledAt = 'canceledAt';
     public const string completedAt = 'completedAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::secondFactorResets)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::secondFactorResets;
-    }
 
     /**
      * Magic getter for entity properties.

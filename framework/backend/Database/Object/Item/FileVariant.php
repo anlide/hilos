@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\FileVariant as EntityFileVariant;
+use Hilos\Database\Object\Collection\FileVariants as ObjectFileVariants;
 
 /**
  * The scalar row of a rendered registry image (HIL-141).
@@ -24,6 +24,7 @@ use Hilos\Database\Entity\Item\FileVariant as EntityFileVariant;
 class FileVariant extends Object_
 {
     public const string ENTITY_CLASS = EntityFileVariant::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectFileVariants::class;
     public const string id = 'id';
     public const string fileId = 'fileId';
     public const string variant = 'variant';
@@ -32,14 +33,6 @@ class FileVariant extends Object_
     public const string mimeType = 'mimeType';
     public const string size = 'size';
     public const string createdAt = 'createdAt';
-
-    /**
-     * @return string The image-copy collection key
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::fileVariants;
-    }
 
     /**
      * @param string $property Scalar property name

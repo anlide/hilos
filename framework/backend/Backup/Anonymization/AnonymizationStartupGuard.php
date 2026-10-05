@@ -11,6 +11,7 @@ use Hilos\Core\Daemon\DaemonApplication;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Hilos;
 
 /**
@@ -50,6 +51,7 @@ final class AnonymizationStartupGuard
      * @throws UnclassifiedLiveSchemaException When a table or a column of the live schema
      *     carries no PII verdict, when a declared verdict cannot be collected, or when the
      *     schema of a configured connection cannot be read
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     public static function assertLiveSchemaClassified(): void
     {

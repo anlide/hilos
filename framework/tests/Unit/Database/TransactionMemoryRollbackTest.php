@@ -102,14 +102,14 @@ final class TransactionMemoryRollbackTest extends TestCase
         MemoryRollbackEntity::$writes = [];
         MemoryRollbackEntity::$refuseWrites = false;
         MemoryRollbackEntity::$table = [];
-        TruthSourceRegistry::register(MemoryRollbackObject::COLLECTION_KEY, TruthSourceKeys::all(), self::AGENT);
+        TruthSourceRegistry::register(MemoryRollbackObjects::COLLECTION_KEY, TruthSourceKeys::all(), self::AGENT);
         RtTruthSourceRegistry::register(MemoryRollbackRtContext::COLLECTION, TruthSourceKeys::all(), self::AGENT);
     }
 
     protected function tearDown(): void
     {
         Database::rollBackLeftOpen();
-        TruthSourceRegistry::unregister(MemoryRollbackObject::COLLECTION_KEY, self::AGENT);
+        TruthSourceRegistry::unregister(MemoryRollbackObjects::COLLECTION_KEY, self::AGENT);
         RtTruthSourceRegistry::unregister(MemoryRollbackRtContext::COLLECTION, self::AGENT);
         SourceChangeBus::reset();
         Hilos::$rt = $this->previousRt;
@@ -566,7 +566,7 @@ final class TransactionMemoryRollbackTest extends TestCase
     {
         $object = MemoryRollbackObject::stored(7, 'before');
         $object->remark('refused');
-        TruthSourceRegistry::unregister(MemoryRollbackObject::COLLECTION_KEY, self::AGENT);
+        TruthSourceRegistry::unregister(MemoryRollbackObjects::COLLECTION_KEY, self::AGENT);
 
         try {
             $object->sync();
@@ -655,7 +655,7 @@ final class TransactionMemoryRollbackTest extends TestCase
      */
     private function view(): MemoryRollbackDbCollection
     {
-        $view = Hilos::$db?->getDbItemCollection(MemoryRollbackObject::COLLECTION_KEY);
+        $view = Hilos::$db?->getDbItemCollection(MemoryRollbackObjects::COLLECTION_KEY);
 
         return $view instanceof MemoryRollbackDbCollection
             ? $view
@@ -806,8 +806,7 @@ final class MemoryRollbackEntity extends Entity
 final class MemoryRollbackObject extends Object_
 {
     public const string ENTITY_CLASS = MemoryRollbackEntity::class;
-
-    public const string COLLECTION_KEY = 'unit-memory-rollback-db';
+    public const string OBJECT_COLLECTION_CLASS = MemoryRollbackObjects::class;
 
     /**
      * Builds an object standing for a row the table holds.
@@ -861,10 +860,6 @@ final class MemoryRollbackObject extends Object_
         $this->entity->mark = $mark;
     }
 
-    protected static function getCollectionKey(): string
-    {
-        return self::COLLECTION_KEY;
-    }
 }
 
 /**
@@ -897,7 +892,7 @@ final class MemoryRollbackObjects extends Objects
 {
     public const string OBJECT_CLASS = MemoryRollbackObject::class;
     public const string ENTITY_COLLECTION_CLASS = MemoryRollbackEntities::class;
-    public const string COLLECTION_KEY = MemoryRollbackObject::COLLECTION_KEY;
+    public const string COLLECTION_KEY = 'unit-memory-rollback-db';
 
     /**
      * Drops one row the way the actions of a collection drop a deleted one - through the door.
@@ -949,8 +944,8 @@ final class MemoryRollbackDbContext extends HilosDbContext
     public static function create(MemoryRollbackObjects $objects, MemoryRollbackDbCollection $view): self
     {
         $context = new self();
-        $context->_objectCollections[MemoryRollbackObject::COLLECTION_KEY] = $objects;
-        $context->_dbItemCollections[MemoryRollbackObject::COLLECTION_KEY] = $view;
+        $context->_objectCollections[MemoryRollbackObjects::COLLECTION_KEY] = $objects;
+        $context->_dbItemCollections[MemoryRollbackObjects::COLLECTION_KEY] = $view;
 
         return $context;
     }

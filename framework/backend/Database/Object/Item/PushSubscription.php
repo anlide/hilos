@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
+use Hilos\Database\Object\Collection\PushSubscriptions as ObjectPushSubscriptions;
 use Hilos\Database\Object\Collection\PushSubscriptions;
 use Hilos\Database\Object\Item\Object_;
 
@@ -35,6 +35,7 @@ use Hilos\Database\Object\Item\Object_;
 class PushSubscription extends Object_
 {
     public const string ENTITY_CLASS = EntityPushSubscription::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectPushSubscriptions::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string endpoint = 'endpoint';
@@ -46,16 +47,6 @@ class PushSubscription extends Object_
     public const string goneAt = 'goneAt';
     public const string createdAt = 'createdAt';
     public const string lastSeenAt = 'lastSeenAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::pushSubscriptions)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::pushSubscriptions;
-    }
 
     /**
      * Magic getter for entity properties.

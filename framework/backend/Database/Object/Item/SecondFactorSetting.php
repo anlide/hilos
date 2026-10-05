@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\SecondFactorSetting as EntitySecondFactorSetting;
+use Hilos\Database\Object\Collection\SecondFactorSettings as ObjectSecondFactorSettings;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -26,21 +26,12 @@ use Hilos\Database\Object\Item\Object_;
 class SecondFactorSetting extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorSetting::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorSettings::class;
     public const string userId = 'userId';
     public const string resetWaitDays = 'resetWaitDays';
     public const string pendingResetWaitDays = 'pendingResetWaitDays';
     public const string pendingResetWaitFrom = 'pendingResetWaitFrom';
     public const string updatedAt = 'updatedAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::secondFactorSettings)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::secondFactorSettings;
-    }
 
     /**
      * Magic getter for entity properties.

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserPhoto as EntityUserPhoto;
+use Hilos\Database\Object\Collection\UserPhotos as ObjectUserPhotos;
 
 /**
  * @extends Object_<EntityUserPhoto>
@@ -17,6 +17,7 @@ use Hilos\Database\Entity\Item\UserPhoto as EntityUserPhoto;
 class UserPhoto extends Object_
 {
     public const string ENTITY_CLASS = EntityUserPhoto::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectUserPhotos::class;
 
     public const string userId = 'userId';
     public const string fileId = 'fileId';
@@ -60,11 +61,5 @@ class UserPhoto extends Object_
             self::fileId => $this->entity->file_id,
             self::setAt => $this->entity->set_at,
         ];
-    }
-
-    /** @return string Framework collection key */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::userPhotos;
     }
 }

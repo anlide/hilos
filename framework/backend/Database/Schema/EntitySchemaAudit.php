@@ -9,7 +9,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Hilos;
@@ -216,17 +216,12 @@ final class EntitySchemaAudit
      *
      * @param class-string<Entity> $entityClass Entity to look the mounted class up for
      * @return class-string<Entity> The mounted subclass over the same table, else `$entityClass` itself
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     public static function mountedClassOf(string $entityClass): string
     {
         $table = constant("{$entityClass}::" . Entity::META_TABLE);
-        foreach (Hilos::$db?->getObjectCollectionClasses() ?? [] as $collectionClass) {
-            $objectClass = $collectionClass::OBJECT_CLASS;
-            if (!is_subclass_of($objectClass, Object_::class)) {
-                continue;
-            }
-
-            $mountedClass = $objectClass::ENTITY_CLASS;
+        foreach (Hilos::$db?->getMountedEntities() ?? [] as $mountedClass) {
             if (
                 is_subclass_of($mountedClass, $entityClass)
                 && constant("{$mountedClass}::" . Entity::META_TABLE) === $table

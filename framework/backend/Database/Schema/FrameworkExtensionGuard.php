@@ -11,7 +11,7 @@ use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\IncompleteFrameworkExtensionException;
-use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 
@@ -100,6 +100,7 @@ final class FrameworkExtensionGuard
      *     framework's class, the two constants naming the Entity disagree, a framework key is
      *     written over past the substitution point, the subclass does not keep a declaration of
      *     the base, a column carries two verdicts or an added one none, or one table is mounted by two chains
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     public static function assertMountedExtensionsWhole(): void
     {
@@ -419,28 +420,16 @@ final class FrameworkExtensionGuard
      * Names every table that more than one mounted collection resolves to, over every collection
      * the context mounted and not only the framework's keys.
      *
-     * The two steps from a collection to its table are the sync applicator's: the collection names
-     * its Object, the Object its Entity. A collection that answers neither is passed over - a broken
-     * mount, not a second chain.
-     *
      * @param HilosDbContext $db Context whose mounts are judged
      * @return list<string> One finding per table under two or more chains, empty when every table has one
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     private static function sharedTableProblems(HilosDbContext $db): array
     {
         $collectionsByTable = [];
-        foreach ($db->getObjectCollectionClasses() as $collectionClass) {
-            $objectClass = $collectionClass::OBJECT_CLASS;
-            if (!is_subclass_of($objectClass, Object_::class)) {
-                continue;
-            }
-
-            $entityClass = $objectClass::ENTITY_CLASS;
-            if (!is_subclass_of($entityClass, Entity::class) || !defined("{$entityClass}::" . Entity::META_TABLE)) {
-                continue;
-            }
-
-            $collectionsByTable[constant("{$entityClass}::" . Entity::META_TABLE)][] = $collectionClass;
+        foreach ($db->getMountedEntities() as $key => $entityClass) {
+            $collectionClass = $db->mountedObjectCollection($key)::class;
+            $collectionsByTable[$entityClass::_table][] = "{$collectionClass} [{$key}]";
         }
 
         $problems = [];
@@ -449,10 +438,8 @@ final class FrameworkExtensionGuard
                 continue;
             }
 
-            $problems[] = "table {$table} is mounted by " . implode(' and ', array_map(
-                static fn(string $collection): string => "{$collection} [" . $collection::COLLECTION_KEY . ']',
-                $collections,
-            )) . '; one table, one mounted chain - a framework table is extended under its own key through'
+            $problems[] = "table {$table} is mounted by " . implode(' and ', $collections)
+                . '; one table, one mounted chain - a framework table is extended under its own key through'
                 . ' HilosDbContext::frameworkExtensions()';
         }
 

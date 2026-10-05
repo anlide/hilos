@@ -242,6 +242,7 @@ use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -1375,7 +1376,7 @@ final class ChatTopologyRegistryTest extends TestCase
     /**
      * @throws HilosException When the context refuses to configure, or the guard refuses a chain under a framework key
      */
-    public function testFrameworkExtensionsAreWhole(): void
+    public function testDatabaseMountsAreWhole(): void
     {
         // The question the daemon asks first on its start, over this project's context and
         // without a database: configure() reads nothing. The chain judged is this demo's rename
@@ -1385,6 +1386,7 @@ final class ChatTopologyRegistryTest extends TestCase
             Hilos::$db = new ChatDbContext();
             Hilos::$db->configure();
             FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            MountedCollectionKeyGuard::assertMountedKeysAgree();
         } finally {
             Hilos::$db = $previous;
         }

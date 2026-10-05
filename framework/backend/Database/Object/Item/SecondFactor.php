@@ -10,10 +10,10 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\SecondFactor as EntitySecondFactor;
+use Hilos\Database\Object\Collection\SecondFactors as ObjectSecondFactors;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
@@ -42,6 +42,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 class SecondFactor extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactor::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactors::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string label = 'label';
@@ -49,16 +50,6 @@ class SecondFactor extends Object_
     public const string confirmedAt = 'confirmedAt';
     public const string lastUsedAt = 'lastUsedAt';
     public const string createdAt = 'createdAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::secondFactors)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::secondFactors;
-    }
 
     /**
      * Magic getter for entity properties.

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
+use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -22,20 +22,11 @@ use Hilos\Database\Object\Item\Object_;
 class Setting extends Object_
 {
     public const string ENTITY_CLASS = EntitySetting::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectSettings::class;
     public const string id = 'id';
     public const string key = 'key';
     public const string type = 'type';
     public const string value = 'value';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::settings)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::settings;
-    }
 
     /**
      * Magic getter for entity properties.

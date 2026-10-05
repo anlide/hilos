@@ -15,6 +15,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\VerifierCircleMember as EntityVerifierCircleMember;
 use Hilos\Database\Exception\IncompleteFrameworkExtensionException;
 use Hilos\Database\Object\Collection\AuthBlocks as ObjectAuthBlocks;
+use Hilos\Database\Object\Collection\Users as ObjectUsers;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
 use Hilos\Database\Object\Objects;
@@ -349,6 +350,29 @@ final class FrameworkExtensionGuardTest extends TestCase
             . ' [' . SecondKeyDbContext::circleCopy . ']',
         );
 
+        FrameworkExtensionGuard::assertMountedExtensionsWhole();
+    }
+
+    /**
+     * @throws HilosException When the context refuses to configure
+     * @throws IncompleteFrameworkExtensionException When the same table is mounted twice
+     */
+    public function testSameCollectionUnderTwoActualKeysNamesBothKeys(): void
+    {
+        Hilos::$db = new class extends HilosDbContext {
+            public function configure(): void
+            {
+                parent::configure();
+                $this->_objectCollections['alias'] = $this->_objectCollections[self::users];
+            }
+        };
+        Hilos::$db->configure();
+
+        $this->expectException(IncompleteFrameworkExtensionException::class);
+        $this->expectExceptionMessage(
+            ObjectUsers::class . ' [' . HilosDbContext::users . '] and '
+            . ObjectUsers::class . ' [alias]',
+        );
         FrameworkExtensionGuard::assertMountedExtensionsWhole();
     }
 

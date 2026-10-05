@@ -8,10 +8,10 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\SessionActions;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Session as EntitySession;
+use Hilos\Database\Object\Collection\Sessions as ObjectSessions;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -44,6 +44,7 @@ use Hilos\Database\SqlParamCollection;
 class Session extends Object_
 {
     public const string ENTITY_CLASS = EntitySession::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectSessions::class;
 
     public const string id = 'id';
     public const string token = 'token';
@@ -64,16 +65,6 @@ class Session extends Object_
     public const string ipAddress = 'ipAddress';
     public const string blockedUserId = 'blockedUserId';
     public const string blockedSignedIn = 'blockedSignedIn';
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (HilosDbContext::sessions)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::sessions;
-    }
 
     /**
      * Returns the value of a session object property by name.

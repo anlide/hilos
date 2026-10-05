@@ -80,6 +80,7 @@ class rather than the framework's:
 | `ENTITY_CLASS` | the entity collection | the project's Entity |
 | `ENTITY_CLASS` | the object item | the project's Entity |
 | `OBJECT_CLASS` | the object collection | the project's Object |
+| `OBJECT_COLLECTION_CLASS` | the object item | the project's object collection, or its framework base |
 | `ENTITY_COLLECTION_CLASS` | the object collection | the project's entity collection |
 | `DB_ITEM_CLASS` | the view collection | the project's view item |
 | `OBJECT_COLLECTION_CLASS` | the view collection | the project's object collection |
@@ -91,6 +92,16 @@ Two constants stay the framework's and are NOT re-pointed:
 - `Objects::COLLECTION_KEY` — process-to-process synchronization is routed by
   the collection key (`DbSyncApplicator` looks the mounted collection up by it),
   so a subclass under another key is a second collection, not an extension.
+
+The Object item's `OBJECT_COLLECTION_CLASS` may keep the framework collection
+when the project's object collection subclasses it: the inherited key remains
+the framework key. `Object_::getCollectionKey()` is final and reads
+`COLLECTION_KEY` from that declared collection. For a project's own collection,
+the link must name the mounted class exactly. At startup, after the whole-chain
+guard, `MountedCollectionKeyGuard` compares each actual mount key with
+`COLLECTION_KEY` and checks this link before the node serves requests. A table
+mounted twice is reported first by `FrameworkExtensionGuard`, with both actual
+keys in its refusal.
 
 Factories on the inheritable classes return `static` and build with
 `new static(...)`, so an inherited factory constructs the subclass — the

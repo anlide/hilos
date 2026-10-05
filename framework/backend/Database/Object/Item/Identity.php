@@ -10,10 +10,10 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -37,6 +37,7 @@ use Hilos\Database\SqlParamCollection;
 class Identity extends Object_
 {
     public const string ENTITY_CLASS = EntityIdentity::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectIdentities::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string type = 'type';
@@ -49,16 +50,6 @@ class Identity extends Object_
      * identifier (see {@see verifyDummyPassword()}). Not a real credential.
      */
     private const string DUMMY_PASSWORD_HASH = '$2y$12$Dl.YAAr3YO3hR7hVxV56Gewg9CzLLWQqLQfTP0TdJj.o9lg9lhwiy';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::identities)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::identities;
-    }
 
     /**
      * Magic getter for entity properties.

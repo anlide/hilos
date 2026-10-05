@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
+use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -23,20 +23,11 @@ use Hilos\Database\Object\Item\Object_;
 final class Event extends Object_
 {
     public const string ENTITY_CLASS = EntityEvent::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectEvents::class;
 
     public const string id = 'id';
     public const string type = 'type';
     public const string timestamp = 'timestamp';
-
-    /**
-     * Return collection key used for ChatDbContext lookup.
-     *
-     * @return string Collection key (ChatDbContext::events)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return ChatDbContext::events;
-    }
 
     /**
      * Returns the value of an event object property by name.

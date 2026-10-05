@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\VerifierCircleMember as EntityVerifierCircleMember;
+use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Collection\VerifierCircleMembers;
 use Hilos\Database\Object\Item\Object_;
 
@@ -26,19 +26,10 @@ use Hilos\Database\Object\Item\Object_;
 class VerifierCircleMember extends Object_
 {
     public const string ENTITY_CLASS = EntityVerifierCircleMember::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectVerifierCircleMembers::class;
     public const string id = 'id';
     public const string identityType = 'identityType';
     public const string identifier = 'identifier';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::verifierCircle)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::verifierCircle;
-    }
 
     /**
      * Magic getter for entity properties.

@@ -33,6 +33,7 @@ use Hilos\Constants\AppEnv;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -180,6 +181,7 @@ HELP;
      * @param list<string> $args Positional args (the backup id)
      * @return int Exit code (0 success, 1 refused/failed, 2 bad argument, 3 unconfigured)
      * @throws EnvException When the hot path needs daemon host/port env values and they are missing or invalid
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     public function execute(array $options, array $args): int
     {
@@ -332,6 +334,7 @@ HELP;
      * can be read, which on the cold path is the last cheap moment to ask.
      *
      * @return bool Whether the declared verdicts collect into a registry
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     private function reportPiiRegistry(): bool
     {

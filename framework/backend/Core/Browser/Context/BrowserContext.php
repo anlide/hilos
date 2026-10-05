@@ -129,6 +129,7 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\HilosException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 
 /**
  * Base browser-facing context.
@@ -6288,6 +6289,7 @@ abstract class BrowserContext
      * does.
      *
      * @return ?PiiRegistry Verdicts of this installation, or null when they could not be collected
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     protected function viewerPiiRegistry(): ?PiiRegistry
     {

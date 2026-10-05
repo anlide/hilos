@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AccessLogEntry as EntityAccessLogEntry;
+use Hilos\Database\Object\Collection\AccessLogEntries as ObjectAccessLogEntries;
 
 /**
  * AccessLogEntry object - wraps one use of an account (HIL-1174).
@@ -22,19 +22,12 @@ use Hilos\Database\Entity\Item\AccessLogEntry as EntityAccessLogEntry;
 class AccessLogEntry extends Object_
 {
     public const string ENTITY_CLASS = EntityAccessLogEntry::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectAccessLogEntries::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string event = 'event';
     public const string ipAddress = 'ipAddress';
     public const string occurredAt = 'occurredAt';
-
-    /**
-     * @return string Collection key (HilosDbContext::accessLogEntries)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::accessLogEntries;
-    }
 
     /**
      * @param string $property Property name (see class @property list)

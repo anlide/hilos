@@ -17,6 +17,7 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
@@ -45,12 +46,12 @@ final class ObjectUpdateAnnouncementTest extends TestCase
 
         SourceChangeBus::reset();
         Hilos::$sr = new SignalRouter();
-        TruthSourceRegistry::register(UpdateAnnouncementObject::COLLECTION_KEY, TruthSourceKeys::all(), self::AGENT);
+        TruthSourceRegistry::register(UpdateAnnouncementObjects::COLLECTION_KEY, TruthSourceKeys::all(), self::AGENT);
     }
 
     protected function tearDown(): void
     {
-        TruthSourceRegistry::unregister(UpdateAnnouncementObject::COLLECTION_KEY, self::AGENT);
+        TruthSourceRegistry::unregister(UpdateAnnouncementObjects::COLLECTION_KEY, self::AGENT);
         SourceChangeBus::reset();
         Hilos::$sr = null;
 
@@ -67,7 +68,7 @@ final class ObjectUpdateAnnouncementTest extends TestCase
         $object->sync();
 
         $this->assertCount(1, $seen);
-        $this->assertSame(UpdateAnnouncementObject::COLLECTION_KEY, $seen[0][0]->sourceKey);
+        $this->assertSame(UpdateAnnouncementObjects::COLLECTION_KEY, $seen[0][0]->sourceKey);
         $this->assertSame('7', $seen[0][0]->sourceId);
         $this->assertSame(TableMutationType::Update, $seen[0][0]->mutationType);
         $this->assertSame(['value' => 'after'], $seen[0][0]->row);
@@ -218,8 +219,7 @@ final class UpdateAnnouncementEntity extends Entity
 final class UpdateAnnouncementObject extends Object_
 {
     public const string ENTITY_CLASS = UpdateAnnouncementEntity::class;
-
-    public const string COLLECTION_KEY = 'object_update_announcement_test';
+    public const string OBJECT_COLLECTION_CLASS = UpdateAnnouncementObjects::class;
 
     /**
      * Builds an object standing for a row that already exists.
@@ -271,13 +271,13 @@ final class UpdateAnnouncementObject extends Object_
         return $this->entity->value;
     }
 
-    /**
-     * @return string Collection key the announcement is made under
-     */
-    protected static function getCollectionKey(): string
-    {
-        return self::COLLECTION_KEY;
-    }
+}
+
+/** @extends Objects<UpdateAnnouncementObject> */
+final class UpdateAnnouncementObjects extends Objects
+{
+    public const string OBJECT_CLASS = UpdateAnnouncementObject::class;
+    public const string COLLECTION_KEY = 'object_update_announcement_test';
 }
 
 /**

@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Tasks\Database\Object\Item;
 
 use Demo\Tasks\Database\Entity\Item\Guest as EntityGuest;
-use Demo\Tasks\Database\TasksDbContext;
+use Demo\Tasks\Database\Object\Collection\Guests as ObjectGuests;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -24,21 +26,12 @@ use Hilos\Database\Object\Item\Object_;
 final class Guest extends Object_
 {
     public const string ENTITY_CLASS = EntityGuest::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectGuests::class;
 
     public const string id = 'id';
     public const string sessionToken = 'sessionToken';
     public const string name = 'name';
     public const string createdAt = 'createdAt';
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (TasksDbContext::guests)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return TasksDbContext::guests;
-    }
 
     /**
      * Returns the value of a guest object property by name.

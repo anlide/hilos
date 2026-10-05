@@ -15,11 +15,15 @@ use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Item\DbActions as ItemDbActions;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
+use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\HilosException;
@@ -166,6 +170,62 @@ abstract class DbContext
     public function mountedObjectCollection(string $name): ?Objects
     {
         return $this->_objectCollections[$name] ?? null;
+    }
+
+    /**
+     * Resolve every mounted collection without a reader-interest check. The key is the actual
+     * registration key, even when it disagrees with the collection's declared key.
+     *
+     * @return array<string, class-string<Entity>> Entity classes by mount key, in registration order
+     * @throws InvalidMountedCollectionException When a mounted class chain or table name is invalid
+     */
+    public function getMountedEntities(): array
+    {
+        $mounted = [];
+        foreach ($this->_objectCollections as $key => $objects) {
+            $collectionClass = $objects::class;
+            $objectClass = $collectionClass::OBJECT_CLASS;
+            if (!is_subclass_of($objectClass, Object_::class)) {
+                throw new InvalidMountedCollectionException(
+                    "Object collection {$collectionClass} [{$key}] has invalid OBJECT_CLASS {$objectClass}"
+                );
+            }
+
+            $entityClass = $objectClass::ENTITY_CLASS;
+            if (!is_subclass_of($entityClass, Entity::class)) {
+                throw new InvalidMountedCollectionException(
+                    "Object collection {$collectionClass} [{$key}] has invalid ENTITY_CLASS {$entityClass}"
+                );
+            }
+
+            if (!defined($entityClass . '::_table') || !is_string($entityClass::_table) || $entityClass::_table === '') {
+                throw new InvalidMountedCollectionException(
+                    "Object collection {$collectionClass} [{$key}] has invalid _table on {$entityClass}"
+                );
+            }
+
+            $mounted[$key] = $entityClass;
+        }
+
+        return $mounted;
+    }
+
+    /**
+     * @param class-string<Objects> $collectionClass Collection to mount under its declared key
+     * @param int $strategy Loading strategy for the object collection
+     * @throws InvalidMountedCollectionException When the declared key is empty or already mounted
+     * @throws UnknownLazyStrategyException When the loading strategy is unknown
+     */
+    protected function mountObjectCollection(string $collectionClass, int $strategy): void
+    {
+        $key = $collectionClass::COLLECTION_KEY;
+        if ($key === '' || isset($this->_objectCollections[$key])) {
+            throw new InvalidMountedCollectionException(
+                "Object collection {$collectionClass} cannot mount under [{$key}]: empty or occupied key"
+            );
+        }
+
+        $this->_objectCollections[$key] = $collectionClass::initDB($strategy);
     }
 
     /**

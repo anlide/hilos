@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Entity\Item\User as EntityUser;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\User as EntityUser;
+use Hilos\Database\Object\Collection\Users as ObjectUsers;
 
 /**
  * User - Object wrapper for user entity.
@@ -24,6 +24,7 @@ use Hilos\Database\DatabaseException;
 class User extends Object_
 {
     public const string ENTITY_CLASS = EntityUser::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
 
     public const string id = 'id';
     public const string name = 'name';
@@ -82,15 +83,5 @@ class User extends Object_
             self::block => $this->entity->block,
             self::lastActivity => $this->entity->last_activity,
         ];
-    }
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (HilosDbContext::users)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::users;
     }
 }

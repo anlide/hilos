@@ -6,10 +6,10 @@ namespace Hilos\Database\Object\Item;
 
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\LegalAcceptanceExport as EntityLegalAcceptanceExport;
+use Hilos\Database\Object\Collection\LegalAcceptanceExports as ObjectLegalAcceptanceExports;
 use Hilos\HilosException;
 use Hilos\Legal\Export\LegalAcceptancesExportState;
 
@@ -33,6 +33,7 @@ use Hilos\Legal\Export\LegalAcceptancesExportState;
 class LegalAcceptanceExport extends Object_
 {
     public const string ENTITY_CLASS = EntityLegalAcceptanceExport::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectLegalAcceptanceExports::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string state = 'state';
@@ -134,14 +135,6 @@ class LegalAcceptanceExport extends Object_
             self::sizeBytes => $this->entity->size_bytes,
             self::records => $this->entity->records,
         ];
-    }
-
-    /**
-     * @return string The framework queue's collection key
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::legalAcceptanceExports;
     }
 
     /**

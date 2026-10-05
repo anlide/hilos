@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
+use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -31,6 +33,7 @@ use Hilos\Database\Object\Item\Object_;
 final class Bot extends Object_
 {
     public const string ENTITY_CLASS = EntityBot::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectBots::class;
 
     public const string id = 'id';
     public const string name = 'name';
@@ -45,16 +48,6 @@ final class Bot extends Object_
     public const string topicMatchRequired = 'topicMatchRequired';
     public const string cooldownAfterMessage = 'cooldownAfterMessage';
     public const string priority = 'priority';
-
-    /**
-     * Return collection key used for ChatDbContext lookup.
-     *
-     * @return string Collection key (ChatDbContext::bots)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return ChatDbContext::bots;
-    }
 
     /**
      * Returns the value of a bot object property by name.

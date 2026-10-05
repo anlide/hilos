@@ -6,11 +6,10 @@ namespace Hilos\Database\Schema;
 
 use Hilos\Core\Daemon\DaemonApplication;
 use Hilos\Database\Context\DbContext;
-use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Entity\Item\NotificationDelivery;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\UndeclaredSetOwnershipException;
-use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
 
 /**
@@ -42,8 +41,8 @@ use Hilos\Hilos;
  *   is not climbed: the value is the top. Framework rows belonging to a person instead carry
  *   a key onto `hilos_user` (HIL-1202). The delivery journal's `notification_id` remains soft
  *   ({@see NotificationDelivery}) so a delivery can be pruned independently of its notification.
- * - A mounted collection that resolves to no Entity is passed over. That is a broken mount
- *   rather than an undeclared set, and this gate answers one question only.
+ * - A mounted collection that resolves to no Entity is refused by the shared mounted-entity
+ *   reader before this gate judges set declarations.
  *
  * Runs from {@see DaemonApplication::run()}, ahead of the anonymization coverage gate: this one
  * reads constants alone and so costs less, and an unmarked table is the more basic defect of
@@ -62,6 +61,7 @@ final class SetOwnershipGuard
      *     column it does not have, declares a non-boolean root, hangs its set on a table that does
      *     not declare itself a root, declares a short path that is not another column of a table in
      *     a set, or hangs its set on a chain of parents that returns to itself
+     * @throws InvalidMountedCollectionException When a mounted collection resolves to no Entity
      */
     public static function assertMountedSetsDeclared(): void
     {
@@ -93,31 +93,12 @@ final class SetOwnershipGuard
     /**
      * Names the Entity classes of the collections this installation mounted.
      *
-     * The two steps from a collection to its table class are the ones the sync applicator takes
-     * ({@see DbSyncApplicator}): the collection names its Object class, the Object names its
-     * Entity. A collection that answers neither is passed over, as the docblock of this class
-     * says.
-     *
      * @return list<class-string<Entity>> Entity classes of the mounted collections, in registration order
+     * @throws InvalidMountedCollectionException When a mounted collection resolves to no Entity
      */
     private static function mountedEntities(): array
     {
-        $entityClasses = [];
-        foreach (Hilos::$db?->getObjectCollectionClasses() ?? [] as $collectionClass) {
-            $objectClass = $collectionClass::OBJECT_CLASS;
-            if (!is_subclass_of($objectClass, Object_::class)) {
-                continue;
-            }
-
-            $entityClass = $objectClass::ENTITY_CLASS;
-            if (!is_subclass_of($entityClass, Entity::class)) {
-                continue;
-            }
-
-            $entityClasses[] = $entityClass;
-        }
-
-        return $entityClasses;
+        return array_values(Hilos::$db?->getMountedEntities() ?? []);
     }
 
     /**

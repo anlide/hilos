@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\StepUp as EntityStepUp;
+use Hilos\Database\Object\Collection\StepUps as ObjectStepUps;
 
 /**
  * StepUp object - wraps one operation confirmation (HIL-495).
@@ -23,20 +23,13 @@ use Hilos\Database\Entity\Item\StepUp as EntityStepUp;
 class StepUp extends Object_
 {
     public const string ENTITY_CLASS = EntityStepUp::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectStepUps::class;
     public const string id = 'id';
     public const string sessionTokenHash = 'sessionTokenHash';
     public const string userId = 'userId';
     public const string operation = 'operation';
     public const string confirmedUntil = 'confirmedUntil';
     public const string createdAt = 'createdAt';
-
-    /**
-     * @return string Collection key (HilosDbContext::stepUps)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::stepUps;
-    }
 
     /**
      * @param string $property Property name (see class @property list)

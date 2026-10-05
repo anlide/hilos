@@ -12,6 +12,7 @@ use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseGuaranteeStartupGuard;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
@@ -106,6 +107,7 @@ final class DaemonApplication
             // Object says nothing until the day somebody opens it. Constants and the mounted map
             // alone, no query.
             FrameworkExtensionGuard::assertMountedExtensionsWhole();
+            MountedCollectionKeyGuard::assertMountedKeysAgree();
 
             // Before anything composes: a mounted table that does not say whose set its rows are
             // part of leaves "did all of them arrive" with nobody to answer it. Ahead of the

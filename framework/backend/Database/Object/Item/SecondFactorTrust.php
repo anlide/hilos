@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\SecondFactorTrust as EntitySecondFactorTrust;
+use Hilos\Database\Object\Collection\SecondFactorTrusts as ObjectSecondFactorTrusts;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -26,21 +26,12 @@ use Hilos\Database\Object\Item\Object_;
 class SecondFactorTrust extends Object_
 {
     public const string ENTITY_CLASS = EntitySecondFactorTrust::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactorTrusts::class;
     public const string id = 'id';
     public const string sessionId = 'sessionId';
     public const string userId = 'userId';
     public const string trustedUntil = 'trustedUntil';
     public const string createdAt = 'createdAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::secondFactorTrusts)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::secondFactorTrusts;
-    }
 
     /**
      * Magic getter for entity properties.

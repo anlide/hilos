@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece as EntityModeratorPromptPiece;
+use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -21,6 +23,7 @@ use Hilos\Database\Object\Item\Object_;
 final class ModeratorPromptPiece extends Object_
 {
     public const string ENTITY_CLASS = EntityModeratorPromptPiece::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectModeratorPromptPieces::class;
     public const string SECTION_NAME_RULE = 'name_rule';
     public const string SECTION_MESSAGE_RULE = 'message_rule';
     public const string SECTION_PHOTO_RULE = 'photo_rule';
@@ -28,16 +31,6 @@ final class ModeratorPromptPiece extends Object_
     public const string id = 'id';
     public const string section = 'section';
     public const string promptPiece = 'promptPiece';
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (ChatDbContext::moderatorPromptPieces)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return ChatDbContext::moderatorPromptPieces;
-    }
 
     /**
      * Returns the value of a moderator prompt piece property by name.

@@ -7,10 +7,10 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\DataExport\DataExportState;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\DataExport as EntityDataExport;
+use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
 use Hilos\HilosException;
 
 /**
@@ -29,6 +29,7 @@ use Hilos\HilosException;
 class DataExport extends Object_
 {
     public const string ENTITY_CLASS = EntityDataExport::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectDataExports::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string state = 'state';
@@ -114,14 +115,6 @@ class DataExport extends Object_
             self::storedName => $this->entity->stored_name,
             self::sizeBytes => $this->entity->size_bytes,
         ];
-    }
-
-    /**
-     * @return string The framework queue's collection key
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::dataExports;
     }
 
     /**

@@ -7,10 +7,10 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\RegistrationReservation as EntityRegistrationReservation;
+use Hilos\Database\Object\Collection\RegistrationReservations as ObjectRegistrationReservations;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -36,6 +36,7 @@ use Hilos\Database\SqlParamCollection;
 class RegistrationReservation extends Object_
 {
     public const string ENTITY_CLASS = EntityRegistrationReservation::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectRegistrationReservations::class;
     public const string id = 'id';
     public const string type = 'type';
     public const string identifier = 'identifier';
@@ -43,16 +44,6 @@ class RegistrationReservation extends Object_
     public const string codeAcceptedAt = 'codeAcceptedAt';
     public const string acceptedRevisions = 'acceptedRevisions';
     public const string expiresAt = 'expiresAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::registrationReservations)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::registrationReservations;
-    }
 
     /**
      * Magic getter for entity properties.

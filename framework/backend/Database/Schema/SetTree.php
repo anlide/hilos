@@ -6,12 +6,13 @@ namespace Hilos\Database\Schema;
 
 use Closure;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\Topology\TopologyValidator;
+use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
 
@@ -53,6 +54,7 @@ final class SetTree
      * @throws DbCollectionNotReadableException When this process does not read a table the climb passes through
      * @throws LogicException When the collection of a parent table has no entity collection configured
      * @throws DatabaseException When loading a parent row fails
+     * @throws InvalidMountedCollectionException When a mounted parent collection has no valid class chain or table
      */
     public static function topOfSetKey(string $entityClass, string $setKey): ?string
     {
@@ -116,6 +118,7 @@ final class SetTree
      * @param class-string<Entity> $entityClass Entity whose set column starts the climb
      * @return array<string, ?string> Mounted collection key of each table the climb reads, keyed by
      *     table name, null for a table that is not mounted; empty when the value is the top already
+     * @throws InvalidMountedCollectionException When a mounted parent collection has no valid class chain or table
      */
     public static function walkOf(string $entityClass): array
     {
@@ -186,27 +189,16 @@ final class SetTree
     /**
      * Maps each mounted table to the collection it is mounted under and its Entity.
      *
-     * The same two steps {@see SetOwnershipGuard} takes from a collection to its table: the
-     * collection names its Object class, the Object names its Entity. A collection that answers
-     * neither is passed over.
+     * The context resolves every mounted collection to its Entity before this map is built.
      *
      * @return array<string, array{0: string, 1: class-string<Entity>}> Collection key and Entity per table name
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     private static function mountedByTable(): array
     {
         $mounted = [];
-        foreach (Hilos::$db?->getObjectCollectionClasses() ?? [] as $collectionClass) {
-            $objectClass = $collectionClass::OBJECT_CLASS;
-            if (!is_subclass_of($objectClass, Object_::class)) {
-                continue;
-            }
-
-            $entityClass = $objectClass::ENTITY_CLASS;
-            if (!is_subclass_of($entityClass, Entity::class) || !defined("{$entityClass}::" . Entity::META_TABLE)) {
-                continue;
-            }
-
-            $mounted[constant("{$entityClass}::" . Entity::META_TABLE)] = [$collectionClass::COLLECTION_KEY, $entityClass];
+        foreach (Hilos::$db?->getMountedEntities() ?? [] as $key => $entityClass) {
+            $mounted[$entityClass::_table] = [$key, $entityClass];
         }
 
         return $mounted;

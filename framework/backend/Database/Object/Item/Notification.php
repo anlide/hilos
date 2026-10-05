@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
+use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -31,6 +31,7 @@ use Hilos\Database\Object\Item\Object_;
 class Notification extends Object_
 {
     public const string ENTITY_CLASS = EntityNotification::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectNotifications::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string type = 'type';
@@ -40,16 +41,6 @@ class Notification extends Object_
     public const string data = 'data';
     public const string readAt = 'readAt';
     public const string createdAt = 'createdAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::notifications)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::notifications;
-    }
 
     /**
      * Magic getter for entity properties.

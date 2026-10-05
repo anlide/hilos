@@ -87,6 +87,7 @@ use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Actions\Item\UserRenameActions;
 use Hilos\Database\Actions\Item\VerifierCircleMemberActions;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 
 /**
  * HilosDbContext - Framework database context with Hilos-level collections.
@@ -278,6 +279,7 @@ abstract class HilosDbContext extends DbContext
      * @throws CollectionAlreadyMountedException When a key is represented twice
      * @throws ObjectCollectionNotFoundException When a framework object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
+     * @throws InvalidMountedCollectionException When a project mount declares an invalid or occupied key
      */
     public function configure(): void
     {

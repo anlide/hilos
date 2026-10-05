@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database\Object\Item;
 
 use Hilos\Constants\SignalConstants;
@@ -20,6 +22,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Objects;
@@ -55,6 +58,9 @@ abstract class Object_
      * @var class-string<Entity>
      */
     public const string ENTITY_CLASS = '';
+
+    /** @var class-string<Objects>|'' Collection that owns this object row */
+    public const string OBJECT_COLLECTION_CLASS = '';
 
     /**
      * Prevents cloning of Object instances.
@@ -342,15 +348,20 @@ abstract class Object_
     }
 
     /**
-     * Collection key for DB sync broadcast (e.g. ChatDbContext::bots).
+     * Collection key for DB sync, read from the row's declared object collection.
      *
      * Return empty string to skip broadcast.
      *
      * @return string Collection key or empty string
      */
-    protected static function getCollectionKey(): string
+    final protected static function getCollectionKey(): string
     {
-        return '';
+        $collectionClass = static::OBJECT_COLLECTION_CLASS;
+        if ($collectionClass === '') {
+            return '';
+        }
+
+        return $collectionClass::COLLECTION_KEY;
     }
 
     /**
@@ -617,6 +628,7 @@ abstract class Object_
      * @throws DbCollectionNotReadableException When this process does not read a table the climb passes through
      * @throws LogicException When the collection of a parent table has no entity collection configured
      * @throws DatabaseException When loading a parent row fails
+     * @throws InvalidMountedCollectionException When a mounted parent collection has no valid class chain or table
      */
     public function touchedSetKeys(): array
     {
@@ -660,6 +672,7 @@ abstract class Object_
      * @throws DbCollectionNotReadableException When this process does not read a table the climb passes through
      * @throws LogicException When the collection of a parent table has no entity collection configured
      * @throws DatabaseException When loading a parent row fails
+     * @throws InvalidMountedCollectionException When a mounted parent collection has no valid class chain or table
      */
     public function storedSetTop(): ?string
     {

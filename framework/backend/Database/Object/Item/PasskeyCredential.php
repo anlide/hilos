@@ -10,10 +10,10 @@ use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
+use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
@@ -48,6 +48,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 class PasskeyCredential extends Object_
 {
     public const string ENTITY_CLASS = EntityPasskeyCredential::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectPasskeyCredentials::class;
     public const string id = 'id';
     public const string identityId = 'identityId';
     public const string userId = 'userId';
@@ -61,16 +62,6 @@ class PasskeyCredential extends Object_
     public const string label = 'label';
     public const string lastUsedAt = 'lastUsedAt';
     public const string createdAt = 'createdAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::passkeyCredentials)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::passkeyCredentials;
-    }
 
     /**
      * Magic getter for entity properties.

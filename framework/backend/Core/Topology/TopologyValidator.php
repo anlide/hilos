@@ -56,6 +56,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceOwner;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
@@ -230,6 +231,7 @@ final class TopologyValidator
      *     viewer of the admin view mode, or an agent claims a set of a table cut by no column, or of a runtime collection
      *     cut by no field
      * @throws InvalidArgumentException When an index declaration names a direction or a type it cannot name
+     * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
      */
     public function validateReferences(string $hilosClass): void
     {
@@ -361,14 +363,15 @@ final class TopologyValidator
      *
      * Silent in three cases, and in each the refusal stands elsewhere or is not owed. A collection
      * that is not mounted: no claim is held against the mounting today, whatever its width. A
-     * mounted collection with no Entity behind it: a broken mount, which {@see SetOwnershipGuard}
-     * passes over too. An Entity that declares no `_setVia` at all: {@see SetOwnershipGuard} has
+     * mounted collection with no Entity behind it: the context refuses that broken mount when
+     * its mounted map is read. An Entity that declares no `_setVia` at all: {@see SetOwnershipGuard} has
      * refused the node before the first agent was built ({@see DaemonApplication::run()}). Nor does
      * it repeat that guard's cross-check of the root a column points at - a claim is judged here,
      * not a table.
      *
      * @param array $agents Agent registry
      * @param list<string> $errors Validation error accumulator
+     * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
      */
     private function validateSetClaims(array $agents, array &$errors): void
     {
@@ -417,6 +420,7 @@ final class TopologyValidator
      * @param string $collection Collection the claim names
      * @param class-string<Entity> $entityClass Entity of that collection
      * @param list<string> $errors Validation error accumulator
+     * @throws InvalidMountedCollectionException When a mounted set collection has no valid class chain or table
      */
     private function validateSetClimb(string $ownerClass, string $collection, string $entityClass, array &$errors): void
     {

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
+use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
@@ -22,21 +22,12 @@ use Hilos\Database\Object\Item\Object_;
 final class EventMessage extends Object_
 {
     public const string ENTITY_CLASS = EntityEventMessage::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectEventMessages::class;
 
     public const string eventId = 'eventId';
     public const string authorUserId = 'authorUserId';
     public const string authorBotId = 'authorBotId';
     public const string message = 'message';
-
-    /**
-     * Returns the database collection key for message event details.
-     *
-     * @return string Collection key (ChatDbContext::eventMessages)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return ChatDbContext::eventMessages;
-    }
 
     /**
      * Returns an event message property by name.

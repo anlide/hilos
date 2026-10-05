@@ -10,6 +10,7 @@ use Demo\Polls\Database\View\Collection\Guests;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
@@ -34,12 +35,13 @@ final class PollsDbContext extends HilosDbContext
      * @throws CollectionAlreadyMountedException When a key is represented twice
      * @throws ObjectCollectionNotFoundException When a represented object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
+     * @throws InvalidMountedCollectionException When a project collection key is empty or already mounted
      */
     public function configure(): void
     {
         parent::configure();
 
-        $this->_objectCollections[self::guests] = ObjectGuests::initDB(Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectGuests::class, Objects::LAZY_STRATEGY_KEY);
 
         $this->setRepresent(self::guests, Guests::class, GuestsActions::class);
     }

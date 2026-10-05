@@ -11,6 +11,7 @@ use Hilos\Backup\Exception\BackupException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Hilos;
@@ -60,8 +61,8 @@ final class PiiRegistry
      * the order of the anonymization pass.
      *
      * @return self Registry over every verdict this installation declares
-     * @throws AnonymizationConfigException When a verdict is malformed, or a mounted collection
-     *     resolves to no table class
+     * @throws AnonymizationConfigException When a personal-data verdict is malformed
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     public static function collect(): self
     {
@@ -193,21 +194,12 @@ final class PiiRegistry
      * only knows it found nothing.
      *
      * @return list<class-string<Entity>> Entity classes declaring a verdict, in registration order
-     * @throws AnonymizationConfigException When a mounted collection resolves to no table class
+     * @throws InvalidMountedCollectionException When a mounted collection resolves to no table class
      */
     private static function classifiedEntities(): array
     {
         $entityClasses = [];
-        foreach (Hilos::$db?->getObjectCollectionClasses() ?? [] as $collectionClass) {
-            try {
-                $entityClass = BackupTableResolver::entityClassOf($collectionClass);
-            } catch (BackupException $failure) {
-                throw new AnonymizationConfigException(
-                    "Mounted collection {$collectionClass} stands for no table, so its personal data cannot be judged",
-                    0,
-                    $failure,
-                );
-            }
+        foreach (Hilos::$db?->getMountedEntities() ?? [] as $entityClass) {
             if (defined("{$entityClass}::" . Entity::META_PII)) {
                 $entityClasses[] = $entityClass;
             }

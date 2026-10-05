@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
+use Hilos\Database\Object\Collection\UserMerges as ObjectUserMerges;
 
 /**
  * UserMerge - Object wrapper for one row of the framework merge table.
@@ -22,6 +22,7 @@ use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 class UserMerge extends Object_
 {
     public const string ENTITY_CLASS = EntityUserMerge::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectUserMerges::class;
 
     public const string userId = 'userId';
     public const string survivorUserId = 'survivorUserId';
@@ -73,15 +74,5 @@ class UserMerge extends Object_
             self::survivorUserId => $this->entity->survivor_user_id,
             self::mergedAt => $this->entity->merged_at,
         ];
-    }
-
-    /**
-     * Returns the database collection key for this object type.
-     *
-     * @return string Collection key (HilosDbContext::userMerges)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::userMerges;
     }
 }

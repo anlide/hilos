@@ -31,6 +31,7 @@ use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
@@ -70,17 +71,18 @@ final class ChatDbContext extends HilosDbContext
      * @throws CollectionAlreadyMountedException When a key is represented twice
      * @throws ObjectCollectionNotFoundException When a represented object collection is missing
      * @throws UnknownLazyStrategyException When a collection is mounted under a strategy initDB() does not know
+     * @throws InvalidMountedCollectionException When a project collection key is empty or already mounted
      */
     public function configure(): void
     {
         parent::configure();
 
-        $this->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
-        $this->_objectCollections[self::eventMessages] = ObjectEventMessages::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->_objectCollections[self::eventUserRegistrations] = ObjectEventUserRegistrations::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->_objectCollections[self::eventAttachments] = ObjectEventAttachments::initDB(Objects::LAZY_STRATEGY_KEY);
-        $this->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_NONE);
-        $this->_objectCollections[self::moderatorPromptPieces] = ObjectModeratorPromptPieces::initDB(Objects::LAZY_STRATEGY_NONE);
+        $this->mountObjectCollection(ObjectEvents::class, Objects::LAZY_STRATEGY_NONE);
+        $this->mountObjectCollection(ObjectEventMessages::class, Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectEventUserRegistrations::class, Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectEventAttachments::class, Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectBots::class, Objects::LAZY_STRATEGY_NONE);
+        $this->mountObjectCollection(ObjectModeratorPromptPieces::class, Objects::LAZY_STRATEGY_NONE);
 
         $this->setRepresent(self::events, Events::class, EventsActions::class);
         $this->setRepresent(self::eventMessages, EventMessages::class, EventMessagesActions::class);

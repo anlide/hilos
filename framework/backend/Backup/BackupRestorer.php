@@ -20,6 +20,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseMarker;
 use Hilos\Database\DatabaseMarkerRow;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
+use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
 use Hilos\Environment\Exception\EnvException;
@@ -90,6 +91,7 @@ final class BackupRestorer
      *     whether the database was already being replaced ({@see RestoreFailedException::databaseTouched()})
      * @throws EnvException When the backup storage env value cannot be read
      * @throws DatabaseException When a connection the archive imports into cannot be reached
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     public function restore(
         string $id,
@@ -695,6 +697,7 @@ final class BackupRestorer
      * @return RestoreAnonymizer Anonymizer over this installation's declarations
      * @throws RestoreFailedException When the declared registry is not a registry, or the
      *     platform's secure random source refuses to mint this run's salt
+     * @throws InvalidMountedCollectionException When a mounted collection has no valid class chain or table
      */
     private function resolveAnonymizer(): RestoreAnonymizer
     {

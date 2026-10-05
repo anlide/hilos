@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\File as EntityFile;
+use Hilos\Database\Object\Collection\Files as ObjectFiles;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Files\FileVisibility;
 
@@ -32,6 +32,7 @@ use Hilos\Files\FileVisibility;
 class File extends Object_
 {
     public const string ENTITY_CLASS = EntityFile::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectFiles::class;
     public const string id = 'id';
     public const string storedName = 'storedName';
     public const string filename = 'filename';
@@ -42,16 +43,6 @@ class File extends Object_
     public const string visibility = 'visibility';
     public const string bound = 'bound';
     public const string createdAt = 'createdAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::files)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::files;
-    }
 
     /**
      * Magic getter for entity properties.

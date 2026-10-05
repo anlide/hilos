@@ -9,10 +9,10 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\OAuthProvider as EntityOAuthProvider;
+use Hilos\Database\Object\Collection\OAuthProviders as ObjectOAuthProviders;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
@@ -43,6 +43,7 @@ use Hilos\Database\SqlParamCollection;
 class OAuthProvider extends Object_
 {
     public const string ENTITY_CLASS = EntityOAuthProvider::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectOAuthProviders::class;
     public const string id = 'id';
     public const string providerKey = 'providerKey';
     public const string clientId = 'clientId';
@@ -50,16 +51,6 @@ class OAuthProvider extends Object_
 
     /** Remembered answer of {@see hasClientSecret()}; null when never asked or forgotten. */
     private ?bool $clientSecretSet = null;
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::oauthProviders)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::oauthProviders;
-    }
 
     /**
      * Magic getter for entity properties.

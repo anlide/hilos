@@ -10,10 +10,10 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AccountDeletion as EntityAccountDeletion;
+use Hilos\Database\Object\Collection\AccountDeletions as ObjectAccountDeletions;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
@@ -41,22 +41,13 @@ use Hilos\Utils\Helpers\TimeHelper;
 class AccountDeletion extends Object_
 {
     public const string ENTITY_CLASS = EntityAccountDeletion::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectAccountDeletions::class;
     public const string id = 'id';
     public const string userId = 'userId';
     public const string requestedAt = 'requestedAt';
     public const string effectiveAt = 'effectiveAt';
     public const string canceledAt = 'canceledAt';
     public const string completedAt = 'completedAt';
-
-    /**
-     * Returns the database collection key.
-     *
-     * @return string Collection key (HilosDbContext::accountDeletions)
-     */
-    protected static function getCollectionKey(): string
-    {
-        return HilosDbContext::accountDeletions;
-    }
 
     /**
      * Magic getter for entity properties.
