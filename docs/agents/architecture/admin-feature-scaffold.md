@@ -532,6 +532,14 @@ It supplies the default-language env value (not in the code yet — HIL-1471).
 Startup refuses a partially activated feature (not in the code yet — HIL-1470).
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
 
+### daemon — the Daemon section
+
+Configure-only: the framework owns the node agent, the collector, the abstract page agent and the section's pages (not in the code yet — HIL-1370).
+The project lists the feature in `Hilos::FEATURES` and registers the three agents in `Hilos::AGENTS`, the page agent as an empty subclass (not in the code yet — HIL-1370).
+It registers the section's thin pages, whose addresses carry the node (not in the code yet — HIL-1381).
+Startup refuses a partially activated feature (not in the code yet — HIL-1370).
+For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
+
 ### a future framework feature (roles, …)
 
 A new framework admin feature ships the same shape: a base page (subscribe +
