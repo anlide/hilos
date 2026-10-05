@@ -63,6 +63,8 @@ such a section by registering its page and table in the topology, with no line
 in `FEATURES`; the first one is `hilos_maintenance`
 (`Hilos\Pages\Maintenance\AbstractHilosMaintenancePage`), which shows the
 verifier circle through the framework's `HilosVerifierCircleTable`.
+It is also where an admin closes the system to visitors by hand
+([protected-mode.md](protected-mode.md), *Manual Maintenance*) (not in the code yet — HIL-1362).
 
 A framework section may also come with a feature case that is not its own. The
 analytics section has no separate case: `HilosFeature::ANALYTICS` enables both

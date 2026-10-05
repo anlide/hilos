@@ -30,7 +30,7 @@ Use this skill for agent business logic and registration work. Start by reading 
 - The agent writes a fact somebody has on screen right now — when the server
   owes that screen a move, and which frame moves it:
   `docs/agents/signals/screen-invalidation.md`
-- Asking for a node freeze before a destructive operation: `docs/agents/architecture/protected-mode.md`
+- Asking for a node freeze before a destructive operation, or for the verification window straight away (manual maintenance): `docs/agents/architecture/protected-mode.md`
 - Blocking anti-patterns: `docs/agents/antipatterns/blocking-in-ontick.md`
 - Moving long or blocking work out of an agent, and why a child process is not the way: `docs/agents/antipatterns/child-process-for-long-work.md`
 - Signal routing changes: use `$hilos-signals`

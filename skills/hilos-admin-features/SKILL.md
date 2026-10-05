@@ -33,7 +33,7 @@ read the canonical spec before editing.
   table per subject, the administrators' windows as state inside it, and a
   refusal instead of an empty list when no holder answers:
   `docs/agents/architecture/table-agents.md`
-- Who owns the verifier circle: `docs/agents/architecture/protected-mode.md`
+- Who owns the verifier circle, and closing the system to visitors by hand from the Maintenance section: `docs/agents/architecture/protected-mode.md`
 - The admin view mode — what a non-admin viewer sees and may not do, and what
   every admin page owes it: `docs/agents/architecture/admin-view-mode.md`
 - The Analytics section — what its screens read, whose browser session they

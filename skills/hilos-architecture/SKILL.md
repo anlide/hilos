@@ -13,7 +13,7 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
 - Worker processes, forking, worker message handling: `docs/agents/architecture/worker-lifecycle.md`
 - Agent creation, lifecycle hooks, signal sending: `docs/agents/architecture/agent-lifecycle.md`
 - Sockets, event loop, I/O, blocking operations: `docs/agents/architecture/event-loop.md`
-- Freezing a node for a destructive operation: `docs/agents/architecture/protected-mode.md`
+- Freezing a node for a destructive operation, or closing it to visitors by hand (manual maintenance): `docs/agents/architecture/protected-mode.md`
 - Guarding an expensive auth action against brute force, and why there is no
   captcha: `docs/agents/architecture/auth-throttle.md`
 - Spreading the holders of entities across cluster nodes, and what a caller

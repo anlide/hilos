@@ -9,12 +9,17 @@ only connection left through is the one driving the operation. Its machinery is
 `framework/backend/ProtectedMode/`; the two entries are
 `StandaloneProtectedMode` (single node) and `ClusterProtectedMode` (leader plus
 followers).
+The same mode also closes visitors out by hand, straight into its verification window,
+with no operation or agent stop behind it (*Manual Maintenance*) (not in the code yet — HIL-1355).
 
 ## Core Rule
 
 The mode is unconditional and its only entry is an agent. Do not add a switch —
 not a `HilosFeature` case, not an env variable, not a facade or static method,
 not a second entry "for tests".
+
+An administrator closes visitors out from Maintenance (not in the code yet — HIL-1362) or the CLI (not in the code yet — HIL-1357); both trigger the index agent, which asks through this same entry (not in the code yet — HIL-1356).
+There is no second entry: the core authorizes the recorded agent by type and index; the agent authorizes the person.
 
 ## Unconditional, With One Physical Boundary
 
@@ -53,7 +58,8 @@ Agent::requestProtectedModeEnable(operation, acceptKey)
 A CLI command never enters the mode itself. It sends its request down the
 command channel to the agent that owns the operation — `backup:restore-request`
 reaching `BackupAgent` is the worked example — and that agent asks for the
-freeze. `ProtectedModeSwitch` is out of reach from a CLI process anyway — not
+freeze; a manual-maintenance command reaching the index agent is another
+(not in the code yet — HIL-1357). `ProtectedModeSwitch` is out of reach from a CLI process anyway — not
 because `Hilos::$cluster` is missing (`Hilos::initEnv()` builds it everywhere)
 but because nothing registers a switch into it outside the daemon, so
 `ClusterContext::protectedMode()` is null there. No extra guard is written for
@@ -168,6 +174,9 @@ second owner), a project may hold two initiators — the real one and the test
 driver's carrier — and a freeze may only be driven by the agent the row names. A
 shared name would hand one initiator's freeze to the other, and the identity
 check would then refuse it. Hence the two ladders, same shape, different owners.
+
+A third command family serves manual maintenance in production on the index agent: enable, disable and mint a code, with distinct names for the same one-command-owner reason (not in the code yet — HIL-1357).
+A project with backup carries both production families; see *Manual Maintenance* (not in the code yet — HIL-1357).
 
 The mint and the close each answer to **two** names — `protected-mode:pass` and
 `test:protected-mode:pass`, `protected-mode:close` and `test:protected-mode:close`
@@ -388,9 +397,9 @@ makes no blocking call.
 | Verdict | What it means |
 |---|---|
 | `INITIATOR_LOST` | the initiator agent stopped; sticky, because the agent-start gate lets its type start again and a fresh instance would read as alive |
-| `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick |
+| `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick — under manual maintenance only when the settings key calls for it; by default, a log line (not in the code yet — HIL-1359) |
 | `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`; the alert names the nodes that never confirmed |
-| `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` |
+| `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` — except in a manual-maintenance window, where no operation is behind the door to mark progress (not in the code yet — HIL-1358) |
 
 **The progress mark is written by the operation, not by the framework.** What
 proves life is that the *work* moved, not that a process is up: a restore spawns
@@ -437,14 +446,16 @@ automatically, the human path out has to actually work.
   out. **A file that is there and cannot be read or parsed refuses the startup**
   with the reason named — reading a damaged freeze as "no freeze" opens the node
   on the strength of a parse failure. A missing file is the ordinary startup.
-  Every accept key is dropped on restore, the initiator's own included: each was
-  minted on a 101 that died with the daemon. The session hashes go too — the
-  initiator's and every admitted verifier's — and that one is a decision rather
-  than a consequence: those cookies do outlive the daemon, and keeping them would
-  hand their browsers the run of a node whose operation nobody is driving.
+  Every accept key is dropped: it was minted on a 101 that died with the daemon.
+  `restoreFromDisk()` keeps the initiator's session hash: Backups' reopen button uses
+  `belongsToInitiator()`, which refuses null, so losing it would lock out the restore operator.
+  Passes, admitted sessions and the circle are cleared by choice: a code lasts minutes,
+  and a verifier asks for a new one. The restored window admits only the initiating browser.
   A restored row is still frozen even before this node remembers its leader. It
   accepts the current leader's frames and refuses a fresh quiesce outside the
   verification window.
+  Manual maintenance alone clears that hash too, by operation rather than phase, returning an empty window; restore keeps its behavior (not in the code yet — HIL-1359).
+  Its restart mail follows the settings key; see *Manual Maintenance* (not in the code yet — HIL-1359).
 - **Leader change.** `ClusterProtectedMode::onBecameLeader()` rebuilds the
   leader-side freeze from the row this node carries. Without it `onDisable()`
   from a live and healthy initiator is dropped (`leadsFreezeFor()` on
@@ -545,6 +556,8 @@ adds a reason of its own, and it is why the photograph is taken
 has an answer — the circle table lives in the database a restore rewrites, and
 afterwards the archive's own circle applies — and resolving a person to a
 session later would mean reading a session table the restore has replaced.
+Manual maintenance is the exception: the node is not quiesced, and the photograph at closing
+is chosen by rule rather than forced by a swap; see *Manual Maintenance* (not in the code yet — HIL-1355).
 
 The read and the write sit on opposite sides of a process boundary and neither
 may cross it. The circle is three database queries, which the master is forbidden
@@ -784,6 +797,77 @@ the frame means reload: after a restore the initiator's data is as stale as
 anyone's. What the browser does with that frame, and why the reload is a full
 one rather than a re-subscribe, is the client half in
 [../frontend/core-and-connection.md](../frontend/core-and-connection.md).
+
+## Manual Maintenance: The Window Without An Operation (HIL-1291)
+
+Manual maintenance takes the row from `inactive` straight to `verifying`, skipping
+`activating` and `active`: no agents stop or restart and no unstopped writer is
+silenced (not in the code yet — HIL-1355). The window already permits agent starts
+(`WorkerServer::protectedModeRefusesStart()`); writer silence already applies only
+in `activating` / `active` (`ProtectedModeRuntime::silencesUnstoppedWriters()`).
+Why skip the full freeze: the writer rule in *The Freeze Is Also The Window For
+Repairing What The Operation Broke* explains the discarded node analytics journal
+(counted as restore loss) and dropped durable mail deliveries until silence ends.
+Stopping and restarting agents would also put the initiating browser on the stub.
+The owner's rule is "the door is closed, the house keeps working": no manual path
+to full freeze, through either repeat enable or close-back (not in the code yet — HIL-1355).
+
+The index agent owns entry, disable of its manual window and code minting, with
+stated refusals (not in the code yet — HIL-1356); its test open already requires
+one instance per cluster. Its third CLI family has those three commands, with
+names distinct from backup's `protected-mode:*` and the test-only `test:*`, since
+a command routes to one agent type (not in the code yet — HIL-1357). Enable prints
+no code; a lost reply is checked through `protected-mode:inspect` (not in the code yet — HIL-1357).
+
+Visitors get the stub; inside are the initiating browser (when closed by button),
+the circle photographed at closing, and code holders (not in the code yet — HIL-1355).
+The browser uses the same accept-key and session halves; two nulls never meet,
+so CLI entry has no initiating browser. With the node running and no database
+swap, the photograph's moment is chosen by rule: a circle member arriving later
+or named during the window enters by code (not in the code yet — HIL-1355).
+
+Any admitted admin may open the system from Maintenance: the page and agent check
+admin rights and that the window is manual (not in the code yet — HIL-1363).
+The core still checks the disabling agent's type and index. The CLI may also
+disable (not in the code yet — HIL-1357); the exit is the same `inactive` and reload
+for everyone. Restore's window still opens from Backups only for its initiating browser.
+Minting in Maintenance is only for this window and shows the code once (not in the code yet — HIL-1364), and
+the CLI mints too, only in the manual window (not in the code yet — HIL-1357).
+The code uses secure randomness; only its hash stands on the row, its clear value in the reply.
+
+The watchdog exempts the manual operation on the row from `SILENT`: no work owes
+progress behind that door (not in the code yet — HIL-1358). This is an operation
+exception, not phase branching; other verdicts stand, and the watchdog never lifts.
+
+On restart, phase, operation and initiator agent identity survive; codes, admitted
+sessions and the circle are cleared by the ordinary restart rule. Manual maintenance
+also clears the initiating browser's hash, returning an empty window, by operation,
+not phase; restore keeps its hash (not in the code yet — HIL-1359). Agents start in `verifying`.
+Enter with a new CLI code or disable from the CLI (not in the code yet — HIL-1357).
+A settings-catalog key saying "restart under manual maintenance is normal" defaults
+to on: log only; off gives `RESTORED_FROM_DISK` mail and reminders as for restore,
+and projects without settings use the default (not in the code yet — HIL-1359).
+
+`Hilos::PROTECTED_MODE_STUB` maps operations plus a default to copy, is overridden
+wholesale by a project, and refuses startup without a default or with missing or
+extra copy fields. The manual entry says "closed for maintenance", with no promise
+of a brief wait or automatic return (not in the code yet — HIL-1360). Its admitted
+banner names manual maintenance and says the system is closed to visitors, naming
+the Maintenance section in words, with no disable button; projects may replace it (not in the code yet — HIL-1360).
+
+Restore under the manual window is refused as a foreign freeze; disable manual
+maintenance first, accepting the visitor gap before restore freezes the node
+(owner decision, 2026-10-04); manual entry under another freeze is refused too
+(not in the code yet — HIL-1356).
+
+Maintenance shows open / manually closed (since when, button or CLI, not who) /
+operation running, the last without manual controls (not in the code yet — HIL-1361).
+Its controls enable (not in the code yet — HIL-1362), disable (not in the code yet — HIL-1363)
+and mint a code (not in the code yet — HIL-1364); each is disabled for a view-mode viewer.
+There is no extra project wiring: the index agent already serves this page and
+owns manual entry (not in the code yet — HIL-1356).
+In a cluster all masters close; disable and code minting work from any node
+(not in the code yet — HIL-1367).
 
 ## Reading The Runtime Row, And What Null Means
 
