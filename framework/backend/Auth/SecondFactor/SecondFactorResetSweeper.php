@@ -7,6 +7,7 @@ namespace Hilos\Auth\SecondFactor;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -31,6 +32,10 @@ final class SecondFactorResetSweeper
     /**
      * Carries out the removals due and reminds of the ones still waiting.
      *
+     * A standing request with no cancel token fails the tick and is not marked sent, so the
+     * next tick tries it again instead of announcing a reminder that cannot be canceled.
+     *
+     * @throws LogicException When a standing request has no cancel token
      * @throws HilosException When a lookup, a write, a frame or an announcement fails
      */
     public function sweep(): void
@@ -49,7 +54,11 @@ final class SecondFactorResetSweeper
 
         $staleBefore = date('Y-m-d H:i:s', time() - TimeConstants::SECONDS_PER_DAY);
         foreach (Hilos::$db->secondFactorResets->reminderDueBy($now, $staleBefore) as $reset) {
-            SecondFactorResetNotifier::reminder($reset->userId, (int)strtotime($reset->effectiveAt));
+            $token = $reset->readCancelToken();
+            if ($token === null) {
+                throw new LogicException('A standing second-factor removal ' . $reset->id . ' has no cancel token');
+            }
+            SecondFactorResetNotifier::reminder($reset->userId, $token, (int)strtotime($reset->effectiveAt));
             $reset->actions->markNotified();
         }
     }

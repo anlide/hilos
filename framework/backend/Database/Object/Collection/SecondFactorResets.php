@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Collection\SecondFactorResets as EntitySecondFactorResets;
@@ -16,13 +18,15 @@ use Hilos\Database\Entity\Item\SecondFactorReset as EntitySecondFactorReset;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactorReset as ObjectSecondFactorReset;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\SqlParam;
+use Hilos\Database\SqlParamCollection;
 use Hilos\Database\SqlSortDirection;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * SecondFactorResets object collection - the delayed removals of second factors (HIL-494).
  *
- * {@see request()} opens one, {@see liveOf()} and {@see findLiveByTokenHash()} answer the
+ * {@see request()} opens one, {@see liveOf()} and {@see findLiveByToken()} answer the
  * profile, the sign-in step and the cancel link, and the two sweeps -
  * {@see dueBy()} for the removals whose time has come and {@see reminderDueBy()} for the
  * daily announcement - are what the users library's tick reads.
@@ -50,24 +54,27 @@ class SecondFactorResets extends Objects
      * The announcement that goes out at once counts as the first one, so `notified_at` starts
      * at the request.
      *
+     * The row is inserted without the token, and the token is written straight after, so it
+     * stays out of the ORM columns. The caller commits the two together.
+     *
      * @param int $userId Person whose second factor is to be removed
      * @param string $effectiveAt Moment the removal is carried out (SQL datetime)
-     * @param string $cancelTokenHash sha256 (hex) of the token the cancel link carries
+     * @param string $cancelToken Token the cancel link carries
      * @return ObjectSecondFactorReset The request
-     * @throws DatabaseException When the insert fails
+     * @throws DatabaseException When the insert or the token write fails
      * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      */
-    public function request(int $userId, string $effectiveAt, string $cancelTokenHash): ObjectSecondFactorReset
+    public function request(int $userId, string $effectiveAt, string $cancelToken): ObjectSecondFactorReset
     {
         $now = TimeHelper::getSqlDateTime();
         $reset = static::OBJECT_CLASS::create();
         $reset->userId = $userId;
         $reset->requestedAt = $now;
         $reset->effectiveAt = $effectiveAt;
-        $reset->cancelTokenHash = $cancelTokenHash;
         $reset->notifiedAt = $now;
         $reset->sync();
 
@@ -75,6 +82,7 @@ class SecondFactorResets extends Objects
         if ($id === null) {
             throw new DatabaseException('Second factor reset insert did not assign an id');
         }
+        $reset->writeCancelToken($cancelToken);
         $this[$id] = $reset;
 
         return $reset;
@@ -101,19 +109,33 @@ class SecondFactorResets extends Objects
     /**
      * The standing request a cancel link names, if any.
      *
-     * @param string $cancelTokenHash sha256 (hex) of the token the link carries
+     * The token is DB-only, so the lookup reads the id and then loads the row.
+     *
+     * @param string $cancelToken Token the link carries
      * @return ?ObjectSecondFactorReset The standing request, or null when the link names none
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     * @throws LogicException When the entity collection class is not configured
      */
-    public function findLiveByTokenHash(string $cancelTokenHash): ?ObjectSecondFactorReset
+    public function findLiveByToken(string $cancelToken): ?ObjectSecondFactorReset
     {
-        return $this->hydrateAll(static::entityClass()::get(
-            '`' . EntitySecondFactorReset::cancel_token_hash . '` = ? AND ' . self::LIVE_CONDITION,
-            [$cancelTokenHash],
-            [],
-            1,
-        ))[0] ?? null;
+        if ($cancelToken === '') {
+            return null;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($cancelToken));
+        $row = Database::sql(
+            'SELECT `' . EntitySecondFactorReset::id . '` FROM `' . EntitySecondFactorReset::_table
+                . '` WHERE `' . EntitySecondFactorReset::cancel_token . '` = ? AND ' . self::LIVE_CONDITION
+                . ' LIMIT 1',
+            $params,
+        )->firstRow();
+        if ($row === null) {
+            return null;
+        }
+
+        return $this->offsetGet((int)$row[EntitySecondFactorReset::id]);
     }
 
     /**

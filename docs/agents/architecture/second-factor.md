@@ -41,7 +41,7 @@ has a submit of its own in flight.
 |---|---|---|
 | `hilos_second_factor` | users library | apps: base32 secret, last accepted step, confirmed or not |
 | `hilos_second_factor_backup_code` | users library | one row per code, spent by a conditional write |
-| `hilos_second_factor_reset` | users library | removals: when asked, when due, token hash, last notice |
+| `hilos_second_factor_reset` | users library | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | users library | the person's removal wait and a shorter one not yet in force |
 | `hilos_second_factor_trust` | session holder | a browser (session row) trusted for a person until a moment |
 
@@ -52,6 +52,12 @@ or carried out with `canceled_at IS NULL AND completed_at IS NULL`.
 **Backup codes are stored as they are, not hashed.** The app secret has to stay
 readable for the server to compute codes, so a dump of the database already
 opens the factor; hashing the codes would add work and protect nothing.
+
+**The cancel token of a removal is stored as it is, not hashed.** Same reason:
+a copy of the database already holds the app secret, so it already opens the
+factor, and the link only cancels a removal. Hashing it would leave a reminder
+with nothing to repeat. The token stays out of the object, the view and the
+browser. The first notice and every daily reminder carry the same link.
 
 ## Trust
 
@@ -69,9 +75,10 @@ step or from the profile. It takes effect after the person's wait (a shorter
 wait they chose waits out the wait in force first; the administrator bounds it,
 floor 1 day). The users library sweeps once a minute: a due removal is marked
 carried out first, then the factor, its codes and its trusts go; a waiting one
-is announced again daily. Every notice is a mandatory notification type on
-every channel, and the "it was not me" link (`HILOS_SECOND_FACTOR_CANCEL_URL`,
-route `/auth/second-factor/cancel`) cancels it without signing in. Any accepted
+is announced again daily, and that reminder carries the same "it was not me"
+link as the first notice (`HILOS_SECOND_FACTOR_CANCEL_URL`, route
+`/auth/second-factor/cancel`). Every notice is a mandatory notification type on
+every channel, and the link cancels the removal without signing in. Any accepted
 code cancels a standing removal too — whoever shows the factor has not lost it.
 
 ## Policy

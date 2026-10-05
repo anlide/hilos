@@ -40,15 +40,15 @@ class SecondFactorResets extends DbCollection
     /**
      * The standing request a cancel link names, if any.
      *
-     * @param string $cancelTokenHash sha256 (hex) of the token the link carries
+     * @param string $cancelToken Token the link carries
      * @return ?SecondFactorReset The standing request, or null when the link names none
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction or an object type does not match
      * @throws LogicException When collection class constants are not configured
      */
-    public function findLiveByTokenHash(string $cancelTokenHash): ?SecondFactorReset
+    public function findLiveByToken(string $cancelToken): ?SecondFactorReset
     {
-        return $this->itemFor($this->objectCollection->findLiveByTokenHash($cancelTokenHash));
+        return $this->itemFor($this->objectCollection->findLiveByToken($cancelToken));
     }
 
     /**

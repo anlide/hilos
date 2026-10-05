@@ -282,6 +282,9 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         parse_str((string)parse_url($url, PHP_URL_QUERY), $query);
         $token = $query[SecondFactorResetNotifier::TOKEN_PARAM] ?? null;
         $this->assertIsString($token);
+        $this->assertSame($token, $reset->readCancelToken());
+        $this->assertStringContainsString($url, (string)$announcement?->body);
+        $this->assertNotContains($token, $reset->toArray());
 
         $this->library->onAgentAction(
             'accept-anyone',
@@ -312,6 +315,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
             new ProfileSecondFactorResetRequestActionDTO(),
         );
+        $firstToken = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `user_id` = ?',
             [date('Y-m-d H:i:s', time() - 2 * 86400), self::USER_ID],
@@ -322,7 +326,12 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         $this->library->onStart();
         $this->library->onTick();
-        $this->assertNotNull($this->announcement(SecondFactorNotificationType::RESET_REMINDER));
+        $reminder = $this->announcement(SecondFactorNotificationType::RESET_REMINDER);
+        $this->assertNotNull($reminder);
+        $this->assertSame($firstToken, $this->tokenOf($reminder));
+        $reminderUrl = $reminder->data['url'] ?? null;
+        $this->assertIsString($reminderUrl);
+        $this->assertStringContainsString($reminderUrl, (string)$reminder->body);
         $this->assertNotNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID), 'A reminder carries nothing out');
 
         Database::sqlRun(
@@ -336,6 +345,96 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
         $this->assertNotNull($this->announcement(SecondFactorNotificationType::RESET_COMPLETED));
+    }
+
+    /**
+     * The link in a reminder cancels the removal, and does so only once.
+     *
+     * @throws HilosException When a command or the sweep fails
+     * @throws DatabaseException When the backdating write fails
+     */
+    public function testAReminderLinkCancelsTheRemoval(): void
+    {
+        $this->connectFirstApp();
+        $this->requestAndAgeTheNotice();
+        $this->library->onStart();
+        $this->library->onTick();
+        $token = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REMINDER));
+
+        $this->library->onAgentAction(
+            'accept-anyone',
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
+            new SecondFactorResetCancelLinkActionDTO($token),
+        );
+        $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID));
+
+        $this->expectException(ValidationException::class);
+        $this->library->onAgentAction(
+            'accept-anyone',
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
+            new SecondFactorResetCancelLinkActionDTO($token),
+        );
+    }
+
+    /**
+     * The first notice's link still cancels after a reminder has repeated it.
+     *
+     * @throws HilosException When a command or the sweep fails
+     * @throws DatabaseException When the backdating write fails
+     */
+    public function testTheFirstLinkStillWorksAfterAReminder(): void
+    {
+        $this->connectFirstApp();
+        $firstToken = $this->requestAndAgeTheNotice();
+        $this->library->onStart();
+        $this->library->onTick();
+        $this->assertSame($firstToken, $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REMINDER)));
+
+        $this->library->onAgentAction(
+            'accept-anyone',
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
+            new SecondFactorResetCancelLinkActionDTO($firstToken),
+        );
+        $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID));
+    }
+
+    /**
+     * A standing removal with no token fails the tick and is not marked sent.
+     *
+     * @throws HilosException When a command fails
+     * @throws DatabaseException When the backdating write fails
+     */
+    public function testAReminderWithoutATokenFailsTheTick(): void
+    {
+        $this->connectFirstApp();
+        $this->library->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
+            new ProfileSecondFactorResetRequestActionDTO(),
+        );
+        $stale = date('Y-m-d H:i:s', time() - 2 * 86400);
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `cancel_token` = NULL, `notified_at` = ? WHERE `user_id` = ?',
+            [$stale, self::USER_ID],
+        );
+        Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
+        Hilos::$db->secondFactorResets->clearCache();
+        $this->drain();
+        $this->library->onStart();
+
+        try {
+            $this->library->onTick();
+            $this->fail('A standing removal with no cancel token must fail the tick');
+        } catch (LogicException) {
+        }
+
+        Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
+        Hilos::$db->secondFactorResets->clearCache();
+        $reset = Hilos::$db->secondFactorResets->liveOf(self::USER_ID);
+        $this->assertNotNull($reset);
+        $this->assertSame($stale, $reset->notifiedAt);
+        $this->assertNull($reset->readCancelToken());
+        $this->assertNull($this->announcement(SecondFactorNotificationType::RESET_REMINDER));
     }
 
     /**
@@ -355,6 +454,47 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         $this->expectException(ValidationException::class);
         $this->setWait(SecondFactorSettings::DEFAULT_RESET_WAIT_MAX_DAYS + 1);
+    }
+
+    /**
+     * Asks a removal and makes its first notice old enough to remind.
+     *
+     * @return string Token the first notice carried
+     * @throws HilosException When the request fails
+     * @throws DatabaseException When the backdating write fails
+     */
+    private function requestAndAgeTheNotice(): string
+    {
+        $this->library->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
+            new ProfileSecondFactorResetRequestActionDTO(),
+        );
+        $token = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
+        Database::sqlRun(
+            'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `user_id` = ?',
+            [date('Y-m-d H:i:s', time() - 2 * 86400), self::USER_ID],
+        );
+        Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
+        Hilos::$db->secondFactorResets->clearCache();
+        $this->drain();
+
+        return $token;
+    }
+
+    /**
+     * @param ?NotificationEmitSignalData $announcement Announcement that should carry the cancel link
+     * @return string Token the link carried
+     */
+    private function tokenOf(?NotificationEmitSignalData $announcement): string
+    {
+        $url = $announcement?->data['url'] ?? null;
+        $this->assertIsString($url);
+        parse_str((string)parse_url($url, PHP_URL_QUERY), $query);
+        $token = $query[SecondFactorResetNotifier::TOKEN_PARAM] ?? null;
+        $this->assertIsString($token);
+
+        return $token;
     }
 
     /**

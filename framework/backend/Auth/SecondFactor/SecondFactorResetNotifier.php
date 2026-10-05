@@ -16,9 +16,10 @@ use Hilos\Notification\NotificationSeverity;
  *
  * Four announcements ({@see SecondFactorNotificationType}), all mandatory, all at warning: the
  * removal asked for, the daily reminder, the cancel, and the removal carried out. The first
- * carries the "it was not me" link - in the body for mail and SMS, and as `data.url`, which
- * the push opens and the bell links to. No channel is chosen here: a mandatory type goes to
- * every enabled channel the person has an address on, whatever their own preferences say.
+ * and every reminder carry the same "it was not me" link - in the body for mail and SMS, and
+ * as `data.url`, which the push opens and the bell links to. No channel is chosen here: a
+ * mandatory type goes to every enabled channel the person has an address on, whatever their
+ * own preferences say.
  *
  * An installation with no notifier wired announces nothing; the removal still waits its time.
  */
@@ -56,26 +57,24 @@ final class SecondFactorResetNotifier
     }
 
     /**
-     * Reminds that a removal still stands.
-     *
-     * The token of the cancel link is kept only as its hash, so a reminder cannot repeat the
-     * link; it sends the person to the link of the first announcement and to the profile,
-     * where a standing removal is canceled in one step.
+     * Reminds that a removal still stands, repeating the cancel link of the first notice.
      *
      * @param int $userId Person whose second factor is to be removed
+     * @param string $token Token of the cancel link
      * @param int $effectiveAtSec Moment the removal takes effect (Unix seconds)
      * @throws InvalidArgumentException When the emit signal cannot be named or queued
+     * @throws EnvException When the cancel link address cannot be read
      */
-    public static function reminder(int $userId, int $effectiveAtSec): void
+    public static function reminder(int $userId, string $token, int $effectiveAtSec): void
     {
+        $url = self::cancelUrl($token);
         self::emit(
             $userId,
             SecondFactorNotificationType::RESET_REMINDER,
             'Two-step verification will be removed',
             'Two-step verification on your account will be removed on ' . date(self::DATE_FORMAT, $effectiveAtSec)
-                . '. If you did not ask for this, cancel it with the link from the first message about it,'
-                . ' or in your profile.',
-            null,
+                . '. If this was not you, cancel it: ' . $url,
+            $url,
         );
     }
 

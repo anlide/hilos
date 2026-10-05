@@ -26,7 +26,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * A delayed removal of a person's second factor. It ends one of two ways, and only one:
  * {@see cancel()} and {@see complete()} both carry the condition that neither has
  * happened on their write, so a cancel link clicked in the minute the removal runs
- * decides the race in the database.
+ * decides the race in the database. The cancel token is DB-only and moves only through
+ * {@see readCancelToken()} and {@see writeCancelToken()}.
  *
  * @extends Object_<EntitySecondFactorReset>
  *
@@ -34,7 +35,6 @@ use Hilos\Utils\Helpers\TimeHelper;
  * @property int $userId
  * @property string $requestedAt
  * @property string $effectiveAt
- * @property string $cancelTokenHash
  * @property string $notifiedAt
  * @property-read ?string $canceledAt
  * @property-read ?string $completedAt
@@ -47,7 +47,6 @@ class SecondFactorReset extends Object_
     public const string userId = 'userId';
     public const string requestedAt = 'requestedAt';
     public const string effectiveAt = 'effectiveAt';
-    public const string cancelTokenHash = 'cancelTokenHash';
     public const string notifiedAt = 'notifiedAt';
     public const string canceledAt = 'canceledAt';
     public const string completedAt = 'completedAt';
@@ -66,7 +65,6 @@ class SecondFactorReset extends Object_
             self::userId => $this->entity->user_id,
             self::requestedAt => $this->entity->requested_at,
             self::effectiveAt => $this->entity->effective_at,
-            self::cancelTokenHash => $this->entity->cancel_token_hash,
             self::notifiedAt => $this->entity->notified_at,
             self::canceledAt => $this->entity->canceled_at,
             self::completedAt => $this->entity->completed_at,
@@ -90,10 +88,66 @@ class SecondFactorReset extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::requestedAt => $this->entity->requested_at = (string)$value,
             self::effectiveAt => $this->entity->effective_at = (string)$value,
-            self::cancelTokenHash => $this->entity->cancel_token_hash = (string)$value,
             self::notifiedAt => $this->entity->notified_at = (string)$value,
             default => parent::__set($property, $value),
         };
+    }
+
+    /**
+     * Reads the stored cancel token, so a reminder can repeat the link.
+     *
+     * @return ?string Stored token, or null when none is stored or the row is unpersisted
+     * @throws DatabaseException When the token lookup query fails
+     */
+    public function readCancelToken(): ?string
+    {
+        if ($this->entity->id === null) {
+            return null;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        $row = Database::sql(
+            'SELECT `' . EntitySecondFactorReset::cancel_token . '` FROM `' . EntitySecondFactorReset::_table
+                . '` WHERE `' . EntitySecondFactorReset::id . '` = ?',
+            $params,
+        )->firstRow();
+        $token = $row[EntitySecondFactorReset::cancel_token] ?? null;
+
+        return is_string($token) && $token !== '' ? $token : null;
+    }
+
+    /**
+     * Stores the cancel token of this removal.
+     *
+     * Written with a targeted UPDATE right after the row is inserted, so the token stays
+     * out of the ORM columns and the cross-worker sync payload. A no-op for an unpersisted row.
+     *
+     * @param string $token Token the cancel link carries
+     * @throws DatabaseException When the token update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function writeCancelToken(string $token): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            $this->touchedSetKeys(...),
+            TruthSourceOperation::Update,
+        );
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($token));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntitySecondFactorReset::_table . '` SET `' . EntitySecondFactorReset::cancel_token
+                . '` = ? WHERE `' . EntitySecondFactorReset::id . '` = ?',
+            $params,
+        );
     }
 
     /**
@@ -195,7 +249,7 @@ class SecondFactorReset extends Object_
     }
 
     /**
-     * Converts the request to an associative array (never includes the token hash).
+     * Converts the request to an associative array (never includes the cancel token).
      *
      * @return array<string, mixed> Request data (id, userId, requestedAt, effectiveAt, notifiedAt, canceledAt, completedAt)
      */

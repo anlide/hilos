@@ -33,21 +33,22 @@ class SecondFactorResetsActions extends DbActions
      *
      * @param int $userId Person whose second factor is to be removed
      * @param string $effectiveAt Moment the removal is carried out (SQL datetime)
-     * @param string $cancelTokenHash sha256 (hex) of the token the cancel link carries
+     * @param string $cancelToken Token the cancel link carries
      * @return SecondFactorReset The request
      * @throws CreateNotAllowedException When the truth source rejects the insert
-     * @throws DatabaseException When the insert fails
+     * @throws WriteNotAllowedException When the truth source rejects the token write
+     * @throws DatabaseException When the insert or the token write fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws ObjectGetIdStringNotImplementedException If the inserted row has no primary key
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      */
-    public function request(int $userId, string $effectiveAt, string $cancelTokenHash): SecondFactorReset
+    public function request(int $userId, string $effectiveAt, string $cancelToken): SecondFactorReset
     {
         $this->ensureCanCreateInSet((string)$userId);
 
         return $this->createDbItemFromObject(
-            $this->objectCollection->request($userId, $effectiveAt, $cancelTokenHash),
+            $this->objectCollection->request($userId, $effectiveAt, $cancelToken),
         );
     }
 

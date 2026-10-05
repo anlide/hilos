@@ -37,6 +37,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Database\Database;
 use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Database\View\Item\SecondFactorReset;
 use Hilos\Hilos;
@@ -67,9 +68,6 @@ use Random\RandomException;
  */
 final class SecondFactorCommands extends AbstractLibraryCommands
 {
-    /** Hash the cancel link's token is kept under. */
-    private const string TOKEN_HASH = 'sha256';
-
     /** Bytes of a cancel link's token. */
     private const int TOKEN_BYTES = 32;
 
@@ -248,7 +246,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     {
         $reset = $dto->token === ''
             ? null
-            : Hilos::$db->secondFactorResets->findLiveByTokenHash(hash(self::TOKEN_HASH, $dto->token));
+            : Hilos::$db->secondFactorResets->findLiveByToken($dto->token);
         if ($reset === null || !$this->cancelReset($reset)) {
             throw new ValidationException(SecondFactorMessages::LINK_DEAD);
         }
@@ -261,7 +259,8 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * Opens a delayed removal of a person's second factor and announces it.
      *
      * Shared by the code step and the profile. The wait is the person's own, taken as it stands
-     * at the moment of asking, and the first announcement carries the cancel link.
+     * at the moment of asking. The row and its token commit together, and only then does the
+     * first announcement carry the cancel link.
      *
      * @param int $userId Person whose factor is to be removed
      * @return SecondFactorReset The removal asked for
@@ -280,11 +279,18 @@ final class SecondFactorCommands extends AbstractLibraryCommands
         $effectiveAtSec = $now + SecondFactorResetWait::of($userId)->effectiveDays(SecondFactorPolicy::current(), $now)
             * TimeConstants::SECONDS_PER_DAY;
         $token = RandomHelper::secureHex(self::TOKEN_BYTES);
-        $reset = Hilos::$db->secondFactorResets->actions->request(
-            $userId,
-            date('Y-m-d H:i:s', $effectiveAtSec),
-            hash(self::TOKEN_HASH, $token),
-        );
+        Database::transactionStart();
+        try {
+            $reset = Hilos::$db->secondFactorResets->actions->request(
+                $userId,
+                date('Y-m-d H:i:s', $effectiveAtSec),
+                $token,
+            );
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            Database::transactionRollback();
+            throw $failure;
+        }
         SecondFactorResetNotifier::requested($userId, $token, $effectiveAtSec);
 
         return $reset;

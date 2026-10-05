@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\View\Item;
 
 use Hilos\Database\Actions\Item\SecondFactorResetActions;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\SecondFactorReset as ObjectSecondFactorReset;
@@ -13,9 +14,9 @@ use Hilos\HilosException;
 /**
  * SecondFactorReset Db item - read-facing wrapper around ObjectSecondFactorReset (HIL-494).
  *
- * A delayed removal of a person's second factor. The hash of the cancel token is not a
- * property: the only question asked of it is which request a link names, and the
- * collection answers that.
+ * A delayed removal of a person's second factor. The cancel token is not a property:
+ * {@see readCancelToken()} hands it to a reminder, and the collection answers which
+ * request a link names.
  *
  * @extends DbItem<ObjectSecondFactorReset>
  * @property-read ?int $id
@@ -50,6 +51,17 @@ class SecondFactorReset extends DbItem
             ObjectSecondFactorReset::completedAt => $this->_object->completedAt,
             default => parent::__get($name),
         };
+    }
+
+    /**
+     * Reads the stored cancel token.
+     *
+     * @return ?string Stored token, or null when none is stored
+     * @throws DatabaseException When the token lookup query fails
+     */
+    public function readCancelToken(): ?string
+    {
+        return $this->_object->readCancelToken();
     }
 
     /**
