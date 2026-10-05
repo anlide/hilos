@@ -30,9 +30,9 @@ async function openRename(page: Page): Promise<void> {
 // disturbs no other spec. /test/reset is never called here — it would wipe
 // what other workers dictated.
 //
-// On screen the refusal reason is the backend's words: its code
-// ('spam', 'service_unavailable'), by the chat mockup rule that a refusal
-// on screen is always named in the backend's words. That is intended.
+// On screen the refusal reason is the backend's words: a human-readable phrase
+// ('This name was not accepted because it appears to be spam.', 'Names cannot be checked right now.'),
+// replacing raw machine error codes. That is intended.
 
 test('a name the model refuses is not taken, and a retry it permits renames the author', async ({
   page,
@@ -53,7 +53,9 @@ test('a name the model refuses is not taken, and a retry it permits renames the 
 
   // The inline error is the settled state: the verdict is applied in one step, and the
   // refusal branch never commits the name — so the card and modal are judged after it.
-  await expect(page.getByTestId('profile-rename-error')).toHaveText('spam')
+  await expect(page.getByTestId('profile-rename-error')).toHaveText(
+    'This name was not accepted because it appears to be spam.',
+  )
   await expect(page.getByTestId('modal')).toBeVisible()
   await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)
   await expect(page.getByTestId('profile-name')).toHaveText(oldName)
@@ -73,7 +75,9 @@ test('a name the model refuses is not taken, and a retry it permits renames the 
   await openBell(page)
   const menu = page.getByTestId('hilos-notification-menu')
   await expect(menu).toContainText('Your new name was not accepted')
-  await expect(menu).toContainText('Moderation rejected it: spam')
+  await expect(menu).toContainText(
+    'This name was not accepted because it appears to be spam.',
+  )
 
   // A cold load of the chat room proves the event stream received the rename.
   // The filter isolates the event-notice row: the author label on events carries the
@@ -101,7 +105,33 @@ test('a rename nobody dictated a verdict for comes back as moderation unavailabl
   await clickSubmit(page.getByTestId('profile-rename-save'))
 
   await expect(page.getByTestId('profile-rename-error')).toHaveText(
-    'service_unavailable',
+    'Names cannot be checked right now.',
+  )
+  await expect(page.getByTestId('modal')).toBeVisible()
+  await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)
+  await expect(page.getByTestId('profile-name')).toHaveText(oldName)
+})
+
+test('a rename refused without a reason shows generic acceptance failure and preserves draft', async ({
+  page,
+}) => {
+  const { name: oldName } = await signUp(page)
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('profile-name')).toHaveText(oldName)
+
+  const key = modelKey()
+  const newName = `Blocked ${key}`
+  await dictateModerationVerdict(key, false, 'blocked')
+
+  await openRename(page)
+  await typeInto(page.getByTestId('profile-name-input'), newName)
+  await clickSubmit(page.getByTestId('profile-rename-save'))
+
+  await expect(page.getByTestId('profile-rename-error')).toHaveText(
+    'This name was not accepted.',
+  )
+  await expect(page.getByTestId('profile-rename-error')).not.toContainText(
+    'blocked',
   )
   await expect(page.getByTestId('modal')).toBeVisible()
   await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)

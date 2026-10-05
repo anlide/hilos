@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages;
 
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\DTO\ModerationDecision;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -242,15 +243,16 @@ final class MainPage extends AbstractPage
                 $phase,
                 $reason,
             );
+            $publicReason = ModerationDecision::publicMessageReason($reason, $phase);
             if ($phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED) {
                 $this->notifyMessageRejected(
                     Hilos::$rt->selfConnection->userId,
                     $result->message,
-                    $reason,
+                    $publicReason,
                 );
             }
 
-            throw new ValidationException($reason);
+            throw new ValidationException($publicReason);
         }
 
         if (Hilos::$rt->selfConnection->outboundModerationAttachments === []) {
@@ -327,7 +329,7 @@ final class MainPage extends AbstractPage
      *
      * @param ?int $userId Author user id, or null when the connection carries none
      * @param string $message Rejected message text, kept so the author knows which one
-     * @param string $reason Moderation reason
+     * @param string $reason Public moderation reason
      */
     private function notifyMessageRejected(?int $userId, string $message, string $reason): void
     {
@@ -341,7 +343,7 @@ final class MainPage extends AbstractPage
                 type: ChatNotificationType::MESSAGE_REJECTED,
                 title: 'Your message was not published',
                 severity: NotificationSeverity::WARNING,
-                body: 'Moderation rejected it: ' . $reason,
+                body: $reason,
                 data: [
                     'reason' => $reason,
                     'message' => $message,

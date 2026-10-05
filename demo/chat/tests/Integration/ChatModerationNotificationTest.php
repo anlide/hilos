@@ -89,9 +89,40 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         self::assertSame(ChatNotificationType::MESSAGE_REJECTED, $notification->type);
         self::assertSame(NotificationSeverity::WARNING, $notification->severity);
         self::assertSame('Your message was not published', $notification->title);
-        self::assertSame('Moderation rejected it: policy', $notification->body);
+        self::assertSame('Message rejected.', $notification->body);
         self::assertSame(
-            ['reason' => 'policy', 'message' => 'blocked message'],
+            ['reason' => 'Message rejected.', 'message' => 'blocked message'],
+            $notification->decodedData(),
+        );
+    }
+
+    public function testRejectedMessageWithCategoryNotifiesAuthorWithCategoryPhrase(): void
+    {
+        $user = Hilos::$db->users->actions->createWithName('SpamAuthor557');
+        Hilos::$rt->connections->actions->register('reject-spam-ak', $user->id);
+        Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+        Hilos::$rt->connections['reject-spam-ak']?->actions->startOutboundModeration('spam message', []);
+
+        Hilos::initSignalRouter(new ChatSignalRouter());
+        $this->dispatchTextModerationSignalToMainPage(
+            new ChatAgent(),
+            new ModerationResultSignalData(
+                acceptKey: 'reject-spam-ak',
+                userId: $user->id,
+                message: 'spam message',
+                allow: false,
+                reason: 'spam',
+            ),
+        );
+
+        $notification = $this->onlyNotificationFor($user->id);
+
+        self::assertSame(ChatNotificationType::MESSAGE_REJECTED, $notification->type);
+        self::assertSame(NotificationSeverity::WARNING, $notification->severity);
+        self::assertSame('Your message was not published', $notification->title);
+        self::assertSame('Message rejected: it appears to be spam.', $notification->body);
+        self::assertSame(
+            ['reason' => 'Message rejected: it appears to be spam.', 'message' => 'spam message'],
             $notification->decodedData(),
         );
     }
@@ -144,9 +175,44 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         self::assertSame(ChatNotificationType::RENAME_REJECTED, $notification->type);
         self::assertSame(NotificationSeverity::WARNING, $notification->severity);
         self::assertSame('Your new name was not accepted', $notification->title);
-        self::assertSame('Moderation rejected it: policy', $notification->body);
+        self::assertSame('This name was not accepted.', $notification->body);
         self::assertSame(
-            ['reason' => 'policy', 'newName' => 'BlockedName'],
+            ['reason' => 'This name was not accepted.', 'newName' => 'BlockedName'],
+            $notification->decodedData(),
+        );
+    }
+
+    public function testRejectedRenameWithCategoryNotifiesUserWithCategoryPhrase(): void
+    {
+        $user = Hilos::$db->users->actions->createWithName('ImpersonateAsker557');
+        Hilos::$rt->connections->actions->register('rename-cat-ak', $user->id);
+        Hilos::$rt->connections['rename-cat-ak']?->actions->startRenameModeration('ImpersonateName');
+
+        Hilos::initSignalRouter(new ChatSignalRouter());
+        $this->dispatchRenameModerationVerdict(
+            new RenameModerationResultSignalData(
+                acceptKey: 'rename-cat-ak',
+                userId: (int)$user->id,
+                newName: 'ImpersonateName',
+                allow: false,
+                reason: 'impersonation',
+            ),
+        );
+
+        $notification = $this->onlyNotificationFor($user->id);
+
+        self::assertSame(ChatNotificationType::RENAME_REJECTED, $notification->type);
+        self::assertSame(NotificationSeverity::WARNING, $notification->severity);
+        self::assertSame('Your new name was not accepted', $notification->title);
+        self::assertSame(
+            'This name was not accepted because it appears to impersonate someone else.',
+            $notification->body,
+        );
+        self::assertSame(
+            [
+                'reason' => 'This name was not accepted because it appears to impersonate someone else.',
+                'newName' => 'ImpersonateName',
+            ],
             $notification->decodedData(),
         );
     }

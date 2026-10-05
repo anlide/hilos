@@ -559,6 +559,15 @@ final class ModeratorAgent extends AbstractAgent
             return;
         }
 
+        if (
+            !$allow
+            && ($this->currentRequestType === self::REQUEST_TYPE_MESSAGE || $this->currentRequestType === self::REQUEST_TYPE_RENAME)
+        ) {
+            $this->logAgentInfo(
+                "Moderation refusal for request type '{$this->currentRequestType}': reason={$reason}",
+            );
+        }
+
         switch ($this->currentRequestType) {
             case self::REQUEST_TYPE_MESSAGE:
                 $this->sendToAgent(

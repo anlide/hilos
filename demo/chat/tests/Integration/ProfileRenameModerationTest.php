@@ -163,7 +163,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             $this->assertSame('rename-reject-ak', $errorSignal->targetAcceptKey);
             $this->assertInstanceOf(PageActionErrorSignalData::class, $errorSignal->data);
             $this->assertSame(ChatSignalConstants::RENAME, $errorSignal->data->action);
-            $this->assertSame('policy', $errorSignal->data->reason);
+            $this->assertSame('This name was not accepted.', $errorSignal->data->reason);
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
             Hilos::$rt->connections->actions->clear();

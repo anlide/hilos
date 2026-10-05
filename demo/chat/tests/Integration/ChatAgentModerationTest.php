@@ -192,7 +192,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $this->assertSame('reject-ak', $actionErrorSignal->targetAcceptKey);
             $this->assertInstanceOf(PageActionErrorSignalData::class, $actionErrorSignal->data);
             $this->assertSame(ChatSignalConstants::MESSAGE, $actionErrorSignal->data->action);
-            $this->assertSame('policy', $actionErrorSignal->data->reason);
+            $this->assertSame('Message rejected.', $actionErrorSignal->data->reason);
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();

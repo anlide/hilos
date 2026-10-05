@@ -109,18 +109,16 @@ const moderationBanner = computed<ModerationBanner | null>(() => {
   }
   if (state.phase === 'rejected') {
     return {
-      text: state.reason
-        ? `Message rejected: ${state.reason}`
-        : 'Message rejected',
+      text: state.reason || 'Message rejected.',
       className: 'text-danger',
       spinner: false,
     }
   }
 
   return {
-    text: state.reason
-      ? `Moderation unavailable: ${state.reason}`
-      : 'Moderation unavailable',
+    text:
+      state.reason ||
+      'Moderation is unavailable right now. Your message is still here.',
     className: 'text-warning-emphasis',
     spinner: false,
   }

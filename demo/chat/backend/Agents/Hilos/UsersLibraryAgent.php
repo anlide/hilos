@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\Hilos;
 
+use Demo\Chat\Agents\DTO\ModerationDecision;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Auth\ChatOAuthConfig;
 use Demo\Chat\Auth\ChatStepUpOperationKey;
@@ -332,11 +333,12 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
                 ? ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE
                 : ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_REJECTED;
             $connection->actions->failRenameModeration($phase, $reason);
+            $publicReason = ModerationDecision::publicNameReason($reason, $phase);
             if ($phase === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_REJECTED) {
-                $this->notifyRenameRejected($result->userId, $result->newName, $reason);
+                $this->notifyRenameRejected($result->userId, $result->newName, $publicReason);
             }
 
-            $this->refuseRename($result->acceptKey, $reason);
+            $this->refuseRename($result->acceptKey, $publicReason);
 
             return;
         }
@@ -359,7 +361,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Tells one connection its rename was refused, in the frame it is already listening for.
      *
      * @param string $acceptKey Connection that asked for the rename
-     * @param string $reason Moderation reason, shown as it is
+     * @param string $reason Public moderation reason shown to the user
      * @throws InvalidArgumentException When the action-error signal cannot be named or queued
      */
     private function refuseRename(string $acceptKey, string $reason): void
@@ -381,7 +383,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      *
      * @param int $userId User who asked to be renamed
      * @param string $newName Rejected display name
-     * @param string $reason Moderation reason
+     * @param string $reason Public moderation reason
      */
     private function notifyRenameRejected(int $userId, string $newName, string $reason): void
     {
@@ -391,7 +393,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
                 type: ChatNotificationType::RENAME_REJECTED,
                 title: 'Your new name was not accepted',
                 severity: NotificationSeverity::WARNING,
-                body: 'Moderation rejected it: ' . $reason,
+                body: $reason,
                 data: [
                     'reason' => $reason,
                     'newName' => $newName,

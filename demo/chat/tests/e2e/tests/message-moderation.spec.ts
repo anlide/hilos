@@ -42,7 +42,7 @@ test('a rejected message stays out of the room and its author is told', async ({
   // The banner is the settled state: the verdict is applied in one step, and the
   // refusal branch publishes nothing — so the room is judged only after it.
   await expect(page.getByTestId('moderation-text')).toHaveText(
-    'Message rejected: spam',
+    'Message rejected: it appears to be spam.',
   )
   await expect(
     page.getByTestId('event-text').filter({ hasText: key }),
@@ -56,7 +56,7 @@ test('a rejected message stays out of the room and its author is told', async ({
   await openBell(page)
   const menu = page.getByTestId('hilos-notification-menu')
   await expect(menu).toContainText('Your message was not published')
-  await expect(menu).toContainText('Moderation rejected it: spam')
+  await expect(menu).toContainText('Message rejected: it appears to be spam.')
 })
 
 test('a message nobody dictated a verdict for comes back as moderation unavailable', async ({
@@ -73,8 +73,30 @@ test('a message nobody dictated a verdict for comes back as moderation unavailab
   await clickSubmit(page.getByTestId('message-send'))
 
   await expect(page.getByTestId('moderation-text')).toHaveText(
-    'Moderation unavailable: service_unavailable',
+    'Moderation is unavailable right now. Your message is still here.',
   )
+  await expect(
+    page.getByTestId('event-text').filter({ hasText: key }),
+  ).toHaveCount(0)
+  await expect(page.getByTestId('message-input')).toHaveValue(text)
+})
+
+test('a message refused without a reason shows generic message rejection and preserves draft', async ({
+  page,
+}) => {
+  await signUp(page)
+
+  const key = modelKey()
+  const text = `a message blocked without category ${key}`
+  await dictateModerationVerdict(key, false, 'blocked')
+
+  await typeInto(page.getByTestId('message-input'), text)
+  await clickSubmit(page.getByTestId('message-send'))
+
+  await expect(page.getByTestId('moderation-text')).toHaveText(
+    'Message rejected.',
+  )
+  await expect(page.getByTestId('moderation-text')).not.toContainText('blocked')
   await expect(
     page.getByTestId('event-text').filter({ hasText: key }),
   ).toHaveCount(0)
