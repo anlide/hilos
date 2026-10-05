@@ -61,10 +61,12 @@ two things — its own form and one `RowEditBaseline`, taken with `openRowEdit`
 when the modal opens — and projects both the form and the live row into one
 shape of edited fields. For a modal over a table window, the live row is the
 table's **focused row**: `focusRow` on open (in place of `applyAndResolve`),
-`releaseFocus` on close, `focusedRow` to read; a table whose rows open an edit
-or delete dialog wires `sendFocus`. The server follows that row for the tab past
-the window — a search, a page turn, a move under the order — so the modal reads
-it wherever it went, and reads `undefined` only when the row is gone
+`releaseFocus` on close, `focusedRow` to read; a table whose rows open an edit,
+delete, or confirmation dialog wires `sendFocus`. The rotation takeout and
+withdrawal dialogs use the same focus to follow their batch (HIL-1233). The
+server follows that row for the tab past the window — a search, a page turn, a
+move under the order — so the modal reads it wherever it went, and reads
+`undefined` only when the row is gone
 ([table-subscription.md](table-subscription.md), "A row an open dialog holds in
 focus").
 

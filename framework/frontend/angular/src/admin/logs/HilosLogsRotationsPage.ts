@@ -51,6 +51,8 @@ import {
   hasRotationNodes,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
+  rotationTakeoutNotice,
+  rotationUndoNotice,
   rotationsEmptyState,
   rotationsSearchPlaceholder,
   subscribeSignal,
@@ -64,6 +66,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
@@ -93,6 +96,7 @@ const RETENTION_CLASS: Record<string, string> = {
   imports: [
     HilosActionError,
     HilosAdminPage,
+    HilosEditNotice,
     HilosHideable,
     HilosLink,
     HilosLongText,
@@ -297,7 +301,8 @@ const RETENTION_CLASS: Record<string, string> = {
       </p>
 
       <hilos-modal
-        [(open)]="takeoutOpen"
+        [open]="takeoutOpen()"
+        (openChange)="$event ? takeoutOpen.set(true) : closeTakeout()"
         [title]="takeoutTitle()"
         [closeOnBackdrop]="!takeout.busy()"
         [closeOnEsc]="!takeout.busy()"
@@ -357,6 +362,11 @@ const RETENTION_CLASS: Record<string, string> = {
             there.
           </div>
         }
+        <hilos-edit-notice
+          [kind]="takeoutNotice() ? 'deleted' : null"
+          [text]="takeoutNotice() ?? ''"
+          dataId="hilos-rotation-takeout-notice"
+        />
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -371,6 +381,7 @@ const RETENTION_CLASS: Record<string, string> = {
             hilosLoadingButton
             class="btn-primary"
             [loading]="takeout.loading()"
+            [disabled]="takeoutNotice() !== null"
             data-id="hilos-rotation-takeout-confirm"
             (click)="submitTakeout()"
           >
@@ -380,7 +391,8 @@ const RETENTION_CLASS: Record<string, string> = {
       </hilos-modal>
 
       <hilos-modal
-        [(open)]="undoOpen"
+        [open]="undoOpen()"
+        (openChange)="$event ? undoOpen.set(true) : closeUndo()"
         title="Has the batch not been carried off?"
         [closeOnBackdrop]="!undo.busy()"
         [closeOnEsc]="!undo.busy()"
@@ -406,6 +418,11 @@ const RETENTION_CLASS: Record<string, string> = {
           cleaner has passed there is nothing to bring back — which is exactly
           why deleting waits for your word.
         </div>
+        <hilos-edit-notice
+          [kind]="undoNotice() ? 'deleted' : null"
+          [text]="undoNotice() ?? ''"
+          dataId="hilos-rotation-undo-notice"
+        />
         <ng-template #modalActions let-requestClose="requestClose">
           <button
             type="button"
@@ -420,6 +437,7 @@ const RETENTION_CLASS: Record<string, string> = {
             hilosLoadingButton
             class="btn-primary"
             [loading]="undo.loading()"
+            [disabled]="undoNotice() !== null"
             data-id="hilos-rotation-undo-confirm"
             (click)="submitUndo()"
           >
@@ -509,6 +527,9 @@ export class HilosLogsRotationsPage {
   // The header and the window state, mirrored from the (per-context) core signals
   // into Angular signals so the template re-renders on every frame.
   protected readonly header = signal<HilosLogRotationsHeader | null>(null)
+  private readonly focusedRow = signal<HilosLogRotationRow | undefined>(
+    undefined,
+  )
   private readonly rowCount = signal(0)
   private readonly search = signal('')
 
@@ -525,6 +546,11 @@ export class HilosLogsRotationsPage {
   protected readonly takeoutOpen = signal(false)
   protected readonly takeoutRow = signal<HilosLogRotationRow | null>(null)
   protected readonly takeout = createHilosTrackedAction()
+  protected readonly takeoutNotice = computed(() =>
+    this.takeoutRow() === null || this.takeout.busy()
+      ? null
+      : rotationTakeoutNotice(this.focusedRow()),
+  )
 
   // Taking the word back (HIL-759). Offered on a taken batch and on no other. The
   // judge is the physical batch and never a timer in this tab — the node refuses
@@ -532,6 +558,11 @@ export class HilosLogsRotationsPage {
   protected readonly undoOpen = signal(false)
   protected readonly undoRow = signal<HilosLogRotationRow | null>(null)
   protected readonly undo = createHilosTrackedAction()
+  protected readonly undoNotice = computed(() =>
+    this.undoRow() === null || this.undo.busy()
+      ? null
+      : rotationUndoNotice(this.focusedRow()),
+  )
 
   protected readonly legendOpen = signal(false)
 
@@ -635,12 +666,16 @@ export class HilosLogsRotationsPage {
       headerHandle.start()
       rotations.start()
       this.header.set(headerHandle.header.get())
+      this.focusedRow.set(rotations.controller.focusedRow.get())
       this.rowCount.set(rotations.controller.rows.get().length)
       this.search.set(rotations.controller.search.get())
       this.stateFilter.set(rotations.state.get())
       const unsubscribes = [
         subscribeSignal(headerHandle.header, (next) => {
           this.header.set(next)
+        }),
+        subscribeSignal(rotations.controller.focusedRow, (next) => {
+          this.focusedRow.set(next)
         }),
         subscribeSignal(rotations.controller.rows, (next) => {
           this.rowCount.set(next.length)
@@ -677,21 +712,30 @@ export class HilosLogsRotationsPage {
   }
 
   protected openTakeout(row: HilosLogRotationRow): void {
+    const fresh = this.rotations().controller.focusRow(row.rowKey)
+    if (fresh === null) {
+      return
+    }
     this.takeout.clearError()
-    this.takeoutRow.set(row)
+    this.takeoutRow.set(fresh)
     this.takeoutOpen.set(true)
+  }
+
+  protected closeTakeout(): void {
+    this.takeoutOpen.set(false)
+    this.rotations().controller.releaseFocus()
   }
 
   protected async submitTakeout(): Promise<void> {
     const row = this.takeoutRow()
-    if (row === null || this.takeout.busy()) {
+    if (row === null || this.takeout.busy() || this.takeoutNotice() !== null) {
       return
     }
     // The dialog closes on the server's word and not on the click: the refusals
     // this can meet — the batch is gone, it is protected again — are the whole
     // reason the confirmation travels to the node that holds the directory.
     if (await this.takeout.run(this.actions().sendTakeoutConfirm(row))) {
-      this.takeoutOpen.set(false)
+      this.closeTakeout()
     }
   }
 
@@ -700,21 +744,30 @@ export class HilosLogsRotationsPage {
   }
 
   protected openUndo(row: HilosLogRotationRow): void {
+    const fresh = this.rotations().controller.focusRow(row.rowKey)
+    if (fresh === null) {
+      return
+    }
     this.undo.clearError()
-    this.undoRow.set(row)
+    this.undoRow.set(fresh)
     this.undoOpen.set(true)
+  }
+
+  protected closeUndo(): void {
+    this.undoOpen.set(false)
+    this.rotations().controller.releaseFocus()
   }
 
   protected async submitUndo(): Promise<void> {
     const row = this.undoRow()
-    if (row === null || this.undo.busy()) {
+    if (row === null || this.undo.busy() || this.undoNotice() !== null) {
       return
     }
     // Closes on the server's word, like the confirmation: the one refusal this can
     // meet — the batch is no longer on the node — is exactly what the operator has
     // to see instead of a modal that closed as though it had worked.
     if (await this.undo.run(this.actions().sendTakeoutUndo(row))) {
-      this.undoOpen.set(false)
+      this.closeUndo()
     }
   }
 

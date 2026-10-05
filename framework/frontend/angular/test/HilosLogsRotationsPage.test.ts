@@ -3,10 +3,9 @@
 // history screen — carrying a batch off, and taking that word back (HIL-759) —
 // plus the fourth batch state the badge has to name (HIL-870).
 //
-// Only the cases about the withdrawal, about the takeout modal's promise, about
-// the Files cell, about the switch following the address (HIL-903) and about a
-// viewer of the admin view mode (HIL-1268) are here, by the same names the Vue
-// peer gives them. The empty states, the other
+// The withdrawal, the takeout modal's promise, the Files cell, the address
+// switch (HIL-903), admin view mode (HIL-1268), and the focused dialog batch
+// (HIL-1233) are checked here. The empty states, the other
 // filters and the sub-line are the core headless's
 // discrimination and are proved once, in the peers; a third copy of them would
 // test @hilos/core through three view layers rather than test this view.
@@ -105,16 +104,20 @@ function router(
 function makeConnection(): {
   connection: HilosConnection
   sent: TableViewportDescriptor[]
+  focus: string[]
   pushHeader: (frame: HilosLogRotationsHeader) => void
   pushWindow: (rows: Record<string, unknown>[]) => void
   pushPageWindow: (rows: Record<string, unknown>[]) => void
+  pushFocusedChange: (row?: Record<string, unknown>) => void
 } {
   const projectListeners: ((signal: {
     type: string
     data: unknown
   }) => void)[] = []
   const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  const deltaListeners: ((signal: { data: unknown }) => void)[] = []
   const sent: TableViewportDescriptor[] = []
+  const focus: string[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'projectSignal') {
@@ -127,6 +130,11 @@ function makeConnection(): {
       }
       if (event === 'tableWindow') {
         windowListeners.push(
+          listener as unknown as (signal: { data: unknown }) => void,
+        )
+      }
+      if (event === 'tableViewportDelta') {
+        deltaListeners.push(
           listener as unknown as (signal: { data: unknown }) => void,
         )
       }
@@ -143,11 +151,37 @@ function makeConnection(): {
     ): void {
       sent.push(descriptor)
     },
+    sendTableRowFocus(
+      _page: string,
+      _tableKey: string,
+      rowKey: string,
+    ): boolean {
+      focus.push(rowKey)
+
+      return true
+    },
   } as unknown as HilosConnection
 
   return {
     connection,
     sent,
+    focus,
+    pushFocusedChange(row?: Record<string, unknown>): void {
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.LOGS_ROTATIONS,
+            tableKey: 'hilosLogRotations',
+            kind: 'row_removed',
+            rowKey: 'node-1:1800000000',
+            reason: row === undefined ? 'deleted' : 'left_set',
+            ...(row === undefined
+              ? {}
+              : { row: { rowKey: String(row.rowKey), slots: { batch: row } } }),
+          },
+        })
+      }
+    },
     // The window the page's own answer carries — every batch, whatever the address
     // named, because the page declares the table and not the route's filter.
     pushPageWindow(rows: Record<string, unknown>[]): void {
@@ -787,5 +821,98 @@ describe('HilosLogsRotationsPage', () => {
         payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
       },
     ])
+  })
+})
+
+describe('HilosLogsRotationsPage dialogs following a batch', () => {
+  it('focuses the batch, warns when protected, and releases focus on close', () => {
+    const { connection, focus, pushWindow, pushFocusedChange } =
+      makeConnection()
+    const fixture = mountPage(connection)
+    pushWindow([batch({ retentionState: 'due' })])
+    fixture.detectChanges()
+
+    clickById(fixture, 'hilos-rotation-takeout')
+    expect(focus).toEqual(['node-1:1800000000'])
+    pushFocusedChange(batch({ retentionState: 'kept' }))
+    fixture.detectChanges()
+    expect(
+      byId(fixture, 'hilos-rotation-takeout-notice')?.textContent,
+    ).toContain('This batch is protected again')
+    expect(
+      (byId(fixture, 'hilos-rotation-takeout-confirm') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+
+    clickById(fixture, 'modal-close')
+    expect(focus.at(-1)).toBe('')
+  })
+
+  it.each([
+    [
+      'taken',
+      batch({ retentionState: 'taken' }),
+      'Already recorded as carried off elsewhere.',
+    ],
+    ['gone', undefined, 'This batch is no longer on the node.'],
+  ])('warns when a takeout batch is %s', (_name, live, message) => {
+    const { connection, pushWindow, pushFocusedChange } = makeConnection()
+    const fixture = mountPage(connection)
+    pushWindow([batch({ retentionState: 'due' })])
+    fixture.detectChanges()
+    clickById(fixture, 'hilos-rotation-takeout')
+
+    pushFocusedChange(live)
+    fixture.detectChanges()
+    expect(
+      byId(fixture, 'hilos-rotation-takeout-notice')?.textContent,
+    ).toContain(message)
+    expect(
+      (byId(fixture, 'hilos-rotation-takeout-confirm') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('hides its own change while confirmation is in flight', () => {
+    const { connection, pushWindow, pushFocusedChange } = makeConnection()
+    const { actions } = makeActions()
+    const fixture = mountPage(connection, actions)
+    pushWindow([batch({ retentionState: 'due' })])
+    fixture.detectChanges()
+    clickById(fixture, 'hilos-rotation-takeout')
+    clickById(fixture, 'hilos-rotation-takeout-confirm')
+
+    pushFocusedChange(batch({ retentionState: 'taken' }))
+    fixture.detectChanges()
+    expect(byId(fixture, 'hilos-rotation-takeout-notice')).toBeNull()
+  })
+
+  it.each([
+    [
+      'withdrawn',
+      batch({ retentionState: 'due' }),
+      'Already withdrawn elsewhere.',
+    ],
+    ['gone', undefined, 'This batch is no longer on the node.'],
+  ])('warns when an acknowledged batch is %s', (_name, live, message) => {
+    const { connection, focus, pushWindow, pushFocusedChange } =
+      makeConnection()
+    const fixture = mountPage(connection)
+    pushWindow([batch({ retentionState: 'taken' })])
+    fixture.detectChanges()
+    clickById(fixture, 'hilos-rotation-undo')
+    expect(focus).toEqual(['node-1:1800000000'])
+
+    pushFocusedChange(live)
+    fixture.detectChanges()
+    expect(byId(fixture, 'hilos-rotation-undo-notice')?.textContent).toContain(
+      message,
+    )
+    expect(
+      (byId(fixture, 'hilos-rotation-undo-confirm') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+    clickById(fixture, 'modal-close')
+    expect(focus.at(-1)).toBe('')
   })
 })

@@ -2,7 +2,6 @@ import { test, expect, type Page } from '@playwright/test'
 
 import {
   clearCustomSetting,
-  overlapSpot,
   setCustomSetting,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
@@ -24,13 +23,10 @@ import { gotoPage, PAGE_READY } from '../helpers/page'
 // not exist in production, and there is no injectable clock to age anything with
 // (docs/agents/cli/commands.md, "Time-based features: no universal clock").
 //
-// Two refusals ride inside the same walk (HIL-1097), because one of them only the
-// cleaner this scenario wakes can produce: confirming a batch that went back under
-// protection while its modal stood open ("The batch is protected again"), and
-// withdrawing the word for a batch the cleaner has since removed ("The batch is
-// no longer on this node."). Both must end on the refusal row in the modal, and
-// the first is pressed through the error card the stack lays over the dialog's
-// footer.
+// Two changes ride inside the same walk (HIL-1233): a batch returns under
+// protection while the takeout dialog stands open, and the cleaner removes an
+// acknowledged batch while its withdrawal dialog stands open. Each dialog keeps
+// its batch in focus, names the change and locks its own action.
 //
 // What is NOT checked here, because it belongs to the leaves that built it: the
 // marker's shape and the other takeout refusals (HIL-483), the order files are
@@ -345,6 +341,14 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   expect(body[0]).toBeLessThanOrEqual(body[1])
   await page.setViewportSize(desktop)
 
+  // Another tab of the same session visits rotations and leaves just before the
+  // confirmation. The reply must still reach this dialog and close it on success.
+  const tabC = await page.context().newPage()
+  await gotoPage(tabC, '/hilos/logs/rotations', PAGE_READY)
+  await expect(tabC.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await tabC.close()
+  await page.bringToFront()
+
   // The confirmation is answered by the node that owns the directory, and the
   // modal closes on that answer rather than on the click.
   await page.getByTestId('hilos-rotation-takeout-confirm').click()
@@ -363,67 +367,39 @@ test('rotates on the configured threshold, carries a batch off on the operator c
     timeout: WALK_WAIT_MS,
   })
 
-  // The first refusal, met the way the owner met it on acceptance (HIL-1097): the
-  // takeout modal stands open on batch B, another tab of the same session puts
-  // the batch back under protection, the batch leaves the Awaiting window under
-  // the modal, and the button is pressed anyway.
+  // The takeout modal stands open on batch B while another tab puts it back
+  // under protection. The batch leaves the Awaiting window under the dialog;
+  // its focused row still reaches the dialog and locks the stale confirmation.
   await page.getByTestId('hilos-rotation-state-due').click()
   await expect(rowB).toBeVisible()
   await rowB.getByTestId('hilos-rotation-takeout').click()
   const modal = page.getByTestId('modal')
   await expect(modal).toBeVisible()
 
-  // A window where the stack's bottom-right corner lands on the dialog's footer:
-  // at least 768 wide, or the stack moves to the top, narrow enough for a card
-  // to reach the button, and low enough that the scrollable dialog is cut to the
-  // screen and its footer sits on the bottom margin. It is taken with the dialog
-  // already open, so the table's own buttons were pressed at the desktop size.
-  await page.setViewportSize({ width: 1024, height: 520 })
-
   // Batch B is the second newest, so the count criterion alone protects it.
   await setSetting(tabB, RETENTION_KEEP_BATCHES, '100')
   await expect(rowB).toHaveCount(0, { timeout: WALK_WAIT_MS })
 
-  // The node that owns the directory judges the batch again and refuses; the
-  // modal stays, with the refusal in its row and in the corner.
-  const confirm = page.getByTestId('hilos-rotation-takeout-confirm')
-  await confirm.click()
-  await expect(page.getByTestId('hilos-action-error')).toContainText(
-    'The batch is protected again',
+  await expect(page.getByTestId('hilos-rotation-takeout-notice')).toContainText(
+    'This batch is protected again',
   )
+  await expect(
+    page.getByTestId('hilos-rotation-takeout-confirm'),
+  ).toBeDisabled()
   await expect(modal).toBeVisible()
-  const refusal = page.getByTestId('hilos-toast-error')
-  await expect(refusal).toBeVisible()
 
-  // The precondition, asserted rather than hoped for: a green click below means
-  // "through the card" only if it lands where the card lies on the button.
-  // Without this it could also mean the two never met — the trap newBatchKeys
-  // describes above — and a plain click would not do either: it goes to the
-  // button's middle, and the card covers only its lower edge.
-  const underCard = await overlapSpot(refusal, confirm)
-
-  // The same button again, under the card. An error never expires, so nothing
-  // is raced here, and a second refusal merges into the card it lies under
-  // rather than stacking a new one: the count says the click reached the node.
-  await confirm.click({ position: underCard })
-  await expect(refusal.getByTestId('hilos-toast-repeats')).toHaveText('×2')
-
-  // Back to the walk: the dialog closes, the card is closed by its cross once no
-  // modal is open (an error waits for a hand, and would lie over the table), and
-  // the count criterion goes back to leaving batch B unprotected.
+  // Back to the walk: the count criterion goes back to leaving batch B
+  // unprotected after the operator closes the dialog.
   await page.getByTestId('modal-close').click()
   await expect(modal).toHaveCount(0)
-  await refusal.getByTestId('hilos-toast-close').click()
-  await expect(refusal).toHaveCount(0)
-  await page.setViewportSize(desktop)
   await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
   await page.getByTestId('hilos-rotation-state-all').click()
   await expect(rowB).toContainText('Awaiting carry-off', {
     timeout: WALK_WAIT_MS,
   })
 
-  // The second refusal needs the cleaner, so its modal is opened before the
-  // attempt that runs it and stays open while batch A goes.
+  // The withdrawal dialog opens before the cleaner runs and stays open while
+  // batch A goes.
   await expect(rowA).toContainText('Taken', { timeout: WALK_WAIT_MS })
   await rowA.getByTestId('hilos-rotation-undo').click()
   await expect(modal).toBeVisible()
@@ -438,12 +414,10 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   await expect(rowA).toHaveCount(0, { timeout: WALK_WAIT_MS })
   await expect(rowB).toContainText('Awaiting carry-off')
 
-  // Withdrawing the word for a batch that is no longer there is refused by its
-  // node, and the modal shows that instead of closing as though it had worked.
-  await page.getByTestId('hilos-rotation-undo-confirm').click()
-  await expect(page.getByTestId('hilos-action-error')).toContainText(
-    'The batch is no longer on this node.',
+  await expect(page.getByTestId('hilos-rotation-undo-notice')).toContainText(
+    'This batch is no longer on the node.',
   )
+  await expect(page.getByTestId('hilos-rotation-undo-confirm')).toBeDisabled()
   await expect(modal).toBeVisible()
   await page.getByTestId('modal-close').click()
   await expect(modal).toHaveCount(0)

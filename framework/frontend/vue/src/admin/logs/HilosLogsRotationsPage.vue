@@ -34,6 +34,8 @@ import {
   rotationsSearchPlaceholder,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
+  rotationTakeoutNotice,
+  rotationUndoNotice,
   HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
@@ -53,6 +55,7 @@ import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
+import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosLongText from '../../HilosLongText.vue'
@@ -89,6 +92,7 @@ onUnmounted(() => {
 })
 
 const rows = useSignal(rotationsTable.rows)
+const focusedRow = useSignal(rotationsTable.focusedRow)
 const search = useSignal(rotationsTable.search)
 
 // The node column and the node filter exist only where nodes have names: in a
@@ -208,10 +212,25 @@ function offersTakeout(row: HilosLogRotationRow): boolean {
 }
 
 function openTakeout(row: HilosLogRotationRow): void {
+  const fresh = rotationsTable.focusRow(row.rowKey)
+  if (fresh === null) {
+    return
+  }
   clearTakeoutError()
-  takeoutRow.value = row
+  takeoutRow.value = fresh
   takeoutOpen.value = true
 }
+
+function closeTakeout(): void {
+  takeoutOpen.value = false
+  rotationsTable.releaseFocus()
+}
+
+const takeoutNotice = computed(() =>
+  takeoutRow.value === null || takeoutBusy.value
+    ? null
+    : rotationTakeoutNotice(focusedRow.value),
+)
 
 // A snapshot of the row the dialog opened on, so a window re-served underneath it
 // (the page re-sends one whenever the picture moves) does not swap the batch the
@@ -225,14 +244,14 @@ const takeoutCommand = computed(() =>
 
 async function submitTakeout(): Promise<void> {
   const row = takeoutRow.value
-  if (row === null || takeoutBusy.value) {
+  if (row === null || takeoutBusy.value || takeoutNotice.value !== null) {
     return
   }
   // The dialog closes on the server's word and not on the click: the refusals
   // this can meet — the batch is gone, it is protected again — are the whole
   // reason the confirmation travels to the node that holds the directory.
   if (await runTakeout(rotationsActions.sendTakeoutConfirm(row))) {
-    takeoutOpen.value = false
+    closeTakeout()
   }
 }
 
@@ -255,10 +274,25 @@ function offersUndo(row: HilosLogRotationRow): boolean {
 }
 
 function openUndo(row: HilosLogRotationRow): void {
+  const fresh = rotationsTable.focusRow(row.rowKey)
+  if (fresh === null) {
+    return
+  }
   clearUndoError()
-  undoRow.value = row
+  undoRow.value = fresh
   undoOpen.value = true
 }
+
+function closeUndo(): void {
+  undoOpen.value = false
+  rotationsTable.releaseFocus()
+}
+
+const undoNotice = computed(() =>
+  undoRow.value === null || undoBusy.value
+    ? null
+    : rotationUndoNotice(focusedRow.value),
+)
 
 // What the batch's own node promises: the instant its cleaner may first take it.
 // One word for one actor on this screen — the class behind it is a pruner, but
@@ -273,14 +307,14 @@ const undoDeadline = computed(() =>
 
 async function submitUndo(): Promise<void> {
   const row = undoRow.value
-  if (row === null || undoBusy.value) {
+  if (row === null || undoBusy.value || undoNotice.value !== null) {
     return
   }
   // Closes on the server's word, like the confirmation: the one refusal this can
   // meet — the batch is no longer on the node — is exactly what the operator has
   // to see instead of a modal that closed as though it had worked.
   if (await runUndo(rotationsActions.sendTakeoutUndo(row))) {
-    undoOpen.value = false
+    closeUndo()
   }
 }
 
@@ -490,6 +524,7 @@ const legendOpen = ref(false)
       :close-on-backdrop="!takeoutBusy"
       :close-on-esc="!takeoutBusy"
       initial-focus="dialog"
+      @cancel="closeTakeout"
     >
       <HilosActionError
         :action="takeoutAction"
@@ -543,6 +578,11 @@ const legendOpen = ref(false)
         straight away: this node keeps a confirmed batch for a while, and you
         can take the confirmation back for as long as the batch is there.
       </div>
+      <HilosEditNotice
+        :kind="takeoutNotice ? 'deleted' : null"
+        :text="takeoutNotice ?? ''"
+        data-id="hilos-rotation-takeout-notice"
+      />
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -556,6 +596,7 @@ const legendOpen = ref(false)
         <LoadingButton
           class="btn-primary"
           :loading="takeoutLoading"
+          :disabled="takeoutNotice !== null"
           data-id="hilos-rotation-takeout-confirm"
           @click="submitTakeout"
         >
@@ -570,6 +611,7 @@ const legendOpen = ref(false)
       :close-on-backdrop="!undoBusy"
       :close-on-esc="!undoBusy"
       initial-focus="dialog"
+      @cancel="closeUndo"
     >
       <HilosActionError
         :action="undoAction"
@@ -591,6 +633,11 @@ const legendOpen = ref(false)
         cleaner has passed there is nothing to bring back — which is exactly why
         deleting waits for your word.
       </div>
+      <HilosEditNotice
+        :kind="undoNotice ? 'deleted' : null"
+        :text="undoNotice ?? ''"
+        data-id="hilos-rotation-undo-notice"
+      />
       <template #actions="{ requestClose }">
         <button
           type="button"
@@ -604,6 +651,7 @@ const legendOpen = ref(false)
         <LoadingButton
           class="btn-primary"
           :loading="undoLoading"
+          :disabled="undoNotice !== null"
           data-id="hilos-rotation-undo-confirm"
           @click="submitUndo"
         >

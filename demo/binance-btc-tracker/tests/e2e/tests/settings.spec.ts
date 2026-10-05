@@ -4,6 +4,7 @@ import {
   clearCustomSetting,
   draftCustomSetting,
   openSettingEdit,
+  overlapSpot,
   setCustomSetting,
   shareOneRow,
   shownByTestId,
@@ -684,6 +685,18 @@ test('refuses a bad value in the words of the rule that refused it', async ({
   // No detail badge: a sentence written for a person is shown in full, so there
   // is nothing the framework held back to reveal.
   await expect(page.getByTestId('hilos-action-error-type')).toHaveCount(0)
+
+  // The toast overlaps the still-open dialog's Save button at this viewport.
+  // A second click through its card must reach the action and merge the repeat
+  // into the same toast; the overlap is checked before the click (HIL-1097).
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 1024, height: 500 })
+  const toast = page.getByTestId('hilos-toast-error')
+  await expect(toast).toBeVisible()
+  const underCard = await overlapSpot(toast, save)
+  await save.click({ position: underCard })
+  await expect(toast.getByTestId('hilos-toast-repeats')).toHaveText('×2')
+  await page.setViewportSize(desktop)
 
   // Nothing was written: the row still reads as the catalog default. Closing
   // goes through the discard guard, because the draft is dirty by construction.

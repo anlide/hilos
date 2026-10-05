@@ -16,8 +16,12 @@ import {
   rotationsSearchPlaceholder,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
+  rotationTakeoutNotice,
+  rotationUndoNotice,
+  HILOS_ROTATION_NOTICE_COPY,
   HILOS_ROTATION_STATE_DUE,
   HILOS_ROTATION_STATE_CARRYING,
+  HILOS_ROTATION_STATE_KEPT,
   HILOS_ROTATION_STATE_TAKEN,
   LOGS_SIGNAL_SCHEMAS,
   LOGS_TAKEOUT_CONFIRM_ACTION,
@@ -518,6 +522,7 @@ describe('createHilosLogRotationsTable and the address', () => {
   /** A context whose connection records the descriptors and delivers nothing. */
   function stubContext(
     sent: TableViewportDescriptor[],
+    focusFrames: Array<{ page: string; tableKey: string; rowKey: string }> = [],
   ): HilosLogRotationsContext {
     return {
       connection: {
@@ -531,6 +536,15 @@ describe('createHilosLogRotationsTable and the address', () => {
           descriptor: TableViewportDescriptor,
         ): boolean {
           sent.push(descriptor)
+
+          return true
+        },
+        sendTableRowFocus(
+          page: string,
+          tableKey: string,
+          rowKey: string,
+        ): boolean {
+          focusFrames.push({ page, tableKey, rowKey })
 
           return true
         },
@@ -651,5 +665,83 @@ describe('createHilosLogRotationsTable and the address', () => {
     expect(table.state.get()).toBe(HILOS_ROTATION_STATE_DUE)
     expect(sent.at(-1)?.filter).toEqual({ state: HILOS_ROTATION_STATE_DUE })
     table.dispose()
+  })
+
+  it('holds a dialog batch beyond the window and releases it on close', () => {
+    const focusFrames: Array<{
+      page: string
+      tableKey: string
+      rowKey: string
+    }> = []
+    const table = createHilosLogRotationsTable(stubContext([], focusFrames))
+    table.start()
+    servePageWindow(table)
+
+    expect(table.controller.focusRow('node-1:1800000060')?.rowKey).toBe(
+      'node-1:1800000060',
+    )
+    table.controller.releaseFocus()
+
+    expect(focusFrames).toEqual([
+      {
+        page: HilosPages.LOGS_ROTATIONS,
+        tableKey: 'hilosLogRotations',
+        rowKey: 'node-1:1800000060',
+      },
+      {
+        page: HilosPages.LOGS_ROTATIONS,
+        tableKey: 'hilosLogRotations',
+        rowKey: '',
+      },
+    ])
+    table.dispose()
+  })
+})
+
+describe('rotationTakeoutNotice', () => {
+  it('names a batch that left the node', () => {
+    expect(rotationTakeoutNotice(undefined)).toBe(
+      HILOS_ROTATION_NOTICE_COPY.batchGone,
+    )
+  })
+
+  it('names a batch confirmed in another place', () => {
+    expect(
+      rotationTakeoutNotice(
+        row({ retentionState: HILOS_ROTATION_STATE_TAKEN }),
+      ),
+    ).toBe(HILOS_ROTATION_NOTICE_COPY.takeoutTaken)
+  })
+
+  it('names a batch that returned under protection', () => {
+    expect(
+      rotationTakeoutNotice(row({ retentionState: HILOS_ROTATION_STATE_KEPT })),
+    ).toBe(HILOS_ROTATION_NOTICE_COPY.takeoutProtected)
+  })
+
+  it('offers no notice while the batch is still recommended for takeout', () => {
+    expect(
+      rotationTakeoutNotice(row({ retentionState: HILOS_ROTATION_STATE_DUE })),
+    ).toBeNull()
+  })
+})
+
+describe('rotationUndoNotice', () => {
+  it('names a batch that left the node', () => {
+    expect(rotationUndoNotice(undefined)).toBe(
+      HILOS_ROTATION_NOTICE_COPY.batchGone,
+    )
+  })
+
+  it('names an acknowledgement withdrawn elsewhere', () => {
+    expect(
+      rotationUndoNotice(row({ retentionState: HILOS_ROTATION_STATE_DUE })),
+    ).toBe(HILOS_ROTATION_NOTICE_COPY.undoWithdrawn)
+  })
+
+  it('offers no notice while the acknowledgement stands', () => {
+    expect(
+      rotationUndoNotice(row({ retentionState: HILOS_ROTATION_STATE_TAKEN })),
+    ).toBeNull()
   })
 })

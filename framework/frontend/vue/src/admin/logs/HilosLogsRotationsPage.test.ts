@@ -88,17 +88,21 @@ function router(
 function makeConnection(): {
   connection: HilosConnection
   sent: TableViewportDescriptor[]
+  focus: string[]
   pushHeader: (frame: HilosLogRotationsHeader) => void
   pushEmptyWindow: () => void
   pushWindow: (rows: Record<string, unknown>[]) => void
   pushPageWindow: (rows: Record<string, unknown>[]) => void
+  pushFocusedChange: (row?: Record<string, unknown>) => void
 } {
   const projectListeners: ((signal: {
     type: string
     data: unknown
   }) => void)[] = []
   const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  const deltaListeners: ((signal: { data: unknown }) => void)[] = []
   const sent: TableViewportDescriptor[] = []
+  const focus: string[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'projectSignal') {
@@ -114,6 +118,11 @@ function makeConnection(): {
           listener as unknown as (signal: { data: unknown }) => void,
         )
       }
+      if (event === 'tableViewportDelta') {
+        deltaListeners.push(
+          listener as unknown as (signal: { data: unknown }) => void,
+        )
+      }
 
       return () => {}
     },
@@ -126,6 +135,15 @@ function makeConnection(): {
       descriptor: TableViewportDescriptor,
     ): void {
       sent.push(descriptor)
+    },
+    sendTableRowFocus(
+      _page: string,
+      _tableKey: string,
+      rowKey: string,
+    ): boolean {
+      focus.push(rowKey)
+
+      return true
     },
   } as unknown as HilosConnection
 
@@ -148,6 +166,23 @@ function makeConnection(): {
   return {
     connection,
     sent,
+    focus,
+    pushFocusedChange(row?: Record<string, unknown>): void {
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.LOGS_ROTATIONS,
+            tableKey: 'hilosLogRotations',
+            kind: 'row_removed',
+            rowKey: 'node-1:1800000000',
+            reason: row === undefined ? 'deleted' : 'left_set',
+            ...(row === undefined
+              ? {}
+              : { row: { rowKey: String(row.rowKey), slots: { batch: row } } }),
+          },
+        })
+      }
+    },
     pushHeader(frame: HilosLogRotationsHeader): void {
       for (const listener of projectListeners) {
         listener({ type: ROTATIONS_HEADER_SIGNAL, data: frame })
@@ -936,5 +971,117 @@ describe('HilosLogsRotationsPage', () => {
         payload: { nodeId: 'node-1', batchTimestamp: 1800000000 },
       },
     ])
+  })
+})
+
+describe('HilosLogsRotationsPage dialogs following a batch', () => {
+  it('takes the batch into focus, warns when it is protected, and releases focus on close', async () => {
+    const { connection, focus, pushWindow, pushFocusedChange } =
+      makeConnection()
+    const wrapper = mountPage(connection)
+    pushWindow([batch({ retentionState: 'due' })])
+    await nextTick()
+
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+    expect(focus).toEqual(['node-1:1800000000'])
+
+    pushFocusedChange(batch({ retentionState: 'kept' }))
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-notice"]')
+        ?.textContent,
+    ).toContain('This batch is protected again')
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-rotation-takeout-confirm"]',
+      )?.disabled,
+    ).toBe(true)
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await nextTick()
+    expect(focus.at(-1)).toBe('')
+  })
+
+  it.each([
+    [
+      'taken',
+      batch({ retentionState: 'taken' }),
+      'Already recorded as carried off elsewhere.',
+    ],
+    ['gone', undefined, 'This batch is no longer on the node.'],
+  ])('warns when a takeout batch is %s', async (_name, live, message) => {
+    const { connection, pushWindow, pushFocusedChange } = makeConnection()
+    const wrapper = mountPage(connection)
+    pushWindow([batch({ retentionState: 'due' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+
+    pushFocusedChange(live)
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-notice"]')
+        ?.textContent,
+    ).toContain(message)
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-rotation-takeout-confirm"]',
+      )?.disabled,
+    ).toBe(true)
+  })
+
+  it('hides the notice while its own confirmation is in flight', async () => {
+    const { connection, pushWindow, pushFocusedChange } = makeConnection()
+    const { actions } = makeActions()
+    const wrapper = mountPage(connection, actions)
+    pushWindow([batch({ retentionState: 'due' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-takeout"]').trigger('click')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="hilos-rotation-takeout-confirm"]',
+      )
+      ?.click()
+    await nextTick()
+
+    pushFocusedChange(batch({ retentionState: 'taken' }))
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-notice"]'),
+    ).toBeNull()
+  })
+
+  it.each([
+    [
+      'withdrawn',
+      batch({ retentionState: 'due' }),
+      'Already withdrawn elsewhere.',
+    ],
+    ['gone', undefined, 'This batch is no longer on the node.'],
+  ])('warns when an acknowledged batch is %s', async (_name, live, message) => {
+    const { connection, focus, pushWindow, pushFocusedChange } =
+      makeConnection()
+    const wrapper = mountPage(connection)
+    pushWindow([batch({ retentionState: 'taken' })])
+    await nextTick()
+    await wrapper.find('[data-id="hilos-rotation-undo"]').trigger('click')
+    expect(focus).toEqual(['node-1:1800000000'])
+
+    pushFocusedChange(live)
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-rotation-undo-notice"]')
+        ?.textContent,
+    ).toContain(message)
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-rotation-undo-confirm"]',
+      )?.disabled,
+    ).toBe(true)
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+      ?.click()
+    await nextTick()
+    expect(focus.at(-1)).toBe('')
   })
 })

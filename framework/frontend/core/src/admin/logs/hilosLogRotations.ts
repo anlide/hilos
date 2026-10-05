@@ -7,9 +7,10 @@
 //
 // A row is one archived batch ON ONE NODE: the same rotation moment on two nodes
 // is two directories on two machines, carried off apart. The rows ride the ordinary
-// server-windowed table (there are no live per-row deltas — the backend projects
-// them from a mirror of the cluster picture, which raises no source events), and
-// everything else on the screen — whether there is a picture at all, which nodes
+// server-windowed table (ordinary rows are re-served as windows because the
+// backend projects them from a mirror of the cluster picture); a row held by an
+// open dialog gets a focused-row reply beyond that window. Everything else on
+// the screen — whether there is a picture at all, which nodes
 // exist, and the rules in force — rides the page's own header signal.
 //
 // The screen judges nothing: the retention verdict is decided on the backend. It
@@ -369,9 +370,11 @@ export function logRotationsPath(state: string): string {
  * table's (page, tableKey) address. Rows resolve through
  * {@link resolveHilosLogRotationRow}. Newest batch first by default.
  *
- * There are no live deltas here, and the window is not re-requested by the client
- * either: the page re-serves it whenever the cluster picture or the retention rule
- * moves, over this same descriptor. The returned handle's `start` binds the table
+ * Ordinary rows arrive as windows, not live deltas, and the window is not
+ * re-requested by the client either: the page re-serves it whenever the cluster
+ * picture or the retention rule moves, over this same descriptor. A dialog holds
+ * one row in focus and receives its change even after it leaves that window.
+ * The returned handle's `start` binds the table
  * and requests the first window; `dispose` unbinds it.
  *
  * The state filter lives in the address too (HIL-903). An address carrying the
@@ -400,6 +403,12 @@ export function createHilosLogRotationsTable(
         HilosPages.LOGS_ROTATIONS,
         ROTATIONS_TABLE,
         descriptor,
+      ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.LOGS_ROTATIONS,
+        ROTATIONS_TABLE,
+        rowKey,
       ),
     initialFilter:
       entered === '' ? undefined : { [ROTATION_FILTER_STATE]: entered },
@@ -675,6 +684,55 @@ export function formatRotationState(row: HilosLogRotationRow): string {
     default:
       return row.retentionState
   }
+}
+
+/** The notices a dialog draws when the batch changes underneath it. */
+export const HILOS_ROTATION_NOTICE_COPY = {
+  takeoutProtected:
+    'This batch is protected again — there is nothing to carry off now.',
+  takeoutTaken: 'Already recorded as carried off elsewhere.',
+  batchGone: 'This batch is no longer on the node.',
+  undoWithdrawn: 'Already withdrawn elsewhere.',
+} as const
+
+/**
+ * The open takeout dialog follows its focused batch even after it leaves the
+ * table window. A change under the dialog is said here before the operator can
+ * confirm an obsolete recommendation.
+ *
+ * @param live The batch held in focus, or undefined once it has left the node.
+ */
+export function rotationTakeoutNotice(
+  live: HilosLogRotationRow | undefined,
+): string | null {
+  if (live === undefined) {
+    return HILOS_ROTATION_NOTICE_COPY.batchGone
+  }
+  if (live.retentionState === HILOS_ROTATION_STATE_TAKEN) {
+    return HILOS_ROTATION_NOTICE_COPY.takeoutTaken
+  }
+
+  return live.retentionState === HILOS_ROTATION_STATE_DUE
+    ? null
+    : HILOS_ROTATION_NOTICE_COPY.takeoutProtected
+}
+
+/**
+ * The open withdrawal dialog follows its focused batch until the node removes
+ * it or the acknowledgement changes elsewhere.
+ *
+ * @param live The batch held in focus, or undefined once it has left the node.
+ */
+export function rotationUndoNotice(
+  live: HilosLogRotationRow | undefined,
+): string | null {
+  if (live === undefined) {
+    return HILOS_ROTATION_NOTICE_COPY.batchGone
+  }
+
+  return live.retentionState === HILOS_ROTATION_STATE_TAKEN
+    ? null
+    : HILOS_ROTATION_NOTICE_COPY.undoWithdrawn
 }
 
 /**

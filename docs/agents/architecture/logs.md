@@ -611,6 +611,17 @@ retention period afterwards; the row repaints when the node's next index reaches
 the mirror, not when the ack does — which is why the ack carries a sentence, so
 the person knows their click landed.
 
+Both rotation dialogs keep their batch as the table's focused row while they
+are open. If a batch leaves the visible window, the dialog still receives its
+current state. The takeout dialog says "This batch is no longer on the node.",
+"Already recorded as carried off elsewhere.", or "This batch is protected
+again — there is nothing to carry off now." The withdrawal dialog says "This
+batch is no longer on the node." or "Already withdrawn elsewhere." In each
+case the dialog keeps its original batch details, holds room for the message,
+locks its main button, and waits for the operator to close it. A click that
+outruns the next index update still goes to the owning node; its refusal reaches
+the open dialog and the error toast.
+
 **The pruner deletes** (`LogArchivePruner::prune()`), and it asks two questions
 of a batch: does its directory hold a readable takeout marker, and has the undo
 window over it run out. The deadline the screen shows is the same addition, so
@@ -913,8 +924,10 @@ Remember the outcome, speak on its change, clear on recovery.
   over the live socket.
 - `demo/binance-btc-tracker` e2e `logs.spec.ts` — the tail driven from a
   browser: a line the daemon writes arrives on its own (HIL-395);
-  `logs-rotation.spec.ts` — rotation, takeout, two refusals and the pruning of
-  exactly the carried-off batch (HIL-763, HIL-1097).
+  `logs-rotation.spec.ts` — rotation, takeout, the two dialogs answering a
+  change beneath them, and pruning exactly the carried-off batch (HIL-763,
+  HIL-1233); `settings.spec.ts` keeps the click-through-error-card check from
+  HIL-1097 on a deterministic refused setting.
 - Where every stream lands, proven on a live stand by a run and not by reading
   — `composer run test:log-streams`, the `log-streams` step of the full run:
   `demo/tasks` stood up, each source provoked on purpose, and every line of

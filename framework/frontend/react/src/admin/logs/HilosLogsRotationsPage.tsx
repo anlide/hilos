@@ -43,6 +43,8 @@ import {
   hasRotationNodes,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
+  rotationTakeoutNotice,
+  rotationUndoNotice,
   rotationsEmptyState,
   rotationsSearchPlaceholder,
 } from '@hilos/core'
@@ -54,6 +56,7 @@ import type {
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
+import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
@@ -202,6 +205,7 @@ export function HilosLogsRotationsPage({
   }, [headerHandle, rotations])
 
   const rows = useSignal(rotationsTable.rows)
+  const focusedRow = useSignal(rotationsTable.focusedRow)
   const search = useSignal(rotationsTable.search)
 
   // The node column and the node filter exist only where nodes have names: in a
@@ -252,6 +256,10 @@ export function HilosLogsRotationsPage({
   // operator is reading the address of.
   const [takeoutRow, setTakeoutRow] = useState<HilosLogRotationRow | null>(null)
   const takeout = useTrackedAction()
+  const takeoutNotice =
+    takeoutRow === null || takeout.busy
+      ? null
+      : rotationTakeoutNotice(focusedRow)
   const takeoutAddress =
     takeoutRow === null ? null : rotationTakeoutAddress(takeoutRow)
   const takeoutCommand =
@@ -262,6 +270,8 @@ export function HilosLogsRotationsPage({
   const [undoOpen, setUndoOpen] = useState(false)
   const [undoRow, setUndoRow] = useState<HilosLogRotationRow | null>(null)
   const undo = useTrackedAction()
+  const undoNotice =
+    undoRow === null || undo.busy ? null : rotationUndoNotice(focusedRow)
   // What the batch's own node promises: the instant its cleaner may first take it.
   // One word for one actor on this screen — the class behind it is a pruner, but
   // the operator has been reading "cleaner" since the takeout modal. Null is the
@@ -275,38 +285,56 @@ export function HilosLogsRotationsPage({
   const [legendOpen, setLegendOpen] = useState(false)
 
   function openTakeout(row: HilosLogRotationRow): void {
+    const fresh = rotationsTable.focusRow(row.rowKey)
+    if (fresh === null) {
+      return
+    }
     takeout.clearError()
-    setTakeoutRow(row)
+    setTakeoutRow(fresh)
     setTakeoutOpen(true)
   }
 
+  function closeTakeout(): void {
+    setTakeoutOpen(false)
+    rotationsTable.releaseFocus()
+  }
+
   async function submitTakeout(): Promise<void> {
-    if (takeoutRow === null || takeout.busy) {
+    if (takeoutRow === null || takeout.busy || takeoutNotice !== null) {
       return
     }
     // The dialog closes on the server's word and not on the click: the refusals
     // this can meet — the batch is gone, it is protected again — are the whole
     // reason the confirmation travels to the node that holds the directory.
     if (await takeout.run(rotationsActions.sendTakeoutConfirm(takeoutRow))) {
-      setTakeoutOpen(false)
+      closeTakeout()
     }
   }
 
   function openUndo(row: HilosLogRotationRow): void {
+    const fresh = rotationsTable.focusRow(row.rowKey)
+    if (fresh === null) {
+      return
+    }
     undo.clearError()
-    setUndoRow(row)
+    setUndoRow(fresh)
     setUndoOpen(true)
   }
 
+  function closeUndo(): void {
+    setUndoOpen(false)
+    rotationsTable.releaseFocus()
+  }
+
   async function submitUndo(): Promise<void> {
-    if (undoRow === null || undo.busy) {
+    if (undoRow === null || undo.busy || undoNotice !== null) {
       return
     }
     // Closes on the server's word, like the confirmation: the one refusal this can
     // meet — the batch is no longer on the node — is exactly what the operator has
     // to see instead of a modal that closed as though it had worked.
     if (await undo.run(rotationsActions.sendTakeoutUndo(undoRow))) {
-      setUndoOpen(false)
+      closeUndo()
     }
   }
 
@@ -516,7 +544,7 @@ export function HilosLogsRotationsPage({
         closeOnBackdrop={!takeout.busy}
         closeOnEsc={!takeout.busy}
         initialFocus="dialog"
-        onClose={() => setTakeoutOpen(false)}
+        onClose={closeTakeout}
         actions={({ requestClose }) => (
           <>
             <button
@@ -531,6 +559,7 @@ export function HilosLogsRotationsPage({
             <LoadingButton
               className="btn-primary"
               loading={takeout.loading}
+              disabled={takeoutNotice !== null}
               data-id="hilos-rotation-takeout-confirm"
               onClick={() => void submitTakeout()}
             >
@@ -594,6 +623,11 @@ export function HilosLogsRotationsPage({
             there.
           </div>
         )}
+        <HilosEditNotice
+          kind={takeoutNotice ? 'deleted' : null}
+          text={takeoutNotice ?? ''}
+          dataId="hilos-rotation-takeout-notice"
+        />
       </HilosModal>
 
       <HilosModal
@@ -602,7 +636,7 @@ export function HilosLogsRotationsPage({
         closeOnBackdrop={!undo.busy}
         closeOnEsc={!undo.busy}
         initialFocus="dialog"
-        onClose={() => setUndoOpen(false)}
+        onClose={closeUndo}
         actions={({ requestClose }) => (
           <>
             <button
@@ -617,6 +651,7 @@ export function HilosLogsRotationsPage({
             <LoadingButton
               className="btn-primary"
               loading={undo.loading}
+              disabled={undoNotice !== null}
               data-id="hilos-rotation-undo-confirm"
               onClick={() => void submitUndo()}
             >
@@ -645,6 +680,11 @@ export function HilosLogsRotationsPage({
           cleaner has passed there is nothing to bring back — which is exactly
           why deleting waits for your word.
         </div>
+        <HilosEditNotice
+          kind={undoNotice ? 'deleted' : null}
+          text={undoNotice ?? ''}
+          dataId="hilos-rotation-undo-notice"
+        />
       </HilosModal>
 
       <HilosModal
