@@ -34,8 +34,9 @@ target is **WCAG 2.1 AA**, in full, from v1.
 4. Never convey a status by color alone — pair the color with text: a visible
    badge, or a `visually-hidden` span beside a decorative `aria-hidden` dot.
 5. Edit only inside a focus-trapped `HilosModal`; name every table through its
-   `label`; set `aria-busy` on an in-flight button; announce transient status
-   through `role="status" aria-live="polite"`, sparingly.
+   declared `title` or the admin page heading; set `aria-busy` on an in-flight
+   button; announce transient status through `role="status" aria-live="polite"`,
+   sparingly.
 6. Let a page's tab title flow from `pageTitles` (the bootstrap input), not a
    hand-set `document.title`.
 7. Guard new structure in the demo's `a11y.spec.ts` (the rare category); run it

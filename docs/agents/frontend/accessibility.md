@@ -135,12 +135,24 @@ The rules to apply when building a view or an SDK component:
   a `visually-hidden` text span next to a decorative dot; mark the dot
   `aria-hidden="true"`. The presence indicators (online/offline) are the
   reference: a text badge, or a hidden label beside an `aria-hidden` dot.
-- **Tables expose their accessibility tree.** `HilosViewportTable` takes a `label`
-  → a `visually-hidden` `<caption>` (the table's accessible name); sortable
-  headers report `aria-sort` (`none`/`ascending`/`descending`); the search box has
-  an `aria-label` (not just a placeholder); the loading row is `role="status"`;
-  the Apply control names its pending count; the page indicator reads "Page N of
-  M". Name every table through the `label` prop.
+- **Tables expose their accessibility tree.** `HilosViewportTable` takes its
+  name from its declared `title`, or from the admin page heading when no title
+  is declared, through `aria-labelledby`. The name is already visible as a
+  heading; it needs no hidden copy. `HilosAdminPage` hands that heading's id
+  down — Vue `hilosPageHeadingIdKey`, React `HilosPageHeadingIdContext`, Angular
+  `HILOS_PAGE_HEADING_ID`. A table outside an admin page declares `title`,
+  since it has no page heading id to inherit. The cards on a narrow screen form
+  a `role="list"` named by the same heading. Sortable headers report `aria-sort`
+  (`none`/`ascending`/`descending`); the search box takes its `aria-label` from
+  the declared placeholder ("Search…" when omitted). The loading skeleton
+  carries `aria-busy` and a hidden "Loading…" with `role="status"`. The pending
+  count stands beside Apply in the live-message row, and the hidden
+  `role="status"` region (`hilos-table-live-status`) speaks it in words. The
+  footer reports the rows on screen as "first – last of total", with a trailing
+  "+" when the count stopped at its ceiling; its "Pagination" group offers page
+  buttons named "Page N" and marks the current page with `aria-current="page"`.
+  Do not leave a table unnamed; use its declared `title` or the admin page
+  heading.
 - **A listbox owns only `option` and `group`.** An intermediate `<li>`
   carries `role="presentation"` so the listbox owns the options directly;
   `HilosDropdown`'s empty row is one `role="option"` with `aria-disabled`; a
@@ -237,7 +249,8 @@ it. See [testing.md](../testing.md).
 3. No information by color alone — pair every status color with text.
 4. An edit surface is a `HilosModal` (focus trap, return, Esc, named); it
    declares where focus lands when it opens.
-5. A new table is named through `label` and keeps the SDK's ARIA cells.
+5. A new table is named by its declared `title` or the admin page heading and
+   keeps the SDK's ARIA cells.
 6. Build from stock Bootstrap classes; add no hand CSS, suppress no focus
    outline, add no `prefers-reduced-motion` override.
 7. If the page has a tab title, it flows from `pageTitles`; add the key there

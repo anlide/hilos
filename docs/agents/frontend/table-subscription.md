@@ -137,8 +137,9 @@ fields inside the row's slots the table draws. The core builds the list from the
 declared columns (`hilosTableRenderedKeys`, `tableRendered.ts`) — every column's
 key, plus the fields each cell names in `reads` because it draws from more than its
 own key. The actions column has no key to count, so its `reads` is required, and an
-empty list is how it says it reads nothing. A table with no declared frame sends no
-list, and the server then compares the whole row. The server keeps a digest of each
+empty list is how it says it reads nothing. Every table sends the list; the server
+compares the whole row while it has no list, as on a cold window before
+`table_rendered`. The server keeps a digest of each
 delivered row whole and a second one of its drawn part (`TableViewportSubscription`),
 and the two answer different questions — see the next section.
 
@@ -180,15 +181,10 @@ accumulated before the break is gone — the window that arrives outranks it.
 > numbers in the footer and the place of a column in a composite order on its
 > header, and the one room of live messages above the rows with the row tint and
 > the waiting marks beside it, the bar of work under a row and the project's
-> places next to running work, the cards a declared table becomes on a narrow
+> places next to running work, the cards a table becomes on a narrow
 > screen, the panel a row and a card expand into, and the states of the body —
 > the skeleton of a late window and the two worded empty states, and the marks of
 > a quiet source on headers, on the row-state cell and on the head of a card.
-> Six framework tables declare one — settings, users, the delivery journal,
-> backups, the channels hub and a channel's fields. The framework's log pages and
-> the verifier circle's table still hand their view columns, a label
-> and an empty text as props, and a table that declares nothing keeps drawing the
-> bar and the footer it drew before.
 
 **The page declares; the view draws.** The framework owns the whole bar above the
 table and the whole footer below it, and a page that wants a title, a filter, or
@@ -199,7 +195,8 @@ states again.
 
 The declaration is one value, `HilosTableFrame`
 (`framework/frontend/core/src/table/tableFrame.ts`), handed to the controller as
-its `frame` option:
+its `frame` option. This is the only way to build a table: `frame` is required,
+so a table cannot be built without its declaration (not in the code yet — HIL-1346).
 
 | Declared | What it is |
 |---|---|
@@ -235,12 +232,12 @@ on a narrow screen is a fourth and has its own section below:
   which a reader practically never sees, the first window riding the page's own
   answer. Until the threshold the previous rows stay, so a quick answer draws no
   skeleton; past it the view draws one as tall as the previous window, or
-  `pageSize` rows when that window was empty. The state is read by every table,
-  declared frame or not: "Nothing found" names the query and the active
+  `pageSize` rows when that window was empty. The state is read by every table:
+  "Nothing found" names the query and the active
   declared filters and resets through `resetFilters()`, while `empty` speaks
   the declared `empty` and `mainAction`, or the page's own words where nothing
   is declared — the `empty` slot in Vue, the `empty` prop in React, the `#empty`
-  template in Angular, each falling back to `emptyText`.
+  template in Angular.
   `empty_page` is about the WINDOW rather than the set: the window came back
   empty while the count says the set has rows — its address landed past the
   end, or the rows moved out from under it. Saying "nothing here yet" there
@@ -294,8 +291,8 @@ header, the column order, and sorting never read it.
 
 The layout is derived once, with the rest of the frame, and read off
 `frame.card` — it follows from the declaration alone, which does not change over
-the life of a table, so it is not wrapped in a signal and null exactly when
-`declaration` is. Drawing the card is a view's job, all three views draw it, and
+the life of a table, so it is not wrapped in a signal.
+Drawing the card is a view's job, all three views draw it, and
 what follows is what drawing it means.
 
 **Which branch is seen is a matter of Bootstrap's visibility utilities, not of
@@ -337,7 +334,7 @@ accessibility tree with its display. What the table says in words when it has no
 rows stands BESIDE that list rather than inside it, a sentence being no item of
 a list; the container of the branch holds the two.
 
-**A declared table hands the page one slot per column, `#cell-<key>`, and writes
+**A table hands the page one slot per column, `#cell-<key>`, and writes
 the cell around it.** That is what makes a cell addressable by column at all, and
 it is what lets the card be built without a second markup: one slot fills the
 `<td>` of the row and the line of the card alike. The wide branch draws the cell
@@ -363,15 +360,9 @@ column, `#cell-<key>`. React takes a map of renderers by column key, the prop
 is already a function prop. Angular takes one `ng-template` per column marked with
 the `hilosTableCell` directive and the column's key,
 `<ng-template hilosTableCell="name" let-row let-rowKey="rowKey">`, collected
-through `contentChildren` — a template looked up by a static name (`#row`) cannot
+through `contentChildren` — a template looked up by a static name cannot
 carry a key known only at run time. "The page filled nothing" reads in each view
 as the absence it is: no slot, no key in the map, no marked template.
-
-**A table drawing its frame from props keeps the whole-row slot and gets no
-cards** (`#row` in Vue and Angular, the `row` prop in React).
-There is nothing to address a cell by in that epoch, so there is nothing to build
-a card out of, and such a table keeps its horizontal scroll at every width until
-its page moves onto the declaration.
 
 **A title is declared only when it tells tables apart.** The one table of a
 framework admin page declares none: the page heading above already names it, the
@@ -417,14 +408,8 @@ not in the card's main set on a narrow screen either: the card expands to it,
 rather than carrying it in its body. What the column keeps is its label, which
 becomes the label of the field in the panel, and its place: the panel holds the
 fields in declaration order, and there is no second answer to that question.
-
-**Removing the cell of a marked column from the `#row` slot is the page's own
-duty — in the props epoch, which is the only one that has such a slot.** The
-framework does not see the markup a page writes, so it cannot check this; a page
-that marks a column and keeps its `<td>` gets a row one cell wider than its
-header. In a DECLARED table the question does not arise: the framework draws the
-cells itself, from the columns left standing in the row, and a marked one is
-simply not among them.
+The framework draws the cells from the columns left standing in the row, and a
+marked one is simply not among them.
 
 **The framework owns the panel, the page owns its values.** The room under the
 row, the order of the fields, their labels, the control and its accessibility are
@@ -1166,20 +1151,17 @@ the table saying in words what froze, why, and that the rest is live; a snowflak
 in the header of every column built from a quiet source, carried inside its sort
 control alongside a hidden warning (or beside the label when unsortable); and a
 snowflake in the narrow row-state cell at the end of every row whose own values
-are behind. The mark the mockup draws *inside* the cells of the lagging column
-is **not one of them and cannot be**: the body of a row comes from the page through
-the `#row` slot, so the framework owns no cell to put an icon in — design debt
-`D-051`. Showing yesterday's number silently beside today's is the worst of the
+are behind. The framework puts no mark inside the cells of the lagging column:
+their content belongs to the page (`#cell-<key>`), and the framework writes the
+cell around that content and nothing into it. The mark stays in the three places
+it owns completely (`D-051`).
+Showing yesterday's number silently beside today's is the worst of the
 options, because it looks fresh. A lagging source does not block the rest — rows
 page, filter, and sort by live or stale columns alike — and **a column of a stale
 source still sorts**: the header button and the Order menu item remain live and
 carry a snowflake with a hidden warning saying what the order is worth
 (`sortWarning`). The other orders a table refuses, and what it answers, are in
 [table-sort-orders.md](table-sort-orders.md).
-
-The table mockup still draws one removed-row placeholder and lets a window made
-only of placeholders stand over an empty set; design debt `D-124` records that
-the three reasons and the converged empty state belong there instead.
 
 ## Headless table state machine
 
@@ -1204,7 +1186,7 @@ Everything inside the root keeps the `hilos-table-*` prefix:
 - **frame:** `hilos-table-bar-slot` — the stacked container holding the bar's
   controls and the selection panel (only when the table declared bulk operations),
   `hilos-table-controls` — the strip of controls in the bar (present on every
-  table with a frame declaration), `hilos-table-title`, `hilos-table-main-action`,
+  table), `hilos-table-title`, `hilos-table-main-action`,
   `hilos-table-search`, `hilos-table-filters`,
   `hilos-table-filter-<filterKey>`, `hilos-table-facet-<filterKey>-<value>` — the
   number beside one option of a dropdown filter, keyed by `String(value)`,
@@ -1261,8 +1243,6 @@ Everything inside the root keeps the `hilos-table-*` prefix:
 - **counts and paging:** `hilos-table-count`,
   `hilos-table-page-<pageNumber>` (1-based, and only while the count is exact
   enough to have page numbers at all), `hilos-table-prev`, `hilos-table-next`;
-  `hilos-table-page` is the single number the props-driven footer prints, and
-  only a table that declares no frame still carries it;
 - **states:** `hilos-table-loading` — the skeleton as a whole,
   `hilos-table-skeleton-row` — one row of it (one bar in the cards);
   `hilos-table-empty` with `hilos-table-empty-title`, `hilos-table-empty-hint`
