@@ -76,7 +76,8 @@ the recipe before generating code.
 - Generate against the framework base; do not generate a copy of the table
   merge/mutation or the page `onAction` lifecycle.
 - Back presence with a project RT collection implementing `HilosPresenceSource`,
-  not framework analytics (process-local, not user-keyed).
+  not framework analytics: the cluster writer loads those records seconds later;
+  they are not live connection state.
 - The account block fact is the framework's: `block` is a column of `hilos_user`
   and the framework reads it. Do not generate a project block source.
 - Scaffold framework-owned features only; a project's own divergent table is

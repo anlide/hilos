@@ -2,12 +2,13 @@
 
 Read this before touching `Hilos::$ac` or anything under
 `framework/backend/Core/Analytics/`, before adding an analytics event, and before
-writing into an `hilos_analytics_*` table from anywhere.
+writing into an `hilos_analytics_*` table from anywhere or reading these tables
+for the admin analytics section.
 
 ## The Rule
 
 **The analytics tables are written by one agent, the cluster's writer, and by
-nobody else.**
+nobody else. Any agent may read them.**
 Every other process hands its events to the **journal agent of its node**, which
 keeps them in files until the writer has them in the database. This is the frame
 the owner set when P-415 was taken apart (26.09.2026): analytics is written into
@@ -15,7 +16,15 @@ the database by dedicated monopolistic agents, no other process touches its
 tables, the node's journal guarantees that what reached it will be written now or
 later, and the writer does not care which node it stands on.
 
-The chain is four leaves; this document describes what has landed:
+On 04.10.2026 the owner opened the reading side: the admin section reads the raw
+tables with raw SQL. Entities over analytics are a Phase-2 question (HIL-1402):
+«Мы же это решили отложить до фазы два» — "We decided to put that off until phase
+two". A change another subsystem needs in these tables goes through the writer,
+never around it.
+
+The chain is four leaves; this document describes what has landed. The exception
+is [The Admin Section](#the-admin-section), written ahead of its code: every
+statement of behavior that has not landed names the leaf that will make it true.
 
 | Leaf | What it does |
 |---|---|
@@ -78,6 +87,13 @@ starts the collector in every process of the project, `Hilos::initAnalytics()`
 refuses a project without the feature, and the start refuses the feature without
 an `analytics_journal` directory ([filesystem.md](filesystem.md)) or the
 `AnalyticsSettingsCatalog` fragment in its settings catalog.
+
+The admin analytics section comes with this same case, with no case of its own
+(not in the code yet — HIL-1415); see [The Admin Section](#the-admin-section).
+All six demos with accounts — chat, binance-btc-tracker, ecommerce-shop, tasks,
+online-testing and polls — declare it (not in the code yet — HIL-1416); today
+only chat does. The owner, 04.10.2026: «Аналитику включить во всех 6 demo» — "Turn
+analytics on in all six demos".
 
 ## The Directory
 
@@ -317,6 +333,116 @@ marks this with `AnalyticsJournalAgentDaemon::stopsAfterOtherWorkers()`; the
 mechanism is `WorkerServer`'s ([worker-lifecycle.md](worker-lifecycle.md)). The
 master's shutdown ceiling does not change. The stop of the journal's own worker
 session is lost — one line per stop of a node, by consequence.
+
+## The Admin Section
+
+### The section and its Phase-1 screens
+
+Analytics is a framework admin section ([admin-features.md](admin-features.md)).
+Its existing page key is `hilos_analytics`, its route is `/hilos/analytics`, and
+it inherits `PageAccessLevel::ADMIN` from `AbstractHilosPage`. The framework's
+`AbstractHilosAnalyticsAgent` serves it; today that class and chat's subclass
+are empty stubs. The section has no feature case of its own: a project declaring
+`HilosFeature::ANALYTICS` gets the section, and a project without it sees no
+section card (not in the code yet — HIL-1415).
+
+- The overview is empty apart from one line explaining that a person's actions
+  open from their admin page, with a link to the users list
+  (not in the code yet — HIL-1418).
+- A browser-session page shows its actions in order — when, on which page, and
+  the action's name — with a short browser description in the header
+  (not in the code yet — HIL-1419).
+- A person's page lists the browser sessions in which they were the last to
+  sign in, each linking to its session page; the entry is on the admin user card
+  (not in the code yet — HIL-1420).
+- React and Angular provide the same screens as Vue
+  (not in the code yet — HIL-1421).
+
+Everything beyond that — visits, lists of people and visits, reports, cubes,
+retention, live updates and content for the overview — belongs to Phase-2,
+HIL-1402.
+
+### The reader and the facts it reads
+
+The section's agent reads the analytics tables
+(not in the code yet — HIL-1415). It reads raw SQL: no Entity maps these tables.
+Keep that SQL in the analytics data layer, `framework/backend/Core/Analytics/`;
+the section's table calls that layer. Do not put SQL in a page or table, as with
+any database access ([../orm/db-collection.md](../orm/db-collection.md)). The
+master and the collector never read the analytics tables.
+
+| Fact | Source |
+|---|---|
+| Action and its moment | `hilos_analytics_user_action`, with `created_ts` and its name through `hilos_analytics_action_name` |
+| The action's browser session | Its connection in `hilos_analytics_ws_connection`, whose `browser_session_id` names `hilos_analytics_browser_session` |
+| Page name | `hilos_analytics_page_session` leads to `hilos_analytics_page.page_name` |
+| Browser | The browser session's `current_user_agent_id` leads to `hilos_analytics_user_agent` |
+| Account | `user_identity_type` and `user_identity_value` on the browser session itself |
+
+### Whose browser session the screen names
+
+The identity is written on every sign-in and on the handshake that admits the
+browser back. Signing out does not clear it. The account on a browser session
+therefore means **the last person to sign in**, and the screen must say so.
+If two accounts use one browser, the first person's actions appear under the
+second person. Attribution to the person at the moment of an action needs a
+visit, a Phase-2 question (HIL-1402). A session in which nobody signed in names
+nobody.
+
+The screen identifies an erased account as a deleted user by its number, never
+by its name (not in the code yet — HIL-1415). What account erasure leaves in
+analytics belongs to HIL-1283.
+
+### What the screen never shows
+
+- **The action body.** Do not display it. It is no longer stored either
+  (not in the code yet — HIL-1283). The owner, 01.10.2026: «Ни в коем случае» —
+  "Under no circumstances".
+- **Page parameters.** In Phase-1 name the page; do not show its parameters.
+- **The network address or its changes.**
+- **The browser-session token or its aliases.**
+  `hilos_analytics_browser_session.session_token` and the `old_token` /
+  `new_token` values in `hilos_analytics_browser_session_alias` are live browser
+  secrets, not screen identifiers. They belong neither on screen, in a route,
+  nor in an analytics frame
+  ([../antipatterns/secret-in-query.md](../antipatterns/secret-in-query.md)).
+  Name a session by its row number, `hilos_analytics_browser_session.id`.
+- **The connection key (`accept_key`).** It is internal.
+
+### Numbers, order, delay and volume
+
+A session number is not permanent. A token rename that finds rows under both
+tokens merges the old session into the new one and deletes the old row
+([Loading](#loading)). A page addressed by that vanished number answers as for
+a missing resource (not in the code yet — HIL-1419).
+
+Order actions by their source moment, `created_ts`, breaking ties by row number.
+Never order them by loading: files from different nodes arrive in any order
+([Across Nodes](#across-nodes)).
+
+The screen can show only what the writer has loaded. An action reaches the
+tables after its node's journal file rotates — at 1 MiB or no later than ten
+seconds after the file opened — and the writer loads it. If its connection's
+browser-session attachment has not been loaded, the action is not visible on
+any browser-session page until that attachment arrives. A file loads in one
+transaction: the reader sees the whole file or none of it.
+
+Phase-1 shows what was recorded when the page opened; live updates belong to
+HIL-1402. Nothing is deleted by age yet — retention is also HIL-1402 — so read a
+window of rows, never all the rows of a session or account at once.
+
+### The admin view mode
+
+In Phase-1 a view-mode viewer receives **no analytics values**. The bridge knows
+the verdict only for a column of a mounted collection (`WireField::column()`),
+and no Entity maps these tables. `WireField::notPersonal()` is not an escape
+for a value copied from a column
+([admin-view-mode.md](admin-view-mode.md)). Let the viewer open the pages, but
+keep the values as hidden markers.
+
+The owner accepted this boundary on 04.10.2026: «да, потом сделаем как-то» —
+"yes, we will do something about it later". How the viewer can see analytics
+belongs to Phase-2, HIL-1402.
 
 ## Settled — Do Not Reopen
 

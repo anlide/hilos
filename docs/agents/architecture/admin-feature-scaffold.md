@@ -136,8 +136,8 @@ requires, in dependency order (the table merges sources that must exist first):
    the card of one person reads presence under that key, and a collection
    mounted under another one is refused by the start's source check.
    *(Contract Gate: RT item shape.)* Presence comes from this project RT
-   collection — never framework analytics, which is process-local and not
-   user-keyed.
+   collection — never framework analytics: the cluster writer loads those records
+   seconds later; they are not live connection state.
 4. **Table.** Generate a subclass of `AbstractHilosUsersTable` with two things:
    a `BROWSER` built from the base's `USERS_SOURCE` and `USERS_ROW` plus the row
    of the project's own connections collection (its `userId` as the row key,

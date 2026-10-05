@@ -36,6 +36,9 @@ read the canonical spec before editing.
 - Who owns the verifier circle: `docs/agents/architecture/protected-mode.md`
 - The admin view mode — what a non-admin viewer sees and may not do, and what
   every admin page owes it: `docs/agents/architecture/admin-view-mode.md`
+- The Analytics section — what its screens read, whose browser session they
+  name, and what they never show: `docs/agents/architecture/analytics.md`
+  (section "The Admin Section")
 
 ## Workflow
 

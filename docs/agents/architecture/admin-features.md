@@ -64,6 +64,12 @@ in `FEATURES`; the first one is `hilos_maintenance`
 (`Hilos\Pages\Maintenance\AbstractHilosMaintenancePage`), which shows the
 verifier circle through the framework's `HilosVerifierCircleTable`.
 
+A framework section may also come with a feature case that is not its own. The
+analytics section has no separate case: `HilosFeature::ANALYTICS` enables both
+collection and the section — a project that collects gets it, one that does not
+has no section (not in the code yet — HIL-1415). For what it reads and shows,
+see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
+
 The project must NOT copy the table query, the catalog-merge, the value-source
 logic, or the action routing. Those are framework-owned.
 
