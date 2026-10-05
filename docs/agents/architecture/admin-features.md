@@ -32,7 +32,9 @@ A spec section and any skill wrapper must keep this fork explicit.
 ### Mode 1 — Framework-owned feature: activate, configure, use
 
 For features the framework owns end to end: `settings`, `hilos_users`, `backup`,
-and later `roles`. The framework owns the browser table, the subscribe, and the
+and later `roles`.
+The languages and countries section is one more ([languages-and-countries.md](languages-and-countries.md)) (not in the code yet — HIL-1470).
+The framework owns the browser table, the subscribe, and the
 actions. `backup` is the same mode with a wider engine — the framework also owns
 its monopoly agent, cron schedule, `mysqldump` child command, and retention
 pruner, and the project supplies only a catalog (reference registry + optional

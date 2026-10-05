@@ -523,6 +523,15 @@ name and an indeterminate bar — and a run that outlives its estimate is told i
 ("taking longer than usual"), because a negative number and a frozen zero both read as
 "almost done".
 
+### i18n — the languages and countries section
+
+Configure-only: the framework owns the five reference tables, their library, the section's pages and browser tables (not in the code yet — HIL-1470).
+The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS` (not in the code yet — HIL-1470).
+It registers thin section pages and tables in the topology, migrates the five framework stubs and mounts the SDK views (not in the code yet — HIL-1470).
+It supplies the default-language env value (not in the code yet — HIL-1471).
+Startup refuses a partially activated feature (not in the code yet — HIL-1470).
+For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
+
 ### a future framework feature (roles, …)
 
 A new framework admin feature ships the same shape: a base page (subscribe +
