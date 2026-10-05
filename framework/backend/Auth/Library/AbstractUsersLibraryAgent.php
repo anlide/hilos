@@ -41,6 +41,7 @@ use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
@@ -1409,13 +1410,29 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * over by the frame that ends the flow and so sent after this one (HIL-1182).
      *
      * @param ActingSession $acting Person and acting session to preserve
+     * @throws HilosException When the current session cannot be read
      * @throws InvalidArgumentException When the frame cannot be named or queued
      */
     public function announceOtherSessionsEnd(ActingSession $acting): void
     {
+        $keepSessionId = Hilos::$db->sessions->findByToken($acting->sessionToken)?->id ?? 0;
         $this->sendToAgent(
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
-            new AuthOtherSessionsEndSignalData($acting->userId, $acting->sessionToken),
+            new AuthOtherSessionsEndSignalData($acting->userId, $acting->sessionToken, $keepSessionId),
+        );
+    }
+
+    /**
+     * @param ActingSession $acting Browser that changed its password
+     * @throws HilosException When the current session cannot be read
+     * @throws InvalidArgumentException When the frame cannot be named or queued
+     */
+    public function announceOtherTrustsRevoke(ActingSession $acting): void
+    {
+        $keepSessionId = Hilos::$db->sessions->findByToken($acting->sessionToken)?->id ?? 0;
+        $this->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS,
+            new AuthSecondFactorTrustRevokeOthersSignalData($acting->userId, $keepSessionId),
         );
     }
 

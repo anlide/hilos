@@ -27,12 +27,13 @@ class SecondFactorTrusts extends DbCollection
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person asking to be let in
+     * @param int $allowedDays Current policy limit in days
      * @return bool True while a trust of the pair has not run out
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function isTrusted(int $sessionId, int $userId): bool
+    public function isTrusted(int $sessionId, int $userId, int $allowedDays): bool
     {
-        return $this->objectCollection->isTrusted($sessionId, $userId);
+        return $this->objectCollection->isTrusted($sessionId, $userId, $allowedDays);
     }
 }

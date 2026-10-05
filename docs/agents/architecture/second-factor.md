@@ -68,6 +68,24 @@ not end the trust, switching the factor off and a carried-out removal do.
 Trust does not remove a protected operation's fresh confirmation; step-up asks a
 different question and deliberately ignores trust ([step-up.md](step-up.md)).
 
+The gate checks the current trust term as well as the row: 0 never accepts an old
+trust, and a row ending later than now plus the current term waits on the code
+until the session holder applies a shorter term. A saved shorter term caps only
+trusts that were live when it was saved, using that save moment; it never extends
+an earlier expiry. Saving 0 erases every trust, including expired rows. Raising
+the term later does not recreate or lengthen a trust. The settings library sends
+the reduction to the session holder and the administrator's action is answered
+after the holder commits it.
+
+Password recovery and a profile password change revoke trust of every other
+browser, including browsers already signed out; the current browser is kept by
+its durable session row id across token rotation. Choosing to end other sessions
+controls those sessions, not whether their trust is revoked. Ending one session
+revokes that browser's trust for the person; ending all other sessions revokes
+all their trusts. Blocking a person removes every trust even when no session is
+currently signed in. Unblocking does not restore one. Ordinary sign-out keeps
+the trust until its expiry or an explicit revocation.
+
 ## The delayed removal
 
 With neither an app nor a backup code, a person asks a removal — from the code

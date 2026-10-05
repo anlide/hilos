@@ -37,6 +37,7 @@ use Hilos\Auth\Session\DTO\DismissAccountBlockedActionDTO;
 use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -52,6 +53,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use JsonException;
+use Random\RandomException;
 
 /**
  * Integration tests for block enforcement at the sessions library (HIL-289).
@@ -157,6 +159,35 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNotNull($response);
         $this->assertNull($response->selfId);
         $this->assertSame(['identifier' => $email, 'dataExport' => null], $response->accountBlocked);
+    }
+
+    /**
+     * A block removes a signed-out browser's trust even when the person has no active session.
+     *
+     * @throws HilosException When a user, session, or trust write fails
+     * @throws RandomException When a fixture token cannot be minted
+     */
+    public function testBlockWithoutActiveSessionsRevokesOldTrust(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $library = $this->sessionsLibrary();
+        $sessionId = $this->underAgent($library, function () use ($userId): int {
+            $session = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::secureHex(16));
+            $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+            Hilos::$db->secondFactorTrusts->actions->trust($session->id, $userId, $until);
+            Hilos::$db->secondFactorTrusts->actions->trust(0, $userId, $until);
+
+            return $session->id;
+        });
+
+        $this->block($userId);
+        $this->sendBlockChanged($userId);
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted(0, $userId, 30));
+
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, 30));
     }
 
     /**
@@ -555,9 +586,18 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $userId = $this->registerUser($email);
         $this->block($userId);
         $token = $this->anonymousSession('recovery-ak');
+        $currentSessionId = Hilos::$db->sessions->findByToken($token)->id;
         $this->drainSignals();
 
         $library = $this->sessionsLibrary();
+        $otherSessionId = $this->underAgent($library, static function () use ($userId, $currentSessionId): int {
+            $other = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::hex(16));
+            $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+            Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, $userId, $until);
+            Hilos::$db->secondFactorTrusts->actions->trust($other->id, $userId, $until);
+
+            return $other->id;
+        });
         $this->underAgent($library, static fn () => $library->onSignalAgent(
             new AgentSignalData(new AuthPasswordChangedSignalData(
                 userId: $userId,
@@ -577,6 +617,8 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNull($session?->pendingAck, 'No "password changed" panel over the card');
         $this->assertSame($userId, $session?->blockedUserId);
         $this->assertSame(AuthFlowOutcome::CODE_ACCOUNT_BLOCKED, $outcome?->code);
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, $userId, 30));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, $userId, 30));
     }
 
     /**

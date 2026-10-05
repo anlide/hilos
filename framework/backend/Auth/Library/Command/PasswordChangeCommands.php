@@ -185,6 +185,8 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
         $this->library->announcePasswordUpdated($acting->userId, ProfilePasswordUpdatedSignalData::MODE_CHANGED);
         if ($dto->signOutOthers) {
             $this->library->announceOtherSessionsEnd($acting);
+        } else {
+            $this->library->announceOtherTrustsRevoke($acting);
         }
         if ($target !== null) {
             $this->library->announceProfileFlowStep($acting, StepUpOperationKey::CHANGE_PASSWORD, null);

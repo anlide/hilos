@@ -50,7 +50,8 @@ final class SecondFactorGate
     public static function verdict(int $sessionId, int $userId, SecondFactorPolicy $policy): string
     {
         if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
-            return Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId) ? self::PASS : self::VERIFY;
+            return Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, $policy->trustDays)
+                ? self::PASS : self::VERIFY;
         }
 
         return $policy->requiresFor($userId) ? self::SETUP : self::PASS;

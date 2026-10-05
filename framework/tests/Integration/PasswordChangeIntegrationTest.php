@@ -13,6 +13,7 @@ use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
@@ -513,6 +514,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     {
         $updates = [];
         $ends = [];
+        $revokes = [];
         foreach ($this->drainSignals() as $signal) {
             if ($signal->signalName->getName() === HilosSignalConstants::PROFILE_PASSWORD_UPDATED) {
                 self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
@@ -524,9 +526,30 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
                 self::assertInstanceOf(AuthOtherSessionsEndSignalData::class, $signal->data->data);
                 $ends[] = $signal->data->data->toArray();
             }
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertInstanceOf(AuthSecondFactorTrustRevokeOthersSignalData::class, $signal->data->data);
+                $revokes[] = $signal->data->data->toArray();
+            }
         }
         self::assertSame([[self::ACCEPT_KEY, 'changed'], [self::OTHER_ACCEPT_KEY, 'changed']], $updates);
-        self::assertSame($signOutOthers ? [['userId' => self::USER_ID, 'sessionToken' => self::SESSION_TOKEN]] : [], $ends);
+        self::assertSame(
+            $signOutOthers
+                ? [[
+                    'userId' => self::USER_ID,
+                    'sessionToken' => self::SESSION_TOKEN,
+                    'keepSessionId' => Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id,
+                ]]
+                : [],
+            $ends,
+        );
+        self::assertSame(
+            $signOutOthers ? [] : [[
+                'userId' => self::USER_ID,
+                'keepSessionId' => Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id,
+            ]],
+            $revokes,
+        );
     }
 }
 

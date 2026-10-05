@@ -38,6 +38,8 @@ use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
@@ -53,6 +55,7 @@ use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\BrowserEraseActionDTO;
 use Hilos\Auth\Session\DTO\DeferredSessionCarryoverHandoverSignalData;
@@ -464,6 +467,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
+        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS => AuthSecondFactorTrustRevokeOthersSignalData::class,
         HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
@@ -3107,6 +3112,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->deauthenticateSession($targetSession->token);
+        Hilos::$db->secondFactorTrusts->actions->deleteForPair($targetSessionId, $actingSession->userId);
         $this->setActionSuccessMessage("Session #{$targetSessionId} ended");
     }
 
@@ -3125,7 +3131,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException('This session has already ended');
         }
 
-        $ended = $this->deauthenticateOtherSessions($actingSession->userId, $actingSessionToken);
+        $ended = $this->deauthenticateOtherSessions(
+            $actingSession->userId,
+            $actingSessionToken,
+            $actingSession->id ?? 0,
+        );
         $this->setActionSuccessMessage(match ($ended) {
             0 => 'No other sessions were signed in',
             1 => 'Signed out of 1 session',
@@ -3165,12 +3175,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $userId User whose other sessions are dropped
      * @param string $keepSessionToken Session token that stays signed in
+     * @param int $keepSessionId Durable row of the browser to retain, or 0 when absent
      * @return int Number of ordinary sessions reverted to anonymous
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): int
+    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken, int $keepSessionId): int
     {
+        Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($userId, $keepSessionId);
+
         $ended = 0;
         foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
             if ($session->token === $keepSessionToken || $session->impersonatorUserId !== null) {
@@ -3973,12 +3986,45 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY:
+                if (!$data->data instanceof AuthSecondFactorTrustDaysApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthSecondFactorTrustDaysApplySignalData::class,
+                        $data->data,
+                    );
+                }
+
+                $this->applyTrustDays($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS:
+                if (!$data->data instanceof AuthSecondFactorTrustRevokeOthersSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        AuthSecondFactorTrustRevokeOthersSignalData::class,
+                        $data->data,
+                    );
+                }
+
+                Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession(
+                    $data->data->userId,
+                    $data->data->keepSessionId,
+                );
+
+                return;
+
             case HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END:
                 if (!$data->data instanceof AuthOtherSessionsEndSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
                 }
 
-                $this->deauthenticateOtherSessions($data->data->userId, $data->data->sessionToken);
+                $this->deauthenticateOtherSessions(
+                    $data->data->userId,
+                    $data->data->sessionToken,
+                    $data->data->keepSessionId,
+                );
 
                 return;
 
@@ -5439,6 +5485,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return 0;
         }
 
+        $trusts = Hilos::$db->secondFactorTrusts;
+        Database::transactionStart();
+        try {
+            $trusts->actions->deleteForUser($userId);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Preserve the failure that prevented the trust revocation.
+            }
+            throw $failure;
+        }
         $sessions = array_merge(
             array_filter(
                 Hilos::$db->sessions->findByUserId($userId),
@@ -6414,6 +6473,46 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Applies a shorter term and answers the original setting action after its transaction commits.
+     *
+     * @param AuthSecondFactorTrustDaysApplySignalData $ask New term and original handover address
+     * @throws InvalidArgumentException When the handover answer cannot be routed
+     */
+    private function applyTrustDays(AuthSecondFactorTrustDaysApplySignalData $ask): void
+    {
+        try {
+            if ($ask->trustDays < 0 || $ask->trustDays > SecondFactorSettings::TRUST_DAYS_MAX || $ask->savedAt <= 0) {
+                throw new ValidationException('Invalid second-factor trust deadline');
+            }
+            if ($ask->trustDays === 0) {
+                Hilos::$db->secondFactorTrusts->actions->deleteAll();
+            } else {
+                $savedAtSql = date('Y-m-d H:i:s', $ask->savedAt);
+                $limitSql = date('Y-m-d H:i:s', $ask->savedAt + $ask->trustDays * TimeConstants::SECONDS_PER_DAY);
+                Hilos::$db->secondFactorTrusts->actions->capLiveUntil($limitSql, $savedAtSql);
+            }
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Second-factor trust term is not wired: {$refusal->getMessage()}");
+            $this->sendToAgent(
+                $ask->replySignal,
+                HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($refusal)),
+            );
+
+            return;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Second-factor trust term apply failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, null));
+    }
+
+    /**
      * Releases a browser's second-factor wait and sends its tabs back to the address field (HIL-494).
      *
      * @param Session $session Session whose wait ends
@@ -7330,6 +7429,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // browser gets the card where the "password changed" panel would have been, and every other
         // session still goes, as a reset promises.
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        $keepSessionId = $session?->id ?? 0;
         if ($session !== null && $this->refuseBlockedSignIn(
             $session,
             $frame->userId,
@@ -7338,7 +7438,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->action,
         )) {
             $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);
-            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, $keepSessionId);
 
             return;
         }
@@ -7359,7 +7459,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $frame->requestId,
                 $frame->action,
             );
-            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, $keepSessionId);
 
             return;
         }
@@ -7376,7 +7476,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             outcome: $frame->outcome,
         );
         $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
-        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken);
+        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken, $keepSessionId);
     }
 
     /**

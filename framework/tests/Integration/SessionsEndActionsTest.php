@@ -6,11 +6,13 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\HilosException;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsEndOthersActionDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
@@ -116,10 +118,16 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
     {
         $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        Hilos::$db->secondFactorTrusts->actions->trust(
+            $other->id,
+            self::USER_ID,
+            date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
+        );
 
         $this->dispatch(new SessionEndActionDTO((int)$other->id));
 
         self::assertNull($other->userId);
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
         $frame = $this->nextSessionState();
         self::assertNotNull($frame);
         self::assertSame($other->id, $frame->sessionId);
@@ -133,11 +141,19 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
         $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+        $signedOut = Hilos::$db->sessions->actions->createAnonymous('44444444444444444444444444444444');
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        foreach ([$current, $other, $signedOut] as $session) {
+            Hilos::$db->secondFactorTrusts->actions->trust($session->id, self::USER_ID, $until);
+        }
 
         $this->dispatch(new SessionsEndOthersActionDTO());
 
         self::assertSame(self::USER_ID, $current->userId);
         self::assertNull($other->userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($current->id, self::USER_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($signedOut->id, self::USER_ID, 30));
         self::assertSame(self::USER_ID, $admin->userId);
         self::assertSame(self::ADMIN_ID, $admin->impersonatorUserId);
         self::assertSame('Signed out of 1 session', $this->nextSuccessMessage());
@@ -153,15 +169,20 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
         $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
         $admin = $this->session(self::ADMIN_TOKEN, self::ADMIN_ACCEPT_KEY, self::ADMIN_ID);
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
 
         new SessionsEndActionsAgent()->onSignalAgent(
-            new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN)),
+            new AgentSignalData(new AuthOtherSessionsEndSignalData(self::USER_ID, self::CURRENT_TOKEN, $current->id)),
             'users-library',
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
         );
 
         self::assertSame(self::USER_ID, $current->userId);
         self::assertNull($other->userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($current->id, self::USER_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
         self::assertSame(self::USER_ID, $admin->userId);
         self::assertSame(self::ADMIN_ID, $admin->impersonatorUserId);
         $state = $this->nextSessionState();
@@ -169,6 +190,26 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertNull($state->userId);
         self::assertSame([self::OTHER_ACCEPT_KEY], $state->acceptKeys);
         self::assertNull($this->nextSuccessMessage(), 'The holder owes no second acknowledgement');
+    }
+
+    /** A profile password change may keep other sessions while revoking their browser trust. */
+    public function testTrustOnlyPasswordChangeLeavesOtherSessionsSignedIn(): void
+    {
+        $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
+        $other = $this->session(self::OTHER_TOKEN, self::OTHER_ACCEPT_KEY);
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
+
+        new SessionsEndActionsAgent()->onSignalAgent(
+            new AgentSignalData(new AuthSecondFactorTrustRevokeOthersSignalData(self::USER_ID, $current->id)),
+            'users-library',
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS,
+        );
+
+        self::assertSame(self::USER_ID, $other->userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($current->id, self::USER_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
     }
 
     public function testEndingAllOthersReportsWhenThereWereNone(): void

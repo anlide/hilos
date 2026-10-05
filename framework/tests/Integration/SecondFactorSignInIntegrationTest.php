@@ -9,12 +9,15 @@ use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorSetupConfirmActionDTO;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
+use Hilos\Auth\SecondFactor\SecondFactorGate;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\Totp;
@@ -22,7 +25,9 @@ use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
@@ -33,6 +38,8 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
@@ -277,10 +284,173 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $this->assertNotNull($signedOut);
         $this->assertNotSame($rotated, $signedOut->sessionToken);
         $this->assertSame($sessionId, $signedOut->sessionId);
-        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID));
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted(
+            $sessionId,
+            self::USER_ID,
+            SecondFactorSettings::DEFAULT_TRUST_DAYS,
+        ));
         $this->grant($signedOut->sessionToken);
 
         $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId, 'The trusted browser is signed in at once');
+    }
+
+    /**
+     * A shorter policy refuses an old long trust until the holder caps it; zero always refuses it.
+     *
+     * @throws HilosException When enrolment, lookup, or a trust write fails
+     */
+    public function testTrustPolicyAndSavedDeadline(): void
+    {
+        $this->enrol();
+        $sessionId = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        $savedAt = time();
+        $savedAtSql = date('Y-m-d H:i:s', $savedAt);
+        $longUntil = date('Y-m-d H:i:s', $savedAt + 365 * TimeConstants::SECONDS_PER_DAY);
+        $shortUntil = date('Y-m-d H:i:s', $savedAt + 7 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $longUntil);
+
+        $defaults = SecondFactorPolicy::defaults();
+        $policy = new SecondFactorPolicy(
+            $defaults->required,
+            7,
+            $defaults->backupCodes,
+            $defaults->resetWaitDefaultDays,
+            $defaults->resetWaitMinDays,
+            $defaults->resetWaitMaxDays,
+        );
+        $this->assertSame(SecondFactorGate::VERIFY, SecondFactorGate::verdict($sessionId, self::USER_ID, $policy));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 0));
+
+        Hilos::$db->secondFactorTrusts->actions->capLiveUntil($shortUntil, $savedAtSql);
+        $this->assertSame(SecondFactorGate::PASS, SecondFactorGate::verdict($sessionId, self::USER_ID, $policy));
+        Hilos::$db->secondFactorTrusts->actions->capLiveUntil(
+            date('Y-m-d H:i:s', $savedAt + 30 * TimeConstants::SECONDS_PER_DAY),
+            $savedAtSql,
+        );
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 7));
+
+        Hilos::$db->secondFactorTrusts->actions->deleteAll();
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 365));
+    }
+
+    /**
+     * An already signed-out browser still loses trust when other browsers are revoked.
+     *
+     * @throws HilosException When a session or trust write fails
+     */
+    public function testTrustRevocationIncludesSignedOutBrowsers(): void
+    {
+        $currentSessionId = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        $otherToken = 'cc00000000000000000000000000cc94';
+        self::seedSession($otherToken, null, self::CREATED_AT, null);
+        $otherSessionId = Hilos::$db->sessions->findByToken($otherToken)->id;
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until);
+
+        Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession(self::USER_ID, $currentSessionId);
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, self::USER_ID, 30));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, self::USER_ID, 30));
+
+        Hilos::$db->secondFactorTrusts->actions->deleteForPair($currentSessionId, self::USER_ID);
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, self::USER_ID, 30));
+    }
+
+    /**
+     * The holder answers a shortened term only after the trust row is capped.
+     *
+     * @throws HilosException When enrolment, lookup, or a trust write fails
+     */
+    public function testTrustTermHandoverAnswersAfterTheWrite(): void
+    {
+        $sessionId = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        $savedAt = time();
+        Hilos::$db->secondFactorTrusts->actions->trust(
+            $sessionId,
+            self::USER_ID,
+            date('Y-m-d H:i:s', $savedAt + 365 * TimeConstants::SECONDS_PER_DAY),
+        );
+        $this->drain();
+        $ask = new AuthSecondFactorTrustDaysApplySignalData(
+            trustDays: 7,
+            savedAt: $savedAt,
+            replySignal: 'trust-term-test-done',
+            acceptKey: self::ACCEPT_KEY,
+            requestId: self::REQUEST_ID,
+            action: HilosSignalConstants::SETTING_UPDATE,
+            successMessage: 'Trust term saved.',
+        );
+
+        $this->holder->onSignalAgent(
+            new AgentSignalData($ask),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
+        );
+
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 7));
+        $answer = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $answer = $signal->data->data;
+            }
+        }
+        $this->assertNotNull($answer);
+        $this->assertNull($answer->error);
+        $this->assertSame(self::REQUEST_ID, $answer->requestId);
+        $this->assertSame('Trust term saved.', $answer->successMessage);
+
+        $this->holder->onSignalAgent(
+            new AgentSignalData(new AuthSecondFactorTrustDaysApplySignalData(
+                trustDays: 0,
+                savedAt: $savedAt,
+                replySignal: 'trust-term-test-done',
+                acceptKey: self::ACCEPT_KEY,
+                requestId: self::REQUEST_ID,
+                action: HilosSignalConstants::SETTING_UPDATE,
+                successMessage: null,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
+        );
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 365));
+    }
+
+    /**
+     * A missing trust source is an internal refusal, but the pending admin action still gets an answer.
+     *
+     * @throws HilosException When the handover cannot be queued
+     */
+    public function testTrustTermHandoverAnswersAWiringRefusal(): void
+    {
+        $originalDb = Hilos::$db;
+        Hilos::$db = new SecondFactorRefusingTrustDbContext();
+        try {
+            $this->holder->onSignalAgent(
+                new AgentSignalData(new AuthSecondFactorTrustDaysApplySignalData(
+                    trustDays: 0,
+                    savedAt: time(),
+                    replySignal: 'trust-term-test-done',
+                    acceptKey: self::ACCEPT_KEY,
+                    requestId: self::REQUEST_ID,
+                    action: HilosSignalConstants::SETTING_UPDATE,
+                    successMessage: null,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
+            );
+        } finally {
+            Hilos::$db = $originalDb;
+        }
+
+        $answers = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $answers[] = $signal->data->data;
+            }
+        }
+        $this->assertCount(1, $answers);
+        $this->assertNotNull($answers[0]->error);
+        $this->assertSame('DbCollectionNotReadableException', $answers[0]->errorType);
     }
 
     /**
@@ -291,6 +461,20 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     public function testARecoveredPasswordWaitsOnTheCodeStep(): void
     {
         $this->enrol();
+        $currentSessionId = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        $otherToken = 'dd00000000000000000000000000dd94';
+        self::seedSession($otherToken, null, self::CREATED_AT, null);
+        $otherSessionId = Hilos::$db->sessions->findByToken($otherToken)->id;
+        Hilos::$db->secondFactorTrusts->actions->trust(
+            $currentSessionId,
+            self::USER_ID,
+            date('Y-m-d H:i:s', time() + 365 * TimeConstants::SECONDS_PER_DAY),
+        );
+        Hilos::$db->secondFactorTrusts->actions->trust(
+            $otherSessionId,
+            self::USER_ID,
+            date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
+        );
 
         $this->holder->onSignalAgent(
             new AgentSignalData(data: new AuthPasswordChangedSignalData(
@@ -309,6 +493,40 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $this->assertNull($session?->userId, 'Nobody is signed in');
         $this->assertSame(self::USER_ID, $session?->pendingSecondFactorUserId);
         $this->assertSame(SessionAck::PASSWORD_CHANGED, $session?->pendingSecondFactorAck);
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, self::USER_ID, 365));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, self::USER_ID, 30));
+    }
+
+    /**
+     * Recovery that signs in at once retains this browser and revokes even a signed-out other.
+     *
+     * @throws HilosException When a session or trust write fails
+     */
+    public function testRecoveredPasswordThatSignsInRevokesOtherTrusts(): void
+    {
+        $currentSessionId = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
+        $otherToken = 'ee00000000000000000000000000ee94';
+        self::seedSession($otherToken, null, self::CREATED_AT, null);
+        $otherSessionId = Hilos::$db->sessions->findByToken($otherToken)->id;
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until);
+
+        $this->holder->onSignalAgent(
+            new AgentSignalData(new AuthPasswordChangedSignalData(
+                self::USER_ID,
+                self::SESSION_TOKEN,
+                self::ACCEPT_KEY,
+                'ada@example.test',
+                self::REQUEST_ID,
+                HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED,
+        );
+
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, self::USER_ID, 30));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherSessionId, self::USER_ID, 30));
     }
 
     /**
@@ -510,6 +728,20 @@ final class SecondFactorRequiredTestCatalog implements CatalogProviderInterface
             = SecondFactorSettings::REQUIRED_EVERYONE;
 
         return $catalog;
+    }
+}
+
+/** A mounted context that refuses the holder's trust read, like missing source interest does. */
+final class SecondFactorRefusingTrustDbContext extends HilosDbContext
+{
+    /**
+     * @param string $name Collection the holder asks for
+     * @return mixed No value: this fixture refuses the read
+     * @throws DbCollectionNotReadableException Always, as the source is unavailable
+     */
+    public function __get(string $name): mixed
+    {
+        throw new DbCollectionNotReadableException("Collection {$name} is not readable in this process");
     }
 }
 

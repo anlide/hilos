@@ -9,6 +9,8 @@ use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorPolicySignalData;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -337,7 +339,7 @@ final class SettingsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Answers the ask, then announces each installation-wide frame the write changed.
+     * Announces installation-wide changes and answers once any trust reduction has landed.
      *
      * A refused write changed nothing and sends nothing. Neither does a write the method set
      * could not be read around: the set is then unknown on both sides of it, and the next write
@@ -369,9 +371,21 @@ final class SettingsLibraryAgent extends AbstractAgent
         CodeDeliverySignalData $deliveryBefore,
         ?ImpersonationPolicySignalData $impersonationBefore,
     ): void {
-        $this->answer($ask, $refusal);
         if ($refusal !== null) {
+            $this->answer($ask, $refusal);
             return;
+        }
+
+        $savedAt = time();
+        $policyAfter = $this->secondFactorPolicy();
+        $touchesTrustDays = $this->touchesTrustDays($ask);
+        $shortened = $touchesTrustDays && $policyAfter !== null
+            && ($policyBefore === null || $policyAfter->trustDays < $policyBefore->trustDays);
+        $retry = $touchesTrustDays && $ask instanceof SettingWriteSignalData && $policyAfter !== null
+            && $policyAfter->trustDays === $policyBefore?->trustDays;
+        $deferAnswer = $shortened || $retry;
+        if (!$deferAnswer && (!$touchesTrustDays || $policyAfter !== null)) {
+            $this->answer($ask, null);
         }
 
         $methodsAfter = $methodsBefore === null ? null : $this->offeredMethods();
@@ -389,14 +403,55 @@ final class SettingsLibraryAgent extends AbstractAgent
             $this->sendToAllConnected(HilosSignalConstants::HILOS_IMPERSONATION_POLICY, $impersonationAfter);
         }
 
-        $policyAfter = $policyBefore === null ? null : $this->secondFactorPolicy();
-        if ($policyBefore === null || $policyAfter === null) {
+        if ($policyBefore !== null && $policyAfter !== null) {
+            $announced = SecondFactorPolicySignalData::of($policyAfter);
+            if ($announced->toArray() !== SecondFactorPolicySignalData::of($policyBefore)->toArray()) {
+                $this->sendToAllConnected(HilosSignalConstants::HILOS_SECOND_FACTOR_POLICY, $announced);
+            }
+        }
+
+        if ($touchesTrustDays && $policyAfter === null) {
+            $this->answer($ask, ActionRefusal::said('Second-factor trust policy could not be read after saving'));
             return;
         }
-        $announced = SecondFactorPolicySignalData::of($policyAfter);
-        if ($announced->toArray() !== SecondFactorPolicySignalData::of($policyBefore)->toArray()) {
-            $this->sendToAllConnected(HilosSignalConstants::HILOS_SECOND_FACTOR_POLICY, $announced);
+        if (!$deferAnswer) {
+            return;
         }
+
+        try {
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY,
+                new AuthSecondFactorTrustDaysApplySignalData(
+                    trustDays: $policyAfter->trustDays,
+                    savedAt: $savedAt,
+                    replySignal: $ask->replySignal,
+                    acceptKey: $ask->acceptKey,
+                    requestId: $ask->requestId,
+                    action: $ask->action,
+                    successMessage: $ask->successMessage,
+                ),
+            );
+        } catch (HilosException $e) {
+            $this->answer($ask, $this->refusal($e, 'Trust deadline could not be sent to the session holder'));
+        }
+    }
+
+    /**
+     * @param HandoverAskInterface $ask Successful settings write
+     * @return bool Whether its target includes the trust term
+     */
+    private function touchesTrustDays(HandoverAskInterface $ask): bool
+    {
+        if ($ask instanceof SettingWriteSignalData || $ask instanceof SettingResetSignalData) {
+            return $ask->key === SecondFactorSettings::TRUST_DAYS_KEY;
+        }
+        if ($ask instanceof SettingPresetApplySignalData) {
+            $provider = $ask->groupProvider;
+
+            return in_array(SecondFactorSettings::TRUST_DAYS_KEY, $provider::presetGroup()->memberKeys(), true);
+        }
+
+        return false;
     }
 
     /**

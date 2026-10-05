@@ -8,9 +8,11 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Constants\TimeConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\SecondFactorTrusts as EntitySecondFactorTrusts;
+use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\SecondFactorTrust as EntitySecondFactorTrust;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactorTrust as ObjectSecondFactorTrust;
@@ -77,15 +79,77 @@ class SecondFactorTrusts extends Objects
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person asking to be let in
+     * @param int $allowedDays Current policy limit in days
      * @return bool True while a trust of the pair has not run out
      * @throws DatabaseException When the lookup fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      */
-    public function isTrusted(int $sessionId, int $userId): bool
+    public function isTrusted(int $sessionId, int $userId, int $allowedDays): bool
+    {
+        if ($allowedDays <= 0) {
+            return false;
+        }
+
+        $trust = $this->find($sessionId, $userId);
+        $now = time();
+        $until = date('Y-m-d H:i:s', $now + $allowedDays * TimeConstants::SECONDS_PER_DAY);
+
+        return $trust !== null && $trust->trustedUntil > date('Y-m-d H:i:s', $now) && $trust->trustedUntil <= $until;
+    }
+
+    /**
+     * Limits trusts live at the save moment without lengthening any row.
+     *
+     * @param string $limitSql New latest expiry (SQL datetime)
+     * @param string $savedAtSql Setting save moment (SQL datetime)
+     * @throws DatabaseException When a lookup or update fails
+     * @throws InvalidArgumentException When a query or sync announcement is invalid
+     * @throws WriteNotAllowedException When this process cannot write a row
+     * @throws SourceChangeSubscriberException Whatever a store subscriber raises
+     * @throws ObjectGetIdStringNotImplementedException When a row id cannot be named
+     */
+    public function capLiveUntil(string $limitSql, string $savedAtSql): void
+    {
+        $where = '`' . EntitySecondFactorTrust::trusted_until . '` > ? AND `'
+            . EntitySecondFactorTrust::trusted_until . '` > ? AND `'
+            . EntitySecondFactorTrust::created_at . '` <= ?';
+        foreach ($this->hydrateAll(static::entityClass()::get($where, [$limitSql, $savedAtSql, $savedAtSql])) as $trust) {
+            $trust->trustedUntil = $limitSql;
+            $trust->sync();
+        }
+    }
+
+    /**
+     * @param int $userId Person whose other browsers lose trust
+     * @param int $keepSessionId Current browser's session row
+     * @throws DatabaseException When a lookup or delete fails
+     * @throws InvalidArgumentException When a query or sync announcement is invalid
+     * @throws WriteNotAllowedException When this process cannot remove a row
+     * @throws SourceChangeSubscriberException Whatever a store subscriber raises
+     */
+    public function deleteForUserExceptSession(int $userId, int $keepSessionId): void
+    {
+        $where = '`' . EntitySecondFactorTrust::user_id . '` = ? AND `'
+            . EntitySecondFactorTrust::session_id . '` <> ?';
+        foreach ($this->hydrateAll(static::entityClass()::get($where, [$userId, $keepSessionId])) as $trust) {
+            $this->remove($trust);
+        }
+    }
+
+    /**
+     * @param int $sessionId Browser's session row
+     * @param int $userId Person whose trust of that browser ends
+     * @throws DatabaseException When a lookup or delete fails
+     * @throws InvalidArgumentException When a query or sync announcement is invalid
+     * @throws WriteNotAllowedException When this process cannot remove a row
+     * @throws SourceChangeSubscriberException Whatever a store subscriber raises
+     */
+    public function deleteForPair(int $sessionId, int $userId): void
     {
         $trust = $this->find($sessionId, $userId);
-
-        return $trust !== null && $trust->trustedUntil > TimeHelper::getSqlDateTime();
+        if ($trust !== null) {
+            $this->remove($trust);
+        }
     }
 
     /**
@@ -99,7 +163,19 @@ class SecondFactorTrusts extends Objects
      */
     public function deleteForUser(int $userId): void
     {
-        foreach (static::entityClass()::get([EntitySecondFactorTrust::user_id => $userId]) as $entity) {
+        foreach ($this->hydrateAll(static::entityClass()::get([EntitySecondFactorTrust::user_id => $userId])) as $trust) {
+            $this->remove($trust);
+        }
+    }
+
+    /**
+     * @param EntityCollection<EntitySecondFactorTrust> $entities Matching rows
+     * @return list<ObjectSecondFactorTrust> Hydrated row objects
+     */
+    private function hydrateAll(EntityCollection $entities): array
+    {
+        $result = [];
+        foreach ($entities as $entity) {
             $id = $entity->id;
             if ($id === null) {
                 continue;
@@ -107,9 +183,24 @@ class SecondFactorTrusts extends Objects
             if (!isset($this->objects[$id])) {
                 $this->hydrate($id, static::OBJECT_CLASS::fromEntity($entity));
             }
-            $this->objects[$id]->delete();
-            unset($this[$id]);
+            $result[] = $this->objects[$id];
         }
+
+        return $result;
+    }
+
+    /**
+     * @param ObjectSecondFactorTrust $trust Row to remove
+     * @throws DatabaseException When the delete fails
+     * @throws InvalidArgumentException When a DB-sync announcement is invalid
+     * @throws WriteNotAllowedException When this process cannot write the row
+     * @throws SourceChangeSubscriberException Whatever a store subscriber raises
+     */
+    private function remove(ObjectSecondFactorTrust $trust): void
+    {
+        $id = $trust->id;
+        $trust->delete();
+        unset($this[$id]);
     }
 
     /**

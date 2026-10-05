@@ -23,6 +23,8 @@ use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
@@ -1309,6 +1311,18 @@ final class HilosSignalConstants
      * waiting on a code go. Carried by {@see AuthSecondFactorOffSignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_OFF = 'hilos_auth_second_factor_off';
+
+    /**
+     * Settings library → session holder: cap or erase trusts before answering the setting write.
+     * Carried by {@see AuthSecondFactorTrustDaysApplySignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY = 'hilos_auth_second_factor_trust_days_apply';
+
+    /**
+     * Users library → session holder: revoke other browsers after a password change.
+     * Carried by {@see AuthSecondFactorTrustRevokeOthersSignalData}.
+     */
+    public const string HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS = 'hilos_auth_second_factor_trust_revoke_others';
 
     /**
      * Users library → session holder: end the other sessions after a password change (HIL-300).

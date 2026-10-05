@@ -12,6 +12,8 @@ use Hilos\Auth\Method\AuthMethodSettings;
 use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -30,6 +32,12 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
+use Hilos\Database\Settings\Library\DTO\SettingPresetApplySignalData;
+use Hilos\Database\Settings\Preset\SettingPreset;
+use Hilos\Database\Settings\Preset\SettingPresetGroup;
+use Hilos\Database\Settings\Preset\SettingPresetGroupProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
 use Hilos\Sms\Delivery\SmsDeliveryChannel;
@@ -464,6 +472,134 @@ final class SettingsPageActionTest extends IntegrationTestCase
     }
 
     /**
+     * A shorter term is handed to the trust owner; the settings writer does not answer first.
+     */
+    public function testShorterTrustTermDefersTheAnswer(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingWriteSignalData(
+                    replySignal: 'trust-term-setting-done',
+                    acceptKey: 'trust-term-ak',
+                    requestId: 'trust-term-request',
+                    action: HilosSignalConstants::SETTING_ADD,
+                    successMessage: 'Trust term saved.',
+                    key: SecondFactorSettings::TRUST_DAYS_KEY,
+                    value: 7,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_WRITE,
+            );
+
+            $apply = [];
+            $answered = [];
+            while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof AgentSignalData
+                    && $signal->data->data instanceof AuthSecondFactorTrustDaysApplySignalData) {
+                    $apply[] = $signal->data->data;
+                }
+                if ($signal->data instanceof AgentSignalData
+                    && $signal->data->data instanceof HandoverAnswerSignalData) {
+                    $answered[] = $signal->data->data;
+                }
+            }
+            $this->assertCount(1, $apply);
+            $this->assertSame(7, $apply[0]->trustDays);
+            $this->assertSame('trust-term-setting-done', $apply[0]->replySignal);
+            $this->assertSame([], $answered);
+        }, [SecondFactorSettings::TRUST_DAYS_KEY]);
+    }
+
+    /** A reset can shorten an override, while raising a zero term cannot restore erased trusts. */
+    public function testResetAndIncreaseRouteOnlyShorterTrustTerms(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+            $write = function (int $days): void {
+                new SettingsLibraryAgent()->onSignalAgent(
+                    new AgentSignalData(new SettingWriteSignalData(
+                        replySignal: 'trust-term-setting-done',
+                        acceptKey: 'trust-term-ak',
+                        requestId: 'trust-term-request',
+                        action: HilosSignalConstants::SETTING_ADD,
+                        successMessage: null,
+                        key: SecondFactorSettings::TRUST_DAYS_KEY,
+                        value: $days,
+                    )),
+                    'test',
+                    HilosSignalConstants::HILOS_SETTING_WRITE,
+                );
+            };
+
+            $write(365);
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingResetSignalData(
+                    replySignal: 'trust-term-setting-done',
+                    acceptKey: 'trust-term-ak',
+                    requestId: 'trust-term-request',
+                    action: HilosSignalConstants::SETTING_RESET,
+                    successMessage: null,
+                    key: SecondFactorSettings::TRUST_DAYS_KEY,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_RESET,
+            );
+            $reset = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
+            $this->assertCount(1, $reset);
+            $this->assertSame(SecondFactorSettings::DEFAULT_TRUST_DAYS, $reset[0]->data->data->trustDays);
+
+            $write(0);
+            $zero = $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY);
+            $this->assertCount(1, $zero);
+            $this->assertSame(0, $zero[0]->data->data->trustDays);
+            $write(0);
+            $this->assertCount(1, $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+            $write(365);
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY));
+        }, [SecondFactorSettings::TRUST_DAYS_KEY]);
+    }
+
+    /** Applying a preset that contains the trust term still waits for the holder. */
+    public function testPresetWithTrustTermDefersTheAnswer(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->deleteSettingIfExists(SecondFactorSettings::TRUST_DAYS_KEY);
+            $this->deleteSettingIfExists(self::CATALOG_KEY);
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingPresetApplySignalData(
+                    replySignal: 'trust-term-preset-done',
+                    acceptKey: 'trust-term-ak',
+                    requestId: 'trust-term-request',
+                    action: HilosSignalConstants::SETTING_PRESET_APPLY,
+                    successMessage: null,
+                    groupProvider: TrustTermTestPreset::class,
+                    preset: TrustTermTestPreset::SHORT,
+                )),
+                'test',
+                HilosSignalConstants::HILOS_SETTING_PRESET_APPLY,
+            );
+
+            $apply = [];
+            $answers = [];
+            while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof AgentSignalData
+                    && $signal->data->data instanceof AuthSecondFactorTrustDaysApplySignalData) {
+                    $apply[] = $signal->data->data;
+                }
+                if ($signal->data instanceof AgentSignalData
+                    && $signal->data->data instanceof HandoverAnswerSignalData) {
+                    $answers[] = $signal->data->data;
+                }
+            }
+            $this->assertCount(1, $apply);
+            $this->assertSame(7, $apply[0]->trustDays);
+            $this->assertSame([], $answers);
+        }, [SecondFactorSettings::TRUST_DAYS_KEY, self::CATALOG_KEY]);
+    }
+
+    /**
      * Runs one settings action end to end: the page checks and forwards, the library writes.
      *
      * Both halves in one process, which is what makes this a test of the seam and not of one
@@ -614,5 +750,21 @@ final class SettingsPageActionTest extends IntegrationTestCase
             }
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
+    }
+}
+
+/** Fixture preset containing the trust term and using the catalog's string stub as selection. */
+final class TrustTermTestPreset implements SettingPresetGroupProviderInterface
+{
+    public const string SHORT = 'short';
+
+    /** @return SettingPresetGroup One preset that shortens browser trust */
+    public static function presetGroup(): SettingPresetGroup
+    {
+        return new SettingPresetGroup(
+            'trust-term-test',
+            SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
+            [new SettingPreset(self::SHORT, [SecondFactorSettings::TRUST_DAYS_KEY => 7])],
+        );
     }
 }

@@ -14,17 +14,19 @@ final class AuthOtherSessionsEndSignalData extends BaseDTO implements SignalData
     /**
      * @param int $userId Person whose other sessions end
      * @param string $sessionToken Acting session to preserve
+     * @param int $keepSessionId Acting browser's durable session row
      */
     public function __construct(
         public readonly int $userId,
         public readonly string $sessionToken,
+        public readonly int $keepSessionId,
     ) {
     }
 
-    /** @return array{userId: int, sessionToken: string} Frame payload */
+    /** @return array{userId: int, sessionToken: string, keepSessionId: int} Frame payload */
     public function toArray(): array
     {
-        return ['userId' => $this->userId, 'sessionToken' => $this->sessionToken];
+        return ['userId' => $this->userId, 'sessionToken' => $this->sessionToken, 'keepSessionId' => $this->keepSessionId];
     }
 
     /**
@@ -34,6 +36,10 @@ final class AuthOtherSessionsEndSignalData extends BaseDTO implements SignalData
      */
     public static function fromArray(array $data): static
     {
-        return new static(self::requireInt($data, 'userId'), self::requireString($data, 'sessionToken'));
+        return new static(
+            self::requireInt($data, 'userId'),
+            self::requireString($data, 'sessionToken'),
+            self::requireInt($data, 'keepSessionId'),
+        );
     }
 }

@@ -17,6 +17,8 @@ use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpeningReplyDTO;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
+use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpenActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
@@ -188,11 +190,29 @@ final class ProfileActionDTOTest extends TestCase
     /** The session holder receives the person and token to preserve without losing either. */
     public function testOtherSessionsEndFrameRoundTrips(): void
     {
-        $dto = new AuthOtherSessionsEndSignalData(300, 'acting-session');
-        self::assertSame(['userId' => 300, 'sessionToken' => 'acting-session'], $dto->toArray());
+        $dto = new AuthOtherSessionsEndSignalData(300, 'acting-session', 41);
+        self::assertSame(['userId' => 300, 'sessionToken' => 'acting-session', 'keepSessionId' => 41], $dto->toArray());
         self::assertSame($dto->toArray(), AuthOtherSessionsEndSignalData::fromJson($dto->toJson())->toArray());
         $this->expectException(InvalidFormatException::class);
         AuthOtherSessionsEndSignalData::fromArray(['userId' => 300]);
+    }
+
+    /** The owner receives the original answer address along with the saved deadline. */
+    public function testTrustDeadlineHandoverRoundTrips(): void
+    {
+        $dto = new AuthSecondFactorTrustDaysApplySignalData(7, 1_780_000_000, 'reply', 'accept', null, 'setting_update', null);
+        self::assertSame($dto->toArray(), AuthSecondFactorTrustDaysApplySignalData::fromJson($dto->toJson())->toArray());
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorTrustDaysApplySignalData::fromArray(['trustDays' => 7]);
+    }
+
+    /** The current browser is named by its row id, even when its token later rotates. */
+    public function testOtherTrustsRevokeFrameRoundTrips(): void
+    {
+        $dto = new AuthSecondFactorTrustRevokeOthersSignalData(300, 41);
+        self::assertSame($dto->toArray(), AuthSecondFactorTrustRevokeOthersSignalData::fromJson($dto->toJson())->toArray());
+        $this->expectException(InvalidFormatException::class);
+        AuthSecondFactorTrustRevokeOthersSignalData::fromArray(['userId' => 300]);
     }
 
     /**
