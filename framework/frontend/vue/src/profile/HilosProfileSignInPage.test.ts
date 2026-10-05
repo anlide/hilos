@@ -1,10 +1,14 @@
 import {
   ActionError,
+  bindProfileFlows,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
+  profileFlowsSchema,
+  SIGNAL_PROFILE_FLOWS,
   ScopeManager,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
+  type HilosConnection,
   type HilosProfileSignInMethod,
   type ProjectSignal,
 } from '@hilos/core'
@@ -102,23 +106,64 @@ function setup(
   resendAt = 1_900_000_000_000,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn((action: string) => ({
-    loading: createSignal(false),
-    done: Promise.resolve(
-      action === 'hilos_step_up_start'
-        ? { reply: opening }
-        : action === 'profile_add_sms_request' ||
-            action === 'profile_add_password_request'
-          ? {
-              reply: {
-                sent: true,
-                resendAt,
-                expiresAt: resendAt + 600_000,
+  const emit = (type: string, data: unknown) => {
+    for (const listener of listeners)
+      listener({ kind: 'project', type, data } as ProjectSignal)
+  }
+  const dispatch = vi.fn(
+    (action: string, payload?: { phone?: string; email?: string }) => {
+      if (action === 'profile_add_sms_request' && payload?.phone)
+        emit(
+          SIGNAL_PROFILE_FLOWS,
+          profileFlowsSchema.parse({
+            flows: [
+              {
+                operation: 'add_sign_in_method',
+                step: 'phone_sent',
+                address: payload.phone,
+                target: payload.phone,
               },
-            }
-          : {},
-    ),
-  }))
+            ],
+          }),
+        )
+      if (action === 'profile_add_password_request' && payload?.email)
+        emit(
+          SIGNAL_PROFILE_FLOWS,
+          profileFlowsSchema.parse({
+            flows: [
+              {
+                operation: 'add_sign_in_method',
+                step: 'email_sent',
+                address: payload.email,
+                target: payload.email,
+              },
+            ],
+          }),
+        )
+      if (
+        action === 'profile_add_sms_confirm' ||
+        action === 'hilos_profile_flow_cancel'
+      )
+        emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
+      return {
+        loading: createSignal(false),
+        done: Promise.resolve(
+          action === 'hilos_step_up_start'
+            ? { reply: opening }
+            : action === 'profile_add_sms_request' ||
+                action === 'profile_add_password_request'
+              ? {
+                  reply: {
+                    sent: true,
+                    resendAt,
+                    expiresAt: resendAt + 600_000,
+                  },
+                }
+              : {},
+        ),
+      }
+    },
+  )
   const scopes = new ScopeManager()
   scopes.session.data.set('authMethods', offered)
   setMethods(scopes, initial)
@@ -133,6 +178,8 @@ function setup(
       },
     },
   } as unknown as HilosAuthContext
+  bindProfileFlows(context.connection as HilosConnection)
+  emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
   const wrapper = mount(HilosProfileSignInPage, {
     props: { context },
     attachTo: document.body,
@@ -143,10 +190,7 @@ function setup(
     dispatch,
     setMethods: (next: readonly HilosProfileSignInMethod[]) =>
       setMethods(scopes, next),
-    emit: (type: string, data: unknown) => {
-      for (const listener of listeners)
-        listener({ kind: 'project', type, data } as ProjectSignal)
-    },
+    emit,
   }
 }
 function byId(id: string): HTMLElement {
@@ -235,12 +279,49 @@ describe('profile sign-in page dialogs', () => {
     byId('profile-add-sms-confirm').click()
     await flushPromises()
     expect(world.dispatch).toHaveBeenLastCalledWith('profile_add_sms_confirm', {
-      phone: '+15557654321',
       code: '123456',
     })
     expect(
       document.querySelector('[data-id="profile-sign-in-add-modal"]'),
     ).toBeNull()
+  })
+  it('asks before discarding a session code step with an empty draft and clears a code after a new frame', async () => {
+    const world = setup()
+    world.emit(
+      SIGNAL_PROFILE_FLOWS,
+      profileFlowsSchema.parse({
+        flows: [
+          {
+            operation: 'add_sign_in_method',
+            step: 'phone_sent',
+            address: '+15551234567',
+            target: '+15551234567',
+          },
+        ],
+      }),
+    )
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    expect(byId('profile-add-sms-code')).toBeDefined()
+    await fill('profile-add-sms-code', '123456')
+    world.emit(
+      SIGNAL_PROFILE_FLOWS,
+      profileFlowsSchema.parse({
+        flows: [
+          {
+            operation: 'add_sign_in_method',
+            step: 'phone_sent',
+            address: '+15559876543',
+            target: '+15559876543',
+          },
+        ],
+      }),
+    )
+    await flushPromises()
+    expect((byId('profile-add-sms-code') as HTMLInputElement).value).toBe('')
+    byId('profile-sign-in-add-cancel').click()
+    await flushPromises()
+    expect(byId('modal-confirm')).toBeDefined()
   })
   it.each([
     {

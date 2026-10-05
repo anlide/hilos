@@ -1,10 +1,14 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import {
+  bindProfileFlows,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
+  profileFlowsSchema,
   ScopeManager,
+  SIGNAL_PROFILE_FLOWS,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
+  type HilosConnection,
   type HilosProfileSignInMethod,
   type HilosRouter,
   type ProjectSignal,
@@ -96,23 +100,64 @@ function setup(
   offered: readonly object[] = OFFERED,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn((action: string) => ({
-    loading: createSignal(false),
-    done: Promise.resolve(
-      action === 'hilos_step_up_start'
-        ? { reply: opening }
-        : action === 'profile_add_sms_request' ||
-            action === 'profile_add_password_request'
-          ? {
-              reply: {
-                sent: true,
-                resendAt: 1_900_000_000_000,
-                expiresAt: 1_900_000_600_000,
+  const emit = (type: string, data: unknown) => {
+    for (const listener of listeners)
+      listener({ kind: 'project', type, data } as ProjectSignal)
+  }
+  const dispatch = vi.fn(
+    (action: string, payload?: { phone?: string; email?: string }) => {
+      if (action === 'profile_add_sms_request' && payload?.phone)
+        emit(
+          SIGNAL_PROFILE_FLOWS,
+          profileFlowsSchema.parse({
+            flows: [
+              {
+                operation: 'add_sign_in_method',
+                step: 'phone_sent',
+                address: payload.phone,
+                target: payload.phone,
               },
-            }
-          : {},
-    ),
-  }))
+            ],
+          }),
+        )
+      if (action === 'profile_add_password_request' && payload?.email)
+        emit(
+          SIGNAL_PROFILE_FLOWS,
+          profileFlowsSchema.parse({
+            flows: [
+              {
+                operation: 'add_sign_in_method',
+                step: 'email_sent',
+                address: payload.email,
+                target: payload.email,
+              },
+            ],
+          }),
+        )
+      if (
+        action === 'profile_add_sms_confirm' ||
+        action === 'hilos_profile_flow_cancel'
+      )
+        emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
+      return {
+        loading: createSignal(false),
+        done: Promise.resolve(
+          action === 'hilos_step_up_start'
+            ? { reply: opening }
+            : action === 'profile_add_sms_request' ||
+                action === 'profile_add_password_request'
+              ? {
+                  reply: {
+                    sent: true,
+                    resendAt: 1_900_000_000_000,
+                    expiresAt: 1_900_000_600_000,
+                  },
+                }
+              : {},
+        ),
+      }
+    },
+  )
   const context = {
     actions: { dispatch },
     connection: {
@@ -124,6 +169,8 @@ function setup(
     scopes: new ScopeManager(),
     channels: [],
   } as unknown as HilosAuthContext
+  const stopFlows = bindProfileFlows(context.connection as HilosConnection)
+  emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
   context.scopes.session.data.set('authMethods', offered)
   setMethods(context.scopes, methods)
   const router = {
@@ -155,6 +202,8 @@ function setup(
     fill,
     fixture,
     listeners,
+    emit,
+    stopFlows,
     node,
     setMethods: (next: readonly HilosProfileSignInMethod[]) => {
       setMethods(context.scopes, next)
@@ -178,7 +227,7 @@ async function settle(fixture: ComponentFixture<unknown>): Promise<void> {
 }
 
 it('adds a phone through two steps and releases its listeners', async () => {
-  const { dispatch, fill, fixture, listeners, node } = setup()
+  const { dispatch, fill, fixture, listeners, node, stopFlows } = setup()
   node('profile-sign-in-add').click()
   await settle(fixture)
   node('profile-sign-in-choose-phone').click()
@@ -190,12 +239,51 @@ it('adds a phone through two steps and releases its listeners', async () => {
   node('profile-add-sms-confirm').click()
   await settle(fixture)
   expect(dispatch).toHaveBeenLastCalledWith('profile_add_sms_confirm', {
-    phone: '+15551234567',
     code: '123456',
   })
   expect(node('profile-sign-in-add-modal')).toBeNull()
   fixture.destroy()
+  stopFlows()
   expect(listeners.size).toBe(0)
+})
+
+it('asks before discarding a session code step with no draft and clears a code after a new frame', async () => {
+  const { emit, fill, fixture, node } = setup()
+  emit(
+    SIGNAL_PROFILE_FLOWS,
+    profileFlowsSchema.parse({
+      flows: [
+        {
+          operation: 'add_sign_in_method',
+          step: 'phone_sent',
+          address: '+15551234567',
+          target: '+15551234567',
+        },
+      ],
+    }),
+  )
+  node('profile-sign-in-add').click()
+  await settle(fixture)
+  expect(node('profile-add-sms-code')).not.toBeNull()
+  fill('profile-add-sms-code', '123456')
+  emit(
+    SIGNAL_PROFILE_FLOWS,
+    profileFlowsSchema.parse({
+      flows: [
+        {
+          operation: 'add_sign_in_method',
+          step: 'phone_sent',
+          address: '+15559876543',
+          target: '+15559876543',
+        },
+      ],
+    }),
+  )
+  fixture.detectChanges()
+  expect((node('profile-add-sms-code') as HTMLInputElement).value).toBe('')
+  node('profile-sign-in-add-cancel').click()
+  fixture.detectChanges()
+  expect(document.querySelector('[data-id="modal-confirm"]')).not.toBeNull()
 })
 
 it('opens at the confirmation step when the server asks, and shows the chooser once confirmed', async () => {

@@ -99,9 +99,10 @@ with their own account is never done with someone else's hands.
 
 The confirmation is not the only thing another tab continues: the step a
 multi-step profile window reached is the session's too (HIL-1182). The email
-change, password change and account deletion keep, per session and window, one row of
-`hilosProfileFlows` — the step reached, the account's address behind it, and the
-moment its code dies. Email and password steps may record a matched code;
+change, password change, account deletion and add-a-way-in windows keep, per
+session and window, one row of `hilosProfileFlows` — the step reached, the
+destination its code went to, and the moment its code dies. Email and password
+steps may record a matched code;
 deletion records only that a code was sent.
 
 - **One writer.** The users library runs a step and spends the codes exactly
@@ -116,6 +117,9 @@ deletion records only that a code was sent.
   a resend after the first died — dies at another moment, and the proof with it.
   The row has no clock of its own; the tick drops dead rows without a frame, and
   the handshake never sends one.
+  For an add-a-way-in code step, the tab also carries no destination: the final
+  action sends the code and, for an email addition, the new password. The phone
+  number or email address is read from the session's row.
 - **Discard ends the flow for the session.** `hilos_profile_flow_cancel` is the
   window's Discard, and it always answers the session with the list, even when
   nothing was left to drop: a tab can still hold a flow the tick reclaimed
@@ -132,7 +136,11 @@ the account's address, and the code itself is still checked and spent at the
 start. Cancel on that step discards the session's flow without a question. A
 deletion scheduled by another tab, browser or administrator closes an open
 window of steps; the tab that started it shows "Deletion in progress". "Add a
-way to sign in" joins the same record in HIL-1184.
+way to sign in" (HIL-1184) records `phone_sent` or `email_sent` under
+`add_sign_in_method`: `address` and `target` are both the phone number or email
+address the code went to. The code is still checked at the final step; that step
+reads only the destination from the row. Back moves only this tab's window and
+leaves the session's flow alive.
 
 A code request held by the resend cooldown after its earlier code was spent
 returns `expiresAt: null` (HIL-1186). The email/password window still stands on

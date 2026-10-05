@@ -14,6 +14,7 @@ use Hilos\Auth\Library\DTO\ProfileAddSmsRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
 use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
+use Hilos\Auth\Session\DTO\ProfileFlowsSignalData;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
@@ -22,6 +23,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooShortException;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -30,6 +32,8 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
  * Profile sign-in methods: first password, code-proven additions and unlink (HIL-1137, HIL-300).
@@ -46,6 +50,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     private const string PASSWORD = 'correct horse battery';
     private const string NEW_PASSWORD = 'a-brand-new-secret';
     private const string PHONE = '+15551231137';
+    private const string OTHER_PHONE = '+15551231138';
     private const string CODE = '424242';
     private const string WRONG_CODE = '000000';
 
@@ -155,8 +160,10 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
      */
     public function testAddPasswordRequestMailsACodeToAFreeAddress(): void
     {
-        $reply = $this->submit(HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST, new ProfileAddPasswordRequestActionDTO(strtoupper(self::EMAIL)));
-        $this->settleProfileFlows();
+        $reply = $this->submitStep(
+            HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,
+            new ProfileAddPasswordRequestActionDTO(strtoupper(self::EMAIL)),
+        );
         self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
         self::assertTrue($reply->sent);
         self::assertSame(StepUpOperationKey::ADD_SIGN_IN_METHOD, $this->codeSendLine()?->purpose);
@@ -167,6 +174,23 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::assertSame(
             [[self::EMAIL, MailTemplateCatalogConstants::AUTH_EMAIL_ADD]],
             $this->mailer->sentTo(MailTemplateCatalogConstants::AUTH_EMAIL_ADD),
+        );
+        $flow = $this->profileFlows()[HilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+        )];
+        self::assertSame(HilosProfileFlow::STEP_EMAIL_SENT, $flow?->step);
+        self::assertSame(self::EMAIL, $flow?->address);
+        self::assertSame(self::EMAIL, $flow?->target);
+        self::assertSame($reply->expiresAt, $flow?->expiresAt);
+        self::assertSame(
+            [[
+                HilosProfileFlow::operation => StepUpOperationKey::ADD_SIGN_IN_METHOD,
+                HilosProfileFlow::step => HilosProfileFlow::STEP_EMAIL_SENT,
+                HilosProfileFlow::address => self::EMAIL,
+                HilosProfileFlow::target => self::EMAIL,
+            ]],
+            $this->profileFlowFrames()[0]->flows,
         );
     }
 
@@ -195,6 +219,39 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     }
 
     /**
+     * Confirming an email addition needs this session's matching step before spending the code.
+     *
+     * @throws HilosException When a seed or runtime write fails
+     */
+    public function testAddPasswordConfirmRefusesMissingForeignAndWrongStepsWithoutSpendingTheCode(): void
+    {
+        $this->seedCode(VerificationType::EMAIL_ADD, self::EMAIL, self::USER_ID, self::CODE);
+        $dto = new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD);
+
+        $this->assertRefused(AuthMessages::INVALID_CODE, HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM, $dto);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::EMAIL,
+            self::EMAIL,
+            self::OTHER_USER_ID,
+        );
+        $this->assertRefused(AuthMessages::INVALID_CODE, HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM, $dto);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_PHONE_SENT,
+            VerificationType::EMAIL_ADD,
+            self::EMAIL,
+            self::EMAIL,
+        );
+        $this->assertRefused(AuthMessages::INVALID_CODE, HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM, $dto);
+
+        self::assertNull(Hilos::$db->identities->findPasswordByUser(self::USER_ID));
+        self::assertNotNull($this->verifications()->findActive(VerificationType::EMAIL_ADD, self::EMAIL, self::MAX_ATTEMPTS));
+    }
+
+    /**
      * The right code writes a confirmed password on the proven address and tells every tab.
      *
      * @throws HilosException When the seed or the command fails
@@ -202,22 +259,46 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddPasswordConfirmCreatesAConfirmedPasswordAndSignalsAdded(): void
     {
         $this->seedCode(VerificationType::EMAIL_ADD, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::EMAIL,
+            self::EMAIL,
+        );
 
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::CODE, self::NEW_PASSWORD),
+            new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD),
         );
 
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, self::EMAIL);
         self::assertSame(self::USER_ID, $identity?->userId);
         self::assertTrue($identity->verified);
         self::assertTrue($identity->verifyPassword(self::NEW_PASSWORD));
+        self::assertNull($this->flowStep(StepUpOperationKey::ADD_SIGN_IN_METHOD));
+        $signals = $this->drainSignals();
+        $updates = [];
+        $frames = [];
+        foreach ($signals as $signal) {
+            if ($signal->signalName->getName() === HilosSignalConstants::PROFILE_PASSWORD_UPDATED) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertInstanceOf(ProfilePasswordUpdatedSignalData::class, $signal->data->data);
+                $updates[] = [(string)$signal->data->targetAcceptKey, $signal->data->data->mode];
+            }
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_PROFILE_FLOWS) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertInstanceOf(ProfileFlowsSignalData::class, $signal->data->data);
+                $frames[] = $signal->data->data;
+            }
+        }
+        self::assertSame([], $frames[0]->flows);
         self::assertSame(
             [
                 [self::ACCEPT_KEY, ProfilePasswordUpdatedSignalData::MODE_ADDED],
                 [self::OTHER_ACCEPT_KEY, ProfilePasswordUpdatedSignalData::MODE_ADDED],
             ],
-            $this->passwordUpdates(),
+            $updates,
         );
     }
 
@@ -231,11 +312,18 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         $this->seedPassword();
         $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
         $this->seedCode(VerificationType::EMAIL_ADD, self::OTHER_EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::OTHER_EMAIL,
+            self::OTHER_EMAIL,
+        );
 
         $this->assertRefused(
             AuthMessages::ALREADY_HAS_PASSWORD,
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO(self::OTHER_EMAIL, self::CODE, self::NEW_PASSWORD),
+            new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD),
         );
 
         self::assertSame(self::EMAIL, Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->identifier);
@@ -254,11 +342,18 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddPasswordConfirmRefusesAWeakPasswordBeforeTheCode(): void
     {
         $this->seedCode(VerificationType::EMAIL_ADD, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::EMAIL,
+            self::EMAIL,
+        );
 
         try {
             $this->submit(
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-                new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::CODE, 'short'),
+                new ProfileAddPasswordConfirmActionDTO(self::CODE, 'short'),
             );
             self::fail('A weak password must be refused');
         } catch (ValueTooShortException) {
@@ -280,11 +375,18 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddPasswordConfirmRefusesACommonPasswordBeforeTheCode(): void
     {
         $this->seedCode(VerificationType::EMAIL_ADD, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::EMAIL,
+            self::EMAIL,
+        );
 
         try {
             $this->submit(
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-                new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::CODE, '12345678'),
+                new ProfileAddPasswordConfirmActionDTO(self::CODE, '12345678'),
             );
             self::fail('A common password must be refused before spending the code');
         } catch (PasswordTooCommonException) {
@@ -297,7 +399,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
 
         $this->submit(
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::CODE, self::NEW_PASSWORD),
+            new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD),
         );
         self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword(self::NEW_PASSWORD));
     }
@@ -311,16 +413,31 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     {
         $this->seedCode(VerificationType::EMAIL_ADD, self::EMAIL, self::USER_ID, self::CODE);
         $this->seedCode(VerificationType::EMAIL_ADD, self::OTHER_EMAIL, self::OTHER_USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::EMAIL,
+            self::EMAIL,
+        );
 
         $this->assertRefused(
             AuthMessages::INVALID_CODE,
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::WRONG_CODE, self::NEW_PASSWORD),
+            new ProfileAddPasswordConfirmActionDTO(self::WRONG_CODE, self::NEW_PASSWORD),
+        );
+        self::assertSame(HilosProfileFlow::STEP_EMAIL_SENT, $this->flowStep(StepUpOperationKey::ADD_SIGN_IN_METHOD));
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::EMAIL_ADD,
+            self::OTHER_EMAIL,
+            self::OTHER_EMAIL,
         );
         $this->assertRefused(
             AuthMessages::INVALID_CODE,
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO(self::OTHER_EMAIL, self::CODE, self::NEW_PASSWORD),
+            new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD),
         );
 
         self::assertSame([], self::rowsOf(self::USER_ID));
@@ -334,8 +451,10 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
      */
     public function testAddSmsRequestIssuesACodeForTheNormalizedNumber(): void
     {
-        $reply = $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO('+1 555 123 1137'));
-        $this->settleProfileFlows();
+        $reply = $this->submitStep(
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+            new ProfileAddSmsRequestActionDTO('+1 555 123 1137'),
+        );
         self::assertInstanceOf(CodeSendReplyDTO::class, $reply);
         self::assertTrue($reply->sent);
         self::assertSame(StepUpOperationKey::ADD_SIGN_IN_METHOD, $this->codeSendLine()?->purpose);
@@ -345,6 +464,80 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
             self::USER_ID,
             $this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS)?->userId,
         );
+        $flow = $this->profileFlows()[HilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+        )];
+        self::assertSame(HilosProfileFlow::STEP_PHONE_SENT, $flow?->step);
+        self::assertSame(self::PHONE, $flow?->address);
+        self::assertSame(self::PHONE, $flow?->target);
+        self::assertSame($reply->expiresAt, $flow?->expiresAt);
+        self::assertSame(
+            [[
+                HilosProfileFlow::operation => StepUpOperationKey::ADD_SIGN_IN_METHOD,
+                HilosProfileFlow::step => HilosProfileFlow::STEP_PHONE_SENT,
+                HilosProfileFlow::address => self::PHONE,
+                HilosProfileFlow::target => self::PHONE,
+            ]],
+            $this->profileFlowFrames()[0]->flows,
+        );
+    }
+
+    /**
+     * A new send in this session moves the one add-method flow to the new number.
+     *
+     * @throws HilosException When either request or the holder fails
+     */
+    public function testAddSmsRequestToAnotherNumberReplacesTheSessionFlow(): void
+    {
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+        $this->profileFlowFrames();
+        $reply = $this->submitStep(
+            HilosSignalConstants::PROFILE_ADD_SMS_REQUEST,
+            new ProfileAddSmsRequestActionDTO(self::OTHER_PHONE),
+        );
+
+        $flow = $this->profileFlows()[HilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+        )];
+        self::assertSame(self::OTHER_PHONE, $flow?->address);
+        self::assertSame(self::OTHER_PHONE, $flow?->target);
+        self::assertSame($reply?->expiresAt, $flow?->expiresAt);
+        self::assertSame(self::OTHER_PHONE, $this->profileFlowFrames()[0]->flows[0][HilosProfileFlow::target]);
+    }
+
+    /**
+     * Confirming a phone addition needs this session's matching step before spending the code.
+     *
+     * @throws HilosException When a seed or runtime write fails
+     */
+    public function testAddSmsConfirmRefusesMissingForeignAndWrongStepsWithoutSpendingTheCode(): void
+    {
+        $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $dto = new ProfileAddSmsConfirmActionDTO(self::CODE);
+
+        $this->assertRefused(AuthMessages::INVALID_CODE, HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, $dto);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_PHONE_SENT,
+            VerificationType::SMS_ADD,
+            self::PHONE,
+            self::PHONE,
+            self::OTHER_USER_ID,
+        );
+        $this->assertRefused(AuthMessages::INVALID_CODE, HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, $dto);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_EMAIL_SENT,
+            VerificationType::SMS_ADD,
+            self::PHONE,
+            self::PHONE,
+        );
+        $this->assertRefused(AuthMessages::INVALID_CODE, HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, $dto);
+
+        self::assertSame([], self::rowsOf(self::USER_ID));
+        self::assertNotNull($this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS));
     }
 
     /** @throws HilosException When the code or its pause history cannot be written */
@@ -394,10 +587,19 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddSmsConfirmAttachesTheNumber(): void
     {
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_PHONE_SENT,
+            VerificationType::SMS_ADD,
+            self::PHONE,
+            self::PHONE,
+        );
 
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE));
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
 
         self::assertSame([[IdentityType::SMS, self::PHONE, true]], self::rowsOf(self::USER_ID));
+        self::assertNull($this->flowStep(StepUpOperationKey::ADD_SIGN_IN_METHOD));
+        self::assertSame([], $this->profileFlowFrames()[0]->flows);
     }
 
     /**
@@ -408,14 +610,22 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     public function testAddSmsConfirmRefusesAWrongCode(): void
     {
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_PHONE_SENT,
+            VerificationType::SMS_ADD,
+            self::PHONE,
+            self::PHONE,
+        );
 
         $this->assertRefused(
             AuthMessages::INVALID_CODE,
             HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
-            new ProfileAddSmsConfirmActionDTO(self::PHONE, self::WRONG_CODE),
+            new ProfileAddSmsConfirmActionDTO(self::WRONG_CODE),
         );
 
         self::assertSame([], self::rowsOf(self::USER_ID));
+        self::assertSame(HilosProfileFlow::STEP_PHONE_SENT, $this->flowStep(StepUpOperationKey::ADD_SIGN_IN_METHOD));
     }
 
     /**
@@ -427,11 +637,18 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
     {
         self::seedIdentity(self::OTHER_USER_ID, IdentityType::SMS, self::PHONE);
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
+        $this->seedFlow(
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            HilosProfileFlow::STEP_PHONE_SENT,
+            VerificationType::SMS_ADD,
+            self::PHONE,
+            self::PHONE,
+        );
 
         $this->assertRefused(
             AuthMessages::PHONE_IN_USE,
             HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
-            new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE),
+            new ProfileAddSmsConfirmActionDTO(self::CODE),
         );
 
         self::assertSame([], self::rowsOf(self::USER_ID));
@@ -494,7 +711,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         $this->assertRefused(
             StepUpMessages::EXPIRED,
             HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
-            new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE),
+            new ProfileAddSmsConfirmActionDTO(self::CODE),
         );
         $this->assertRefused(
             StepUpMessages::EXPIRED,
@@ -504,7 +721,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         $this->assertRefused(
             StepUpMessages::EXPIRED,
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO(self::EMAIL, self::CODE, self::NEW_PASSWORD),
+            new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD),
         );
 
         self::assertSame([[IdentityType::MAGIC_LINK, self::EMAIL, true]], self::rowsOf(self::USER_ID));
@@ -527,9 +744,9 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
         $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE));
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
         $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
 
         self::assertSame(
@@ -556,11 +773,11 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
      */
     public function testAnAccountWithNothingToConfirmWithAddsWithoutAStep(): void
     {
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
         self::assertNotNull($this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS));
 
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::PHONE, self::CODE));
+        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
 
         self::assertSame([[IdentityType::SMS, self::PHONE, true]], self::rowsOf(self::USER_ID));
     }
@@ -581,6 +798,26 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
             self::USER_ID,
             $this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS)?->userId,
         );
+    }
+
+    /**
+     * @return list<ProfileFlowsSignalData> Session lists sent after the sign-in flow steps
+     * @throws HilosException When a queued flow step cannot be settled
+     */
+    private function profileFlowFrames(): array
+    {
+        $frames = [];
+        foreach ($this->drainSignals() as $signal) {
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_PROFILE_FLOWS) {
+                continue;
+            }
+            self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            self::assertSame(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN), $signal->data->targetSessionTokenHash);
+            self::assertInstanceOf(ProfileFlowsSignalData::class, $signal->data->data);
+            $frames[] = $signal->data->data;
+        }
+
+        return $frames;
     }
 
     /**

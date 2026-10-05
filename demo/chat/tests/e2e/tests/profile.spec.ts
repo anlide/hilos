@@ -20,6 +20,10 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { declareOAuthAccount } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
+import {
+  uniquePhone,
+  waitForSmsCode,
+} from '../../../../../framework/frontend/scripts/standSms.mjs'
 
 // Type into a Vue input the way a user does — clear, then key by key — so the
 // reactivity a bare fill() can miss actually fires (see helpers/session).
@@ -515,6 +519,43 @@ test('saves the new password from another tab of the same session (HIL-1182)', a
 
   await expect(tabB.getByTestId('profile-password-outcome')).toBeVisible()
   await expect(tabA.getByTestId('profile-password-modal')).toHaveCount(0)
+})
+
+test('adds a phone from another tab of the same session (HIL-1184)', async ({
+  context,
+}) => {
+  const tabA = await context.newPage()
+  await signUp(tabA)
+  await gotoPage(tabA, '/profile/sign-in')
+  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+  await clickSubmit(tabA.getByTestId('profile-sign-in-add'))
+  await confirmStepUp(tabA, 'profile-sign-in-add-step-up-confirm')
+  await clickSubmit(tabA.getByTestId('profile-sign-in-choose-phone'))
+  const phone = uniquePhone()
+  await typeInto(tabA.getByTestId('profile-add-sms-phone'), phone)
+  await clickSubmit(tabA.getByTestId('profile-add-sms-request'))
+  await expect(tabA.getByTestId('profile-add-sms-code')).toBeVisible()
+
+  const tabB = await context.newPage()
+  await gotoPage(tabB, '/profile/sign-in')
+  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await clickSubmit(tabB.getByTestId('profile-sign-in-add'))
+  await expect(tabB.getByTestId('profile-add-sms-code')).toBeVisible()
+  await expect(tabB.getByTestId('step-up')).toHaveCount(0)
+
+  await typeInto(
+    tabB.getByTestId('profile-add-sms-code'),
+    await waitForSmsCode(phone),
+  )
+  await clickSubmit(tabB.getByTestId('profile-add-sms-confirm'))
+  await expect(tabB.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+  await expect(tabA.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+  await expect(
+    tabA.getByTestId('profile-identity-item').filter({ hasText: phone }),
+  ).toHaveCount(1)
+  await expect(
+    tabB.getByTestId('profile-identity-item').filter({ hasText: phone }),
+  ).toHaveCount(1)
 })
 
 test('ends one other browser session from the sessions page', async ({

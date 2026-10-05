@@ -11,16 +11,13 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /**
  * ProfileAddPasswordConfirmActionDTO - DTO for the profile add-password confirm payload (HIL-406, HIL-1137).
  *
- * Step 2 of adding a password: an authenticated submit that carries the email, the
- * delivered code, and the new password. The email is trimmed here and re-lowercased
- * by the handler so it matches the issued challenge identifier; the code is trimmed
- * so surrounding whitespace never fails an otherwise valid code. The new password is
- * not trimmed (leading/trailing whitespace is significant). The owning user is read
- * from the session, never carried here.
+ * Step 2 of adding a password: an authenticated submit carrying the delivered code
+ * and new password. The email comes from the session's profile flow; the code is
+ * trimmed so surrounding whitespace never fails an otherwise valid code. The new
+ * password is not trimmed (leading/trailing whitespace is significant).
  */
 final class ProfileAddPasswordConfirmActionDTO extends ActionPayloadDTO
 {
-    public const string EMAIL = 'email';
     public const string CODE = 'code';
     public const string NEW_PASSWORD = 'newPassword';
 
@@ -29,12 +26,10 @@ final class ProfileAddPasswordConfirmActionDTO extends ActionPayloadDTO
     /**
      * Creates an add-password confirm DTO.
      *
-     * @param string $email Submitted email address (trimmed)
      * @param string $code Submitted verification code (trimmed)
      * @param string $newPassword New password to set (untrimmed)
      */
     public function __construct(
-        public readonly string $email,
         public readonly string $code,
         public readonly string $newPassword,
     ) {
@@ -60,7 +55,6 @@ final class ProfileAddPasswordConfirmActionDTO extends ActionPayloadDTO
     public static function fromArray(array $data): static
     {
         return new static(
-            email: trim(self::requireString($data, self::EMAIL)),
             code: trim(self::requireString($data, self::CODE)),
             newPassword: self::requireString($data, self::NEW_PASSWORD),
         );
@@ -69,24 +63,23 @@ final class ProfileAddPasswordConfirmActionDTO extends ActionPayloadDTO
     /**
      * Convert to array for transport.
      *
-     * @return array{email: string, code: string, newPassword: string} Confirm payload
+     * @return array{code: string, newPassword: string} Confirm payload
      */
     public function toArray(): array
     {
         return [
-            self::EMAIL => $this->email,
             self::CODE => $this->code,
             self::NEW_PASSWORD => $this->newPassword,
         ];
     }
 
     /**
-     * Check if the payload is valid (a non-empty email, code, and password).
+     * Check if the payload is valid (a non-empty code and password).
      *
      * @return bool True if valid
      */
     public function isValid(): bool
     {
-        return $this->email !== '' && $this->code !== '' && $this->newPassword !== '';
+        return $this->code !== '' && $this->newPassword !== '';
     }
 }

@@ -2,11 +2,15 @@ import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  bindProfileFlows,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
+  profileFlowsSchema,
   ScopeManager,
+  SIGNAL_PROFILE_FLOWS,
   resolveHilosProfileSignInMethods,
   type HilosAuthContext,
+  type HilosConnection,
   type HilosProfileSignInMethod,
   type HilosRouter,
   type ProjectSignal,
@@ -96,16 +100,57 @@ function setup(
   offered: readonly object[] = OFFERED,
 ) {
   const listeners = new Set<(signal: ProjectSignal) => void>()
-  const dispatch = vi.fn((action: string) => ({
-    loading: createSignal(false),
-    done: Promise.resolve(
-      action === 'hilos_step_up_start'
-        ? { reply: opening }
-        : CODE_REQUESTS.includes(action)
-          ? { reply: SENT }
-          : {},
-    ),
-  }))
+  const emit = (type: string, data: unknown) => {
+    for (const listener of listeners)
+      listener({ kind: 'project', type, data } as ProjectSignal)
+  }
+  const dispatch = vi.fn(
+    (action: string, payload?: { phone?: string; email?: string }) => {
+      if (action === 'profile_add_sms_request' && payload?.phone)
+        emit(
+          SIGNAL_PROFILE_FLOWS,
+          profileFlowsSchema.parse({
+            flows: [
+              {
+                operation: 'add_sign_in_method',
+                step: 'phone_sent',
+                address: payload.phone,
+                target: payload.phone,
+              },
+            ],
+          }),
+        )
+      if (action === 'profile_add_password_request' && payload?.email)
+        emit(
+          SIGNAL_PROFILE_FLOWS,
+          profileFlowsSchema.parse({
+            flows: [
+              {
+                operation: 'add_sign_in_method',
+                step: 'email_sent',
+                address: payload.email,
+                target: payload.email,
+              },
+            ],
+          }),
+        )
+      if (
+        action === 'profile_add_sms_confirm' ||
+        action === 'hilos_profile_flow_cancel'
+      )
+        emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
+      return {
+        loading: createSignal(false),
+        done: Promise.resolve(
+          action === 'hilos_step_up_start'
+            ? { reply: opening }
+            : CODE_REQUESTS.includes(action)
+              ? { reply: SENT }
+              : {},
+        ),
+      }
+    },
+  )
   const context = {
     actions: { dispatch },
     connection: {
@@ -117,6 +162,8 @@ function setup(
     scopes: new ScopeManager(),
     channels: [],
   } as unknown as HilosAuthContext
+  const stopFlows = bindProfileFlows(context.connection as HilosConnection)
+  emit(SIGNAL_PROFILE_FLOWS, profileFlowsSchema.parse({ flows: [] }))
   context.scopes.session.data.set('authMethods', offered)
   setMethods(context.scopes, methods)
   const router = {
@@ -134,14 +181,18 @@ function setup(
       </HilosRouterContext.Provider>
     </StrictMode>
   )
-  const { unmount } = render(page)
+  const { unmount: unmountPage } = render(page)
   const node = (id: string) =>
     document.querySelector(`[data-id="${id}"]`) as HTMLElement
   return {
     dispatch,
     listeners,
+    emit,
     node,
-    unmount,
+    unmount: () => {
+      unmountPage()
+      stopFlows()
+    },
     setMethods: (next: readonly HilosProfileSignInMethod[]) =>
       act(() => setMethods(context.scopes, next)),
   }
@@ -210,6 +261,48 @@ it('opens at the confirmation step when the server asks, and shows the chooser o
   expect(document.querySelector('.modal-title')?.textContent).toBe(
     'Add a way to sign in',
   )
+})
+
+it('asks before discarding a session code step with no draft and clears a code after a new frame', async () => {
+  const { emit, node } = setup()
+  act(() =>
+    emit(
+      SIGNAL_PROFILE_FLOWS,
+      profileFlowsSchema.parse({
+        flows: [
+          {
+            operation: 'add_sign_in_method',
+            step: 'phone_sent',
+            address: '+15551234567',
+            target: '+15551234567',
+          },
+        ],
+      }),
+    ),
+  )
+  await act(async () => fireEvent.click(node('profile-sign-in-add')))
+  expect(node('profile-add-sms-code')).not.toBeNull()
+  fireEvent.change(node('profile-add-sms-code'), {
+    target: { value: '123456' },
+  })
+  act(() =>
+    emit(
+      SIGNAL_PROFILE_FLOWS,
+      profileFlowsSchema.parse({
+        flows: [
+          {
+            operation: 'add_sign_in_method',
+            step: 'phone_sent',
+            address: '+15559876543',
+            target: '+15559876543',
+          },
+        ],
+      }),
+    ),
+  )
+  expect((node('profile-add-sms-code') as HTMLInputElement).value).toBe('')
+  fireEvent.click(node('profile-sign-in-add-cancel'))
+  expect(node('modal-confirm')).not.toBeNull()
 })
 
 it('warns a passkey-only account with a button per offered way and drops it when another way arrives', () => {

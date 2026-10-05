@@ -3,6 +3,8 @@
 // Adding a way in is a protected operation (HIL-1138): the dialog opens on the
 // server's word, at the confirmation step or straight at the chooser — or, when
 // it was opened for one way (HIL-1166), straight at that way's first step.
+// A sent phone or email code and its destination live in the session's profile
+// flow (HIL-1184); the last submit carries no destination.
 import { type HilosAuthContext } from '../auth/authContext.js'
 import {
   codeSendReplySchema,
@@ -25,7 +27,9 @@ import { toLocal } from '../session/serverClock.js'
 import {
   computedSignal,
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
+  type Unsubscribe,
 } from '../state/signal.js'
 import { hilosToasts } from '../state/toasts.js'
 import {
@@ -34,6 +38,13 @@ import {
   type HilosProfileAddableWay,
   type HilosProfileSignInMethod,
 } from './profileSignInMethods.js'
+import {
+  hilosProfileFlowFor,
+  PROFILE_FLOW_CANCEL_ACTION,
+  PROFILE_FLOW_STEP_EMAIL_SENT,
+  PROFILE_FLOW_STEP_PHONE_SENT,
+  type HilosProfileFlowState,
+} from './profileFlows.js'
 import { createHilosProfileSignInActions } from './signInMethods.js'
 
 /** The step-up operation every add of a way in belongs to (PHP `StepUpOperationKey::ADD_SIGN_IN_METHOD`). */
@@ -70,6 +81,8 @@ export interface HilosProfileAddSignInFlow {
   readonly provider: ReadonlySignal<string | null>
   readonly email: ReadonlySignal<string>
   readonly phone: ReadonlySignal<string>
+  /** A code step with a session record asks before its flow is discarded. */
+  readonly asksBeforeClosing: ReadonlySignal<boolean>
   /**
    * Ask the server whether a confirmation is needed and open on its answer.
    *
@@ -93,6 +106,21 @@ export interface HilosProfileAddSignInFlow {
   back(): void
   close(): void
   dispose(): void
+}
+
+/** The code step named by this session's add-method record. */
+function stepOfRecord(
+  record: HilosProfileFlowState | null,
+): 'phone-code' | 'password-code' | null {
+  if (record?.target === null) return null
+  switch (record?.step) {
+    case PROFILE_FLOW_STEP_PHONE_SENT:
+      return 'phone-code'
+    case PROFILE_FLOW_STEP_EMAIL_SENT:
+      return 'password-code'
+    default:
+      return null
+  }
 }
 
 /** Messages shared by all sign-in-section views. */
@@ -143,6 +171,7 @@ export function createHilosProfileAddSignInFlow(
   const provider = createSignal<string | null>(null)
   const email = createSignal('')
   const phone = createSignal('')
+  const record = hilosProfileFlowFor(ADD_SIGN_IN_METHOD_OPERATION)
   const reportedProgress = hilosCodeSendProgressFor(
     ADD_SIGN_IN_METHOD_OPERATION,
   )
@@ -158,12 +187,21 @@ export function createHilosProfileAddSignInFlow(
     () => sendProgress.get()?.resendAt ?? replyResendAt.get(),
   )
   let round = 0
+  let pending = 0
+  let following: Unsubscribe | null = null
   let stopPassword: (() => void) | null = null
   let stopTrip: (() => void) | null = null
   let tripAbort: AbortController | null = null
   let pendingWay: HilosProfileAddableWay | null = null
 
-  function close(): void {
+  const asksBeforeClosing = computedSignal(
+    () =>
+      (step.get() === 'phone-code' || step.get() === 'password-code') &&
+      record.get() !== null,
+  )
+
+  /** Close this tab's dialog without ending the session flow. */
+  function finish(): void {
     round += 1
     pendingWay = null
     stopPassword?.()
@@ -180,6 +218,36 @@ export function createHilosProfileAddSignInFlow(
     phone.set('')
     hiddenTicket.set(null)
     replyResendAt.set(null)
+    following?.()
+    following = null
+  }
+
+  /** Stand on the code step the session has reached, when it has one. */
+  function standOn(flow: HilosProfileFlowState | null): void {
+    const next = stepOfRecord(flow)
+    if (next === null || flow === null || flow.target === null) return
+    if (next === 'phone-code') phone.set(flow.target)
+    else email.set(flow.target)
+    step.set(next)
+  }
+
+  /** Follow changes only while this tab is already on a code step. */
+  function follow(flow: HilosProfileFlowState | null): void {
+    const current = step.get()
+    if (current !== 'phone-code' && current !== 'password-code') return
+    if (flow === null) {
+      if (pending === 0) finish()
+      return
+    }
+    const next = stepOfRecord(flow)
+    if (next === null) return
+    if (
+      next !== current ||
+      flow.target !== (next === 'phone-code' ? phone.get() : email.get())
+    ) {
+      refusal.set(null)
+      standOn(flow)
+    }
   }
 
   /**
@@ -209,6 +277,17 @@ export function createHilosProfileAddSignInFlow(
     step.set('choose')
     const way = pendingWay
     pendingWay = null
+    const sessionFlow = record.get()
+    const sessionStep = stepOfRecord(sessionFlow)
+    if (
+      sessionStep !== null &&
+      (way === null ||
+        (way.kind === 'phone' && sessionStep === 'phone-code') ||
+        (way.kind === 'password' && sessionStep === 'password-code'))
+    ) {
+      standOn(sessionFlow)
+      return
+    }
     if (way === null) return
     switch (way.kind) {
       case 'password':
@@ -237,6 +316,7 @@ export function createHilosProfileAddSignInFlow(
     const started = round
     busy.set(true)
     refusal.set(null)
+    pending += 1
     try {
       const result = await send().done
       if (round === started) {
@@ -253,6 +333,7 @@ export function createHilosProfileAddSignInFlow(
         )
       }
     } finally {
+      pending -= 1
       if (round === started && (!waitForPassword || refusal.get() !== null))
         busy.set(false)
     }
@@ -268,9 +349,11 @@ export function createHilosProfileAddSignInFlow(
     provider,
     email,
     phone,
+    asksBeforeClosing,
     async open(way) {
       if (step.get() !== 'closed') return
       pendingWay = way ?? null
+      following ??= subscribeSignal(record, follow)
       stopPassword = watchHilosProfilePasswordUpdated(
         context.connection,
         () => {
@@ -279,7 +362,7 @@ export function createHilosProfileAddSignInFlow(
             step.get() === 'password-code' ||
             step.get() === 'password-email'
           )
-            close()
+            finish()
         },
       )
 
@@ -330,7 +413,7 @@ export function createHilosProfileAddSignInFlow(
         provider.set(null)
         if (outcome.kind === 'error') refusal.set(outcome.message)
         else if (outcome.kind === 'linked' || outcome.kind === 'reauth_pending')
-          close()
+          finish()
       })
       try {
         await oauth.startOAuthLink(key, tripAbort.signal)
@@ -353,7 +436,7 @@ export function createHilosProfileAddSignInFlow(
         const outcome = await passkeys.runPasskeyRegister()
         if (round !== started) return
         if (outcome.ok) {
-          close()
+          finish()
           hilosToasts.push(HILOS_PROFILE_SIGN_IN_COPY.passkeyAdded, {
             severity: 'success',
           })
@@ -383,8 +466,7 @@ export function createHilosProfileAddSignInFlow(
         'password-email',
         () => actions.requestPasswordAdd(address),
         () => {
-          email.set(address)
-          step.set('password-code')
+          standOn(record.get())
         },
         false,
         (reply) => replyResendAt.set(toLocal(reply.resendAt)),
@@ -393,7 +475,7 @@ export function createHilosProfileAddSignInFlow(
     submitPasswordCode(code, newPassword) {
       return submit(
         'password-code',
-        () => actions.confirmPasswordAdd(email.get(), code, newPassword),
+        () => actions.confirmPasswordAdd(code, newPassword),
         () => {},
         true,
       )
@@ -404,19 +486,14 @@ export function createHilosProfileAddSignInFlow(
         'phone-number',
         () => actions.requestSmsAdd(number),
         () => {
-          phone.set(number)
-          step.set('phone-code')
+          standOn(record.get())
         },
         false,
         (reply) => replyResendAt.set(toLocal(reply.resendAt)),
       )
     },
     submitPhoneCode(code) {
-      return submit(
-        'phone-code',
-        () => actions.confirmSmsAdd(phone.get(), code),
-        close,
-      )
+      return submit('phone-code', () => actions.confirmSmsAdd(code), finish)
     },
     async sendAgain() {
       const current = step.get()
@@ -460,10 +537,20 @@ export function createHilosProfileAddSignInFlow(
             : 'choose',
       )
     },
-    close,
-    dispose() {
-      close()
+    close() {
+      if (asksBeforeClosing.get()) {
+        const current = step.get()
+        void submit(
+          current,
+          () =>
+            context.actions.dispatch(PROFILE_FLOW_CANCEL_ACTION, {
+              operation: ADD_SIGN_IN_METHOD_OPERATION,
+            }),
+          finish,
+        )
+      } else finish()
     },
+    dispose: finish,
   }
 
   return flow

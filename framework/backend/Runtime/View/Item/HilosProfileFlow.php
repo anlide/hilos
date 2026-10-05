@@ -25,7 +25,7 @@ use Hilos\Runtime\View\Actions\Collection\HilosProfileFlowsActions;
  * @property-read int $userId The person the flow was started for
  * @property-read string $step What has happened in the window - one of the STEP_* constants
  * @property-read string $address The account's address the proof stands on
- * @property-read ?string $target New address of an email change, on its last step alone
+ * @property-read ?string $target New email on STEP_NEW_SENT, added address or number on STEP_PHONE_SENT or STEP_EMAIL_SENT, null otherwise
  * @property-read int $expiresAt Epoch milliseconds the code of the proof dies at
  */
 final class HilosProfileFlow extends RtItem

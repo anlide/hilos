@@ -105,7 +105,6 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
         // The add-password confirm carries both a code and a password; the password change
         // stopped carrying its code when the proof moved into the session (HIL-1182).
         $envelope = new WebSocketActionSignalDTO($this->acceptKey, HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM, [
-            'email' => 'hil-1187@example.test',
             'code' => '123456',
             'newPassword' => 'hil-1187-new',
         ]);
@@ -134,7 +133,7 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
         $this->assertStringNotContainsString('123456', $json);
         $this->assertStringNotContainsString('hil-1187-new', $json);
         $this->assertSame(
-            ['code' => SecretPayloadMask::MASK, 'email' => 'hil-1187@example.test', 'newPassword' => SecretPayloadMask::MASK],
+            ['code' => SecretPayloadMask::MASK, 'newPassword' => SecretPayloadMask::MASK],
             json_decode($json, true, flags: JSON_THROW_ON_ERROR)['data'],
         );
     }

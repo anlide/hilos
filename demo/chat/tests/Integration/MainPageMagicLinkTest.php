@@ -54,6 +54,8 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
@@ -100,6 +102,9 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
     private const string PROFILE_PASSWORD = 'a-brand-new-secret';
     private const string EMAIL_ADD_CODE = '424242';
     private const int TTL_SECONDS = 900;
+
+    /** Session flow seeded by the profile case, cleared before another case uses this runtime. */
+    private ?string $seededProfileFlowSessionHash = null;
 
     /** A missing or stale consent map must be refused before a hold or letter exists. */
     public function testAnUnknownAddressNeedsConsentBeforeRequestingALink(): void
@@ -647,10 +652,24 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
                 new ProfileAddPasswordRequestActionDTO($email),
             );
             $this->seedKnownEmailAddCode($email, $userId);
+            $expiresAt = new VerificationService()->activeExpiresAt(VerificationType::EMAIL_ADD, $email);
+            $this->assertNotNull($expiresAt);
+            $this->seededProfileFlowSessionHash = StateProtectedModeRuntime::hashSessionToken(
+                Hilos::$rt->connections['profile-ak']->sessionToken,
+            );
+            Hilos::$rt->hilosProfileFlows->actions->put(
+                $this->seededProfileFlowSessionHash,
+                StepUpOperationKey::ADD_SIGN_IN_METHOD,
+                $userId,
+                StateHilosProfileFlow::STEP_EMAIL_SENT,
+                $email,
+                $email,
+                $expiresAt,
+            );
             $this->usersLibrary()->onAgentAction(
                 'profile-ak',
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-                new ProfileAddPasswordConfirmActionDTO($email, self::EMAIL_ADD_CODE, self::PROFILE_PASSWORD),
+                new ProfileAddPasswordConfirmActionDTO(self::EMAIL_ADD_CODE, self::PROFILE_PASSWORD),
             );
 
             $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
@@ -978,6 +997,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(StateRegistrationWaiter::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(StateHilosProfileFlow::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         // The send-progress line is the sessions library's too (HIL-826), and this fixture
         // stands in for it: the wait being let go takes the line with it, and a writer with
         // no claim is refused whether or not there is a row to take.
@@ -1474,6 +1494,13 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
      */
     private function cleanUp(): void
     {
+        if ($this->seededProfileFlowSessionHash !== null) {
+            Hilos::$rt->hilosProfileFlows->actions->drop(
+                $this->seededProfileFlowSessionHash,
+                StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            );
+            $this->seededProfileFlowSessionHash = null;
+        }
         Hilos::$rt->connections->actions->clear();
     }
 

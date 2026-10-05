@@ -83,31 +83,29 @@ final class ProfileActionDTOTest extends TestCase
     /**
      * The add-phone confirm DTO trims both fields.
      */
-    public function testAddSmsConfirmTrimsPhoneAndCode(): void
+    public function testAddSmsConfirmTrimsCode(): void
     {
-        $dto = ProfileAddSmsConfirmActionDTO::fromArray(['phone' => '  +15551234  ', 'code' => '  123456  ']);
-        $this->assertSame('+15551234', $dto->phone);
+        $dto = ProfileAddSmsConfirmActionDTO::fromArray(['code' => '  123456  ']);
         $this->assertSame('123456', $dto->code);
     }
 
     /**
-     * An add-phone confirm payload whose fields are not strings is refused.
+     * An add-phone confirm payload without a string code is refused.
      */
     public function testAddSmsConfirmRefusesNonStringFields(): void
     {
         $this->expectException(InvalidFormatException::class);
 
-        ProfileAddSmsConfirmActionDTO::fromArray(['phone' => null, 'code' => 42]);
+        ProfileAddSmsConfirmActionDTO::fromArray(['code' => 42]);
     }
 
     /**
-     * The add-phone confirm DTO is valid only with a non-empty phone and code.
+     * The add-phone confirm DTO is valid only with a non-empty code.
      */
-    public function testAddSmsConfirmIsValidRequiresPhoneAndCode(): void
+    public function testAddSmsConfirmIsValidRequiresCode(): void
     {
-        $this->assertTrue(ProfileAddSmsConfirmActionDTO::fromArray(['phone' => '+15551234', 'code' => '123456'])->isValid());
-        $this->assertFalse(ProfileAddSmsConfirmActionDTO::fromArray(['phone' => '+15551234', 'code' => ''])->isValid());
-        $this->assertFalse(ProfileAddSmsConfirmActionDTO::fromArray(['phone' => '', 'code' => '123456'])->isValid());
+        $this->assertTrue(ProfileAddSmsConfirmActionDTO::fromArray(['code' => '123456'])->isValid());
+        $this->assertFalse(ProfileAddSmsConfirmActionDTO::fromArray(['code' => ''])->isValid());
     }
 
     /**
@@ -116,8 +114,8 @@ final class ProfileActionDTOTest extends TestCase
     public function testAddSmsConfirmToArrayShape(): void
     {
         $this->assertSame(
-            ['phone' => '+15551234', 'code' => '123456'],
-            new ProfileAddSmsConfirmActionDTO('+15551234', '123456')->toArray(),
+            ['code' => '123456'],
+            new ProfileAddSmsConfirmActionDTO('123456')->toArray(),
         );
     }
 
@@ -221,22 +219,21 @@ final class ProfileActionDTOTest extends TestCase
     }
 
     /**
-     * The add-password steps trim the address and the code, never the password.
+     * The add-password request trims the address; confirmation trims only the code.
      */
     public function testAddPasswordStepsTrimAddressAndCodeButNotThePassword(): void
     {
         $request = ProfileAddPasswordRequestActionDTO::fromArray(['email' => '  a@example.com  ']);
         $confirm = ProfileAddPasswordConfirmActionDTO::fromArray([
-            'email' => '  a@example.com  ',
             'code' => '  123456  ',
             'newPassword' => ' secret ',
         ]);
 
         $this->assertSame(['email' => 'a@example.com'], $request->toArray());
         $this->assertTrue($request->isValid());
-        $this->assertSame(['email' => 'a@example.com', 'code' => '123456', 'newPassword' => ' secret '], $confirm->toArray());
+        $this->assertSame(['code' => '123456', 'newPassword' => ' secret '], $confirm->toArray());
         $this->assertTrue($confirm->isValid());
-        $this->assertFalse(new ProfileAddPasswordConfirmActionDTO('a@example.com', '123456', '')->isValid());
+        $this->assertFalse(new ProfileAddPasswordConfirmActionDTO('123456', '')->isValid());
     }
 
     /**
@@ -297,11 +294,11 @@ final class ProfileActionDTOTest extends TestCase
         $this->assertSame(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO('x')->getAction());
         $this->assertSame(HilosSignalConstants::PROFILE_UNLINK_IDENTITY, new ProfileUnlinkIdentityActionDTO(1)->getAction());
         $this->assertSame(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO('p')->getAction());
-        $this->assertSame(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO('p', 'c')->getAction());
+        $this->assertSame(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO('c')->getAction());
         $this->assertSame(HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST, new ProfileAddPasswordRequestActionDTO('e')->getAction());
         $this->assertSame(
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
-            new ProfileAddPasswordConfirmActionDTO('e', 'c', 'p')->getAction(),
+            new ProfileAddPasswordConfirmActionDTO('c', 'p')->getAction(),
         );
         $this->assertSame(
             HilosSignalConstants::PROFILE_CHANGE_EMAIL_CURRENT_REQUEST,

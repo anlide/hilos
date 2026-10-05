@@ -1,5 +1,5 @@
 // The profile windows a browser session is half-way through (HIL-1182): how far
-// the email change, password change and account deletion have got, held by the SESSION rather
+// the email change, password change, account deletion and add-method dialog have got, held by the SESSION rather
 // than by the tab that opened them.
 //
 // A window used to keep its step in the tab that drew it, so a second tab of the
@@ -51,13 +51,19 @@ export const PROFILE_FLOW_STEP_CODE_SENT = 'code_sent'
 /** Password change: that code matched; the new password is next (PHP `STEP_CODE_PROVEN`). */
 export const PROFILE_FLOW_STEP_CODE_PROVEN = 'code_proven'
 
+/** Add a way to sign in: a code went to the phone number being added (PHP `STEP_PHONE_SENT`). */
+export const PROFILE_FLOW_STEP_PHONE_SENT = 'phone_sent'
+
+/** Add a way to sign in: a code went to the address a password is being added on (PHP `STEP_EMAIL_SENT`). */
+export const PROFILE_FLOW_STEP_EMAIL_SENT = 'email_sent'
+
 /**
  * The frame: every live flow of the session, which may be none.
  *
- * `operation` names the window (`change_email`, `change_password`, `delete_account`), `step` says
+ * `operation` names the window (`change_email`, `change_password`, `delete_account`, `add_sign_in_method`), `step` says
  * what has happened in it, `address` is the account's address the proof stands
- * on, and `target` is the new address of an email change on its last step and
- * null everywhere else.
+ * on, and `target` is the new email on `new_sent`, the added address or number
+ * on `phone_sent` or `email_sent`, and null elsewhere.
  */
 export const profileFlowsSchema = z.looseObject({
   flows: z.array(
@@ -72,13 +78,13 @@ export const profileFlowsSchema = z.looseObject({
 
 /** One window's flow as the session remembers it. */
 export interface HilosProfileFlowState {
-  /** The window - the operation key it confirms (`change_email`, `change_password`, `delete_account`). */
+  /** The window - the operation key it confirms (`change_email`, `change_password`, `delete_account`, `add_sign_in_method`). */
   readonly operation: string
   /** What has happened in it - one of the `PROFILE_FLOW_STEP_*` values. */
   readonly step: string
   /** The account's address the proof stands on. */
   readonly address: string
-  /** The new address of an email change on its last step, `null` otherwise. */
+  /** New email on `new_sent`, added address or number on `phone_sent` or `email_sent`, `null` otherwise. */
   readonly target: string | null
 }
 

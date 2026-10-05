@@ -109,10 +109,9 @@ export interface HilosProfileSignInActions {
   /**
    * Add the phone with the code it received.
    *
-   * @param phone The phone number the code was sent to.
    * @param code The code the phone received.
    */
-  confirmSmsAdd(phone: string, code: string): ActionHandle
+  confirmSmsAdd(code: string): ActionHandle
   /**
    * Send a code to the address a password is to be added on.
    *
@@ -122,15 +121,10 @@ export interface HilosProfileSignInActions {
   /**
    * Add the password on the proven address.
    *
-   * @param email The address the code was sent to.
    * @param code The code the address received.
    * @param newPassword The new password.
    */
-  confirmPasswordAdd(
-    email: string,
-    code: string,
-    newPassword: string,
-  ): ActionHandle
+  confirmPasswordAdd(code: string, newPassword: string): ActionHandle
 }
 
 /**
@@ -159,9 +153,8 @@ export function createHilosProfileSignInActions(
         { replySchema: codeSendReplySchema },
       )
     },
-    confirmSmsAdd(phone, code) {
+    confirmSmsAdd(code) {
       return context.actions.dispatch(PROFILE_ADD_SMS_CONFIRM_ACTION, {
-        phone,
         code,
       })
     },
@@ -172,9 +165,8 @@ export function createHilosProfileSignInActions(
         { replySchema: codeSendReplySchema },
       )
     },
-    confirmPasswordAdd(email, code, newPassword) {
+    confirmPasswordAdd(code, newPassword) {
       return context.actions.dispatch(PROFILE_ADD_PASSWORD_CONFIRM_ACTION, {
-        email,
         code,
         newPassword,
       })

@@ -29,6 +29,8 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Random\RandomException;
 
 /**
@@ -56,6 +58,10 @@ use Random\RandomException;
  * through {@see AbstractLibraryCommands::confirmedUser()} first, and a two-step add asks again on
  * its second step. Taking a way off is no operation, by the owner's decision: once every add is
  * confirmed, whatever is left to remove is the owner's own.
+ *
+ * The phone-code and email-code steps of an add live in the session's profile flow
+ * (HIL-1184). Sending writes the destination there; confirmation reads it from that
+ * record and ends the flow. The final submit carries the code, not the destination.
  */
 final class IdentityCommands extends AbstractLibraryCommands
 {
@@ -98,6 +104,8 @@ final class IdentityCommands extends AbstractLibraryCommands
      * synchronously); the send gate returns the cooldown and the earlier code's lifetime on a
      * held request, and refuses the per-window cap (HIL-421). No duplicate-phone check here:
      * a number is not tested for an owner until the code proves possession of it.
+     * A live code puts the normalized number on the session's phone-code step; a held
+     * send without a live code leaves the window on its number-entry step.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddSmsRequestActionDTO $dto Phone to send the code to
@@ -117,44 +125,57 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_PHONE);
         }
 
-        return $this->sendProfileCode($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, VerificationType::SMS_ADD, $phone);
+        $reply = $this->sendProfileCode($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, VerificationType::SMS_ADD, $phone);
+        if ($reply->expiresAt === null) {
+            return $reply;
+        }
+
+        $this->library->announceProfileFlowStep(
+            $acting,
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            StateHilosProfileFlow::STEP_PHONE_SENT,
+            $phone,
+            $phone,
+            $reply->expiresAt,
+            $reply,
+        );
+        return $reply;
     }
 
     /**
      * Step 2 of adding a phone: verifies the code and attaches the number (HIL-403).
      *
      * The submitted code is verified against the `sms_add` challenge; a missing, expired or
-     * wrong code - or a challenge minted for a different person than this session's (defence
-     * in depth against a swapped phone) - is refused with the same generic message. On
+     * wrong code - or a challenge minted for a different person than this session's -
+     * is refused with the same generic message. The number comes from the session's
+     * phone-code step; a missing or foreign step is refused before the code is spent. On
      * success a verified `sms` identity is attached to the person; the new row reaches every
      * connection through the identities projection re-emit. A phone already used by any
      * identity is refused and the existing link is never moved.
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @param ProfileAddSmsConfirmActionDTO $dto Phone and the code it received
+     * @param ProfileAddSmsConfirmActionDTO $dto Code received by the phone in the session's flow
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the add is not confirmed, the phone or code is invalid, or the phone is already in use
+     * @throws ValidationException When the add is not confirmed, the flow or code is invalid, or the phone is already in use
+     * @throws InvalidArgumentException When the completed-step frame cannot be queued
      * @throws HilosException When a verification or identity query fails
      */
     public function confirmSmsAdd(string $acceptKey, ProfileAddSmsConfirmActionDTO $dto): void
     {
-        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
-
-        $phone = PhoneNumber::normalize($dto->phone);
-        $verifiedUserId = $phone === null
-            ? null
-            : new VerificationService()->verify(VerificationType::SMS_ADD, $phone, $dto->code);
-        if ($phone === null || $verifiedUserId === null || $verifiedUserId !== $userId) {
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        $phone = $this->addingTo($acting, StateHilosProfileFlow::STEP_PHONE_SENT);
+        if (new VerificationService()->verify(VerificationType::SMS_ADD, $phone, $dto->code) !== $acting->userId) {
             throw new ValidationException(AuthMessages::INVALID_CODE);
         }
 
         try {
-            Hilos::$db->identities->createSmsIdentity($userId, $phone);
+            Hilos::$db->identities->createSmsIdentity($acting->userId, $phone);
         } catch (DuplicateValueException) {
             throw new ValidationException(AuthMessages::PHONE_IN_USE);
         } catch (EmptyValueException) {
             throw new ValidationException(AuthMessages::INVALID_PHONE);
         }
+        $this->library->announceProfileFlowStep($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, null);
     }
 
     /**
@@ -167,6 +188,8 @@ final class IdentityCommands extends AbstractLibraryCommands
      * refused without sending anything - a stranger's verified address is never mailed. A
      * free email, or one already the person's own, is issued a code through the send gate,
      * which answers with the cooldown timing or refuses the cap (HIL-421).
+     * A live code puts the normalized address on the session's email-code step;
+     * a held send without a live code leaves the window on its address-entry step.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddPasswordRequestActionDTO $dto Address to send the code to
@@ -192,7 +215,21 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         }
 
-        return $this->sendProfileCode($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, VerificationType::EMAIL_ADD, $email);
+        $reply = $this->sendProfileCode($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, VerificationType::EMAIL_ADD, $email);
+        if ($reply->expiresAt === null) {
+            return $reply;
+        }
+
+        $this->library->announceProfileFlowStep(
+            $acting,
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+            StateHilosProfileFlow::STEP_EMAIL_SENT,
+            $email,
+            $email,
+            $reply->expiresAt,
+            $reply,
+        );
+        return $reply;
     }
 
     /**
@@ -205,14 +242,15 @@ final class IdentityCommands extends AbstractLibraryCommands
      * would burn it over a question already settled. The submitted code is then verified
      * against the `email_add` challenge; a missing, expired or wrong code - or a challenge
      * minted for a different person than this session's - is refused with the same generic
-     * message. Uniqueness is re-checked after the code (a magic-link-verified collision on
+     * message. The address comes from the session's email-code step; a missing or foreign
+     * step is refused before the code is spent. Uniqueness is re-checked after the code (a magic-link-verified collision on
      * the same email would slip past the password-scoped duplicate guard of the write)
      * before the write. On success a verified `password` identity is attached on the
      * now-proven email and the password-updated signal (added) is fanned to all the
      * person's connections; the new identity also arrives over the projection re-emit.
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @param ProfileAddPasswordConfirmActionDTO $dto Address, the code it received, and the new password
+     * @param ProfileAddPasswordConfirmActionDTO $dto Code received by the email in the session's flow and new password
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValueTooShortException When the password is shorter than the policy minimum
      * @throws PasswordTooCommonException When the new password is in the common-password list
@@ -224,36 +262,59 @@ final class IdentityCommands extends AbstractLibraryCommands
      */
     public function confirmPasswordAdd(string $acceptKey, ProfileAddPasswordConfirmActionDTO $dto): void
     {
-        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         // Nothing to be unchanged from: this flow only ever adds a password to an account
         // that has none, which is what the refusal below it enforces.
         PasswordPolicy::assertValid($dto->newPassword, false);
 
-        if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
+        if (Hilos::$db->identities->findPasswordByUser($acting->userId) !== null) {
             throw new ValidationException(AuthMessages::ALREADY_HAS_PASSWORD);
         }
 
-        $email = strtolower($dto->email);
+        $email = $this->addingTo($acting, StateHilosProfileFlow::STEP_EMAIL_SENT);
         $verifiedUserId = new VerificationService()->verify(VerificationType::EMAIL_ADD, $email, $dto->code);
-        if ($verifiedUserId === null || $verifiedUserId !== $userId) {
+        if ($verifiedUserId !== $acting->userId) {
             throw new ValidationException(AuthMessages::INVALID_CODE);
         }
 
         $ownerId = Hilos::$db->identities->findUserIdByVerifiedEmail($email);
-        if ($ownerId !== null && $ownerId !== $userId) {
+        if ($ownerId !== null && $ownerId !== $acting->userId) {
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         }
 
         try {
-            Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
+            Hilos::$db->identities->createPasswordIdentity($acting->userId, $email, $dto->newPassword)->markVerified();
         } catch (DuplicateValueException) {
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         } catch (EmptyValueException) {
             throw new ValidationException(AuthMessages::INVALID_EMAIL);
         }
 
-        $this->library->announcePasswordUpdated($userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
+        $this->library->announcePasswordUpdated($acting->userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
+        $this->library->announceProfileFlowStep($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, null);
+    }
+
+    /**
+     * Reads the destination held by this person's phone-code or email-code step.
+     *
+     * @param ActingSession $acting Person and session confirming the add
+     * @param string $step Expected STEP_* value
+     * @return string Number or address receiving the code
+     * @throws ValidationException When the session has no matching flow
+     * @throws HilosException When the runtime collection cannot be read
+     */
+    private function addingTo(ActingSession $acting, string $step): string
+    {
+        $flow = Hilos::$rt->hilosProfileFlows[StateHilosProfileFlow::idFor(
+            StateProtectedModeRuntime::hashSessionToken($acting->sessionToken),
+            StepUpOperationKey::ADD_SIGN_IN_METHOD,
+        )];
+        if ($flow === null || $flow->userId !== $acting->userId || $flow->step !== $step || $flow->target === null) {
+            throw new ValidationException(AuthMessages::INVALID_CODE);
+        }
+
+        return $flow->target;
     }
 
     /**

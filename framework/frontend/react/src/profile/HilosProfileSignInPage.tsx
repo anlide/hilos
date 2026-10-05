@@ -155,6 +155,7 @@ export function HilosProfileSignInPage({
   const resendAt = useSignal(flow.resendAt)
   const sentEmail = useSignal(flow.email)
   const sentPhone = useSignal(flow.phone)
+  const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
   const stepUpRefusal = useSignal(flow.stepUp.refusal)
   const stepUpBusy = useSignal(flow.stepUp.busy)
   const pendingProvider = useSignal(flow.provider)
@@ -169,6 +170,9 @@ export function HilosProfileSignInPage({
     const dialog = addBody.current?.closest<HTMLElement>('[role="dialog"]')
     if (dialog) focusInitial(dialog)
   }, [step])
+  useEffect(() => {
+    setDraft((current) => ({ ...current, code: '' }))
+  }, [step, sentEmail, sentPhone])
   function openAdd(way?: HilosProfileAddableWay): void {
     setAddPressed(way === undefined ? 'add' : wayKey(way))
     setDraft(emptyDraft())
@@ -457,7 +461,10 @@ export function HilosProfileSignInPage({
         onClose={flow.close}
         title={onStepUp ? HILOS_STEP_UP_COPY.title : 'Add a way to sign in'}
         initialFocus="dialog"
-        confirmOnClose={Object.values(draft).some((value) => value !== '')}
+        confirmOnClose={
+          Object.values(draft).some((value) => value !== '') ||
+          asksBeforeClosing
+        }
         actions={({ requestClose }) => (
           <>
             <button

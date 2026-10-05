@@ -39,7 +39,7 @@ final class HilosProfileFlowsActions extends RtActions
      * @param int $userId The person the flow is for
      * @param string $step One of the STEP_* constants on {@see StateHilosProfileFlow}
      * @param string $address The account's address the proof stands on
-     * @param ?string $target New address of an email change, on its last step alone
+     * @param ?string $target New email on STEP_NEW_SENT, added address or number on STEP_PHONE_SENT or STEP_EMAIL_SENT, null otherwise
      * @param int $expiresAt Epoch milliseconds the code of the proof dies at
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable

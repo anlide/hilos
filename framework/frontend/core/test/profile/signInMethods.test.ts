@@ -27,11 +27,9 @@ describe('profile sign-in methods', () => {
     expect(signIn.setPassword('new-secret')).toBe(handle)
     expect(signIn.unlinkIdentity(7)).toBe(handle)
     expect(signIn.requestSmsAdd('+15551234')).toBe(handle)
-    expect(signIn.confirmSmsAdd('+15551234', '123456')).toBe(handle)
+    expect(signIn.confirmSmsAdd('123456')).toBe(handle)
     expect(signIn.requestPasswordAdd('a@example.com')).toBe(handle)
-    expect(signIn.confirmPasswordAdd('a@example.com', '123456', 'secret')).toBe(
-      handle,
-    )
+    expect(signIn.confirmPasswordAdd('123456', 'secret')).toBe(handle)
     expect(sent).toEqual([
       {
         action: 'profile_set_password',
@@ -41,7 +39,7 @@ describe('profile sign-in methods', () => {
       { action: 'profile_add_sms_request', payload: { phone: '+15551234' } },
       {
         action: 'profile_add_sms_confirm',
-        payload: { phone: '+15551234', code: '123456' },
+        payload: { code: '123456' },
       },
       {
         action: 'profile_add_password_request',
@@ -50,7 +48,6 @@ describe('profile sign-in methods', () => {
       {
         action: 'profile_add_password_confirm',
         payload: {
-          email: 'a@example.com',
           code: '123456',
           newPassword: 'secret',
         },

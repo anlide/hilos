@@ -141,6 +141,7 @@ const sendProgress = useSignal(flow.sendProgress)
 const resendAt = useSignal(flow.resendAt)
 const sentEmail = useSignal(flow.email)
 const sentPhone = useSignal(flow.phone)
+const asksBeforeClosing = useSignal(flow.asksBeforeClosing)
 const stepUpRefusal = useSignal(flow.stepUp.refusal)
 const stepUpBusy = useSignal(flow.stepUp.busy)
 const pendingProvider = useSignal(flow.provider)
@@ -168,8 +169,10 @@ const addOpen = computed({
     if (!open) flow.close()
   },
 })
-const addDirty = computed(() =>
-  Object.values(addDraft.value).some((value) => value !== ''),
+const addDirty = computed(
+  () =>
+    Object.values(addDraft.value).some((value) => value !== '') ||
+    asksBeforeClosing.value,
 )
 function openAdd(way?: HilosProfileAddableWay): void {
   addPressed.value = way === undefined ? 'add' : wayKey(way)
@@ -187,6 +190,9 @@ watch(step, () => {
     const dialog = addBody.value?.closest<HTMLElement>('[role="dialog"]')
     if (dialog) focusInitial(dialog)
   })
+})
+watch([step, sentEmail, sentPhone], () => {
+  addDraft.value.code = ''
 })
 const addFields = computed(() => {
   switch (step.value) {

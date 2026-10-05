@@ -12,8 +12,8 @@ use Hilos\Runtime\State\Collection\HilosProfileFlows;
 /**
  * HilosProfileFlow - how far one profile window of one browser session has got (HIL-1182).
  *
- * The record behind the email-change, password-change and account-deletion windows. A window
- * used to keep its step in the tab that drew it; for email and password changes, a matched code
+ * The record behind the email-change, password-change, account-deletion and add-sign-in windows.
+ * A window used to keep its step in the tab that drew it; for email and password changes, a matched code
  * travelled with that tab from submit to submit. So a second tab of the same
  * browser started the flow from the first step, its "Send code" voided the first tab's code, and
  * a reload threw the flow away. The step and any proof now live here, in the session,
@@ -22,7 +22,8 @@ use Hilos\Runtime\State\Collection\HilosProfileFlows;
  * ONE ROW PER SESSION AND WINDOW: the id is the hash of the session's cookie token - the form the
  * toast stack and the send-progress line use - joined to the operation key of the window
  * ({@see StepUpOperationKey}). Two windows of one session live apart: the email change in one tab
- * and the password change in another are two flows, not one; deletion has its own operation too.
+ * and the password change in another are two flows, not one; deletion and adding a sign-in
+ * method each have their own operation too (HIL-1184).
  *
  * Framework-owned runtime state mounted by the sign-in feature ({@see HilosProfileFlows}) and
  * written by the session holder ({@see AbstractSessionsLibraryAgent}) and by nobody else; the users
@@ -63,13 +64,19 @@ final class HilosProfileFlow extends RtState
     /** Password change: that code matched; the new password is next. */
     public const string STEP_CODE_PROVEN = 'code_proven';
 
+    /** Add a way to sign in: a code went to the phone number being added. */
+    public const string STEP_PHONE_SENT = 'phone_sent';
+
+    /** Add a way to sign in: a code went to the address a password is being added on. */
+    public const string STEP_EMAIL_SENT = 'email_sent';
+
     /** Joins the session hash and the operation key into the row id; neither of them carries it. */
     private const string ID_SEPARATOR = ':';
 
     /** Hash of the session cookie token this flow belongs to. */
     private(set) string $sessionTokenHash = '';
 
-    /** Operation key of the window - CHANGE_EMAIL, CHANGE_PASSWORD or DELETE_ACCOUNT. */
+    /** Operation key of the window - CHANGE_EMAIL, CHANGE_PASSWORD, DELETE_ACCOUNT or ADD_SIGN_IN_METHOD. */
     private(set) string $operation = '';
 
     /** The person the flow was started for; a flow read on behalf of anybody else is no proof. */
@@ -78,10 +85,10 @@ final class HilosProfileFlow extends RtState
     /** One of the STEP_* constants: what has happened, not which screen draws it. */
     private(set) string $step = '';
 
-    /** The account's address the proof stands on - the current email, or where the password code went. */
+    /** The account's address the proof stands on, or the address or number being added where its code went. */
     private(set) string $address = '';
 
-    /** The address the flow moves the account to, on {@see self::STEP_NEW_SENT} and nowhere else. */
+    /** New email on STEP_NEW_SENT; added address or number on STEP_PHONE_SENT or STEP_EMAIL_SENT; null otherwise. */
     private(set) ?string $target = null;
 
     /** Epoch milliseconds the code the proof stands on dies at; the row's whole lifetime. */
@@ -107,7 +114,7 @@ final class HilosProfileFlow extends RtState
      * @param int $userId The person the flow is for
      * @param string $step One of the STEP_* constants
      * @param string $address The account's address the proof stands on
-     * @param ?string $target New address, on {@see self::STEP_NEW_SENT} alone
+     * @param ?string $target New email on STEP_NEW_SENT, added address or number on STEP_PHONE_SENT or STEP_EMAIL_SENT, null otherwise
      * @param int $expiresAt Epoch milliseconds the code of the proof dies at
      * @return static Fresh flow row
      */

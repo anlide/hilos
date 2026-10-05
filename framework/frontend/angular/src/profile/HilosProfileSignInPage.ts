@@ -622,6 +622,7 @@ export class HilosProfileSignInPage {
   protected readonly resendAt = signal<number | null>(null)
   protected readonly sentEmail = signal('')
   protected readonly sentPhone = signal('')
+  protected readonly addAsksBeforeClosing = signal(false)
   protected readonly stepUpRefusal = signal<string | null>(null)
   protected readonly stepUpBusy = signal(false)
   protected readonly pendingProvider = signal<string | null>(null)
@@ -633,8 +634,10 @@ export class HilosProfileSignInPage {
   )
   protected readonly draft = signal(emptyDraft())
   private readonly addBody = viewChild<ElementRef<HTMLElement>>('addBody')
-  protected readonly addDirty = computed(() =>
-    Object.values(this.draft()).some((value) => value !== ''),
+  protected readonly addDirty = computed(
+    () =>
+      Object.values(this.draft()).some((value) => value !== '') ||
+      this.addAsksBeforeClosing(),
   )
   protected readonly fields = computed(() => {
     const step = this.step()
@@ -757,19 +760,32 @@ export class HilosProfileSignInPage {
       this.resendAt.set(flow.resendAt.get())
       this.sentEmail.set(flow.email.get())
       this.sentPhone.set(flow.phone.get())
+      this.addAsksBeforeClosing.set(flow.asksBeforeClosing.get())
       this.stepUpRefusal.set(flow.stepUp.refusal.get())
       this.stepUpBusy.set(flow.stepUp.busy.get())
       this.pendingProvider.set(flow.provider.get())
       const stops = [
-        subscribeSignal(flow.step, (value) => this.step.set(value)),
+        subscribeSignal(flow.step, (value) => {
+          this.step.set(value)
+          this.draft.update((draft) => ({ ...draft, code: '' }))
+        }),
         subscribeSignal(flow.busy, (value) => this.busy.set(value)),
         subscribeSignal(flow.refusal, (value) => this.refusal.set(value)),
         subscribeSignal(flow.sendProgress, (value) =>
           this.sendProgress.set(value),
         ),
         subscribeSignal(flow.resendAt, (value) => this.resendAt.set(value)),
-        subscribeSignal(flow.email, (value) => this.sentEmail.set(value)),
-        subscribeSignal(flow.phone, (value) => this.sentPhone.set(value)),
+        subscribeSignal(flow.email, (value) => {
+          this.sentEmail.set(value)
+          this.draft.update((draft) => ({ ...draft, code: '' }))
+        }),
+        subscribeSignal(flow.phone, (value) => {
+          this.sentPhone.set(value)
+          this.draft.update((draft) => ({ ...draft, code: '' }))
+        }),
+        subscribeSignal(flow.asksBeforeClosing, (value) =>
+          this.addAsksBeforeClosing.set(value),
+        ),
         subscribeSignal(flow.stepUp.refusal, (value) =>
           this.stepUpRefusal.set(value),
         ),

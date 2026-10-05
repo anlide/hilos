@@ -32,7 +32,7 @@ final class ProfileFlowStepSignalData extends BaseDTO implements SignalDataInter
      * @param string $operation Operation key of the window
      * @param ?string $step Step reached ({@see HilosProfileFlow}'s STEP_* constants), or null when the flow is over
      * @param ?string $address The account's address the proof stands on, or null when the flow is over
-     * @param ?string $target New address of an email change, on its last step alone
+     * @param ?string $target New email on STEP_NEW_SENT, added address or number on STEP_PHONE_SENT or STEP_EMAIL_SENT, null otherwise
      * @param ?int $expiresAt Epoch milliseconds the code of the proof dies at, or null when the flow is over
      * @param string $initiatorAcceptKey Accept key of the connection that submitted
      * @param ?string $requestId Request id of the action to answer, or null when it was untracked

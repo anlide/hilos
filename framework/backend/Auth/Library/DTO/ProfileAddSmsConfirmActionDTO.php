@@ -11,14 +11,12 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 /**
  * ProfileAddSmsConfirmActionDTO - DTO for the profile add-phone confirm payload (HIL-403, HIL-1137).
  *
- * Step 2 of adding a phone as a way in: an authenticated submit that carries the
- * phone and the delivered code. The phone is trimmed here and re-normalized to
- * E.164 by the handler; the code is trimmed so surrounding whitespace never fails
- * an otherwise valid code. The owning user is read from the session, never here.
+ * Step 2 of adding a phone as a way in: an authenticated submit carrying only the
+ * delivered code. The phone comes from the session's profile flow. The code is trimmed
+ * so surrounding whitespace never fails an otherwise valid code.
  */
 final class ProfileAddSmsConfirmActionDTO extends ActionPayloadDTO
 {
-    public const string PHONE = 'phone';
     public const string CODE = 'code';
 
     public const array SECRET_FIELDS = [self::CODE];
@@ -26,11 +24,9 @@ final class ProfileAddSmsConfirmActionDTO extends ActionPayloadDTO
     /**
      * Creates an add-phone confirm DTO.
      *
-     * @param string $phone Submitted phone number (trimmed)
      * @param string $code Submitted verification code (trimmed)
      */
     public function __construct(
-        public readonly string $phone,
         public readonly string $code,
     ) {
     }
@@ -55,7 +51,6 @@ final class ProfileAddSmsConfirmActionDTO extends ActionPayloadDTO
     public static function fromArray(array $data): static
     {
         return new static(
-            phone: trim(self::requireString($data, self::PHONE)),
             code: trim(self::requireString($data, self::CODE)),
         );
     }
@@ -63,23 +58,22 @@ final class ProfileAddSmsConfirmActionDTO extends ActionPayloadDTO
     /**
      * Convert to array for transport.
      *
-     * @return array{phone: string, code: string} Confirm payload
+     * @return array{code: string} Confirm payload
      */
     public function toArray(): array
     {
         return [
-            self::PHONE => $this->phone,
             self::CODE => $this->code,
         ];
     }
 
     /**
-     * Check if the payload is valid (a non-empty phone and code).
+     * Check if the payload is valid (a non-empty code).
      *
      * @return bool True if valid
      */
     public function isValid(): bool
     {
-        return $this->phone !== '' && $this->code !== '';
+        return $this->code !== '';
     }
 }
