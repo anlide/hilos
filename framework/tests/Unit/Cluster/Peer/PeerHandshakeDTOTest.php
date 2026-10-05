@@ -9,6 +9,9 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerAddress;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -20,6 +23,42 @@ use PHPUnit\Framework\TestCase;
  */
 final class PeerHandshakeDTOTest extends TestCase
 {
+    public function testReadyAckAndDrainRoundTrip(): void
+    {
+        $ready = PeerDTO::fromWire((new PeerReadyDTO(true))->toJson());
+        $ack = PeerDTO::fromWire((new PeerReadyAckDTO(false))->toJson());
+        $drain = PeerDTO::fromWire((new PeerDrainDTO())->toJson());
+
+        $this->assertInstanceOf(PeerReadyDTO::class, $ready);
+        $this->assertTrue($ready->hasActiveLink);
+        $this->assertInstanceOf(PeerReadyAckDTO::class, $ack);
+        $this->assertFalse($ack->keepNew);
+        $this->assertInstanceOf(PeerDrainDTO::class, $drain);
+        $this->assertSame([PeerDTO::TYPE => PeerDrainDTO::MESSAGE_TYPE], $drain->toArray());
+    }
+
+    /** @param mixed $value Non-boolean wire value */
+    #[DataProvider('nonBooleanValues')]
+    public function testReadyRejectsNonBoolean(mixed $value): void
+    {
+        $this->expectException(PeerTransportException::class);
+        PeerReadyDTO::fromArray([PeerReadyDTO::FIELD_HAS_ACTIVE_LINK => $value]);
+    }
+
+    /** @param mixed $value Non-boolean wire value */
+    #[DataProvider('nonBooleanValues')]
+    public function testReadyAckRejectsNonBoolean(mixed $value): void
+    {
+        $this->expectException(PeerTransportException::class);
+        PeerReadyAckDTO::fromArray([PeerReadyAckDTO::FIELD_KEEP_NEW => $value]);
+    }
+
+    /** @return array<string, array{mixed}> Non-boolean values */
+    public static function nonBooleanValues(): array
+    {
+        return ['missing' => [null], 'number' => [1], 'string' => ['true']];
+    }
+
     public function testHelloRoundTripsThroughTheWire(): void
     {
         $hello = new PeerHelloDTO(1, 'node-a', NodeRole::Master, ['gpu-local', 'ssd'], PeerTestMarkers::onWire());

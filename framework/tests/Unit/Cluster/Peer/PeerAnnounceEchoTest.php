@@ -10,6 +10,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerProtocol;
 use Hilos\Cluster\Peer\PeerServer;
@@ -167,8 +168,10 @@ final class PeerAnnounceEchoTest extends TestCase
 
         socket_write($far, new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire())->toJson() . "\n");
         $link->read();
+        socket_write($far, (new PeerReadyAckDTO(true))->toJson() . "\n");
+        $link->read();
 
-        $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The welcome must complete the handshake');
+        $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The ready ack must complete the handshake');
 
         return [$link, $far];
     }

@@ -15,6 +15,7 @@ use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
@@ -46,6 +47,8 @@ use Hilos\Cluster\Peer\DTO\PeerProtectedModeRefreezeDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSettledDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeVerifyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRequestVoteDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
@@ -77,8 +80,8 @@ use Hilos\Utils\Logger;
  * One framed connection to a remote cluster node, either dialed or accepted.
  *
  * The dialing side opens the connection and sends {@see PeerHelloDTO} first; the
- * accepting side answers with {@see PeerWelcomeDTO}. Once the handshake sets the
- * remote identity, the two sides exchange membership gossip
+ * accepting side answers with {@see PeerWelcomeDTO}. A ready/ack exchange then
+ * selects the working route; only after that may the two sides exchange membership gossip
  * ({@see PeerRosterDTO}, {@see PeerAnnounceDTO}). This link only parses and
  * frames; the registry updates and the fan-out to other peers are owned by the
  * {@see PeerServer}. A malformed frame or a rejected handshake closes the link
@@ -108,8 +111,26 @@ final class PeerLink extends AbstractClient
     /** @var bool True when this side dialed out (sends hello); false when it accepted (replies welcome) */
     private bool $dialer;
 
-    /** @var ?NodeIdentity Remote node identity, known once the handshake completes */
+    /** @var ?NodeIdentity Remote node identity on an active or draining link */
     private ?NodeIdentity $remoteIdentity = null;
+
+    /** @var ?NodeIdentity Certified identity of a link awaiting the ready verdict */
+    private ?NodeIdentity $candidateIdentity = null;
+
+    /** @var bool Whether this dialer has sent ready and awaits its ack */
+    private bool $readySent = false;
+
+    /** @var bool Whether this acceptor has processed ready */
+    private bool $readyReceived = false;
+
+    /** @var bool Whether this old link may receive the peer's drain marker */
+    private bool $peerDrainAllowed = false;
+
+    /** @var bool Whether this old link has queued its drain marker */
+    private bool $draining = false;
+
+    /** @var bool Whether the peer's drain marker arrived on this old link */
+    private bool $peerDrained = false;
 
     /** @var SocketTransportInterface Transport this link was created with, asked for the peer's certificate name */
     private SocketTransportInterface $transport;
@@ -188,6 +209,14 @@ final class PeerLink extends AbstractClient
      */
     public function sendFrame(PeerDTO $frame): void
     {
+        if ($this->draining && !$frame instanceof PeerDrainDTO) {
+            $nodeId = $this->remoteIdentity?->nodeId;
+            if ($nodeId !== null) {
+                $this->server->sendToNode($nodeId, $frame);
+            }
+            return;
+        }
+
         $this->sendEncodedFrame($frame->toJson());
     }
 
@@ -217,6 +246,51 @@ final class PeerLink extends AbstractClient
         return $this->remoteIdentity;
     }
 
+    /** @return ?NodeIdentity Certified identity awaiting the ready verdict */
+    public function candidateIdentity(): ?NodeIdentity
+    {
+        return $this->candidateIdentity;
+    }
+
+    /** @return ?string Name in the verified peer certificate, if TLS has completed */
+    public function certifiedPeerName(): ?string
+    {
+        return $this->transport->verifiedPeerName();
+    }
+
+    /** @param NodeIdentity $remote Certified identity of the new active link */
+    public function activate(NodeIdentity $remote): void
+    {
+        $this->remoteIdentity = $remote;
+        $this->candidateIdentity = null;
+    }
+
+    /** Allows the old route to receive a drain before the dialer's ack arrives. */
+    public function allowPeerDrain(): void
+    {
+        $this->peerDrainAllowed = true;
+    }
+
+    /** Ends an abandoned replacement attempt without changing the working route. */
+    public function cancelPeerDrain(): void
+    {
+        if (!$this->draining) {
+            $this->peerDrainAllowed = false;
+            $this->peerDrained = false;
+        }
+    }
+
+    /** Queues the old route's end marker after all application frames already queued there. */
+    public function beginDrain(): void
+    {
+        $this->peerDrainAllowed = true;
+        $this->draining = true;
+        $this->sendEncodedFrame((new PeerDrainDTO())->toJson());
+        if ($this->peerDrained) {
+            $this->closeOnceWritten();
+        }
+    }
+
     /**
      * Reports whether this side opened the connection (sent the hello).
      *
@@ -234,10 +308,8 @@ final class PeerLink extends AbstractClient
      * Reports whether the peer closed this dialed link after TLS came up but before it welcomed us.
      *
      * In TLS 1.3 a refusal of the dialer's certificate is known only to the accepting side: the
-     * dialer finishes its own handshake and then finds the connection closed. So a dialed link
-     * that the peer took down with TLS done and no welcome is, almost always, a refusal the peer's
-     * log names - the server says so once per series of such closes. A link this side dropped
-     * itself - timed out in silence, or refused a frame, the welcome included - is not one of them.
+     * dialer finishes its own handshake and then finds the connection closed. A duplicate or a
+     * transport failure may also close before welcome, so the server logs a neutral warning.
      *
      * @return bool True for a dialing link whose TLS handshake completed, that never accepted a
      *              welcome, and that this side did not drop on its own
@@ -248,23 +320,27 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Silently drops this link after it lost the duplicate-link tie-break.
+     * Silently closes this link after it lost the duplicate-link tie-break.
      *
      * The peer is still reachable over the surviving link, so this must not look
      * like a departure: the remote identity is cleared first, which makes
-     * {@see onClose()} a no-op and keeps the registry entry untouched. The link is
-     * then scheduled to close on the next tick.
+     * {@see onClose()} unable to report a departure. Already queued handshake control
+     * frames are written before the socket closes.
      */
     public function discardAsDuplicate(): void
     {
+        $this->candidateIdentity = null;
         $this->remoteIdentity = null;
-        $this->markShouldClose();
+        $this->droppedHere = true;
+        $this->stopReading();
+        $this->closeOnceWritten();
     }
 
     /**
      * Parses complete peer frames and dispatches them, closing on a bad frame.
      *
      * @throws SocketException If buffer size or JSON depth exceeds limits
+     * @throws PeerTransportException When a peer control frame arrives out of sequence
      * @throws InvalidArgumentException When the re-hydrate signal cannot be named
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
@@ -277,8 +353,7 @@ final class PeerLink extends AbstractClient
         $this->lastHeardAt = microtime(true);
 
         while ($this->readBuffer !== '') {
-            // Handling a frame can tear this link down mid-buffer — a completed handshake that
-            // loses the duplicate collapse discards its own link. Once it is closing, stop
+            // Handling a frame can tear this link down mid-buffer. Once it is closing, stop
             // parsing the frames that followed in the same read, or a trailing gossip frame
             // would be mis-flagged as arriving before the (now-undone) handshake.
             if ($this->shouldClose) {
@@ -326,7 +401,7 @@ final class PeerLink extends AbstractClient
             return;
         }
 
-        if ($this->remoteIdentity !== null
+        if ($this->remoteIdentity !== null && !$this->draining
             && $silentFor >= $this->keepaliveIntervalSec
             && ($now - $this->lastPingAt) >= $this->keepaliveIntervalSec) {
             $this->sendFrame(new PeerPingDTO());
@@ -339,11 +414,6 @@ final class PeerLink extends AbstractClient
      */
     protected function onClose(): void
     {
-        if ($this->remoteIdentity === null) {
-            return;
-        }
-
-        Logger::info("Peer left: {$this->remoteIdentity->nodeId}");
         $this->server->onLinkClosed($this);
     }
 
@@ -358,6 +428,9 @@ final class PeerLink extends AbstractClient
         match (true) {
             $frame instanceof PeerHelloDTO => $this->onHello($frame),
             $frame instanceof PeerWelcomeDTO => $this->onWelcome($frame),
+            $frame instanceof PeerReadyDTO => $this->onReady($frame),
+            $frame instanceof PeerReadyAckDTO => $this->onReadyAck($frame),
+            $frame instanceof PeerDrainDTO => $this->onDrain(),
             $frame instanceof PeerRosterDTO => $this->onRoster($frame),
             $frame instanceof PeerAnnounceDTO => $this->onAnnounce($frame),
             $frame instanceof PeerRequestVoteDTO => $this->onRequestVote($frame),
@@ -413,7 +486,7 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Accepting side: records the remote identity and answers with a welcome.
+     * Accepting side: certifies a candidate and answers with a welcome.
      *
      * @param PeerHelloDTO $hello Incoming hello frame
      * @throws PeerTransportException When a hello arrives on the dialing side, the version is incompatible,
@@ -422,8 +495,8 @@ final class PeerLink extends AbstractClient
      */
     private function onHello(PeerHelloDTO $hello): void
     {
-        if ($this->dialer) {
-            throw new PeerTransportException('Unexpected hello on the dialing side of a peer link');
+        if ($this->dialer || $this->candidateIdentity !== null || $this->remoteIdentity !== null) {
+            throw new PeerTransportException('Unexpected peer hello');
         }
 
         $this->requireCompatible($hello);
@@ -431,21 +504,29 @@ final class PeerLink extends AbstractClient
         $this->requireSameMarkers($hello);
 
         $remote = NodeIdentity::of($hello->nodeId, $hello->role, $hello->capabilities, $hello->address);
-        $this->remoteIdentity = $remote;
-        $this->sendFrame(new PeerWelcomeDTO(
+        $welcome = new PeerWelcomeDTO(
             PeerProtocol::VERSION,
             $this->localIdentity->nodeId,
             $this->localIdentity->role,
             $this->localIdentity->capabilities,
             $this->server->localMarkers()->values,
             $this->localIdentity->address,
-        ));
-        Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
-        $this->server->onHandshakeComplete($this, $remote);
+        );
+        try {
+            $this->server->registerCandidate($this, $remote);
+        } catch (PeerTransportException) {
+            // Even a losing dial must learn which certified seed it reached.
+            $this->sendFrame($welcome);
+            $this->stopReading();
+            $this->closeOnceWritten();
+            return;
+        }
+        $this->candidateIdentity = $remote;
+        $this->sendFrame($welcome);
     }
 
     /**
-     * Dialing side: records the remote identity from the welcome reply.
+     * Dialing side: certifies the welcome, names the seed, and sends ready.
      *
      * @param PeerWelcomeDTO $welcome Incoming welcome frame
      * @throws PeerTransportException When a welcome arrives on the accepting side, the version is incompatible,
@@ -454,20 +535,88 @@ final class PeerLink extends AbstractClient
      */
     private function onWelcome(PeerWelcomeDTO $welcome): void
     {
-        if (!$this->dialer) {
-            throw new PeerTransportException('Unexpected welcome on the accepting side of a peer link');
+        if (!$this->dialer || $this->welcomed || $this->remoteIdentity !== null) {
+            throw new PeerTransportException('Unexpected peer welcome');
         }
 
         $this->requireCompatible($welcome);
         $this->requireCertifiedAs($welcome->nodeId);
         $this->requireSameMarkers($welcome);
-        // Set before the server hears of it: the duplicate collapse there may discard this very link.
         $this->welcomed = true;
 
         $remote = NodeIdentity::of($welcome->nodeId, $welcome->role, $welcome->capabilities, $welcome->address);
-        $this->remoteIdentity = $remote;
-        Logger::info("Peer handshake complete with {$remote->nodeId} role={$remote->role->value}");
-        $this->server->onHandshakeComplete($this, $remote);
+        $this->server->stampDialRemote($this, $remote->nodeId);
+        $this->server->registerCandidate($this, $remote);
+        $this->candidateIdentity = $remote;
+        $hasActiveLink = $this->server->hasActiveLinkToNode($remote->nodeId);
+        if ($hasActiveLink) {
+            $this->server->allowOldLinkDrain($remote->nodeId);
+        }
+        $this->readySent = true;
+        $this->sendFrame(new PeerReadyDTO($hasActiveLink));
+    }
+
+    /**
+     * @param PeerReadyDTO $ready Dialer's old-route state
+     * @throws PeerTransportException When ready arrives on the wrong link or out of sequence
+     */
+    private function onReady(PeerReadyDTO $ready): void
+    {
+        if ($this->dialer || $this->candidateIdentity === null || $this->readyReceived) {
+            throw new PeerTransportException('Unexpected peer ready');
+        }
+
+        $this->readyReceived = true;
+        $remote = $this->candidateIdentity;
+        $keepNew = $this->server->shouldKeepCandidate($this, $remote->nodeId, $ready->hasActiveLink);
+        // The ack must precede application frames queued by activation on this socket.
+        $this->sendFrame(new PeerReadyAckDTO($keepNew));
+        if ($keepNew) {
+            $this->server->activateCandidate($this, $remote);
+        } else {
+            $this->discardAsDuplicate();
+        }
+    }
+
+    /**
+     * @param PeerReadyAckDTO $ack Acceptor's route verdict
+     * @throws PeerTransportException When the ack arrives on the wrong link or out of sequence
+     */
+    private function onReadyAck(PeerReadyAckDTO $ack): void
+    {
+        if (!$this->dialer || !$this->readySent || $this->candidateIdentity === null) {
+            throw new PeerTransportException('Unexpected peer ready ack');
+        }
+
+        $remote = $this->candidateIdentity;
+        $this->readySent = false;
+        if ($ack->keepNew) {
+            $this->server->activateCandidate($this, $remote);
+        } else {
+            $this->discardAsDuplicate();
+        }
+    }
+
+    /**
+     * Marks the peer's old stream complete without discarding frames preceding it.
+     *
+     * @throws PeerTransportException When drain arrives without a pending replacement
+     */
+    private function onDrain(): void
+    {
+        if (!$this->peerDrainAllowed || $this->peerDrained) {
+            $nodeId = $this->remoteIdentity?->nodeId;
+            if ($nodeId !== null && $this->server->hasPendingCandidateFor($nodeId)) {
+                $this->server->rejectCandidateFor($nodeId);
+                return;
+            }
+            throw new PeerTransportException('Unexpected peer drain');
+        }
+
+        $this->peerDrained = true;
+        if ($this->draining) {
+            $this->closeOnceWritten();
+        }
     }
 
     /**

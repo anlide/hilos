@@ -9,7 +9,10 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\PeerAddress;
 use Hilos\Cluster\Peer\PeerDial;
 use Hilos\Cluster\Peer\PeerLink;
@@ -42,7 +45,7 @@ final class PeerLinkCertificateNameTest extends TestCase
     private const string REMOTE_NODE = 'node-b';
 
     /** Line the server writes when a dialed target closes before its welcome */
-    private const string UNWELCOMED_LINE = "Peer 10.0.0.2:8095 closed the link before welcoming this node; that node's log names the refusal";
+    private const string UNWELCOMED_LINE = 'Peer 10.0.0.2:8095 closed before welcome; check the peer log';
 
     private ?EnvAccessor $previousEnv = null;
 
@@ -96,6 +99,8 @@ final class PeerLinkCertificateNameTest extends TestCase
         $link = $this->link($near, dialer: false, transport: new NamedPeerTestTransport($near, self::REMOTE_NODE));
 
         $this->deliver($far, $this->hello(self::REMOTE_NODE));
+        $link->read();
+        $this->deliver($far, new PeerReadyDTO(false));
         $link->read();
 
         $this->assertFalse($link->shouldClose());
@@ -160,6 +165,8 @@ final class PeerLinkCertificateNameTest extends TestCase
         [$welcomedNear, $welcomedFar] = $this->makeSocketPair();
         $welcomed = $this->link($welcomedNear, dialer: true, transport: new NamedPeerTestTransport($welcomedNear, self::REMOTE_NODE));
         $this->deliver($welcomedFar, new PeerWelcomeDTO(PeerProtocol::VERSION, self::REMOTE_NODE, NodeRole::Master, [], PeerTestMarkers::onWire()));
+        $welcomed->read();
+        $this->deliver($welcomedFar, new PeerReadyAckDTO(true));
         $welcomed->read();
         $this->assertNotNull($welcomed->remoteIdentity());
         $welcomed->discardAsDuplicate();
@@ -285,9 +292,9 @@ final class PeerLinkCertificateNameTest extends TestCase
      * Writes one frame into the far end, the way the node on the other side sends it.
      *
      * @param Socket $far Far end of a pair
-     * @param PeerHelloDTO|PeerWelcomeDTO $frame Frame to send
+     * @param PeerDTO $frame Frame to send
      */
-    private function deliver(Socket $far, PeerHelloDTO|PeerWelcomeDTO $frame): void
+    private function deliver(Socket $far, PeerDTO $frame): void
     {
         $this->assertNotFalse(socket_write($far, $frame->toJson() . "\n"));
     }

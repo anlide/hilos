@@ -92,6 +92,9 @@ abstract class PeerDTO extends BaseDTO
         return match ($type) {
             PeerHelloDTO::MESSAGE_TYPE => PeerHelloDTO::fromArray($data),
             PeerWelcomeDTO::MESSAGE_TYPE => PeerWelcomeDTO::fromArray($data),
+            PeerReadyDTO::MESSAGE_TYPE => PeerReadyDTO::fromArray($data),
+            PeerReadyAckDTO::MESSAGE_TYPE => PeerReadyAckDTO::fromArray($data),
+            PeerDrainDTO::MESSAGE_TYPE => PeerDrainDTO::fromArray($data),
             PeerRosterDTO::MESSAGE_TYPE => PeerRosterDTO::fromArray($data),
             PeerAnnounceDTO::MESSAGE_TYPE => PeerAnnounceDTO::fromArray($data),
             PeerRequestVoteDTO::MESSAGE_TYPE => PeerRequestVoteDTO::fromArray($data),

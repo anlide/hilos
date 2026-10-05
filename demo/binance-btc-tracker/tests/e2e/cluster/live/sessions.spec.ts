@@ -19,13 +19,7 @@ import {
   uniqueEmail,
 } from '../../helpers/session.js'
 
-// Red on every attempt in run 0806 (HIL-1218, 7 lanes), green alone in one
-// lane (0807) on the same HEAD. The harness recorded leader m3 at term 1; by
-// the time the test began m1 led at term 2, so expectLeaderUnmoved() refused
-// it before its first step - the extra election seconds after the cluster
-// starts (P-459). Parked by the owner on 04.10.2026 (HOTFIX); HIL-1286 pays
-// it off.
-test.fixme("a sign-in and a sign-out on a follower master reach the same person's tab on another master", async ({
+test("a sign-in and a sign-out on a follower master reach the same person's tab on another master", async ({
   browser,
 }) => {
   // Registration and both remote session rotations must settle on two real sockets.
@@ -73,13 +67,7 @@ test.fixme("a sign-in and a sign-out on a follower master reach the same person'
   }
 })
 
-// Red on every attempt in run 0806 (HIL-1218, 7 lanes), green alone in one
-// lane (0807) on the same HEAD. The harness recorded leader m3 at term 1; by
-// the time the test began m1 led at term 2, so expectLeaderUnmoved() refused
-// it before its first step - the extra election seconds after the cluster
-// starts (P-459). Parked by the owner on 04.10.2026 (HOTFIX); HIL-1286 pays
-// it off.
-test.fixme('a change of rights reaches an admin page open on a follower master: a grant opens it, a revoke shuts it', async ({
+test('a change of rights reaches an admin page open on a follower master: a grant opens it, a revoke shuts it', async ({
   browser,
 }) => {
   const before = await clusterInspect(CLUSTER_FOLLOWER)

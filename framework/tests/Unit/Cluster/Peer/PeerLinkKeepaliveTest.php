@@ -8,6 +8,7 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerProtocol;
 use Hilos\Cluster\Peer\PeerServer;
@@ -138,8 +139,10 @@ final class PeerLinkKeepaliveTest extends TestCase
         $welcome = new PeerWelcomeDTO(PeerProtocol::VERSION, 'node-b', NodeRole::Master, [], PeerTestMarkers::onWire());
         socket_write($far, $welcome->toJson() . "\n");
         $link->read();
+        socket_write($far, (new PeerReadyAckDTO(true))->toJson() . "\n");
+        $link->read();
 
-        $this->assertNotNull($link->remoteIdentity(), 'The welcome must complete the handshake');
+        $this->assertNotNull($link->remoteIdentity(), 'The ready ack must complete the handshake');
 
         return $link;
     }

@@ -10,7 +10,9 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerMarkers;
 use Hilos\Cluster\Peer\PeerProtocol;
@@ -101,6 +103,8 @@ final class PeerLinkMarkerTest extends TestCase
         $link = $this->link($near, dialer: false);
 
         $this->deliver($far, $this->hello(PeerTestMarkers::onWire()));
+        $link->read();
+        $this->deliver($far, new PeerReadyDTO(false));
         $link->read();
 
         $this->assertFalse($link->shouldClose());
@@ -268,9 +272,9 @@ final class PeerLinkMarkerTest extends TestCase
      * Writes one frame into the far end, the way the node on the other side sends it.
      *
      * @param Socket $far Far end of a pair
-     * @param PeerHelloDTO|PeerWelcomeDTO $frame Frame to send
+     * @param PeerDTO $frame Frame to send
      */
-    private function deliver(Socket $far, PeerHelloDTO|PeerWelcomeDTO $frame): void
+    private function deliver(Socket $far, PeerDTO $frame): void
     {
         $this->assertNotFalse(socket_write($far, $frame->toJson() . "\n"));
     }

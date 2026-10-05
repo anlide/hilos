@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Cluster\Exception\PeerTransportException;
+
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClusterNode;
@@ -122,8 +124,9 @@ use Throwable;
  * existing cluster, and — driven by a {@see ConnectionPolicy}, full mesh by
  * default — every peer learned through gossip, so two nodes that only know each
  * other transitively still raise a direct link. Both directions become framed
- * {@see PeerLink} connections that exchange a hello/welcome handshake, then
- * gossip membership. Every socket operation here is non-blocking, so the master
+ * {@see PeerLink} connections that exchange hello/welcome, then ready/ack before
+ * gossip membership. A replaced link drains its queued frames before closing.
+ * Every socket operation here is non-blocking, so the master
  * loop is never stalled. The server owns the membership side effects: it merges
  * peers into the master registry and fans out roster/announce gossip so every
  * node's registry converges. Gossip carries membership only - which nodes exist,
@@ -182,6 +185,12 @@ final class PeerServer extends AbstractTlsServer implements
 
     /** @var array<string, PeerDial> Dial-on-learn state for gossip-learned peers, keyed by node id */
     private array $peerDials = [];
+
+    /** @var array<string, PeerLink> One application-frame route per remote node */
+    private array $activeLinks = [];
+
+    /** @var array<string, PeerLink> Certified links awaiting a ready verdict, one per remote node */
+    private array $candidateLinks = [];
 
     /** @var ?ClusterCoordinator Consensus coordinator, built at start for a master node; null for a slave */
     private ?ClusterCoordinator $coordinator = null;
@@ -604,12 +613,10 @@ final class PeerServer extends AbstractTlsServer implements
             if (in_array($dial->link, $this->clients, true) && !$dial->link->shouldClose()) {
                 return;
             }
-            // TLS came up and the peer closed before its welcome: the refusal is in its log, not
-            // here (TLS 1.3 tells it only to the accepting side). Once per series to this target.
+            // TLS came up but this attempt closed before welcome. The peer's log may clarify why.
             if ($dial->link->closedUnwelcomed() && !$dial->unwelcomedReported) {
                 Logger::warning(
-                    "Peer {$dial->address->host}:{$dial->address->port} closed the link before welcoming this node;"
-                    . " that node's log names the refusal",
+                    "Peer {$dial->address->host}:{$dial->address->port} closed before welcome; check the peer log",
                 );
                 $dial->unwelcomedReported = true;
             }
@@ -785,15 +792,9 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function onHandshakeComplete(PeerLink $link, NodeIdentity $remote): void
     {
+        $this->activeLinks[$remote->nodeId] = $link;
         $registry = $this->registry();
         if ($registry === null) {
-            return;
-        }
-
-        $this->stampDialRemote($link, $remote->nodeId);
-
-        if ($this->collapseDuplicateLink($link, $remote->nodeId)) {
-            // This link lost the tie-break; the surviving link already owns the peer.
             return;
         }
 
@@ -802,6 +803,7 @@ final class PeerServer extends AbstractTlsServer implements
         $this->sendRoster($link, $registry);
 
         if ($changed) {
+            Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
             $this->notifyJoined($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote), $link);
         }
@@ -862,7 +864,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link that just handshaked
      * @param string $nodeId Remote node id learned from the handshake
      */
-    private function stampDialRemote(PeerLink $link, string $nodeId): void
+    public function stampDialRemote(PeerLink $link, string $nodeId): void
     {
         $dial = $this->dialForLink($link);
         if ($dial !== null) {
@@ -874,34 +876,94 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Collapses a second connection to an already-linked peer down to one link.
+     * Reserves the certified candidate slot before any application frame can be sent on it.
      *
-     * A simultaneous bootstrap leaves each node with a dialed and an accepted link
-     * to the same peer. Both nodes apply the shared tie-break
-     * ({@see PeerProtocol::dialedLinkWinsTieBreak()}) and drop the same connection,
-     * so exactly one survives on each end. The loser is discarded silently, leaving
-     * the peer online over the survivor. Returns true when the just-handshaked link
-     * is the one discarded.
-     *
-     * @param PeerLink $link Link that just handshaked
-     * @param string $remoteNodeId Remote node id learned from the handshake
-     * @return bool True when this link lost the tie-break and was discarded
+     * @param PeerLink $link Candidate connection
+     * @param NodeIdentity $remote Identity certified by the peer transport
+     * @throws PeerTransportException When a preferred candidate is already in progress
      */
-    private function collapseDuplicateLink(PeerLink $link, string $remoteNodeId): bool
+    public function registerCandidate(PeerLink $link, NodeIdentity $remote): void
     {
-        $existing = $this->findHandshakedLinkToNode($remoteNodeId, $link);
-        if ($existing === null) {
-            return false;
+        $existing = $this->candidateLinks[$remote->nodeId] ?? null;
+        if ($existing !== null && $existing !== $link) {
+            $dialedWins = PeerProtocol::dialedLinkWinsTieBreak($this->localIdentity->nodeId, $remote->nodeId);
+            if ($existing->isDialer() === $dialedWins || $link->isDialer() !== $dialedWins) {
+                throw new PeerTransportException("Peer candidate already in progress for {$remote->nodeId}");
+            }
+            if ($existing->isDialer() && $existing->certifiedPeerName() === $remote->nodeId) {
+                $this->stampDialRemote($existing, $remote->nodeId);
+            }
+            $existing->discardAsDuplicate();
         }
 
-        $dialedWins = PeerProtocol::dialedLinkWinsTieBreak($this->localIdentity->nodeId, $remoteNodeId);
-        $keep = $link->isDialer() === $dialedWins ? $link : $existing;
-        $drop = $keep === $link ? $existing : $link;
+        $this->candidateLinks[$remote->nodeId] = $link;
+    }
 
-        $drop->discardAsDuplicate();
-        Logger::info("Collapsed duplicate peer link to {$remoteNodeId}");
+    /** @param string $nodeId Remote node id */
+    public function hasActiveLinkToNode(string $nodeId): bool
+    {
+        return $this->activeLinkToNode($nodeId) !== null;
+    }
 
-        return $drop === $link;
+    /** @param string $nodeId Remote node id */
+    public function hasPendingCandidateFor(string $nodeId): bool
+    {
+        return isset($this->candidateLinks[$nodeId]);
+    }
+
+    /** @param string $nodeId Remote node id whose candidate sent a control frame out of order */
+    public function rejectCandidateFor(string $nodeId): void
+    {
+        ($this->candidateLinks[$nodeId] ?? null)?->discardAsDuplicate();
+    }
+
+    /** @param string $nodeId Remote node id */
+    public function allowOldLinkDrain(string $nodeId): void
+    {
+        $this->activeLinkToNode($nodeId)?->allowPeerDrain();
+    }
+
+    /**
+     * Decides whether a candidate wins once the dialer has reported its old route.
+     *
+     * @param PeerLink $link Candidate link
+     * @param string $nodeId Remote node id
+     * @param bool $remoteHasActiveLink Whether the dialer has an old working route
+     * @return bool Whether the candidate should become active
+     */
+    public function shouldKeepCandidate(PeerLink $link, string $nodeId, bool $remoteHasActiveLink): bool
+    {
+        if (!$remoteHasActiveLink || !$this->hasActiveLinkToNode($nodeId)) {
+            return true;
+        }
+
+        return $link->isDialer() === PeerProtocol::dialedLinkWinsTieBreak($this->localIdentity->nodeId, $nodeId);
+    }
+
+    /**
+     * Switches the route after the ack is queued or received, then drains the old stream.
+     *
+     * @param PeerLink $link Candidate link
+     * @param NodeIdentity $remote Certified remote identity
+     * @throws PeerTransportException When this link lost its candidate slot
+     */
+    public function activateCandidate(PeerLink $link, NodeIdentity $remote): void
+    {
+        if (($this->candidateLinks[$remote->nodeId] ?? null) !== $link) {
+            throw new PeerTransportException("Peer candidate no longer current for {$remote->nodeId}");
+        }
+
+        $old = $this->activeLinkToNode($remote->nodeId);
+        unset($this->candidateLinks[$remote->nodeId]);
+        $link->activate($remote);
+        $this->activeLinks[$remote->nodeId] = $link;
+        if ($old === null) {
+            $this->onHandshakeComplete($link, $remote);
+            return;
+        }
+
+        $old->beginDrain();
+        Logger::info("Replaced duplicate peer link to {$remote->nodeId}");
     }
 
     /**
@@ -1782,33 +1844,38 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Marks the closed link's peer offline.
-     *
-     * A peer can briefly hold two links to us — during a simultaneous-bootstrap
-     * collapse, or any transient reconnect overlap — so a close only means the peer
-     * departed when it was the last link to that node. While another handshaked link
-     * still reaches it, the close is one duplicate dropping and the node stays online.
+     * Marks a closed working route's peer offline when no replacement became active.
+     * Candidate and draining-link closes leave membership and reader interest intact.
      *
      * @param PeerLink $link Link that closed
      */
     public function onLinkClosed(PeerLink $link): void
     {
+        foreach ($this->candidateLinks as $nodeId => $candidate) {
+            if ($candidate === $link) {
+                unset($this->candidateLinks[$nodeId]);
+                $this->activeLinkToNode($nodeId)?->cancelPeerDrain();
+            }
+        }
+
         $remote = $link->remoteIdentity();
         if ($remote === null) {
             return;
         }
+
+        if (($this->activeLinks[$remote->nodeId] ?? null) !== $link) {
+            // A replaced link has finished draining while its successor remains active.
+            return;
+        }
+        unset($this->activeLinks[$remote->nodeId]);
 
         $registry = $this->registry();
         if ($registry === null) {
             return;
         }
 
-        if ($this->findHandshakedLinkToNode($remote->nodeId, $link) !== null) {
-            // The peer is still reachable over another link; this was a duplicate, not a departure.
-            return;
-        }
-
         $now = microtime(true);
+        Logger::info("Peer left: {$remote->nodeId}");
 
         // The last link to that node is gone, so its RT deltas stop arriving here and the copies
         // this node holds of its rows stop being current (HIL-711). Told outside the branch
@@ -2002,12 +2069,7 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendToMaster(string $nodeId, PeerDTO $frame): void
     {
-        foreach ($this->clients as $client) {
-            if ($client->remoteIdentity()?->nodeId === $nodeId) {
-                $client->sendFrame($frame);
-                return;
-            }
-        }
+        $this->activeLinkToNode($nodeId)?->sendFrame($frame);
     }
 
     /**
@@ -2022,11 +2084,10 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
     {
-        foreach ($this->clients as $client) {
-            if ($client->remoteIdentity()?->nodeId === $nodeId) {
-                $client->sendFrame($frame);
-                return true;
-            }
+        $link = $this->activeLinkToNode($nodeId);
+        if ($link !== null) {
+            $link->sendFrame($frame);
+            return true;
         }
 
         return false;
@@ -2970,6 +3031,10 @@ final class PeerServer extends AbstractTlsServer implements
         $encoded = null;
 
         foreach ($this->clients as $client) {
+            $nodeId = $client->remoteIdentity()?->nodeId;
+            if ($nodeId === null || $this->activeLinkToNode($nodeId) !== $client) {
+                continue;
+            }
             if (!$reaches($client)) {
                 continue;
             }
@@ -3042,12 +3107,8 @@ final class PeerServer extends AbstractTlsServer implements
     public function linkedNodeIds(): array
     {
         $ids = [];
-        foreach ($this->clients as $client) {
-            if (!$client instanceof PeerLink) {
-                continue;
-            }
-            $nodeId = $client->remoteIdentity()?->nodeId;
-            if ($nodeId !== null && !in_array($nodeId, $ids, true)) {
+        foreach ($this->activeLinks as $nodeId => $link) {
+            if ($this->activeLinkToNode($nodeId) === $link) {
                 $ids[] = $nodeId;
             }
         }
@@ -3122,38 +3183,30 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Finds another handshaked link to the given node, excluding one link.
+     * Returns the sole working link, excluding closing and draining connections.
      *
-     * @param string $nodeId Remote node id to match
-     * @param PeerLink $exclude Link to skip (the one that just handshaked)
-     * @return ?PeerLink Other handshaked link to the node, or null when none
+     * @param string $nodeId Remote node id
+     * @return ?PeerLink Working link or null
      */
-    private function findHandshakedLinkToNode(string $nodeId, PeerLink $exclude): ?PeerLink
+    private function activeLinkToNode(string $nodeId): ?PeerLink
     {
-        foreach ($this->clients as $client) {
-            if ($client !== $exclude && $client->remoteIdentity()?->nodeId === $nodeId) {
-                return $client;
-            }
+        $link = $this->activeLinks[$nodeId] ?? null;
+        if ($link === null || $link->shouldClose() || !in_array($link, $this->clients, true)) {
+            return null;
         }
 
-        return null;
+        return $link;
     }
 
     /**
-     * Reports whether any handshaked link currently reaches the given node.
+     * Reports whether a working link currently reaches the given node.
      *
-     * @param string $nodeId Remote node id to match
-     * @return bool True when a link to that node is established
+     * @param string $nodeId Remote node id
+     * @return bool True when the node has a working route
      */
     private function hasHandshakedLinkToNode(string $nodeId): bool
     {
-        foreach ($this->clients as $client) {
-            if ($client->remoteIdentity()?->nodeId === $nodeId) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->hasActiveLinkToNode($nodeId);
     }
 
     /**

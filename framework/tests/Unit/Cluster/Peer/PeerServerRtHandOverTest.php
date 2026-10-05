@@ -11,6 +11,8 @@ use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
@@ -284,7 +286,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
-        $server->onLinkClosed($link);
+        $server->onNodeLeaving(new PeerNodeLeavingDTO('node-b', false, null));
         $sink->frozen = [];
 
         $server->onLinkClosed($link);
@@ -590,6 +592,8 @@ final class PeerServerRtHandOverTest extends TestCase
             null,
         );
         socket_write($far, $hello->toJson() . "\n");
+        $link->read();
+        socket_write($far, (new PeerReadyDTO(false))->toJson() . "\n");
         $link->read();
     }
 

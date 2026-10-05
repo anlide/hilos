@@ -11,6 +11,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerProtocol;
 use Hilos\Cluster\Peer\PeerServer;
@@ -234,8 +235,10 @@ final class PeerDbReHydrateBarrierTest extends TestCase
         );
         socket_write($pair[1], new PeerWelcomeDTO(PeerProtocol::VERSION, $nodeId, NodeRole::Master, [], PeerTestMarkers::onWire())->toJson() . "\n");
         $link->read();
+        socket_write($pair[1], (new PeerReadyAckDTO(true))->toJson() . "\n");
+        $link->read();
 
-        $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The welcome must complete the handshake');
+        $this->assertSame($nodeId, $link->remoteIdentity()?->nodeId, 'The ready ack must complete the handshake');
 
         return $link;
     }

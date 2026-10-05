@@ -12,6 +12,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerProtocol;
@@ -275,6 +276,8 @@ final class PeerBroadcastEncodingTest extends TestCase
         );
         $this->attach($server, $link);
         socket_write($far, (new PeerHelloDTO(PeerProtocol::VERSION, $nodeId, $role, [], PeerTestMarkers::onWire(), null))->toJson() . "\n");
+        $link->read();
+        socket_write($far, (new PeerReadyDTO(false))->toJson() . "\n");
         $link->read();
 
         return [$link, $far];
