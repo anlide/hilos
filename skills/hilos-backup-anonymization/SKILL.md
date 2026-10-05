@@ -25,6 +25,9 @@ writing a verdict.
   `demo/chat/tests/Integration/PiiRegistryCoverageTest.php`
 - What the same verdict shows a non-admin viewer of the admin view mode:
   `docs/agents/architecture/admin-view-mode.md`
+- What the same verdict decides for the change log — a personal column is
+  journaled only as the fact of its change — and why a restore puts the journal
+  triggers back last: `docs/agents/architecture/change-log.md`
 - Strategy semantics and the SQL each one becomes: the PHPDoc of
   `framework/backend/Backup/Anonymization/AnonymizationStrategy.php` and
   `framework/backend/Backup/Anonymization/AnonymizationSqlBuilder.php`

@@ -15,6 +15,8 @@ you choose.
   migrations: use `$hilos-orm` and `docs/agents/orm/db-collection.md`.
 - A column of the project's own on a framework table:
   `docs/agents/orm/inheritance.md`.
+- A new column on a table under the change log needs its place in the journal —
+  the value, the fact, or nothing: `docs/agents/architecture/change-log.md`.
 - Runtime state, `RtContext`, `RtState`, runtime collections, sync, and actions:
   use `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.

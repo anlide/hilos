@@ -44,6 +44,12 @@ column and leaves the verdict to it. For the author of a verdict this means
 `_piiNotPersonal` now also opens a column to a non-admin: name a column there
 only because it holds nothing personal, never so that a viewer may see it.
 
+The verdict has a third reader: the change log ([change-log.md](change-log.md)).
+A column in `_pii` goes into the journal only as the fact that it changed, never
+with its value (not in the code yet — HIL-1446). A restore puts the journal's
+triggers back only after the anonymization pass, so the pass leaves nothing in
+the journal (not in the code yet — HIL-1451).
+
 ## Anonymization Belongs To The Restore, Not To The Archive
 
 A production archive is written raw and stays raw. That is deliberate: the

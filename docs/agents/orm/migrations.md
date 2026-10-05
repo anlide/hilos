@@ -177,6 +177,11 @@ php cli.php db:seed:apply 001
   backup the cost arrives sooner than a restore: the daemon does not start while
   anything the live schema holds carries no verdict
   ([../architecture/backup-anonymization.md](../architecture/backup-anonymization.md))
+- A migration that changes a table under the change log regenerates that table's
+  trigger files in the same commit (not in the code yet — HIL-1447). A node will not
+  start on a trigger file that disagrees with what the generator writes today
+  (not in the code yet — HIL-1448); see
+  [../architecture/change-log.md](../architecture/change-log.md)
 
 ## Test reset
 

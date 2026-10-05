@@ -1,6 +1,6 @@
 ---
 name: hilos-orm
-description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior. Use it too when a new Entity has to say which column cuts its table into sets — the same declaration decides which rows an agent may own as its set, so ask who will own them before naming the column. Use it too when a project needs its own column on a framework table or subclasses any framework ORM class — the whole chain is subclassed and mounted under the framework key. Use it too when you open a database transaction or need something to happen only once a write commits — the framework never nests a transaction, a transaction ends inside the handler that opened it, and its announcements leave at the commit.
+description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior. Use it too when a new Entity has to say which column cuts its table into sets — the same declaration decides which rows an agent may own as its set, so ask who will own them before naming the column. Use it too when a project needs its own column on a framework table or subclasses any framework ORM class — the whole chain is subclassed and mounted under the framework key. Use it too when you open a database transaction or need something to happen only once a write commits — the framework never nests a transaction, a transaction ends inside the handler that opened it, and its announcements leave at the commit. Use it too when an Entity declares its table journaled or a write has to run under a change-log receipt — the database writes the journal, and the Entity says what goes in.
 ---
 
 # Hilos ORM
@@ -33,6 +33,9 @@ touched ORM surfaces.
   and a new column needs naming in `_pii` or `_piiNotPersonal`:
   `docs/agents/architecture/backup-anonymization.md` or
   `$hilos-backup-anonymization`
+- A table under the change log — the label on its Entity, the place of each
+  column, the trigger files a migration regenerates, the receipt a write runs
+  under: `docs/agents/architecture/change-log.md`
 - A new table also needs to say whose set it is part of, in `_setVia` and
   `_setRoot` on the same Entity (a column carrying the top of the set tree may
   be named in the optional `_setShortPath`); a node refuses to start without

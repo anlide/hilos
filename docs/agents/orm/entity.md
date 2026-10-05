@@ -199,6 +199,16 @@ How to choose a strategy, and what the gates of a restore and of a startup refus
 on:
 [../architecture/backup-anonymization.md](../architecture/backup-anonymization.md).
 
+## Whether the table is journaled
+
+An Entity also declares whether its table goes under the change log, and how each
+column goes in — with its value, as a fact, or not at all
+(not in the code yet — HIL-1446). A personal column takes its mode from `_pii`;
+secrets and noisy columns are named by the Entity; a binary column and the record
+key go by their type (not in the code yet — HIL-1446). A column of a journaled table
+left without a mode keeps a node from starting (not in the code yet — HIL-1446).
+The rule and its reasons: [../architecture/change-log.md](../architecture/change-log.md).
+
 ## Whose set the table is part of
 
 An Entity also declares which larger set its rows belong to, in two more constants
