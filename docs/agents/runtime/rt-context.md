@@ -543,40 +543,48 @@ Application code should write through runtime actions, typed `RtState` fields,
 and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT
 synchronization internals after another worker already made the write.
 
-### A collection written outside its actions is worker-local
+### A collection written outside its actions skips its owner
 
-`RtStates::add()`, `remove()`, and `clear()` are plain in-memory operations:
-they queue **nothing**. The `RT_SYNC_*` signals come from the actions layer
-(`RtActions::addStateToCollection()`, `removeStateFromCollection()`,
-`clearAllStates()`, item `remove()`, and `sync()`). So a write that skips the
-actions changes the collection **in the writing worker only**.
+A mounted collection's `RtStates::add()` and `remove()` announce their changes
+through `SourceChangeBus`, including when called through `offsetSet()` or
+`offsetUnset()`. `ViewCacheSubscriber` repairs the local view cache, and
+`OutboundRtSyncSubscriber` queues `RT_SYNC_CREATED` / `RT_SYNC_DELETED` for a
+`LocalWrite`. A direct write therefore reaches other processes, but bypasses
+the actions' check that the truth source owns the operation and the row's set.
+The single writer is a rule across the cluster, as described above; skipping
+the check lets another caller write without that permission.
 
-That failure is silent and looks like a frontend bug: the writing agent's log
-says the data is there, and a page served by any other worker shows nothing —
-including after a reload, because the reload lands on a worker whose collection
-was never populated. The truth-source rule guarantees a single writer; it does
-not move a single byte between processes on its own.
+`clear()` is different: it announces nothing. A clear outside
+`RtActions::clearAllStates()` empties only the writing worker's store, leaving
+the other copies and the cached view wrappers unchanged. `clearAllStates()`
+checks removal permission, queues each row's deletion and clears the view cache.
 
 Two rules follow, and both are mandatory:
 
 - **Register the representation.** A state collection in `_stateCollections`
-  with no matching `setRepresent()` has no actions class, so it has no write
-  path that syncs. Registering the state alone is a half-activation: reads work
-  inside one worker and nothing else does.
+  with no matching `setRepresent()` has no view for the page to read and no
+  actions for a permitted write. It still receives its collection name when
+  mounted, so its `add()` and `remove()` can announce changes. Registering the
+  state alone is a half-activation, and a direct write is refused by the
+  `RT-STATE-MUTATE` guard.
 - **Write through the actions,** never through the state collection —
-  even from the owning agent, even for a bulk rebuild. When a rebuild is
-  genuinely a rebuild, diff it against the current rows and emit one create /
-  update / delete per real change (`clear()` + re-add would tear down and
-  recreate every row for every browser watching).
+  even from the owning agent, even for a bulk rebuild: the actions check
+  ownership of the operation and the row's set. Diff a rebuild against the
+  current rows and emit one create / update / delete per real change (clearing
+  through actions and re-adding would tear down and recreate every row for
+  every browser watching).
 
 ```php
-// Wrong: memory-only, invisible to every other worker and to the browser.
+// Wrong: skips the owner check; the RT-STATE-MUTATE guard refuses this path.
 Hilos::$rt->getStateCollection(Foo::RT_COLLECTION)->add(Foo::fromRow($row));
 
-// Right: the actions queue RT_SYNC_CREATED, so every worker and every
-// subscribed table sees the new row.
+// Right: the actions check ownership; the collection's announcement queues
+// RT_SYNC_CREATED through the outbound subscriber.
 Hilos::$rt->fooRows->actions->register($row);
 ```
+
+A replacement under an existing id follows
+[rt-state.md, Replacing a row](rt-state.md#replacing-a-row).
 
 A framework-owned collection binds its own framework-owned representation; the
 project supplies only the `setRepresent()` call

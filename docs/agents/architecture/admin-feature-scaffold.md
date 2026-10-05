@@ -342,13 +342,12 @@ also registers those. Generate, in any order:
 6. Nothing for the runtime index — step 1 already brought it. Files are truth;
    the index is a rebuildable projection the agent rescans from `BACKUP_DIR` on
    start, so the project persists no backup DB table either. It is mounted *with*
-   the framework representation because the halves cannot be separated: the agent
-   is monopolistic and the page is served by whichever worker owns the browser's
-   connection, and only the actions emit `RT_SYNC_*`, so a state collection
-   mounted without `setRepresent()` lives in the agent's worker alone and the page
-   shows an empty table forever
+   the framework representation because the halves cannot be separated: without
+   `setRepresent()` the page has no view to read and the agent has no actions
+   that check its write permission. Direct membership writes bypass that check
+   and are refused by `RT-STATE-MUTATE`
    ([../runtime/rt-context.md](../runtime/rt-context.md), *A collection written
-   outside its actions is worker-local*). That pairing used to be the project's to
+   outside its actions skips its owner*). That pairing used to be the project's to
    get right; it is the framework's now.
 7. Register the framework table `Hilos\Tables\Backup\HilosBackupHistoryTable` in
    the project `TableContext`, add a thin subscription-owner page — `final class …

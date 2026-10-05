@@ -12,6 +12,7 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Database\Database;
 use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use IteratorAggregate;
@@ -116,8 +117,11 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Add state to collection and announce the new membership.
      *
-     * A state already standing under that id is replaced, and the announcement says created for
-     * that too: what every dependent view has to hear is that the id now holds a different row.
+     * A state already standing under that id is replaced in this process, and its local views
+     * follow. The announcement still says created: a copy in another worker, on the master or
+     * on another node that already holds the id ignores it ({@see RtSyncApplicator::applyCreated()})
+     * and keeps the old row, onto which later diffs are applied. A replacement that must reach
+     * those copies needs a removal followed by a creation through the base actions.
      * Under an open transaction what the id held is remembered first, for a rollback to put back.
      *
      * @param T $state State instance to add

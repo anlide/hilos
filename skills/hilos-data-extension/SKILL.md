@@ -57,10 +57,11 @@ restart is acceptable and a truth source can own writes.
 3. Search existing contexts before adding names: `extends HilosDbContext`,
    `extends RtContext`, collection constants, `setRepresent()` calls, and
    `setRepresentItem()` item aliases. A new runtime collection is not activated
-   until `setRepresent()` binds its view and actions: without them the only
-   write path is the state collection, which syncs nothing and leaves the data
-   inside one worker (`docs/agents/runtime/rt-context.md`, *A collection written
-   outside its actions is worker-local*).
+   until `setRepresent()` binds its view and actions: without them the page has
+   no view to read and the agent has no actions that check write permission.
+   Direct membership writes bypass ownership and `RT-STATE-MUTATE` refuses them
+   (`docs/agents/runtime/rt-context.md`, *A collection written outside its actions
+   skips its owner*).
 4. Inspect the existing View collection/item, Object or State collection/item,
    and collection/item Actions classes.
 5. Add the smallest missing API to the owning layer.

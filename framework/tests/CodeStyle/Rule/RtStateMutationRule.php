@@ -9,15 +9,15 @@ use Hilos\Tests\CodeStyle\Violation;
 
 /**
  * Enforces rt-state.md: which rows a backing RT state collection holds changes only
- * through the base actions, so that one road carries both the store write and the
- * announcement every dependent view listens to.
+ * through the base actions, where the truth source is checked for the operation and
+ * the row's set before the store is written.
  *
- * The rule inventories the legal writers rather than watching a zone: the collection
- * announces its own membership now, and the four files below are the ones that either
- * own that road or apply a change that has already been announced elsewhere. Anything
- * else calls the base method, which is what remembers. A caller that hand-rolls the
- * mutation loses the cache drop and the outgoing sync, and it does so silently - the
- * row is in the store and the views go on showing the old membership.
+ * The rule inventories the legal writers of a mounted collection: the collection's
+ * add() and remove() announce membership themselves, including through array access,
+ * so skipping the actions bypasses ownership, not the announcement. A direct clear()
+ * also loses the per-row deletions and view cache clear supplied by clearAllStates().
+ * The four files below either check ownership or apply a change decided elsewhere;
+ * every other caller uses the base actions.
  *
  * The store's own array is the second road to the same place, so writing
  * `$this->states` is left to the class that declares it; a subclass reading it is
@@ -56,14 +56,14 @@ final class RtStateMutationRule implements CodeStyleRule
     /**
      * Files allowed to mutate the membership directly, each path relative to the
      * backend root it sits in - which is what the rule is handed. The first two are
-     * the base actions themselves, the road every other caller is told to take. The
-     * other two apply a membership change this process did not decide: a sync that
-     * arrived from another worker and a snapshot handed over at startup, both of which
-     * announce nothing on purpose, because rebroadcasting a change would send it back
-     * where it came from.
+     * the base actions themselves, which check ownership. The other two apply a sync
+     * or snapshot this process did not decide: their point mutations run inside
+     * SourceChangeBus::whileApplyingRemote(), so announcements repair local views
+     * without being sent back to the network. A snapshot's whole-collection clear is
+     * silent, and its caller clears the view cache explicitly.
      *
      * Adding a line is the point of the rule, not a way around it: a fifth writer is a
-     * decision about who may change membership without announcing it, and the reason
+     * decision about who may change membership without checking ownership, and the reason
      * belongs in that file's own docblock.
      *
      * @var array<int, string>

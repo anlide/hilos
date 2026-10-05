@@ -193,32 +193,58 @@ address the empty-string state key.
 
 Which rows a collection holds changes only through the base `RtActions` methods
 — `addStateToCollection()`, `removeStateFromCollection()`, `clearAllStates()`,
-and the item's `remove()`. They call `add()`, `remove()` or `clear()` on the
-backing collection, which announces the new membership itself, so the view cache
-and the outgoing RT sync both follow from one place. A caller that reaches past
-them — `getStateCollection()->remove($id)`, `unset($stateCollection[$id])`,
-`$stateCollection[$id] = $state` — writes the store and announces nothing, and
-every dependent view goes on showing the membership it already had.
+and the item's `remove()`. The backing collection's `add()` and `remove()`
+announce membership changes through `SourceChangeBus`: `ViewCacheSubscriber`
+repairs the local view cache, and `OutboundRtSyncSubscriber` queues
+`RT_SYNC_CREATED` / `RT_SYNC_DELETED` for a `LocalWrite`. `offsetSet()` and
+`offsetUnset()` call those same methods. `clear()` announces nothing;
+`clearAllStates()` queues a deletion for each row and clears the view cache.
 
-Four files change membership directly, and the list is closed:
+A caller that reaches past the base actions —
+`getStateCollection()->remove($id)`, `unset($stateCollection[$id])`,
+`$stateCollection[$id] = $state` — still announces the change, but skips the
+truth-source check for the operation and the row's set. The actions are where
+that permission is checked; bypassing them lets a second writer mutate the
+store. A direct `clear()` also loses the per-row deletions and cache clear.
+
+Four files change a **mounted collection's** membership directly, and the list
+is closed:
 `Runtime/View/Actions/Collection/RtActions.php` and
 `Runtime/View/Actions/Item/RtActions.php` are the base methods themselves, while
 `Runtime/RtSyncApplicator.php` and `Runtime/RtSnapshot.php` apply a change this
-process did not decide — one that arrived from another worker, or from a
-snapshot handed over at startup — and announce nothing on purpose, because
-rebroadcasting it would send it back where it came from. The row array
+process did not decide — an incoming sync or a snapshot. Their point mutations
+run inside `SourceChangeBus::whileApplyingRemote()`: announcements repair local
+views, but the outbound subscriber does not send them back to the network.
+The snapshot's whole-collection `clear()` stays silent and its caller clears
+the view cache explicitly. The row array
 `$this->states` belongs to `RtStates` alone: a concrete collection narrows a
 lookup by reading it, and writing it is what `add()`, `remove()` and `clear()`
 are for.
 
-A detached copy is outside all of this. `HilosConnections::forUser()` builds one
-with `$stateCollection::init()` and fills it row by row, which is legal: the
-copy holds the same rows, is mounted under no collection name, and is therefore
-a read surface nobody subscribes to rather than a second write path into the
-same rows.
+Unmounted stores are outside that list. `HilosConnections::forUser()` builds a
+detached copy with `$stateCollection::init()` and fills it row by row: it holds
+the same row objects and is a read surface, not another write path into them.
+`AbstractOAuthAgent` also keeps an unmounted `OAuthPendingLogins` pool for its
+own pending exchanges. Neither store has a collection name, so its `add()` and
+`remove()` publish no announcement.
 
-Checked automatically: `RT-STATE-MUTATE`, see
+The restriction on direct membership writes is checked automatically:
+`RT-STATE-MUTATE`, see
 [automated-checks.md](../code-style/automated-checks.md).
+
+### Replacing a row
+
+`add()` over an id the collection already holds replaces the row in **this
+process**, and the local views follow. The announcement goes out as a creation.
+A copy in another worker, on the master or on another node that already holds
+the id ignores that creation (`RtSyncApplicator::applyCreated()`), keeps the old
+row, and applies every later diff to it.
+
+**Replace a row through `removeStateFromCollection()`, then
+`addStateToCollection()`.** The removal and the creation are two events every
+copy applies; `HilosCodeSendAttemptsActions::start()` is the example. Writes
+applied from a sync or a snapshot are the copy itself and are outside this
+replacement rule.
 
 ## Reading a row: required, optional, and a patch
 

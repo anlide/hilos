@@ -15,7 +15,7 @@ Start with `agents.md`, then read the matching runtime guide.
 - Truth sources and shared state ownership: `docs/agents/agent-system/monopolistic-agent.md`
 - Declaring what an agent owns and what it reads, and the operations a claim
   carries: `docs/agents/architecture/truth-source.md`
-- Why a direct state write never leaves its worker: `docs/agents/antipatterns/rt-write-outside-actions.md`
+- Why a direct membership write skips its owner: `docs/agents/antipatterns/rt-write-outside-actions.md`
 - RT sync signal flow: use `$hilos-signals`
 
 ## Mental Model
@@ -75,8 +75,9 @@ Start with `agents.md`, then read the matching runtime guide.
 3. Find the existing `RtContext` collection constant, `setRepresent()` entry,
    and any `setRepresentItem()` aliases before adding new runtime logic. A
    collection registered in `_stateCollections` with no `setRepresent()` is a
-   half-activation — data written to it never leaves its worker; fix that before
-   anything else.
+   half-activation: the page has no view to read and the agent has no actions
+   that check write permission. Direct membership writes bypass ownership and
+   `RT-STATE-MUTATE` refuses them; bind the representation first.
 4. Inspect the matching View collection/item, State collection/item, and Actions
    classes.
 5. Find the owning truth source agent before writing shared runtime state.
@@ -216,9 +217,12 @@ of duplicating runtime mutation logic in the page/table layer.
   operations its claim covers: a claim carries a list of `TruthSourceOperation`
   and the guard refuses the others by name. A co-owner declared for adding and
   removing brings rows into being and takes them away, and may never edit one.
-- Never write to an `RtStates` collection directly (`add()`, `remove()`,
-  `clear()`): those queue no RT sync, so the change exists in the writing worker
-  and nowhere else. Write through the collection or item actions.
+- Write mounted collection membership through the collection or item actions:
+  direct `add()` / `remove()` announce changes but skip the truth-source check
+  for the operation and the row's set. A direct `clear()` also loses the per-row
+  deletions and cache clear. `RT-STATE-MUTATE` refuses those direct writes.
+- Replace a row by removing it before adding its replacement; see
+  [rt-state.md, Replacing a row](../../docs/agents/runtime/rt-state.md#replacing-a-row).
 - An agent that claims a WHOLE collection must run on exactly one node: keep
   `AgentRegistryKey::SCOPE` at its default `AgentScope::CLUSTER`. Two nodes owning
   one row WHOLLY is the split the daemon can only refuse and log
@@ -234,8 +238,8 @@ of duplicating runtime mutation logic in the page/table layer.
   without asking; burning a one-time token or spending a quota off a frozen row is
   the case that fails closed, as `HilosSessionRotations::claimable()` does.
 - Never register a state collection without its `setRepresent()` representation:
-  with no actions class there is no write path that syncs, and every other
-  worker keeps an empty collection forever.
+  the page needs its view, and writes need its actions to check ownership.
+  Direct membership writes are refused by `RT-STATE-MUTATE`.
 - Rebuild an index by diffing against the current rows (one signal per real
   change), never by `clear()` + re-add.
 - Do not use runtime state as a hidden durable database.

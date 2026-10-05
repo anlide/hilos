@@ -1,35 +1,37 @@
 # Anti-pattern: Writing RT State Outside Its Actions
 
-A runtime collection changed through its `RtStates` state object changes in one
-worker and in no other. The write silently does nothing for everyone else.
+Write a mounted runtime collection through its actions. Direct membership
+writes bypass the check that the truth source owns the operation and the row's
+set, even though `add()` and `remove()` still announce the change.
 
 ## What breaks
 
-`RtStates::add()`, `remove()`, and `clear()` are plain array operations. They
-queue no `RT_SYNC_*` signal, because the sync signals are emitted by the actions
-layer — `RtActions::addStateToCollection()`, `removeStateFromCollection()`,
-`clearAllStates()`, item `remove()`, and `RtState::sync()`.
+`RtStates::add()` and `remove()` on a mounted collection publish through
+`SourceChangeBus`; `offsetSet()` and `offsetUnset()` call them too. The local
+view cache follows the announcement, and `OutboundRtSyncSubscriber` queues
+`RT_SYNC_CREATED` / `RT_SYNC_DELETED` for a `LocalWrite`. Delivery does not make
+the direct write a permitted one:
 
-Hilos runs one agent per monopolistic worker, and a browser is served by
-whichever worker owns its connection. So the two ends of a feature normally sit
-in **different processes**:
+- **The owner is not checked.** The base actions check the operation and the
+  row's set before writing. A caller that skips them can mutate the store
+  without that permission, violating ownership across the cluster.
+- **A direct `clear()` stays in one worker.** It announces nothing and leaves
+  other copies and cached view wrappers unchanged. `clearAllStates()` checks
+  removal permission, queues a deletion per row and clears the view cache.
+- **An `add()` over a taken id leaves copies holding the old row.** Follow
+  [rt-state.md, Replacing a row](../runtime/rt-state.md#replacing-a-row).
 
-```
-BackupAgent (worker #10)          browser page (worker #4)
-  $states->add($row)   ──✗──>       collection still empty
-```
+The `RT-STATE-MUTATE` guard refuses direct membership writes outside the base
+actions and the sync/snapshot writers named in
+[rt-state.md](../runtime/rt-state.md).
 
-The symptom is not an error. It is a page that shows nothing while the writing
-agent's log insists the data is there — and a reload does not fix it, because the
-reload lands on a worker whose collection was never populated either. Every
-verification that runs *inside* the writing worker (a unit test, a CLI command, a
-log line) passes.
-
-## Two mistakes, one symptom
+## Two mistakes
 
 1. **A state collection registered without a representation.** `_stateCollections`
-   alone gives the collection no actions class, so the only reachable write path
-   is the state object — the wrong one. The registration is a half-activation:
+   alone gives the page no view to read and the agent no actions to write through.
+   The collection still gets its name when mounted, so its `add()` and `remove()`
+   can announce changes; the direct path bypasses ownership and the guard refuses
+   it. The registration is a half-activation:
 
    ```php
    // Wrong: half-activated. Nothing can write to this collection correctly.
@@ -47,11 +49,10 @@ log line) passes.
    );
    ```
 
-2. **An owning agent that writes to the state collection because it can.** Being
-   the truth source is permission to write, not a delivery mechanism - and not
-   even permission to write anything: a claim names the operations it covers, so
-   an agent that may add and remove is refused on an edit (HIL-688), and only the
-   actions ask that question:
+2. **An owning agent that writes to the state collection because it can.** A
+   truth-source claim covers specific operations and rows: an agent allowed to
+   add and remove may not edit, and an owner of one set may not write another.
+   The actions check those permissions; reaching the state object skips them:
 
    ```php
    // Wrong: the truth source still has to go through the actions.
@@ -63,25 +64,25 @@ log line) passes.
    ```
 
    ```php
-   // Right: one signal per real change, so other workers and tables follow.
+   // Right: actions check ownership and send only real changes.
    Hilos::$rt->fooRows->actions->syncToScan($scanned);
    ```
 
 ## Rebuilds are diffs
 
 When an index is re-derived from an external truth (a directory scan, a remote
-listing), do not clear and re-add: that is a delete + create for every row, sent
-to every subscribed browser, on every refresh. Compare the incoming set against
-the current rows and emit only what actually changed — new rows created, missing
-rows deleted, changed rows updated.
+listing), do not clear through actions and re-add: that is a delete + create for
+every row, sent to every subscribed browser, on every refresh. Compare the
+incoming set against the current rows and emit only what actually changed — new
+rows created, missing rows deleted, changed rows updated.
 
 ## How to spot it
 
 - `getStateCollection(...)` followed by `->add(`, `->remove(`, or `->clear(`
-  anywhere outside `Runtime/`.
+  outside the base actions or the sync/snapshot writers.
+- A write or `unset()` on a backing collection key outside those same writers.
 - A `_stateCollections[...] = ...` line with no matching `setRepresent(...)`.
-- A feature whose data appears in the agent log but never in the browser.
-- A "live" table that only ever shows what was there when the worker booted.
+- `add()` of a row whose id may already exist, without removing the old row first.
 
 ## Related
 
