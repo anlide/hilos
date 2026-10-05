@@ -751,7 +751,7 @@ final class UploadsTestFsContext extends FsContext
      */
     public function configure(): void
     {
-        $this->setTmpPath($this->tmpPath, DirectoryScope::NODE);
+        $this->setTmpPath($this->tmpPath, DirectoryScope::CLUSTER);
     }
 }
 

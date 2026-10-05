@@ -30,22 +30,26 @@ name through the directory's ArrayAccess
 (`framework/backend/Fs/FsDirectory.php`), and a temporary file by the 32-hex
 index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
-The framework reserves five names: `tmp` (`FsContext::TMP`), `files`
+The framework reserves five names: `tmp` (`FsContext::TMP`, the cluster's: files
+are handed to the files library through it), `files`
 (`FsContext::FILES`, HIL-336), `data_export` (`FsContext::DATA_EXPORT`,
 HIL-303), `legal_export` (`FsContext::LEGAL_EXPORT`, HIL-1234, the
 administrators' exports of acceptance records —
 [legal-documents.md](legal-documents.md)) and `analytics_journal`
 (`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a node directory whose one owner is
 the node's journal agent — [analytics.md](analytics.md)). The start refuses
-`UPLOADS` without tmp, `FILES` without `files`, `AUTH` without `data_export`, a
-registered legal agent (`HilosAgentType::HILOS_LEGAL`) without `legal_export`
+`UPLOADS` or `IMAGES` without tmp, `FILES` without `files`, `AUTH` without
+`data_export`, a registered legal agent (`HilosAgentType::HILOS_LEGAL`) without
+`legal_export`
 and `ANALYTICS` without `analytics_journal` (`refuseUploadsWithoutTmp()`,
-`refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()`,
+`refuseImagesWithoutTmp()`, `refuseFilesWithoutDirectory()`,
+`refuseDataExportWithoutDirectory()`,
 `refuseLegalExportWithoutDirectory()` and
 `refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`). A
 sixth refusal, `refuseMisdeclaredDirectories()`, throws
-`InvalidTopologyException` when `files`, `data_export` or `legal_export` is declared `NODE`,
-when `analytics_journal` is declared `CLUSTER`, or when one path is declared by
+`InvalidTopologyException` when `tmp`, `files`, `data_export` or `legal_export`
+is declared `NODE`, when `analytics_journal` is declared `CLUSTER`, or when one
+path is declared by
 two owners; the rules live in `FsContext::declarationErrors()`, which a
 project's unit test can call on its own context.
 
@@ -59,7 +63,7 @@ The test is one question: will a process of another node open a file from
 this directory? An agent placed by POLICY moves between nodes, so its
 directory answers yes.
 
-`files`, `data_export` and `legal_export` are declared cluster directories,
+`tmp`, `files`, `data_export` and `legal_export` are declared cluster directories,
 whatever features the project declares; any of them declared `NODE` fails the
 start. `files`, because
 the library is one per cluster and puts a file in from its own node, while the
@@ -79,9 +83,10 @@ A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy
 (`hilos_image_rendered`, field `tmpIndex`), both to the files library, which
 takes them with `storeFromTmp()` from its own node
-(`framework/backend/Files/Storage/LocalFilesStorage.php`). Such a file lies
-where the library's node sees it: the hand-over goes through a cluster
-directory (not in the code yet — HIL-1241).
+(`framework/backend/Files/Storage/LocalFilesStorage.php`). The temporary
+directory is the cluster's, so the uploads agent, the images agent, a project's
+check reading a complete upload and the library may each live on any node.
+On the volume of the files directory, publication is a rename.
 
 One path, one answer: names registered on one path are one directory with one
 owner. Two owners on one path — the temporary directory counted too, under
@@ -106,6 +111,10 @@ mounted on every node. The volume is the installation's concern; the framework
 does not carry files between nodes (declined at the HIL-303 interview,
 27.09.2026).
 
+The shared volume carries tmp too. Upload chunks are appended there, 64 KiB
+per append, with several round trips to a network volume for each. A canceled
+or abandoned upload lies there until its row goes.
+
 The nginx of every node serves a cluster directory under the same internal
 alias, because the X-Accel reply comes from the node that holds the browser's
 connection. The demos show the shape: `data_export` is mounted at
@@ -129,7 +138,7 @@ directory (HIL-1242). Without it an installation without a shared volume learns
 of that by a 404 on a download, or by ready copies gone after the export agent
 moved.
 
-**The marker.** Every cluster directory — tmp too, when declared `CLUSTER` —
+**The marker.** Every cluster directory — tmp too —
 carries the file `.hilos-cluster-directory.json` at its root: the format
 version, a marker of 32 hex characters, the `CLUSTER_NODE_ID` of the node that
 wrote it and when (`ClusterDirectoryMarker`,

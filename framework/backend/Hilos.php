@@ -1183,6 +1183,7 @@ abstract class Hilos implements TruthSourceOwner
             static::$fs = static::createFs();
             static::$fs?->configure();
             static::refuseUploadsWithoutTmp();
+            static::refuseImagesWithoutTmp();
             static::refuseFilesWithoutDirectory();
             static::refuseDataExportWithoutDirectory();
             static::refuseLegalExportWithoutDirectory();
@@ -1291,6 +1292,27 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::UPLOADS keeps chunks in the tmp directory, but the FS context configures none'],
+        );
+    }
+
+    /**
+     * Refuses HilosFeature::IMAGES on a project whose FS context has no tmp directory.
+     *
+     * Checked here for the reason the uploads refusal above is: the FS context is known only after
+     * configuration. Without tmp, the images agent fails to write every copy and the library
+     * silently serves the original instead.
+     *
+     * @throws IncompleteFeatureActivationException When IMAGES is declared and no tmp directory is configured
+     */
+    protected static function refuseImagesWithoutTmp(): void
+    {
+        if (!in_array(HilosFeature::IMAGES, static::FEATURES, true) || static::$fs?->hasTmp() === true) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::IMAGES draws copies into the tmp directory, but the FS context configures none'],
         );
     }
 
@@ -1420,7 +1442,8 @@ abstract class Hilos implements TruthSourceOwner
      * The rules live with the context, in declarationErrors(), so a project's unit test reads its
      * own declaration without the facade.
      *
-     * @throws InvalidTopologyException When a reserved directory is declared NODE or one path is declared by two owners
+     * @throws InvalidTopologyException When tmp or a reserved cluster directory is declared NODE,
+     *     analytics_journal is declared CLUSTER, or one path is declared by two owners
      */
     protected static function refuseMisdeclaredDirectories(): void
     {

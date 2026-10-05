@@ -137,6 +137,9 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         TruthSourceRegistry::unregisterAgent(HilosAgentType::HILOS_FILES_LIBRARY);
         ExecutionContext::clear();
         SourceChangeBus::reset();
+        if (is_link($this->directory . '-node-b')) {
+            unlink($this->directory . '-node-b');
+        }
         foreach (['files', 'tmp'] as $folder) {
             foreach (glob($this->directory . '/' . $folder . '/*') ?: [] as $path) {
                 unlink($path);
@@ -188,6 +191,31 @@ final class ImageVariantIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame([], $this->library->renders);
         self::assertSame(1, $this->engine->renders);
         self::assertCount(1, Hilos::$db->fileVariants->forFile($file->id));
+    }
+
+    /** The renderer and library resolve the same tmp index through different mount paths. */
+    public function testACopyDrawnOnOneNodeIsKeptByTheLibraryOnAnother(): void
+    {
+        symlink($this->directory, $this->directory . '-node-b');
+        $libraryFs = new ImageVariantFs($this->directory . '-node-b');
+        $libraryFs->configure();
+        $file = $this->publish();
+        $this->ask($file);
+        $result = $this->render($this->takeRender());
+        $tmp = Hilos::$fs->getTmp()[$result->tmpIndex]->getPath();
+        self::assertFileExists($tmp);
+
+        $rendererFs = Hilos::$fs;
+        Hilos::$fs = $libraryFs;
+        try {
+            $this->deliver($result);
+        } finally {
+            Hilos::$fs = $rendererFs;
+        }
+
+        $copy = $this->copy($file);
+        self::assertSame($this->storage->read($copy->storedName), $this->reply()->body);
+        self::assertFileDoesNotExist($tmp);
     }
 
     /** Exercises the library and renderer over real registry rows and files. */
@@ -661,7 +689,7 @@ final class ImageVariantFs extends FsContext
     public function configure(): void
     {
         $this->registerDirectory(self::FILES, $this->directory . '/files', DirectoryScope::CLUSTER);
-        $this->setTmpPath($this->directory . '/tmp', DirectoryScope::NODE);
+        $this->setTmpPath($this->directory . '/tmp', DirectoryScope::CLUSTER);
     }
 }
 

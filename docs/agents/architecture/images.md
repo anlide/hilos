@@ -46,9 +46,10 @@ reserved for framework variants. Each side is an integer in 1–4096. The fit is
 The reserved prefix is checked at startup. `Hilos::imageVariants()` combines
 project declarations with variants from enabled framework features.
 
-Startup collects all activation errors: missing FILES or agent pair, variants
-without IMAGES, IMAGES without variants, malformed declarations, a worker
-outside the `ImagesAgent` family, or an engine that cannot write the declared
+Startup collects all activation errors: missing FILES or agent pair, IMAGES
+without a tmp directory, variants without IMAGES, IMAGES without variants,
+malformed declarations, a worker outside the `ImagesAgent` family, or an engine
+that cannot write the declared
 formats. The default needs PHP GD with the relevant output codecs. A project
 without IMAGES needs no GD. The chat declares IMAGES with one variant,
 `chat_thumb` (384×384, contain, WEBP), the picture its feed shows in place of
@@ -181,14 +182,10 @@ new collection read or copy state of its own.
 ## Cluster Boundary
 
 HTTP replies retain the request's origin node, so the library may answer a
-browser on another node. Rendering still requires access to the original's
-storage, and handing the result over requires a shared temporary directory.
-With local directories this means the images agent and the library must run
-on the same node. Their automatic co-placement is not implemented; POLICY
-entries alone do not guarantee it, just as for uploads and publication. The
-hand-over of a drawn copy goes through a cluster directory, so the images agent
-and the library may live on different nodes (not in the code yet — HIL-1241);
-whose the directories are — [filesystem.md](filesystem.md).
+browser on another node. The original is read from the files directory and a
+drawn copy is handed over through tmp. Both directories are the cluster's, so
+the images agent and the library may live on different nodes. Whose the
+directories are — [filesystem.md](filesystem.md).
 
 The framework-owned `hilos_avatar` variant is a 256×256 WEBP COVER copy of a
 cropped profile photo; its upload and row are in [profile-photo.md](profile-photo.md).

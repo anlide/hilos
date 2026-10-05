@@ -15,11 +15,11 @@ use Hilos\Fs\FsTmpDirectory;
  * Chat-project filesystem context: tmp, the files registry's directory, data exports, the
  * administrators' exports of acceptance records and the analytics journal.
  *
- * Tmp is the node's - only the connection's process touches it, and the uploads agent keeps the
- * chunks of a file there. The files directory and the exports are the cluster's. The analytics
- * journal is the node's as well: each node's journal agent keeps its own files there (HIL-1154),
- * under a subdirectory of the environment and the node, so the environments that mount this one
- * data directory never see each other's.
+ * Tmp is the cluster's: the uploads agent keeps a file's chunks there and the images agent draws
+ * copies there, both for the files library, which may live on another node. The files directory
+ * and the exports are the cluster's. The analytics journal is the node's: each node's journal
+ * agent keeps its own files there (HIL-1154), under a subdirectory of the environment and the
+ * node, so the environments that mount this one data directory never see each other's.
  *
  * @property-read FsTmpDirectory $tmp
  * @property-read FsDirectory $files Where the files registry keeps the chat's attachments
@@ -44,7 +44,7 @@ final class ChatFsContext extends FsContext
         $base = self::defaultBaseDir();
         $filesPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR]->string();
 
-        $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP, DirectoryScope::NODE);
+        $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP, DirectoryScope::CLUSTER);
 
         // The files registry keeps its files where attachments were published before it (HIL-336):
         // the earlier attachments became registry rows without a file moving (HIL-144), and the

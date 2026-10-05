@@ -138,6 +138,30 @@ final class FeatureRuntimeMountTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testDeclaringImagesWithoutATmpDirectoryIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(
+            'HilosFeature::IMAGES draws copies into the tmp directory, but the FS context configures none',
+        );
+
+        $this->withFs(new FeatureUploadsTestFsContext(withTmp: false), FeatureImagesHilos::refuseForTest(...));
+    }
+
+    public function testDeclaringImagesWithATmpDirectoryPasses(): void
+    {
+        $this->withFs(new FeatureUploadsTestFsContext(withTmp: true), FeatureImagesHilos::refuseForTest(...));
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAProjectWithoutImagesNeedsNoTmpDirectory(): void
+    {
+        $this->withFs(null, FeatureRuntimeContextlessHilos::refuseImagesForTest(...));
+
+        $this->addToAssertionCount(1);
+    }
+
     public function testDeclaringFilesWithoutAFilesDirectoryIsRefused(): void
     {
         $this->expectException(IncompleteFeatureActivationException::class);
@@ -232,6 +256,16 @@ final class FeatureRuntimeContextlessHilos extends HilosFacade
     }
 
     /**
+     * Runs the images tmp check on a project that declares no images.
+     *
+     * @throws IncompleteFeatureActivationException When IMAGES is declared and no tmp directory is configured
+     */
+    public static function refuseImagesForTest(): void
+    {
+        static::refuseImagesWithoutTmp();
+    }
+
+    /**
      * Runs the files directory check the way init() does, on a project that declares no files registry.
      *
      * @throws IncompleteFeatureActivationException When FILES is declared and no files directory is registered
@@ -293,6 +327,32 @@ final class FeatureUploadsHilos extends HilosFacade
     }
 }
 
+/** Facade declaring images; only its tmp check is run. */
+final class FeatureImagesHilos extends HilosFacade
+{
+    protected const array FEATURES = [HilosFeature::IMAGES];
+
+    /**
+     * Runs the images tmp check the way init() does.
+     *
+     * @throws IncompleteFeatureActivationException When no tmp directory is configured
+     */
+    public static function refuseForTest(): void
+    {
+        static::refuseImagesWithoutTmp();
+    }
+
+    /**
+     * Creates a no-op DB context; the fixture never reaches a layer.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new FeatureRuntimeTestDbContext();
+    }
+}
+
 /**
  * FS context with or without a tmp directory; nothing is ever written through it.
  */
@@ -304,7 +364,7 @@ final class FeatureUploadsTestFsContext extends FsContext
     public function __construct(bool $withTmp)
     {
         if ($withTmp) {
-            $this->setTmpPath(sys_get_temp_dir(), DirectoryScope::NODE);
+            $this->setTmpPath(sys_get_temp_dir(), DirectoryScope::CLUSTER);
         }
     }
 

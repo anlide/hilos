@@ -101,6 +101,8 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 
     private ?FsContext $previousFs = null;
 
+    private ?FilePublishTestFsContext $libraryFs = null;
+
     private ?HilosFiles $previousFiles = null;
 
     private ?RtContext $previousRt = null;
@@ -205,6 +207,12 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         SourceChangeBus::reset();
         Logger::resetLogFile();
 
+        foreach ([$this->tmpPath . '-node-b', $this->filesPath . '-node-b'] as $link) {
+            if (is_link($link)) {
+                unlink($link);
+            }
+        }
+
         foreach ([$this->tmpPath, $this->filesPath, $this->logPath] as $directory) {
             foreach (glob($directory . '/*') ?: [] as $file) {
                 unlink($file);
@@ -252,6 +260,26 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         self::assertFileDoesNotExist($tmp);
         self::assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u1'));
         self::assertSame([[self::SIGNED_IN, 'u1']], $this->goneFrames);
+    }
+
+    /** The frame carries a tmp index; the library resolves it under its own mount path. */
+    public function testTheLibraryOnAnotherNodeKeepsWhatTheUploadsAgentAssembled(): void
+    {
+        $this->complete(self::SIGNED_IN, 'u1', 'hello from node a');
+        $tmp = $this->tmpFile(self::SIGNED_IN, 'u1');
+        Hilos::$fs->getDirectory(FsContext::FILES)->ensureDirectory();
+        symlink($this->tmpPath, $this->tmpPath . '-node-b');
+        symlink($this->filesPath, $this->filesPath . '-node-b');
+        $this->libraryFs = new FilePublishTestFsContext($this->tmpPath . '-node-b', $this->filesPath . '-node-b');
+        $this->libraryFs->configure();
+
+        $answer = $this->publish(self::SIGNED_IN, ['u1']);
+
+        self::assertNull($answer->error, implode("\n", $this->library->errors));
+        self::assertCount(1, $answer->fileIds);
+        $row = self::row($answer->fileIds[0]);
+        self::assertSame('hello from node a', file_get_contents($this->filesPath . '/' . $row['stored_name']));
+        self::assertFileDoesNotExist($tmp);
     }
 
     public function testATargetThatReadsTheContentRegistersTheTypeItRead(): void
@@ -729,8 +757,16 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
                 self::assertInstanceOf(FilePublishSignalData::class, $signal->data->data);
                 $this->libraryAsked = true;
                 ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_FILES_LIBRARY);
-                $this->library->onSignalAgent($signal->data, '', HilosSignalConstants::HILOS_FILE_PUBLISH);
-                ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
+                $uploadFs = Hilos::$fs;
+                try {
+                    if ($this->libraryFs !== null) {
+                        Hilos::$fs = $this->libraryFs;
+                    }
+                    $this->library->onSignalAgent($signal->data, '', HilosSignalConstants::HILOS_FILE_PUBLISH);
+                } finally {
+                    Hilos::$fs = $uploadFs;
+                    ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
+                }
             } elseif ($name === self::REPLY && $signal->data instanceof AgentSignalData) {
                 self::assertNull($answer, 'The asker is answered once');
                 self::assertInstanceOf(FilesPublishedSignalData::class, $signal->data->data);
@@ -1107,7 +1143,7 @@ final class FilePublishTestFsContext extends FsContext
      */
     public function configure(): void
     {
-        $this->setTmpPath($this->tmpPath, DirectoryScope::NODE);
+        $this->setTmpPath($this->tmpPath, DirectoryScope::CLUSTER);
         $this->registerDirectory(FsContext::FILES, $this->filesPath, DirectoryScope::CLUSTER);
     }
 }

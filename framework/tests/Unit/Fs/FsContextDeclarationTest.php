@@ -14,8 +14,8 @@ use PHPUnit\Framework\TestCase;
  * Every $fs directory says whose it is - its node's or the cluster's (HIL-1240).
  *
  * The declaration is read back from a directory and from tmp, the context lists its directories,
- * and the start refuses two faults: a reserved cluster directory declared NODE, and one path
- * declared by two owners. Paths never have to exist here - the rules compare them as written.
+ * and the start refuses three faults: tmp declared NODE, a reserved directory declared with the
+ * wrong owner, and one path declared by two owners. Paths need not exist: rules compare written paths.
  */
 final class FsContextDeclarationTest extends TestCase
 {
@@ -74,7 +74,7 @@ final class FsContextDeclarationTest extends TestCase
     public function testACorrectDeclarationHasNoFaults(): void
     {
         $context = (new DeclaringFsContext())
-            ->declareTmp('/srv/node/tmp', DirectoryScope::NODE)
+            ->declareTmp('/srv/shared/tmp', DirectoryScope::CLUSTER)
             ->declareDirectory('published', '/srv/shared/published', DirectoryScope::CLUSTER)
             ->declareDirectory(FsContext::FILES, '/srv/shared/published', DirectoryScope::CLUSTER)
             ->declareDirectory(FsContext::DATA_EXPORT, '/srv/shared/exports', DirectoryScope::CLUSTER);
@@ -99,6 +99,21 @@ final class FsContextDeclarationTest extends TestCase
         );
     }
 
+    public function testATmpDeclaredNodeIsNamedFirst(): void
+    {
+        $context = (new DeclaringFsContext())
+            ->declareTmp('/srv/node/tmp', DirectoryScope::NODE)
+            ->declareDirectory(FsContext::FILES, '/srv/node/files', DirectoryScope::NODE);
+
+        self::assertSame(
+            [
+                "FS tmp directory is the cluster's: set it with DirectoryScope::CLUSTER",
+                "FS directory [files] is the cluster's: register it with DirectoryScope::CLUSTER",
+            ],
+            $context->declarationErrors(),
+        );
+    }
+
     public function testOnePathWithTwoOwnersNamesBoth(): void
     {
         $context = (new DeclaringFsContext())
@@ -117,13 +132,13 @@ final class FsContextDeclarationTest extends TestCase
     public function testTmpOnTheDirectoryPathWithAnotherOwnerIsNamedTmp(): void
     {
         $context = (new DeclaringFsContext())
-            ->declareDirectory('published', '/srv/shared/published', DirectoryScope::CLUSTER)
-            ->declareTmp('/srv/shared/published', DirectoryScope::NODE);
+            ->declareDirectory('drafts', '/srv/shared/drafts', DirectoryScope::NODE)
+            ->declareTmp('/srv/shared/drafts', DirectoryScope::CLUSTER);
 
         self::assertSame(
             [
-                'FS directories [tmp, published] share the path /srv/shared/published'
-                . ' but declare different owners: tmp NODE, published CLUSTER',
+                'FS directories [tmp, drafts] share the path /srv/shared/drafts'
+                . ' but declare different owners: tmp CLUSTER, drafts NODE',
             ],
             $context->declarationErrors(),
         );
@@ -158,11 +173,25 @@ final class FsContextDeclarationTest extends TestCase
         }
     }
 
+    public function testTheStartRefusesANodeTmp(): void
+    {
+        $previousFs = Hilos::$fs;
+        Hilos::$fs = (new DeclaringFsContext())
+            ->declareTmp('/srv/node/tmp', DirectoryScope::NODE);
+        try {
+            $this->expectException(InvalidTopologyException::class);
+            $this->expectExceptionMessage("FS tmp directory is the cluster's");
+            DirectoryOwnersHilos::checkDirectories();
+        } finally {
+            Hilos::$fs = $previousFs;
+        }
+    }
+
     public function testTheStartPassesACorrectDeclaration(): void
     {
         $previousFs = Hilos::$fs;
         Hilos::$fs = (new DeclaringFsContext())
-            ->declareTmp('/srv/node/tmp', DirectoryScope::NODE)
+            ->declareTmp('/srv/shared/tmp', DirectoryScope::CLUSTER)
             ->declareDirectory(FsContext::DATA_EXPORT, '/srv/shared/exports', DirectoryScope::CLUSTER);
         try {
             $this->expectNotToPerformAssertions();

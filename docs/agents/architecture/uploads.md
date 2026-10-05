@@ -48,9 +48,9 @@ There is nothing to subclass: a project's only say is its targets. The start
 refuses the feature without the agent pair (and the pair without the feature),
 without a target, with a target that does not extend `AbstractUploadTarget`,
 with targets but no feature, beside a page routing `frame_binary`, and when the
-FS context configures no tmp directory — chunks are kept there. Which
-directories are the node's and which the cluster's, and how the assembled file
-reaches the library on another node — [filesystem.md](filesystem.md).
+FS context configures no tmp directory — chunks are kept there. Tmp is the
+cluster's, so the library and a project's check read a complete upload from any
+node ([filesystem.md](filesystem.md)).
 
 ## Targets And Checks
 
@@ -281,8 +281,7 @@ An upload goes with its file when:
   [files-registry.md](files-registry.md).
 - Drag and drop, the file picker and the upload list — HIL-140.
 - Streaming a file without writing it to disk — HIL-142.
-- Placing the agent so chunks stay on one node: it runs as an ordinary cluster
-  singleton — HIL-1241. Tmp files orphaned by a killed process are not swept.
+- Tmp files orphaned by a killed process are not swept.
 - Metadata in GIF, HEIC, AVIF, TIFF, PDF, and other formats is not stripped.
   Letting a project keep picture metadata by choice is the TODO in
   `UploadsAgent::finish()`.

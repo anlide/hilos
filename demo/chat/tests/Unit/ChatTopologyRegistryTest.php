@@ -393,8 +393,9 @@ final class ChatTopologyRegistryTest extends TestCase
         // every handshake touches sessions, every worker emits into notifications, every published
         // file is bound and swept by one owner, every admin screen writes settings through one
         // hand, and the leader has enough to do. The uploads and images agents are placed the same
-        // way, beside the files library they hand files to (on separate nodes - HIL-1241). The backup
-        // agent owns a directory on one node's disk, so it has to stay with it: following
+        // way, beside the files library they hand files to through the cluster's tmp, on whatever
+        // node each lands. The backup agent owns a directory on one node's disk, so it has to stay
+        // with it: following
         // leadership would move it on every master restart to a node whose directory holds none
         // of its archives. The aggregator is placed so that one holder of the merged log picture
         // survives a re-election instead of dying with the term, and the analytics writer so that

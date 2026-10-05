@@ -24,13 +24,21 @@ use Hilos\Hilos;
  * short-lived signed link under our own address; moving the files already kept when the storage
  * changes.
  *
- * @property-read FsTmpDirectory $tmp Built-in temporary directory
+ * @property-read FsTmpDirectory $tmp Built-in temporary directory, the cluster's: files are handed to the files library through it
  * @property-read FsDirectory $files Published files of the files registry, where the project registers it
  * @property-read FsDirectory $analytics_journal The node's analytics journal, where the project registers it
  */
 abstract class FsContext
 {
-    /** Reserved logical name for the built-in temporary directory. */
+    /**
+     * Reserved logical name for the built-in temporary directory.
+     *
+     * The uploads agent assembles an upload there, the images agent draws a copy there, a project's
+     * check reads a complete upload there, and the files library takes either by its index from
+     * its own node. A cluster directory whatever features the project declares: set it as
+     * DirectoryScope::CLUSTER, and the start refuses it declared NODE. A project registers a
+     * node-local draft under its own name with DirectoryScope::NODE.
+     */
     public const string TMP = 'tmp';
 
     /**
@@ -85,7 +93,7 @@ abstract class FsContext
 
     /**
      * @param string $path Absolute filesystem path for tmp storage
-     * @param DirectoryScope $scope Whose the tmp directory is: its node's or the cluster's
+     * @param DirectoryScope $scope Whose the tmp directory is: the cluster's, see self::TMP
      */
     protected function setTmpPath(string $path, DirectoryScope $scope): void
     {
@@ -185,18 +193,21 @@ abstract class FsContext
     /**
      * What the registrations declare wrong; every fault is collected, none stops the walk.
      *
-     * Two rules. The reserved files, data_export and legal_export are the cluster's whatever features the
-     * project declares, so either declared NODE is a fault, and the reserved analytics_journal is
-     * the node's, so it declared CLUSTER is one. One path is one directory with one
-     * owner, so names registered on one path with different owners are a fault, tmp counted under
+     * Three rules. Tmp is the cluster's whatever features the project declares. The reserved
+     * files, data_export and legal_export are the cluster's, so any declared NODE is a fault;
+     * the reserved analytics_journal is the node's, so it declared CLUSTER is one. One path is one
+     * directory with one owner, so names registered on one path with different owners are a fault, tmp counted under
      * its reserved name. Paths are compared as written, less trailing separators: a directory is
      * created on first use and may not exist at start, so there is nothing to resolve yet.
      *
-     * @return list<string> Fault messages, reserved directories first; empty when the declaration holds
+     * @return list<string> Fault messages, tmp first, then reserved directories, then paths; empty when the declaration holds
      */
     public function declarationErrors(): array
     {
         $errors = [];
+        if ($this->_tmp !== null && $this->_tmp->getScope() === DirectoryScope::NODE) {
+            $errors[] = "FS tmp directory is the cluster's: set it with DirectoryScope::CLUSTER";
+        }
         foreach ([self::FILES, self::DATA_EXPORT, self::LEGAL_EXPORT] as $reserved) {
             if ($this->hasDirectory($reserved) && $this->_directories[$reserved]->getScope() === DirectoryScope::NODE) {
                 $errors[] = "FS directory [{$reserved}] is the cluster's: register it with DirectoryScope::CLUSTER";
