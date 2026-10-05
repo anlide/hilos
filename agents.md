@@ -38,7 +38,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 | [architecture/worker-lifecycle.md](docs/agents/architecture/worker-lifecycle.md) | working with worker processes, forking, message handling |
 | [architecture/agent-lifecycle.md](docs/agents/architecture/agent-lifecycle.md) | creating agents, onStart/onTick/onStop, sending signals |
 | [architecture/event-loop.md](docs/agents/architecture/event-loop.md) | anything involving sockets, I/O, blocking operations |
-| [architecture/browser-source-fanout.md](docs/agents/architecture/browser-source-fanout.md) | DB/RT sync to browser payloads, source-change fan-out, worker-local subscription mirrors |
+| [architecture/browser-source-fanout.md](docs/agents/architecture/browser-source-fanout.md) | DB/RT sync to browser payloads, source-change fan-out, worker-local subscription mirrors, what a failed table or page is owed and which facts bring it back without a reload |
 | [architecture/admin-features.md](docs/agents/architecture/admin-features.md) | graduating or building an admin feature (page + browser table + actions): framework-owned vs project-owned-by-pattern, the framework/project boundary, extension points |
 | [architecture/admin-feature-scaffold.md](docs/agents/architecture/admin-feature-scaffold.md) | activating or building an admin feature in a project: the layer-by-layer scaffold order and the three activation paths (configure-only / bound-sources / project-owned) |
 | [architecture/page-access-control.md](docs/agents/architecture/page-access-control.md) | gating a page subscription: DB_EXISTS / ACCESS guards, the resolveCurrentUserId identity hook, 403/404/401 errors, guards on every delivery path, the cross-agent guard rule |

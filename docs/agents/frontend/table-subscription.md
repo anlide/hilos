@@ -166,6 +166,8 @@ about what that connection shows, not about every change to the table.
 action — filter, sort, paginate, navigate, or press Show on the announcement bar.
 Nothing on the live stream moves the window: the catch-up of a window that froze
 (HIL-1139) re-sends the same window with its rows read again, not another one.
+The same holds for the catch-up of a refused window
+(not in the code yet — HIL-1350).
 
 An explicit window change is **authoritative**: the snapshot that arrives already
 carries everything that was waiting, so the pending queue is emptied rather than
@@ -250,13 +252,21 @@ on a narrow screen is a fourth and has its own section below:
   `unavailable` is the sixth: the server refused this table's window — a
   `table_window_refused` frame, or the `refusedWindows` section of the page
   answer. The body draws the "List unavailable" tile; the way out is the next
-  window that arrives. Frames that belong to a window (`table_viewport_delta`,
+  window that arrives, whether the reader asked for it, a reconnect brought
+  it, or the server sent it on its own as the catch-up of a window owed whole
+  (not in the code yet — HIL-1350). The facts that try its debt are in
+  [Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
+  The tile's words promise no return; they stay true in the two cases that
+  still wait. Frames that belong to a window (`table_viewport_delta`,
   count, append, own-create, announce, unannounce) are dropped while the
   refusal stands. A page that refuses altogether is none of these — that is
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
-  On a test stand the state is called up by `test:table:refuse <tableKey>`, and
-  `demo/binance-btc-tracker/tests/e2e/tests/table-refusal.spec.ts` walks both of
-  its roads.
+  On a test stand the state is called up by `test:table:refuse <tableKey>`.
+  Removing the lever is not a fact: no window goes out until a change of the
+  table's source is built (not in the code yet — HIL-1350).
+  `demo/binance-btc-tracker/tests/e2e/tests/table-refusal.spec.ts` walks the two
+  refusal roads and this third road back too
+  (not in the code yet — HIL-1350).
 
 ### The card a row projects to
 
@@ -1272,7 +1282,7 @@ addressed to the one connection it concerns:
 | `table_viewport` | client → server | `page`, `tableKey`, `filter`, `sort` (a **list** of `{field, direction}`, in the sequence they apply), `limit`, an optional `rendered` (the fields inside the row slots the table draws; absent, rows are compared whole), and then either `anchor` + `anchorDirection` or `pageIndex` — never both |
 | `table_rendered` | client → server | `page`, `tableKey`, `rendered` (required, may be empty) — sent once, over the cold window the page's answer brought; nothing is sent back |
 | `table_row_focus` | client → server | `page`, `tableKey`, `rowKey` (required; empty releases the focus) — the row a tab holds in focus for an open dialog, sent on open, on close, and again with every window the tab receives; nothing is sent back while the window holds the row, and one `table_viewport_delta` of kind `row_removed` when it does not — with the row's body, or without one when the row is gone |
-| `table_window` | server → client, reply only | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
+| `table_window` | server → client, reply or catch-up of a window owed whole (see below) | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is) |
 | `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`) |
 | `table_viewport_frozen` | server → client, live | `page`, `tableKey`, `since` (server ms of the first failure) — sent once per freeze |
 | `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
@@ -1288,8 +1298,10 @@ A **full window snapshot travels on the live stream for one reason only**. It
 travels on three roads and no other: in reply to a `table_viewport` request, which
 is a window the reader changed; in the `windows` section of the page's own
 `page_response`, which is the first window of every viewport table the page
-declares — a cold load and a reconnect alike; and as the catch-up of a window that
-froze on the live road (HIL-1139). A window freezes when a change or a freshness
+declares — a cold load and a reconnect alike; and as the catch-up of a window
+owed whole. The third road carries a window that froze on the live road
+(HIL-1139), or one that was refused (not in the code yet — HIL-1350).
+A window freezes when a change or a freshness
 move cannot be built for it, or anything further down its live road throws: the
 connection is told once with `table_viewport_frozen`, its rows stay where they
 are, and the first delivery that reaches the window without a throw sends it a
@@ -1298,11 +1310,15 @@ delta. A delta would be judged against rows the connection was never brought up
 to date on; the whole window is laid down the way one is after a broken socket —
 pending, placeholders, highlights and announcements go, the selection narrows to
 the rows that came, the focus is said again — and the frozen line goes with them.
-Any window and any refusal clear the freeze, and a window that cannot be built
-sends nothing and leaves it standing. A refusal of a window travels the first
+Any window pays the debt; a refusal does not — it changes the visible state to
+the tile, and the window remains owed whole (not in the code yet — HIL-1350).
+A window that cannot be built sends nothing and leaves the debt standing.
+A refusal of a window travels the first
 two roads only: `table_window_refused` in reply to a request, and the
 `refusedWindows` section of `page_response`. A table stands in one of those,
-never both. A bulk action is still an ordinary
+never both. What the debt is and which facts pay it is in
+[Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
+A bulk action is still an ordinary
 `action` in the shape given above, but its OUTCOME has a frame of its own,
 `table_bulk_report`: the acceptance travels on the reply and the report cannot,
 because the run outlives the timeout the reply is bound by. That frame is a

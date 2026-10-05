@@ -123,7 +123,11 @@ Into the page's own answer, assembled on the backend:
   filters follow that frame as a frame of their own. A page re-sent after a
   failed delivery runs the same subscribe frame on the agent serving it
   (`PageResender` → `PageSignalRouter::resendPage()`), so the re-send is that
-  same one frame too.
+  same one frame too. A page owed whole after a failed delivery is the page
+  half of the same rule as a table owed its window:
+  [Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
+  A subscription that failed on its very first answer with an internal error
+  sets that same page debt (not in the code yet — HIL-1351).
 
 `AbstractPage::withPageIdentity()` is the worked example: the label, lead, and
 breadcrumb that a project's admin page catalog owns are folded into the payload
@@ -214,7 +218,10 @@ A viewport table whose first window could not be built is a sixth section,
 `refusedWindows` — one entry per such table, keyed by table key, carrying the
 error code a `table_window_refused` reply carries. A table stands in `windows`
 or in `refusedWindows`, never both. The section is omitted when empty, as every
-payload section is.
+payload section is. A table in `refusedWindows` remains owed its window whole,
+and the server sends it on its own when a fact pays the debt
+(not in the code yet — HIL-1350); see
+[Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
 
 The window a tab is already holding travels the other way in the same pair of
 frames: `page_subscribe` carries an optional `tableWindows` map, one descriptor

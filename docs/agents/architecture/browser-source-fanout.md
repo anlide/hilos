@@ -99,7 +99,9 @@ serving agent into its mirror on a subscribe and on a re-decision of rights.
 What came back decides the mark: answered — cleared; refused — no mark, the
 subscription stands as a refused one does; failed — the error frame went out
 from the router, so the mark is set silently; unserved — nothing went out, so
-the connection is told its page could not be delivered.
+the connection is told its page could not be delivered. What tries the debt of
+a page owed whole, and what else sets it, is in
+[Coming Back Without A Reload](#coming-back-without-a-reload) below.
 
 As a convention, do not use either hook only to send an empty subscription ack
 via `sendToUser()` with blank `SignalData` or `BrowserPageSignalData`. Hub pages
@@ -129,7 +131,9 @@ reactive fan-out it is logged and skips that one subscription. A table with a
 window is the exception: whatever its live road throws freezes that one window
 instead — a line in the log and one `table_viewport_frozen` frame to its
 connection, the whole window on the next delivery that succeeds — and the page
-around it stays live (HIL-1139). It used to be
+around it stays live (HIL-1139). The window remains owed whole until a fact pays
+the debt — see [Coming Back Without A Reload](#coming-back-without-a-reload)
+below. It used to be
 read as "this source is currently empty", which dropped the row fragment (or the
 whole collection) with nothing said, so a mistyped `KEY` looked exactly like a
 page whose data had not arrived yet. An unknown collection under a well-formed
@@ -150,6 +154,118 @@ viewer once it is whole, after the VIA joins have read the real values
 The separate `table_mutation` transport remains server-authoritative immediate
 table state. Use it for table-store mutations, not for new page-shaped browser
 payloads.
+
+## Coming Back Without A Reload
+
+A table or page that could not reach the tab comes back by itself when the
+cause is gone: no F5, no button, no timer. One rule covers every failure
+(owner's decision, HIL-1151, 2026-10-04): the server remembers that this
+connection is owed a window or a page whole, and facts try that debt. The
+reader's actions — changing the window, reconnecting, reloading — keep their
+own meaning and are outside this rule.
+
+### What Is Owed
+
+A **window owed whole** is one whose live road froze, with
+`table_viewport_frozen` (HIL-1139). A refused window is owed whole too, whether
+the refusal arrived as `table_window_refused` in reply to a request or in the
+`refusedWindows` section of `page_response` (not in the code yet — HIL-1350).
+
+A **page owed whole** is one whose delivery failed and whose connection was
+told `subscription_page_error`. An internal error on the subscription's very
+first answer sets the same debt (not in the code yet — HIL-1351). A page's
+verdict refusing rights or a missing resource is not a debt: it comes back by
+[Preserve-on-fail and live-promotion](page-access-control.md#preserve-on-fail-and-live-promotion)
+when its guard starts passing.
+
+There is one debt per window and one per page subscription, whoever set it:
+a window that froze and was then refused is still one window owed whole
+(not in the code yet — HIL-1350). What the tab was told decides only what it
+shows — rows under "not updated since" or the "List unavailable" tile — and
+never what the server owes.
+
+A debt lives and dies with what is owed. Remove it where the window or page
+subscription is removed: leaving the page, closing the connection, or
+re-subscribing. A page owed whole carries its windows' debts: its answer
+accounts for each table in `windows` or `refusedWindows`. A window in `windows`
+pays its debt; an entry in `refusedWindows` sets it again
+(not in the code yet — HIL-1350).
+
+### What A Debt Is Paid With
+
+Use the existing frames; there is no new frame and HIL-943's refusal contract
+does not change. A window is paid with a `table_window` of the reply's shape,
+followed by its facet counts; the tab lays it down as it does after a broken
+socket — see the three roads in
+[Backend contract surface](../frontend/table-subscription.md#backend-contract-surface-the-gate).
+A page is paid with the same one `page_response` that answers a subscription,
+re-sent on its serving agent (`PageResender` → `PageSignalRouter::resendPage()`;
+see [Page Snapshots](#page-snapshots)).
+
+Any window pays the window's debt. A refusal never pays it: it changes the
+visible state to the tile, and the debt stands
+(not in the code yet — HIL-1350).
+
+While a window is owed whole, send it no live frame: no `table_viewport_delta`
+of any kind, including `row_stale`; no `table_viewport_count`,
+`table_viewport_append`, `table_viewport_own_create`, `table_viewport_announce`,
+or `table_viewport_unannounce`; no second `table_viewport_frozen`. This already
+holds for a frozen window. It holds for a refused window too, and a refused
+window is not told it froze (not in the code yet — HIL-1350). The tab also
+drops these frames; that is a defense, not the rule's enforcement.
+
+### The Facts That Try A Debt
+
+1. A change of the table's own source that the table built for this window
+   without a throw proves that its road is back. It tries a frozen window's
+   debt today (HIL-1139), and a refused window's debt too
+   (not in the code yet — HIL-1350). For a page owed whole, the fact is the
+   first successful delivery to it: a fan-out to the subscription or a window
+   it asked for.
+2. The database came back: the worker's first successful query after it lost
+   its database connection tries all that worker's debts — windows and pages
+   — once each, in the next flush (not in the code yet — HIL-1352). The fact
+   stays inside the worker that saw it; it is not announced to other
+   processes, each of which has its own connection and debts (owner's
+   decision, 2026-10-04) (not in the code yet — HIL-1352).
+   The table that needs this fact is step-up on `/hilos/security/2fa`: it has
+   no sort, search, or filter, and its live source — the step-up setting keys
+   — almost never changes. After a database failure, it used to have only F5.
+3. Reserved, not built: the table's holder came up. When the
+   [table agent](table-agents.md) exists, its start joins this list as another
+   fact; the rule needs no rewrite.
+
+No timer, no probe, no repeat button: a fact, not a clock (HIL-943 Design).
+
+### One Try
+
+A fact tries a debt once. A try that succeeds sends the whole window or page
+and pays the debt; a try that fails sends nothing, not even a refusal, and
+the debt waits for the next fact.
+
+A try that fails again writes no new log line: the line was written when the
+debt was set (not in the code yet — HIL-1350). Set aside a window that could
+not be built for the rest of that flush; this already holds for a frozen
+window. The server starts the try. The tab never asks again on its own.
+
+### The Two Cases That Still Wait
+
+Both cases were accepted by the owner on 2026-10-04 and are recorded here;
+they are also recorded in the database fact's docblock
+(not in the code yet — HIL-1352).
+
+1. A worker on which nothing happens after the database comes back learns of
+   it only on its first query. Its debts wait until then. No timer probes the
+   database: that would be a clock, not a fact.
+2. A table whose query timed out on a live, overloaded database, and whose
+   data does not change afterwards, waits for a change or the reader. A
+   timeout is not a lost connection and does not trigger fact 2. A timeout
+   caused by a lock is paid by the lock holder's commit: that commit is a
+   source change, fact 1.
+
+Removing the stand's `test:table:refuse` lever is not a fact either. On the
+stand, a change of the table's source made after removing the lever brings
+the window back (not in the code yet — HIL-1350).
 
 ## Source Change DTO
 
@@ -208,3 +324,6 @@ transport payloads that need to carry a source fact.
 - Fan-out closes only what a page declared as its contract; for a fact outside
   it that still invalidates an open screen, see
   [../signals/screen-invalidation.md](../signals/screen-invalidation.md).
+- Do not bring back a failed table or page by a timer or by the tab asking
+  again on its own: the server owes it whole, and a fact pays the debt — see
+  [Coming Back Without A Reload](#coming-back-without-a-reload).

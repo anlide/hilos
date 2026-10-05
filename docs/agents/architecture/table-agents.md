@@ -268,6 +268,13 @@ of one connection: the page, its lists and the neighboring tables stay live.
 The table agent inherits the frame as it is — the second source of the same
 word, the way it is the second source of the refusal.
 
+The holder coming up is a fact of the same rule by which a refused or frozen
+window comes back on its own —
+[Coming Back Without A Reload](browser-source-fanout.md#coming-back-without-a-reload).
+When the table agent exists, its start tries the debts of the windows it now
+holds; the rule accepts it as another fact without a rewrite (see
+[Open Preconditions](#open-preconditions), point 2).
+
 **A source that fell behind is marked, not hidden.** A composite row whose one
 source stopped updating is still delivered, with the lagging source named
 inside it; the cells of that source are marked, the rest stay live, and an

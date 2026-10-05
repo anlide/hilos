@@ -23,6 +23,10 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - You just wrote a fact and someone is looking at a screen it devalues right
   now — whether the server owes that screen a move, and which frame moves it:
   `docs/agents/signals/screen-invalidation.md`
+- A table or page could not be delivered, and how it comes back without a
+  reload — what the server owes, which facts pay the debt, and why no timer:
+  `docs/agents/architecture/browser-source-fanout.md`
+  (section "Coming Back Without A Reload")
 - An action that changes what its page does not own — the route out to the
   owner, the deferred ack, and the frame that carries the refusal back:
   `docs/agents/architecture/entity-libraries.md`
