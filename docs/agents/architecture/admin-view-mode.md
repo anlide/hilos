@@ -131,12 +131,18 @@ change the body of that question, not the mode around it.
 - On a stand the lever `test:admin-view-mode on|off` turns the mode on and off
   until the daemon restarts, and touches no latch; the next start decides from
   the variable again. In a production-like environment the lever is refused,
-  like every `test:*` command.
+  like every `test:*` command. On a node of a cluster it is also refused: a
+  single-node switch would leave its startup peer marker unchanged and the nodes
+  would part silently.
 - In a cluster the file is each node's own — a node's log root is its own —
   and the row is the whole cluster's, the database being one: a new node of a
-  production cluster that closed the mode finds it closed. The mode has to be
-  the same on every node, and a node with a different value does not diverge
-  silently (not in the code yet — HIL-1274).
+  production cluster that closed the mode finds it closed. Each node names the
+  variable's `on` or `off` value in its peer handshake and refuses a node naming
+  another value ([daemon-lifecycle.md](daemon-lifecycle.md), *The admin view mode*).
+  In production a node that started before the mode closed keeps its mode until
+  its next start. On the development cluster stand there is no latch, so peer
+  refusal over the variable is the guard against permanently different modes.
+  Scenario 32 on the binance stand proves that refusal ([../testing.md](../testing.md)).
 
 ## The View Verdict
 
@@ -575,6 +581,10 @@ page (HIL-1204; its mode — HIL-1267), and the Guardian moved into the
 framework (HIL-345, after HIL-1270).
 
 ## Tests
+
+A cluster refuses `test:admin-view-mode` on each node. Scenario 32 on the
+binance-btc-tracker cluster stand proves both peer refusals and the node-local
+mode reported by `test:cluster:inspect`.
 
 A viewer's e2e runs with the mode on (the lever `test:admin-view-mode on`);
 the scenarios that expect a non-admin to be refused run with it off. In the chat

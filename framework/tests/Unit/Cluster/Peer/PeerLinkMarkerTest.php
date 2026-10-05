@@ -213,6 +213,34 @@ final class PeerLinkMarkerTest extends TestCase
         );
     }
 
+    /** A differing admin view mode variable is refused before the peer is welcomed (HIL-1274). */
+    public function testAHelloNamingAnotherAdminViewModeIsRefusedAndNotWelcomed(): void
+    {
+        $local = new PeerMarkers(
+            [PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_MARKER, PeerMarkers::ADMIN_VIEW_MODE => PeerMarkers::ADMIN_VIEW_MODE_OFF],
+            [PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_PLACE, PeerMarkers::ADMIN_VIEW_MODE => 'the variable HILOS_ADMIN_VIEW_MODE_ENABLED'],
+        );
+        [$near, $far] = $this->makeSocketPair();
+        $link = $this->link($near, dialer: false, markers: $local);
+
+        $this->deliver($far, $this->hello([
+            PeerMarkers::DATABASE => PeerTestMarkers::DATABASE_MARKER,
+            PeerMarkers::ADMIN_VIEW_MODE => PeerMarkers::ADMIN_VIEW_MODE_ON,
+        ]));
+        $link->read();
+
+        $this->assertTrue($link->shouldClose());
+        $this->assertNull($link->remoteIdentity());
+        $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
+        $this->assertSame('', $this->flushAndReadFar($link, $far));
+        $this->assertStringContainsString(
+            "Peer link dropped: Peer handshake from node 'node-b' names admin-view-mode marker 'on',"
+            . " but this node reads 'off' from the variable HILOS_ADMIN_VIEW_MODE_ENABLED:"
+            . ' the two nodes do not read one admin-view-mode',
+            $this->log(),
+        );
+    }
+
     /**
      * @param Socket $socket Near end of a pair
      * @param bool $dialer Whether the link dialed

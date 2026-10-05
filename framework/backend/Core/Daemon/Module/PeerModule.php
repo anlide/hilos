@@ -38,8 +38,8 @@ final class PeerModule implements DaemonModule
     private readonly Closure $localMarkers;
 
     /**
-     * @param ?Closure(): PeerMarkers $localMarkers Reads this node's markers; the database marker and the marker of
-     *     every cluster directory when null - a unit test that builds the server without a database hands its own
+     * @param ?Closure(): PeerMarkers $localMarkers Reads this node's markers; the database marker, the marker of
+     *     every cluster directory and the admin view mode variable when null - a unit test without a database hands its own
      */
     public function __construct(?Closure $localMarkers = null)
     {
@@ -60,8 +60,9 @@ final class PeerModule implements DaemonModule
      *
      * The node's TLS files are checked first ({@see ClusterTlsConfig::fromEnv()}), then the node
      * reads the markers it names to its peers on every handshake - the database marker
-     * ({@see DatabaseMarker}) and the marker of every cluster directory of `$fs`
-     * ({@see ClusterDirectoryMarker}), each written here by the first node to start. Those reads
+     * ({@see DatabaseMarker}), the marker of every cluster directory of `$fs`
+     * ({@see ClusterDirectoryMarker}), each written here by the first node to start, and the admin
+     * view mode variable. Those reads
      * are the one database and file access of the master outside its loop that the peer channel
      * needs: a one-time bootstrap read before {@see DaemonManager::run()}, which the rule against
      * heavy work in the master allows (docs/agents/antipatterns/heavy-work-in-master.md,
@@ -100,7 +101,7 @@ final class PeerModule implements DaemonModule
 
     /**
      * Reads the database marker, then the marker of every cluster directory, writing each first where
-     * there is none yet, and says so.
+     * there is none yet, then the admin view mode variable, and says so.
      *
      * The database comes first: a refusal names the first breach, so a node on another database is
      * named by its database and not by a directory. No `$fs` context, or no cluster directory in it,
@@ -134,6 +135,18 @@ final class PeerModule implements DaemonModule
             $values[PeerMarkers::directoryKind($name)] = $directory->marker;
             $places[PeerMarkers::directoryKind($name)] = ClusterDirectoryMarker::place($name, $path);
         }
+
+        try {
+            $adminViewModeOn = Hilos::$env[EnvConstants::HILOS_ADMIN_VIEW_MODE_ENABLED]->bool();
+        } catch (EnvException) {
+            $adminViewModeOn = false;
+        }
+        $values[PeerMarkers::ADMIN_VIEW_MODE] = PeerMarkers::adminViewMode($adminViewModeOn);
+        $places[PeerMarkers::ADMIN_VIEW_MODE] = 'the variable ' . EnvConstants::HILOS_ADMIN_VIEW_MODE_ENABLED->name;
+        Logger::info(
+            "Admin view mode marker {$values[PeerMarkers::ADMIN_VIEW_MODE]}, read from"
+            . ' ' . $places[PeerMarkers::ADMIN_VIEW_MODE],
+        );
 
         return new PeerMarkers($values, $places);
     }

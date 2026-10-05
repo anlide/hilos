@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Router\SignalRouter;
@@ -30,6 +31,11 @@ use Socket;
  */
 final class CommandClientAdminViewModeTest extends TestCase
 {
+    private ?ClusterContext $previousCluster = null;
+
+    /** @var array<string, string|false> Cluster environment values before this case */
+    private array $previousClusterEnv = [];
+
     private ?EnvAccessor $previousEnv = null;
 
     private ?RtContext $previousRt = null;
@@ -44,6 +50,10 @@ final class CommandClientAdminViewModeTest extends TestCase
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousRt = Hilos::$rt;
         $this->previousSignalRouter = Hilos::$sr;
+        $this->previousCluster = Hilos::$cluster;
+        foreach (['CLUSTER_ENABLED', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_ROLE'] as $key) {
+            $this->previousClusterEnv[$key] = getenv($key);
+        }
         putenv('SOCKET_READ_BUFFER_SIZE=65536');
         putenv('APP_ENV=test');
         Hilos::$env = new EnvAccessor();
@@ -66,6 +76,10 @@ final class CommandClientAdminViewModeTest extends TestCase
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$env = $this->previousEnv;
+        Hilos::$cluster = $this->previousCluster;
+        foreach ($this->previousClusterEnv as $key => $value) {
+            putenv($value === false ? $key : "{$key}={$value}");
+        }
         putenv('SOCKET_READ_BUFFER_SIZE');
 
         parent::tearDown();
@@ -142,6 +156,24 @@ final class CommandClientAdminViewModeTest extends TestCase
             'This node holds no runtime state for the admin view mode',
             $reply[CommandConstants::FIELD_PAYLOAD][CommandConstants::FIELD_MESSAGE] ?? null,
         );
+    }
+
+    public function testANodeOfAClusterRefusesTheLeverAndLeavesTheRowAlone(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        Hilos::$cluster = new ClusterContext();
+
+        $reply = $this->ask([]);
+
+        $this->assertSame(CommandConstants::STATUS_ERROR, $reply[CommandConstants::FIELD_STATUS] ?? null);
+        $this->assertSame(
+            'On a cluster the admin view mode is what HILOS_ADMIN_VIEW_MODE_ENABLED says on every node,'
+            . ' and a node that says otherwise is refused by the rest: set the variable on every node and restart them.',
+            $reply[CommandConstants::FIELD_PAYLOAD][CommandConstants::FIELD_MESSAGE] ?? null,
+        );
+        $this->assertFalse(Hilos::$rt?->hilosAdminViewModeRuntime?->enabled);
     }
 
     /**

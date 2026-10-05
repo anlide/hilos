@@ -9,6 +9,7 @@ HIL-1230). It also recreates a node with an empty copy of the stand's cluster di
 own: the directory guard refuses it (HIL-1242/HIL-1243). Assertions live in the scenario
 matrix (scenarios.py), which reads each node's `test:cluster:inspect` reply and compares it
 against the expected invariants.
+It can also recreate a node with one environment variable of its own (scenario 32, HIL-1274).
 
 A command that the scenarios drive answers with an Outcome - its exit code, what it would print,
 and what it would complain - and prints nothing itself: the matrix reads the answer, and
@@ -579,6 +580,18 @@ def stranger(stand, action=None):
     raise StandRefused("usage: cluster stranger {up|down}")
 
 
+def _recreate_with_override(stand, node, override):
+    """Replace a node with a compose override passed on stdin, after removing its old container.
+
+    Compose may otherwise keep an existing mount when its type changes (own-directory).
+    """
+    removed = compose(stand, "rm", "-sf", node.service)
+    if removed.code != 0:
+        return removed
+    return _run(["docker", "compose", "-f", str(stand.compose), "-f", "-", "up", "-d",
+                 "--force-recreate", node.service], input_text=json.dumps(override))
+
+
 def own_directory(stand, node_id, action=None):
     """Recreate one member on its own empty cluster directory, or restore the shared one."""
     if stand.cluster_directory is None:
@@ -591,12 +604,8 @@ def own_directory(stand, node_id, action=None):
         # Compose merges volumes by target: long-form tmpfs replaces the shared volume there.
         override = {"services": {node.service: {"volumes": [
             {"type": "tmpfs", "target": stand.cluster_directory.path}]}}}
-        removed = compose(stand, "rm", "-sf", node.service)
-        if removed.code != 0:
-            return removed
-        outcome = _run(["docker", "compose", "-f", str(stand.compose), "-f", "-", "up", "-d",
-                        "--force-recreate", node.service], input_text=json.dumps(override))
-        return _said(outcome, f"cluster: recreated {node.container} with a {name} directory of its own")
+        return _said(_recreate_with_override(stand, node, override),
+                     f"cluster: recreated {node.container} with a {name} directory of its own")
     if action == "off":
         removed = compose(stand, "rm", "-sf", node.service)
         if removed.code != 0:
@@ -604,6 +613,21 @@ def own_directory(stand, node_id, action=None):
         return _said(compose(stand, "up", "-d", "--force-recreate", node.service),
                      f"cluster: recreated {node.container} on the stand's {name} directory")
     raise StandRefused("usage: cluster own-directory <node> {on|off}")
+
+
+def own_env(stand, node_id, assignment=None):
+    """Recreate one member with one environment value of its own, or return to the stand's."""
+    node = stand.member(node_id)
+    if assignment == "off":
+        return _said(compose(stand, "up", "-d", "--force-recreate", node.service),
+                     f"cluster: recreated {node.container} on the stand's environment")
+    if assignment is not None and "=" in assignment:
+        name, value = assignment.split("=", 1)
+        if name:
+            override = {"services": {node.service: {"environment": {name: value}}}}
+            return _said(_recreate_with_override(stand, node, override),
+                         f"cluster: recreated {node.container} with {name}={value} of its own")
+    raise StandRefused("usage: cluster own-env <node> {NAME=value|off}")
 
 
 def cluster_directory_exec(stand, node_id, *argv):
@@ -725,6 +749,10 @@ def execute(stand, command, *args):
         if not args:
             raise StandRefused("usage: cluster own-directory <node> {on|off}")
         return own_directory(stand, *args[:2])
+    if command == "own-env":
+        if not args:
+            raise StandRefused("usage: cluster own-env <node> {NAME=value|off}")
+        return own_env(stand, *args[:2])
     if command == "db-sql":
         return db_sql(stand, *args[:2])
     if command == "db-log":

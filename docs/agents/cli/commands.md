@@ -190,7 +190,7 @@ so the CLI process has nothing to read or
 write either — HIL-1020), `test:table:refuse` (the same shape: the master answers it out of
 memory and writes its own node's refusal row — HIL-1131), `test:admin-view-mode` (the
 master answers it out of memory and writes its own node's admin view mode row —
-HIL-1249), `protected-mode:inspect` (reads
+HIL-1249; refused on a node of a cluster — HIL-1274), `protected-mode:inspect` (reads
 in-memory state and has to answer on a frozen node, which is exactly where a connect would
 hang), the protected-mode drive family `test:protected-mode:enter` / `:leave` / `:open` /
 `:pass` / `:close` (the drive commands write nothing from this process, and the rows the mint

@@ -235,10 +235,10 @@ $steps = array_merge($steps, [
     // to the composer chain because that chain breaks at the first red, while the runner holds
     // the outcome. The demo's unit suite runs in binance-btc-tracker-php. Scenarios 23 and 25
     // freeze the masters last (HIL-1125,
-    // HIL-1128). Scenarios 29 and 30 recreate and kill a slave (HIL-1243). The seconds are
-    // measured alone on nova-de after the database moved into host memory (2026-10-04,
-    // HIL-1327), with scenarios 13, 20 and 25 parked (P-169, P-456); returning one
-    // moves the number.
+    // HIL-1128). Scenarios 29 and 30 recreate and kill a slave (HIL-1243); scenario 32
+    // recreates one twice (HIL-1274). The seconds are measured alone on nova-de, 2026-10-05,
+    // after the database moved into host memory (HIL-1327), with scenarios 5, 8, 13, 20 and 25
+    // parked; returning one moves the number.
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -247,7 +247,7 @@ $steps = array_merge($steps, [
         'deps' => [],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 175,
+        'seconds' => 191,
         'downsStand' => true,
     ],
     // A browser on the cluster stand through its entry (HIL-1232, HIL-1304).

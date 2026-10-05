@@ -71,8 +71,9 @@
    start whose migrations opened the gap — `docker.php` applies them before this runs.
 8. `DaemonManager::__construct()` → `Hilos::initSignalRouter()`, creates `AgentManagerDaemon`
 9. `daemon.php` registers servers: `HttpServer`, `WorkerServer`, `WebSocketServer` (optionally `FrontendHtmlServer`);
-   in cluster mode `PeerModule` reads the database marker and the marker of every cluster
-   directory before the peer port opens (*The database both ends read* below)
+   in cluster mode `PeerModule` reads the database marker, the marker of every cluster
+   directory and the admin view mode variable before the peer port opens
+   (*The database both ends read* below)
 10. The end of `DaemonManager::boot()` decides the admin view mode of the node
    (`AdminViewModeStartup`, HIL-1249) and writes it into the node-local runtime row
    `hilosAdminViewModeRuntime` — before the first socket is bound and the first worker
@@ -558,13 +559,15 @@ on the first poll and every 30th after it. Then one INFO line:
 The marker lives in the master's memory from here on; the handshake touches no database.
 
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
-markers by kind: `database`, and `directory:<name>` for every cluster directory of `$fs`
-(*Cluster directories* below). The field is required, and `PeerProtocol::VERSION` was
+markers by kind: `database`, `directory:<name>` for every cluster directory of `$fs`,
+and `admin-view-mode` (*Cluster directories* and *The admin view mode* below). The field
+is required, and `PeerProtocol::VERSION` was
 raised to `9` for these markers, to `10` when HIL-1297 added initiator identity, to
 `11` when HIL-1304 added WebSocket readiness to the leader heartbeat, to `12` when HIL-1305
 spread operator identity and code admission, to `13` when HIL-1306 added sibling
-drops and page re-decision announcements, and to `14` when HIL-1232 added the
-cross-node command reply ([command-server.md](command-server.md)). A node of the
+drops and page re-decision announcements, to `14` when HIL-1232 added the
+cross-node command reply ([command-server.md](command-server.md)), and to `15` when
+HIL-1178 added the RT row deletion sweep. A node of the
 previous protocol and a node of this one do not link, with the line about the version.
 The accepting side on a hello and the dialing side on a welcome check, in order: the
 protocol version, the certificate name, the markers. The rule
@@ -616,11 +619,32 @@ Then one INFO line per directory:
 On the handshake the kind is judged by the same rule and refused in the same words, the place
 being `cluster directory <name> at <path>`:
 `Peer handshake from node '<id>' names directory:data_export marker '<theirs>', but this node reads '<ours>' from cluster directory data_export at /app/data/data_export: the two nodes do not read one directory:data_export`.
-The directory marker did not itself raise `PeerProtocol::VERSION` (now `10` after
-HIL-1297): the frame kept its shape. At the time of the directory marker change,
+The directory marker did not itself raise `PeerProtocol::VERSION`: the frame kept its
+shape. At the time of the directory marker change,
 a node of the previous build that named no directory kind was refused by the
 marker rule. What the marker means for the files beside it, and who may remove
 it — [filesystem.md](filesystem.md), "The Guard".
+
+**The admin view mode (HIL-1274).** After the database and directory markers,
+`PeerModule` names the value of `HILOS_ADMIN_VIEW_MODE_ENABLED` as `on` or `off` under
+the kind `admin-view-mode`. An unreadable value is `off`; `AdminViewModeStartup` writes
+its own ERROR about it. The start writes `Admin view mode marker on, read from the
+variable HILOS_ADMIN_VIEW_MODE_ENABLED` at INFO (or `off`). Both ends use the existing
+marker rule, so the WARNING reads:
+`Peer link dropped: Peer handshake from node '<id>' names admin-view-mode marker '<theirs>', but this node reads '<ours>' from the variable HILOS_ADMIN_VIEW_MODE_ENABLED: the two nodes do not read one admin-view-mode`.
+A node from the previous build, carrying no such kind, is refused as
+`Peer handshake from node '<id>' names no admin-view-mode marker, but this node reads '<ours>' from the variable HILOS_ADMIN_VIEW_MODE_ENABLED`.
+The field shape and `PeerProtocol::VERSION` (now `15`) do not change for this kind.
+
+The marker compares the variable, not the mode decided at startup. In production the
+shared database latch closes each node when it next starts; comparing the effective
+mode would split a cluster whenever nodes restart one by one after closure. A node
+started before the closure may still serve the old mode until its restart. Changing
+the variable on a cluster means setting it on every node and restarting them: during
+a rolling restart only the part with a majority of masters can work. The
+`test:admin-view-mode` lever refuses a clustered node, since it would switch that
+node without changing its startup marker. The node-local runtime mode and the latch
+are described in [admin-view-mode.md](admin-view-mode.md).
 
 **Proof on the stand.** The cluster matrix starts five nodes at once on an empty database
 (HIL-1228), and the first convergence passes only if all five read one marker — the race of

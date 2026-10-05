@@ -35,6 +35,8 @@ directory; a demo calls this from its composer scripts)
   own-directory <node> on|off
                        recreate a node with an empty copy of the stand's cluster directory
                        of its own / back on the stand's (scenario 29, HIL-1243)
+  own-env <node> NAME=value|off  recreate a node with one environment variable of its own
+                       / back on the stand's (scenario 32, HIL-1274)
   db-sql <statement> [<member>]
                        run one SQL statement in the stand's database, or on one member of a
                        clustered one (scenario 26, HIL-1230), and print its rows (scenario 22
@@ -67,7 +69,7 @@ REFUSED = 2
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "own-directory", "db-sql", "db-log", "db-kill", "db-start",
+            "partition", "heal", "logs", "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",
             "db-proxy", "scenarios", "e2e")
 
 

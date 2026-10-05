@@ -25,8 +25,12 @@ use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\StandaloneLeadership;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\AdminViewModeRuntime as StateAdminViewModeRuntime;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -328,6 +332,7 @@ final class ClusterContextTest extends TestCase
         $this->assertNull($inspection[ClusterCommandConstants::FIELD_CONSENSUS_ROLE]);
         $this->assertFalse($inspection[ClusterCommandConstants::FIELD_HAS_QUORUM]);
         $this->assertSame([], $inspection[ClusterCommandConstants::FIELD_PLACEMENTS]);
+        $this->assertFalse($inspection[ClusterCommandConstants::FIELD_ADMIN_VIEW_MODE]);
 
         $nodes = $inspection[ClusterCommandConstants::FIELD_NODES];
         $this->assertCount(1, $nodes);
@@ -335,6 +340,28 @@ final class ClusterContextTest extends TestCase
         $this->assertSame(['gpu-local'], $nodes[0][ClusterCommandConstants::FIELD_NODE_CAPABILITIES]);
         $this->assertTrue($nodes[0][ClusterCommandConstants::FIELD_NODE_ONLINE]);
         $this->assertArrayHasKey(ClusterCommandConstants::FIELD_NODE_LAST_SEEN, $nodes[0]);
+    }
+
+    public function testInspectReportsTheAdminViewModeOfThisNode(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-a');
+        putenv('CLUSTER_NODE_ROLE=master');
+        $previousRt = Hilos::$rt;
+        $previousSignalRouter = Hilos::$sr;
+        try {
+            Hilos::$sr = new SignalRouter();
+            Hilos::$rt = new ClusterContextTestRtContext();
+            Hilos::$rt->mountFeatureRuntime([]);
+            RtTruthSourceRegistry::registerDaemon(StateAdminViewModeRuntime::RT_ITEM);
+            Hilos::$rt->hilosAdminViewModeRuntime->actions->set(true);
+
+            $this->assertTrue((new ClusterContext())->inspect()[ClusterCommandConstants::FIELD_ADMIN_VIEW_MODE]);
+        } finally {
+            RtTruthSourceRegistry::unregisterDaemon(StateAdminViewModeRuntime::RT_ITEM);
+            Hilos::$rt = $previousRt;
+            Hilos::$sr = $previousSignalRouter;
+        }
     }
 
     public function testInspectReportsConsensusTermAndRoleFromARegisteredCoordinator(): void
@@ -543,5 +570,13 @@ final class ClusterContextTest extends TestCase
                 return $this->answer;
             }
         };
+    }
+}
+
+/** Runtime context for the inspect case; it mounts only framework-owned rows. */
+final class ClusterContextTestRtContext extends RtContext
+{
+    public function configure(): void
+    {
     }
 }

@@ -69,6 +69,31 @@ final class PeerMarkersTest extends TestCase
         $this->assertSame('directory:data_export', PeerMarkers::directoryKind('data_export'));
     }
 
+    public function testTheAdminViewModeMarkerNamesTheVariable(): void
+    {
+        $this->assertSame('admin-view-mode', PeerMarkers::ADMIN_VIEW_MODE);
+        $this->assertSame('on', PeerMarkers::adminViewMode(true));
+        $this->assertSame('off', PeerMarkers::adminViewMode(false));
+    }
+
+    public function testAnotherAdminViewModeIsRefused(): void
+    {
+        $local = new PeerMarkers(
+            [PeerMarkers::DATABASE => self::LOCAL_MARKER, PeerMarkers::ADMIN_VIEW_MODE => PeerMarkers::ADMIN_VIEW_MODE_OFF],
+            [PeerMarkers::DATABASE => self::PLACE, PeerMarkers::ADMIN_VIEW_MODE => 'the variable HILOS_ADMIN_VIEW_MODE_ENABLED'],
+        );
+
+        $this->assertSame(
+            "Peer handshake from node 'node-s1' names admin-view-mode marker 'on',"
+            . " but this node reads 'off' from the variable HILOS_ADMIN_VIEW_MODE_ENABLED:"
+            . ' the two nodes do not read one admin-view-mode',
+            $local->refusalFor(self::PEER, [
+                PeerMarkers::DATABASE => self::LOCAL_MARKER,
+                PeerMarkers::ADMIN_VIEW_MODE => PeerMarkers::ADMIN_VIEW_MODE_ON,
+            ]),
+        );
+    }
+
     /**
      * A cluster directory is one more kind beside the database (HIL-1242): the same rule, and the
      * same words, with the directory's kind and the place it was read from.

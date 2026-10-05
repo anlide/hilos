@@ -301,7 +301,7 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             if ($request->command === CliCommands::ADMIN_VIEW_MODE_TEST) {
                 // Test-only: turn this node's admin view mode on or off until it restarts (HIL-1249).
                 // Answered here rather than parked, because the mode is a row of the master's own
-                // runtime state and no agent owns it.
+                // runtime state and no agent owns it; refused on a node of a cluster (HIL-1274).
                 $reply = $this->answerAdminViewMode($request);
                 $this->writeBuffer .= $reply->toJson() . "\n";
                 continue;
@@ -448,11 +448,26 @@ class CommandClient extends AbstractClient implements CommandClientInterface
      * than echoed from the request, so what the caller is told is what the workers of this node
      * will read.
      *
+     * On a cluster the lever is refused: it would change one node, while the peer handshake
+     * marker is read only at startup, so the nodes would diverge silently (HIL-1274).
+     *
      * @param CommandRequestDTO $request Mode request naming on or off
      * @return CommandReplyDTO Reply carrying the mode after the write, or the error to answer instead
      */
     private function answerAdminViewMode(CommandRequestDTO $request): CommandReplyDTO
     {
+        try {
+            if (Hilos::$cluster?->isEnabled() === true) {
+                return CommandReplyDTO::error(
+                    $request->correlationId,
+                    'On a cluster the admin view mode is what HILOS_ADMIN_VIEW_MODE_ENABLED says on every node,'
+                    . ' and a node that says otherwise is refused by the rest: set the variable on every node and restart them.',
+                );
+            }
+        } catch (HilosException $e) {
+            return CommandReplyDTO::error($request->correlationId, $e->getMessage());
+        }
+
         // external-boundary: a test harness's command line, checked on the very next line
         $enabled = $request->payload[CommandConstants::FIELD_ENABLED] ?? null;
         if (!is_bool($enabled)) {

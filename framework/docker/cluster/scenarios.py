@@ -79,8 +79,10 @@ Plus scenarios beyond that matrix:
                                is connected to each (HIL-1230)
  27 database member dies       a member is killed while every node writes; each writes on through
                                the others (HIL-1231)
- 28 database member comes      the member comes back, catches up, and is handed connections again
+  28 database member comes      the member comes back, catches up, and is handed connections again
                                (HIL-1231)
+ 32 another admin view mode     a node whose HILOS_ADMIN_VIEW_MODE_ENABLED differs from its
+                               neighbours' is refused on both ends (HIL-1274)
  35 rt row deleted while cut    a cut-off neighbour sweeps rows deleted by each set owner on the
     off is swept               hand-over and keeps rows written just after it (HIL-1178)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
@@ -290,7 +292,7 @@ DB_LOAD_INTERVAL_SECONDS = 0.5
 # --------------------------------------------------------------------------- io
 
 def ctl(*args):
-    """Run a controller command (kill/start/recreate/partition/heal/stranger), its answer dropped."""
+    """Run a controller command (kill/start/recreate/partition/heal/stranger/own-env), its answer dropped."""
     control.execute(STAND, *args)
 
 
@@ -611,6 +613,12 @@ def client_deliveries(views, node):
     """Cross-node client deliveries a node reports having accepted, or -1 when unreachable."""
     view = views.get(node)
     return -1 if view is None else int(view.get("clientDeliveries", 0))
+
+
+def admin_view_mode(views, node):
+    """Whether a node reports serving admin view mode, or None while it is unreachable."""
+    view = views.get(node)
+    return None if view is None else view.get("adminViewMode")
 
 
 def db_replicas(views, node):
@@ -2189,6 +2197,66 @@ def scenario_29_cluster_directory_of_its_own_refused():
             "was refused on both ends; the rest converged; back on the shared directory it rejoined")
 
 
+def scenario_32_another_admin_view_mode_refused():
+    """A node with another admin view mode variable is refused by both ends (HIL-1274).
+
+    The marker names the variable; both ends refuse the mismatch. The test lever cannot change
+    one clustered node silently, and inspect names the mode from each node's RT row. This stand
+    runs APP_ENV=dev, so it has no production latch; the latch is covered by
+    AdminViewModeStartupIntegrationTest (HIL-1249).
+    """
+    views = wait_converge(ALL_NODES)
+    leader = leaders(views)[0]
+    victim = SLAVES[0] if SLAVES else next(n for n in MASTERS if n != leader)
+    observer = next(n for n in MASTERS if n != victim)
+    rest = [n for n in ALL_NODES if n != victim]
+
+    assert all(admin_view_mode(views, n) is False for n in ALL_NODES), \
+        f"the stand did not start with admin view mode off everywhere: {views}"
+    refusal = client_refusal(observer, "test:admin-view-mode", "on")
+    assert refusal is not None and \
+        "On a cluster the admin view mode is what HILOS_ADMIN_VIEW_MODE_ENABLED says on every node" in refusal, \
+        f"{observer} did not refuse the admin view mode lever: {refusal!r}"
+    assert admin_view_mode({observer: inspect(observer)}, observer) is False, \
+        f"the refused lever changed {observer}'s mode"
+
+    marks = {n: node_log_mark(n) for n in (observer, victim)}
+    print(f"    recreating {victim} with HILOS_ADMIN_VIEW_MODE_ENABLED=true")
+    try:
+        outcome = control.execute(STAND, "own-env", victim, "HILOS_ADMIN_VIEW_MODE_ENABLED=true")
+        assert outcome.code == 0, f"could not give {victim} an admin view mode of its own: {outcome.err}"
+
+        def refused_on_both_ends(_views):
+            return ("names admin-view-mode marker 'on'" in node_log_since(observer, marks[observer])
+                    and "names admin-view-mode marker 'off'" in node_log_since(victim, marks[victim]))
+
+        wait_until(refused_on_both_ends, CONVERGE_TIMEOUT,
+                   f"the admin view mode refusal named by {observer} and {victim}", nodes=rest)
+
+        def left_out(current):
+            return not node_online(current, victim) and converged(rest)(current)
+
+        views = wait_until(left_out, CONVERGE_TIMEOUT,
+                           f"{victim} offline, the rest under one leader", nodes=rest)
+        for node in rest:
+            listed = [row for row in (views.get(node) or {}).get("nodes", [])
+                      if row.get("nodeId") == victim and row.get("online")]
+            assert listed == [], f"{node} lists {victim} online: {listed}"
+            assert admin_view_mode(views, node) is False, f"{node} changed admin view mode"
+
+        wait_until(lambda current: admin_view_mode(current, victim) is True, CONVERGE_TIMEOUT,
+                   f"{victim} reports admin view mode on from its RT row", nodes=[victim])
+    finally:
+        outcome = control.execute(STAND, "own-env", victim, "off")
+        assert outcome.code == 0, f"could not restore {victim} to the stand's environment: {outcome.err}"
+        views = wait_converge(ALL_NODES)
+        assert all(admin_view_mode(views, n) is False for n in ALL_NODES), \
+            f"the stand did not return to admin view mode off everywhere: {views}"
+
+    return (f"{victim} named admin view mode on, was refused on both ends; the rest agreed on off; "
+            "back on the stand's environment it rejoined")
+
+
 def scenario_30_ready_copy_outlives_its_node():
     """The export agent builds a copy on one slave and finds it after moving to another.
 
@@ -3313,6 +3381,9 @@ SCENARIOS = [
     # Both recreate or stop a slave and restore it before the freeze pair stops every master's agents.
     Scenario("29 cluster directory of its own refused", scenario_29_cluster_directory_of_its_own_refused,
              Need(nodes=3, cluster_directory=True)),
+    # The victim is a slave or a non-leading master, so three nodes leave a quorum to observe it.
+    Scenario("32 a node with another admin view mode refused", scenario_32_another_admin_view_mode_refused,
+             Need(nodes=3)),
     Scenario("30 ready copy outlives its node", scenario_30_ready_copy_outlives_its_node,
              Need(slaves=2, cluster_directory=True)),
     # Last, both of them, because the freeze stops the agents of every master: a lift that fails

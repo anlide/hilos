@@ -14,12 +14,15 @@ use Hilos\Fs\ClusterDirectoryMarker;
  * The markers a node names to its peers on the handshake, one per kind, and the rule both ends
  * of a link judge them by (HIL-1206).
  *
- * A marker names something every node of a cluster must share, and the kinds are of two sorts.
+ * A marker names something every node of a cluster must share, and the kinds are of three sorts.
  * One is the database ({@see DatabaseMarker}): nodes that name different database markers read
  * different databases, and a mesh of them would read wrong rows quietly. The other is one kind
  * `directory:<name>` per cluster directory of `$fs` ({@see ClusterDirectoryMarker}, HIL-1242):
  * nodes that name different markers for one directory do not read one directory, and a file one of
- * them writes is not there for the others.
+ * them writes is not there for the others. The third is the admin view mode variable (HIL-1274):
+ * nodes with different values would answer admin viewers differently. The variable is compared,
+ * not the startup verdict: in production the database latch itself closes each node on its next
+ * start, and comparing the verdict would split the cluster during a rolling restart.
  *
  * Every hello and welcome carries the sender's markers ({@see PeerHandshakeDTO}), and both ends of
  * a link check them right after the certificate name: a kind named by either side must be named by
@@ -39,6 +42,15 @@ final readonly class PeerMarkers
 
     /** @var string Start of the kind of the marker naming a cluster directory; the directory's name follows */
     public const string DIRECTORY_KIND_PREFIX = 'directory:';
+
+    /** @var string Kind of the marker naming the admin view mode variable */
+    public const string ADMIN_VIEW_MODE = 'admin-view-mode';
+
+    /** @var string Marker value when the admin view mode variable is on */
+    public const string ADMIN_VIEW_MODE_ON = 'on';
+
+    /** @var string Marker value when the admin view mode variable is off */
+    public const string ADMIN_VIEW_MODE_OFF = 'off';
 
     /**
      * @param array<string, string> $values Marker this node carries, per kind
@@ -69,6 +81,17 @@ final readonly class PeerMarkers
     public static function directoryKind(string $name): string
     {
         return self::DIRECTORY_KIND_PREFIX . $name;
+    }
+
+    /**
+     * Names the value of this node's admin view mode variable.
+     *
+     * @param bool $on Whether the variable is on
+     * @return string The marker value
+     */
+    public static function adminViewMode(bool $on): string
+    {
+        return $on ? self::ADMIN_VIEW_MODE_ON : self::ADMIN_VIEW_MODE_OFF;
     }
 
     /**

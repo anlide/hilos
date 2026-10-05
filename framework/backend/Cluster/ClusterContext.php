@@ -1024,6 +1024,9 @@ final class ClusterContext
      * hop is this very list, so a scenario asking whether an unread collection stayed home has
      * to be able to see who claimed to read what.
      *
+     * The node's admin view mode comes from its RT row, which pages read, so a scenario can
+     * check that cluster nodes agree about the mode they actually serve (HIL-1274).
+     *
      * @return array<string, mixed> Inspection snapshot payload
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws EnvException When a cluster env value cannot be read
@@ -1075,6 +1078,7 @@ final class ClusterContext
                 $replicas[ClusterCommandConstants::FIELD_DB_COLLECTIONS_READ] ?? [],
             ClusterCommandConstants::FIELD_DB_REPLICAS => $this->dbReplicas,
             ClusterCommandConstants::FIELD_LAST_DB_REPLICA_COLLECTION => $this->lastDbReplicaCollection,
+            ClusterCommandConstants::FIELD_ADMIN_VIEW_MODE => Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true,
         ];
     }
 

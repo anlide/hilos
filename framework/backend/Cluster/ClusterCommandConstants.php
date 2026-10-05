@@ -140,6 +140,9 @@ final class ClusterCommandConstants
     /** @var string Inspect reply key: collection the last accepted DB replica named */
     public const string FIELD_LAST_DB_REPLICA_COLLECTION = 'lastDbReplicaCollection';
 
+    /** @var string Inspect reply key: whether this node's admin view mode is on (HIL-1274) */
+    public const string FIELD_ADMIN_VIEW_MODE = 'adminViewMode';
+
     /**
      * @var string Column a test DB announcement puts its row id in, so the payload is not empty.
      *
