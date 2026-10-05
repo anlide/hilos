@@ -36,6 +36,12 @@ final class OrphanReaperTest extends TestCase
     /** Poll interval while waiting for a spawned child to become visible. */
     private const int SPAWN_POLL_INTERVAL_US = 5_000;
 
+    /** How long a killed child may take to drop off the live scan. */
+    private const int EXIT_TIMEOUT_SECONDS = 5;
+
+    /** Poll interval while waiting for a killed child to leave the live scan. */
+    private const int EXIT_POLL_INTERVAL_US = 5_000;
+
     /** @var list<Process> Processes spawned by the running test, stopped in teardown */
     private array $spawned = [];
 
@@ -139,6 +145,20 @@ final class OrphanReaperTest extends TestCase
     }
 
     /**
+     * @throws FailedToGetStatusException When the spawned child's status cannot be read
+     */
+    public function testReapCollectsAChildThatAlreadyExited(): void
+    {
+        $pid = $this->spawn();
+        $this->exitUncollected($pid);
+        self::assertDirectoryExists("/proc/{$pid}", 'the exited child should wait as a zombie');
+
+        new OrphanReaper()->reap();
+
+        self::assertDirectoryDoesNotExist("/proc/{$pid}", 'the exited child should have been collected');
+    }
+
+    /**
      * Spawns a long-lived child process for the running test and waits until it is ready.
      *
      * Ready means visible to the reaper under the command line it will keep, so the
@@ -170,6 +190,36 @@ final class OrphanReaperTest extends TestCase
             'the spawned child pid=%d never appeared with its post-exec cmdline within %ds',
             $pid,
             self::SPAWN_TIMEOUT_SECONDS,
+        ));
+    }
+
+    /**
+     * Kills the child with posix_kill() and waits until the live scan no longer lists it.
+     *
+     * Never through its Process handle: getStatus() and halt() wait for the child
+     * themselves and would collect the zombie before reap(), so the bug would stay hidden.
+     * Between the kill and reap() nothing may touch that Process.
+     *
+     * @param int $pid Child that spawn() has already reported ready
+     */
+    private function exitUncollected(int $pid): void
+    {
+        posix_kill($pid, SIGKILL);
+
+        $deadline = microtime(true) + self::EXIT_TIMEOUT_SECONDS;
+        while (microtime(true) < $deadline) {
+            $children = new OrphanReaper()->findChildren();
+            if (!isset($children[$pid])) {
+                return;
+            }
+
+            usleep(self::EXIT_POLL_INTERVAL_US);
+        }
+
+        self::fail(sprintf(
+            'the killed child pid=%d never dropped off the live scan within %ds',
+            $pid,
+            self::EXIT_TIMEOUT_SECONDS,
         ));
     }
 

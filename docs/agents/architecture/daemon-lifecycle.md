@@ -109,10 +109,18 @@ Two rules make that supervision survive a *crash* rather than only a clean exit:
     (mysqldump, an LLM call) all land directly on PID 1, so the PPID scan sees the whole
     tree. Where the watchdog is *not* PID 1 the scan simply finds nothing, whereas
     `kill(-1)` would take out processes that were never ours.
-  - It skips zombies and reaps exited children with `pcntl_waitpid(..., WNOHANG)`. A child
-    killed by SIGTERM stays in `/proc` as a zombie until its parent waits for it, and that
-    parent is the watchdog itself — without the skip, every single restart would wait out
-    the full 5s grace and then SIGKILL a corpse.
+  - The first step of every sweep collects every child that has already exited
+    (`pcntl_waitpid(-1, ..., WNOHANG)`). Workers of a crashed daemon exit on their own
+    within a second (HIL-520) and wait as zombies on PID 1 until then; whatever the
+    sweep has to SIGKILL is collected by the next start. The scan then skips zombies,
+    and the grace loop collects again what SIGTERM killed: a child killed by SIGTERM
+    stays in `/proc` as a zombie until its parent waits for it, and that parent is the
+    watchdog itself — without the skip, every restart would wait out the full 5s grace
+    and then SIGKILL a corpse. Collection runs only before a start. The old daemon is
+    already collected and the watchdog has no other children, so `waitpid(-1)` takes
+    nothing that is someone else's. `SIGCHLD` `SIG_IGN` would make the kernel reap the
+    daemon too and the crash line would lose its exit code and signal; collecting on
+    every tick could take the daemon's own status if it died between ticks.
 - **Shout, but keep trying.** A start that dies before reaching
   `DAEMON_MIN_RESTART_INTERVAL` counts as failed; reaching it resets the count. Every
   unexpected stop is logged immediately with the process's terminating signal (preferred

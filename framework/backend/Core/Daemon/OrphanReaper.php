@@ -21,7 +21,9 @@ use Hilos\Utils\Logger;
  * leftover — workers and their own grandchildren alike, since re-parenting is flat —
  * shows up as a direct child of this process. Sweeping them before each daemon start
  * makes "the daemon starts with nobody else around" an invariant, which is why no
- * bind-retry or error-text heuristic is needed anywhere else.
+ * bind-retry or error-text heuristic is needed anywhere else. The sweep also collects
+ * children that have already exited — the zombies a crashed daemon's workers leave on
+ * PID 1, which nobody but this watchdog can collect.
  *
  * Scanning for children by PPID rather than signalling the whole process group is
  * deliberate: `kill(-1)` would also cut down unrelated processes wherever the watchdog
@@ -93,6 +95,10 @@ class OrphanReaper
     /**
      * Terminates every live child of this process, killing whatever refuses to exit.
      *
+     * Collects every child that has already exited before that, and waitpid(-1) is safe
+     * exactly here: the caller runs this with no daemon alive and the old one already
+     * collected, so it takes nothing anyone else waits for.
+     *
      * Blocking on purpose: the caller runs this while no daemon is alive, so there is
      * nothing to keep ticking, and letting a start race a surviving worker is exactly
      * the failure being prevented.
@@ -102,6 +108,8 @@ class OrphanReaper
      */
     public function reap(?int $excludePid = null): int
     {
+        $this->collectExited();
+
         $children = $this->scanChildren($excludePid);
         if ($children === null) {
             return 0;
@@ -143,7 +151,9 @@ class OrphanReaper
      * A signalled child stays visible in /proc as a zombie until its parent collects it,
      * and inside a container that parent is this watchdog. Without this the sweep would
      * wait out the full grace period and then send SIGKILL to a process that is already
-     * dead — on every single daemon start, forever.
+     * dead — on every single daemon start, forever. Workers of a crashed daemon also exit
+     * on their own and wait as zombies on PID 1 — this watchdog — where nobody but it
+     * can collect them.
      */
     private function collectExited(): void
     {
