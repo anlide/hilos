@@ -5,6 +5,7 @@
 // code.
 import {
   ActionError,
+  bindProfileFlows,
   createSignal,
   ScopeManager,
   type ActionHandle,
@@ -14,7 +15,7 @@ import {
   type ProjectSignal,
 } from '@hilos/core'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosAccountDeletion from './HilosAccountDeletion.vue'
@@ -22,6 +23,7 @@ import { hilosRouterKey } from '../hilosRouterKey.js'
 
 // The modal teleports to <body>, so assertions query the document.
 afterEach(() => {
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -49,6 +51,15 @@ function zoneWorld(answers: Record<string, unknown>) {
   const sent: string[] = []
   const navigated: string[] = []
   const dispatched: Array<{ action: string; payload?: unknown }> = []
+  const sendFlows = (flows: unknown[]) => {
+    for (const listener of listeners) {
+      listener({
+        kind: 'project',
+        type: 'hilos_profile_flows',
+        data: { flows },
+      } as unknown as ProjectSignal)
+    }
+  }
   const connection = {
     on(event: string, listener: (payload: never) => void): () => void {
       if (event === 'projectSignal') {
@@ -58,11 +69,32 @@ function zoneWorld(answers: Record<string, unknown>) {
       return () => undefined
     },
   } as unknown as HilosConnection
+  bindProfileFlows(connection)
+  sendFlows([])
   const actions = {
     dispatch(action: string, payload?: unknown): ActionHandle {
       sent.push(action)
       dispatched.push({ action, payload })
       const answer = answers[action] ?? []
+      if (
+        action === 'hilos_account_deletion_code' &&
+        typeof answer !== 'string' &&
+        (answer as { expiresAt?: number | null }).expiresAt != null
+      ) {
+        sendFlows([
+          {
+            operation: 'delete_account',
+            step: 'code_sent',
+            address: 'me@example.test',
+            target: null,
+          },
+        ])
+      }
+      if (
+        action === 'hilos_account_deletion_start' ||
+        action === 'hilos_profile_flow_cancel'
+      )
+        sendFlows([])
 
       return {
         requestId: action,
@@ -120,6 +152,25 @@ function byId(id: string): HTMLElement {
 }
 
 describe('HilosAccountDeletion', () => {
+  it('starts the zone clock when a deletion appears', async () => {
+    let now = 1_700_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const world = zoneWorld({})
+    world.state({ deletion: null })
+    await nextTick()
+    now += 50_000
+    world.state({
+      deletion: {
+        requestedAt: now,
+        effectiveAt: now + 30 * DAY,
+      },
+    })
+    await nextTick()
+    expect(byId('account-deletion-scheduled').textContent).toContain(
+      '30 days left',
+    )
+  })
+
   it('turns the zone into the warning and back as the state says', async () => {
     const world = zoneWorld({})
     world.state({ deletion: null })
@@ -178,6 +229,7 @@ describe('HilosAccountDeletion', () => {
         channel: 'email',
         destination: 'me@example.test',
       },
+      hilos_account_deletion_code: SENT_RESEND_OPEN,
     })
     world.state({ deletion: null })
     await nextTick()

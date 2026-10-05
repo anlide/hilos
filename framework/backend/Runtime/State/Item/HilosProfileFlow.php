@@ -12,17 +12,17 @@ use Hilos\Runtime\State\Collection\HilosProfileFlows;
 /**
  * HilosProfileFlow - how far one profile window of one browser session has got (HIL-1182).
  *
- * The record behind the email-change and password-change windows. A window used to keep its
- * step in the tab that drew it, and the proof it had reached - the code of the current address
- * that matched - travelled with that tab from submit to submit. So a second tab of the same
+ * The record behind the email-change, password-change and account-deletion windows. A window
+ * used to keep its step in the tab that drew it; for email and password changes, a matched code
+ * travelled with that tab from submit to submit. So a second tab of the same
  * browser started the flow from the first step, its "Send code" voided the first tab's code, and
- * a reload threw the flow away. The step and what was proven on it now live here, in the session,
+ * a reload threw the flow away. The step and any proof now live here, in the session,
  * and every tab of it opens the window on the same step.
  *
  * ONE ROW PER SESSION AND WINDOW: the id is the hash of the session's cookie token - the form the
  * toast stack and the send-progress line use - joined to the operation key of the window
  * ({@see StepUpOperationKey}). Two windows of one session live apart: the email change in one tab
- * and the password change in another are two flows, not one.
+ * and the password change in another are two flows, not one; deletion has its own operation too.
  *
  * Framework-owned runtime state mounted by the sign-in feature ({@see HilosProfileFlows}) and
  * written by the session holder ({@see AbstractSessionsLibraryAgent}) and by nobody else; the users
@@ -57,7 +57,7 @@ final class HilosProfileFlow extends RtState
     /** Email change: a code went to the new address, which {@see self::$target} names. */
     public const string STEP_NEW_SENT = 'new_sent';
 
-    /** Password change: a code went to the account's address. */
+    /** Password change or account deletion: a code went to the account's address. */
     public const string STEP_CODE_SENT = 'code_sent';
 
     /** Password change: that code matched; the new password is next. */
@@ -69,7 +69,7 @@ final class HilosProfileFlow extends RtState
     /** Hash of the session cookie token this flow belongs to. */
     private(set) string $sessionTokenHash = '';
 
-    /** Operation key of the window - {@see StepUpOperationKey::CHANGE_EMAIL} or CHANGE_PASSWORD. */
+    /** Operation key of the window - CHANGE_EMAIL, CHANGE_PASSWORD or DELETE_ACCOUNT. */
     private(set) string $operation = '';
 
     /** The person the flow was started for; a flow read on behalf of anybody else is no proof. */

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
+use Hilos\Auth\Session\DTO\ProfileFlowsSignalData;
 use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\AccountDeletion\AccountDeletionMessages;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
@@ -18,6 +19,7 @@ use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpOperationKey;
+use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -32,6 +34,8 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
+use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -272,6 +276,71 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
             [[self::EMAIL, MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION]],
             $this->mailer->sentTo(MailTemplateCatalogConstants::AUTH_ACCOUNT_DELETION),
         );
+        self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::DELETE_ACCOUNT));
+        $flow = $this->profileFlows()[HilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            StepUpOperationKey::DELETE_ACCOUNT,
+        )];
+        self::assertNotNull($flow);
+        self::assertSame(self::EMAIL, $flow->address);
+        self::assertSame($reply->expiresAt, $flow->expiresAt);
+        self::assertSame(null, $flow->target);
+        self::assertSame([[
+            HilosProfileFlow::operation => StepUpOperationKey::DELETE_ACCOUNT,
+            HilosProfileFlow::step => HilosProfileFlow::STEP_CODE_SENT,
+            HilosProfileFlow::address => self::EMAIL,
+            HilosProfileFlow::target => null,
+        ]], $this->profileFlowFrames()[0]->flows);
+    }
+
+    /** @throws HilosException When the code or session flow cannot be written */
+    public function testCooldownKeepsTheLiveCodeMomentInTheSessionFlow(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $sent = $this->submitStep(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE, new AccountDeletionCodeActionDTO());
+        $held = $this->submitStep(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE, new AccountDeletionCodeActionDTO());
+
+        self::assertInstanceOf(CodeSendReplyDTO::class, $sent);
+        self::assertInstanceOf(CodeSendReplyDTO::class, $held);
+        self::assertTrue($sent->sent);
+        self::assertFalse($held->sent);
+        self::assertSame($sent->expiresAt, $held->expiresAt);
+        $flow = $this->profileFlows()[HilosProfileFlow::idFor(
+            ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN),
+            StepUpOperationKey::DELETE_ACCOUNT,
+        )];
+        self::assertSame($sent->expiresAt, $flow?->expiresAt);
+        self::assertSame(2, count($this->profileFlowFrames()));
+    }
+
+    /** @throws HilosException When the verification history or action cannot be written */
+    public function testSendCapDoesNotCreateADeletionFlow(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $key = EnvConstants::HILOS_VERIFICATION_SEND_CAP->name;
+        $previous = getenv($key);
+        putenv($key . '=1');
+        try {
+            new VerificationService()->issue(
+                VerificationType::ACCOUNT_DELETION,
+                self::EMAIL,
+                self::USER_ID,
+            );
+            $cooldown = Hilos::$env[EnvConstants::HILOS_VERIFICATION_RESEND_COOLDOWN_SEC]->int();
+            $this->verifications()->backdateIdentifier(self::EMAIL, date('Y-m-d H:i:s', time() - $cooldown - 1));
+
+            $this->assertRefused(
+                AuthMessages::SEND_CAP,
+                HilosSignalConstants::HILOS_ACCOUNT_DELETION_CODE,
+                new AccountDeletionCodeActionDTO(),
+            );
+            $this->settleProfileFlows();
+
+            self::assertNull($this->flowStep(StepUpOperationKey::DELETE_ACCOUNT));
+            self::assertSame([], $this->profileFlowFrames());
+        } finally {
+            putenv($previous === false ? $key : $key . '=' . $previous);
+        }
     }
 
     /**
@@ -283,6 +352,8 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
         $this->seedCode(VerificationType::ACCOUNT_DELETION, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(StepUpOperationKey::DELETE_ACCOUNT, HilosProfileFlow::STEP_CODE_SENT,
+            VerificationType::ACCOUNT_DELETION, self::EMAIL);
 
         $this->assertRefused(
             AuthMessages::INVALID_CODE,
@@ -292,6 +363,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
         self::assertSame([], $this->stateFrames());
+        self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::DELETE_ACCOUNT));
     }
 
     /**
@@ -303,6 +375,8 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
         $this->seedCode(VerificationType::ACCOUNT_DELETION, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(StepUpOperationKey::DELETE_ACCOUNT, HilosProfileFlow::STEP_CODE_SENT,
+            VerificationType::ACCOUNT_DELETION, self::EMAIL);
         $before = time();
 
         $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_START, new AccountDeletionStartActionDTO(self::CODE));
@@ -320,6 +394,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         self::assertNull($this->verifications()->findActive(VerificationType::ACCOUNT_DELETION, self::EMAIL, self::MAX_ATTEMPTS));
 
         $frames = $this->stateFrames();
+        self::assertNull($this->flowStep(StepUpOperationKey::DELETE_ACCOUNT));
         self::assertCount(1, $frames);
         self::assertSame(
             [
@@ -330,6 +405,21 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         );
     }
 
+    /** @throws HilosException When the code or session flow cannot be written */
+    public function testStartRemovesTheSessionFlowAndPublishesTheEmptyList(): void
+    {
+        self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $this->seedCode(VerificationType::ACCOUNT_DELETION, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(StepUpOperationKey::DELETE_ACCOUNT, HilosProfileFlow::STEP_CODE_SENT,
+            VerificationType::ACCOUNT_DELETION, self::EMAIL);
+
+        $this->submitStep(HilosSignalConstants::HILOS_ACCOUNT_DELETION_START, new AccountDeletionStartActionDTO(self::CODE));
+
+        self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        self::assertNull($this->flowStep(StepUpOperationKey::DELETE_ACCOUNT));
+        self::assertSame([], $this->profileFlowFrames()[0]->flows);
+    }
+
     /**
      * A scheduled deletion refuses opening, the code and a second start - another tab started it.
      *
@@ -338,6 +428,9 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     public function testAScheduledDeletionRefusesEveryStepThatLeadsToOne(): void
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
+        $this->seedCode(VerificationType::ACCOUNT_DELETION, self::EMAIL, self::USER_ID, self::CODE);
+        $this->seedFlow(StepUpOperationKey::DELETE_ACCOUNT, HilosProfileFlow::STEP_CODE_SENT,
+            VerificationType::ACCOUNT_DELETION, self::EMAIL);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
 
         $this->assertOpeningRefused(AccountDeletionMessages::ALREADY_SCHEDULED);
@@ -353,6 +446,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
             new AccountDeletionStartActionDTO(self::CODE),
         );
         self::assertSame([], $this->mailer->sent);
+        self::assertSame(HilosProfileFlow::STEP_CODE_SENT, $this->flowStep(StepUpOperationKey::DELETE_ACCOUNT));
     }
 
     /**
@@ -433,10 +527,11 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         self::assertNull($opening->channel);
         self::assertNull($opening->destination);
 
-        $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_START, new AccountDeletionStartActionDTO(''));
+        $this->submitStep(HilosSignalConstants::HILOS_ACCOUNT_DELETION_START, new AccountDeletionStartActionDTO(''));
 
         self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
         self::assertSame([], $this->mailer->sent);
+        self::assertSame([], $this->profileFlowFrames()[0]->flows);
     }
 
     /**
@@ -480,11 +575,12 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
      * Drains the queue and returns every deletion-state frame sent to the person's group.
      *
      * @return list<AccountDeletionStateSignalData> The states, in order
+     * @throws HilosException When a queued flow step cannot be settled
      */
     private function stateFrames(): array
     {
         $states = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->drainSignals() as $signal) {
             if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_ACCOUNT_DELETION_STATE) {
                 continue;
             }
@@ -495,6 +591,26 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         }
 
         return $states;
+    }
+
+    /**
+     * @return list<ProfileFlowsSignalData> Session lists published after deletion flow steps
+     * @throws HilosException When a queued flow step cannot be settled
+     */
+    private function profileFlowFrames(): array
+    {
+        $frames = [];
+        foreach ($this->drainSignals() as $signal) {
+            if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_PROFILE_FLOWS) {
+                continue;
+            }
+            self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            self::assertSame(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN), $signal->data->targetSessionTokenHash);
+            self::assertInstanceOf(ProfileFlowsSignalData::class, $signal->data->data);
+            $frames[] = $signal->data->data;
+        }
+
+        return $frames;
     }
 
     /**

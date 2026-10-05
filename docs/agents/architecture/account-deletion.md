@@ -55,6 +55,9 @@ window's steps are `createHilosAccountDeletionFlow` in the core, drawn by
 same from the session's standing: a strip under the navigation with the date and
 the days left, whose "Keep my account" is this cancel, and a mark by the header
 avatar ([account-standing.md](account-standing.md), *Who Draws What*).
+The window's code-sent step lives in the session ([step-up.md](step-up.md),
+*A window's step lives in the session*); its "Deletion in progress" view follows
+the person's scheduled deletion state.
 
 The grace period is the setting `auth.account_deletion.grace_days` — 30 by
 default, 1 to 365 (`AccountDeletionSettingsCatalog`, folded into the project's

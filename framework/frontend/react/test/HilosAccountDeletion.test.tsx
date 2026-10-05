@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createSignal,
+  bindProfileFlows,
   ScopeManager,
   type HilosConnection,
   type HilosRouter,
@@ -12,7 +13,10 @@ import {
 import { HilosAccountDeletion } from '../src/profile/HilosAccountDeletion.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 /** The answer to a code request: the code is out, and another may follow at once. */
 const SENT = {
@@ -37,8 +41,32 @@ function setup() {
     },
     hilos_account_deletion_code: SENT,
   }
+  const sendFlows = (flows: unknown[]) => {
+    for (const listener of listeners) {
+      listener({
+        kind: 'project',
+        type: 'hilos_profile_flows',
+        data: { flows },
+      } as unknown as ProjectSignal)
+    }
+  }
   const dispatch = vi.fn((action: string, payload?: unknown) => {
     dispatched.push({ action, payload })
+    if (action === 'hilos_account_deletion_code') {
+      sendFlows([
+        {
+          operation: 'delete_account',
+          step: 'code_sent',
+          address: 'me@example.test',
+          target: null,
+        },
+      ])
+    }
+    if (
+      action === 'hilos_account_deletion_start' ||
+      action === 'hilos_profile_flow_cancel'
+    )
+      sendFlows([])
     return {
       requestId: action,
       loading: createSignal(false),
@@ -56,6 +84,8 @@ function setup() {
       return () => undefined
     },
   } as unknown as HilosConnection
+  bindProfileFlows(connection)
+  sendFlows([])
   const context = {
     connection,
     scopes: new ScopeManager(),
@@ -97,6 +127,20 @@ function setup() {
 }
 
 describe('HilosAccountDeletion', () => {
+  it('starts the zone clock when a deletion appears', () => {
+    let now = 1_700_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { node, state } = setup()
+    state({ deletion: null })
+    now += 50_000
+    state({
+      deletion: { requestedAt: now, effectiveAt: now + 30 * 86_400_000 },
+    })
+    expect(node('account-deletion-scheduled').textContent).toContain(
+      '30 days left',
+    )
+  })
+
   it('confirms step-up via form submit when credential is typed, ignores empty submit, and binds confirm button to form', async () => {
     const { node, dispatched, state } = setup()
     state({ deletion: null })

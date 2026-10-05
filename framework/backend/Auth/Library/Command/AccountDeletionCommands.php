@@ -22,10 +22,12 @@ use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Random\RandomException;
 
 /**
@@ -37,6 +39,9 @@ use Random\RandomException;
  * stands, and where the code goes. The operation opens itself with a code to the account's
  * address, so a person the confirmation would have asked for a mailed code is not asked
  * twice - the gate passes them, and the code of the second step is the proof.
+ * The session keeps the code-sent step of that window (HIL-1183), so its tabs can
+ * continue it together. Starting the deletion ends that flow. The code is still
+ * checked and spent by start itself; the session's step is not proof that it matched.
  *
  * Calling the deletion off is the opposite on purpose: no fresh proof, and not behind the
  * product's guard, because changing one's mind must be easier than deleting, and a frozen
@@ -88,12 +93,14 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
      * The address is derived again; one that vanished since the window opened asks the person
      * to start over. The answer carries the cooldown and whether the earlier code remains
      * live; the window cap is refused out loud.
+     * A live code writes the code-sent step on the acting session's flow.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @return CodeSendReplyDTO Send outcome and server moments
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the confirmation is missing, a deletion is scheduled, no address is left, or the send cap is reached
      * @throws RandomException When the platform CSPRNG cannot produce a code
+     * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When a confirmation, identity, verification or request lookup fails
      */
     public function sendCode(string $acceptKey): CodeSendReplyDTO
@@ -107,12 +114,27 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
-        return $this->sendProfileCode(
+        $destination = (string)$target->destination;
+        $reply = $this->sendProfileCode(
             $acting,
             StepUpOperationKey::DELETE_ACCOUNT,
             $this->codeTypeOf($target),
-            (string)$target->destination,
+            $destination,
         );
+        if ($reply->expiresAt === null) {
+            return $reply;
+        }
+
+        $this->library->announceProfileFlowStep(
+            $acting,
+            StepUpOperationKey::DELETE_ACCOUNT,
+            HilosProfileFlow::STEP_CODE_SENT,
+            $destination,
+            null,
+            $reply->expiresAt,
+            $reply,
+        );
+        return $reply;
     }
 
     /**
@@ -121,16 +143,19 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
      * The moment of the erasure is fixed here - now plus the grace period in force - and never
      * moves. An account no code can reach starts without one. A wrong code spends an attempt,
      * as it does everywhere, and a wrong and an expired one are answered alike.
+     * A successful start removes the acting session's flow, including when no code was needed.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param AccountDeletionStartActionDTO $dto Code the account's address received
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the confirmation is missing, a deletion is scheduled, or the code does not match
+     * @throws InvalidArgumentException When the finished flow frame cannot be named or queued
      * @throws HilosException When a confirmation, identity, verification, setting or request write fails
      */
     public function start(string $acceptKey, AccountDeletionStartActionDTO $dto): void
     {
-        $userId = $this->actingUser($acceptKey)->userId;
+        $acting = $this->actingUser($acceptKey);
+        $userId = $acting->userId;
         $this->stepUp->require($acceptKey, StepUpOperationKey::DELETE_ACCOUNT);
         $this->refuseScheduled($userId);
         $target = new StepUpMethodResolver()->resolveAddress($userId);
@@ -142,6 +167,7 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
         }
 
         $this->scheduleFor($userId);
+        $this->library->announceProfileFlowStep($acting, StepUpOperationKey::DELETE_ACCOUNT, null);
     }
 
     /**

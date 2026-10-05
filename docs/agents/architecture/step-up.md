@@ -99,10 +99,10 @@ with their own account is never done with someone else's hands.
 
 The confirmation is not the only thing another tab continues: the step a
 multi-step profile window reached is the session's too (HIL-1182). The email
-change and the password change keep, per session and window, one row of
-`hilosProfileFlows` — the step reached, what was proven on it (the current
-address's code matched; the new address and its code sent), the account's
-address the proof stands on, and the moment the code of that proof dies.
+change, password change and account deletion keep, per session and window, one row of
+`hilosProfileFlows` — the step reached, the account's address behind it, and the
+moment its code dies. Email and password steps may record a matched code;
+deletion records only that a code was sent.
 
 - **One writer.** The users library runs a step and spends the codes exactly
   where it did before; it reports the step on `hilos_profile_flow_step`, and the
@@ -126,9 +126,13 @@ address the proof stands on, and the moment the code of that proof dies.
   take the session's rows away, where its toast stack is forgotten; signing in
   moves the session onto a new token, which leaves them unreachable.
 
-Another browser of the same person sees nothing. The account-deletion window and
-"Add a way to sign in" join the same record in their own leaves (HIL-1183,
-HIL-1184).
+Another browser of the same person sees nothing. The account-deletion window
+(HIL-1183) writes one `code_sent` step under `delete_account`: the code went to
+the account's address, and the code itself is still checked and spent at the
+start. Cancel on that step discards the session's flow without a question. A
+deletion scheduled by another tab, browser or administrator closes an open
+window of steps; the tab that started it shows "Deletion in progress". "Add a
+way to sign in" joins the same record in HIL-1184.
 
 A code request held by the resend cooldown after its earlier code was spent
 returns `expiresAt: null` (HIL-1186). The email/password window still stands on

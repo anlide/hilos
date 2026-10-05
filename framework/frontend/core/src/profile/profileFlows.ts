@@ -1,5 +1,5 @@
 // The profile windows a browser session is half-way through (HIL-1182): how far
-// the email change and the password change have got, held by the SESSION rather
+// the email change, password change and account deletion have got, held by the SESSION rather
 // than by the tab that opened them.
 //
 // A window used to keep its step in the tab that drew it, so a second tab of the
@@ -45,7 +45,7 @@ export const PROFILE_FLOW_STEP_CURRENT_PROVEN = 'current_proven'
 /** Email change: a code went to the new address the entry's `target` names (PHP `STEP_NEW_SENT`). */
 export const PROFILE_FLOW_STEP_NEW_SENT = 'new_sent'
 
-/** Password change: a code went to the account's address (PHP `STEP_CODE_SENT`). */
+/** Password change or account deletion: a code went to the account's address (PHP `STEP_CODE_SENT`). */
 export const PROFILE_FLOW_STEP_CODE_SENT = 'code_sent'
 
 /** Password change: that code matched; the new password is next (PHP `STEP_CODE_PROVEN`). */
@@ -54,7 +54,7 @@ export const PROFILE_FLOW_STEP_CODE_PROVEN = 'code_proven'
 /**
  * The frame: every live flow of the session, which may be none.
  *
- * `operation` names the window (`change_email`, `change_password`), `step` says
+ * `operation` names the window (`change_email`, `change_password`, `delete_account`), `step` says
  * what has happened in it, `address` is the account's address the proof stands
  * on, and `target` is the new address of an email change on its last step and
  * null everywhere else.
@@ -72,7 +72,7 @@ export const profileFlowsSchema = z.looseObject({
 
 /** One window's flow as the session remembers it. */
 export interface HilosProfileFlowState {
-  /** The window - the operation key it confirms (`change_email`, `change_password`). */
+  /** The window - the operation key it confirms (`change_email`, `change_password`, `delete_account`). */
   readonly operation: string
   /** What has happened in it - one of the `PROFILE_FLOW_STEP_*` values. */
   readonly step: string

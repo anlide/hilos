@@ -21,6 +21,11 @@ import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { applyServerTime } from '../../src/session/serverClock.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import {
+  bindProfileFlows,
+  profileFlowsSchema,
+  SIGNAL_PROFILE_FLOWS,
+} from '../../src/profile/profileFlows.js'
 
 /** A browser clock parked at a known moment. */
 const LOCAL_NOW = 1_700_000_000_000
@@ -30,6 +35,39 @@ const SERVER_DRIFT_MS = 45_000
 
 /** One day, in ms. */
 const DAY = 86_400_000
+
+/** Bind the session's held flow list to a fake connection. */
+function bound(): (flows: unknown[]) => void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  bindProfileFlows({
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+      return () => undefined
+    },
+  } as unknown as HilosConnection)
+  return (flows) => {
+    for (const listener of listeners) {
+      listener({
+        type: SIGNAL_PROFILE_FLOWS,
+        data: profileFlowsSchema.parse({ flows }),
+      })
+    }
+  }
+}
+
+const tell = bound()
+
+/** The deletion step the session holder publishes after a live code order. */
+function record(address = OPENING.destination) {
+  return {
+    operation: 'delete_account',
+    step: 'code_sent',
+    address,
+    target: null,
+  }
+}
 
 /** A connection double that replays project signals to its listeners. */
 function fakeConnection() {
@@ -93,6 +131,22 @@ function scriptedLifecycle(answers: Record<string, unknown>) {
       if (typeof answer === 'string') {
         return { done: Promise.reject(new ActionError(name, 'fail', answer)) }
       }
+      if (answer instanceof Promise) {
+        return { done: answer.then((value) => ({ reply: value })) }
+      }
+
+      if (
+        name === 'hilos_account_deletion_code' &&
+        (answer as { expiresAt?: number | null }).expiresAt != null
+      ) {
+        tell([record()])
+      }
+      if (
+        name === 'hilos_account_deletion_start' ||
+        name === 'hilos_profile_flow_cancel'
+      ) {
+        tell([])
+      }
 
       return {
         done: Promise.resolve({
@@ -138,6 +192,7 @@ const ASK = {
 }
 
 afterEach(() => {
+  tell([])
   applyServerTime(Date.now())
   vi.useRealTimers()
 })
@@ -209,7 +264,136 @@ describe('the four actions', () => {
 })
 
 describe('the window', () => {
-  it('repeats a held code request without leaving the code step', async () => {
+  it('opens on the session code step when its address matches', async () => {
+    tell([record()])
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    expect(flow.step.get()).toBe('code')
+    expect(flow.code.get()).toBe('')
+  })
+
+  it('starts at the explanation when the record belongs to an old address', async () => {
+    tell([record('old@example.test')])
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    expect(flow.step.get()).toBe('explain')
+  })
+
+  it('ignores a record when there is no address for a code', async () => {
+    tell([record()])
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: {
+        ...OPENING,
+        channel: null,
+        destination: null,
+      },
+    })
+    await flow.open()
+    expect(flow.step.get()).toBe('explain')
+    tell([])
+    expect(flow.step.get()).toBe('explain')
+  })
+
+  it('follows the code step live and keeps code already typed on it', async () => {
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    flow.code.set('stale')
+    tell([record()])
+    expect(flow.step.get()).toBe('code')
+    expect(flow.code.get()).toBe('')
+    flow.code.set('123456')
+    tell([record()])
+    expect(flow.code.get()).toBe('123456')
+  })
+
+  it('closes the code step when its session record disappears', async () => {
+    tell([record()])
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    tell([])
+    expect(flow.step.get()).toBe('closed')
+  })
+
+  it('waits for its own pending action when its record disappears', async () => {
+    tell([record()])
+    let release!: (value: unknown) => void
+    const waiting = new Promise<unknown>((resolve) => {
+      release = resolve
+    })
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+      hilos_account_deletion_code: waiting,
+    })
+    await flow.open()
+    const sending = flow.sendAgain()
+    tell([])
+    expect(flow.step.get()).toBe('code')
+    release({ sent: false, resendAt: LOCAL_NOW, expiresAt: null })
+    await sending
+    expect(flow.step.get()).toBe('code')
+  })
+
+  it('cancels the session flow from the code step and closes on the answer', async () => {
+    tell([record()])
+    const { flow, sent } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    flow.close()
+    await vi.waitFor(() => expect(flow.step.get()).toBe('closed'))
+    expect(sent.at(-1)).toStrictEqual({
+      name: 'hilos_profile_flow_cancel',
+      payload: { operation: 'delete_account' },
+    })
+  })
+
+  it('keeps the code window open when canceling its flow is refused', async () => {
+    tell([record()])
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+      hilos_profile_flow_cancel: 'Cannot cancel',
+    })
+    await flow.open()
+    flow.close()
+    await vi.waitFor(() => expect(flow.refusal.get()).toBe('Cannot cancel'))
+    expect(flow.step.get()).toBe('code')
+  })
+
+  it('closes step 1 and disposes without canceling the session flow', async () => {
+    const { flow, sent } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    flow.close()
+    expect(sent).toHaveLength(2)
+    await flow.open()
+    tell([record()])
+    flow.dispose()
+    tell([])
+    expect(flow.step.get()).toBe('code')
+    expect(
+      sent.every((entry) => entry.name !== 'hilos_profile_flow_cancel'),
+    ).toBe(true)
+  })
+
+  it('stays on step 1 when the cooldown has no live code', async () => {
     const { flow, sent } = flowSetup({
       hilos_step_up_start: SKIP,
       hilos_account_deletion_open: OPENING,
@@ -221,12 +405,9 @@ describe('the window', () => {
     })
     await flow.open()
     await flow.next()
-    expect(flow.step.get()).toBe('code')
-    flow.code.set('123456')
-    await flow.sendAgain()
-
-    expect(flow.code.get()).toBe('')
-    expect(flow.step.get()).toBe('code')
+    expect(flow.step.get()).toBe('explain')
+    await flow.next()
+    expect(flow.step.get()).toBe('explain')
     expect(
       sent.filter((entry) => entry.name === 'hilos_account_deletion_code'),
     ).toHaveLength(2)
@@ -288,6 +469,7 @@ describe('the window', () => {
     flow.code.set('302302')
     await flow.start()
 
+    expect(flow.step.get()).toBe('in-progress')
     expect(sent.at(-1)).toStrictEqual({
       name: 'hilos_account_deletion_start',
       payload: { code: '302302' },
@@ -307,6 +489,7 @@ describe('the window', () => {
 
     await flow.next()
 
+    expect(flow.step.get()).toBe('in-progress')
     expect(sent.at(-1)).toStrictEqual({
       name: 'hilos_account_deletion_start',
       payload: { code: '' },
@@ -330,7 +513,7 @@ describe('the window', () => {
     expect(flow.code.get()).toBe('000000')
   })
 
-  it('turns into "in progress" when a deletion is scheduled, from any tab', async () => {
+  it('closes a window on step 1 when another tab schedules deletion', async () => {
     const { flow, store } = flowSetup({
       hilos_step_up_start: SKIP,
       hilos_account_deletion_open: OPENING,
@@ -339,6 +522,57 @@ describe('the window', () => {
 
     store.applyState(wireScheduled())
 
+    expect(flow.step.get()).toBe('closed')
+  })
+
+  it('closes a window on the code step when another browser schedules deletion', async () => {
+    tell([record()])
+    const { flow, store } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+    })
+    await flow.open()
+    store.applyState(wireScheduled())
+    expect(flow.step.get()).toBe('closed')
+  })
+
+  it("shows in progress when state arrives during this window's start", async () => {
+    tell([record()])
+    let release!: (value: unknown) => void
+    const waiting = new Promise<unknown>((resolve) => {
+      release = resolve
+    })
+    const { flow, store } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+      hilos_account_deletion_start: waiting,
+    })
+    await flow.open()
+    const starting = flow.start()
+    store.applyState(wireScheduled())
+    expect(flow.step.get()).toBe('in-progress')
+    release([])
+    await starting
+    expect(flow.step.get()).toBe('in-progress')
+  })
+
+  it('shows in progress on its start answer without waiting for state', async () => {
+    tell([record()])
+    let release!: (value: unknown) => void
+    const waiting = new Promise<unknown>((resolve) => {
+      release = resolve
+    })
+    const { flow } = flowSetup({
+      hilos_step_up_start: SKIP,
+      hilos_account_deletion_open: OPENING,
+      hilos_account_deletion_start: waiting,
+    })
+    await flow.open()
+    const starting = flow.start()
+    tell([])
+    expect(flow.step.get()).toBe('code')
+    release([])
+    await starting
     expect(flow.step.get()).toBe('in-progress')
   })
 

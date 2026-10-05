@@ -72,10 +72,21 @@ watch(step, () => {
 onMounted(() => {
   store.start()
   flow.follow()
-  tick = setInterval(() => {
-    now.value = Date.now()
-  }, ACCOUNT_DELETION_TICK_MS)
 })
+watch(
+  () => state.value?.deletion?.effectiveAt ?? null,
+  (effectiveAt) => {
+    if (tick !== null) clearInterval(tick)
+    tick = null
+    now.value = Date.now()
+    if (effectiveAt !== null) {
+      tick = setInterval(() => {
+        now.value = Date.now()
+      }, ACCOUNT_DELETION_TICK_MS)
+    }
+  },
+  { immediate: true },
+)
 onUnmounted(() => {
   if (tick !== null) {
     clearInterval(tick)

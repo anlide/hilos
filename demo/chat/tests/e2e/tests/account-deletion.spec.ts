@@ -8,6 +8,8 @@
 // The code is read from the stand mailbox, never a backdoor. Erasure in chat
 // is covered by demo/chat/tests/Integration/AccountErasureTest.php; live erasure
 // runs in the polls and tasks e2e suites through test:account:force-purge.
+// The code-sent step of the window belongs to the session (HIL-1183): its
+// tabs move together, and a reload resumes it when the person opens the window.
 import { expect, test } from '@playwright/test'
 
 import { waitForMailCode } from '../helpers/mail'
@@ -96,4 +98,54 @@ test('asks the password of a password account before anything else', async ({
   await clickSubmit(page.getByTestId('account-deletion-cancel'))
   await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
   await expect(page.getByTestId('account-deletion-open')).toBeVisible()
+})
+
+test('shares the deletion code step and closes other open windows on start and cancellation', async ({
+  context,
+  page,
+}) => {
+  const email = await registerEmailOnly(page)
+  const other = await context.newPage()
+  await gotoPage(other, '/profile')
+
+  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await clickSubmit(other.getByTestId('account-deletion-open'))
+  await expect(page.getByTestId('account-deletion-continue')).toBeVisible()
+  await expect(other.getByTestId('account-deletion-continue')).toBeVisible()
+
+  await clickSubmit(other.getByTestId('account-deletion-continue'))
+  await expect(page.getByTestId('account-deletion-code')).toBeVisible()
+  const code = await waitForMailCode(email, SUBJECT)
+  await typeInto(page.getByTestId('account-deletion-code'), code)
+  await clickSubmit(page.getByTestId('account-deletion-start'))
+  await expect(page.getByTestId('account-deletion-keep')).toBeVisible()
+  await expect(other.getByTestId('account-deletion-modal')).toHaveCount(0)
+  await expect(other.getByTestId('account-deletion-scheduled')).toBeVisible()
+
+  await clickSubmit(other.getByTestId('account-deletion-manage'))
+  await expect(other.getByTestId('account-deletion-keep')).toBeVisible()
+  await clickSubmit(other.getByTestId('account-deletion-keep'))
+  await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
+  await expect(page.getByTestId('account-deletion-open')).toBeVisible()
+  await expect(other.getByTestId('account-deletion-open')).toBeVisible()
+})
+
+test('resumes the deletion code step after reload and discards it on Cancel', async ({
+  page,
+}) => {
+  await registerEmailOnly(page)
+  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await clickSubmit(page.getByTestId('account-deletion-continue'))
+  await expect(page.getByTestId('account-deletion-code')).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
+  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await expect(page.getByTestId('account-deletion-code')).toBeVisible()
+  await clickSubmit(page.getByTestId('account-deletion-cancel'))
+  await expect(page.getByTestId('account-deletion-modal')).toHaveCount(0)
+
+  await clickSubmit(page.getByTestId('account-deletion-open'))
+  await expect(page.getByTestId('account-deletion-continue')).toBeVisible()
 })

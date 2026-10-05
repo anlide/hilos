@@ -68,10 +68,8 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
   useEffect(() => {
     store.start()
     flow.follow()
-    const tick = setInterval(() => setNow(Date.now()), ACCOUNT_DELETION_TICK_MS)
 
     return () => {
-      clearInterval(tick)
       flow.dispose()
       store.dispose()
     }
@@ -87,6 +85,12 @@ export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
   }, [step])
 
   const deletion = state?.deletion ?? null
+  useEffect(() => {
+    setNow(Date.now())
+    if (deletion === null) return
+    const tick = setInterval(() => setNow(Date.now()), ACCOUNT_DELETION_TICK_MS)
+    return () => clearInterval(tick)
+  }, [deletion?.effectiveAt ?? null])
   const open = step !== 'closed' && step !== 'opening'
   const stepNumber = step === 'code' ? 2 : 1
   const daysLeft =

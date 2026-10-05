@@ -16,6 +16,7 @@ import {
   effect,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core'
 import {
@@ -348,16 +349,21 @@ export class HilosAccountDeletion {
           this.stepUpRefusal.set(value),
         ),
       ]
-      const tick = setInterval(
-        () => this.now.set(Date.now()),
-        ACCOUNT_DELETION_TICK_MS,
-      )
       onCleanup(() => {
-        clearInterval(tick)
         off.forEach((unsubscribe) => unsubscribe())
         flow.dispose()
         store.dispose()
       })
+    })
+    effect((onCleanup) => {
+      const effectiveAt = this.deletion()?.effectiveAt ?? null
+      untracked(() => this.now.set(Date.now()))
+      if (effectiveAt === null) return
+      const tick = setInterval(
+        () => this.now.set(Date.now()),
+        ACCOUNT_DELETION_TICK_MS,
+      )
+      onCleanup(() => clearInterval(tick))
     })
     // The step the window moves to takes the focus - the code field on step 2 -
     // since the window stays and only its content changes.

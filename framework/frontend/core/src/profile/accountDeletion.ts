@@ -6,9 +6,11 @@
 // The state arrives whole, twice over: as the `accountDeletion` data of the
 // profile page that draws the zone for the first render, and as
 // `hilos_account_deletion_state` to the person's group after every start and
-// cancel, from whichever tab made it. The view of the zone and of the window is
-// DERIVED from it: a scheduled deletion turns the zone into a warning and the
-// window into "Deletion in progress" in every open tab at once.
+// cancel, from whichever tab made it. A scheduled deletion turns the zone into
+// a warning. The window's code-sent step lives in the session (HIL-1183), so
+// its tabs and a reloaded tab open on that step and follow it live. Cancel there
+// ends the flow for the session. A deletion scheduled outside this window
+// closes its steps; the tab that started it shows "Deletion in progress".
 //
 // Starting asks three things of the server in turn — the operation's own
 // confirmation (delete_account, the step-up), the window's opening, the code —
@@ -42,8 +44,15 @@ import {
   createSignal,
   subscribeSignal,
   type ReadonlySignal,
+  type Unsubscribe,
   type WritableSignal,
 } from '../state/signal.js'
+import {
+  hilosProfileFlowFor,
+  PROFILE_FLOW_CANCEL_ACTION,
+  PROFILE_FLOW_STEP_CODE_SENT,
+  type HilosProfileFlowState,
+} from './profileFlows.js'
 
 /** Client→server: open the window (PHP `HILOS_ACCOUNT_DELETION_OPEN`). */
 export const HILOS_ACCOUNT_DELETION_OPEN_ACTION = 'hilos_account_deletion_open'
@@ -362,7 +371,7 @@ export interface HilosAccountDeletionFlow {
   start(): Promise<void>
   /** Call the scheduled deletion off. */
   cancel(): Promise<void>
-  /** Close the window, whatever step it is on; nothing started is started. */
+  /** Close locally, or cancel the session's flow when the code step has a record. */
   close(): void
   /** Start following the state — call on mount. */
   follow(): void
@@ -382,11 +391,10 @@ function actionMessage(error: unknown): string {
 /**
  * Create the window of one danger zone.
  *
- * The window follows the state as well as its own submits: a deletion
- * scheduled by another tab turns an open window into "Deletion in progress",
- * and one called off by another tab closes a window that showed it. A reply
- * that arrives after the window was closed lands nowhere: it does not open the
- * window again.
+ * The window follows the session's code-sent step while its own steps are open.
+ * A deletion scheduled elsewhere closes them; the window that started it shows
+ * "Deletion in progress" by its own answer. Calling off a scheduled deletion
+ * closes that view. A late reply cannot reopen a closed window.
  *
  * @param context The project context (the action lifecycle the submits dispatch over).
  * @param store The state store of the same page.
@@ -407,6 +415,7 @@ export function createHilosAccountDeletionFlow(
   const code = createSignal('')
   const busy = createSignal(false)
   const refusal = createSignal<string | null>(null)
+  const record = hilosProfileFlowFor(ACCOUNT_DELETION_OPERATION)
   const reportedProgress = hilosCodeSendProgressFor(ACCOUNT_DELETION_OPERATION)
   const hiddenTicket = createSignal<string | null>(null)
   const replyResendAt = createSignal<number | null>(null)
@@ -422,7 +431,10 @@ export function createHilosAccountDeletionFlow(
   // Counts the closes: a submit remembers the round it was sent in, and its
   // reply moves the window only while that round is still the current one.
   let round = 0
+  let pending = 0
+  let starting = false
   let stop: (() => void) | null = null
+  let following: Unsubscribe | null = null
 
   function scheduled(): boolean {
     return store.state.get()?.deletion != null
@@ -432,12 +444,16 @@ export function createHilosAccountDeletionFlow(
     const current = step.get()
     if (scheduled()) {
       if (current !== 'closed' && current !== 'in-progress') {
-        busy.set(false)
-        refusal.set(null)
-        step.set('in-progress')
+        if (starting) {
+          busy.set(false)
+          refusal.set(null)
+          step.set('in-progress')
+        } else {
+          finish()
+        }
       }
     } else if (current === 'in-progress') {
-      close()
+      finish()
     }
   }
 
@@ -448,16 +464,49 @@ export function createHilosAccountDeletionFlow(
    * @returns Whether it went through.
    */
   async function run(submit: () => Promise<void>): Promise<boolean> {
+    const started = round
     busy.set(true)
     refusal.set(null)
+    pending += 1
     try {
       await submit()
-      return true
+      return round === started
     } catch (error) {
-      refusal.set(actionMessage(error))
+      if (round === started) refusal.set(actionMessage(error))
       return false
     } finally {
-      busy.set(false)
+      pending -= 1
+      if (round === started) busy.set(false)
+    }
+  }
+
+  /** The deletion code belongs to the account address named by this opening. */
+  function stepOfRecord(
+    flow: HilosProfileFlowState | null,
+    opened: HilosAccountDeletionOpening | null,
+  ): HilosAccountDeletionStep {
+    return flow?.step === PROFILE_FLOW_STEP_CODE_SENT &&
+      flow.address === opened?.destination
+      ? 'code'
+      : 'explain'
+  }
+
+  /** Follow a live session step without replacing code already typed on that step. */
+  function follow(flow: HilosProfileFlowState | null): void {
+    const current = step.get()
+    if (
+      opening.get()?.channel == null ||
+      (current !== 'explain' && current !== 'code')
+    )
+      return
+    if (stepOfRecord(flow, opening.get()) === 'code') {
+      if (current === 'explain') {
+        refusal.set(null)
+        code.set('')
+        step.set('code')
+      }
+    } else if (current === 'code' && pending === 0) {
+      finish()
     }
   }
 
@@ -469,22 +518,66 @@ export function createHilosAccountDeletionFlow(
   async function openSteps(started: number): Promise<void> {
     const opened = await run(async () => {
       const result = await actions.open().done
-      opening.set(result.reply as HilosAccountDeletionOpening)
+      if (round === started)
+        opening.set(result.reply as HilosAccountDeletionOpening)
     })
     if (round !== started || scheduled()) {
       return
     }
-    step.set(opened ? 'explain' : 'refused')
+    if (!opened) {
+      step.set('refused')
+      return
+    }
+    if (opening.get()?.channel == null) {
+      step.set('explain')
+      return
+    }
+    step.set(stepOfRecord(record.get(), opening.get()))
+    following ??= subscribeSignal(record, follow)
   }
 
-  function close(): void {
+  /** Close this tab's window without changing the session's flow. */
+  function finish(): void {
     round += 1
     step.set('closed')
+    busy.set(false)
     opening.set(null)
     code.set('')
     refusal.set(null)
     hiddenTicket.set(null)
     replyResendAt.set(null)
+    following?.()
+    following = null
+  }
+
+  /** End the session's flow, then close this window on the server's answer. */
+  async function discard(): Promise<void> {
+    round += 1
+    if (
+      await run(async () => {
+        await context.actions.dispatch(PROFILE_FLOW_CANCEL_ACTION, {
+          operation: ACCOUNT_DELETION_OPERATION,
+        }).done
+      })
+    )
+      finish()
+  }
+
+  /** The same success path serves a code and an account with no reachable address. */
+  async function startDeletion(value: string): Promise<void> {
+    starting = true
+    try {
+      if (
+        await run(async () => {
+          await actions.start(value).done
+        })
+      ) {
+        refusal.set(null)
+        step.set('in-progress')
+      }
+    } finally {
+      starting = false
+    }
   }
 
   return {
@@ -515,6 +608,7 @@ export function createHilosAccountDeletionFlow(
       const started = round
       const verdict = await stepUp.open(ACCOUNT_DELETION_OPERATION)
       busy.set(false)
+      if (round !== started) return
       if (verdict === 'skip') {
         await openSteps(started)
       } else if (round === started && step.get() === 'opening') {
@@ -538,9 +632,7 @@ export function createHilosAccountDeletionFlow(
         return
       }
       if (opening.get()?.channel == null) {
-        await run(async () => {
-          await actions.start('').done
-        })
+        await startDeletion('')
         return
       }
       const started = round
@@ -553,7 +645,7 @@ export function createHilosAccountDeletionFlow(
         })) &&
         round === started
       ) {
-        step.set('code')
+        step.set(stepOfRecord(record.get(), opening.get()))
       }
     },
     async sendAgain() {
@@ -570,9 +662,7 @@ export function createHilosAccountDeletionFlow(
       if (busy.get() || step.get() !== 'code') {
         return
       }
-      await run(async () => {
-        await actions.start(code.get()).done
-      })
+      await startDeletion(code.get())
     },
     async cancel() {
       if (busy.get()) {
@@ -583,10 +673,13 @@ export function createHilosAccountDeletionFlow(
           await actions.cancel().done
         })
       ) {
-        close()
+        finish()
       }
     },
-    close,
+    close() {
+      if (step.get() === 'code' && record.get() !== null) void discard()
+      else finish()
+    },
     follow() {
       stop?.()
       stop = subscribeSignal(store.state, onState)
@@ -595,6 +688,8 @@ export function createHilosAccountDeletionFlow(
     dispose() {
       stop?.()
       stop = null
+      following?.()
+      following = null
     },
   }
 }
