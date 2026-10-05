@@ -16,7 +16,8 @@ small and stops it from regressing:
 - **Bootstrap 5.3 (the SDK's styling bet) ships the visual a11y layer.** Stock
   components carry `:focus-visible` focus rings, a nuanced
   `prefers-reduced-motion` story (it *slows* spinners rather than freezing them),
-  and an AA-tuned default theme (the `-subtle`/`-emphasis` pairs and `text-bg-*`
+  and stock colors AA-tuned in both the light and the dark mode (the
+  `-subtle`/`-emphasis` pairs and `text-bg-*`
   use computed contrast). Because every view is built from stock Bootstrap
   classes ([styling-rules.md](styling-rules.md)), these come for free.
 - **Hilos owns structure and semantics.** Landmarks, headings, ARIA roles and
@@ -48,8 +49,8 @@ The baseline, mandated since the first spec:
   controls carry an `aria-label` and mark the icon `aria-hidden="true"`; status
   surfaces carry the right role. Decorative glyphs and emoji are `aria-hidden`.
 - **Visible focus and adequate contrast.** Delivered by Bootstrap's
-  `:focus-visible` rings and AA-tuned theme — kept intact by building from stock
-  classes and never suppressing outlines.
+  `:focus-visible` rings and AA-tuned stock colors — kept intact by building from
+  stock classes and never suppressing outlines.
 
 ## Where focus lands when a modal opens
 
@@ -224,11 +225,12 @@ The rules to apply when building a view or an SDK component:
   animations live only in the Sass layer: the toast life bar and the veil over a
   departing page each have a nearby reduced-motion variant (HIL-1146). Do **not**
   add a blanket reset.
-- **Contrast** — the default theme targets AA. A few stock combinations (muted or
-  secondary text on a tinted surface) sit near the 4.5:1 line; tuning them means a
-  full Bootstrap Sass recompile, which [styling-rules.md](styling-rules.md) defers
-  until a theme actually needs it. Until then, prefer the body and `-emphasis`
-  text colors over `-secondary`/`muted` for essential text.
+- **Contrast** — Bootstrap's stock colors target AA in both modes. A few stock
+  combinations (muted or secondary text on a tinted surface) sit near the 4.5:1
+  line; tuning them means a full Bootstrap Sass recompile, which
+  [styling-rules.md](styling-rules.md) defers until the framework has a palette
+  of its own. Until then, prefer the body and `-emphasis` text colors over
+  `-secondary`/`muted` for essential text.
 
 ## Testing
 

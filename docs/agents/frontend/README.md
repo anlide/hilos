@@ -38,7 +38,8 @@ document.
 | the app's page registry — the `pages/` folder (keys, routes, entity-slot types) and the `bindPageScope` / `PAGE_SIGNAL_SCHEMAS` / `createAppPageRouter` SDK binding | [page-registry.md](page-registry.md) |
 | the application boot — the thin `src/index.ts` entry, the `bootstrap/` module (connection / session / main), and the `createHilosConnection` / `sessionUserName` / `bootHilos` core boot helpers | [bootstrap-structure.md](bootstrap-structure.md) |
 | which surface an outcome belongs on — a toast, a banner, or a durable record — and the toast store behind the shell's corner stack | [toasts.md](toasts.md) |
-| styling — the Bootstrap-only rule, the Sass customization layer, theming | [styling-rules.md](styling-rules.md) |
+| styling — the Bootstrap-only rule, the Sass customization layer, painting so a surface holds in both themes | [styling-rules.md](styling-rules.md) |
+| the page's theme — what decides it, where a person's pick lives, the script that sets it before the app loads, the two live settings | [../architecture/theme.md](../architecture/theme.md) |
 | accessibility — WCAG 2.1 AA: the four pillars, the app-shell a11y layer, the ARIA / heading / use-of-color patterns, and what Bootstrap covers | [accessibility.md](accessibility.md) |
 | tests — vitest across the monorepo, Playwright multi-context, full DB and daemon reset per test, stable-id selectors, the shared e2e toolbox | [testing-strategy.md](testing-strategy.md) |
 | the build, the dev / unit / e2e / prod matrix, Docker dev, the Windows-Docker HMR spike | [build-and-docker.md](build-and-docker.md) |
@@ -87,7 +88,7 @@ before editing.
   connection and session singletons and mounts the app, and the boot sequence
   lifted into `bootHilos`.
 - [styling-rules.md](styling-rules.md) — Bootstrap-only styling, the Sass layer as the sole home
-  for custom declarations, and theming.
+  for custom declarations, and the painting rule of the two themes.
 - [accessibility.md](accessibility.md) — the normative WCAG 2.1 AA checklist: the four pillars,
   the application-shell a11y layer, the per-component ARIA / heading / use-of-color
   patterns, the parts Bootstrap delivers for free, and the new-page checklist.

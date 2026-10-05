@@ -1,0 +1,170 @@
+# Theme: Two Modes, Three Positions, One Rule
+
+Read this before deciding, storing, carrying or applying the page's theme — the
+header's theme menu, the profile's Theme row, the Appearance section, a person's
+pick in the account or the browser, the script in the head of a page. For painting
+a surface, read [styling-rules.md](../frontend/styling-rules.md), "Theming".
+
+The theme is being built by epic HIL-1295. A sentence about behavior that is not
+in the code yet ends with the key of the leaf that lands it.
+
+## Core Rule
+
+Use exactly two themes: **light and dark**, Bootstrap 5.3's stock color modes.
+A person picks one of three positions: **light, dark, as the system**. "As the
+system" chooses one of the two themes; it is not a third theme.
+
+Wherever a pick is kept — in the account or the browser — distinguish four
+states: `light`, `dark`, `system`, and **not chosen**. "Not chosen" means the
+person never picked and follows the default theme. Picking the position the
+default already shows is a pick of one's own. Do not offer "not chosen" as a
+position a person can pick back.
+
+Keep one vocabulary through DB, PHP, the wire, TypeScript and the browser:
+`light`, `dark`, `system`. "Not chosen" is the absence of a pick — `null` on the
+wire, nothing stored in the browser — never a fourth word. See
+[cross-layer-field-names.md](../code-style/cross-layer-field-names.md).
+
+## What The Page Wears
+
+Apply this rule in this order:
+
+1. Switching is off → use the default theme.
+2. Otherwise, there is a pick → use the pick.
+3. Otherwise, there is no pick → use the default theme.
+4. If that gave `system` → use the system's color scheme.
+
+Implement the rule as one function of `@hilos/core`; build the head script from
+that same function (not in the code yet — HIL-1430, HIL-1431). A hand-written copy
+of the rule anywhere is forbidden: the first frame and the running app must
+make the same decision.
+
+Follow the system through the `change` event of
+`matchMedia('(prefers-color-scheme: dark)')`, never by polling
+(not in the code yet — HIL-1430).
+
+The core exposes two live values: the pick, one of the four states, and the theme
+the page wears (not in the code yet — HIL-1430). The header and the profile mark
+the **position**; a person who never picked sees the default's position marked
+as the default, which the worn theme alone cannot tell
+(not in the code yet — HIL-1433, HIL-1434, HIL-1440, HIL-1441).
+
+## Who Sets It
+
+Express the theme as `data-bs-theme` on `<html>`, written by the framework's head
+script before the app loads, then by one `core/dom` effect
+(not in the code yet — HIL-1430, HIL-1431). Follow "Shared DOM effects" in
+[multiframework-core.md](../frontend/multiframework-core.md).
+
+No view, component, demo or project writes `data-bs-theme`, on `<html>` or on any
+other element. A subtree pinned to one mode is a pinned color by another name.
+
+## Where A Pick Lives
+
+- **A guest:** keep the pick in localStorage as a value declared with
+  `browserValue`; the erase on `/privacy` erases it, and tabs of one browser
+  follow each other through the `storage` event
+  (not in the code yet — HIL-1430). Follow "What this browser keeps" in
+  [core-and-connection.md](../frontend/core-and-connection.md).
+- **A signed-in person:** keep the pick in the account. Only the person's own
+  agent writes it, like every other edit of their own content; the truth source
+  refuses a write from any other process (not in the code yet — HIL-1427).
+  A change reaches every session of the person on every device as a frame, and
+  each switches at once (not in the code yet — HIL-1429).
+- **The browser copy:** the app writes the signed-in person's pick into the
+  browser on every handshake so the page can wear it on its first frame
+  (not in the code yet — HIL-1429).
+
+Use this table at sign-in:
+
+| The account holds | The guest's pick in this browser | After sign-in the page wears |
+|---|---|---|
+| `light`, `dark` or `system` | any of the four states | the account's pick |
+| not chosen | `light`, `dark` or `system` | the guest's pick, written into the account |
+| not chosen | not chosen | not chosen, which follows the default theme |
+
+Resuming a session follows the same table
+(not in the code yet — HIL-1429). Apply "What The Page Wears" to the resulting
+pick: switching off still means the default, and `system` still resolves to one
+of the two themes.
+
+Sign-up writes the guest's pick into the new account; no guest pick means not
+chosen (not in the code yet — HIL-1427). Sign-out changes nothing on screen
+(not in the code yet — HIL-1429).
+
+A cookie never carries the theme; the cookie is the auth credential only. See
+[wire-protocol.md](../frontend/wire-protocol.md).
+
+## Before The App Loads
+
+Put one synchronous framework script in the `<head>` of every page the build
+emits: the Vite `index.html` of the Vue and React demos, the Angular `index.html`
+and `index.csr.html`, and the prerender template
+([framework/frontend/prerender/src/template.ts](../../../framework/frontend/prerender/src/template.ts)).
+It reads only browser values — the pick and the remembered settings — with no
+network, cookie or import. Nothing remembered, on a new browser's first visit,
+means `system`. The build inserts the script
+(not in the code yet — HIL-1431).
+
+No `index.html` carries a hand-written copy; a project never writes its own.
+
+## The Two Settings
+
+Declare two keys in the framework's settings catalog:
+
+- whether people may switch the theme, **on** by default;
+- the default theme, `light`, `dark` or `system`, **system** by default.
+
+These keys and defaults land together (not in the code yet — HIL-1426). As
+settings, they take effect at once on every node, with nothing restarted; see
+"Settings and catalogs" in [framework-development.md](../framework-development.md).
+
+Every connected tab, a guest's too, receives both in the handshake and again as a
+frame right after a write that moved either. Follow the path of
+`hilos_auth_methods`: `SettingsLibraryAgent::settle()` compares the frame before
+and after a write and calls `sendToAllConnected()` when it changed
+([SettingsLibraryAgent.php](../../../framework/backend/Database/Settings/Library/SettingsLibraryAgent.php))
+(not in the code yet — HIL-1428). The browser remembers both settings for the
+head script (not in the code yet — HIL-1430).
+
+Switching off has three consequences everywhere at once:
+
+- the header's theme icon disappears
+  (not in the code yet — HIL-1433, HIL-1440, HIL-1441);
+- the profile's Theme row disappears
+  (not in the code yet — HIL-1434, HIL-1440, HIL-1441);
+- everyone wears the default, while people's picks in accounts and browsers are
+  kept, not erased, and come back when switching is on again
+  (not in the code yet — HIL-1430).
+
+Neither value is secret — every guest receives both. The admin view mode shows
+the Appearance section and its values and refuses changes
+(not in the code yet — HIL-1435, HIL-1440, HIL-1441); follow
+[admin-view-mode.md](admin-view-mode.md).
+
+## Not In Hilos
+
+- A third theme.
+- A palette of the framework's own or a project recoloring the two modes. That
+  is later work, not a Sass-layer exception.
+- Hiding the switch for one person ("remove from menu" or "no theme").
+- A cookie for the theme.
+- A file the daemon writes beside the page for the head script.
+
+## Contract Gate
+
+The theme touches catalog keys, a person's stored pick, the handshake field,
+two frames — settings to everyone and a person's pick to their sessions — and
+browser-value keys. Pass the contract gate in the leaf that lands each surface.
+This specification leaves their names to those leaves: do not invent them here.
+The leaf that lands a surface writes its names into this file in the same commit
+that clears its marker.
+
+## Validation
+
+- Unit-test the rule function, including the four pick states and switching off
+  (not in the code yet — HIL-1430).
+- Check the painting rule with `STYLE-THEME-PINNED`; see "Theming" in
+  [styling-rules.md](../frontend/styling-rules.md) for the guard's scope and landing
+  markers.
+- Run the theme e2e (not in the code yet — HIL-1442).

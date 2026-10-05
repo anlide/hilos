@@ -299,6 +299,15 @@ Topic documents are referenced by filename; several are still being authored.
   only in the Bootstrap Sass layer (variables, maps, custom-utilities), each with
   a comment stating why Bootstrap utilities cannot achieve it. See
   [styling-rules.md](styling-rules.md).
+- **Paint with classes that follow the theme.** A class pinned to one mode —
+  `bg-light`, `text-bg-light`, `text-dark`, `btn-outline-dark`, any color class
+  whose color word is `light`, `dark`, `white` or `black`, the full list in
+  [styling-rules.md](styling-rules.md) — and a color written by hand on a surface
+  are a **violation**; a QR code and the pixels of a drawn picture are the named
+  exception. `data-bs-theme` is written by the framework alone, on `<html>`.
+  Checked automatically: `STYLE-THEME-PINNED`
+  (not in the code yet — HIL-1432, HIL-1440, HIL-1441). See
+  [styling-rules.md](styling-rules.md) and [theme.md](../architecture/theme.md).
 - **A live message never moves what sits under it.** A surface that has live
   messages — a refusal, a strip about work running, a bar about rows that
   arrived — takes their room before there is anything to say, and that room

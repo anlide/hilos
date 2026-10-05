@@ -218,10 +218,12 @@ Vue/React shells; only the CSS-delivery channel differs.
 
 The accepted trade: build-time Sass customization (variable maps, custom
 utilities — the Sass layer above) becomes a **framework** concern, not a
-per-project one. A project still themes at runtime with `data-bs-theme` and
-CSS-variable overrides. The view layer imports Bootstrap's **compiled**
-stylesheet directly and loads a thin Sass layer (`hilos-styles.scss`) **after**
-it for the few documented declarations stock utilities cannot express. The layer
+per-project one. A project does not recolor the themes: the two modes are
+Bootstrap's stock ones, only the framework sets `data-bs-theme` (see Theming
+below), and a palette is later work, not a Sass-layer exception. The view layer
+imports Bootstrap's **compiled** stylesheet directly and loads a thin Sass layer
+(`hilos-styles.scss`) **after** it for the few documented declarations stock
+utilities cannot express. The layer
 is one file per view package — `framework/frontend/vue/src/hilos-styles.scss`,
 `framework/frontend/react/src/hilos-styles.scss`,
 `framework/frontend/angular/src/hilos-styles.scss` — and where it is allowed to
@@ -231,10 +233,11 @@ the files of the layer, not the declarations inside them. What it holds is read
 in the files themselves: each declaration states WHY no stock utility reaches it
 and WHAT it is for, and that comment — not a list kept somewhere else — is where
 a reader learns what lives there. A full Sass re-compile of Bootstrap
-(overriding its variable and map defaults) stays deferred until a theme actually
-needs it; the thin layer covers the exceptions without it. Components otherwise
-depend only on stock Bootstrap classes, never on declarations a consumer would
-supply.
+(overriding its variable and map defaults) stays deferred until the framework
+has a palette of its own — the dark mode does not need it, the compiled
+stylesheet carries it already; the thin layer covers the exceptions without it.
+Components otherwise depend only on stock Bootstrap classes, never on
+declarations a consumer would supply.
 
 **Angular delivers the layer consumer-side.** Because `@hilos/angular` cannot
 ship transitive CSS (ng-packagr emits no side-effect stylesheet), the Vue and
@@ -248,11 +251,67 @@ the channel that loads it differs.
 
 ## Theming
 
-Theming uses Bootstrap 5.3 `data-bs-theme` plus CSS variables. A theme that needs
-a small `:root` / `[data-bs-theme]` variable override expresses it in the Sass
-layer as a documented exception — that is the intended mechanism, not global CSS
-sprawl. Theme switching need not be implemented for the rule to pay off: holding
-the rule makes the app themeable for free.
+There are two themes, Bootstrap 5.3's stock light and dark modes. The page wears
+one through `data-bs-theme` on `<html>`; what decides it is
+[theme.md](../architecture/theme.md).
+
+**Paint with classes that follow the theme:**
+
+- the body family: `bg-body`, `bg-body-secondary`, `bg-body-tertiary`, `text-body`,
+  `text-body-secondary`, `text-body-tertiary`, `text-body-emphasis`, `border`,
+  `link-body-emphasis`;
+- the `-subtle` and `-emphasis` forms of every color;
+- contextual components;
+- colored fills — `text-bg-<color>`, `btn-<color>`, `btn-outline-<color>` — of
+  `primary`, `secondary`, `success`, `danger`, `warning` and `info`.
+
+**A class pinned to one mode is forbidden:** the color word `light`, `dark`,
+`white` or `black` in `bg-`, `text-`, `text-bg-`, `btn-`, `btn-outline-`,
+`border-`, `link-`, `table-`, plus `dropdown-menu-dark` and `btn-close-white`.
+`[data-bs-theme=dark]` does not redefine `--bs-light`, `--bs-dark`, `--bs-white`
+or `--bs-black`. Not pinned, and allowed: `alert-light`, `alert-dark`,
+`list-group-item-light`, `list-group-item-dark`, and every `-subtle` and
+`-emphasis` form.
+
+Use these replacements to keep the light look:
+
+| Pinned | Use | Light look |
+|---|---|---|
+| `bg-light` | `bg-body-tertiary` | `#f8f9fa` |
+| `text-bg-light` | `bg-body-tertiary text-body-emphasis` | `#f8f9fa`, `#000` |
+| `bg-white` | `bg-body` | `#fff` |
+| `text-dark` | `text-body` | `#212529` |
+| `text-black` | `text-body-emphasis` | `#000` |
+| `text-white` on a colored fill | `text-bg-<color>` | the same fill with its contrast text |
+
+Where no stock class keeps the light look — `btn-outline-dark`, `btn-dark`,
+`btn-light`, `text-bg-dark`, `bg-dark`, `border-dark`, `link-dark`, `table-light`
+— the screen chooses the replacement from its mockup, in classes that follow
+the theme. The pinned class does not stay.
+
+A color written by hand — a hex, `rgb()`, a named color in an attribute such as
+`fill`, a canvas `fillStyle` — on a surface is a pinned color too and is
+forbidden. The exception is a thing whose colors are its content, not the
+page's: a QR code (dark modules on a light field; scanners refuse an inverted
+code) and the pixels of a picture being drawn (the photo preview flattened on
+white). Such a site says so in a comment beside the color. The existing sites
+are `HilosQrCode` in
+[Vue](../../../framework/frontend/vue/src/HilosQrCode.vue),
+[React](../../../framework/frontend/react/src/HilosQrCode.tsx) and
+[Angular](../../../framework/frontend/angular/src/HilosQrCode.ts), and the
+[photo preview](../../../framework/frontend/core/src/profile/photoPick.ts).
+
+No element but `<html>` carries `data-bs-theme`, and only the framework writes
+it; see [theme.md](../architecture/theme.md). A variable override for one mode
+is the framework's alone, lives in the Sass layer with its WHY, and states what
+the other mode wears.
+
+The tree does not hold this yet: the SDK in its three ports and the chat demo
+still carry pinned classes, `text-bg-light` most of all
+(not in the code yet — HIL-1432, HIL-1440, HIL-1441).
+
+Checked automatically: `STYLE-THEME-PINNED`
+(not in the code yet — HIL-1432, HIL-1440, HIL-1441).
 
 ## Responsive and mobile
 
@@ -265,11 +324,12 @@ there is no first-class touch-specific design.
 Accessibility ships from day one at **WCAG 2.1 AA**, not as a later bolt-on, and
 it leans directly on this styling rule: building from stock Bootstrap 5.3 classes
 delivers the visual a11y layer for free — `:focus-visible` focus rings, a nuanced
-`prefers-reduced-motion` story (spinners slow, they do not freeze), and an
-AA-tuned theme — so hand-authored CSS would only regress it (a blanket
-reduced-motion reset, for instance, freezes the loading spinners). Hilos adds the
-structure on top: landmarks, one heading per page, ARIA roles and names, text
-alternatives for status color, focus-trapped modals, and the live regions.
+`prefers-reduced-motion` story (spinners slow, they do not freeze), and
+Bootstrap's stock colors, AA-tuned in both modes — so hand-authored CSS would
+only regress it (a blanket reduced-motion reset, for instance, freezes the
+loading spinners). Hilos adds the structure on top: landmarks, one heading per
+page, ARIA roles and names, text alternatives for status color, focus-trapped
+modals, and the live regions.
 
 The normative checklist — the four pillars, the app-shell layer, the per-component
 patterns, what Bootstrap already covers, and the new-page checklist — is

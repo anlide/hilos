@@ -18,7 +18,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | Route | Read when... |
 |---|---|
 | `$hilos-code-style-typescript` | always, first — the shared TypeScript rules the `<script setup>` block obeys |
-| `docs/agents/frontend/styling-rules.md` | styling anything: the Bootstrap-classes-only rule and the ban on the SFC `<style>` block |
+| `docs/agents/frontend/styling-rules.md` | styling anything: the Bootstrap-classes-only rule, the classes that follow the theme, and the ban on the SFC `<style>` block |
 | `docs/agents/code-style/vue-template-refs.md` | reading a field off a prop or a composable's value inside `<template>` — a ref held as a field is not unwrapped there, and `VUE-TEMPLATE-REF` says so |
 | `docs/agents/code-style/warnings-and-ide.md` | silencing a `vue-tsc` / `eslint` / IDE warning, or writing a TSDoc block in `<script setup>` |
 

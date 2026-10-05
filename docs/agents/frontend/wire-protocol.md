@@ -28,7 +28,11 @@ the server. Because it is `httpOnly`, application code physically cannot read it
 
 - A cookie carries **only** the auth credential. Any non-auth use of a cookie is
   a gross violation (see [rules-and-violations.md](rules-and-violations.md)).
-- Non-secret UI state (theme, layout, drafts) goes in **localStorage**. Secrets
+- Non-secret UI state (layout, drafts, a guest's theme) goes in **localStorage**.
+  A signed-in person's theme lives in the account
+  (not in the code yet — HIL-1427), and the browser keeps a copy only so the page
+  wears it on its first frame (not in the code yet — HIL-1429); see
+  [theme.md](../architecture/theme.md). Secrets
   never go in localStorage — it is a JS-readable API and cannot be made
   `httpOnly`.
 - A token in a query parameter is forbidden (it leaks to logs and history).
