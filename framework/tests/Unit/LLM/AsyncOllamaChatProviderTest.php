@@ -72,6 +72,70 @@ final class AsyncOllamaChatProviderTest extends TestCase
         }
     }
 
+    /** When temperature and maxTokens are omitted, options is not present in the body. */
+    public function testRequestOmitsOptionsWhenTemperatureAndMaxTokensAreNull(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $provider = new AsyncOllamaChatProvider('http://127.0.0.1:' . $port, self::MODEL);
+            $provider->startGenerate([['role' => 'user', 'content' => 'hello']], new ChatGenerateOptions());
+            $request = null;
+            $this->serveUntilFinished($server, $provider, '{"response":"granted"}', $request);
+
+            $this->assertIsString($request);
+            $body = substr($request, strpos($request, HttpConstants::HTTP_DELIMITER) + strlen(HttpConstants::HTTP_DELIMITER));
+            $decoded = json_decode($body, true);
+            $this->assertArrayNotHasKey('options', $decoded);
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /** When maxTokens is provided without temperature, options contains num_predict and no temperature. */
+    public function testRequestCarriesNumPredictWithoutTemperatureWhenMaxTokensSet(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $provider = new AsyncOllamaChatProvider('http://127.0.0.1:' . $port, self::MODEL);
+            $provider->startGenerate([['role' => 'user', 'content' => 'hello']], new ChatGenerateOptions(maxTokens: 50));
+            $request = null;
+            $this->serveUntilFinished($server, $provider, '{"response":"granted"}', $request);
+
+            $this->assertIsString($request);
+            $body = substr($request, strpos($request, HttpConstants::HTTP_DELIMITER) + strlen(HttpConstants::HTTP_DELIMITER));
+            $decoded = json_decode($body, true);
+            $this->assertArrayHasKey('options', $decoded);
+            $this->assertSame(50, $decoded['options']['num_predict']);
+            $this->assertArrayNotHasKey('temperature', $decoded['options']);
+        } finally {
+            fclose($server);
+        }
+    }
+
+    /** An explicit 0.0 temperature is retained in options. */
+    public function testRequestCarriesTemperatureWhenExplicitZero(): void
+    {
+        [$server, $port] = $this->createServer();
+
+        try {
+            $provider = new AsyncOllamaChatProvider('http://127.0.0.1:' . $port, self::MODEL);
+            $provider->startGenerate([['role' => 'user', 'content' => 'hello']], new ChatGenerateOptions(temperature: 0.0));
+            $request = null;
+            $this->serveUntilFinished($server, $provider, '{"response":"granted"}', $request);
+
+            $this->assertIsString($request);
+            $body = substr($request, strpos($request, HttpConstants::HTTP_DELIMITER) + strlen(HttpConstants::HTTP_DELIMITER));
+            $decoded = json_decode($body, true);
+            $this->assertArrayHasKey('options', $decoded);
+            $this->assertEquals(0.0, $decoded['options']['temperature']);
+            $this->assertArrayNotHasKey('num_predict', $decoded['options']);
+        } finally {
+            fclose($server);
+        }
+    }
+
     /**
      * An https address is reached over TLS: against a plain peer the request fails on the handshake.
      */

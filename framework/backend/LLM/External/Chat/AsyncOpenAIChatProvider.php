@@ -119,8 +119,11 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
             LLMApiConstants::KEY_MODEL => $model,
             LLMApiConstants::KEY_MESSAGES => $apiMessages,
             LLMApiConstants::KEY_STREAM => false,
-            LLMApiConstants::KEY_TEMPERATURE => $options->temperature,
         ];
+
+        if ($options->temperature !== null) {
+            $payload[LLMApiConstants::KEY_TEMPERATURE] = $options->temperature;
+        }
 
         if ($options->maxTokens !== null) {
             $payload[LLMApiConstants::KEY_MAX_TOKENS] = $options->maxTokens;

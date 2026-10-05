@@ -175,7 +175,6 @@ PROMPT;
 
         $options = new ChatGenerateOptions(
             model: $this->profile->model,
-            temperature: 0.0,
             timeoutSec: $this->profile->timeoutSec,
             maxTokens: ChatContextAnalyzerConstants::MAX_RESPONSE_TOKENS,
             responseFormat: $this->profile->provider === LlmProvider::EXTERNAL

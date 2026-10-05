@@ -279,7 +279,6 @@ HELP;
         $client = ClientFactory::createChatClientForProfile($profile);
         $options = new ChatGenerateOptions(
             model: $profile->model,
-            temperature: 0.0,
             timeoutSec: $profile->timeoutSec,
             maxTokens: self::PROBE_MAX_TOKENS,
         );

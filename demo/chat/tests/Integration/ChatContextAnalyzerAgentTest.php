@@ -100,6 +100,8 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
             $agent->onTick();
 
             $this->assertSame(1, $chatClient->startGenerateCalls);
+            $this->assertNotNull($chatClient->lastOptions);
+            $this->assertNull($chatClient->lastOptions->temperature);
 
             $agent->onSignalDbSyncCreated(
                 $this->eventSignal(ChatEventType::CHAT_CLEARED),
@@ -185,6 +187,8 @@ final class ControlledAnalyzerChatClient implements AsyncChatLLMInterface
 
     public int $resetCalls = 0;
 
+    public ?ChatGenerateOptions $lastOptions = null;
+
     private bool $busy = false;
 
     private bool $hasResult = false;
@@ -194,6 +198,7 @@ final class ControlledAnalyzerChatClient implements AsyncChatLLMInterface
     public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         $this->startGenerateCalls++;
+        $this->lastOptions = $options;
 
         if ($this->busy) {
             throw new LLMClientBusyException();

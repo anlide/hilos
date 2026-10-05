@@ -299,7 +299,6 @@ final class ModeratorAgent extends AbstractAgent
 
         $options = new ChatGenerateOptions(
             model: $this->profile->model,
-            temperature: 0.0,
             timeoutSec: $this->profile->timeoutSec,
             maxTokens: self::MODERATION_MAX_TOKENS,
         );
@@ -338,7 +337,6 @@ final class ModeratorAgent extends AbstractAgent
                 $this->buildPhotoModerationMessages(),
                 new ChatGenerateOptions(
                     model: $this->photoProfile->model,
-                    temperature: 0.0,
                     timeoutSec: $this->photoProfile->timeoutSec,
                     maxTokens: self::MODERATION_MAX_TOKENS,
                 ),

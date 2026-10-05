@@ -111,10 +111,18 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
             LLMApiConstants::KEY_MODEL => $model,
             LLMApiConstants::KEY_PROMPT => $prompt,
             LLMApiConstants::KEY_STREAM => false,
-            LLMApiConstants::KEY_OPTIONS => [
-                LLMApiConstants::KEY_TEMPERATURE => $options->temperature,
-            ],
         ];
+
+        $ollamaOptions = [];
+        if ($options->temperature !== null) {
+            $ollamaOptions[LLMApiConstants::KEY_TEMPERATURE] = $options->temperature;
+        }
+        if ($options->maxTokens !== null) {
+            $ollamaOptions[LLMApiConstants::KEY_NUM_PREDICT] = $options->maxTokens;
+        }
+        if ($ollamaOptions !== []) {
+            $payload[LLMApiConstants::KEY_OPTIONS] = $ollamaOptions;
+        }
 
         $images = [];
         foreach ($messages as $message) {
@@ -126,10 +134,6 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
         }
         if ($images !== []) {
             $payload[LLMApiConstants::KEY_IMAGES] = $images;
-        }
-
-        if ($options->maxTokens !== null) {
-            $payload[LLMApiConstants::KEY_OPTIONS][LLMApiConstants::KEY_NUM_PREDICT] = $options->maxTokens;
         }
 
         if ($options->responseFormat !== null && $options->responseFormat !== []) {

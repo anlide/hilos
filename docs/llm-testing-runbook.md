@@ -277,14 +277,6 @@ and set the role's model setting to the Claude model id. A `404` means the key o
 account has no access to the compatibility endpoint — use OpenAI or an
 OpenAI-compatible gateway instead.
 
-**Use `claude-haiku-4-5`, and not only because it is the cheapest** ($1 / $5 per
-million tokens against Sonnet's $3 / $15). `ModeratorAgent` sends
-`temperature: 0.0` on every request, and Anthropic removed the sampling
-parameters on its newer models — Opus 4.7 and later reject `temperature`
-outright, and Sonnet 5 rejects any non-default value. Haiku 4.5 still accepts
-them. Until the agent stops sending `temperature`, it is the only Claude model
-this client can drive.
-
 > Only one external endpoint and key exist at a time (`LLM_EXTERNAL_*`), so the
 > roles cannot point at two different vendors simultaneously, and switching
 > vendors means editing `.env` and recreating the container. HIL-332 covers the

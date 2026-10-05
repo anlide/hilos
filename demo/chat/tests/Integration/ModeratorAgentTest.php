@@ -60,6 +60,8 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $agent->onTick();
 
             $this->assertSame(1, $chatClient->startGenerateCalls);
+            $this->assertNotNull($chatClient->lastOptions);
+            $this->assertNull($chatClient->lastOptions->temperature);
             $result = $this->takeQueuedModerationResult();
             $this->assertNotNull($result);
             $this->assertSame('moderator-tick-ak', $result->acceptKey);
@@ -144,6 +146,8 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $agent->onTick();
 
             $this->assertSame(1, $photoClient->startGenerateCalls);
+            $this->assertNotNull($photoClient->lastOptions);
+            $this->assertNull($photoClient->lastOptions->temperature);
             $this->assertCount(2, $photoClient->messages);
             $this->assertSame(Message::ROLE_USER, $photoClient->messages[1]->role);
             $this->assertStringContainsString('User: Photo User', $photoClient->messages[1]->content);
@@ -353,9 +357,12 @@ final class UnavailableModerationChatClient implements AsyncChatLLMInterface
 {
     public int $startGenerateCalls = 0;
 
+    public ?ChatGenerateOptions $lastOptions = null;
+
     public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         $this->startGenerateCalls++;
+        $this->lastOptions = $options;
 
         throw new LLMRequestException('Moderation test client unavailable');
     }
@@ -393,6 +400,8 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
     /** @var list<Message> */
     public array $messages = [];
 
+    public ?ChatGenerateOptions $lastOptions = null;
+
     private bool $busy = false;
 
     private bool $hasResult = false;
@@ -406,6 +415,7 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
     {
         $this->startGenerateCalls++;
         $this->messages = $messages;
+        $this->lastOptions = $options;
 
         if ($this->busy) {
             throw new LLMClientBusyException();
