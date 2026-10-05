@@ -9,6 +9,8 @@ import {
   modelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
+// spec-owner: stand — the stand's local model
+
 // The stand's local model, proved on the gateway itself (HIL-925). The gateway has
 // no unit suite of its own. Since HIL-927 chat moderation calls the channel too
 // (message-moderation.spec.ts), but through the product; this file is where the

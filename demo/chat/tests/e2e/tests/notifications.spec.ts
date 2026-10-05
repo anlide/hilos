@@ -10,6 +10,8 @@ import { dictateModerationVerdict } from '../helpers/moderation'
 import { gotoPage } from '../helpers/page'
 import { clickSubmit, signUp, typeInto } from '../helpers/session'
 
+// spec-owner: demo — notifications raised by chat's own events
+
 // The product half of the notification line in chat (HIL-557, HIL-1196): a
 // domain event of this demo raises a notification — a mention in a message, an
 // administrator's rename that the room's feed also shows. The notification

@@ -8,6 +8,8 @@ import {
 } from '../../../../../framework/frontend/scripts/standGateway.mjs'
 import { uniquePhone } from '../../../../../framework/frontend/scripts/standSms.mjs'
 
+// spec-owner: stand — the gateway's levers, no product involved
+
 // The stand gateway's behavior handles, proved on the gateway itself (HIL-922). The
 // gateway has no unit suite of its own, and the product's scenarios read a lever only
 // through what a person sees; this file is where each lever is held to its contract —

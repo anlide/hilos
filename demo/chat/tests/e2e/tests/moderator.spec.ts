@@ -7,6 +7,8 @@ import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 import { tableRowKeyByText } from '../helpers/table'
 
+// spec-owner: demo — chat's moderation and its prompt pieces
+
 // Moderation admin e2e: /hilos/app/moderator renders the prompt-pieces table
 // over the live socket, and the create / edit / delete dialogs round-trip through
 // the backend (AdminModeratorPage), the row appearing, updating, and leaving the

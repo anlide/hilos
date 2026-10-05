@@ -114,22 +114,43 @@ cross-user features testable at all.
    ([wire-protocol.md](wire-protocol.md)). The hardest features require this category to test, so it
    is built in from the start.
 
-### Which demo carries a spec — the account stays, the operation moves
+### Which demo carries a spec — the server check travels, the product stays home
 
-A spec lives on the side of the boundary its feature belongs to (the owner's
-rule, 2026-09-27). The **account** side stays in chat, tasks and polls:
-sign-in, profile, second factor, step-up, passkey, the account itself —
-deletion, merge, export — sessions, connection, the application shell
-(navigation, layout, a11y, prerender, error pages), the stand contracts
-(stand-gateway, stand-model, stand-oauth), and chat's showcase. The
-**operations** side lives in the new demos: backup, protected mode,
-maintenance, logs, settings, users, admin, tables, notifications and
-communications. Every demo keeps its own smoke and its own sign-in.
+A spec whose screen only leads the scenario while what it checks is the
+**server** — the session, cookies, letters, database rows — may live in a demo
+of any view framework where its feature is switched on (the owner's rule,
+2026-10-04). This is a judgment with examples, not a mechanical test: sign-in
+by a code or a link, step-up, second factor and session rotation check the
+server; the sign-in card on a narrow screen and its still button check the
+screen. A spec whose subject is the **screen** stays with its view framework
+and its area. Every demo keeps its own smoke and its own sign-in.
 
-The demos pair by view framework: chat (Vue) → binance-btc-tracker (Vue),
-tasks (React) → ecommerce-shop (React), polls (Angular) → online-testing
-(Angular). An operations spec lives in the new demo of the same framework as
-the demo it leaves.
+For a **new file** that checks the server, choose where the load is least at
+the moment:
+
+1. Name the functions and stand services the spec needs.
+2. Find the demos where the feature is switched on — the feature constants and
+   registered pages and agents in `demo/<demo>/backend/Hilos.php` — and whose
+   stand carries the needed service. Read
+   `demo/<demo>/docker/docker-compose.test.yml`: the Telegram/SMS gateway is
+   in chat, tasks and polls; Mailpit is in all six demos.
+3. Of those candidates, choose the shortest group chain: add `check`, `php`
+   and `e2e` in `$demos` in `scripts/test-suite.php`. A tie permits either.
+   A feature switched on only in chat leaves chat as the only candidate.
+
+A new test in an existing spec goes into that spec. The durations are the
+last measurement, refreshed by the leaves that move specs; nobody keeps the
+lengths level. Load decides only where a new spec file is born. A spec born
+away from its area takes shared helpers from `framework/frontend/e2e/`,
+without copying them.
+
+A new demo is born only together with the specs that move into it. A moved
+spec leaves no copy behind: the view framework it left stops proving those
+screens end to end. The owner accepts that loss of screen coverage.
+
+The operations moves of 2026-09-27 paired the demos by view framework:
+chat (Vue) → binance-btc-tracker (Vue), tasks (React) → ecommerce-shop (React),
+polls (Angular) → online-testing (Angular).
 
 | Area | Specs today | Lives in | Leaf |
 |---|---|---|---|
@@ -142,6 +163,24 @@ the demo it leaves.
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | ecommerce-shop: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop | HIL-1225 |
 | The operations half of polls | online-testing: users, settings, notifications, protected-mode, maintenance, logs | online-testing | HIL-1226 |
+| Sign-in on the server — third-party providers and their failures, codes over Telegram, SMS and phone, sign-in by a code and by a link, sign-up in several tabs of one browser | chat: auth, all but what stays | tasks | HIL-1324 |
+| Step-up, session rotation, passkey | chat: step-up, session-rotation, passkey | tasks | HIL-1324 |
+| Profile on the server — password, address, other browsers' sessions, the GitHub link, devices | chat: profile, all but what stays | polls | HIL-1325 |
+| Second factor | chat: second-factor | polls | HIL-1325 |
+| Legal | chat: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
+| Data and privacy | chat: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
+
+**What stays in chat:** its product (the specs marked `demo`), the stand's own
+specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
+`page-error`, `unbuilt-page`, `prerender`, `license`, `smoke`, `connection`,
+`admin-view-mode`), `profile-photo` and `account-merge` (their features are
+switched on only in chat), and `account-deletion` and `profile-data` (tasks and
+polls carry their own copies of those screens). From `auth`, chat keeps the
+narrow-screen layout and the still button, sign-up with a return, a wrong
+password, a message sent behind the sign-in surface, and the re-check of an
+open admin and profile on sign-out. From `profile`, it keeps the header link,
+the rename, the tab conflict and the narrow screen. Everything else of
+`auth` and `profile` moves.
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
 over people, and they go with settings, people and admin: framework-level
@@ -174,14 +213,50 @@ shared toolbox" below — and is not copied across.
 **Until the new demo carries an area, its specs — old and new — are written
 where the area lives today, and move together.** The leaf that moves an area
 takes every spec of it, named in its card or not. An area in neither list
-stays in its demo; a new operations area is born in the new demo of its
-framework.
+stays in its demo. This governs the planned moves above and specs of screens;
+a new server spec file follows the load choice above.
 
-Why: on 2026-09-27 (run 0593) `chat-e2e` took ≈17 of the ≈20 minutes of a full
-run — 243 tests on one Playwright worker, and ≈874 of its ≈998 seconds went to
-the framework's own surfaces rather than to chat's product. A stand per demo
-buys parallelism, and every operations feature gets proved on every view
-framework.
+#### Whose a spec is — the spec-owner line
+
+A spec of a demo's own product or of the stand carries one of these lines,
+literally, on a line of its own under the imports, above its header comment:
+
+```ts
+// spec-owner: demo — <why>
+// spec-owner: stand — <why>
+```
+
+Use **one line per file**. No line means the framework's spec; never write
+`framework` as the owner.
+
+- **demo:** another demo could not carry the spec without this demo's product
+  — its entities, screens or domain events. Chat's rooms and messages, bots,
+  moderation and its own Users screen belong here.
+- **framework:** another demo could carry it by switching the feature on,
+  even when the scenario passes through the product. Chat's moderator judges
+  a profile photo, but the photo is a framework feature, so `profile-photo`
+  carries no line.
+- **stand:** the spec holds an emulator of the stand to its contract, with no
+  product taking part.
+
+A file containing **whole tests of both sides** is mixed: cut it in two, with
+the framework half keeping the file name. One assertion of the other side
+inside a test does not make a mixed spec.
+
+**Whenever you touch a spec, check its side.** If it is about the demo or the
+stand and has no line, add one. If its side changed, fix the line — remove it
+when it becomes a framework spec. If the sides mixed, cut the file. No guard
+holds the line; this rule does.
+
+The distinction matters because framework specs are read across Vue, React
+and Angular; a demo's own spec has nothing to compare there, and a stand spec
+belongs beside its emulator.
+
+Why the moves: on 2026-10-03 (run 0786, nova-de, seven lanes), chat's chain —
+`chat-php`, `chat-e2e` and `chat-check` on one stand — took 18m48s of the full
+run's 19m14s. `chat-e2e` alone carried 211 tests and took 891 seconds. After
+HIL-1324 and HIL-1325, the chain is expected at about 11 minutes, level with
+the framework suite.
 
 ## Backend state — full reset per test
 

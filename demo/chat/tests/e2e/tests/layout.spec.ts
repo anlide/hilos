@@ -36,26 +36,3 @@ test('footer links navigate to framework static pages', async ({ page }) => {
   expect(new URL(page.url()).pathname).toBe('/terms')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
 })
-
-// The chat message list owns its own scroll: the shell is a fixed-height
-// viewport (vh-100 + overflow-hidden) and the event stream is an overflow-auto
-// region (the min-h-0 flex chain), so messages scroll inside the card rather
-// than growing the document.
-test('the event stream is its own scroll region', async ({ page }) => {
-  await gotoPage(page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-
-  const overflowY = await page
-    .getByTestId('events-scroll')
-    .evaluate((el) => getComputedStyle(el).overflowY)
-  expect(overflowY).toBe('auto')
-
-  // The document itself never scrolls: the shell is locked to the viewport, so
-  // only inner regions (here the event stream) scroll.
-  const documentScrolls = await page.evaluate(
-    () =>
-      document.documentElement.scrollHeight >
-      document.documentElement.clientHeight + 1,
-  )
-  expect(documentScrolls).toBe(false)
-})

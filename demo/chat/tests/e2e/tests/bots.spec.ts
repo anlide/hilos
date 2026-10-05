@@ -17,6 +17,8 @@ import {
   tableTotal,
 } from '../helpers/table'
 
+// spec-owner: demo — chat's bots and their admin screen
+
 // Bots admin e2e: /hilos/app/bots draws the bots table over the live socket, and
 // the create / edit / delete dialogs round-trip through the backend
 // (AdminBotsPage). What the file pins is where a bot turns up in a window after a

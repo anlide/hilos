@@ -5,6 +5,8 @@ import { gotoPage } from '../helpers/page'
 import { clickSubmit, typeInto } from '../helpers/session'
 import { goToLastPage } from '../helpers/table'
 
+// spec-owner: demo — chat's own Users screen
+
 // The chat's own "Users" screen (/hilos/app/users, the chat table adminUsers) — an
 // admin screen of this demo, not the framework's people pages, so its spec stays
 // here beside bots.spec and moderator.spec, which also follow their screens. The

@@ -18,6 +18,8 @@ import {
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
 
+// spec-owner: demo — files attached to chat's messages
+
 const ATTACHMENT_MIME = 'image/png'
 
 /**

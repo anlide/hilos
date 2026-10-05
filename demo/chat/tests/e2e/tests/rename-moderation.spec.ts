@@ -9,6 +9,8 @@ import { dictateModerationVerdict } from '../helpers/moderation'
 import { gotoPage } from '../helpers/page'
 import { PASSWORD, clickSubmit, signUp, typeInto } from '../helpers/session'
 
+// spec-owner: demo — chat's moderator judging a new name
+
 /** Open rename and pass the password-backed protected-operation step. */
 async function openRename(page: Page): Promise<void> {
   await clickSubmit(page.getByTestId('profile-edit'))

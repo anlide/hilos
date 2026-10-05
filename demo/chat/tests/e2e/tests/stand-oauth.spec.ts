@@ -18,6 +18,8 @@ import {
   type StandOAuthProfile,
 } from '../../../../../framework/frontend/scripts/standOAuth.mjs'
 
+// spec-owner: stand — the stand's OAuth providers
+
 // The stand's OAuth provider, held to its contract on the provider itself (HIL-923). The
 // product takes no part here: what is proved is that the emulator behaves like the thing it
 // stands in for — a screen that refuses a request no provider would honor, a code good once,

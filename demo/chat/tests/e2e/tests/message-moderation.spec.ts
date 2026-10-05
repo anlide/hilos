@@ -9,6 +9,8 @@ import { dictateModerationVerdict } from '../helpers/moderation'
 import { signUpJoined } from '../helpers/notifications'
 import { clickSubmit, signUp, typeInto } from '../helpers/session'
 
+// spec-owner: demo — chat's moderator judging a message
+
 // Message moderation on a real call to the stand's model (HIL-927): a refusal, and
 // a model that does not answer. Until this leaf the moderator swapped in an
 // in-process client on the stand that always allowed, so neither outcome had ever
@@ -20,7 +22,7 @@ import { clickSubmit, signUp, typeInto } from '../helpers/session'
 // called here — it would wipe what the other workers dictated.
 //
 // The Send button is not asserted on: a send starts the re-send lockout, and
-// waiting it out would test the lockout, not moderation (connection.spec.ts holds
+// waiting it out would test the lockout, not moderation (room.spec.ts holds
 // the lockout).
 
 test('a rejected message stays out of the room and its author is told', async ({

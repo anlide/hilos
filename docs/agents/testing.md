@@ -468,8 +468,8 @@ beside any of them in the lane plan: nothing keeps them apart, and each fleet
 leaves with its own step (HIL-1227).
 
 The ports and the subnet of every stand are in the registry of
-[../new-project/README.md](../new-project/README.md); which demo carries the
-e2e of an operations feature is in
+[../new-project/README.md](../new-project/README.md); which demo carries an
+e2e spec, and whose a spec is, is in
 [frontend/testing-strategy.md](frontend/testing-strategy.md), "Which demo
 carries a spec".
 
