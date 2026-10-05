@@ -62,8 +62,8 @@ final class ChatAgent extends AbstractAgent
         ChatDbContext::events => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventMessages => TruthSourceOperation::BY_KIND,
         ChatDbContext::eventUserRegistrations => TruthSourceOperation::BY_KIND,
-        // TODO(HIL-630): borrowed claim - the users library owns the rename journal; clearing the
-        // room's history takes the renames off the events it deletes (HIL-1196).
+        // Borrowed to sweep room references from the rename journal while clearing the room's history.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::userRenames => [TruthSourceOperation::Update],
         ChatDbContext::eventAttachments => TruthSourceOperation::BY_KIND,
         ChatDbContext::users => TruthSourceOperation::BY_KIND,

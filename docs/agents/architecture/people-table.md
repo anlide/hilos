@@ -56,6 +56,10 @@ class itself, not in a project subclass.
 Ownership and the reader interest a claim raises:
 [truth-source.md](truth-source.md).
 
+The row's name, administrator flag and block edits move to the person's own
+agent — [instance-owners.md](instance-owners.md)
+(not in the code yet — HIL-1404); creation stays with the library.
+
 ## What The Framework Does For A Person
 
 Each operation below is the framework's on the target structure, and each row

@@ -74,12 +74,13 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * A borrowed claim, and the TODO on the entry says whose it is: the users library owns the
      * identity table, and a linked provider account is one of its rows. The write is here only
      * because the exchange that proves the account ends in this agent's tick, so it is this
-     * process that finds out what to write; the entity-owner leaf moves it behind a command.
+     * process that finds out what to write. HIL-1405 narrows this agent's claim to creation;
+     * existing identities move to their person's agent, as declared in docs/agents/architecture/instance-owners.md.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
+        // TODO(HIL-1405): the identity claim is narrowed to creation; existing rows move to their person's agent.
         HilosDbContext::identities => TruthSourceOperation::BY_KIND,
     ];
 

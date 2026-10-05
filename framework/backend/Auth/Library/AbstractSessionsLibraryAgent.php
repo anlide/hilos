@@ -283,8 +283,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * let through, and it is dropped when the second factor it skipped is switched off - all of
      * it here, because what a browser is let into is decided here.
      *
-     * The rest are borrowed for the account erasure (HIL-302). Its transaction removes the
-     * person's rows and releases their sessions before removing the person, so a forgotten row is
+     * The rest are borrowed for the account erasure and merge: set operations held by this library
+     * in one transaction, a declared shape in docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+     * The erasure removes the person's rows and releases their sessions before removing the person, so a forgotten row is
      * caught by a foreign key and rolls the erasure back (HIL-1202). The request is marked carried
      * out - an edit - in that same transaction. Three collections were read here before, and still
      * are: the live code behind a session's step is asked about on every handshake
@@ -300,40 +301,55 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const array OWNS_DB = [
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
-        // TODO(HIL-630): borrowed claim - the users library owns the person row; this library mints an
-        // administrator, writes the admin and block flags (HIL-1197) and deletes the erased person's row (HIL-1200).
+        // TODO(HIL-1404): the admin and block flags move to the person's own agent.
+        // Creating the first administrator and deleting the erased person's row remain library set operations.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::users => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the identity table belongs to the users library.
+        // Borrowed for the account erasure and merge, each held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; carried out with the account here (HIL-302).
+        // Borrowed to mark the request carried out in the account erasure transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update],
-        // TODO(HIL-630): borrowed claim - the users library owns it; moved to the survivor at a
-        // merge (HIL-1132) and erased with the account here (HIL-302).
+        // Borrowed to move credentials in the merge and remove them in the account erasure, in the same transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::verifications => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactors => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns it; erased with the account here (HIL-302).
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorSettings => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): also credited by the sign-in the block refused (HIL-303); shared with the users library.
+        // TODO(HIL-1407): step-up writes move to the person's own agent; also credited by a sign-in the block refused.
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
-        HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure.
-        // TODO(HIL-630): borrowed for account erasure (HIL-1202); the notifications library owns these.
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+        HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove],
+        // Borrowed from the notifications library for the account erasure's single transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::notifications => [TruthSourceOperation::Remove],
         HilosDbContext::notificationDeliveries => [TruthSourceOperation::Remove],
         HilosDbContext::notificationPreferences => [TruthSourceOperation::Remove],
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed for account erasure (HIL-1202); the export agents own these.
+        // Borrowed from the export agents for the account erasure's single transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::dataExports => [TruthSourceOperation::Remove],
         HilosDbContext::legalAcceptanceExports => [TruthSourceOperation::Remove],
-        HilosDbContext::userRenames => [TruthSourceOperation::Remove], // TODO(HIL-630): borrowed for account erasure (HIL-1200).
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+        HilosDbContext::userRenames => [TruthSourceOperation::Remove],
         HilosDbContext::userMerges => TruthSourceOperation::ALL,
-        // TODO(HIL-630): borrowed for account erasure (HIL-1205); the users library owns these.
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::userPhotos => [TruthSourceOperation::Remove],
         HilosDbContext::accessLogEntries => TruthSourceOperation::ALL,
     ];

@@ -258,6 +258,9 @@ for every reader at once, and a table that declares `SET_STANDALONE` leaves no s
 claim. The width itself:
 [../architecture/truth-source.md](../architecture/truth-source.md), *A Claim Over A Set*.
 
+For the root of a new set tree, ask whether it needs an agent per instance:
+[Does A New Entity Need One](../architecture/instance-owners.md#does-a-new-entity-need-one).
+
 ## Settings Entity (special case)
 
 `Entity/Item/Setting.php` — key/value store for app-level runtime settings.

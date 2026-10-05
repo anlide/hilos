@@ -193,14 +193,13 @@ class UserVerification extends Object_
      * the count would go on promising a person a live code on an exhausted row. A row that
      * is gone by then leaves the mirror as it was: the count is not something to invent.
      *
-     * The guard is TEMPORARY, and it is meant to stay small enough to remove. Once the
-     * user library and the per-user agents arrive, one writer owns the row and this
-     * increment becomes purely local however it is written — so this must not grow a
-     * transaction, a row lock, a broadcast frame or a cache of its own, all of which
-     * would then have to be dug back out of the architecture. What that horizon depends
-     * on is not this leaf's to decide (proposal P-163): the confirmed child entities of
-     * a user agent (HIL-630) do not include verifications, and the SMS-login and
-     * registration challenges carry no `user_id` at all, so the epic HIL-626 owns it.
+     * The guard is TEMPORARY and stays small enough to remove. Verification codes are outside
+     * the person's set (P-163, 2026-08-30); SMS-login and registration challenges carry no
+     * `user_id` at all. The people library becomes their only writer after HIL-1411 removes
+     * the code agent's and sessions holder's writes. Removing this guard is a separate decision
+     * after that leaf, with no removal leaf assigned yet. Until then it must not grow a
+     * transaction, a row lock, a broadcast frame or a cache of its own.
+     * See docs/agents/architecture/verification-codes.md and docs/agents/architecture/instance-owners.md.
      *
      * @param int $maxAttempts Attempt ceiling the row is judged against
      * @return bool True when this call recorded an attempt, false when the row was already at the ceiling

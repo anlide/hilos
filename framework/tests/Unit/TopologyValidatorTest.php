@@ -5315,7 +5315,7 @@ final class TopologyRecordedSharedDbOwnersHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'shared_users' => [
             SharedOwnersKey::OWNERS => [TopologyFullDbOwnerAgent::class, TopologySecondFullDbOwnerAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 
@@ -5418,7 +5418,7 @@ final class TopologyStaleSharedOwnersHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'shared_users' => [
             SharedOwnersKey::OWNERS => [TopologyFullDbOwnerAgent::class, TopologyNarrowDbCoOwnerAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 
@@ -5545,7 +5545,7 @@ final class TopologyRecordedSharedSetOwnersHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'shared_users' => [
             SharedOwnersKey::OWNERS => [TopologyFullSetOwnerAgent::class, TopologySecondFullSetOwnerAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 
@@ -5576,7 +5576,7 @@ final class TopologyStaleSharedSetOwnersHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'shared_users' => [
             SharedOwnersKey::OWNERS => [TopologyFullSetOwnerAgent::class, TopologyBorrowedSetOwnerAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 
@@ -5615,7 +5615,7 @@ final class TopologyUninvolvedOwnerRecordHilos extends HilosFacade
                 TopologySecondFullDbOwnerAgent::class,
                 TopologyOwningNothingAgent::class,
             ],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 
@@ -5646,7 +5646,7 @@ final class TopologyLoneOwnerRecordHilos extends HilosFacade
     public const array SHARED_DB_OWNERS = [
         'shared_users' => [
             SharedOwnersKey::OWNERS => [TopologyFullDbOwnerAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 
@@ -5681,7 +5681,7 @@ final class TopologyUnregisteredOwnerRecordHilos extends HilosFacade
                 TopologySecondFullDbOwnerAgent::class,
                 TopologyOwningNothingAgent::class,
             ],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'intentional: a fixture pair that no leaf parts',
         ],
     ];
 

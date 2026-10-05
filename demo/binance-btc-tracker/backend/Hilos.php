@@ -289,21 +289,22 @@ final class Hilos extends HilosFacade
      * Three rows, all of them signing in: the people, their step-up proofs and the registration
      * holds, each shared by the sessions and the users library. They stand the same way in every
      * demo that switches the feature on; the rows the provider and the code agents add elsewhere
-     * do not arise here, because this demo runs neither. Parting them has an address: HIL-630
-     * gives the person an agent of their own, and the auth libraries are parted with it.
+     * do not arise here, because this demo runs neither. The rows are parted by their own leaves:
+     * users by HIL-1404, stepUps by HIL-1407, and registrationReservations by HIL-1411.
+     * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
      */
     public const array SHARED_DB_OWNERS = [
         HilosDbContext::stepUps => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1407',
         ],
         HilosDbContext::users => [
             SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1404',
         ],
         HilosDbContext::registrationReservations => [
             SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1411',
         ],
     ];
 

@@ -45,7 +45,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
+        // TODO(HIL-1411): borrowed claim - the users library owns the reservation table. The hold
         // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
         // sessions library's row; the sweep itself belongs with the table.
         HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,

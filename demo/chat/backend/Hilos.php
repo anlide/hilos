@@ -601,25 +601,26 @@ final class Hilos extends HilosFacade
      * auth libraries and the code agent sharing the tables of signing in, and they stand the same
      * way in every demo that switches those features on.
      *
-     * Parting them for real is somebody else's work, and it has an address: HIL-630 gives the
-     * person an agent of their own, and the auth libraries are parted with it.
+     * The rows are parted by their own leaves: users by HIL-1404, identities by HIL-1405,
+     * stepUps by HIL-1407, and verifications and registrationReservations by HIL-1411.
+     * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
      */
     public const array SHARED_DB_OWNERS = [
         HilosDbContext::stepUps => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1407',
         ],
         ChatDbContext::users => [
             SharedOwnersKey::OWNERS => [ChatAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1404',
         ],
         HilosDbContext::identities => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, OAuthAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1405',
         ],
         HilosDbContext::verifications => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1411',
         ],
         HilosDbContext::registrationReservations => [
             SharedOwnersKey::OWNERS => [
@@ -627,7 +628,7 @@ final class Hilos extends HilosFacade
                 SessionsLibraryAgent::class,
                 AuthCodeAgent::class,
             ],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1411',
         ],
     ];
 

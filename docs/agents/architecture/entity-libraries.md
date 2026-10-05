@@ -12,7 +12,7 @@ here so the next leaf does not coin its own: say *library* for the unit and
 "manager".
 
 The counterpart is the **instance owner** — the agent that owns one row and its
-contents (epic HIL-626; the rule itself is HIL-632's document). The third figure
+contents ([instance-owners.md](instance-owners.md)). The third figure
 is the **table agent** — the agent that answers for the surface a page draws over
 the set or over one instance, holding its viewers' windows and running the bulk
 action, and reading from the library or the owner without owning a row
@@ -633,8 +633,9 @@ each piece lands:
 | HIL-627 | routing a subscription to an *instance* agent; a library needs none of it, being reachable by the existing `SUBSCRIPTION_AGENT_TYPE` |
 | HIL-628 | raising an instance owner on demand and stopping it when idle |
 | HIL-629 | delivering a signal to an agent that is not up yet — a library needs it for the same reason an owner does |
-| HIL-630 | the instance owner as the writer of its row |
-| HIL-632 | the instance-owner rule in docs and skills; that document and this one are neighbours and reference each other |
+| HIL-630 | the person's own agent as a figure: raised on demand, asleep when idle, holding its row and set |
+| HIL-1404…HIL-1410 | the edits of one person moving to that person's agent |
+| HIL-632 | the instance-owner rule: [instance-owners.md](instance-owners.md) |
 | HIL-946 | the settings library: one writer for a collection three admin screens write, and the first library that holds a write without holding a read |
 
 Also outside it: the library base class and any framework code; the splitting of
@@ -684,6 +685,8 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
 
 ## Related
 
+- [instance-owners.md](instance-owners.md) — whether an entity needs an owner per
+  instance, the content edits it writes, and the operations its library keeps.
 - [table-agents.md](table-agents.md) — the third figure: the agent that answers
   for a table's surface beside a library or an instance owner; its holder keeps
   the viewers' windows and reads without owning.

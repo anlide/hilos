@@ -97,13 +97,13 @@ an exhausted row. That is the right trade — the ceiling exists to bound guessi
 and knowing the code is not guessing.
 
 **The guard is temporary, and is meant to stay small enough to remove** (owner's
-call, 2026-08-26). Once the user library and the per-user agents arrive, one writer
-owns the row and this increment is purely local however it is written. So it must
-not grow a transaction, a row lock, a broadcast frame or a cache of its own — all
-of which would then have to be dug back out of the architecture. When that horizon
-arrives is not this page's to say (proposal P-163): the confirmed child entities of
-a user agent (HIL-630) do not include verifications, and the SMS-login and
-registration challenges carry no `user_id` at all, so the epic HIL-626 owns it.
+call, 2026-08-26). Verification codes are outside the person's set (P-163,
+2026-08-30); SMS-login and registration challenges carry no `user_id` at all.
+The people library becomes their only writer after the code agent and sessions
+holder give up their writes (not in the code yet — HIL-1411). Removing the guard
+is a separate decision after that leaf, with no removal leaf assigned yet. Until
+then it must not grow a transaction, a row lock, a broadcast frame or a cache of
+its own. See [instance-owners.md](instance-owners.md).
 
 ## What Is Not Protected: The Send Cap
 

@@ -26,6 +26,8 @@ you choose.
   carries, and whether the owner of a new collection holds it whole or by the
   set its rows are cut into (*A Claim Over A Set*):
   `docs/agents/architecture/truth-source.md`
+- Whether a top-level entity needs an agent per instance and what that owner
+  writes: `docs/agents/architecture/instance-owners.md`.
 - Repository/service anti-pattern:
   `docs/agents/antipatterns/no-repository-service.md`.
 - Test command selection: use `$hilos-testing-cli`.
@@ -49,7 +51,9 @@ restart is acceptable and a truth source can own writes.
 1. Define the lifecycle: durable DB state, transient RT state, or a DB item with
    an RT overlay.
 2. Find the owner before writing: existing truth source agent, DB collection, RT
-   collection, or page subscription boundary.
+   collection, or page subscription boundary. When a new collection's rows belong
+   to one instance of a top-level entity, ask whether that entity needs an agent
+   per instance: `docs/agents/architecture/instance-owners.md`.
 3. Search existing contexts before adding names: `extends HilosDbContext`,
    `extends RtContext`, collection constants, `setRepresent()` calls, and
    `setRepresentItem()` item aliases. A new runtime collection is not activated

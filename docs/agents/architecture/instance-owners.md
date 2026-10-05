@@ -1,0 +1,212 @@
+# Instance Owners
+
+Read this before adding an entity whose content several surfaces or people edit,
+writing an edit into one person's content (or any instance with an owner), or
+giving a library another write into one instance.
+
+Three figures stand beside each other: the [library](entity-libraries.md) answers
+for the entity's set, the instance owner writes one instance's content, and the
+[table agent](table-agents.md) holds the surface a viewer reads over either one.
+This document specifies the approach, not a description of code already built.
+An unbuilt part carries the leaf that lands it; the ownership mechanism itself
+is in [truth-source.md](truth-source.md).
+
+## Core Rule
+
+A top-level entity around which many interactions gather gets an agent per
+instance. That agent is the sole writer of ordinary content edits made by the
+person or an administrator: its own row and every row whose set tree ends at
+that instance. For a person, the figure is still to be built
+(not in the code yet — HIL-630). The edits move to it in the leaves named in
+[Where The Pieces Land](#where-the-pieces-land)
+(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409, HIL-1410).
+
+Choose the writer before adding a write path. A new surface does not become
+another writer merely because it already runs in a library or a page agent.
+Until a named move lands, the existing library remains the writer; a marker
+does not make the future agent callable today.
+
+## Does A New Entity Need One
+
+Ask both questions; both answers must be yes:
+
+1. **Is it the root of a set tree, itself in nobody's set?** Its Entity declares
+   `_setVia = Entity::SET_STANDALONE` and `_setRoot = true`. See
+   [Whose set the table is part of](../orm/entity.md#whose-set-the-table-is-part-of).
+2. **Does more than one surface or actor edit its content?** The person, an
+   administrator and background work may all reach the same instance. Count
+   independent content edits, not every internal step of the one writer.
+
+The current roots give these answers:
+
+| Root | Decision | Why |
+|---|---|---|
+| Person — `framework/backend/Database/Entity/Item/User.php` | Yes (not in the code yet — HIL-630) | The person's own and administrative edits converge on the same row and child sets. |
+| File — `framework/backend/Database/Entity/Item/File.php` | No | The [files registry](files-registry.md) has one owner of the table. |
+| Chat bot — `demo/chat/backend/Database/Entity/Item/Bot.php` | No | One screen edits it through the library. `BotAgent` is indexed by bot but owns only its own RT status row (`BotAgent::OWNS_RT_ROWS`); it reads the bot's DB row. |
+| Chat room — `demo/chat/backend/Database/Entity/Item/Event.php` | Candidate, not decided | Apply the same test. There is no leaf assigning it an instance owner; `ChatAgent` holds the room tables whole today. |
+
+An indexed agent is not by that fact an instance owner: the bot is the worked
+counterexample. This decision needs judgment and has no guard. A source scan
+can find the two Entity constants, but cannot decide the second question.
+
+## What The Owner Writes, And What It Does Not
+
+The owner writes ordinary edits of one instance's content, whether the person
+or an administrator requested them. For the person those moves are still ahead
+(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+
+The library keeps operations over the set: create, erase, merge, sweep expired
+rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
+A merge moves rows between sets; the write mechanism grants that move only to
+the holder of the whole table, because a claim over one set cannot cover both
+the origin and destination of that move. See [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
+The sessions holder's existing erasure and merge are the declared shapes below.
+
+**Executors keep their working rows.** A delivery status, a personal data export
+and an administrator's export of acceptances stay with the executor that writes
+them. These are declared exceptions, with one writer for the work and no race
+between content editors:
+
+- `AbstractDeliveryChannelAgent` edits the delivery attempt it is running
+  (`framework/backend/Notification/Delivery/AbstractDeliveryChannelAgent.php`).
+- `AbstractDataExportAgent` owns personal data copies
+  (`framework/backend/DataExport/AbstractDataExportAgent.php`).
+- `AbstractHilosLegalAgent` owns administrators' exports of acceptance records
+  (`framework/backend/Core/Agent/Hilos/AbstractHilosLegalAgent.php`).
+
+Do not raise the recipient's agent for each delivery-status change. Belonging
+to a person's data does not turn an executor's bookkeeping into a content edit.
+Erasing that data with the account is a separate set operation, described below.
+
+A sweeper may find what is due itself; an ordinary content edit still goes to
+the instance owner. In particular, the second-factor reset sweeper
+(`framework/backend/Auth/SecondFactor/SecondFactorResetSweeper.php`) hands a reset
+whose delay has elapsed to the person's agent
+(not in the code yet — HIL-1406).
+
+The sessions holder's responsibility is authorization. The person's other
+ordinary content edits go to the person's own agent, with erasure and merge
+remaining the declared set operations below (owner's decision, 2026-10-04)
+(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+Whether a session itself needs an instance owner is open in HIL-1403. Until
+that answer, this rule neither puts the session in the person's set nor rules
+it out as a future decision; it does not change the current Entity declaration.
+
+## How It Is Declared
+
+The mechanisms below exist. Their application to the person's agent is still
+to be built (not in the code yet — HIL-630):
+
+- The agent index is the instance id. The first frame addressed to it raises
+  it, and `AgentRegistryKey::IDLE_TIMEOUT` lets it stop when idle. Follow
+  [Idle stop](agent-lifecycle.md#idle-stop-an-agent-that-lives-as-long-as-it-is-spoken-to):
+  the idle window, no live subscriber and no work in flight all matter.
+- Address signals by that index using
+  [Indexed agent signals](../signals/routing.md#indexed-agent-signals).
+- A page served by the owner names `SUBSCRIPTION_AGENT_INDEX`; see
+  [Per-instance page subscriptions](../signals/routing.md#per-instance-page-subscriptions).
+- Claim the person's own row by key in `OWNS_DB_ROWS`. `hilos_user` declares
+  `SET_STANDALONE`, so it offers no set by which to claim that row.
+- Claim the child set in `OWNS_DB_SET`, with its key returned by
+  `ownedDbSetKey()`, **without `Add`**. That is a borrowed claim beside the
+  libraries that create the rows. The exact widths, operations, reads and
+  startup refusals belong to [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
+
+Raising the instance owner is cheap enough to use as the write path. Do not
+bypass the hop by writing one person's content from the library to avoid
+starting an agent (owner's decision, 2026-10-04). The person acquires that path
+with its figure and the content moves
+(not in the code yet — HIL-630, HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+
+## Memory
+
+In phase 2 the person's agent does not keep its set in memory: it reads on
+demand. Establishing the writer comes first
+(not in the code yet — HIL-630).
+
+The target is for the owner to hold the set in memory and serve as the reader's
+source of truth, with the profile served by its owner's agent. That memory and
+profile move belong to a separate leaf
+(not in the code yet — HIL-1281).
+
+## Operations Over Many Instances
+
+These are declared shapes, not debts waiting for an instance owner:
+
+- **Account erasure** is one transaction at the sessions holder over the whole
+  circle of merged accounts. It removes the person's rows and child data
+  together; see [The Erasure](account-deletion.md#the-erasure) (HIL-302, HIL-1202).
+- **Account merge** is one transaction there too: it transfers sign-in methods,
+  passkey credentials and the access log, blocks the losing account and records
+  the merge. See [A Merged Account](people-table.md#a-merged-account).
+- **Chat room rows during a person's erasure or merge** stay in that operation's
+  transaction: messages, attachments, events and registration events. Erasure
+  must remove the person's messages atomically, whoever owns the room (owner's
+  decision at the split, 2026-10-04).
+- **Unlinking the rename journal while clearing chat history** is a sweep. The
+  chat agent has the borrowed write needed to clear the room reference.
+
+Creating the first administrator is creation, so it remains a library operation;
+deleting the erased person's row is part of the erasure transaction. Neither is
+an ordinary edit of a living person's content. The admin and block flag edits
+outside those set operations move to the person's agent
+(not in the code yet — HIL-1404).
+
+The borrowed claims for these operations carry an ordinary code comment: name
+the erasure, merge or sweep, say why it writes here, and point to this section.
+Do not put `TODO` or a future leaf key on a deliberately retained shape. A real
+move keeps a `TODO` naming the leaf that will remove the borrowed write.
+
+## Anti-Patterns
+
+- **A library writes ordinary content edits of one owned instance.** Send the
+  edit to the instance owner. This is the current arrangement the person's
+  content moves replace, not evidence that the rule is already implemented
+  (not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+- **The owner writes only its own row and merely reads its children.** Own the
+  child set as well, with the executor exceptions above. Owning the children
+  was the owner's explicit decision of 2026-09-17; the person's figure carries
+  it (not in the code yet — HIL-630).
+- **The owner writes every row in its set literally, including executor work.**
+  Keep the executor's one writer. Routing each delivery-status change through
+  the recipient's agent would raise it for every attempt; that shape was
+  rejected on 2026-10-04.
+- **A reader warms a projection from the database before each snapshot instead
+  of asking the owner.** Avoid making that the ownership model. This workaround
+  was accepted but discouraged on HIL-410 (2026-08-20); the profile gets the
+  owner-held memory in HIL-1281 (not in the code yet — HIL-1281).
+- **One monolithic library holds all entities.** Keep the idea of a library,
+  not hleb's monolithic `Library` shape. Follow
+  [One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
+
+## Where The Pieces Land
+
+| Leaf | Piece |
+|---|---|
+| HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (not in the code yet — HIL-630). |
+| HIL-1404 | Name, administrator flag and block edits (not in the code yet — HIL-1404). |
+| HIL-1405 | Sign-in methods and passkey credentials, including sign-in (not in the code yet — HIL-1405). |
+| HIL-1406 | Second factor, including a reset whose delay elapsed (not in the code yet — HIL-1406). |
+| HIL-1407 | Step-up confirmations and browser trust (not in the code yet — HIL-1407). |
+| HIL-1408 | Notification marks, channel preferences and push unsubscribe (not in the code yet — HIL-1408). |
+| HIL-1409 | Account-deletion requests and profile photos (not in the code yet — HIL-1409). |
+| HIL-1410 | Erasure and merge stop the affected instance agents (not in the code yet — HIL-1410). |
+| HIL-1411 | The code agent and sessions holder stop writing the people library's sign-in tables (not in the code yet — HIL-1411). Verification codes are outside the person's set and belong to that library (P-163, 2026-08-30). |
+| HIL-1412 | Cluster behavior of the person's agent (not in the code yet — HIL-1412). |
+| HIL-1403 | Decide whether a session has an instance owner; the answer remains open. |
+| HIL-1281 | Profile on the owner's agent and memory as the reader's truth (not in the code yet — HIL-1281). |
+
+The verification attempt guard is a separate decision after HIL-1411; no leaf
+removes it yet. See [verification-codes.md](verification-codes.md). There is no
+leaf for a chat room owner either: its candidacy above is not an assignment.
+
+## Related
+
+- [entity-libraries.md](entity-libraries.md) — operations over the entity's set.
+- [table-agents.md](table-agents.md) — the reader's surface beside either owner.
+- [truth-source.md](truth-source.md) — declarations, widths and write guards.
+- [agent-lifecycle.md](agent-lifecycle.md) — startup, idle stop and identity.
+- [people-table.md](people-table.md) — the person's own row and account merge.
+- [account-deletion.md](account-deletion.md) — the erasure transaction.
+- [../orm/entity.md](../orm/entity.md) — whose set a row belongs to.

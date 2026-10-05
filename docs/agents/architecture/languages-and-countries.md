@@ -105,7 +105,7 @@ default operation set (not in the code yet — HIL-1470).
 Languages, countries and locales have no instance owner beside it: one
 surface writes them, the section, and the startup reflow is the library's own
 pass rather than a second writer. Their rows are few and cold. This is the
-judgment called for by the instance-owner rule (HIL-632's document).
+judgment called for by the [instance-owner rule](instance-owners.md).
 
 The rule for a library beside instance owners, “A library never edits a row it
 already wrote,” therefore does not apply here. `SettingsLibraryAgent`, the

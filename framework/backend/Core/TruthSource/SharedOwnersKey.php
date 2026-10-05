@@ -18,7 +18,7 @@ use Hilos\Hilos;
  * public const array SHARED_DB_OWNERS = [
  *     ChatDbContext::users => [
  *         SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class],
- *         SharedOwnersKey::DEBT => 'HIL-630',
+ *         SharedOwnersKey::DEBT => 'HIL-1404',
  *     ],
  * ];
  * ```

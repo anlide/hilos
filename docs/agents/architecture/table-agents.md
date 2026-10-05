@@ -58,7 +58,7 @@ are two kinds of subject, and the address is the same pair for both:
 | Subject | Subject key | Holders | Where the rows come from |
 |---|---|---|---|
 | a **set** — the list of every user in the admin | empty | one per installation | that entity's library ([entity-libraries.md](entity-libraries.md)) |
-| an **instance** — my ways of signing in; the messages of one room | the instance's key | one per instance | the owner of that instance (epic HIL-626) |
+| an **instance** — my ways of signing in; the messages of one room | the instance's key | one per instance | the owner of that instance ([instance-owners.md](instance-owners.md)) |
 
 Nothing else is a subject. The decision of 2026-09-06 fixes both rows in as
 many words: the list of every user goes to the users library, and a table
@@ -306,8 +306,8 @@ Both preconditions are figures rather than mechanisms, and neither is built by
 the leaf that wrote this page.
 
 1. **The instance owner does not exist yet.** A table over an instance subject
-   takes its rows from the owner of that instance (epic HIL-626), and the owner
-   as a figure — the agent that owns one user's row and its child entities — is
+   takes its rows from the [owner of that instance](instance-owners.md), and the
+   owner as a figure — the agent that writes every edit of one person's content — is
    not built (not in the code yet — HIL-630). This page does not wait for it:
    it writes the approach. The first leaf of the epic that takes a table over
    an instance subject stands behind HIL-630; a table over a set subject does
@@ -388,6 +388,8 @@ Answer with the table's refusal frame. An empty list is a claim about the data.
 
 ## Related
 
+- [instance-owners.md](instance-owners.md) — the owner of one instance's content,
+  beside its library and the table's reader.
 - [entity-libraries.md](entity-libraries.md) — the library, the figure that
   answers for the set; the words *holder* and *instance owner* are its.
 - [agent-lifecycle.md](agent-lifecycle.md) — `onStart()` / `onStop()`, the idle

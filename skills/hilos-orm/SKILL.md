@@ -40,6 +40,8 @@ touched ORM surfaces.
   `_setRoot` on the same Entity (a column carrying the top of the set tree may
   be named in the optional `_setShortPath`); a node refuses to start without
   them: `docs/agents/orm/entity.md`
+- Whether the root of a new set tree needs an agent per instance:
+  `docs/agents/architecture/instance-owners.md`
 - Repository/service anti-pattern: `docs/agents/antipatterns/no-repository-service.md`
 - Test commands: use `$hilos-testing-cli`
 - Declaring what an agent owns and what it reads, the operations a claim

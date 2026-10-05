@@ -19,6 +19,9 @@ Use this skill for agent business logic and registration work. Start by reading 
   instance stays alive: `docs/agents/architecture/agent-lifecycle.md`
 - An agent that holds a whole entity's set — one entity one library, and which
   of the two placement axes is yours: `docs/agents/architecture/entity-libraries.md`
+- An agent that owns one instance of a top-level entity — whether the entity
+  needs one, what it writes and what stays with the library:
+  `docs/agents/architecture/instance-owners.md`
 - An agent that answers for a table rather than for an entity — one holder per
   table per subject, the viewer's window as state inside it, reading without
   owning: `docs/agents/architecture/table-agents.md`
@@ -95,7 +98,9 @@ Use this skill for agent business logic and registration work. Start by reading 
    `docs/agents/architecture/entity-libraries.md` before writing its registry
    entry. One entity gets one such agent, and how many instances run is a
    separate question from which node runs them.
-8. When the agent answers for ONE instance — this user, this document, this
+8. Is this the owner of one instance of a top-level entity? Decide it by the test
+   in `docs/agents/architecture/instance-owners.md` before choosing the idle window.
+   When the agent answers for ONE instance — this user, this document, this
    room — decide how long it lives before writing the entry, because nothing
    else in the registry asks. Declaring `AgentRegistryKey::IDLE_TIMEOUT` is the
    whole of it: the agent starts on the first frame addressed to it and stops

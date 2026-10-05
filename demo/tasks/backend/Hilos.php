@@ -311,29 +311,30 @@ final class Hilos extends HilosFacade
      * Five rows, and all of them are signing in: this demo's people table, held by its own agent
      * together with the sessions and the users library, and the four framework tables those
      * libraries share with the code agent. They stand the same way in every demo that switches
-     * the feature on. Parting them is somebody else's work and it has an address: HIL-630 gives
-     * the person an agent of their own, and the auth libraries are parted with it.
+     * the feature on. The rows are parted by their own leaves: users by HIL-1404, identities
+     * by HIL-1405, stepUps by HIL-1407, and verifications and registrationReservations by HIL-1411.
+     * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
      */
     public const array SHARED_DB_OWNERS = [
         HilosDbContext::stepUps => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1407',
         ],
         TasksDbContext::users => [
             SharedOwnersKey::OWNERS => [TasksAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1404',
         ],
         HilosDbContext::identities => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, OAuthAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1405',
         ],
         HilosDbContext::verifications => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1411',
         ],
         HilosDbContext::registrationReservations => [
             SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class, AuthCodeAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-630',
+            SharedOwnersKey::DEBT => 'HIL-1411',
         ],
     ];
 

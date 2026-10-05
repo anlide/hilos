@@ -25,6 +25,8 @@ switch to the focused data-layer skill first.
   is in progress: `docs/agents/orm/collection-iteration.md`.
 - Reading a whole set of an entity, or writing a row that has no owner yet:
   `docs/agents/architecture/entity-libraries.md`.
+- Writing an edit into one person's content — who writes it today and where it
+  moves: `docs/agents/architecture/instance-owners.md`.
 - Serving a table rather than an entity — who holds a viewer's window, where the
   rows of a table over a set or over one instance come from, and why the table
   agent never writes: `docs/agents/architecture/table-agents.md`.

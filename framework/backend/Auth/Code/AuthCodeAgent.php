@@ -93,7 +93,7 @@ class AuthCodeAgent extends AbstractAgent
      * this process learns what became of the send. The claims are the same statement said to
      * the guard, which since HIL-716 asks on every table rather than on the four eager ones.
      *
-     * TODO(HIL-630): borrowed claim - the users library owns the challenge and the hold; this
+     * TODO(HIL-1411): borrowed claim - the users library owns the challenge and the hold; this
      * agent mints one and takes the other because a code that was never delivered must cost
      * neither.
      *

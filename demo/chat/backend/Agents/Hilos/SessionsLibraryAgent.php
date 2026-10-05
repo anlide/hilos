@@ -73,19 +73,19 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // TODO(HIL-626): borrowed claim - the chat agent owns the message rows. A merge
-        // re-points the loser's messages onto the survivor; an erasure deletes the person's.
+        // A person's erasure and merge touch the room's messages in their own transaction, whoever owns the room.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::eventMessages => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        // TODO(HIL-626): borrowed claim - the chat agent owns the attachment rows; an erasure
-        // deletes those of the person's messages (HIL-302).
+        // Borrowed to erase attachments with the person's messages in one transaction, whoever owns the room.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::eventAttachments => [TruthSourceOperation::Remove],
-        // TODO(HIL-626): borrowed claim - the chat agent owns the events; an erasure deletes
-        // the person's messages and the events about them (HIL-302).
+        // Borrowed to erase the events with the person's messages in one transaction, whoever owns the room.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::events => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library writes the registration events; an
-        // erasure deletes the person's (HIL-302).
+        // Borrowed to erase the person's registration events in the account erasure transaction, whoever owns the room.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::eventUserRegistrations => [TruthSourceOperation::Remove],
-        // TODO(HIL-630): borrowed claim - the users library owns the reservation table. The hold
+        // TODO(HIL-1411): borrowed claim - the users library owns the reservation table. The hold
         // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
         // sessions library's row; the sweep itself belongs with the table.
         HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
