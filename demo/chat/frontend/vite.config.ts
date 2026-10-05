@@ -29,8 +29,9 @@ function buildTimestampPlugin(): Plugin {
 export default defineConfig(({ mode }) => {
   // Same-origin registry files: the browser requests /_hilos/file on the Vite
   // origin (so the session cookie rides along, no token in the URL) and Vite
-  // forwards it to the daemon, where the files library answers. VITE_FILES_TARGET
-  // is set by docker-compose.local.yml; test/prod use nginx, so this proxy is dev-only.
+  // forwards it to the stack's files-nginx (chat-files-local), which asks the
+  // daemon and streams the file via X-Accel. VITE_FILES_TARGET is set by
+  // docker-compose.local.yml; test/prod use nginx, so this proxy is dev-only.
   const env = loadEnv(mode, '.', 'VITE_')
 
   return {
@@ -61,7 +62,7 @@ export default defineConfig(({ mode }) => {
           ws: true,
         },
         '/_hilos/file': {
-          target: env.VITE_FILES_TARGET || 'http://chat-local:8090',
+          target: env.VITE_FILES_TARGET || 'http://chat-files-local',
           changeOrigin: true,
         },
       },

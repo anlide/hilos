@@ -29,6 +29,11 @@ use PHPUnit\Framework\TestCase;
  * the first start without it would take the mode away from the demo forever, and a new demo
  * with a production stack cannot land without saying it.
  *
+ * Stacks serving registry files through X-Accel mount the published files directory into every
+ * web server of that stack and keep dev servers from reaching the daemon's HTTP port directly
+ * (HIL-456): otherwise files larger than 4 MiB fail with 500 only on local setups, which remains
+ * invisible until someone tests large file downloads by hand.
+ *
  * A demo arrives through the glob and a demo without a `docker/` directory is skipped in
  * silence, the way the code-style guard treats a root that is not there: the framework also
  * ships without the demos.
@@ -55,6 +60,18 @@ final class DemoStackComposeGuardTest extends TestCase
 
     /** Path ending of a demo's production compose file. */
     private const string PRODUCTION_COMPOSE = '/docker/docker-compose.prod.yml';
+
+    /** Name of the value holding the internal X-Accel location for registry files. */
+    private const string FILES_XACCEL = 'HILOS_FILES_XACCEL_LOCATION';
+
+    /** Name of the value pointing the frontend dev server at the files gateway. */
+    private const string VITE_FILES_TARGET = 'VITE_FILES_TARGET';
+
+    /** Volume mount target ending for the published registry files directory. */
+    private const string FILES_MOUNT = ':/published:ro';
+
+    /** HTTP port suffix of the daemon service. */
+    private const string DAEMON_HTTP_PORT = ':8090';
 
     /**
      * A daemon service names its own address and its command channel in full.
@@ -196,6 +213,98 @@ final class DemoStackComposeGuardTest extends TestCase
     }
 
     /**
+     * Every web server of a stack that serves files by X-Accel mounts the published directory.
+     *
+     * @return void
+     */
+    public function testEveryWebServerOfAStackServingFilesByXAccelMountsTheFilesDirectory(): void
+    {
+        $stacks = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            $services = $this->servicesOf($path);
+            $servesFilesByXAccel = false;
+
+            foreach ($services as $lines) {
+                if (!$this->isDaemon($lines)) {
+                    continue;
+                }
+
+                $xaccel = $this->valueOf($lines, self::FILES_XACCEL);
+                if ($xaccel !== null && $xaccel !== '') {
+                    $servesFilesByXAccel = true;
+                    break;
+                }
+            }
+
+            if (!$servesFilesByXAccel) {
+                continue;
+            }
+
+            $stacks++;
+            foreach ($services as $service => $lines) {
+                if (!$this->isNginx($lines)) {
+                    continue;
+                }
+
+                $this->assertTrue(
+                    $this->mountsFilesDirectory($lines),
+                    "{$relativePath}: the nginx service {$service} does not mount the files directory with " . self::FILES_MOUNT
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $stacks, 'no stack serving files by X-Accel was found');
+    }
+
+    /**
+     * The dev server reaches files through an nginx proxy rather than directly (HIL-456).
+     *
+     * @return void
+     */
+    public function testTheDevServerSendsFilesThroughNginx(): void
+    {
+        $devServers = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            $services = $this->servicesOf($path);
+
+            foreach ($services as $service => $lines) {
+                $target = $this->valueOf($lines, self::VITE_FILES_TARGET);
+                if ($target === null) {
+                    continue;
+                }
+
+                $devServers++;
+                $this->assertFalse(
+                    str_ends_with($target, self::DAEMON_HTTP_PORT),
+                    "{$relativePath}: {$service} points " . self::VITE_FILES_TARGET . " directly at daemon port " . self::DAEMON_HTTP_PORT
+                );
+
+                $daemonHasXaccel = false;
+                foreach ($services as $daemonLines) {
+                    if (!$this->isDaemon($daemonLines)) {
+                        continue;
+                    }
+
+                    $xaccel = $this->valueOf($daemonLines, self::FILES_XACCEL);
+                    if ($xaccel !== null && $xaccel !== '') {
+                        $daemonHasXaccel = true;
+                        break;
+                    }
+                }
+
+                $this->assertTrue(
+                    $daemonHasXaccel,
+                    "{$relativePath}: the daemon beside {$service} does not declare non-empty " . self::FILES_XACCEL
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $devServers, 'no service declaring ' . self::VITE_FILES_TARGET . ' was found');
+    }
+
+    /**
      * Every compose file of every demo, keyed by its path from the repository root.
      *
      * @return array<string, string> Repository-relative path => absolute path
@@ -309,6 +418,46 @@ final class DemoStackComposeGuardTest extends TestCase
         foreach ($lines as $line) {
             $trimmed = ltrim($line);
             if (str_starts_with($trimmed, 'command:') && str_contains($trimmed, self::DAEMON_COMMAND)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a service runs an nginx web server rather than PHP or a database.
+     *
+     * @param array<int, string> $lines Effective lines of the service
+     * @return bool True when the service builds from an nginx Dockerfile or uses an nginx image
+     */
+    private function isNginx(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            $trimmed = ltrim($line);
+            if (str_contains($trimmed, 'Dockerfile.nginx') || str_starts_with($trimmed, 'image: nginx')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a service mounts the published files directory.
+     *
+     * @param array<int, string> $lines Effective lines of the service
+     * @return bool True when any volume mount ends with the published files mount suffix
+     */
+    private function mountsFilesDirectory(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            $trimmed = trim(ltrim($line), " \"'");
+            if (str_starts_with($trimmed, '#')) {
+                continue;
+            }
+
+            if (str_ends_with($trimmed, self::FILES_MOUNT)) {
                 return true;
             }
         }

@@ -112,8 +112,10 @@ composer run daemon-stop      # stop containers (data is preserved)
 
 **Dev mode** is the default `daemon-start`: the Vite dev server
 (`chat-frontend-local`) comes up with the backend and serves the SPA on :5173, and
-the browser talks WebSocket directly to the daemon. HMR runs on native filesystem
-events (no polling) when the repository lives on the WSL2 filesystem.
+the browser talks WebSocket directly to the daemon. Page files (`/_hilos/file`) are
+fetched by Vite from the stack's small nginx (`chat-files-local`), which serves them
+from disk via X-Accel like on test/prod. HMR runs on native filesystem events (no polling)
+when the repository lives on the WSL2 filesystem.
 
 **Build / prod serving** (static build behind Nginx, HTTPS, and SSG prerender for
 public pages) is being rebuilt as part of the current frontend rewrite — see

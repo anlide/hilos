@@ -19,16 +19,17 @@ registry file at `GET /_hilos/file`
    which only the server knows.
 2. **Serve strictly same-origin.** `/_hilos/file` is reverse-proxied in every
    environment — an nginx `location = /_hilos/file` in test/prod (mirroring
-   `/ws`) and the Vite `server.proxy` in dev (`VITE_FILES_TARGET`). A separate
-   public port/host for files is not allowed: cross-site the cookie would not
-   ride without `SameSite=None` + CORS.
-3. **nginx streams the bytes via `X-Accel-Redirect`.** With
-   `HILOS_FILES_XACCEL_LOCATION=/__hilos_files` (test/prod) the library answers
-   with an empty body and the redirect header; nginx's `internal` location
+   `/ws`), and in local Vite proxies to `chat-files-local` (`VITE_FILES_TARGET`).
+   A separate public port/host for files is not allowed: cross-site the cookie
+   would not ride without `SameSite=None` + CORS.
+3. **nginx streams the bytes via `X-Accel-Redirect`.** Used on all chat stands,
+   including local (and the full profile with the `/published` volume). With
+   `HILOS_FILES_XACCEL_LOCATION=/__hilos_files` the library answers with an
+   empty body and the redirect header; nginx's `internal` location
    `^~ /__hilos_files/` (`alias /published/`, the registry's files directory
-   mounted read-only) streams the file. In dev, with no nginx in front, the
-   daemon sends the bytes itself, up to 4 MiB — an environment-specific
-   transport, not a stopgap.
+   mounted read-only) streams the file. The daemon's direct body delivery
+   (up to 4 MiB, docs/agents/architecture/files-registry.md, "Serving A File")
+   is not used by any chat stand.
 4. **Render by mime type.** `image/*` → the `chat_thumb` copy
    (`<img loading=lazy>`; 384×384 contain, WEBP, drawn by the images agent on
    its first request) inside a link to the original; everything else →
