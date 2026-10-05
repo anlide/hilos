@@ -37,16 +37,18 @@ test('reads the current documents before registration and records both accepted 
   await expect(page.getByTestId('legal-consent-standard-toggle')).toHaveText(
     'Standard Hilos terms · 13 clauses',
   )
-  // The third terms revision adds the demo's own availability clause (HIL-500).
-  await expect(page.getByTestId('legal-consent-deviation')).toHaveCount(5)
+  // Four Terms and two Privacy deviations, including the analytics declaration.
+  await expect(page.getByTestId('legal-consent-deviation')).toHaveCount(6)
   await expect(page.getByTestId('legal-consent-direction')).toHaveText([
     'stricter',
     'stricter',
     'stricter',
     'stricter',
     'looser',
+    'looser',
   ])
   await expect(page.getByTestId('legal-consent-deviation')).toContainText([
+    'Hilos standard:',
     'Hilos standard:',
     'Hilos standard:',
     'Hilos standard:',
@@ -90,7 +92,7 @@ test('previews the same complete consent body from a legal document', async ({
   await clickSubmit(page.getByTestId('legal-preview-consent'))
   const preview = page.getByTestId('legal-consent-preview')
   await expect(preview).toBeVisible()
-  await expect(preview.getByTestId('legal-consent-deviation')).toHaveCount(5)
+  await expect(preview.getByTestId('legal-consent-deviation')).toHaveCount(6)
   await expect(preview.getByTestId('auth-consent-accept')).not.toBeChecked()
   await preview.getByTestId('auth-consent-accept').check()
   await expect(preview.getByTestId('auth-submit')).toHaveCount(0)

@@ -21,12 +21,10 @@ use Hilos\Utils\Helpers\RandomHelper;
 use JsonException;
 
 /**
- * Analytics keeps no password or code of an action, on the real chat topology (HIL-1187).
+ * Analytics keeps action names without their bodies on the real chat topology (HIL-1283).
  *
- * The collector finds what to mask through the chat's own router, so these cases run the
- * declarations the project really ships: a sign-in written by the master, a password change as
- * the agent receives it - the action inside the envelope's `data` - and a name no page or agent
- * routes. The last case plays the cleanup migration over rows written the old way.
+ * These cases cover a sign-in written by the master, a password change received by an agent,
+ * and an unknown action. The last case plays the old cleanup migration over historical rows.
  */
 final class AnalyticsSecretFieldsTest extends IntegrationTestCase
 {
@@ -70,36 +68,29 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
     }
 
     /**
-     * @throws DatabaseException When the recorded payload cannot be read
-     * @throws JsonException When the recorded payload is not JSON
+     * @throws DatabaseException When the recorded action cannot be read
      */
-    public function testSignInIsRecordedWithThePasswordMasked(): void
+    public function testSignInKeepsItsNameWithoutAnyBody(): void
     {
         $userActionKey = $this->collector->logUserAction($this->acceptKey, HilosSignalConstants::HILOS_LOGIN, [
             'email' => 'hil-1187@example.test',
             'password' => 'hil-1187-pw',
         ]);
         $this->assertNotNull($userActionKey);
-        $this->loadJournal($this->journalLines());
+        $lines = $this->journalLines();
+        $this->assertStringNotContainsString('hil-1187@example.test', implode('', $lines));
+        $this->assertStringNotContainsString('hil-1187-pw', implode('', $lines));
+        $this->loadJournal($lines);
 
-        $json = $this->userActionPayload($userActionKey);
-
-        $this->assertNotNull($json);
-        $this->assertStringNotContainsString('hil-1187-pw', $json);
-        $this->assertSame(
-            ['email' => 'hil-1187@example.test', 'password' => SecretPayloadMask::MASK],
-            json_decode($json, true, flags: JSON_THROW_ON_ERROR),
-        );
+        $this->assertNull($this->userActionPayload($userActionKey));
     }
 
     /**
-     * The worker's half masks before the journal: the file on the node's disk is storage too, so
-     * the secret is gone from the journal line already, and from the row the writer loads it into.
+     * The worker discards the entire signal body before the journal or database receives it.
      *
      * @throws HilosException When the journal cannot be loaded or the recorded payload read
-     * @throws JsonException When the recorded payload is not JSON
      */
-    public function testAgentReactionIsRecordedWithTheCodeAndPasswordMaskedInsideData(): void
+    public function testAgentReactionKeepsItsNameWithoutAnyBody(): void
     {
         $agentSessionId = $this->openAgentSession();
         // The add-password confirm carries both a code and a password; the password change
@@ -122,20 +113,9 @@ final class AnalyticsSecretFieldsTest extends IntegrationTestCase
         $this->assertStringNotContainsString('hil-1187-new', $journal);
         $this->loadJournal($lines);
 
-        Database::sql(
-            'SELECT p.`payload_json` FROM `hilos_analytics_agent_user_action` a
-             JOIN `hilos_analytics_payload_json` p ON p.`id` = a.`payload_json_id`
-             WHERE a.`agent_session_id` = ?',
-            [$agentSessionId],
-        );
-        $json = (string)Database::field('payload_json');
-
-        $this->assertStringNotContainsString('123456', $json);
-        $this->assertStringNotContainsString('hil-1187-new', $json);
-        $this->assertSame(
-            ['code' => SecretPayloadMask::MASK, 'newPassword' => SecretPayloadMask::MASK],
-            json_decode($json, true, flags: JSON_THROW_ON_ERROR)['data'],
-        );
+        Database::sql('SELECT `payload_json_id` FROM `hilos_analytics_agent_user_action` WHERE `agent_session_id` = ?',
+            [$agentSessionId]);
+        $this->assertNull(Database::field('payload_json_id'));
     }
 
     /**

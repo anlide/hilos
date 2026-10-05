@@ -462,6 +462,9 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             . "account_deletion: your pending deletion request, or null.\n"
             . "legal_acceptances: each revision of the terms and the privacy policy you accepted, when, and its full text; "
             . "a revision the project no longer publishes has inCode false and no text.\n"
+            . "analytics_person: when analytics is enabled, an index of numbered analytics_person_000001 parts; "
+            . "events are selected by the authenticated actor, including accounts folded into yours, "
+            . "and never by the last user of a shared browser.\n"
             . "The section named after the project contains your profile and project content.\n"
             . "files/ contains original attachments referenced by relative paths in that section.\n\n"
             . "Preparing this copy does not change or remove anything in your account.\n";

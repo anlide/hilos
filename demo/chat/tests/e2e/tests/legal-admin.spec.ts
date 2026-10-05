@@ -209,11 +209,23 @@ test("previews the re-consent screen through the previous revision's holder", as
 
   await gotoPage(page, '/hilos/legal/privacy')
   await clickSubmit(page.getByTestId('legal-preview-reconsent'))
+  const privacyPreview = page.getByTestId('legal-reconsent-preview')
+  await expect(privacyPreview.getByTestId('legal-reconsent-badge')).toHaveText(
+    'No window · in force since 5 October 2026',
+  )
   await expect(
-    page
-      .getByTestId('legal-reconsent-preview')
-      .getByTestId('legal-reconsent-preview-first'),
-  ).toBeVisible()
+    privacyPreview.getByTestId('legal-reconsent-change'),
+  ).toHaveCount(2)
+  await expect(
+    privacyPreview.locator(
+      '[data-id="legal-reconsent-change"][data-clause="standard.deletion"]',
+    ),
+  ).toContainText('Account deletion leaves numbered analytics events')
+  await expect(
+    privacyPreview.locator(
+      '[data-id="legal-reconsent-change"][data-clause="standard.access_log"]',
+    ),
+  ).toContainText('The separate access log is disabled')
   await clickSubmit(page.getByTestId('legal-reconsent-preview-close'))
 })
 

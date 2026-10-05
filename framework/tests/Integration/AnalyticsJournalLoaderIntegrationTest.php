@@ -10,6 +10,7 @@ use Hilos\Core\Analytics\AnalyticsJournalLoadOutcome;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
 use Hilos\Core\Analytics\AnalyticsJournalSkip;
 use Hilos\Core\Analytics\AnalyticsLossReason;
+use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -170,6 +171,30 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
         $this->assertTrue($second->alreadyLoaded);
         $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_agent_system_signal`'));
         $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_journal_file`'));
+    }
+
+    /**
+     * @throws HilosException When a load fails
+     */
+    public function testPersonEventKeepsItsActorAndLoadsOnce(): void
+    {
+        $event = AnalyticsJournalRecord::personEvent(new AnalyticsPersonEvent(
+            self::TOKEN, 42, null, 7, AnalyticsPersonEvent::ACTION, 'send', null, null, '127.0.0.1', self::STARTED_TS,
+        ));
+        $lines = $this->lines([$event]);
+        $loader = $this->loader();
+        $first = $loader->load(self::NODE, 'person-event.jsonl', $lines);
+        $second = $loader->load(self::NODE, 'person-event.jsonl', $lines);
+
+        $this->assertSame([], $first->skipped);
+        $this->assertFalse($first->alreadyLoaded);
+        $this->assertTrue($second->alreadyLoaded);
+        $this->assertSame(
+            [['42', '7', 'action', 'send', '127.0.0.1', (string)self::STARTED_TS]],
+            $this->rows('SELECT e.`user_id`, e.`session_id`, e.`event_kind`, a.`name`, INET_NTOA(e.`ipv4`), e.`created_ts`
+                FROM `hilos_analytics_person_event` e
+                JOIN `hilos_analytics_action_name` a ON a.`id` = e.`action_name_id`'),
+        );
     }
 
     /**

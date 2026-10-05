@@ -134,6 +134,20 @@ final class AnalyticsCollector
     }
 
     /**
+     * Records an event attributed to an authenticated person.
+     *
+     * @param AnalyticsPersonEvent $event Event with its actor resolved at the source
+     */
+    public function logPersonEvent(AnalyticsPersonEvent $event): void
+    {
+        if ($event->userId <= 0) {
+            return;
+        }
+
+        $this->record(AnalyticsJournalRecord::personEvent($event), null);
+    }
+
+    /**
      * Remembers a WebSocket connection and records its opening.
      *
      * Records the opening client IP and nothing about the visitor: the record is built on
@@ -396,13 +410,11 @@ final class AnalyticsCollector
     /**
      * Records a user action against the remembered WS connection and current page key.
      *
-     * The payload is masked here, before anything stores it: the secret fields the action's DTO
-     * declares are written as {@see SecretPayloadMask::MASK}, and an action the topology does not
-     * know keeps its name but loses its payload, since nobody declared what in it is secret.
+     * The action body is never passed to the journal, including for known actions.
      *
      * @param string $acceptKey WebSocket accept key; unknown yields null
      * @param string $actionName Client action name; empty yields null
-     * @param ?array<string, mixed> $payload Raw action payload, or null
+     * @param ?array<string, mixed> $payload Action payload, ignored by analytics
      * @return ?string User action key, or null when the connection is unknown
      */
     public function logUserAction(string $acceptKey, string $actionName, ?array $payload): ?string
@@ -413,22 +425,20 @@ final class AnalyticsCollector
 
         $key = RandomHelper::hex(self::SESSION_KEY_BYTES);
         $this->record(AnalyticsJournalRecord::userAction($key, $acceptKey, $this->connections[$acceptKey],
-            $actionName, $this->maskActionPayload($actionName, $payload), $this->nowTs()), null);
+            $actionName, null, $this->nowTs()), null);
         return $key;
     }
 
     /**
      * Records an agent reaction to a user action.
      *
-     * The payload is masked here, before anything stores it - the journal file is storage too -
-     * by the same rule as {@see self::logUserAction()}: the signal name is the action's name, and
-     * the action lies under `data` of the envelope, where the mask looks too.
+     * The reaction keeps its name and correlation key, without the signal body.
      *
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
      * @param ?string $userActionKey Originating user action key, or null when uncorrelated
      * @param string $signalName Signal name handled by the agent; empty is ignored
-     * @param ?array<string, mixed> $payload Signal payload, or null
+     * @param ?array<string, mixed> $payload Signal payload, ignored by analytics
      */
     public function logAgentUserAction(string $agentType, ?string $agentIndex, ?string $userActionKey, string $signalName, ?array $payload): void
     {
@@ -441,7 +451,7 @@ final class AnalyticsCollector
             $session->key,
             $userActionKey,
             $signalName,
-            $this->maskActionPayload($signalName, $payload),
+            null,
             $this->nowTs(),
         ), $session);
     }
@@ -452,7 +462,7 @@ final class AnalyticsCollector
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
      * @param string $signalName System signal name; empty is ignored
-     * @param ?array<string, mixed> $payload Signal payload, or null
+     * @param ?array<string, mixed> $payload Signal payload, ignored by analytics
      */
     public function logAgentSystemSignal(string $agentType, ?string $agentIndex, string $signalName, ?array $payload): void
     {
@@ -461,7 +471,7 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->record(AnalyticsJournalRecord::agentSystemSignal($session->key, $signalName, $payload, $this->nowTs()), $session);
+        $this->record(AnalyticsJournalRecord::agentSystemSignal($session->key, $signalName, null, $this->nowTs()), $session);
     }
 
     /**
@@ -470,7 +480,7 @@ final class AnalyticsCollector
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
      * @param string $cronName Cron job name; empty is ignored
-     * @param ?array<string, mixed> $payload Signal payload, or null
+     * @param ?array<string, mixed> $payload Signal payload, ignored by analytics
      */
     public function logAgentCronSignal(string $agentType, ?string $agentIndex, string $cronName, ?array $payload): void
     {
@@ -479,14 +489,14 @@ final class AnalyticsCollector
             return;
         }
 
-        $this->record(AnalyticsJournalRecord::agentCronSignal($session->key, $cronName, $payload, $this->nowTs()), $session);
+        $this->record(AnalyticsJournalRecord::agentCronSignal($session->key, $cronName, null, $this->nowTs()), $session);
     }
 
     /**
      * Records a system signal delivered to the worker itself.
      *
      * @param string $signalName System signal name; empty is ignored
-     * @param ?array<string, mixed> $payload Signal payload, or null
+     * @param ?array<string, mixed> $payload Signal payload, ignored by analytics
      */
     public function logWorkerSystemSignal(string $signalName, ?array $payload): void
     {
@@ -495,7 +505,7 @@ final class AnalyticsCollector
         }
 
         $this->record(
-            AnalyticsJournalRecord::workerSystemSignal($this->workerSession->key, $signalName, $payload, $this->nowTs()),
+            AnalyticsJournalRecord::workerSystemSignal($this->workerSession->key, $signalName, null, $this->nowTs()),
             null,
             $this->sessionsNamedBy(null),
         );
@@ -507,7 +517,7 @@ final class AnalyticsCollector
      * @param ?string $sessionToken Browser session token, or null for anonymous
      * @param string $method HTTP method
      * @param string $path Request path
-     * @param ?array<string, mixed> $params Request params, or null
+     * @param ?array<string, mixed> $params Request params, ignored by analytics
      * @param ?string $userAgent Raw User-Agent header, or null
      * @param ?string $acceptLanguage Raw Accept-Language header, or null
      * @return AnalyticsApiRequest Description held by the caller until the request finishes
@@ -521,7 +531,7 @@ final class AnalyticsCollector
         ?string $acceptLanguage,
     ): AnalyticsApiRequest {
         return new AnalyticsApiRequest(RandomHelper::hex(self::SESSION_KEY_BYTES),
-            $sessionToken === '' ? null : $sessionToken, $method, $path, $params,
+            $sessionToken === '' ? null : $sessionToken, $method, $path, null,
             $userAgent, $acceptLanguage, $this->nowTs());
     }
 
@@ -544,15 +554,13 @@ final class AnalyticsCollector
     /**
      * Records an agent action triggered by an API request.
      *
-     * The payload is masked here, before anything stores it, when the signal name is an action
-     * the topology knows. System, cron and agent signals pass this way too; theirs is no action,
-     * and their payload is written as it came.
+     * The signal body is never passed to the journal.
      *
      * @param string $apiRequestKey Originating API request key
      * @param string $agentType Agent type identifier
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent
      * @param string $signalName Signal name dispatched to the agent; empty is ignored
-     * @param ?array<string, mixed> $payload Signal payload, or null
+     * @param ?array<string, mixed> $payload Signal payload, ignored by analytics
      */
     public function logApiAgentAction(string $apiRequestKey, string $agentType, ?string $agentIndex, string $signalName, ?array $payload): void
     {
@@ -565,7 +573,7 @@ final class AnalyticsCollector
             $apiRequestKey,
             $session->key,
             $signalName,
-            $this->maskSignalPayload($signalName, $payload),
+            null,
             $this->nowTs(),
         ), $session);
     }
@@ -793,42 +801,6 @@ final class AnalyticsCollector
     private function buildAgentKey(string $agentType, ?string $agentIndex): string
     {
         return $agentIndex === null ? $agentType : $agentType . '::' . $agentIndex;
-    }
-
-    /**
-     * Returns a user action's payload as analytics may keep it: masked, or nothing at all for an
-     * action the topology does not know - that one never declared which of its fields are secret.
-     *
-     * @param string $actionName Action name the payload came with
-     * @param ?array<string, mixed> $payload Action payload, or null
-     * @return ?array<string, mixed> Masked payload, or null when there is none or the action is unknown
-     */
-    private function maskActionPayload(string $actionName, ?array $payload): ?array
-    {
-        $secretFields = Hilos::$sr?->actionSecretFields($actionName);
-        if ($payload === null || $secretFields === null) {
-            return null;
-        }
-
-        return SecretPayloadMask::apply($payload, $secretFields);
-    }
-
-    /**
-     * Returns a signal's payload as analytics may keep it: masked when the name is an action the
-     * topology knows, as it came when it is not an action at all.
-     *
-     * @param string $signalName Signal name the payload came with
-     * @param ?array<string, mixed> $payload Signal payload, or null
-     * @return ?array<string, mixed> Masked payload, or the payload unchanged for a name that is no action
-     */
-    private function maskSignalPayload(string $signalName, ?array $payload): ?array
-    {
-        $secretFields = Hilos::$sr?->actionSecretFields($signalName);
-        if ($payload === null || $secretFields === null) {
-            return $payload;
-        }
-
-        return SecretPayloadMask::apply($payload, $secretFields);
     }
 
     /**

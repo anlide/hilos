@@ -160,6 +160,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(DataExportState::PREPARING, Hilos::$db->dataExports->ofUser(8)?->state);
         self::assertSame(7 * 86400, strtotime($first->expiresAt) - strtotime($first->finishedAt));
         $archive = new PharData($this->directory . '/' . $first->storedName);
+        self::assertFalse(isset($archive['analytics_person.json']));
         self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00Z'], self::section($archive, 'account'));
         self::assertSame([['from' => 'Old me', 'to' => 'New me', 'at' => '2026-01-03T00:00:00Z']], self::section($archive, 'renames'));
         self::assertSame(

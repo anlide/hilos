@@ -46,6 +46,9 @@ final class AnalyticsJournalLoader
     private const string KIND_PAYLOAD = 'payload';
     private const string KIND_LOSS_REASON = 'loss_reason';
     private const string KIND_POSITIVE_INT = 'positive_int';
+    private const string KIND_BIG_ID = 'big_id';
+    private const string KIND_NULLABLE_BIG_ID = 'nullable_big_id';
+    private const string KIND_EVENT_KIND = 'event_kind';
 
     /** @var int Widest value of a `VARCHAR(100)` column the records feed: names, tokens, accept keys */
     private const int NAME_MAX_CHARS = 100;
@@ -192,6 +195,18 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::KEY_DURATION_MS => self::KIND_NULLABLE_UNSIGNED_INT,
             AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
         ],
+        AnalyticsJournalRecord::TYPE_PERSON_EVENT => [
+            AnalyticsJournalRecord::KEY_SESSION_TOKEN => self::KIND_NULLABLE_NAME,
+            AnalyticsJournalRecord::KEY_USER_ID => self::KIND_BIG_ID,
+            AnalyticsJournalRecord::KEY_SUBJECT_USER_ID => self::KIND_NULLABLE_BIG_ID,
+            AnalyticsJournalRecord::KEY_SESSION_ID => self::KIND_NULLABLE_BIG_ID,
+            AnalyticsJournalRecord::KEY_EVENT_KIND => self::KIND_EVENT_KIND,
+            AnalyticsJournalRecord::KEY_ACTION => self::KIND_NULLABLE_NAME,
+            AnalyticsJournalRecord::KEY_PAGE => self::KIND_NULLABLE_NAME,
+            AnalyticsJournalRecord::KEY_PARAMS => self::KIND_PAYLOAD,
+            AnalyticsJournalRecord::KEY_IP => self::KIND_NULLABLE_TEXT,
+            AnalyticsJournalRecord::KEY_TS => self::KIND_INT,
+        ],
         AnalyticsJournalRecord::TYPE_LOSS => [
             AnalyticsJournalRecord::KEY_REASON => self::KIND_LOSS_REASON,
             AnalyticsJournalRecord::KEY_EVENTS => self::KIND_POSITIVE_INT,
@@ -306,6 +321,9 @@ final class AnalyticsJournalLoader
         if (!$this->isWellFormed($record, $fields)) {
             return AnalyticsJournalSkip::MALFORMED;
         }
+        if ($type === AnalyticsJournalRecord::TYPE_PERSON_EVENT && !$this->isPersonEventShape($record)) {
+            return AnalyticsJournalSkip::MALFORMED;
+        }
 
         return match ($type) {
             AnalyticsJournalRecord::TYPE_WORKER_SESSION => $this->applyWorkerSession($record),
@@ -328,6 +346,7 @@ final class AnalyticsJournalLoader
             AnalyticsJournalRecord::TYPE_PAGE_SESSION_CLOSE => $this->applyPageSessionClose($record),
             AnalyticsJournalRecord::TYPE_USER_ACTION => $this->applyUserAction($record),
             AnalyticsJournalRecord::TYPE_API_REQUEST => $this->applyApiRequest($record),
+            AnalyticsJournalRecord::TYPE_PERSON_EVENT => $this->applyPersonEvent($record),
             AnalyticsJournalRecord::TYPE_LOSS => $this->applyLoss($record, $nodeId),
         };
     }
@@ -649,6 +668,45 @@ final class AnalyticsJournalLoader
     }
 
     /**
+     * @param array<mixed> $record Well-formed authenticated event
+     * @return ?AnalyticsJournalSkip Always null after insertion
+     * @throws DatabaseException When the insert fails
+     */
+    private function applyPersonEvent(array $record): ?AnalyticsJournalSkip
+    {
+        $this->store->insertPersonEvent(new AnalyticsPersonEvent(
+            $record[AnalyticsJournalRecord::KEY_SESSION_TOKEN],
+            $record[AnalyticsJournalRecord::KEY_USER_ID],
+            $record[AnalyticsJournalRecord::KEY_SUBJECT_USER_ID],
+            $record[AnalyticsJournalRecord::KEY_SESSION_ID],
+            $record[AnalyticsJournalRecord::KEY_EVENT_KIND],
+            $record[AnalyticsJournalRecord::KEY_ACTION],
+            $record[AnalyticsJournalRecord::KEY_PAGE],
+            $record[AnalyticsJournalRecord::KEY_PARAMS],
+            $record[AnalyticsJournalRecord::KEY_IP],
+            $record[AnalyticsJournalRecord::KEY_TS],
+        ));
+        return null;
+    }
+
+    /**
+     * @param array<mixed> $record Validated person event fields
+     * @return bool Whether names and route params match their event kind
+     */
+    private function isPersonEventShape(array $record): bool
+    {
+        $kind = $record[AnalyticsJournalRecord::KEY_EVENT_KIND];
+        $isAction = $kind === AnalyticsPersonEvent::ACTION;
+        $isPage = $kind === AnalyticsPersonEvent::PAGE_OPEN || $kind === AnalyticsPersonEvent::PAGE_UPDATE;
+        $isTakeover = $kind === AnalyticsPersonEvent::TAKEOVER_START || $kind === AnalyticsPersonEvent::TAKEOVER_STOP;
+
+        return ($record[AnalyticsJournalRecord::KEY_ACTION] !== null) === $isAction
+            && ($record[AnalyticsJournalRecord::KEY_PAGE] !== null) === $isPage
+            && ($isPage || $record[AnalyticsJournalRecord::KEY_PARAMS] === null)
+            && (!$isTakeover || $record[AnalyticsJournalRecord::KEY_SUBJECT_USER_ID] !== null);
+    }
+
+    /**
      * Whether every field the type declares is present and of its kind.
      *
      * @param array<mixed> $record Decoded record
@@ -693,6 +751,9 @@ final class AnalyticsJournalLoader
             self::KIND_PAYLOAD => $value === null || is_array($value),
             self::KIND_LOSS_REASON => is_string($value) && AnalyticsLossReason::tryFrom($value) !== null,
             self::KIND_POSITIVE_INT => is_int($value) && $value >= 1 && $value <= self::UNSIGNED_INT_MAX,
+            self::KIND_BIG_ID => is_int($value) && $value > 0,
+            self::KIND_NULLABLE_BIG_ID => $value === null || (is_int($value) && $value > 0),
+            self::KIND_EVENT_KIND => is_string($value) && in_array($value, AnalyticsPersonEvent::KINDS, true),
         };
     }
 

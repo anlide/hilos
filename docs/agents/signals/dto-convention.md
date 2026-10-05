@@ -188,23 +188,18 @@ who knows the answer. A check by similar-looking key names was weighed and
 refused — it misses the next field called `pin`, `otp` or `invite`, which is
 exactly how the payloads came to hold passwords.
 
-**What analytics does with the declaration.** `AnalyticsCollector` masks at the
-entry of its three action records, before anything stores the payload:
-`logUserAction()`, `logAgentUserAction()` and `logApiAgentAction()`. It asks
-`SignalRouter::actionSecretFields()`, which finds the DTO the way the action is
-routed — the agent's `AGENT_ACTIONS` first, then the page's `ACTIONS` — and
-`SecretPayloadMask` applies one rule: a declared key is looked for at the top of
-the payload and one level inside `data`, where the envelope a worker hands an
-agent keeps the action; a null or empty value stays, so the record still shows
-which way of confirming was used; any other value becomes `***`. An action the
-topology does not route keeps its name in the user-action and agent-reaction
-records and loses its payload, since nobody declared what in it is secret; under
-an HTTP request an unknown name is a system, cron or agent signal rather than an
-action, and its payload is written as it came. Whoever moves the recording
-elsewhere keeps the mask at these three entries. Since HIL-1154 the two worker
-entries record into the analytics journal rather than the database, and the mask
-is still applied at the source, before the record is built: the journal file on
-the node's disk is storage too ([../architecture/analytics.md](../architecture/analytics.md)).
+**What analytics does with the declaration.** The DTO still declares
+`SECRET_FIELDS`, and topology validation still refuses an action that declares
+nothing. This declaration does not authorize analytics to retain any of the
+action's body. `AnalyticsCollector` writes the action name and correlation key
+with `payload: null` for browser actions and agent reactions, including names
+the topology knows. System, cron, worker and API-agent signals also omit their
+bodies; an HTTP request omits arbitrary body parameters. The discard happens
+before the node journal, because its file is storage too
+([../architecture/analytics.md](../architecture/analytics.md)).
+`SignalRouter::actionSecretFields()` and `SecretPayloadMask` remain available
+for other explicit masking needs and historical data, not as a reason to put
+action contents in a new analytics record.
 
 ## Outbound server→client WebSocket signals (decision)
 

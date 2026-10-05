@@ -16,6 +16,15 @@ catalog publishes no documents.
 A deviation is also a switch of the framework's own recording: a current privacy
 revision deviating from `standard.access_log` or `standard.session_data` turns
 off the access log or the address a session keeps ([access-log.md](access-log.md)).
+An installation declaring `HilosFeature::ANALYTICS` must also have a current
+Privacy revision with an explicit deviation from `standard.deletion`. Startup
+and collector initialization refuse analytics without it. This deviation is the
+project's declaration of collection, retention and what remains after account
+deletion; the framework checks that it exists, not the meaning of its prose.
+Do not use `standard.access_log` for this declaration: that clause switches off
+the separate access log. A project that also disables that log, like chat,
+declares both deviations and keeps its older revisions available to people who
+accepted them.
 
 ## Current text and deadlines
 

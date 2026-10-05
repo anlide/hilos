@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\DataExport;
 
 use Hilos\Auth\AccessLog\AccessLogPolicy;
+use Hilos\Core\Analytics\AnalyticsPersonExportEvent;
+use Hilos\Core\Analytics\AnalyticsPersonExportReader;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\PushSubscription as EntityPushSubscription;
 use Hilos\Database\Schema\Schema;
@@ -59,6 +61,25 @@ final class FrameworkDataExportSections
             $merges[] = self::merge($foldedIn);
         }
         $writer->section('merges', $merges);
+
+        if (Hilos::hasFeature(HilosFeature::ANALYTICS)) {
+            $reader = new AnalyticsPersonExportReader($userId);
+            $lastEvent = null;
+            $parts = 0;
+            while (($events = $reader->next($lastEvent)) !== []) {
+                $parts++;
+                $writer->section(sprintf('analytics_person_%06d', $parts), array_map(
+                    static fn(AnalyticsPersonExportEvent $event): array => $event->archiveRow(),
+                    $events,
+                ));
+                $lastEvent = $events[count($events) - 1];
+            }
+            $writer->section('analytics_person', [
+                'schemaVersion' => 1,
+                'attribution' => 'authenticated_event_actor',
+                'parts' => $parts,
+            ]);
+        }
 
         if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
             $photo = Hilos::$db->userPhotos[$userId];

@@ -10,6 +10,7 @@ use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Analytics\AnalyticsJournalOutbox;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
 use Hilos\Core\Analytics\AnalyticsLossReason;
+use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
@@ -129,12 +130,47 @@ final class AnalyticsJournalOutboxTest extends TestCase
         $this->assertSame([self::WORKER_INDEX, true], [$worker['workerIndex'], $worker['monopolistic']]);
         $this->assertSame([$worker['key'], self::AGENT_TYPE, '4'], [$agent['workerKey'], $agent['agentType'], $agent['agentIndex']]);
         $this->assertSame([$agent['key'], self::USER_ACTION_KEY], [$userAction['agentKey'], $userAction['userActionKey']]);
-        // An action the topology does not know keeps its name and loses its payload (HIL-1187).
+        // The source discards bodies before they reach the journal, regardless of action name.
         $this->assertNull($userAction['payload']);
-        $this->assertSame(['b' => 2], $system['payload']);
+        $this->assertNull($system['payload']);
+        $this->assertNull($records[4]['payload']);
+        $this->assertNull($records[5]['payload']);
+        $this->assertNull($records[6]['payload']);
         $this->assertSame(self::API_REQUEST_KEY, $records[6]['apiRequestKey']);
         $this->assertSame(['user_id', '42'], [$records[8]['identityType'], $records[8]['identityValue']]);
         $this->assertSame([$agent['key'], $worker['key']], [$records[9]['key'], $records[10]['key']]);
+    }
+
+    /** Authenticated events have the exact wire keys and carry no action body. */
+    public function testPersonEventIsWrittenWithoutActionBody(): void
+    {
+        $collector = new AnalyticsCollector();
+        $collector->logPersonEvent(new AnalyticsPersonEvent(
+            'token', 42, null, 7, AnalyticsPersonEvent::ACTION, 'send', null, null, '127.0.0.1', self::T0,
+        ));
+        $collector->flush();
+
+        $record = $this->batches()[0][0];
+        $this->assertSame([
+            't', 'sessionToken', 'userId', 'subjectUserId', 'sessionId', 'eventKind', 'action', 'page', 'params', 'ip', 'ts',
+        ], array_keys($record));
+        $this->assertSame(42, $record['userId']);
+        $this->assertSame('send', $record['action']);
+        $this->assertArrayNotHasKey('payload', $record);
+    }
+
+    /** Request body parameters are gone before a journal line is built. */
+    public function testApiRequestOmitsBodyParameters(): void
+    {
+        $collector = new AnalyticsCollector();
+        $request = $collector->startApiRequest(null, 'POST', '/submit', ['password' => 'secret'], null, null);
+        $collector->finishApiRequest($request, 200, 5);
+        $collector->flush();
+
+        $record = $this->batches()[0][0];
+        $this->assertSame(AnalyticsJournalRecord::TYPE_API_REQUEST, $record['t']);
+        $this->assertSame('/submit', $record['path']);
+        $this->assertNull($record['params']);
     }
 
     /**

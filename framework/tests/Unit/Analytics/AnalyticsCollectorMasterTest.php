@@ -68,6 +68,8 @@ final class AnalyticsCollectorMasterTest extends TestCase
         $this->assertSame($actionKey, $records[5]['key']);
         $this->assertSame($records[3]['key'], $records[6]['key']);
         $this->assertSame('127.0.0.1', $records[0]['ip']);
+        $this->assertSame('send', $records[5]['action']);
+        $this->assertNull($records[5]['payload']);
         $this->assertNull($collector->logUserAction(self::ACCEPT_KEY, 'send', null));
     }
 

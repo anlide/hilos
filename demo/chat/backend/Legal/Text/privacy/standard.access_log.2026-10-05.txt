@@ -1,0 +1,3 @@
+The separate account access log described by the Hilos standard is disabled in this demo.
+
+Analytics still records when an account is used and from which network address. It also records browser and language information, visited pages and their route parameters, and the names of actions and internal signals. Action contents and arbitrary API request bodies are not stored in analytics.

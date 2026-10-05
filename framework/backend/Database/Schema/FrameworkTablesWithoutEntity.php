@@ -146,6 +146,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'new_ipv6' => AnonymizationStrategy::NULLIFY,
             ],
             'hilos_analytics_page_session' => [],
+            'hilos_analytics_person_event' => AnonymizationStrategy::PURGE,
             'hilos_analytics_worker_session' => [],
             'hilos_analytics_agent_session' => [],
             'hilos_analytics_user_action' => [],
@@ -244,6 +245,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
                 'opened_ts',
                 'closed_ts',
             ],
+            'hilos_analytics_person_event' => [],
             // `session_key` is a random name a process drew in memory for its own session, nothing more.
             'hilos_analytics_worker_session' => [
                 'id',

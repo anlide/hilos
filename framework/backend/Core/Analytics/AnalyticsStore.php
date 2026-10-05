@@ -403,7 +403,7 @@ final class AnalyticsStore
                 $newRow['current_user_agent_id'] ?? $oldRow['current_user_agent_id'],
                 $newRow['current_accept_language_id'] ?? $oldRow['current_accept_language_id'], $new->id],
         );
-        foreach (['hilos_analytics_ws_connection', 'hilos_analytics_api_request',
+        foreach (['hilos_analytics_ws_connection', 'hilos_analytics_api_request', 'hilos_analytics_person_event',
             'hilos_analytics_browser_session_user_agent_change', 'hilos_analytics_browser_session_accept_language_change'] as $table) {
             Database::sql("UPDATE `{$table}` SET `browser_session_id` = ? WHERE `browser_session_id` = ?", [$new->id, $old->id]);
         }
@@ -647,6 +647,32 @@ final class AnalyticsStore
             [$id, $key],
         );
         return $id;
+    }
+
+    /**
+     * Writes an event under the authenticated actor, without a foreign key to the user row.
+     *
+     * @param AnalyticsPersonEvent $event Event validated by the journal loader
+     * @throws DatabaseException When a statement fails
+     */
+    public function insertPersonEvent(AnalyticsPersonEvent $event): void
+    {
+        $browserSessionId = $event->sessionToken === null ? null
+            : $this->ensureBrowserSession($event->sessionToken, null, null, $event->ts);
+        $ip = $event->ip === null ? new ParsedIp(null, null) : $this->parseIp($event->ip);
+        $actionNameId = $event->action === null ? null
+            : $this->ensureNamedDictionaryValue($event->action, 'hilos_analytics_action_name', $this->cache->actionNameIds, $event->ts);
+        $pageId = $event->page === null ? null : $this->ensurePage($event->page, $event->ts);
+        $pageParamsId = $event->params === null ? null : $this->ensurePageParams($event->params, $event->ts);
+
+        Database::sql(
+            'INSERT INTO `hilos_analytics_person_event`
+                (`user_id`, `subject_user_id`, `session_id`, `browser_session_id`, `event_kind`,
+                 `action_name_id`, `page_id`, `page_params_id`, `ipv4`, `ipv6`, `created_ts`)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, UNHEX(?), ?)',
+            [$event->userId, $event->subjectUserId, $event->sessionId, $browserSessionId, $event->eventKind,
+                $actionNameId, $pageId, $pageParamsId, $ip->ipv4, $ip->ipv6Hex, $event->ts],
+        );
     }
 
     /**

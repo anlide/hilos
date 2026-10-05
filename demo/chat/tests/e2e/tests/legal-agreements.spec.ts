@@ -69,11 +69,18 @@ test('reads personal agreements and compares published revisions on wide and nar
   )
   await expect(first).toContainText('First revision · Hilos standard 1')
   await expect(first.getByTestId('legal-history-compare')).toHaveCount(0)
+  const privacyHistory = page.locator(
+    '[data-id="legal-history-document"][data-document="privacy"]',
+  )
   await expect(
-    page
-      .locator('[data-id="legal-history-document"][data-document="privacy"]')
-      .getByTestId('legal-history-revision'),
-  ).toHaveCount(1)
+    privacyHistory.getByTestId('legal-history-revision'),
+  ).toHaveCount(2)
+  const privacyCurrent = privacyHistory.locator(
+    '[data-id="legal-history-revision"][data-revision="2026-10-05"]',
+  )
+  await expect(privacyCurrent.getByTestId('legal-history-current')).toHaveText(
+    'current',
+  )
 
   await clickSubmit(current.getByTestId('legal-history-compare'))
   const comparison = page.getByTestId('legal-changes-modal')

@@ -6,6 +6,9 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -15,6 +18,8 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Hilos as HilosFacade;
@@ -94,6 +99,42 @@ final class PageSignalRouterActionAuthGuardTest extends TestCase
         $page = $factory->getPage(ActionAuthGuardTestPage::PAGE);
         $this->assertInstanceOf(ActionAuthGuardTestPage::class, $page);
         $this->assertTrue($page->handled);
+    }
+
+    /** An accepted action is attributed before its handler, while a guest leaves no person row. */
+    public function testAcceptedActionRecordsItsActorAndAddressWithoutItsBody(): void
+    {
+        $previousCollector = HilosFacade::$ac;
+        $previousRouter = HilosFacade::$sr;
+        $previousRt = HilosFacade::$rt;
+        try {
+            HilosFacade::$rt = null;
+            HilosFacade::$sr = new SignalRouter();
+            HilosFacade::$ac = new AnalyticsCollector();
+            HilosFacade::$browser = new ActionAuthGuardTestBrowser(42);
+            $router = new PageSignalRouter(
+                new ActionAuthGuardTestPageFactory(new ActionAuthGuardTestAgent()),
+                new ActionRouteConfig([ActionAuthGuardTestPage::GUARDED_ACTION => ActionAuthGuardTestPage::PAGE]),
+            );
+            $router->dispatchAction(new WebSocketActionSignalDTO(
+                'ak-1', ActionAuthGuardTestPage::GUARDED_ACTION, ['secret' => 'hidden'], clientIp: '127.0.0.1',
+            ), 'websocket');
+            HilosFacade::$ac->flush();
+
+            $signal = HilosFacade::$sr->getNextQueuedSignal();
+            $this->assertInstanceOf(AgentSignalData::class, $signal?->data);
+            $this->assertInstanceOf(AnalyticsJournalAppendSignalData::class, $signal->data->data);
+            $record = json_decode($signal->data->data->lines[0], true);
+            $this->assertSame(AnalyticsJournalRecord::TYPE_PERSON_EVENT, $record['t']);
+            $this->assertSame(42, $record['userId']);
+            $this->assertSame('127.0.0.1', $record['ip']);
+            $this->assertSame(ActionAuthGuardTestPage::GUARDED_ACTION, $record['action']);
+            $this->assertArrayNotHasKey('payload', $record);
+        } finally {
+            HilosFacade::$ac = $previousCollector;
+            HilosFacade::$sr = $previousRouter;
+            HilosFacade::$rt = $previousRt;
+        }
     }
 }
 

@@ -14,12 +14,20 @@ defineOptions({ name: 'PrivacyPage' })
 <template>
   <HilosPrivacyPage :connection="connection" :actions="actions">
     <p>
-      This demo stores only the data needed to show its real-time features: your
-      chosen display name, the messages you send, and any files you attach.
+      To show its real-time features, this demo stores your chosen display name,
+      the messages you send, and any files you attach.
+    </p>
+    <p>
+      This demo records analytics: times, network addresses, browser and
+      language details, visited pages and route parameters, and names of actions
+      and internal signals. It does not store action contents or arbitrary API
+      request bodies in analytics. The separate account access log is disabled.
     </p>
     <p class="mb-0">
-      No analytics or third-party trackers are used, and demo data may be reset
-      at any time.
+      After account deletion, your numeric account number, analytics events, and
+      network addresses remain. There is currently no automatic deletion period
+      for raw analytics. This demo uses no third-party trackers, and demo data
+      may be reset at any time.
     </p>
   </HilosPrivacyPage>
 </template>

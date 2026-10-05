@@ -54,7 +54,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
         self::assertSame(
             [
                 LegalDocument::TERMS->value => ['2026-09-17' => 1, '2026-09-27' => 1, '2026-10-01' => 1],
-                LegalDocument::PRIVACY->value => ['2026-09-17' => 1],
+                LegalDocument::PRIVACY->value => ['2026-09-17' => 1, '2026-10-05' => 1],
             ],
             $published,
             'revision ids and the standard set version each adopts',
@@ -62,7 +62,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
     }
 
     /**
-     * The chat is the demo that deviates: four clauses harsher than the standard, one kinder.
+     * The latest revisions declare four stricter terms clauses and two looser privacy clauses.
      */
     public function testTheLatestRevisionsCarryTheChatDeviations(): void
     {
@@ -75,6 +75,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
                     StandardSetCatalog::CLAUSE_AVAILABILITY => DeviationDirection::STRICTER,
                 ],
                 LegalDocument::PRIVACY->value => [
+                    StandardSetCatalog::CLAUSE_DELETION => DeviationDirection::LOOSER,
                     StandardSetCatalog::CLAUSE_ACCESS_LOG => DeviationDirection::LOOSER,
                 ],
             ],
@@ -83,6 +84,26 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
                 LegalDocument::PRIVACY->value => self::deviationsOf(LegalCatalogResolver::latestRevision(LegalDocument::PRIVACY)),
             ],
         );
+    }
+
+    /** The current legal text and the public static page tell the same analytics truth. */
+    public function testPrivacyTextStatesTheAnalyticsException(): void
+    {
+        $revision = LegalCatalogResolver::latestRevision(LegalDocument::PRIVACY);
+        $texts = [];
+        foreach ($revision->deviations as $deviation) {
+            $texts[$deviation->clauseKey] = LegalCatalogResolver::text($deviation->textFile);
+        }
+        self::assertStringContainsString('Analytics still records', $texts[StandardSetCatalog::CLAUSE_ACCESS_LOG]);
+        self::assertStringContainsString('network addresses remain', $texts[StandardSetCatalog::CLAUSE_DELETION]);
+        self::assertStringContainsString('no automatic deletion period', $texts[StandardSetCatalog::CLAUSE_DELETION]);
+
+        $page = file_get_contents(dirname(__DIR__, 2) . '/frontend/src/views/Privacy/Privacy.vue');
+        self::assertIsString($page);
+        self::assertStringContainsString('records analytics', $page);
+        self::assertStringContainsString('network addresses remain', $page);
+        self::assertStringContainsString('no automatic deletion period', $page);
+        self::assertStringNotContainsString('No analytics', $page);
     }
 
     /**

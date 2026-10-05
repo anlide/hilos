@@ -23,7 +23,7 @@ use Hilos\Utils\Helpers\RandomHelper;
 /**
  * The chat's privacy text keeps no access log and does keep the address of a session (HIL-1174).
  *
- * The text deviates from standard.access_log ("No access logs are kept at all") and not from
+ * The text deviates from standard.access_log (the separate log is disabled) and not from
  * standard.session_data, so a sign-in and a connection from a new address write nothing to the
  * log, while the session still keeps the address it last came from.
  *

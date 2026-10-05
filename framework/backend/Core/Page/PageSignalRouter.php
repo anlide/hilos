@@ -23,6 +23,7 @@ use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\DaemonManager;
@@ -259,7 +260,7 @@ class PageSignalRouter
             return;
         }
 
-        $this->runPageSubscribeFrame($data, $source, $name);
+        $this->runPageSubscribeFrame($data, $source, $name, recordVisit: false);
     }
 
     /**
@@ -291,6 +292,7 @@ class PageSignalRouter
             new WebSocketPageSubscribeSignalDTO(acceptKey: $acceptKey, page: $page, params: $params),
             SignalSource::WORKER,
             $page,
+            recordVisit: false,
         );
     }
 
@@ -336,8 +338,12 @@ class PageSignalRouter
      * @return PageResendOutcome What went out to the connection
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
-    private function runPageSubscribeFrame(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): PageResendOutcome
-    {
+    private function runPageSubscribeFrame(
+        WebSocketPageSubscribeSignalDTO $data,
+        string $source,
+        string $name,
+        bool $recordVisit = true,
+    ): PageResendOutcome {
         $page = $data->page ?? $name;
         if ($page === '') {
             Logger::error('Page subscribe without page name');
@@ -374,6 +380,9 @@ class PageSignalRouter
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
             $pageInstance->onSubscribe($data->acceptKey, $params);
+            if ($recordVisit) {
+                $this->recordPersonEvent($data->acceptKey, AnalyticsPersonEvent::PAGE_OPEN, page: $page, params: $params->toArray());
+            }
 
             return PageResendOutcome::Answered;
         } catch (PageInternalErrorException $e) {
@@ -511,9 +520,16 @@ class PageSignalRouter
 
         try {
             $params = new PageRouteParams($this->mergedSubscriptionParams($data));
+            $previousParams = Hilos::$sr?->getPageSubscriptions()[$data->acceptKey]
+                [SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
             PageAccessGate::assert($pageInstance::class, $data->acceptKey);
             Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
             $pageInstance->onUpdateSubscription($data->acceptKey, $params);
+            if ($params->toArray() != $previousParams) {
+                $this->recordPersonEvent(
+                    $data->acceptKey, AnalyticsPersonEvent::PAGE_UPDATE, page: $page, params: $params->toArray(),
+                );
+            }
 
             try {
                 // Only an accepted update settles into the mirrors: a set the guards
@@ -944,7 +960,7 @@ class PageSignalRouter
             if ($this->deferForThrottleVerdict($host, $data, $dto)) {
                 return;
             }
-            $this->runAction($host, $data->acceptKey, $data->action, $dto, $data->requestId);
+            $this->runAction($host, $data->acceptKey, $data->action, $dto, $data->requestId, $data->clientIp);
         } catch (Throwable $e) {
             $this->failAction($host, $data->acceptKey, $data->action, $dto, $data->requestId, $e);
         }
@@ -1006,6 +1022,50 @@ class PageSignalRouter
     }
 
     /**
+     * Attributes a navigation or action to the authenticated person at the time it occurred.
+     *
+     * @param string $acceptKey Acting connection
+     * @param string $kind Authenticated event kind
+     * @param ?string $action Action name, or null for navigation
+     * @param ?string $page Page name, or null for an action
+     * @param ?array<string, mixed> $params Route params, or null for an action
+     * @param ?string $clientIp Address carried by an action frame, or null
+     * @throws HilosException When the takeover's session cannot be read
+     */
+    private function recordPersonEvent(
+        string $acceptKey,
+        string $kind,
+        ?string $action = null,
+        ?string $page = null,
+        ?array $params = null,
+        ?string $clientIp = null,
+    ): void {
+        if (Hilos::$ac === null) {
+            return;
+        }
+
+        $administratorId = Takeover::administratorBehind($acceptKey);
+        $actorId = $administratorId ?? Hilos::$browser?->resolveActionUserId($acceptKey);
+        if ($actorId === null) {
+            return;
+        }
+
+        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        Hilos::$ac->logPersonEvent(new AnalyticsPersonEvent(
+            $connection?->sessionToken,
+            $actorId,
+            $administratorId === null ? null : $connection?->userId,
+            $connection?->sessionId,
+            $kind,
+            $action,
+            $page,
+            $params,
+            $clientIp,
+            (int)floor(microtime(true) * TimeConstants::MS_PER_SECOND),
+        ));
+    }
+
+    /**
      * Runs one action's guards and handler, and answers a tracked caller.
      *
      * Shared by the straight-through dispatch and the resumed one, so a throttled action
@@ -1026,6 +1086,7 @@ class PageSignalRouter
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Parsed action payload
      * @param ?string $requestId Client-minted request id, or null for an untracked action
+     * @param ?string $clientIp Peer address carried by the action, or null
      * @throws ActionForbiddenException When the page's ADMIN level denies the acting user
      * @throws ActionAccountFrozenException When a frozen person asks for an action that is not an exit
      * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
@@ -1040,12 +1101,14 @@ class PageSignalRouter
         string $action,
         ActionPayloadDTO $dto,
         ?string $requestId,
+        ?string $clientIp,
     ): void {
         if ($host instanceof AbstractPage) {
             $this->assertPageAccessLevel($host, $acceptKey, $action);
         }
         $this->assertActionAuthorized($host, $action, $acceptKey);
         $this->assertTakeover($host, $action, $acceptKey);
+        $this->recordPersonEvent($acceptKey, AnalyticsPersonEvent::ACTION, action: $action, clientIp: $clientIp);
         $host->beginActionDispatch($requestId);
         try {
             $reply = ExecutionContext::withOrigin(
@@ -1198,6 +1261,7 @@ class PageSignalRouter
             action: $data->action,
             dto: $dto,
             requestId: $data->requestId,
+            clientIp: $data->clientIp,
             deadline: $now + $this->throttleGate->verdictTimeoutSeconds(),
             awaitingVerdicts: count($checks),
         );
@@ -1288,7 +1352,9 @@ class PageSignalRouter
                     throw new ActionRateLimitedException($refusalSeconds);
                 }
 
-                $this->runAction($entry->host, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId);
+                $this->runAction(
+                    $entry->host, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId, $entry->clientIp,
+                );
             } catch (Throwable $e) {
                 $this->failAction($entry->host, $entry->acceptKey, $entry->action, $entry->dto, $entry->requestId, $e);
             }

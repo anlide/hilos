@@ -59,7 +59,7 @@ final class LegalConsentActionTest extends IntegrationTestCase
         self::assertCount(6, $reply->documents[0]['clauses']);
         self::assertCount(7, $reply->documents[1]['clauses']);
         self::assertSame(4, $reply->documents[0]['revision']['deviationCount']);
-        self::assertSame(1, $reply->documents[1]['revision']['deviationCount']);
+        self::assertSame(2, $reply->documents[1]['revision']['deviationCount']);
         foreach ($reply->documents as $document) {
             foreach ($document['clauses'] as $clause) {
                 self::assertNotSame('', $clause['text']);

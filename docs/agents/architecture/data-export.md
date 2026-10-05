@@ -92,6 +92,18 @@ Declared revisions also carry `publishedOn`, `effectiveOn`, `significance`, and
 stays in the copy with `inCode: false` and null revision details. A person with
 no acceptances gets an empty list.
 
+When analytics is enabled, `analytics_person.json` indexes numbered
+`analytics_person_000001.json` parts of at most 500 events. It exists with
+`parts: 0` when there are no events. The reader pages by source time and row id
+through `hilos_analytics_person_event.user_id`: the person and every account
+folded into them, including indirect merges. It never selects by the browser
+session's last signed-in identity. A guest's activity before sign-in and another
+person's activity in the same browser therefore stay out. Rows carry UTC time,
+kind, action or page name, page params, address, session numbers and takeover
+subject where applicable. They carry no session token, accept key or action
+body. The [analytics writer](analytics.md) remains the only writer of the raw
+table; the export reader issues bounded, read-only SQL from `Core/Analytics`.
+
 When profile photos are enabled, `profile_photo` is null for a person without
 one or whose original file is missing after a restore, or contains the cropped
 JPEG under `files/<stored_name>` and `setAt` in UTC.

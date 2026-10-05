@@ -29,6 +29,7 @@ final class DeferredAction
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Parsed action payload
      * @param ?string $requestId Client-minted request id, or null for an untracked action
+     * @param ?string $clientIp Peer address supplied with the action, or null
      * @param float $deadline Unix seconds after which the action runs whether or not a verdict arrived
      * @param int $awaitingVerdicts Verdicts still outstanding; the action runs when the last allow lands
      */
@@ -38,6 +39,7 @@ final class DeferredAction
         public readonly string $action,
         public readonly ActionPayloadDTO $dto,
         public readonly ?string $requestId,
+        public readonly ?string $clientIp,
         public readonly float $deadline,
         public int $awaitingVerdicts,
     ) {

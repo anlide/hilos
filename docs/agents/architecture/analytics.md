@@ -55,7 +55,8 @@ every process, including master ── Hilos::$ac ──► AnalyticsJournalOutb
   gathered, and at worker shutdown (`WorkerManager::cleanup()` sends it with the
   stop hooks' frames). The master queues its batch through its signal router,
   which `dispatchSignals()` delivers to the journal agent of that same node.
-  A browser-session rename flushes at once. The payload is masked at the source
+  A browser-session rename flushes at once. New action and signal bodies and
+  arbitrary API request parameters are discarded at the source
   ([../signals/dto-convention.md](../signals/dto-convention.md)): the file on the
   node's disk is storage too. An append frame carries the number of event
   records and the source's loss counts, even when the batch has no lines.
@@ -86,7 +87,10 @@ Turning it on is `HilosFeature::ANALYTICS`: it requires both agents, the framewo
 starts the collector in every process of the project, `Hilos::initAnalytics()`
 refuses a project without the feature, and the start refuses the feature without
 an `analytics_journal` directory ([filesystem.md](filesystem.md)) or the
-`AnalyticsSettingsCatalog` fragment in its settings catalog.
+`AnalyticsSettingsCatalog` fragment in its settings catalog. The current Privacy
+revision must declare a deviation from `standard.deletion` before the collector
+starts ([legal-documents.md](legal-documents.md)); the project states what it
+collects, how long it keeps it, and what remains after account deletion.
 
 The admin analytics section comes with this same case, with no case of its own
 (not in the code yet — HIL-1415); see [The Admin Section](#the-admin-section).
@@ -150,17 +154,31 @@ at the source, never at the writer. A `key`, `pageKey`, `userActionKey` or
 {"t":"ws_connection_attach","acceptKey","sessionToken","userAgent","acceptLanguage","ts"}
 {"t":"browser_session_rename","oldToken","newToken","ts"}
 {"t":"browser_session_identity","sessionToken","identityType","identityValue","ts"}
+{"t":"person_event","sessionToken","userId","subjectUserId","sessionId","eventKind","action","page","params","ip","ts"}
 {"t":"loss","reason":"<AnalyticsLossReason>","events":n,"fromTs":…,"toTs":…}
 {"t":"journal_end","events":n,"closedTs":…}                   last line of a ready file
 ```
 
 The master's synchronous signal meta carries `userActionKey` or `apiRequestKey`;
 an agent response carries that key in its journal record. A parked HTTP request
-has no active capture while it waits. A payload is an object already masked, or
-null; one that cannot be encoded travels as null and counts as `payload_dropped`.
+has no active capture while it waits. Older journal files may contain a masked
+object payload or null; newly collected actions and signals always write
+`payload: null`. An old payload that cannot be encoded travels as null and
+counts as `payload_dropped`.
 The master's `ip`, `pageKey`,
 `params`, `sessionToken`, `userAgent`, `acceptLanguage`, `status` and `durationMs`
 are nullable where their builders say so.
+
+`person_event` is written only when the source has a proven authenticated actor.
+Its `userId` is that actor, not the last user of the browser. During a takeover
+it names the administrator and `subjectUserId` names the account they act in.
+Kinds are `sign_in`, `sign_out`, `takeover_start`, `takeover_stop`, `page_open`,
+`page_update` and `action`. Page events keep route params; action events keep
+only their name, never a body. A rejected page subscription, a rights
+reassessment or a resend is not another page open. The session holder announces
+identity events after commit; the page router records actions after its access
+guards but before the handler, so an accepted attempt remains an event even if
+the handler later refuses it. The existing journal version remains 2.
 
 **A batch stands on its own.** It opens with the description of every session its
 records name — the worker first, then the agents — so a batch lost on the way
@@ -197,11 +215,17 @@ writes nothing twice. All SQL lives in `AnalyticsStore`.
 - A browser-session token is looked up as a session, then through up to eight
   stored aliases. A rename A→B records A as an alias even when A has no session.
   If A has a row and B does not, it renames A. If both have rows, it merges A
-  into B: connections, requests and User-Agent and Accept-Language history move
+  into B: connections, requests, person events and User-Agent and Accept-Language history move
   to B; first and last moments become min/max; B's identity and current header
   values win where present, otherwise A's. The writer rewires its cached token
   states before it can use an id of the deleted A row again. If A has no row,
   the first later event under either token opens B. No arrival order splits a visit.
+- `hilos_analytics_person_event` stores the actor id and source time without a
+  foreign key to `hilos_user` or `hilos_session`. Its browser session, action,
+  page and params references use the existing analytics dictionaries. Account
+  deletion leaves the numeric actor, events and network addresses in analytics;
+  anonymized restore purges the table whole. There is no automatic raw-analytics
+  expiry yet (HIL-1402).
 - `last_seen_ts` of a browser session never moves back: the batches of different
   processes arrive out of order.
 - What cannot be applied — the half line a machine crash left, an unknown type,
@@ -239,11 +263,11 @@ If a node falls offline during a read, the incomplete file is discarded and
 read from zero after the node returns. A silent node gets one warning until it
 answers again. Late portions from another node, file or offset are ignored.
 
-A journal line may be at most 128 KiB. A larger payload is removed at its source
+A journal line may be at most 128 KiB. A larger legacy payload is removed at its source
 while its event stays; a record still too long without payload is dropped. A
 legacy long line is read to its end by the journal agent, then omitted with one
 warning for that portion. The limit keeps a portion safely inside the peer link's
-8 MiB outgoing buffer even when an unbounded browser action carried the payload.
+8 MiB outgoing buffer even when an older unbounded browser action carried the payload.
 
 ## The Ceiling And The Account Of Losses
 
@@ -385,18 +409,20 @@ The identity is written on every sign-in and on the handshake that admits the
 browser back. Signing out does not clear it. The account on a browser session
 therefore means **the last person to sign in**, and the screen must say so.
 If two accounts use one browser, the first person's actions appear under the
-second person. Attribution to the person at the moment of an action needs a
-visit, a Phase-2 question (HIL-1402). A session in which nobody signed in names
-nobody.
+second person on this Phase-1 screen. `hilos_analytics_person_event` separately
+attributes each authenticated event to its actor for the personal export; the
+screen does not read it yet. A full visit model remains a Phase-2 question
+(HIL-1402). A session in which nobody signed in names nobody.
 
 The screen identifies an erased account as a deleted user by its number, never
-by its name (not in the code yet — HIL-1415). What account erasure leaves in
-analytics belongs to HIL-1283.
+by its name (not in the code yet — HIL-1415). Account erasure leaves the numeric
+id, analytic events and addresses; the project's Privacy revision states this.
 
 ### What the screen never shows
 
-- **The action body.** Do not display it. It is no longer stored either
-  (not in the code yet — HIL-1283). The owner, 01.10.2026: «Ни в коем случае» —
+- **The action body.** Do not display it. New action records no longer store it;
+  older chat rows were left in place by the owner's decision. The owner,
+  01.10.2026: «Ни в коем случае» —
   "Under no circumstances".
 - **Page parameters.** In Phase-1 name the page; do not show its parameters.
 - **The network address or its changes.**

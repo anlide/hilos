@@ -19,6 +19,9 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
@@ -33,6 +36,7 @@ use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -117,6 +121,55 @@ final class PageSignalRouterResendPageTest extends TestCase
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
         // Not a re-subscribe: the mirror holds the subscription it held, params and all.
         $this->assertEquals($held, Hilos::$sr?->pageSubscription('ak-1'));
+    }
+
+    /** A real accepted subscribe is a visit; restoring its answer is not a second visit. */
+    public function testResendDoesNotDuplicateAnAcceptedPageOpen(): void
+    {
+        $previousCollector = Hilos::$ac;
+        try {
+            Hilos::$ac = new AnalyticsCollector();
+            Hilos::initBrowser(new ResendPageTestBrowser(7));
+            $this->subscribe(ResendPageTestPage::PAGE);
+            $router = $this->router();
+            $router->dispatchPageSubscribe(
+                new WebSocketPageSubscribeSignalDTO('ak-1', ResendPageTestPage::PAGE, ['tab' => 'all']),
+                SignalSource::WORKER,
+                ResendPageTestPage::PAGE,
+            );
+            Hilos::$ac->flush();
+            $first = $this->personEventsFromQueue();
+            $this->assertCount(1, $first);
+            $this->assertSame(AnalyticsJournalRecord::TYPE_PERSON_EVENT, $first[0]['t']);
+            $this->assertSame('page_open', $first[0]['eventKind']);
+            $this->assertSame(7, $first[0]['userId']);
+
+            $router->resendPage(ResendPageTestPage::PAGE, 'ak-1', ['tab' => 'all']);
+            Hilos::$ac->flush();
+            $this->assertSame([], $this->personEventsFromQueue());
+        } finally {
+            Hilos::$ac = $previousCollector;
+        }
+    }
+
+    /** @return list<array<string, mixed>> Authenticated event records in queued journal batches */
+    private function personEventsFromQueue(): array
+    {
+        $events = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $batch = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+            if (!$batch instanceof AnalyticsJournalAppendSignalData) {
+                continue;
+            }
+            foreach ($batch->lines as $line) {
+                $record = json_decode($line, true);
+                if ($record['t'] === AnalyticsJournalRecord::TYPE_PERSON_EVENT) {
+                    $events[] = $record;
+                }
+            }
+        }
+
+        return $events;
     }
 
     public function testAPageTheVerdictRefusesIsAnsweredWithTheRefusal(): void

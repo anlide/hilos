@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Analytics\AnalyticsJournalLoader;
+use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseException;
@@ -28,9 +29,57 @@ final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSche
 
     private const string NEW_TOKEN = 'fedcba9876543210fedcba9876543210';
 
+    private const string EXIT_TOKEN = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    private const string BOB_TOKEN = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
     private const string ACCEPT_KEY = 'hil-582-accept-key';
 
     private const int USER_ID = 7;
+
+    private const int BOB_ID = 8;
+
+    /**
+     * @throws HilosException When a journal file cannot be loaded
+     */
+    public function testTwoPeopleKeepSeparateEventsInsideOneBrowserSession(): void
+    {
+        $collector = new AnalyticsCollector();
+        $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, null, null);
+        $this->loadJournal($collector);
+
+        $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
+        $collector->identifyBrowserSessionUser(self::NEW_TOKEN, self::USER_ID);
+        $collector->logPersonEvent(new AnalyticsPersonEvent(
+            self::NEW_TOKEN, self::USER_ID, null, 11, AnalyticsPersonEvent::ACTION, 'alice_action',
+            null, null, '127.0.0.1', 10,
+        ));
+        $this->loadJournal($collector);
+
+        $collector->logPersonEvent(new AnalyticsPersonEvent(
+            self::NEW_TOKEN, self::USER_ID, null, 11, AnalyticsPersonEvent::SIGN_OUT,
+            null, null, null, '127.0.0.1', 20,
+        ));
+        $collector->renameBrowserSession(self::NEW_TOKEN, self::EXIT_TOKEN);
+        $collector->renameBrowserSession(self::EXIT_TOKEN, self::BOB_TOKEN);
+        $collector->identifyBrowserSessionUser(self::BOB_TOKEN, self::BOB_ID);
+        $collector->logPersonEvent(new AnalyticsPersonEvent(
+            self::BOB_TOKEN, self::BOB_ID, null, 11, AnalyticsPersonEvent::ACTION, 'bob_action',
+            null, null, '127.0.0.2', 30,
+        ));
+        $this->loadJournal($collector);
+
+        $browserSessionIds = $this->browserSessionIds();
+        $this->assertCount(1, $browserSessionIds);
+        $this->assertSame((string)self::BOB_ID, $this->identityValueOf($browserSessionIds[0]));
+        Database::sql('SELECT `user_id`, `event_kind`, `browser_session_id`, INET_NTOA(`ipv4`)
+            FROM `hilos_analytics_person_event` ORDER BY `created_ts`');
+        $this->assertSame([
+            [(string)self::USER_ID, 'action', (string)$browserSessionIds[0], '127.0.0.1'],
+            [(string)self::USER_ID, 'sign_out', (string)$browserSessionIds[0], '127.0.0.1'],
+            [(string)self::BOB_ID, 'action', (string)$browserSessionIds[0], '127.0.0.2'],
+        ], array_map('array_values', Database::rows()));
+    }
 
     /**
      * @throws HilosException When the journal cannot be loaded
@@ -120,11 +169,19 @@ final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSche
         $collector = new AnalyticsCollector();
         $loader = new AnalyticsJournalLoader(new AnalyticsStore());
         $collector->attachWsConnectionToBrowserSession(self::ACCEPT_KEY, self::OLD_TOKEN, 'old UA', null);
+        $collector->logPersonEvent(new AnalyticsPersonEvent(
+            self::OLD_TOKEN, self::USER_ID, null, 11, AnalyticsPersonEvent::ACTION, 'old_action',
+            null, null, null, 10,
+        ));
         $request = $collector->startApiRequest(self::OLD_TOKEN, 'GET', '/before-login', null, null, null);
         $collector->finishApiRequest($request, 200, 1);
         $this->loadJournal($collector, $loader);
         $collector->attachWsConnectionToBrowserSession('new-connection', self::NEW_TOKEN, 'new UA', null);
         $collector->identifyBrowserSessionUser(self::NEW_TOKEN, self::USER_ID);
+        $collector->logPersonEvent(new AnalyticsPersonEvent(
+            self::NEW_TOKEN, self::USER_ID, null, 11, AnalyticsPersonEvent::ACTION, 'new_action',
+            null, null, null, 20,
+        ));
         $this->loadJournal($collector, $loader);
         $collector->renameBrowserSession(self::OLD_TOKEN, self::NEW_TOKEN);
         $this->loadJournal($collector, $loader);
@@ -140,6 +197,9 @@ final class AnalyticsBrowserSessionRotationIntegrationTest extends AnalyticsSche
         Database::sql('SELECT COUNT(*) AS `total` FROM `hilos_analytics_api_request` WHERE `browser_session_id` = ?',
             [$this->browserSessionIds()[0]]);
         $this->assertSame(1, (int)Database::field('total'));
+        $browserSessionId = $this->browserSessionIds()[0];
+        Database::sql('SELECT DISTINCT `browser_session_id` FROM `hilos_analytics_person_event`');
+        $this->assertSame((string)$browserSessionId, (string)Database::field('browser_session_id'));
         Database::sql('SELECT u.`value` FROM `hilos_analytics_browser_session` b
             JOIN `hilos_analytics_user_agent` u ON u.`id` = b.`current_user_agent_id`
             WHERE b.`id` = ?', [$this->browserSessionIds()[0]]);

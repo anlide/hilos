@@ -104,6 +104,7 @@ use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -2349,6 +2350,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ));
         }
         $this->registerRotation($ticket, $newToken, $liveKeys);
+        $this->recordSessionExit($session, $sessionToken, $impersonatorId, $vacatedUserId);
 
         return new HandshakeSession(Hilos::$db->sessions->findByToken($newToken) ?? $session, $ticket);
     }
@@ -2395,6 +2397,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         Hilos::$ac?->identifyBrowserSessionUser($newToken, $userId);
         $this->registerRotation($ticket, $newToken, $liveKeys);
         $this->logAccountBlockLifted($userId, [$session->id], [], []);
+        $this->recordSessionPersonEvent($session, $newToken, $userId, AnalyticsPersonEvent::SIGN_IN);
 
         return new HandshakeSession(Hilos::$db->sessions->findByToken($newToken) ?? $session, $ticket);
     }
@@ -2450,6 +2453,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $requestId Request id of the action waiting on this ending, or null when nobody waits
      * @param ?string $action Action name the state frame answers, or null when it answers none
      * @param ?array<string, mixed> $outcome Reply the answer carries, or null for no domain reply
+     * @param bool $recordPersonSignIn Whether this is a sign-in rather than a takeover rebind
      * @return ?string Token the session answers to now, or null when the token named no session
      * @throws InvalidArgumentException When the state frame cannot be named
      * @throws HilosException On database or runtime failure
@@ -2464,6 +2468,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ?string $requestId = null,
         ?string $action = null,
         ?array $outcome = null,
+        bool $recordPersonSignIn = true,
     ): ?string {
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session === null) {
@@ -2541,6 +2546,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 action: $action,
                 outcome: $outcome,
             ));
+            if ($recordPersonSignIn) {
+                $this->recordSessionPersonEvent($session, $liveToken, $userId, AnalyticsPersonEvent::SIGN_IN);
+            }
 
             return $liveToken;
         }
@@ -2568,6 +2576,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             action: $action,
             outcome: $outcome,
         ));
+        if ($recordPersonSignIn) {
+            $this->recordSessionPersonEvent($session, $liveToken, $userId, AnalyticsPersonEvent::SIGN_IN);
+        }
 
         return $liveToken;
     }
@@ -2598,6 +2609,63 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             AccessLogEvent::SIGN_IN,
             $session->ipAddress,
             TimeHelper::getSqlDateTime(),
+        );
+    }
+
+    /**
+     * Records a session event only after any transaction containing the identity write commits.
+     *
+     * @param Session $session Session whose id and address belong to the event
+     * @param string $sessionToken Token at the event moment
+     * @param int $actorId Person at the keyboard
+     * @param string $kind One of the authenticated event kinds
+     * @param ?int $subjectUserId Account under takeover, or null
+     */
+    private function recordSessionPersonEvent(
+        Session $session,
+        string $sessionToken,
+        int $actorId,
+        string $kind,
+        ?int $subjectUserId = null,
+    ): void {
+        $event = new AnalyticsPersonEvent(
+            $sessionToken,
+            $actorId,
+            $subjectUserId,
+            $session->id,
+            $kind,
+            null,
+            null,
+            null,
+            $session->ipAddress,
+            (int)floor(microtime(true) * TimeConstants::MS_PER_SECOND),
+        );
+        Database::afterCommit(static function () use ($event): void {
+            Hilos::$ac?->logPersonEvent($event);
+        });
+    }
+
+    /**
+     * Records a sign-out and, when needed, the end of a takeover before the session is forgotten.
+     *
+     * @param Session $session Session just unbound
+     * @param string $sessionToken Token used while signed in
+     * @param ?int $impersonatorId Administrator behind the takeover, or null
+     * @param ?int $vacatedUserId Account left by the sign-out, or null for a guest
+     */
+    private function recordSessionExit(Session $session, string $sessionToken, ?int $impersonatorId, ?int $vacatedUserId): void
+    {
+        if ($vacatedUserId === null) {
+            return;
+        }
+        if ($impersonatorId !== null) {
+            $this->recordSessionPersonEvent(
+                $session, $sessionToken, $impersonatorId, AnalyticsPersonEvent::TAKEOVER_STOP, $vacatedUserId,
+            );
+        }
+        $this->recordSessionPersonEvent(
+            $session, $sessionToken, $impersonatorId ?? $vacatedUserId,
+            AnalyticsPersonEvent::SIGN_OUT, $impersonatorId === null ? null : $vacatedUserId,
         );
     }
 
@@ -2834,6 +2902,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 action: $action,
             ));
         }
+        $this->recordSessionExit($session, $sessionToken, $impersonatorId, $vacatedUserId);
 
         return $newToken;
     }
@@ -2908,6 +2977,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 action: $action,
             ));
         }
+        $this->recordSessionExit($session, $sessionToken, $impersonatorId, $vacatedUserId);
     }
 
     /**
@@ -4409,6 +4479,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
+        $wasImpersonating = $session->impersonatorUserId !== null;
         if ($frame->userId !== null && $session->impersonatorUserId !== $frame->impersonatorUserId) {
             $session->actions->setImpersonator($frame->impersonatorUserId);
         }
@@ -4421,6 +4492,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $frame->initiatorAcceptKey,
                 requestId: $requestId,
                 action: $action,
+                recordPersonSignIn: !$wasImpersonating && $frame->impersonatorUserId === null,
             );
 
         $this->replyToRebind($frame, null, $liveToken ?? $frame->sessionToken);
@@ -4880,6 +4952,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             'target' => $targetUserId,
             'session' => $session->id,
         ]));
+        $this->recordSessionPersonEvent(
+            $session, $sessionToken, $adminId, AnalyticsPersonEvent::TAKEOVER_START, $targetUserId,
+        );
     }
 
     /**
@@ -4945,6 +5020,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             'vacatedUser' => $vacatedUserId,
             'session' => $session->id,
         ]));
+        $this->recordSessionPersonEvent(
+            $session, $sessionToken, $impersonatorId, AnalyticsPersonEvent::TAKEOVER_STOP, $vacatedUserId,
+        );
     }
 
     /**

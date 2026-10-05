@@ -14,10 +14,9 @@ use Hilos\Socket\Client\WebSocketClient;
  * host composes it again when that session finally authenticates, and a counter is only
  * cleared if both arrive at the same string.
  *
- * A digest rather than the token itself, and that is not incidental: the action payload is
- * written to the analytics journal verbatim, so a raw token travelling on it would become a
- * replayable credential sitting in a table. The digest keys the same counter and cannot be
- * presented as a session.
+ * A digest rather than the token itself: the anti-abuse key may travel with action metadata,
+ * but it cannot be presented as a session. Analytics drops action bodies before journaling;
+ * that does not make a raw session token safe to use as an identity elsewhere.
  */
 final class ThrottleIdentity
 {

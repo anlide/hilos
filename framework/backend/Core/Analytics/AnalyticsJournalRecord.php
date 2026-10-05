@@ -15,8 +15,8 @@ namespace Hilos\Core\Analytics;
  *
  * A session of a worker or of an agent is named by a key its process drew in memory: 32 lowercase
  * hex characters, stored as `UNHEX()` of it. Every moment is the unix time in milliseconds at the
- * source, not at the writer. A payload is an object already masked by the source
- * ({@see SecretPayloadMask}), or null.
+ * source, not at the writer. New action and signal records carry no payload; the nullable
+ * payload field remains for older journal files.
  *
  * The builders return raw arrays on purpose: a record is handed to `json_encode()` and back, and a
  * value object in between would only be taken apart again.
@@ -65,6 +65,10 @@ final class AnalyticsJournalRecord
     public const string KEY_FROM_TS = 'fromTs';
     public const string KEY_TO_TS = 'toTs';
     public const string KEY_CLOSED_TS = 'closedTs';
+    public const string KEY_USER_ID = 'userId';
+    public const string KEY_SUBJECT_USER_ID = 'subjectUserId';
+    public const string KEY_SESSION_ID = 'sessionId';
+    public const string KEY_EVENT_KIND = 'eventKind';
 
     public const string TYPE_JOURNAL = 'journal';
     public const string TYPE_JOURNAL_END = 'journal_end';
@@ -89,6 +93,7 @@ final class AnalyticsJournalRecord
     public const string TYPE_PAGE_SESSION_CLOSE = 'page_session_close';
     public const string TYPE_USER_ACTION = 'user_action';
     public const string TYPE_API_REQUEST = 'api_request';
+    public const string TYPE_PERSON_EVENT = 'person_event';
 
     /** @var string A session key as it travels: 16 random bytes in lowercase hex */
     public const string SESSION_KEY_PATTERN = '/^[0-9a-f]{32}$/';
@@ -450,6 +455,27 @@ final class AnalyticsJournalRecord
     {
         return [self::KEY_TYPE => self::TYPE_USER_ACTION, self::KEY_KEY => $key, self::KEY_ACCEPT_KEY => $acceptKey,
             self::KEY_PAGE_KEY => $pageKey, self::KEY_ACTION => $action, self::KEY_PAYLOAD => $payload, self::KEY_TS => $ts];
+    }
+
+    /**
+     * @param AnalyticsPersonEvent $event Event with a proven authenticated actor
+     * @return array<string, mixed> Record
+     */
+    public static function personEvent(AnalyticsPersonEvent $event): array
+    {
+        return [
+            self::KEY_TYPE => self::TYPE_PERSON_EVENT,
+            self::KEY_SESSION_TOKEN => $event->sessionToken,
+            self::KEY_USER_ID => $event->userId,
+            self::KEY_SUBJECT_USER_ID => $event->subjectUserId,
+            self::KEY_SESSION_ID => $event->sessionId,
+            self::KEY_EVENT_KIND => $event->eventKind,
+            self::KEY_ACTION => $event->action,
+            self::KEY_PAGE => $event->page,
+            self::KEY_PARAMS => $event->params,
+            self::KEY_IP => $event->ip,
+            self::KEY_TS => $event->ts,
+        ];
     }
 
     /**

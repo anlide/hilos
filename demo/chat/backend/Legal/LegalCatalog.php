@@ -16,7 +16,7 @@ use Hilos\Legal\StandardSetCatalog;
  * LegalCatalog - The chat's legal documents: the project that departs from the standard.
  *
  * Chat keeps more and shows more than the standard promises - people moderate, messages and
- * files stay, files open by link - and keeps less in one place: it records no access logs. Each
+ * files stay, files open by link - and keeps less in one place: it records no separate access log. Each
  * of those is a deviation of the revision that declares it, never an edit of the framework text.
  * A revision once published stays here for good: a person may hold it. The second terms
  * revision clarifies the retention wording without changing its meaning. The third tells the truth
@@ -37,6 +37,9 @@ final class LegalCatalog implements LegalCatalogProviderInterface
 
     /** @var string First privacy revision, named by its publication date */
     private const string PRIVACY_FIRST_REVISION = '2026-09-17';
+
+    /** @var string Substantial revision declaring analytics collection and retention */
+    private const string PRIVACY_ANALYTICS_REVISION = '2026-10-05';
 
     /** @var string Directory of the chat's deviation text files, one subdirectory per document */
     private const string TEXT_DIRECTORY = __DIR__ . '/Text';
@@ -155,6 +158,28 @@ final class LegalCatalog implements LegalCatalogProviderInterface
                             direction: DeviationDirection::LOOSER,
                             statement: 'No access logs are kept at all',
                             textFile: self::TEXT_DIRECTORY . '/privacy/standard.access_log.2026-09-17.txt',
+                        ),
+                    ],
+                ),
+                new LegalRevision(
+                    document: LegalDocument::PRIVACY,
+                    id: self::PRIVACY_ANALYTICS_REVISION,
+                    publishedOn: self::PRIVACY_ANALYTICS_REVISION,
+                    setVersion: 1,
+                    significance: LegalSignificance::SUBSTANTIAL,
+                    effectiveOn: self::PRIVACY_ANALYTICS_REVISION,
+                    deviations: [
+                        new Deviation(
+                            clauseKey: StandardSetCatalog::CLAUSE_ACCESS_LOG,
+                            direction: DeviationDirection::LOOSER,
+                            statement: 'The separate access log is disabled; analytics records use and addresses',
+                            textFile: self::TEXT_DIRECTORY . '/privacy/standard.access_log.2026-10-05.txt',
+                        ),
+                        new Deviation(
+                            clauseKey: StandardSetCatalog::CLAUSE_DELETION,
+                            direction: DeviationDirection::LOOSER,
+                            statement: 'Account deletion leaves numbered analytics events and network addresses',
+                            textFile: self::TEXT_DIRECTORY . '/privacy/standard.deletion.2026-10-05.txt',
                         ),
                     ],
                 ),

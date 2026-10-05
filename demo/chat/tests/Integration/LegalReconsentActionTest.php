@@ -14,7 +14,7 @@ use Hilos\HilosException;
  * The administrator's preview of the "the terms have changed" screen over the chat's real catalog (HIL-500).
  *
  * The third terms revision says the demo's data may be wiped and is in force the day it is published,
- * so whoever held the second is past the deadline; the privacy policy has only its first revision.
+ * so whoever held the second is past the deadline; the new Privacy revision declares analytics.
  */
 final class LegalReconsentActionTest extends IntegrationTestCase
 {
@@ -53,18 +53,25 @@ final class LegalReconsentActionTest extends IntegrationTestCase
     }
 
     /**
-     * The privacy policy has nothing before its first revision, so nobody sees the screen for it.
+     * The preview shows what a holder of the earlier Privacy text must accept about analytics.
      *
      * @throws HilosException When the preview cannot be built
      */
-    public function testThePrivacyPreviewIsTheFirstRevision(): void
+    public function testThePrivacyPreviewNamesTheAnalyticsRevision(): void
     {
         $preview = $this->preview('privacy');
 
-        self::assertNull($preview->standing);
-        self::assertNull($preview->held);
-        self::assertSame([], $preview->changes);
-        self::assertSame('2026-09-17', $preview->current['revisionId']);
+        self::assertSame('lapsed', $preview->standing);
+        self::assertSame('2026-10-05', $preview->deadline);
+        self::assertSame('2026-09-17', $preview->held['revisionId'] ?? null);
+        self::assertSame('2026-10-05', $preview->current['revisionId']);
+        self::assertSame([
+            ['standard.deletion', 'changed', 'Account deletion leaves numbered analytics events and network addresses'],
+            ['standard.access_log', 'changed', 'The separate access log is disabled; analytics records use and addresses'],
+        ], array_map(
+            static fn (array $change): array => [$change['clauseKey'], $change['kind'], $change['after']['statement'] ?? null],
+            $preview->changes,
+        ));
     }
 
     /**

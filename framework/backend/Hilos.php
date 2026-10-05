@@ -57,13 +57,15 @@ use Hilos\Database\Pages\PageCatalogResolver;
 use Hilos\Database\Pages\PageCatalogStub;
 use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
 use Hilos\Legal\Exception\LegalException;
+use Hilos\Legal\LegalCatalogResolver;
+use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalAcceptanceChangeSubscriber;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Legal\LegalCatalogProviderInterface;
-use Hilos\Legal\LegalCatalogResolver;
+use Hilos\Legal\StandardSetCatalog;
 use Hilos\Log\LogWriteLevelSubscriber;
 use Hilos\LLM\Routing\LlmProfileCatalogStub;
 use Hilos\LLM\Routing\LlmProfileOverrideSource;
@@ -1116,7 +1118,7 @@ abstract class Hilos implements TruthSourceOwner
      * @throws IncompleteFeatureActivationException When a declared feature is not fully activated
      * @throws FeatureRuntimeOverwrittenException When the project re-mounts runtime state a feature owns
      * @throws StateCollectionNotFoundException When a feature represents a collection it did not mount
-     * @throws LegalException When the legal catalog of an AUTH project is faulty or names a missing text file
+     * @throws LegalException When the AUTH or ANALYTICS legal catalog is faulty or names a missing text file
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
     public static function init(): void
@@ -1188,6 +1190,7 @@ abstract class Hilos implements TruthSourceOwner
             static::refuseDataExportWithoutDirectory();
             static::refuseLegalExportWithoutDirectory();
             static::refuseAccessLogWithoutSessionAddress();
+            static::refuseAnalyticsWithoutPrivacyDeclaration();
             static::refuseAnalyticsWithoutJournalDirectory();
             static::refuseMisdeclaredDirectories();
         }
@@ -1409,6 +1412,36 @@ abstract class Hilos implements TruthSourceOwner
     }
 
     /**
+     * Requires an explicit current Privacy declaration before analytics can collect personal data.
+     *
+     * The framework checks the declared clause, not the meaning of the project's prose: only the
+     * project can accurately describe its collection, retention and account-erasure policy.
+     * This clause does not switch off the account access log as standard.access_log would.
+     *
+     * @throws IncompleteFeatureActivationException When ANALYTICS has no current Privacy deletion deviation
+     * @throws LegalException When the legal catalog or a declared text file is faulty
+     */
+    protected static function refuseAnalyticsWithoutPrivacyDeclaration(): void
+    {
+        if (!static::hasFeature(HilosFeature::ANALYTICS)) {
+            return;
+        }
+
+        $revisions = LegalCatalogResolver::revisions(LegalDocument::PRIVACY);
+        if ($revisions !== []) {
+            foreach ($revisions[array_key_last($revisions)]->deviations as $deviation) {
+                if ($deviation->clauseKey === StandardSetCatalog::CLAUSE_DELETION) {
+                    return;
+                }
+            }
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(static::class, [
+            'HilosFeature::ANALYTICS requires the current Privacy revision to declare a deviation from standard.deletion',
+        ]);
+    }
+
+    /**
      * Refuses a project that declares ANALYTICS and registers no directory for the node journal (HIL-1154).
      *
      * The journal agent keeps every event a process handed it in that directory until the writer
@@ -1581,9 +1614,11 @@ abstract class Hilos implements TruthSourceOwner
      * The framework calls it in every process of a project that declares
      * {@see HilosFeature::ANALYTICS}, right after the entrypoint prelude, and refuses it to a project
      * that does not: a collector without the journal agents would hand its batches to nobody.
+     * The current Privacy revision must declare the deletion exception before collection begins.
      *
      * @param ?AnalyticsCollector $analyticsCollector Analytics collector instance
-     * @throws IncompleteFeatureActivationException When the project does not declare ANALYTICS
+     * @throws IncompleteFeatureActivationException When ANALYTICS is absent or its Privacy declaration is missing
+     * @throws LegalException When the legal catalog or a declared text file is faulty
      */
     public static function initAnalytics(?AnalyticsCollector $analyticsCollector = null): void
     {
@@ -1593,6 +1628,8 @@ abstract class Hilos implements TruthSourceOwner
                 ['Hilos::initAnalytics() needs HilosFeature::ANALYTICS: without the journal agents nobody takes what it collects'],
             );
         }
+
+        static::refuseAnalyticsWithoutPrivacyDeclaration();
 
         static::$ac = $analyticsCollector ?? new AnalyticsCollector();
     }
