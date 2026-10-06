@@ -492,7 +492,7 @@ export class TableViewportController<R> implements TableWindowSink {
   >
 
   /** Fields of a row the declared columns draw, empty when the table declares no frame. */
-  private readonly renderedKeys: readonly string[]
+  private readonly renderedKeys: ReadonlySignal<readonly string[]>
 
   private readonly orderSignal: WritableSignal<TableSortOrder | undefined>
 
@@ -858,18 +858,12 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly bulkState: HilosTableBulkState
 
   /**
-   * The orders the menu offers after the way home — every sortable column of the frame
-   * in both directions, then each declared order followed by its mirror. Settled once
-   * here: the declaration is a constant of the table, and a view answers every pick by
-   * looking the key up in this very list.
+   * The orders the menu offers after the way home — resolved from current
+   * columns and declared composites whenever the frame changes.
    */
-  private readonly offeredOrders: readonly HilosTableSortOrder[]
+  private readonly offeredOrders: ReadonlySignal<readonly HilosTableSortOrder[]>
 
   constructor(private readonly options: TableViewportControllerOptions<R>) {
-    this.offeredOrders = [
-      ...hilosTableColumnOrders(options.frame?.columns ?? []),
-      ...hilosTableOfferedOrders(options.declaredOrders ?? []),
-    ]
     this.filterSignal = createSignal<Record<string, unknown>>({
       ...(options.initialFilter ?? {}),
     })
@@ -968,11 +962,30 @@ export class TableViewportController<R> implements TableWindowSink {
     this.announced = this.announcedSignal
     this.loaded = this.loadedSignal
     const declaration = options.frame ?? null
+    const resolvedFrame = computedSignal(() => ({
+      columns:
+        typeof declaration?.columns === 'function'
+          ? declaration.columns()
+          : (declaration?.columns ?? []),
+      filters:
+        typeof declaration?.filters === 'function'
+          ? declaration.filters()
+          : (declaration?.filters ?? []),
+    }))
+    const columns = computedSignal(() => resolvedFrame.get().columns)
+    const filters = computedSignal(() => resolvedFrame.get().filters)
+    this.renderedKeys = computedSignal(() =>
+      hilosTableRenderedKeys(columns.get()),
+    )
+    this.offeredOrders = computedSignal(() => [
+      ...hilosTableColumnOrders(columns.get()),
+      ...hilosTableOfferedOrders(options.declaredOrders ?? []),
+    ])
     const filterViews = computedSignal<readonly HilosTableFilterView[]>(() => {
       const filter = this.filterSignal.get()
       const counts = this.facetCountsSignal.get()
 
-      return (declaration?.filters ?? []).map((declared) => {
+      return filters.get().map((declared) => {
         if (declared.kind === 'date_range') {
           const from = filter[declared.fromKey]
           const to = filter[declared.toKey]
@@ -999,7 +1012,7 @@ export class TableViewportController<R> implements TableWindowSink {
     )
     this.facetOptions = computedSignal(() => {
       const declared: Record<string, readonly unknown[]> = {}
-      for (const filter of declaration?.filters ?? []) {
+      for (const filter of filters.get()) {
         if (filter.kind !== 'select') {
           continue
         }
@@ -1032,12 +1045,88 @@ export class TableViewportController<R> implements TableWindowSink {
         }
       })
     }
-    // The columns are a constant of the table, so what they draw is settled once here and
-    // rides every descriptor as it is: the window frames and the report of a held window.
-    this.renderedKeys = hilosTableRenderedKeys(declaration?.columns ?? [])
+    let previousColumns = columns.get()
+    let previousFilters = filters.get()
+    let previousRendered = this.renderedKeys.get()
+    subscribeSignal(
+      resolvedFrame,
+      ({ columns: nextColumns, filters: nextFilters }) => {
+        const availableKeys = new Set(nextColumns.map(({ key }) => key))
+        const nextFilterKeys = new Set<string>()
+        const nextFilter = { ...this.filterSignal.get() }
+        for (const filter of nextFilters) {
+          if (filter.kind === 'date_range') {
+            nextFilterKeys.add(filter.fromKey)
+            nextFilterKeys.add(filter.toKey)
+          } else {
+            nextFilterKeys.add(filter.key)
+            if (
+              filter.kind === 'select' &&
+              nextFilter[filter.key] !== undefined &&
+              !filter
+                .options()
+                .some(({ value }) => value === nextFilter[filter.key])
+            ) {
+              delete nextFilter[filter.key]
+            }
+          }
+        }
+        for (const filter of previousFilters) {
+          const keys =
+            filter.kind === 'date_range'
+              ? [filter.fromKey, filter.toKey]
+              : [filter.key]
+          for (const key of keys) {
+            if (!nextFilterKeys.has(key)) {
+              delete nextFilter[key]
+            }
+          }
+        }
+        const filterChanged =
+          Object.keys(nextFilter).length !==
+          Object.keys(this.filterSignal.get()).length
+        const currentOrder = this.orderSignal.get()
+        const orderChanged =
+          currentOrder !== undefined &&
+          currentOrder.some(
+            ({ field }) =>
+              previousColumns.some(({ key }) => key === field) &&
+              !availableKeys.has(field),
+          )
+        previousColumns = nextColumns
+        previousFilters = nextFilters
+        const nextRendered = this.renderedKeys.get()
+        const renderedChanged =
+          nextRendered.length !== previousRendered.length ||
+          nextRendered.some((key, index) => key !== previousRendered[index])
+        previousRendered = nextRendered
+        if (filterChanged || orderChanged) {
+          if (filterChanged) {
+            this.filterSignal.set(nextFilter)
+          }
+          if (orderChanged) {
+            this.orderSignal.set(this.openingOrder)
+          }
+          this.resetAddress()
+          if (this.loadedSignal.get()) {
+            this.changeWindow()
+          }
+        }
+        if (renderedChanged && this.loadedSignal.get()) {
+          options.sendRendered?.(nextRendered)
+        }
+      },
+    )
     this.frameState = {
       declaration,
-      card: declaration ? hilosTableCard(declaration.columns) : null,
+      columns,
+      card: computedSignal(() =>
+        declaration ? hilosTableCard(columns.get()) : null,
+      ),
+      searchPlaceholder: computedSignal(() => {
+        const placeholder = declaration?.search?.placeholder
+        return typeof placeholder === 'function' ? placeholder() : placeholder
+      }),
       filters: filterViews,
       activeFilterCount,
       orders: computedSignal<readonly HilosTableOrderView[]>(() =>
@@ -1045,15 +1134,12 @@ export class TableViewportController<R> implements TableWindowSink {
           this.orders,
           this.openingOrder,
           this.orderSignal.get(),
-          declaration?.columns ?? [],
+          columns.get(),
           hilosTableStaleSources(this.rows.get()),
         ),
       ),
       orderLabel: computedSignal(() =>
-        hilosTableOrderLabel(
-          this.orderSignal.get(),
-          declaration?.columns ?? [],
-        ),
+        hilosTableOrderLabel(this.orderSignal.get(), columns.get()),
       ),
       footer: computedSignal<HilosTableFooter>(() => {
         const shown = this.windowSignal.get().length
@@ -1184,7 +1270,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * behind the key.
    */
   get orders(): readonly HilosTableSortOrder[] {
-    return this.offeredOrders
+    return this.offeredOrders.get()
   }
 
   /**
@@ -1773,14 +1859,14 @@ export class TableViewportController<R> implements TableWindowSink {
     )
     if (
       firstWindow &&
-      this.renderedKeys.length > 0 &&
+      this.renderedKeys.get().length > 0 &&
       this.options.sendRendered !== undefined
     ) {
       // The first window of a table that had none was served before the table mounted, so the
       // server holds it without the fields the columns draw. A table coming back after a broken
       // socket already reported them with its window, and a later answer to the same page finds
       // this table loaded: only this one window ever needs telling (HIL-880).
-      this.options.sendRendered(this.renderedKeys)
+      this.options.sendRendered(this.renderedKeys.get())
     }
   }
 
@@ -2935,7 +3021,7 @@ export class TableViewportController<R> implements TableWindowSink {
       anchor: this.anchor,
       anchorDirection: this.anchorDirection,
       pageIndex: this.pageIndex,
-      ...(this.renderedKeys.length > 0 ? { rendered: this.renderedKeys } : {}),
+      ...(this.options.frame ? { rendered: this.renderedKeys.get() } : {}),
     }
   }
 

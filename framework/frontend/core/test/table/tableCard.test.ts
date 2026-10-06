@@ -178,7 +178,7 @@ describe('hilosTableCard', () => {
 
 describe('TableViewportController frame card', () => {
   it('has no card when the page declared no frame', () => {
-    expect(makeController().frame.card).toBeNull()
+    expect(makeController().frame.card.get()).toBeNull()
   })
 
   it('reads back the layout the declared columns derive', () => {
@@ -188,7 +188,7 @@ describe('TableViewportController frame card', () => {
       { key: 'size', label: 'Size' },
       actionsColumn,
     ]
-    const card = makeController({ title: 'Backups', columns }).frame.card
+    const card = makeController({ title: 'Backups', columns }).frame.card.get()
 
     expect(card).toEqual(hilosTableCard(columns))
     expect(card?.title?.key).toBe('createdAt')

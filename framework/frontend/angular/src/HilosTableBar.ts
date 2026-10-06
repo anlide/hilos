@@ -468,8 +468,9 @@ export class HilosTableBar<R> {
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.
+  private readonly resolvedPlaceholder = signal<string | undefined>(undefined)
   protected readonly searchPlaceholder = computed(
-    () => this.searchBox()?.placeholder ?? 'Search…',
+    () => this.resolvedPlaceholder() ?? 'Search…',
   )
 
   protected readonly search = signal('')
@@ -585,6 +586,7 @@ export class HilosTableBar<R> {
         bind(controller.frame.activeFilterCount, this.activeFilterCount),
         bind(controller.frame.orders, this.orders),
         bind(controller.frame.orderLabel, this.orderLabel),
+        bind(controller.frame.searchPlaceholder, this.resolvedPlaceholder),
         bind(controller.selection.target, this.selectionTarget),
       ]
       onCleanup(() => {

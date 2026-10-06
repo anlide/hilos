@@ -118,16 +118,17 @@ const declaration = props.controller.frame.declaration
 // the width of a full-row cell, the card — counts THIS list, so a declared table
 // cannot assemble its row from one list and its card from another (Design D7).
 // It is the one reader of the prop left in the component.
-const frameColumns = computed<readonly HilosTableColumn[]>(
-  () => declaration?.columns ?? props.columns,
+const resolvedColumns = useSignal(props.controller.frame.columns)
+const frameColumns = computed<readonly HilosTableColumn[]>(() =>
+  declaration ? resolvedColumns.value : props.columns,
 )
 
 // Which declared column takes which place of the card a row is drawn as on a
 // narrow screen — the head, the badge beside it, the labelled lines, the
 // controls. The core derived it from the declaration (tableCard.ts) and the view
 // has no arithmetic of its own about it; like the declaration it follows from, it
-// is a constant over the life of a table and null exactly when that is.
-const card = props.controller.frame.card
+// changes with the resolved columns and is null exactly without a frame.
+const card = useSignal(props.controller.frame.card)
 
 // The slots as the page filled them — read to tell a place of the card the page
 // draws nothing into from one it does (Flow F3).
@@ -344,7 +345,7 @@ function hasCell(column: HilosTableColumn | null): boolean {
 // those are settled per render — a computed would hold the answer from the render
 // the page passed other slots in.
 function cardFields(): readonly HilosTableColumn[] {
-  return card === null ? [] : card.fields.filter(hasCell)
+  return card.value === null ? [] : card.value.fields.filter(hasCell)
 }
 
 // The id of one row's panel, which the control above it points at through
@@ -867,7 +868,8 @@ function onSelectPage(event: Event): void {
               <HilosTableEmptyState
                 :controller="controller"
                 :kind="
-                  body === 'empty_filtered' ||
+                  (body === 'empty_filtered' &&
+                    declaration?.filteredEmpty !== 'page') ||
                   body === 'empty_page' ||
                   body === 'unavailable'
                     ? body
@@ -1136,7 +1138,8 @@ function onSelectPage(event: Event): void {
         v-else
         :controller="controller"
         :kind="
-          body === 'empty_filtered' ||
+          (body === 'empty_filtered' &&
+            declaration?.filteredEmpty !== 'page') ||
           body === 'empty_page' ||
           body === 'unavailable'
             ? body

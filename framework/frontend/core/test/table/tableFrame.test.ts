@@ -100,6 +100,110 @@ const backupsFrame: HilosTableFrame = {
 }
 
 describe('TableViewportController frame declaration', () => {
+  it('resolves late columns, filters and placeholder, then clears a vanished node and order', () => {
+    const cluster = createSignal(false)
+    const sent: TableViewportDescriptor[] = []
+    const rendered: Array<readonly string[]> = []
+    const facets: Array<Readonly<Record<string, readonly unknown[]>>> = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: (descriptor) => sent.push(descriptor),
+      sendRendered: (keys) => rendered.push([...keys]),
+      sendFacets: (options) => facets.push(options),
+      frame: {
+        search: { placeholder: () => (cluster.get() ? 'Key or node' : 'Key') },
+        columns: () =>
+          cluster.get()
+            ? [
+                { key: 'key', label: 'Key' },
+                { key: 'node', label: 'Node', sortable: true },
+              ]
+            : [{ key: 'key', label: 'Key' }],
+        filters: () =>
+          cluster.get()
+            ? [
+                {
+                  key: 'node',
+                  kind: 'select',
+                  label: 'Node',
+                  options: () => [{ value: 'n1', label: 'n1' }],
+                },
+              ]
+            : [],
+      },
+    })
+
+    expect(controller.frame.columns.get().map(({ key }) => key)).toEqual([
+      'key',
+    ])
+    expect(controller.frame.searchPlaceholder.get()).toBe('Key')
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    expect(rendered).toEqual([['key']])
+
+    cluster.set(true)
+    expect(controller.frame.columns.get().map(({ key }) => key)).toEqual([
+      'key',
+      'node',
+    ])
+    expect(controller.frame.card.get()?.fields.map(({ key }) => key)).toContain(
+      'node',
+    )
+    expect(controller.frame.searchPlaceholder.get()).toBe('Key or node')
+    expect(controller.orders.map(({ key }) => key)).toEqual([
+      'node-asc',
+      'node-desc',
+    ])
+    expect(rendered.at(-1)).toEqual(['key', 'node'])
+    expect(facets.at(-1)).toEqual({ node: ['n1'] })
+
+    controller.setFilter('node', 'n1')
+    controller.setOrder([{ field: 'node', direction: 'asc' }])
+    cluster.set(false)
+    expect(controller.filter.get()).toEqual({})
+    expect(controller.order.get()).toBeUndefined()
+    expect(sent.at(-1)?.rendered).toEqual(['key'])
+    expect(rendered.at(-1)).toEqual(['key'])
+    expect(facets.at(-1)).toEqual({})
+  })
+
+  it('reports an empty rendered set after the last drawn column disappears', () => {
+    const visible = createSignal(true)
+    const rendered: Array<readonly string[]> = []
+    const controller = new TableViewportController<TableRow>({
+      resolve: (row) => row,
+      sendViewport: () => {},
+      sendRendered: (keys) => rendered.push([...keys]),
+      frame: {
+        columns: () =>
+          visible.get() ? [{ key: 'status', label: 'Status' }] : [],
+      },
+    })
+    controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+    expect(rendered).toEqual([['status']])
+
+    visible.set(false)
+    expect(rendered).toEqual([['status'], []])
+    expect(controller.descriptor()?.rendered).toEqual([])
+  })
+
   it('reads the declaration back unchanged', () => {
     const { controller } = makeController(backupsFrame)
 
@@ -114,7 +218,7 @@ describe('TableViewportController frame declaration', () => {
     expect(declaration?.subtitle).toBe('Nightly and manual copies')
     expect(declaration?.search?.placeholder).toBe('Search backups')
     expect(declaration?.mainAction?.label).toBe('Create backup')
-    expect(declaration?.columns.map((column) => column.key)).toEqual([
+    expect(controller.frame.columns.get().map((column) => column.key)).toEqual([
       'createdAt',
       'kind',
     ])
@@ -144,7 +248,7 @@ describe('TableViewportController frame declaration', () => {
         },
       ],
     })
-    const declared = controller.frame.declaration?.filters?.[0]
+    const declared = controller.frame.filters.get()[0]?.filter
     if (declared?.kind !== 'select') {
       throw new Error('the declared filter should be a select')
     }
@@ -319,7 +423,9 @@ describe('TableViewportController frame facets', () => {
         ...backupsFrame,
         filters: [
           { kind: 'select', key: 'channel', label: 'Channel', options },
-          ...(backupsFrame.filters ?? []),
+          ...(typeof backupsFrame.filters === 'function'
+            ? backupsFrame.filters()
+            : (backupsFrame.filters ?? [])),
         ],
       },
     })

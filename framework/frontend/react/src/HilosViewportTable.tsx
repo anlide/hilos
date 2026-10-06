@@ -192,8 +192,10 @@ export function HilosViewportTable<R>({
   // The columns the table is drawn from: the declaration's own where there is one,
   // and the prop for a table whose page declared nothing. The header and every cell
   // spanning the whole row count this one list, so they cannot disagree on its width.
-  const frameColumns: readonly HilosTableColumn[] =
-    declaration?.columns ?? columns
+  const resolvedColumns = useSignal(controller.frame.columns)
+  const frameColumns: readonly HilosTableColumn[] = declaration
+    ? resolvedColumns
+    : columns
   // The fields that wait in a panel instead of taking a column of their own, and the
   // columns that are left standing in the row. Every place that measures or draws the
   // row itself — the header, the width of a full-row cell, the cells of a row bar —
@@ -213,8 +215,8 @@ export function HilosViewportTable<R>({
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
   // has no arithmetic of its own about it; like the declaration it follows from, it
-  // is a constant over the life of a table and null exactly when that is.
-  const card = controller.frame.card
+  // changes with the resolved columns and is null exactly without a frame.
+  const card = useSignal(controller.frame.card)
   // The row-state cell stands while anything waits OR while a shown row's values are
   // behind OR while the table declared a field to expand into: it carries all three,
   // and a table with no pending change still needs it the moment a source goes quiet
@@ -1008,7 +1010,8 @@ export function HilosViewportTable<R>({
                     <HilosTableEmptyState
                       controller={controller}
                       kind={
-                        body === 'empty_filtered' ||
+                        (body === 'empty_filtered' &&
+                          declaration?.filteredEmpty !== 'page') ||
                         body === 'empty_page' ||
                         body === 'unavailable'
                           ? body
@@ -1104,7 +1107,8 @@ export function HilosViewportTable<R>({
             <HilosTableEmptyState
               controller={controller}
               kind={
-                body === 'empty_filtered' ||
+                (body === 'empty_filtered' &&
+                  declaration?.filteredEmpty !== 'page') ||
                 body === 'empty_page' ||
                 body === 'unavailable'
                   ? body

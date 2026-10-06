@@ -38,8 +38,11 @@ test('renders every screen of the logs section over the live socket', async ({
   await gotoPage(page, '/hilos/logs/keys')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('By key')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(page.getByTestId('hilos-log-key-class-all')).toBeVisible()
-  await expect(page.getByTestId('hilos-log-key-class-daemon')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-title')).toHaveText('Log streams')
+  await expect(page.getByTestId('hilos-table-search')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-filter-class')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
 
   await gotoPage(page, '/hilos/logs/workers')
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('By worker')

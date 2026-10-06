@@ -50,7 +50,8 @@ const mainAction = declaration?.mainAction
 
 // The search placeholder doubles as the field's accessible name: the field
 // carries no visible label, and two different strings would name it twice.
-const searchPlaceholder = searchBox?.placeholder ?? 'Search…'
+const resolvedPlaceholder = useSignal(props.controller.frame.searchPlaceholder)
+const searchPlaceholder = computed(() => resolvedPlaceholder.value ?? 'Search…')
 
 const search = useSignal(props.controller.search)
 const filters = useSignal(props.controller.frame.filters)

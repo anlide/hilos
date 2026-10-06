@@ -134,7 +134,7 @@ The subscription remembers **two** things and needs both:
 
 What of a row is rendered, the client says: a descriptor may carry `rendered`, the
 fields inside the row's slots the table draws. The core builds the list from the
-declared columns (`hilosTableRenderedKeys`, `tableRendered.ts`) — every column's
+currently resolved columns (`hilosTableRenderedKeys`, `tableRendered.ts`) — every column's
 key, plus the fields each cell names in `reads` because it draws from more than its
 own key. The actions column has no key to count, so its `reads` is required, and an
 empty list is how it says it reads nothing. Every table sends the list; the server
@@ -155,7 +155,9 @@ The rows themselves were never kept, so the drawn part of a row is taken from th
 second read, and only for a row whose whole digest is still the one delivered — a row
 that changed in between stays compared whole until it is delivered again, a delta too
 many rather than one too few. A table opening with a preset asks for its own window
-at once and needs no such frame.
+at once and needs no such frame. After a loaded window changes its resolved columns,
+the controller sends `table_rendered` again if their drawn field list changed, including
+an empty list. Every later `table_viewport` and held-window report carries the current list.
 
 The server therefore knows each connection's concrete window and notifies it only
 about what that connection shows, not about every change to the table.
@@ -163,7 +165,9 @@ about what that connection shows, not about every change to the table.
 ### The window changes only by explicit user action
 
 `filter`, `sort`, `anchor`, and `limit` change **only** by an explicit user
-action — filter, sort, paginate, navigate, or press Show on the announcement bar.
+action — filter, sort, paginate, navigate, or press Show on the announcement bar —
+except that a page header withdrawing a declared filter or sortable column clears
+the now unavailable value and asks for the updated window.
 Nothing on the live stream moves the window: the catch-up of a window that froze
 (HIL-1139) re-sends the same window with its rows read again, not another one.
 The same holds for the catch-up of a refused window
@@ -209,11 +213,23 @@ so a table cannot be built without its declaration (not in the code yet — HIL-
 | `columns` | the columns, in display order |
 | `bulkActions` | the operations offered for the marked rows — key, label, danger |
 | `empty` | what the table says when it is empty and nothing is filtering it |
+| `filteredEmpty: 'page'` | opt in to the page's empty content also under a filter; the default remains the framework's "Nothing found" |
 
 Everything else on the bar and everything in the footer is the framework's:
 the count and its precision, the row range, the pager, "Nothing found", the row
 skeleton, the announcement and staleness bars. **A page owns the content of a
 cell and nothing around it.**
+
+`columns` and `filters` accept a fixed array or a callback returning the current
+array. The callback may call a page `ReadonlySignal.get()`; the controller then
+reads it reactively as the page header changes. A search placeholder likewise
+accepts fixed text or a callback returning current text. The controller exposes
+resolved `columns`, `card`, and `searchPlaceholder` signals in its frame state;
+the three views draw from these instead of reading the declaration again. Its
+offered orders, rendered fields, filter controls, and facet option declarations
+follow the same resolved arrays. If a filter disappears or its selected option
+vanishes, its value is cleared. If an active column order disappears, the window
+returns to its opening order; a loaded table asks the server for the updated window.
 
 Three things follow from the declaration and are read off the controller's
 `frame` getter rather than recomputed per view layer — the card a row projects to
@@ -236,7 +252,8 @@ on a narrow screen is a fourth and has its own section below:
   skeleton; past it the view draws one as tall as the previous window, or
   `pageSize` rows when that window was empty. The state is read by every table:
   "Nothing found" names the query and the active
-  declared filters and resets through `resetFilters()`, while `empty` speaks
+  declared filters and resets through `resetFilters()` unless the frame opts into
+  `filteredEmpty: 'page'`, while `empty` speaks
   the declared `empty` and `mainAction`, or the page's own words where nothing
   is declared — the `empty` slot in Vue, the `empty` prop in React, the `#empty`
   template in Angular.

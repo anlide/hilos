@@ -954,7 +954,7 @@ describe('createHilosUsersTable lapsed filter (HIL-945)', () => {
     table.start()
 
     expect(table.controller.filter.get()).toEqual({})
-    const filter = table.controller.frame.declaration?.filters?.[0]
+    const filter = table.controller.frame.filters.get()[0]?.filter
     expect(filter).toMatchObject({
       kind: 'select',
       key: 'lapsed',

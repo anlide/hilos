@@ -70,7 +70,8 @@ export function HilosTableBar<R>({
 
   // The search placeholder doubles as the field's accessible name: the field
   // carries no visible label, and two different strings would name it twice.
-  const searchPlaceholder = searchBox?.placeholder ?? 'Search…'
+  const searchPlaceholder =
+    useSignal(controller.frame.searchPlaceholder) ?? 'Search…'
 
   const search = useSignal(controller.search)
   const filters = useSignal(controller.frame.filters)

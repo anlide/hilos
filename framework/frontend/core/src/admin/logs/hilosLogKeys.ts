@@ -30,6 +30,8 @@ import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
 
 /** One row of the log-keys table — one log stream on one node. */
@@ -218,12 +220,80 @@ export interface HilosLogKeysTable {
  * window; `dispose` unbinds it.
  *
  * @param context The project context (connection and scope stores).
+ * @param header The page header handle's signal, created before this table.
  * @param initialFilter The initial filter map, or none.
  */
 export function createHilosLogKeysTable(
   context: HilosLogKeysContext,
+  header: ReadonlySignal<HilosLogKeysHeader | null>,
   initialFilter?: Record<string, unknown>,
 ): HilosLogKeysTable {
+  const frame: HilosTableFrame = {
+    title: 'Log streams',
+    subtitle: 'Weight is the live file and all archived batches together.',
+    search: { placeholder: () => logKeysSearchPlaceholder(header.get()) },
+    filters: () => [
+      {
+        key: KEY_FILTER_CLASS,
+        kind: 'select',
+        label: 'Class',
+        anyLabel: 'All',
+        options: () => HILOS_LOG_CLASS_OPTIONS.slice(1),
+      },
+      ...(hasLogKeyNodes(header.get())
+        ? [
+            {
+              key: KEY_FILTER_NODE,
+              kind: 'select' as const,
+              label: 'Node',
+              anyLabel: 'All nodes',
+              options: () =>
+                (header.get()?.nodes ?? []).map((node) => ({
+                  value: node,
+                  label: node,
+                })),
+            },
+          ]
+        : []),
+    ],
+    columns: () => [
+      { key: KEY_NAME_FIELD, label: 'Key', sortable: true },
+      ...(hasLogKeyNodes(header.get())
+        ? [{ key: KEY_NODE_FIELD, label: 'Node', sortable: true }]
+        : []),
+      { key: KEY_CLASS_FIELD, label: 'Class' },
+      { key: KEY_LIVE_FIELD, label: 'State', card: 'badge' as const },
+      {
+        key: KEY_BATCH_COUNT_FIELD,
+        label: 'Batches',
+        sortable: true,
+        headerClass: 'text-end',
+      },
+      {
+        key: KEY_BYTES_FIELD,
+        label: 'Weight',
+        sortable: true,
+        headerClass: 'text-end',
+      },
+      {
+        key: KEY_GROWTH_PER_DAY_FIELD,
+        label: 'Per day',
+        sortable: true,
+        headerClass: 'text-end',
+      },
+      {
+        key: HILOS_TABLE_ACTIONS_KEY,
+        label: '',
+        reads: [
+          KEY_NAME_FIELD,
+          KEY_NODE_FIELD,
+          KEY_LIVE_FIELD,
+          KEY_LAST_BATCH_AT_FIELD,
+        ],
+      },
+    ],
+    filteredEmpty: 'page',
+  }
   const controller = new TableViewportController<HilosLogKeyRow>({
     resolve: resolveHilosLogKeyRow,
     sendViewport: (descriptor) =>
@@ -233,6 +303,19 @@ export function createHilosLogKeysTable(
         descriptor,
       ),
     initialFilter,
+    frame,
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.LOGS_KEYS,
+        KEYS_TABLE,
+        rendered,
+      ),
+    sendFacets: (facets) =>
+      context.connection.sendTableFacets(
+        HilosPages.LOGS_KEYS,
+        KEYS_TABLE,
+        facets,
+      ),
   })
   const teardown: Array<() => void> = []
 

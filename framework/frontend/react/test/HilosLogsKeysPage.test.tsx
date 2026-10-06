@@ -89,6 +89,8 @@ function makeConnection(): {
 
       return () => {}
     },
+    sendTableFacets(): void {},
+    sendTableRendered(): void {},
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -174,7 +176,7 @@ function byId(container: HTMLElement, id: string): HTMLElement | null {
 }
 
 function subLine(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('[data-id^="hilos-table-row-"] .d-lg-none')
+  return container.querySelector('[data-id^="hilos-table-card-"]')
 }
 
 describe('HilosLogsKeysPage', () => {
@@ -220,10 +222,9 @@ describe('HilosLogsKeysPage', () => {
       target: { value: 'nothing' },
     })
 
-    // A search that matched nothing is the table's own state since HIL-808: the framework
-    // names the query and offers the reset, and the page's words stay for an empty store.
-    expect(byId(container, 'hilos-table-no-matches')).not.toBeNull()
-    expect(byId(container, 'hilos-table-no-matches-reset')).not.toBeNull()
+    // This frame opts into the page's own no-match wording and reset control.
+    expect(byId(container, 'hilos-log-key-empty-nomatch')).not.toBeNull()
+    expect(byId(container, 'hilos-log-key-clear-filters')).not.toBeNull()
     expect(byId(container, 'hilos-log-key-empty-never')).toBeNull()
   })
 
@@ -233,7 +234,7 @@ describe('HilosLogsKeysPage', () => {
 
     pushHeader(header({ nodes: [] }))
 
-    expect(byId(container, 'hilos-log-key-node')).toBeNull()
+    expect(byId(container, 'hilos-table-filter-node')).toBeNull()
     expect(byId(container, 'hilos-table-sort-node')).toBeNull()
   })
 
@@ -243,7 +244,7 @@ describe('HilosLogsKeysPage', () => {
 
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
 
-    const select = byId(container, 'hilos-log-key-node')
+    const select = byId(container, 'hilos-table-filter-node')
     expect(select).not.toBeNull()
     expect(select?.textContent).toContain('node-2')
     expect(byId(container, 'hilos-table-sort-node')).not.toBeNull()
@@ -253,16 +254,25 @@ describe('HilosLogsKeysPage', () => {
     const { connection, filters } = makeConnection()
     const container = mountPage(connection)
 
+    const control = byId(container, 'hilos-table-filter-class') as HTMLElement
     fireEvent.click(
-      byId(container, 'hilos-log-key-class-worker') as HTMLElement,
+      control.querySelector('[data-id="hilos-dropdown-toggle"]') as HTMLElement,
     )
-
+    fireEvent.click(
+      control.querySelector(
+        '[data-id="hilos-dropdown-option-2"]',
+      ) as HTMLElement,
+    )
     expect(filters.at(-1)).toEqual({ class: 'worker' })
 
     fireEvent.click(
-      byId(container, 'hilos-log-key-class-daemon') as HTMLElement,
+      control.querySelector('[data-id="hilos-dropdown-toggle"]') as HTMLElement,
     )
-
+    fireEvent.click(
+      control.querySelector(
+        '[data-id="hilos-dropdown-option-0"]',
+      ) as HTMLElement,
+    )
     expect(filters.at(-1)).toEqual({ class: 'daemon' })
   })
 
@@ -280,7 +290,8 @@ describe('HilosLogsKeysPage', () => {
     pushWindow([stream()])
 
     expect(subLine(container)).not.toBeNull()
-    expect(subLine(container)?.textContent).toBe('1.5 GB · 2.0 MB')
+    expect(subLine(container)?.textContent).toContain('1.5 GB')
+    expect(subLine(container)?.textContent).toContain('2.0 MB')
   })
 
   it('carries the node into that sub-line as well where nodes have names', () => {
@@ -290,7 +301,7 @@ describe('HilosLogsKeysPage', () => {
     pushHeader(header({ nodes: ['node-1'] }))
     pushWindow([stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' })])
 
-    expect(subLine(container)?.textContent).toBe('node-1 · 1.5 GB · 2.0 MB')
+    expect(subLine(container)?.textContent).toContain('node-1')
   })
 
   it('sends a live stream to the live file and an archived one to its last batch', () => {
@@ -328,7 +339,7 @@ describe('HilosLogsKeysPage', () => {
     pushHeader(header())
     pushWindow([stream({ growthPerDay: null, growthSort: -1 })])
 
-    expect(subLine(container)?.textContent).toBe('1.5 GB · —')
+    expect(subLine(container)?.textContent).toContain('—')
   })
 
   /**

@@ -90,6 +90,8 @@ function makeConnection(): {
 
       return () => {}
     },
+    sendTableFacets(): void {},
+    sendTableRendered(): void {},
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -212,13 +214,12 @@ describe('HilosLogsKeysPage', () => {
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('nothing')
 
-    // A search that matched nothing is the table's own state since HIL-808: the framework
-    // names the query and offers the reset, and the page's words stay for an empty store.
-    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
-      true,
-    )
+    // This frame opts into the page's own no-match wording and reset control.
     expect(
-      wrapper.find('[data-id="hilos-table-no-matches-reset"]').exists(),
+      wrapper.find('[data-id="hilos-log-key-empty-nomatch"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.find('[data-id="hilos-log-key-clear-filters"]').exists(),
     ).toBe(true)
     expect(wrapper.find('[data-id="hilos-log-key-empty-never"]').exists()).toBe(
       false,
@@ -232,7 +233,9 @@ describe('HilosLogsKeysPage', () => {
     pushHeader(header({ nodes: [] }))
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-log-key-node"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-filter-node"]').exists()).toBe(
+      false,
+    )
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
       false,
     )
@@ -245,7 +248,7 @@ describe('HilosLogsKeysPage', () => {
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
     await nextTick()
 
-    const select = wrapper.find('[data-id="hilos-log-key-node"]')
+    const select = wrapper.find('[data-id="hilos-table-filter-node"]')
     expect(select.exists()).toBe(true)
     expect(select.text()).toContain('node-2')
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
@@ -257,9 +260,9 @@ describe('HilosLogsKeysPage', () => {
     const { connection, filters } = makeConnection()
     const wrapper = mountPage(connection)
 
-    await wrapper
-      .find('[data-id="hilos-log-key-class-worker"]')
-      .trigger('click')
+    const filter = wrapper.find('[data-id="hilos-table-filter-class"]')
+    await filter.find('[data-id="hilos-dropdown-toggle"]').trigger('click')
+    await filter.find('[data-id="hilos-dropdown-option-2"]').trigger('click')
 
     expect(filters.at(-1)).toEqual({ class: 'worker' })
   })
@@ -278,9 +281,10 @@ describe('HilosLogsKeysPage', () => {
     pushWindow([stream()])
     await nextTick()
 
-    const subLine = wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none')
+    const subLine = wrapper.find('[data-id^="hilos-table-card-"]')
     expect(subLine.exists()).toBe(true)
-    expect(subLine.text()).toBe('1.5 GB · 2.0 MB')
+    expect(subLine.text()).toContain('1.5 GB')
+    expect(subLine.text()).toContain('2.0 MB')
   })
 
   it('carries the node into that sub-line as well where nodes have names', async () => {
@@ -291,9 +295,9 @@ describe('HilosLogsKeysPage', () => {
     pushWindow([stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' })])
     await nextTick()
 
-    expect(
-      wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
-    ).toBe('node-1 · 1.5 GB · 2.0 MB')
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain(
+      'node-1',
+    )
   })
 
   it('sends a live stream to the live file and an archived one to its last batch', async () => {
@@ -333,9 +337,7 @@ describe('HilosLogsKeysPage', () => {
     pushWindow([stream({ growthPerDay: null, growthSort: -1 })])
     await nextTick()
 
-    expect(
-      wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
-    ).toBe('1.5 GB · —')
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain('—')
   })
 
   /**

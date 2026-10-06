@@ -365,7 +365,9 @@ describe('legal table controllers', () => {
     const h = harness(vocabulary)
     const table = createHilosLegalAcceptancesTable(h.context)
     table.start()
-    const filters = table.controller.frame.declaration?.filters ?? []
+    const filters = table.controller.frame.filters
+      .get()
+      .map(({ filter }) => filter)
     const documents = filters[0]
     const revisions = filters[1]
     expect(documents?.kind).toBe('select')

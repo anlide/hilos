@@ -23,7 +23,7 @@ import { type HilosTableOrderView } from './tableSortOrder.js'
  */
 export interface HilosTableSearch {
   /** Placeholder text of the search field. */
-  readonly placeholder?: string
+  readonly placeholder?: string | (() => string)
 }
 
 /** One option of a `select` filter: the value it writes and how it reads. */
@@ -148,15 +148,21 @@ export interface HilosTableFrame {
   /** The search box; absent means this table does not search. */
   readonly search?: HilosTableSearch
   /** The filters offered in the bar, in the order they are drawn. */
-  readonly filters?: readonly HilosTableFilter[]
+  readonly filters?:
+    | readonly HilosTableFilter[]
+    | (() => readonly HilosTableFilter[])
   /** The one button at the right of the bar, offered again by the empty state. */
   readonly mainAction?: HilosTableMainAction
   /** The columns of the table, in display order. */
-  readonly columns: readonly HilosTableColumn[]
+  readonly columns:
+    | readonly HilosTableColumn[]
+    | (() => readonly HilosTableColumn[])
   /** The operations offered for the marked rows. */
   readonly bulkActions?: readonly HilosTableBulkAction[]
   /** What the table says when it is empty and nothing is filtering it. */
   readonly empty?: HilosTableEmpty
+  /** Use the page's empty content when a filter leaves no rows. */
+  readonly filteredEmpty?: 'page'
 }
 
 /**
@@ -278,20 +284,21 @@ export type HilosTableBody =
  * The readable frame state a {@link HilosTableFrame} declaration turns into —
  * what a view renders the bar and the footer from.
  *
- * The unchanging parts of the declaration (title, subtitle, columns, main
- * action, bulk actions, empty state, search) are read off `declaration` and are
- * not wrapped in signals: they do not change over the life of a table, and a
- * signal would only make the view subscribe to a constant.
+ * Static parts stay on `declaration`; late-bound columns, card, and search
+ * placeholder are resolved as signals so each view follows page state.
  */
 export interface HilosTableFrameState {
   /** What the page declared, or null when it declared no frame. */
   readonly declaration: HilosTableFrame | null
   /**
-   * The card a row projects to on a narrow screen, derived from the declared
-   * columns. Null exactly when `declaration` is — and not wrapped in a signal for
-   * the same reason the columns are not: it follows from the declaration alone.
+   * The card a row projects to on a narrow screen, derived from resolved columns.
+   * Null exactly when `declaration` is.
    */
-  readonly card: HilosTableCard | null
+  readonly card: ReadonlySignal<HilosTableCard | null>
+  /** The columns currently offered by the page. */
+  readonly columns: ReadonlySignal<readonly HilosTableColumn[]>
+  /** The current search placeholder, or undefined when none was declared. */
+  readonly searchPlaceholder: ReadonlySignal<string | undefined>
   /** The declared filters with their current values, in declaration order. */
   readonly filters: ReadonlySignal<readonly HilosTableFilterView[]>
   /**

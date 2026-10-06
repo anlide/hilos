@@ -1062,8 +1062,9 @@ export class HilosViewportTable<R> {
   // The columns the table is drawn from: the declaration's own where there is one,
   // and the input for a table whose page declared nothing. The header and every cell
   // spanning the whole row count this one list, so they cannot disagree on its width.
-  protected readonly frameColumns = computed<readonly HilosTableColumn[]>(
-    () => this.declaration()?.columns ?? this.columns(),
+  private readonly resolvedColumns = signal<readonly HilosTableColumn[]>([])
+  protected readonly frameColumns = computed<readonly HilosTableColumn[]>(() =>
+    this.declaration() ? this.resolvedColumns() : this.columns(),
   )
   // The fields that wait in a panel instead of taking a column of their own, and the
   // columns that are left standing in the row. Every place that measures or draws the
@@ -1082,9 +1083,10 @@ export class HilosViewportTable<R> {
   // narrow screen — the head, the badge beside it, the labelled lines, the
   // controls. The core derived it from the declaration (tableCard.ts) and the view
   // has no arithmetic of its own about it; like the declaration it follows from, it
-  // is a constant over the life of a table and null exactly when that is.
-  protected readonly card = computed<HilosTableCard | null>(
-    () => this.controller().frame.card,
+  // changes with the resolved columns and is null exactly without a frame.
+  private readonly resolvedCard = signal<HilosTableCard | null>(null)
+  protected readonly card = computed<HilosTableCard | null>(() =>
+    this.resolvedCard(),
   )
   // The labelled lines of a card, each with the template that fills it: the fields
   // of the layout the page actually marked a template for. A card leaves out the
@@ -1193,7 +1195,8 @@ export class HilosViewportTable<R> {
   >(() => {
     const body = this.body()
 
-    return body === 'empty_filtered' ||
+    return (body === 'empty_filtered' &&
+      this.declaration()?.filteredEmpty !== 'page') ||
       body === 'empty_page' ||
       body === 'unavailable'
       ? body
@@ -1296,6 +1299,8 @@ export class HilosViewportTable<R> {
         bind(controller.hasPreviousPage, this.hasPreviousPage),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.frame.body, this.body),
+        bind(controller.frame.columns, this.resolvedColumns),
+        bind(controller.frame.card, this.resolvedCard),
         bind(controller.pageSize, this.pageSize),
         bind(controller.selection.header, this.selectionHeader),
         bind(controller.progress.rows, this.rowProgressBars),
