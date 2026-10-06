@@ -7,7 +7,6 @@ namespace Hilos\Pages\Daemon;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageReach;
 
 /**
@@ -15,7 +14,7 @@ use Hilos\Core\Page\PageReach;
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage).
  */
-abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosPage
+abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosDaemonNodePage
 {
     public const string PAGE = HilosPageConstants::HILOS_DAEMON_WORKERS;
 

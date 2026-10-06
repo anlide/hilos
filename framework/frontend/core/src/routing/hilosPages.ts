@@ -71,6 +71,8 @@ export const HilosPages = {
   DAEMON_CRON: 'hilos_daemon_cron',
   DAEMON_WEBSOCKETS: 'hilos_daemon_websockets',
   DAEMON_HTTP_SERVER: 'hilos_daemon_http_server',
+  DAEMON_ENV: 'hilos_daemon_env',
+  DAEMON_ENV_MISMATCH: 'hilos_daemon_env_mismatch',
   LOGS: 'hilos_logs',
   LOGS_KEYS: 'hilos_logs_keys',
   LOGS_WORKERS: 'hilos_logs_workers',
@@ -223,15 +225,29 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
     admin: true,
   },
   [HilosPages.DAEMON]: { path: '/hilos/daemon', admin: true },
-  [HilosPages.DAEMON_WORKERS]: { path: '/hilos/daemon/workers', admin: true },
-  [HilosPages.DAEMON_AGENTS]: { path: '/hilos/daemon/agents', admin: true },
-  [HilosPages.DAEMON_CRON]: { path: '/hilos/daemon/cron', admin: true },
+  [HilosPages.DAEMON_WORKERS]: {
+    path: '/hilos/daemon/{nodeId}/workers',
+    admin: true,
+  },
+  [HilosPages.DAEMON_AGENTS]: {
+    path: '/hilos/daemon/{nodeId}/agents',
+    admin: true,
+  },
+  [HilosPages.DAEMON_CRON]: {
+    path: '/hilos/daemon/{nodeId}/cron',
+    admin: true,
+  },
   [HilosPages.DAEMON_WEBSOCKETS]: {
-    path: '/hilos/daemon/websockets',
+    path: '/hilos/daemon/{nodeId}/websockets',
     admin: true,
   },
   [HilosPages.DAEMON_HTTP_SERVER]: {
-    path: '/hilos/daemon/http/{serverId}',
+    path: '/hilos/daemon/{nodeId}/http',
+    admin: true,
+  },
+  [HilosPages.DAEMON_ENV]: { path: '/hilos/daemon/{nodeId}/env', admin: true },
+  [HilosPages.DAEMON_ENV_MISMATCH]: {
+    path: '/hilos/daemon/env-mismatch',
     admin: true,
   },
   [HilosPages.LOGS]: { path: '/hilos/logs', admin: true },

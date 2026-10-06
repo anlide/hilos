@@ -19,6 +19,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Log\ClusterLogIndex;
@@ -169,6 +170,7 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
      * @param string $acceptKey Target connection accept key
      * @param PageRouteParams $params Route parameters (unused for this page)
      * @throws InvalidArgumentException When the header signal cannot be named
+     * @throws EnvException When the cluster mode flag cannot be read
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -245,21 +247,20 @@ abstract class AbstractHilosLogsKeysPage extends AbstractHilosPage
     }
 
     /**
-     * The nodes the filter may offer, which are the ones that have a name.
-     *
-     * An installation with no node id at all reports under no name, and an empty list is how the
-     * screen is told to drop its node column and node filter rather than offer a choice of one.
+     * The nodes the filter may offer. Standalone keeps its one-node controls hidden.
      *
      * @param ?ClusterLogIndex $index Cluster picture, or null while none has arrived
      * @return list<string> Node names, in the order the picture holds them
      */
     private static function namedNodesOf(?ClusterLogIndex $index): array
     {
+        if (Hilos::$cluster?->isEnabled() !== true) {
+            return [];
+        }
+
         $nodes = [];
         foreach ($index?->nodes() ?? [] as $slot) {
-            if ($slot->nodeId !== null) {
-                $nodes[] = $slot->nodeId;
-            }
+            $nodes[] = $slot->nodeId;
         }
 
         return $nodes;

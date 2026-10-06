@@ -90,7 +90,7 @@ final class AnalyticsJournalDirectory
 
     /**
      * @param string $path Absolute path of the subdirectory this journal owns
-     * @param string $node Cluster node id the files' header names, '' outside a cluster
+     * @param string $node Effective node id written to new file headers
      */
     public function __construct(
         private readonly string $path,

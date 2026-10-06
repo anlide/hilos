@@ -25,7 +25,6 @@ import {
   readNumber,
   readNumberOrNull,
   readString,
-  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
@@ -40,8 +39,8 @@ export interface HilosLogWorkerRow {
   readonly rowKey: string
   /** File basename of the stream, the name that survives rotation. */
   readonly key: string
-  /** Cluster node the file lives on, or null in a single-node installation. */
-  readonly node: string | null
+  /** Effective node ID of the file. */
+  readonly node: string
   /** Worker kind: {@link HILOS_LOG_WORKER_TYPE_MONOPOLISTIC} or {@link HILOS_LOG_WORKER_TYPE_REGULAR}. */
   readonly type: string
   /** Whether the stream is still being written, or only left in the archive. */
@@ -160,9 +159,8 @@ export function resolveHilosLogWorkerRow(row: TableRow): HilosLogWorkerRow {
     // reference, which would strip every other field off the row (normalizer.ts).
     rowKey: String(row.rowKey),
     key: readString(slot, WORKER_NAME_FIELD),
-    // Null is the single-node installation and not a missing name, which is why the
-    // node reads as nullable here and the column disappears rather than emptying.
-    node: readStringOrNull(slot, WORKER_NODE_FIELD),
+    // Keep the node on the row even when the one-node column is hidden.
+    node: readString(slot, WORKER_NODE_FIELD),
     type: readString(slot, WORKER_TYPE_FIELD),
     live: readBoolean(slot, WORKER_LIVE_FIELD),
     batchCount: readNumber(slot, WORKER_BATCH_COUNT_FIELD),
@@ -440,9 +438,7 @@ export function logWorkerViewerPath(row: HilosLogWorkerRow): string {
   }
 
   return logViewerPath({
-    // The empty node is the single-node installation, which the viewer's own address
-    // builder turns into the dash segment; null here means the same thing.
-    nodeId: row.node ?? '',
+    nodeId: row.node,
     source,
     stream: row.key,
     anchorAtMs: null,

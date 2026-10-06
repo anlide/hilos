@@ -30,9 +30,8 @@ use Hilos\Log\LogSettingsCatalog;
  * were no rotation folders yet. Key metrics (logKeys*, totalWeight*) are null unless available is
  * true.
  *
- * {@see $nodes} carries the per-node table, and only nodes that have a name of their own: a
- * single-node installation reports under no name, and the empty list is how the screen is told
- * there is no node to speak of rather than offered a table of one row.
+ * {@see $nodes} carries the per-node table only in cluster mode. A standalone installation
+ * keeps the list empty even though its one node has an effective ID.
  */
 final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -126,16 +125,6 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
     public const string traceFrames = 'traceFrames';
 
     /**
-     * Value of {@see self::nodeId} in a row of either recent feed from an installation whose nodes have no names.
-     *
-     * A value and not an absence, which is why it is spelled out here rather than left to a
-     * fallback: the viewer address reads the empty id as "the node you are on" and draws it as its
-     * own segment, where a missing id would mean no file was named at all. The screen is told
-     * which file to open either way — only the way of naming the machine differs.
-     */
-    public const string SELF_NODE_ID = '';
-
-    /**
      * @param ?bool $available Whether the cluster's log stores could be read, null while no merged picture has arrived
      * @param ?int $totalRotationsAllTime Number of rotation timestamp folders (null if unavailable)
      * @param ?string $lastRotationAt ISO 8601 datetime of the latest rotation (null if none or unavailable)
@@ -153,8 +142,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      *     filesystemFreeBytes: ?int, filesystemTotalBytes: ?int, freeSpaceThresholdPercent: ?int}> $nodes
      *     Named nodes of the picture, one row each; empty in a single-node installation
      * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentErrors
-     *     Last failures across the cluster inside the panel's window, newest first; the node id is
-     *     an empty string in a single-node installation, which is what the viewer address expects
+     *     Last failures across the cluster inside the panel's window, newest first, with effective node IDs
      * @param bool $recentErrorsCapped Whether that list was cut at the limit, so the screen says "10+"
      * @param list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> $recentWarnings
      *     Last warnings across the cluster inside the panel's window, newest first, in the same row as the failures
@@ -357,8 +345,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      * Reads one feed of the panel back — errors or warnings — refusing a row that is not one (HIL-867, HIL-868).
      *
      * Every field of a row is required but the frame count, and the node id is required as a
-     * STRING that may be empty: a single-node installation has no name to give, and the address
-     * the row leads to wants the empty string in that place rather than nothing at all. The frame
+     * string carrying the effective node ID: even a standalone installation names its node. The frame
      * count keeps its null, which is the difference between "there is a stack to look at" and
      * "there is not" — read as zero it would put a badge on every row.
      *

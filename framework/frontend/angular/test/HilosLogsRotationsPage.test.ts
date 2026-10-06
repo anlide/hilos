@@ -510,6 +510,22 @@ describe('HilosLogsRotationsPage', () => {
     )
   })
 
+  it('keeps the opened remote copy command when the header loses its node list', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const fixture = mountPage(connection)
+
+    pushHeader(header({ nodes: ['node-1'] }))
+    pushWindow([batch({ node: 'node-1', retentionState: 'due' })])
+    fixture.detectChanges()
+    clickById(fixture, 'hilos-rotation-takeout')
+    pushHeader(header({ nodes: [] }))
+    fixture.detectChanges()
+
+    expect(
+      byId(fixture, 'hilos-rotation-takeout-command')?.textContent,
+    ).toContain('rsync -a node-1:/var/log/hilos/archive/')
+  })
+
   /**
    * A batch on its way to the archive is a fourth state, and it is the state in
    * which neither action applies: it is not being recommended for carrying off, and

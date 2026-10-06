@@ -79,7 +79,7 @@ final class AnalyticsJournalAgent extends AbstractAgent
         ],
     ];
 
-    /** @var string Subdirectory name of the node off a cluster, where there is no node id */
+    /** @var string Existing standalone subdirectory, retained so older ready files remain visible. */
     private const string STANDALONE_NODE = 'node';
 
     private const string LINE_BREAK = "\n";
@@ -101,8 +101,8 @@ final class AnalyticsJournalAgent extends AbstractAgent
     /** @var bool Whether the subdirectory was set up; a failed start is tried again by the next batch or tick */
     private bool $started = false;
 
-    /** @var ?string Cluster node id of this node, null off a cluster */
-    private ?string $nodeId = null;
+    /** @var string Effective node id of this node */
+    private string $nodeId = HilosClusterNode::STANDALONE_NODE_ID;
 
     /** @var array<string, true> Operations whose failure was said and has not cleared since */
     private array $failingOperations = [];
@@ -142,12 +142,13 @@ final class AnalyticsJournalAgent extends AbstractAgent
             throw new DirectoryNotFoundException('FS directory [' . FsContext::ANALYTICS_JOURNAL . '] has no FS context to live in');
         }
 
-        $nodeId = $cluster !== null && $cluster->isEnabled() ? $cluster->identity()->nodeId : null;
+        $clustered = $cluster?->isEnabled() === true;
+        $nodeId = $cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
         $root = rtrim(Hilos::$fs->getDirectory(FsContext::ANALYTICS_JOURNAL)->getPath(), '/');
         $this->openJournal(
             new AnalyticsJournalDirectory(
-                $root . '/' . Hilos::$env[EnvConstants::APP_ENV]->string() . '/' . ($nodeId ?? self::STANDALONE_NODE),
-                $nodeId ?? HilosClusterNode::STANDALONE_NODE_ID,
+                $root . '/' . Hilos::$env[EnvConstants::APP_ENV]->string() . '/' . ($clustered ? $nodeId : self::STANDALONE_NODE),
+                $nodeId,
             ),
             $nodeId,
         );
@@ -159,11 +160,11 @@ final class AnalyticsJournalAgent extends AbstractAgent
      * {@see self::onStart()} resolves the subdirectory and comes here; a test hands a journal of its own.
      *
      * @param AnalyticsJournalDirectory $journal The node's journal
-     * @param ?string $nodeId Cluster node id of this node, null off a cluster
+     * @param string $nodeId Effective node id of this node
      * @param ?int $ceilingBytes Test seam for a fixed ceiling; production reads the setting
      * @throws InvalidArgumentException When a ready notice cannot be named
      */
-    public function openJournal(AnalyticsJournalDirectory $journal, ?string $nodeId, ?int $ceilingBytes = null): void
+    public function openJournal(AnalyticsJournalDirectory $journal, string $nodeId, ?int $ceilingBytes = null): void
     {
         $this->journal = $journal;
         $this->nodeId = $nodeId;

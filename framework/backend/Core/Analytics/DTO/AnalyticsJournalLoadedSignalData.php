@@ -18,18 +18,18 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 final class AnalyticsJournalLoadedSignalData extends BaseDTO implements SignalDataInterface
 {
-    /** Payload key: node whose journal holds the file, null for the sender's own. */
+    /** Payload key: node whose journal holds the file. */
     public const string nodeId = 'nodeId';
 
     /** Payload key: the ready file the writer loaded. */
     public const string file = 'file';
 
     /**
-     * @param ?string $nodeId Node whose journal holds the file, null for the sender's own
+     * @param string $nodeId Node whose journal holds the file
      * @param string $file Ready file the writer loaded
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly string $file,
     ) {
     }
@@ -52,8 +52,13 @@ final class AnalyticsJournalLoadedSignalData extends BaseDTO implements SignalDa
      */
     public static function fromArray(array $data): static
     {
+        $nodeId = self::requireString($data, self::nodeId);
+        if ($nodeId === '') {
+            throw new InvalidFormatException('Analytics journal node id must not be empty');
+        }
+
         return new static(
-            nodeId: self::optionalString($data, self::nodeId),
+            nodeId: $nodeId,
             file: self::requireString($data, self::file),
         );
     }

@@ -606,6 +606,15 @@ describe('HilosLogsRotationsPage', () => {
     ).toBe(
       'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
     )
+
+    pushHeader(header({ nodes: [] }))
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="hilos-rotation-takeout-command"]')
+        ?.textContent,
+    ).toBe(
+      'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
+    )
   })
 
   /**

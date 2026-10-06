@@ -32,7 +32,7 @@ use Hilos\Log\LogKeySummary;
 final class HilosLogKeysTableRow extends AbstractTableRow
 {
     /**
-     * Payload key of the row identity (`<node>:<key>`, a dash for the node in a single-node installation).
+     * Payload key of the row identity (`<node>:<key>`, the effective node id on every installation).
      *
      * It rides the row fragment's `rowKey`, never a field inside the slot, so the frontend
      * normalizer keeps the row whole ({@see HilosLogKeysTableRow}).
@@ -68,7 +68,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
     /**
      * @param string $rowKey Stable row key, `<node>:<key>`
      * @param string $key File basename of the stream, stable across rotation batches
-     * @param ?string $node Cluster node the file lives on, null in a single-node installation
+     * @param string $node Node the file lives on
      * @param string $class Stream class: {@see LogKeySummary::CLASS_AGENT} or {@see LogKeySummary::CLASS_WORKER}
      * @param bool $live Whether the stream is still being written, or only present in the archive
      * @param int $batchCount Number of archived batches the stream occurs in
@@ -80,7 +80,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
     public function __construct(
         public string $rowKey,
         public string $key,
-        public ?string $node,
+        public string $node,
         public string $class,
         public bool $live,
         public int $batchCount,
@@ -144,7 +144,7 @@ final class HilosLogKeysTableRow extends AbstractTableRow
         return new static(
             rowKey: self::requireString($data, self::rowKey),
             key: self::requireString($data, self::key),
-            node: self::optionalString($data, self::node),
+            node: self::requireString($data, self::node),
             class: self::requireString($data, self::streamClass),
             live: self::requireBool($data, self::live),
             batchCount: self::requireInt($data, self::batchCount),

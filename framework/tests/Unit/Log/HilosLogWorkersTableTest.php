@@ -98,6 +98,15 @@ final class HilosLogWorkersTableTest extends TestCase
         );
     }
 
+    public function testStandaloneRowUsesItsEffectiveNodeIdInTheKey(): void
+    {
+        $this->picture($this->node('standalone', [$this->summary('worker-0.log')]));
+
+        $row = $this->rows(new TableQueryDTO())[0];
+        $this->assertSame('standalone', $row->node);
+        $this->assertSame('standalone:worker-0.log', $row->rowKey);
+    }
+
     /**
      * The screen is about workers by definition, and the agent and daemon streams are not in the
      * branch it reads. Left in the count they would make the pager promise a page that holds nothing.

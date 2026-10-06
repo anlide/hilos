@@ -198,6 +198,7 @@ function clearFilters(): void {
 // that it was. Only a recommended batch offers it — a kept one is not being asked
 // for, and a taken one has already been answered.
 const takeoutOpen = ref(false)
+const takeoutClustered = ref(false)
 const takeoutRow = ref<HilosLogRotationRow | null>(null)
 const takeoutAction = useTrackedAction()
 const {
@@ -217,6 +218,7 @@ function openTakeout(row: HilosLogRotationRow): void {
     return
   }
   clearTakeoutError()
+  takeoutClustered.value = clustered.value
   takeoutRow.value = fresh
   takeoutOpen.value = true
 }
@@ -236,10 +238,14 @@ const takeoutNotice = computed(() =>
 // (the page re-sends one whenever the picture moves) does not swap the batch the
 // operator is reading the address of.
 const takeoutAddress = computed(() =>
-  takeoutRow.value === null ? null : rotationTakeoutAddress(takeoutRow.value),
+  takeoutRow.value === null
+    ? null
+    : rotationTakeoutAddress(takeoutRow.value, takeoutClustered.value),
 )
 const takeoutCommand = computed(() =>
-  takeoutRow.value === null ? null : rotationTakeoutCommand(takeoutRow.value),
+  takeoutRow.value === null
+    ? null
+    : rotationTakeoutCommand(takeoutRow.value, takeoutClustered.value),
 )
 
 async function submitTakeout(): Promise<void> {

@@ -53,6 +53,8 @@ use Demo\Polls\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsRotationsPage;
@@ -615,6 +617,8 @@ final class PollsTopologyRegistryTest extends TestCase
             DaemonCronPage::class,
             DaemonWebsocketsPage::class,
             DaemonHttpServerPage::class,
+            DaemonEnvPage::class,
+            DaemonEnvMismatchPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);

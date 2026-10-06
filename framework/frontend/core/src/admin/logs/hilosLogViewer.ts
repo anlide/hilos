@@ -79,11 +79,8 @@ export const LOG_SOURCE_LIVE = 'live'
 const LOG_SOURCE_BATCH = 'batch'
 
 /**
- * Address segment standing for the node of an installation that has no cluster.
- *
- * Such a node is the empty string on the wire, and an empty path segment is not a
- * segment at all: the three slots are positional, so a skipped node would slide
- * the source into its place and open a file named `live`.
+ * Legacy address segment for the node of a standalone installation.
+ * New addresses use the effective node id; this token remains for old bookmarks.
  */
 export const LOG_NODE_SELF_SEGMENT = '-'
 
@@ -148,6 +145,7 @@ const logViewerNodeSchema = z.looseObject({
  */
 const logViewerCatalogSchema = z.looseObject({
   available: z.boolean().nullable(),
+  clusterEnabled: z.boolean(),
   nodes: z.array(logViewerNodeSchema),
 })
 
@@ -247,11 +245,10 @@ export const HILOS_LOG_LEVEL_OPTIONS: readonly HilosLogLevelOption[] = [
  * chosen — entering from the menu chooses none of them, and a stream is never
  * guessed, because opening the wrong file looks exactly like an answer.
  *
- * The node is the empty string in an installation with no cluster: that is the
- * name it reports under, and the one the read request is addressed by.
+ * A legacy dash address is resolved against the standalone catalog before reading.
  */
 export interface HilosLogViewerSelection {
-  /** The node holding the file, empty in a single-node installation, null when unchosen. */
+  /** Effective node id, legacy dash pending catalog resolution, or null when unchosen. */
   readonly nodeId: string | null
   /** {@link LOG_SOURCE_LIVE}, an archived batch timestamp, or null when unchosen. */
   readonly source: typeof LOG_SOURCE_LIVE | number | null
@@ -416,8 +413,7 @@ export function readLogViewerAddress(
   const anchor = params[LOG_VIEWER_ANCHOR_PARAM]
 
   return {
-    nodeId:
-      node === undefined ? null : node === LOG_NODE_SELF_SEGMENT ? '' : node,
+    nodeId: node ?? null,
     source: source === undefined ? null : readSourceSegment(source),
     stream: stream === undefined ? null : stream,
     anchorAtMs:
@@ -449,8 +445,7 @@ export function logViewerPath(selection: HilosLogViewerSelection): string {
   }
 
   return resolveHilosPath(HilosPages.LOGS_VIEW, {
-    [LOG_VIEWER_NODE_PARAM]:
-      selection.nodeId === '' ? LOG_NODE_SELF_SEGMENT : selection.nodeId,
+    [LOG_VIEWER_NODE_PARAM]: selection.nodeId,
     [LOG_VIEWER_SOURCE_PARAM]: String(selection.source),
     [LOG_VIEWER_STREAM_PARAM]: selection.stream,
     ...(selection.anchorAtMs === null
@@ -571,18 +566,14 @@ export function logViewerCatalogState(
 }
 
 /**
- * Whether this installation names its nodes, which is what decides the node
- * select.
- *
- * A single node reports under the empty string, and a picker with one nameless
- * option is furniture for a choice that does not exist.
+ * Whether cluster mode makes the node select useful.
  *
  * @param catalog The latest catalog, or null before the first one arrives.
  */
 export function hasLogViewerNodes(
   catalog: HilosLogViewerCatalog | null,
 ): boolean {
-  return catalog !== null && catalog.nodes.some((node) => node.nodeId !== '')
+  return catalog?.clusterEnabled === true
 }
 
 /**
@@ -1025,6 +1016,19 @@ export function createHilosLogViewer(
 
   const read = (older: boolean): void => {
     const current = selection.get()
+    const knownDashNode =
+      catalog
+        .get()
+        ?.nodes.some((node) => node.nodeId === LOG_NODE_SELF_SEGMENT) === true
+    // A dash may be a legacy alias or a configured node ID. Wait only if the
+    // standalone catalog has not named an actual dash node yet.
+    if (
+      current.nodeId === LOG_NODE_SELF_SEGMENT &&
+      catalog.get()?.clusterEnabled !== true &&
+      !knownDashNode
+    ) {
+      return
+    }
     if (
       current.nodeId === null ||
       current.source === null ||
@@ -1223,19 +1227,47 @@ export function createHilosLogViewer(
   }
 
   // What can be chosen without guessing, once there is a catalog to choose from.
-  // The node only when the installation has exactly one and it has no name of its
-  // own - in a cluster, picking one for the operator would open some machine's
-  // log because it happened to report first. The stream is never preselected at
+  // The node only on a standalone installation; in a cluster, picking one for
+  // the operator would open some machine's log because it reported first.
+  // The stream is never preselected at
   // all: the wrong file open looks exactly like an answer.
-  const preselect = (next: HilosLogViewerCatalog): void => {
+  const preselect = (
+    next: HilosLogViewerCatalog,
+    previous: HilosLogViewerCatalog | null,
+  ): void => {
     const current = selection.get()
+    const single = !next.clusterEnabled && next.nodes.length === 1
+    if (single && current.nodeId === LOG_NODE_SELF_SEGMENT) {
+      if (next.nodes[0].nodeId === LOG_NODE_SELF_SEGMENT) {
+        const alreadyKnown =
+          previous?.clusterEnabled === false &&
+          previous.nodes.some((node) => node.nodeId === LOG_NODE_SELF_SEGMENT)
+        if (!alreadyKnown) {
+          read(false)
+        }
+        return
+      }
+      selection.set({ ...current, nodeId: next.nodes[0].nodeId })
+      ownPath = logViewerPath(selection.get())
+      address.replacePath(ownPath)
+      read(false)
+      return
+    }
+    if (current.nodeId === LOG_NODE_SELF_SEGMENT && next.clusterEnabled) {
+      if (previous?.clusterEnabled !== true) {
+        read(false)
+      }
+      return
+    }
+    if (current.nodeId === LOG_NODE_SELF_SEGMENT) {
+      return
+    }
     if (current.nodeId !== null && current.source !== null) {
       return
     }
 
-    const single = next.nodes.length === 1 && next.nodes[0].nodeId === ''
     selection.set({
-      nodeId: current.nodeId ?? (single ? '' : null),
+      nodeId: current.nodeId ?? (single ? next.nodes[0].nodeId : null),
       source: current.source ?? LOG_SOURCE_LIVE,
       stream: current.stream,
       anchorAtMs: current.anchorAtMs,
@@ -1372,8 +1404,9 @@ export function createHilosLogViewer(
             // Validated against logViewerCatalogSchema at the parse boundary; this
             // cast is the declared typed selector for that schema's output.
             const next = signal.data as HilosLogViewerCatalog
+            const previous = catalog.get()
             catalog.set(next)
-            preselect(next)
+            preselect(next, previous)
 
             return
           }

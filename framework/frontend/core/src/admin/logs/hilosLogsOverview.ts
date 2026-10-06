@@ -76,9 +76,8 @@ export const OVERVIEW_NODE_THRESHOLD_FIELD = 'freeSpaceThresholdPercent'
 /**
  * Row payload key of the node an entry was written on.
  *
- * Empty in an installation whose nodes have no names, and that empty string is a
- * value rather than an absence: {@link logsOverviewRecentPath} reads it as "the node
- * you are on", where a missing id would mean no file was named at all.
+ * Carries the effective node ID even on standalone, so a recent entry links to
+ * the exact node and file.
  */
 export const OVERVIEW_RECENT_NODE_ID_FIELD = 'nodeId'
 
@@ -796,8 +795,8 @@ export function formatLogsOverviewRecentAt(at: string): string {
  *
  * The node is named only in an installation that has node names — the same rule the
  * rest of the screen keeps, and the reason it is asked of the picture rather than of
- * the row: a row from an unnamed node carries an empty id, which is a value and not
- * a signal that this installation is single-node.
+ * the row: a standalone entry still carries a technical node ID, so its value
+ * does not say whether a node column belongs on the screen.
  *
  * @param overview The latest screen, or null before the first frame arrives.
  * @param entry The entry the row draws.

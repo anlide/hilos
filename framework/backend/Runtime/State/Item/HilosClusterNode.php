@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
-use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Collection\HilosClusterNodes;
@@ -31,9 +30,8 @@ use Hilos\Runtime\State\Collection\HilosClusterNodes;
  * be offline because its node is only heard of from a neighbour and not seen yet.
  *
  * With clustering off the collection is not empty either - the master publishes itself as the
- * single row - so a reader never needs a branch for the standalone case. `nodeId` is the empty
- * string there and only there: a configured node id can never be empty, since
- * {@see NodeIdentity::fromEnv()} refuses an empty CLUSTER_NODE_ID outright.
+ * single row - so a reader never needs a branch for the standalone case. Its non-empty id is
+ * the configured CLUSTER_NODE_ID or the stable standalone default.
  */
 final class HilosClusterNode extends RtState
 {
@@ -43,11 +41,9 @@ final class HilosClusterNode extends RtState
     /**
      * Row id of the one node published on an install running without clustering.
      *
-     * Empty because there is no identity to name it with - the same answer standalone
-     * leadership gives when asked for the leader's id - and it collides with no real node,
-     * since {@see NodeIdentity::fromEnv()} refuses an empty configured node id.
+     * Used when the standalone installation does not configure CLUSTER_NODE_ID.
      */
-    public const string STANDALONE_NODE_ID = '';
+    public const string STANDALONE_NODE_ID = 'standalone';
 
     public const string nodeId = 'nodeId';
     public const string role = 'role';
@@ -56,7 +52,7 @@ final class HilosClusterNode extends RtState
     public const string online = 'online';
     public const string lastSeen = 'lastSeen';
 
-    /** Id of the node this row describes, and the row id; empty on a standalone install. */
+    /** Id of the node this row describes, and the row id. */
     private(set) string $nodeId = '';
 
     /** Self-declared role of the node, a {@see NodeRole} value. */
@@ -77,7 +73,7 @@ final class HilosClusterNode extends RtState
     /**
      * Builds a row for a node the master has just seen for the first time.
      *
-     * @param string $nodeId Node id, empty on a standalone install
+     * @param string $nodeId Non-empty node id
      * @param string $role Node role value
      * @param list<string> $capabilities Capability tags the node declared
      * @param ?string $address Address peers dial to reach the node, or null

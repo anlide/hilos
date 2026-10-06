@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -18,6 +19,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -29,6 +31,7 @@ use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
@@ -54,6 +57,10 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsPageSubscribeTest extends TestCase
 {
+    private ?ClusterContext $previousCluster = null;
+
+    private ?EnvAccessor $previousEnv = null;
+
     private const string ACCEPT_KEY = 'ak-logs-1';
 
     private const string REFUSED_ACCEPT_KEY = 'ak-logs-refused';
@@ -79,6 +86,11 @@ final class HilosLogsPageSubscribeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousCluster = Hilos::$cluster;
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+        putenv('CLUSTER_ENABLED=true');
 
         Hilos::$sr = new LogsPageSubscribeTestRouter();
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
@@ -102,6 +114,9 @@ final class HilosLogsPageSubscribeTest extends TestCase
         Hilos::$sr = null;
         Hilos::$browser = null;
 
+        Hilos::$cluster = $this->previousCluster;
+        Hilos::$env = $this->previousEnv;
+        putenv('CLUSTER_ENABLED');
         parent::tearDown();
     }
 
@@ -290,19 +305,19 @@ final class HilosLogsPageSubscribeTest extends TestCase
     }
 
     /**
-     * Only a node with a name of its own gets a row. The installation that runs on one node
-     * reports under no name, and the table it would head is a table of one row about "here".
+     * Cluster mode reports every node in a row, including one named standalone.
      */
-    public function testOnlyNamedNodesGetARow(): void
+    public function testClusterModeKeepsEveryNamedNodeRow(): void
     {
-        $this->fileThePicture(self::nodeSlot('node-1'), self::nodeSlot(null));
+        $this->fileThePicture(self::nodeSlot('node-1'), self::nodeSlot(HilosClusterNode::STANDALONE_NODE_ID));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
         $overview = $this->overview();
-        $this->assertCount(1, $overview->nodes);
+        $this->assertCount(2, $overview->nodes);
         $this->assertSame('node-1', $overview->nodes[0][HilosLogsOverviewSignalData::nodeId]);
+        $this->assertSame(HilosClusterNode::STANDALONE_NODE_ID, $overview->nodes[1][HilosLogsOverviewSignalData::nodeId]);
     }
 
     /**
@@ -311,13 +326,14 @@ final class HilosLogsPageSubscribeTest extends TestCase
      */
     public function testASingleNodeInstallationSendsNoRows(): void
     {
-        $this->fileThePicture(self::nodeSlot(null));
+        putenv('CLUSTER_ENABLED=false');
+        $this->fileThePicture(self::nodeSlot(HilosClusterNode::STANDALONE_NODE_ID));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
         $overview = $this->overview();
-        $this->assertTrue($overview->available, 'The node answered for itself, it just has no name');
+        $this->assertTrue($overview->available, 'The one node answered for itself');
         $this->assertSame([], $overview->nodes);
     }
 
@@ -361,8 +377,9 @@ final class HilosLogsPageSubscribeTest extends TestCase
      */
     public function testASingleNodeInstallationCarriesItsDiskInTheHeader(): void
     {
+        putenv('CLUSTER_ENABLED=false');
         $this->fileThePicture(self::nodeSlot(
-            null,
+            HilosClusterNode::STANDALONE_NODE_ID,
             filesystemFreeBytes: 12_884_901_888,
             filesystemTotalBytes: 107_374_182_400,
             freeSpaceThresholdPercent: 35,
@@ -409,9 +426,9 @@ final class HilosLogsPageSubscribeTest extends TestCase
      */
     public function testAnUnreadableSingleNodeLeavesTheHeaderEmpty(): void
     {
+        putenv('CLUSTER_ENABLED=false');
         $this->fileThePicture(
-            self::nodeSlot('node-1', keys: [new LogKeySummary('agent-a.log', LogKeySummary::CLASS_AGENT, true, [], 100)]),
-            self::nodeSlot(null, available: false, filesystemFreeBytes: 500, filesystemTotalBytes: 1000),
+            self::nodeSlot(HilosClusterNode::STANDALONE_NODE_ID, available: false, filesystemFreeBytes: 500, filesystemTotalBytes: 1000),
         );
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
@@ -539,11 +556,12 @@ final class HilosLogsPageSubscribeTest extends TestCase
 
     /**
      * A single-node installation draws no per-node table and still has failures to show, so the
-     * row keeps its place in this list under the empty name the viewer address reads as "here".
+     * row keeps the effective node ID for its viewer address.
      */
-    public function testAFailureOnAnUnnamedNodeCarriesTheEmptyNodeId(): void
+    public function testAFailureOnStandaloneCarriesTheEffectiveNodeId(): void
     {
-        $this->fileThePicture(self::nodeSlot(null, recentErrors: [self::failure(30, 'daemon-error.log', 4)]));
+        putenv('CLUSTER_ENABLED=false');
+        $this->fileThePicture(self::nodeSlot(HilosClusterNode::STANDALONE_NODE_ID, recentErrors: [self::failure(30, 'daemon-error.log', 4)]));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
@@ -552,7 +570,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->assertSame([], $overview->nodes, 'No table, and the panel still has the row');
         $this->assertCount(1, $overview->recentErrors);
         $this->assertSame(
-            HilosLogsOverviewSignalData::SELF_NODE_ID,
+            HilosClusterNode::STANDALONE_NODE_ID,
             $overview->recentErrors[0][HilosLogsOverviewSignalData::nodeId],
         );
         $this->assertSame('daemon-error.log', $overview->recentErrors[0][HilosLogsOverviewSignalData::stream]);
@@ -680,9 +698,13 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * A single-node installation has warnings to show as well, under the empty name the viewer
      * address reads as "here".
      */
-    public function testAWarningOnAnUnnamedNodeCarriesTheEmptyNodeId(): void
+    public function testAWarningOnStandaloneCarriesTheEffectiveNodeId(): void
     {
-        $this->fileThePicture(self::nodeSlot(null, recentWarnings: [self::failure(30, 'daemon.log', message: 'slow')]));
+        putenv('CLUSTER_ENABLED=false');
+        $this->fileThePicture(self::nodeSlot(
+            HilosClusterNode::STANDALONE_NODE_ID,
+            recentWarnings: [self::failure(30, 'daemon.log', message: 'slow')],
+        ));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
@@ -690,7 +712,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $overview = $this->overview();
         $this->assertCount(1, $overview->recentWarnings);
         $this->assertSame(
-            HilosLogsOverviewSignalData::SELF_NODE_ID,
+            HilosClusterNode::STANDALONE_NODE_ID,
             $overview->recentWarnings[0][HilosLogsOverviewSignalData::nodeId],
         );
     }
@@ -931,7 +953,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
     /**
      * One node's slot, with everything a case does not name left empty.
      *
-     * @param ?string $nodeId Node name, null for the installation that runs on one node
+     * @param string $nodeId Effective node name
      * @param bool $available Whether that node could read its log store
      * @param list<LogBatchSummary> $batches Rotation batches the node holds
      * @param list<LogKeySummary> $keys Streams the node holds, live and archived together
@@ -945,7 +967,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
     private static function nodeSlot(
-        ?string $nodeId,
+        string $nodeId,
         bool $available = true,
         array $batches = [],
         array $keys = [],

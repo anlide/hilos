@@ -52,6 +52,8 @@ use Demo\Polls\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Polls\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Polls\Pages\Hilos\Logs\LogsRotationsPage;
@@ -188,6 +190,8 @@ final class Hilos extends HilosFacade
         DaemonCronPage::PAGE => DaemonCronPage::class,
         DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
         DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
+        DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
         LogsWorkersPage::PAGE => LogsWorkersPage::class,

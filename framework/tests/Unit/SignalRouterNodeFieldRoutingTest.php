@@ -23,6 +23,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 
@@ -37,8 +38,7 @@ use PHPUnit\Framework\TestCase;
  *
  * The silence on an empty id is a case of its own, because it is where the key parts ways with
  * {@see AgentSignalConfigKey::INDEX_FIELD} ({@see SignalRouterIndexedAgentSignalTest}): an
- * absent index is a sender that forgot, an absent node id is a sender that means "here", and
- * off a cluster that is the only id there is.
+ * absent index is a sender that forgot, while an absent node id means "here".
  */
 final class SignalRouterNodeFieldRoutingTest extends TestCase
 {
@@ -171,10 +171,7 @@ final class SignalRouterNodeFieldRoutingTest extends TestCase
     }
 
     /**
-     * Off a cluster the local node has no id to compare against, and asking for one throws
-     * ({@see ClusterContext::identity()}). Getting a destination back rather than an exception is
-     * the proof the gate short-circuits: a named node is simply not this one, and the daemon is
-     * left to report the unreachable peer it already knows how to report.
+     * The foreign id is still remote when clustering is disabled.
      */
     public function testForeignNodeIdOffClusterIsStillRemoteAndNeverAsksForALocalIdentity(): void
     {
@@ -201,8 +198,31 @@ final class SignalRouterNodeFieldRoutingTest extends TestCase
         $this->assertEquals(
             [new AgentDestination(NodeFieldTestAgent::AGENT_TYPE)],
             $destinations,
-            'The single node publishes itself under an empty id, so a reader of it must stay home',
+            'An empty legacy address still means the sender\'s own node',
         );
+    }
+
+    public function testEffectiveStandaloneNodeIdAddressesTheLocalReplica(): void
+    {
+        HilosFacade::$cluster = new ClusterContext();
+
+        $destinations = new NodeFieldTestRouter()->getDestinations(
+            $this->agentSignal(NodeFieldTestAgent::NODE_SIGNAL, ['nodeId' => HilosClusterNode::STANDALONE_NODE_ID]),
+        );
+
+        $this->assertEquals([new AgentDestination(NodeFieldTestAgent::AGENT_TYPE)], $destinations);
+    }
+
+    public function testConfiguredStandaloneNodeIdAddressesTheLocalReplica(): void
+    {
+        putenv('CLUSTER_NODE_ID=local-custom');
+        HilosFacade::$cluster = new ClusterContext();
+
+        $destinations = new NodeFieldTestRouter()->getDestinations(
+            $this->agentSignal(NodeFieldTestAgent::NODE_SIGNAL, ['nodeId' => 'local-custom']),
+        );
+
+        $this->assertEquals([new AgentDestination(NodeFieldTestAgent::AGENT_TYPE)], $destinations);
     }
 
     public function testNodeIdIsIgnoredWithNoClusterContextAtAll(): void

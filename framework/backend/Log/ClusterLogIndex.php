@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
-use Hilos\Cluster\NodeIdentity;
-
 /**
  * Immutable picture of every node's log store at once (HIL-754).
  *
@@ -23,18 +21,7 @@ use Hilos\Cluster\NodeIdentity;
  */
 final class ClusterLogIndex
 {
-    /**
-     * Slot key of the installation that has no node id at all.
-     *
-     * The empty string, and it is the one key no real node can take: {@see NodeIdentity::fromEnv()}
-     * refuses an empty CLUSTER_NODE_ID as a configuration error rather than defaulting it, so a
-     * single-node installation cannot collide with anybody. It is named here rather than written
-     * where it is used because there it would read as a missing value, which is the opposite of
-     * what it is — a slot addressed by it holds a node's real index.
-     */
-    private const string SINGLE_NODE_KEY = '';
-
-    /** @var array<string, ClusterLogNodeSlot> Node id → its slot, keyed by {@see self::SINGLE_NODE_KEY} in a single-node installation */
+    /** @var array<string, ClusterLogNodeSlot> Effective node id → its slot */
     private readonly array $nodes;
 
     /**
@@ -94,10 +81,10 @@ final class ClusterLogIndex
     /**
      * One node's slot.
      *
-     * @param ?string $nodeId Node to look up, null for the single-node installation
+     * @param string $nodeId Node to look up
      * @return ?ClusterLogNodeSlot Its slot, or null when that node has never reported
      */
-    public function node(?string $nodeId): ?ClusterLogNodeSlot
+    public function node(string $nodeId): ?ClusterLogNodeSlot
     {
         return $this->nodes[self::slotKey($nodeId)] ?? null;
     }
@@ -163,16 +150,13 @@ final class ClusterLogIndex
     /**
      * The array key one node's slot lives under.
      *
-     * Public because it is the cluster picture's rule and not one map's: {@see LogAggregatorAgent}
-     * keeps a revision per slot and has to name a slot the same way, and two places deciding on
-     * their own what a node with no id is called is exactly how a single-node installation ends up
-     * with a revision nobody can find.
+     * Public because the aggregator keeps a revision per slot and must use the same key.
      *
-     * @param ?string $nodeId Node id, or null in a single-node installation
-     * @return string Slot key, {@see self::SINGLE_NODE_KEY} when there is no node id
+     * @param string $nodeId Effective node id
+     * @return string Slot key
      */
-    public static function slotKey(?string $nodeId): string
+    public static function slotKey(string $nodeId): string
     {
-        return $nodeId ?? self::SINGLE_NODE_KEY;
+        return $nodeId;
     }
 }

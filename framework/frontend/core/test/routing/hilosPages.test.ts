@@ -9,6 +9,42 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it('routes Daemon children through a required node segment', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    const children = [
+      [HilosPages.DAEMON_WORKERS, 'workers'],
+      [HilosPages.DAEMON_AGENTS, 'agents'],
+      [HilosPages.DAEMON_CRON, 'cron'],
+      [HilosPages.DAEMON_WEBSOCKETS, 'websockets'],
+      [HilosPages.DAEMON_HTTP_SERVER, 'http'],
+      [HilosPages.DAEMON_ENV, 'env'],
+    ] as const
+
+    expect(router.match('/hilos/daemon').page).toBe(HilosPages.DAEMON)
+    for (const [page, tail] of children) {
+      const path = `/hilos/daemon/standalone/${tail}`
+      expect(resolveHilosPath(page, { nodeId: 'standalone' })).toBe(path)
+      expect(router.match(path)).toEqual({
+        page,
+        params: { nodeId: 'standalone' },
+        admin: true,
+      })
+      expect(router.match(`/hilos/daemon/${tail}`).page).toBe(
+        HilosPages.DASHBOARD,
+      )
+    }
+    expect(router.match('/hilos/daemon/env-mismatch')).toEqual({
+      page: HilosPages.DAEMON_ENV_MISMATCH,
+      params: {},
+      admin: true,
+    })
+    expect(router.match('/hilos/daemon/http/old-server').page).toBe(
+      HilosPages.DASHBOARD,
+    )
+  })
+
   it('declares a route for every Hilos page key', () => {
     for (const key of Object.values(HilosPages)) {
       expect(HILOS_ROUTE_DECLARATIONS[key].path).toBeTypeOf('string')

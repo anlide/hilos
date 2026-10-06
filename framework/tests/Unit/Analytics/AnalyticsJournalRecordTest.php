@@ -8,7 +8,10 @@ use Hilos\Core\Analytics\AnalyticsJournalRecord;
 use Hilos\Core\Analytics\AnalyticsLossCount;
 use Hilos\Core\Analytics\AnalyticsLossReason;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
 
@@ -72,5 +75,28 @@ final class AnalyticsJournalRecordTest extends TestCase
     {
         $this->expectException(InvalidFormatException::class);
         AnalyticsLossCount::fromArray(['reason' => 'other', 'events' => 1, 'fromTs' => 10, 'toTs' => 20]);
+    }
+
+    public function testEveryJournalControlFrameRequiresANamedNodeOnTheWire(): void
+    {
+        foreach ([
+            new AnalyticsJournalReadySignalData('standalone'),
+            new AnalyticsJournalReadSignalData('standalone', 'file', 0),
+            new AnalyticsJournalPortionSignalData('standalone', 'file', 0, 1, [], true, false),
+            new AnalyticsJournalLoadedSignalData('standalone', 'file'),
+        ] as $frame) {
+            self::assertEquals($frame, $frame::fromArray($frame->toArray()));
+
+            foreach (['', null] as $invalid) {
+                $payload = $frame->toArray();
+                $payload['nodeId'] = $invalid;
+                try {
+                    $frame::fromArray($payload);
+                    self::fail($frame::class . ' accepted an absent or empty node id');
+                } catch (InvalidFormatException) {
+                    // This frame cannot be routed without a node address.
+                }
+            }
+        }
     }
 }

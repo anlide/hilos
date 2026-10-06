@@ -62,6 +62,7 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $this->previousCluster = Hilos::$cluster;
 
         Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
         Hilos::$rt = new ClusterNodesTestRtContext();
         Hilos::$rt->mountFeatureRuntime([]);
     }
@@ -89,7 +90,8 @@ final class DaemonManagerClusterNodesTest extends TestCase
         $this->assertCount(1, Hilos::$rt->hilosClusterNodes, 'A node with no cluster is one node, and it says so');
 
         $row = Hilos::$rt->hilosClusterNodes[StateHilosClusterNode::STANDALONE_NODE_ID];
-        $this->assertNotNull($row, 'The standalone row is keyed by the empty id, since there is no identity to name it');
+        $this->assertNotNull($row, 'The standalone row is keyed by its effective id');
+        $this->assertSame(StateHilosClusterNode::STANDALONE_NODE_ID, $row->nodeId);
         $this->assertSame(NodeRole::Master->value, $row->role, 'A node on its own is its own master');
         $this->assertTrue($row->online, 'The node publishing the row is by definition up');
         $this->assertSame([], $row->capabilities);
@@ -111,6 +113,15 @@ final class DaemonManagerClusterNodesTest extends TestCase
             Hilos::$rt->hilosClusterNodes[StateHilosClusterNode::STANDALONE_NODE_ID]?->lastSeen,
             'Re-stamping the row on every call would make an unchanging node look like news',
         );
+    }
+
+    public function testConfiguredStandaloneIdKeysTheOnlyRow(): void
+    {
+        putenv('CLUSTER_NODE_ID=local-custom');
+        $this->startMaster(new ClusterNodesTestManager());
+
+        $this->assertCount(1, Hilos::$rt->hilosClusterNodes);
+        $this->assertSame('local-custom', Hilos::$rt->hilosClusterNodes['local-custom']?->nodeId);
     }
 
     public function testAJoinPublishesTheJoinedNodeWithEveryFieldOfItsRecord(): void

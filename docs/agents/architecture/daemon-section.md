@@ -251,11 +251,11 @@ Startup requires the section's pages and its three agents, refusing a partial ac
 The section is enabled in the demos that already enable `LOGS`: chat, tasks,
 polls, binance-btc-tracker and online-testing.
 The page agent serves the section, replacing the index agent in chat.
-The section's addresses carry the node
-(not in the code yet — HIL-1381).
+The six node child addresses carry a required node ID, including on standalone
+installations; Env mismatch is a cluster-wide address without one.
 
-The framework has six abstract Daemon pages, with thin concrete subclasses in
-all five demos. All six keys remain in
+The framework has eight abstract Daemon pages, with thin concrete subclasses in
+all five demos. All eight keys remain in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts).
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read

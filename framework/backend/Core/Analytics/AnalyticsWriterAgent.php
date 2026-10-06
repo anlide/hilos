@@ -199,7 +199,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
      */
     public function applyReady(AnalyticsJournalReadySignalData $ready, int $nowMs): void
     {
-        $node = $ready->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID;
+        $node = $ready->nodeId;
         $this->waitingNodes[$node] = true;
         if ($this->readingNode === $node) {
             $this->ask($node, $this->file, $this->offset, $nowMs);
@@ -215,7 +215,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
      */
     public function applyPortion(AnalyticsJournalPortionSignalData $portion, int $nowMs): void
     {
-        $node = $portion->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID;
+        $node = $portion->nodeId;
         if (
             $this->readingNode !== $node
             || $portion->offset !== $this->offset
@@ -302,7 +302,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
 
         $this->sendToAgent(
             HilosSignalConstants::ANALYTICS_JOURNAL_LOADED,
-            new AnalyticsJournalLoadedSignalData(nodeId: $node === HilosClusterNode::STANDALONE_NODE_ID ? null : $node, file: $file),
+            new AnalyticsJournalLoadedSignalData(nodeId: $node, file: $file),
         );
     }
 
@@ -328,7 +328,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
         $this->sendToAgent(
             HilosSignalConstants::ANALYTICS_JOURNAL_READ,
             new AnalyticsJournalReadSignalData(
-                nodeId: $node === HilosClusterNode::STANDALONE_NODE_ID ? null : $node,
+                nodeId: $node,
                 file: $file,
                 offset: $offset,
             ),

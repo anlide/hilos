@@ -80,12 +80,16 @@ describe('resolveHilosLogKeyRow', () => {
     })
   })
 
-  it('keeps a nameless node null, because that is the single-node installation', () => {
+  it('keeps the effective standalone node id', () => {
     const resolved = resolveHilosLogKeyRow(
-      keyTableRow('-:worker-0.log', { key: 'worker-0.log', bytes: 10 }),
+      keyTableRow('standalone:worker-0.log', {
+        node: 'standalone',
+        key: 'worker-0.log',
+        bytes: 10,
+      }),
     )
 
-    expect(resolved.node).toBeNull()
+    expect(resolved.node).toBe('standalone')
   })
 
   it('keeps an unmeasured growth null rather than reading it as a standstill', () => {
@@ -219,9 +223,9 @@ describe('logKeyViewerPath', () => {
     ).toBe('/hilos/logs/view/node-1/1799999000/worker-0.log')
   })
 
-  it('names the single-node installation by the dash segment the viewer reads', () => {
-    expect(logKeyViewerPath(row({ node: null }))).toBe(
-      '/hilos/logs/view/-/live/worker-0.log',
+  it('names the standalone node in the viewer address', () => {
+    expect(logKeyViewerPath(row({ node: 'standalone' }))).toBe(
+      '/hilos/logs/view/standalone/live/worker-0.log',
     )
   })
 

@@ -20,6 +20,15 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
+  it('keeps both new Environment pages and WebSockets unbuilt in every view layer', () => {
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      const unbuilt = hilosUnbuiltPages(layer)
+      expect(unbuilt.has(HilosPages.DAEMON_ENV)).toBe(true)
+      expect(unbuilt.has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(true)
+      expect(unbuilt.has(HilosPages.DAEMON_WEBSOCKETS)).toBe(true)
+    }
+  })
+
   it('removes project views only from this result and ignores unrelated keys', () => {
     expect(
       hilosUnbuiltPages('vue', [HilosPages.ROLES]).has(HilosPages.ROLES),

@@ -52,6 +52,8 @@ use Demo\Tasks\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Tasks\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
@@ -656,6 +658,8 @@ final class TasksTopologyRegistryTest extends TestCase
             DaemonCronPage::class,
             DaemonWebsocketsPage::class,
             DaemonHttpServerPage::class,
+            DaemonEnvPage::class,
+            DaemonEnvMismatchPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);

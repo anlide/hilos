@@ -27,6 +27,9 @@ final class HilosPageRouteParams
      */
     public const string HILOS_GUARDIAN_AGENT_AGENT_ID = AgentConstants::FIELD_AGENT_ID;
 
+    /** Route param for the Daemon section's node child pages. */
+    public const string HILOS_DAEMON_NODE_ID = 'nodeId';
+
     /** Legal document and revision route parameters. */
     public const string HILOS_LEGAL_DOCUMENT_KEY = 'documentKey';
     public const string HILOS_LEGAL_REVISION_ID = 'revisionId';

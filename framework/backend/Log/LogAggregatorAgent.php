@@ -279,7 +279,7 @@ final class LogAggregatorAgent extends AbstractAgent
     {
         $views = [];
         foreach ($this->index->nodes() as $slot) {
-            $row = Hilos::$rt?->hilosClusterNodes[$slot->nodeId ?? HilosClusterNode::STANDALONE_NODE_ID];
+            $row = Hilos::$rt?->hilosClusterNodes[$slot->nodeId];
             $views[] = new ClusterLogNodeView($slot->nodeId, $slot, $row?->online ?? true);
         }
 
@@ -421,14 +421,11 @@ final class LogAggregatorAgent extends AbstractAgent
     /**
      * Names a node the way a journal line wants it named.
      *
-     * A single-node installation has no id to print ({@see NodeLogIndex::$nodeId} is null there),
-     * so the whole subject of the sentence is built here rather than a stand-in id being minted.
-     *
-     * @param ?string $nodeId Node id, or null in a single-node installation
+     * @param string $nodeId Effective node id
      * @return string Subject naming that node
      */
-    private static function nodeSubject(?string $nodeId): string
+    private static function nodeSubject(string $nodeId): string
     {
-        return $nodeId === null ? 'the single node' : "node {$nodeId}";
+        return "node {$nodeId}";
     }
 }

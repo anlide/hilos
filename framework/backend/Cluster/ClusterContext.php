@@ -30,14 +30,15 @@ use Hilos\ProtectedMode\ProtectedModeLeadership;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
  * Facade context for cluster mode and the local node identity.
  *
  * This is the single seam through which the rest of the framework asks "are we
  * clustered, and who am I". It is always present on the facade; when cluster
- * mode is off it simply reports disabled and holds no identity, so a single-node
- * daemon carries this context at zero behavioral cost. Later cluster slices
+ * mode is off it reports disabled and has a stable local id without starting
+ * the cluster mesh. Later cluster slices
  * (the live node registry, the peer channel, the coordinator) hang off this same
  * context rather than adding further facade globals.
  *
@@ -168,17 +169,22 @@ final class ClusterContext
     }
 
     /**
-     * Returns this node's id: the origin HttpRouter gives a request it parks for an agent, and the
-     * node an agent answering that request compares it with.
+     * Returns this node's effective id in both cluster and standalone mode.
      *
-     * @return ?string This node's id, null off a cluster
+     * @return string This node's non-empty id
      * @throws EnvException When the cluster-enabled flag value is invalid or a cluster env value cannot be read
      * @throws ClusterConfigurationException When enabled but node config is missing or invalid
      * @throws ClusterDisabledException When the cluster reports itself on and then refuses its identity
      */
-    public function localNodeId(): ?string
+    public function localNodeId(): string
     {
-        return $this->isEnabled() ? $this->identity()->nodeId : null;
+        if ($this->isEnabled()) {
+            return $this->identity()->nodeId;
+        }
+
+        $configured = trim(Hilos::$env[EnvConstants::CLUSTER_NODE_ID]->string());
+
+        return $configured !== '' ? $configured : HilosClusterNode::STANDALONE_NODE_ID;
     }
 
     /**

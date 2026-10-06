@@ -54,9 +54,10 @@ function router(): HilosRouter {
 /** A live file catalog, with the no-name node of a single-node installation. */
 const CATALOG = {
   available: true,
+  clusterEnabled: false,
   nodes: [
     {
-      nodeId: '',
+      nodeId: 'standalone',
       available: true,
       batches: [],
       streams: [

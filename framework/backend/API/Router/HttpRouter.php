@@ -161,7 +161,7 @@ class HttpRouter
                     path: $route['path'],
                     query: $queryParams->toArray(),
                     sessionToken: $sessionToken,
-                    originNodeId: Hilos::$cluster?->localNodeId(),
+                    originNodeId: Hilos::$cluster?->isEnabled() === true ? Hilos::$cluster->localNodeId() : null,
                 ),
                 $analytics,
                 hrtime(true),

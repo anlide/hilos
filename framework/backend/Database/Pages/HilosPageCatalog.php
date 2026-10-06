@@ -331,33 +331,43 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_DAEMON => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Daemon',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Process metrics, workers, cron, websockets, and HTTP servers.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Nodes and their processes, with agent placement across them.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-cpu',
         ],
         HilosPageConstants::HILOS_DAEMON_WORKERS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Workers',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Worker processes and their current load.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Workers of one node and the agents running on them.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_DAEMON_AGENTS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Agents',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Registered agents and their assignment to workers.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Agent instances on this node, their workers and sources.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_DAEMON_CRON => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Cron',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Scheduled cron entries and their last run.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Schedule rules and their last run.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_DAEMON_WEBSOCKETS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'WebSockets',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Live websocket connections and subscriptions.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'WebSocket connections on this node.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_DAEMON_HTTP_SERVER => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'HTTP server',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Request metrics for a single HTTP server.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Metrics of this node\'s HTTP server.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
+        ],
+        HilosPageConstants::HILOS_DAEMON_ENV => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Environment',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Environment values of one node and where they came from.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
+        ],
+        HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Env mismatch',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Environment keys whose values differ across the cluster.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_LOGS => [

@@ -20,6 +20,7 @@ use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogTotals;
@@ -220,6 +221,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      *
      * @param PageAgentInterface $agent Hilos logs agent (for {@see PageAgentInterface::getAgentSignalSource()} when broadcasting)
      * @throws InvalidArgumentException When the overview signal cannot be named
+     * @throws EnvException When the cluster mode flag cannot be read
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -264,6 +266,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @param string $acceptKey Target connection accept key
      * @param PageRouteParams $params Route parameters (unused for this page)
      * @throws InvalidArgumentException When the overview signal cannot be named
+     * @throws EnvException When the cluster mode flag cannot be read
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -349,17 +352,17 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
 
         $batchesDueForTakeout = 0;
         $nodes = [];
-        // Cleared before the walk rather than beside the other scalars above: only a nameless slot
-        // ever fills them, so in a cluster they stay null and the disks are read out of the rows.
+        // A standalone installation keeps its single node's disk figures in the header.
         self::$logsOverviewFilesystemFreeBytes = null;
         self::$logsOverviewFilesystemTotalBytes = null;
         self::$logsOverviewFreeSpaceThresholdPercent = null;
+        $clusterEnabled = Hilos::$cluster?->isEnabled() === true;
         foreach ($index->nodes() as $slot) {
             $due = self::batchesDueOf($slot->index);
-            // Summed over every slot, the nameless one included: a single-node installation draws
+            // Summed over every slot: a single-node installation draws
             // no table, and the banner above it still has to say the batches are waiting.
             $batchesDueForTakeout += $due;
-            if ($slot->nodeId === null) {
+            if (!$clusterEnabled) {
                 self::fillFreeSpaceHeader($slot->index);
 
                 continue;
@@ -372,7 +375,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Copies the disk figures of the one slot that has no name into the header (HIL-869).
+     * Copies the standalone node's disk figures into the header (HIL-869).
      *
      * The mirror image of {@see self::nodeRow()}, and the reason there are two places at all: a
      * single-node installation draws no table, so a figure only its row could carry would never
@@ -382,7 +385,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * A node that could not be read leaves all three null, including the threshold it would have
      * resolved: a reading nobody took has no threshold to be judged against.
      *
-     * @param NodeLogIndex $index Index of the nameless slot, as that node last reported it
+     * @param NodeLogIndex $index Index of the standalone node, as it last reported it
      */
     private static function fillFreeSpaceHeader(NodeLogIndex $index): void
     {
@@ -567,7 +570,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * Each list is cut to the limit on its own and says so on its own: a tab counts what it shows,
      * and warnings past the limit say nothing about how many errors there were.
      *
-     * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture, the nameless one included
+     * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture
      * @param int $now Unix timestamp the window is measured back from
      */
     private static function fillRecent(array $slots, int $now): void
@@ -589,14 +592,14 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * shared millisecond is broken by node and then by stream — without a second key two entries
      * of the same instant swap places from frame to frame and the list jitters on a quiet screen.
      *
-     * The nameless slot is in, where the table above skips it: a single-node installation has no
-     * table and all of the failures, and the row still has to name a file to open.
+     * The standalone slot is included even though its node table is hidden; a recent entry still
+     * has to name the node and file to open.
      *
      * Both feeds go through this one method (HIL-868): the window, the order and the shape of a row
      * are the same question for errors and for warnings, and a second copy would part ways on the
      * first edit.
      *
-     * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture, the nameless one included
+     * @param list<ClusterLogNodeSlot> $slots Every slot of the cluster picture
      * @param int $now Unix timestamp the window is measured back from
      * @param Closure(NodeLogIndex): list<LogRecentEntry> $entriesOf Which feed of a node's index to read
      * @return list<array{nodeId: string, stream: string, at: string, message: string, traceFrames: ?int}> Every row
@@ -608,7 +611,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
 
         $rows = [];
         foreach ($slots as $slot) {
-            $nodeId = $slot->nodeId ?? HilosLogsOverviewSignalData::SELF_NODE_ID;
+            $nodeId = $slot->nodeId;
             foreach ($entriesOf($slot->index) as $entry) {
                 if ($entry->atMs < $oldestShown) {
                     continue;

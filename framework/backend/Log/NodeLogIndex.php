@@ -64,7 +64,7 @@ namespace Hilos\Log;
 final class NodeLogIndex
 {
     /**
-     * @param ?string $nodeId Cluster node this index was measured on, or null in a single-node installation
+     * @param string $nodeId Node this index was measured on
      * @param bool $available Whether the log store could be read
      * @param int $sampledAt Unix timestamp of the walk this index was built from
      * @param list<LogBatchSummary> $batches Rotation batches, ascending by timestamp
@@ -81,7 +81,7 @@ final class NodeLogIndex
      * @param int $freeSpaceThresholdPercent Percentage of the volume this node keeps as its free-space threshold
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly bool $available,
         public readonly int $sampledAt,
         public readonly array $batches,

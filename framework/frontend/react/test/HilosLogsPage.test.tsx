@@ -72,7 +72,7 @@ function failure(
   overrides: Partial<HilosLogsOverviewRecentEntry> = {},
 ): HilosLogsOverviewRecentEntry {
   return {
-    nodeId: '',
+    nodeId: 'standalone',
     stream: 'worker-monopolistic-5.error.log',
     at: '2026-09-06T10:00:02.125+00:00',
     message: 'login action failed',
@@ -361,7 +361,7 @@ describe('HilosLogsPage', () => {
 
     const row = byId(container, 'hilos-logs-recent-row')
     expect(row?.getAttribute('href')).toBe(
-      `/hilos/logs/view/-/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
+      `/hilos/logs/view/standalone/live/worker-0.error.log/${Date.parse('2026-09-06T10:00:02.125+00:00')}`,
     )
     expect(row?.textContent).toContain('login action failed')
   })

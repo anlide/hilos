@@ -15,6 +15,7 @@ use Hilos\Core\Analytics\AnalyticsStore;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
  * The writer's half of the analytics journal: a ready file loaded into the analytics tables (HIL-1154).
@@ -24,7 +25,7 @@ use Hilos\HilosException;
  */
 final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegrationTestCase
 {
-    private const string NODE = '';
+    private const string NODE = HilosClusterNode::STANDALONE_NODE_ID;
 
     private const string WORKER_KEY = '0123456789abcdef0123456789abcdef';
 
@@ -120,7 +121,7 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
             $this->rows('SELECT b.`session_token` FROM `hilos_analytics_ws_connection` c
                 JOIN `hilos_analytics_browser_session` b ON b.`id` = c.`browser_session_id`'),
         );
-        $this->assertSame([['', $this->lastFileName(), '11']], $this->rows(
+        $this->assertSame([[self::NODE, $this->lastFileName(), '11']], $this->rows(
             'SELECT `node_id`, `file_name`, `record_count` FROM `hilos_analytics_journal_file`',
         ));
     }
@@ -171,6 +172,45 @@ final class AnalyticsJournalLoaderIntegrationTest extends AnalyticsSchemaIntegra
         $this->assertTrue($second->alreadyLoaded);
         $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_agent_system_signal`'));
         $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_journal_file`'));
+    }
+
+    /**
+     * @throws HilosException When a legacy file cannot be loaded
+     */
+    public function testLegacyStandaloneHeaderLoadsUnderTheEffectiveId(): void
+    {
+        $lines = $this->lines([
+            AnalyticsJournalRecord::journal('', self::STARTED_TS),
+            AnalyticsJournalRecord::workerSession(self::WORKER_KEY, 1, false, self::STARTED_TS),
+        ]);
+
+        $outcome = $this->loader()->load(self::NODE, 'legacy.jsonl', $lines);
+
+        $this->assertFalse($outcome->alreadyLoaded);
+        $this->assertSame([[self::NODE, 'legacy.jsonl']], $this->rows(
+            'SELECT `node_id`, `file_name` FROM `hilos_analytics_journal_file`',
+        ));
+        $this->assertSame([['1']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_worker_session`'));
+    }
+
+    /**
+     * @throws HilosException When the legacy receipt cannot be read
+     */
+    public function testLegacyReceiptPreventsLoadingTheSameReadyFileAgain(): void
+    {
+        Database::sql(
+            'INSERT INTO `hilos_analytics_journal_file` (`node_id`, `file_name`, `record_count`, `loaded_ts`) VALUES (?, ?, 1, ?)',
+            ['', 'legacy.jsonl', self::STARTED_TS],
+        );
+        $lines = $this->lines([
+            AnalyticsJournalRecord::journal('', self::STARTED_TS),
+            AnalyticsJournalRecord::workerSession(self::WORKER_KEY, 1, false, self::STARTED_TS),
+        ]);
+
+        $outcome = $this->loader()->load(self::NODE, 'legacy.jsonl', $lines);
+
+        $this->assertTrue($outcome->alreadyLoaded);
+        $this->assertSame([['0']], $this->rows('SELECT COUNT(*) FROM `hilos_analytics_worker_session`'));
     }
 
     /**

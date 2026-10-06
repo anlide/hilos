@@ -131,6 +131,15 @@ final class HilosLogRotationsTableTest extends TestCase
         $this->assertSame(self::NOW - 10 * self::DAY, $due[0]->batchAt);
     }
 
+    public function testStandaloneRowUsesItsEffectiveNodeIdInTheKey(): void
+    {
+        $this->picture($this->node('standalone', [self::NOW]));
+
+        $row = $this->rows(new TableQueryDTO())[0];
+        $this->assertSame('standalone', $row->node);
+        $this->assertSame('standalone:' . self::NOW, $row->rowKey);
+    }
+
     /**
      * The point of the move, stated as a case (HIL-871): the node names a batch due that any rule
      * this process could read would have protected - it is the newest of its archive and a day

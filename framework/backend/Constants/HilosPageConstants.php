@@ -138,6 +138,12 @@ final class HilosPageConstants
     /** @var string Hilos daemon — HTTP server detail */
     public const string HILOS_DAEMON_HTTP_SERVER = 'hilos_daemon_http_server';
 
+    /** @var string Hilos daemon — node environment */
+    public const string HILOS_DAEMON_ENV = 'hilos_daemon_env';
+
+    /** @var string Hilos daemon — environment differences across the cluster */
+    public const string HILOS_DAEMON_ENV_MISMATCH = 'hilos_daemon_env_mismatch';
+
     /** @var string Hilos logs overview */
     public const string HILOS_LOGS = 'hilos_logs';
 

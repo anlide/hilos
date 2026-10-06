@@ -23,6 +23,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -145,6 +146,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      *
      * @param PageAgentInterface $agent Hilos logs agent, for {@see PageAgentInterface::getAgentSignalSource()}
      * @throws InvalidArgumentException When the catalog signal cannot be named
+     * @throws EnvException When the cluster mode flag cannot be read
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -254,6 +256,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * @param PageRouteParams $params Route parameters; what to read is named by the action, not by
      *     the address, so the page ignores them
      * @throws InvalidArgumentException When the catalog signal cannot be named
+     * @throws EnvException When the cluster mode flag cannot be read
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -301,7 +304,10 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      */
     private static function buildCatalog(): HilosLogsViewCatalogSignalData
     {
-        return HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index());
+        return HilosLogsViewCatalogSignalData::fromIndex(
+            ClusterLogIndexMirror::index(),
+            Hilos::$cluster?->isEnabled() === true,
+        );
     }
 
     /**
@@ -453,14 +459,14 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * no node ever answered to is a stale or mistyped choice, while a node the master last saw
      * offline is the machine whose failure is the very reason the logs are being opened.
      *
-     * An empty id is this node and is not looked up at all - a single-node install publishes
-     * itself under one, so a lookup would be asking whether this machine exists.
+     * A legacy empty id still means this node and bypasses lookup; new requests carry the
+     * effective id and are checked against the roster.
      *
      * Checking here is what keeps an undeliverable request from hanging: a frame sent to a node
      * that is not there is answered by nobody, and the browser would sit on the request until
      * its own action timeout expired.
      *
-     * @param string $nodeId Node id from the request, empty for this node
+     * @param string $nodeId Node id from the request, or legacy empty for this node
      * @throws TableActionException When no such node is known, or the master last saw it offline
      * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
      */

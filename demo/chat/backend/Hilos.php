@@ -100,6 +100,8 @@ use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -390,6 +392,8 @@ final class Hilos extends HilosFacade
         DaemonCronPage::PAGE => DaemonCronPage::class,
         DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
         DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
+        DaemonEnvPage::PAGE => DaemonEnvPage::class,
+        DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
         LogsWorkersPage::PAGE => LogsWorkersPage::class,

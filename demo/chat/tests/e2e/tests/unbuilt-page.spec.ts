@@ -5,7 +5,7 @@ import { gotoPage, PAGE_REFUSED } from '../helpers/page'
 test('answers 404 for a page the view layer has not built', async ({
   page,
 }) => {
-  for (const path of ['/hilos/roles', '/hilos/daemon/workers']) {
+  for (const path of ['/hilos/roles', '/hilos/daemon/standalone/websockets']) {
     await gotoPage(page, path, PAGE_REFUSED)
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     const error = page.getByTestId('page-error')

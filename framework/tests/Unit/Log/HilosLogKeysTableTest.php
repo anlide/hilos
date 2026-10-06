@@ -80,6 +80,15 @@ final class HilosLogKeysTableTest extends TestCase
         );
     }
 
+    public function testStandaloneRowUsesItsEffectiveNodeIdInTheKey(): void
+    {
+        $this->picture($this->node('standalone', [$this->summary('worker-0.log')]));
+
+        $row = $this->rows(new TableQueryDTO())[0];
+        $this->assertSame('standalone', $row->node);
+        $this->assertSame('standalone:worker-0.log', $row->rowKey);
+    }
+
     /**
      * The daemon's own streams are where the errors that bring anyone to this section land, so they
      * are a row like any other: listed, and counted in the total the pager is drawn from.

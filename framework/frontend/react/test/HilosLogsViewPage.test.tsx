@@ -60,9 +60,10 @@ function catalog(
 ): HilosLogViewerCatalog {
   return {
     available: true,
+    clusterEnabled: false,
     nodes: [
       {
-        nodeId: '',
+        nodeId: 'standalone',
         available: true,
         batches: [BATCH],
         streams: [
@@ -89,6 +90,7 @@ function catalog(
 function clusterCatalog(): HilosLogViewerCatalog {
   return {
     available: true,
+    clusterEnabled: true,
     nodes: [
       {
         nodeId: 'node-1',

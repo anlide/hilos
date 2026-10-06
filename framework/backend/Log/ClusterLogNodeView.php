@@ -26,12 +26,12 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 final class ClusterLogNodeView
 {
     /**
-     * @param ?string $nodeId Cluster node this view describes, or null in a single-node installation
+     * @param string $nodeId Node this view describes
      * @param ClusterLogNodeSlot $slot Slot holding the index as that node last reported it
      * @param bool $online Whether the cluster still counts the node as connected
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly ClusterLogNodeSlot $slot,
         public readonly bool $online,
     ) {

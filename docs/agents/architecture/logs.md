@@ -365,8 +365,10 @@ browser: logs_read_lines(nodeId, source, batchTimestamp, stream, cursor | anchor
 `AgentSignalConfigKey::NODE_FIELD` on the owner's `AGENT_SIGNALS` is what makes
 a per-node replica addressable ([../signals/routing.md](../signals/routing.md),
 node-addressed agent signals): an id naming another node becomes a delivery over
-the peer channel, an empty id means "here", which is what a single-node
-installation always sends. The owner is the last step of somebody else's action,
+the peer channel; the effective local ID names the local replica, including on a
+standalone installation. Old viewer bookmarks containing `-` resolve to that ID
+when the standalone catalog arrives. The physical log directory and old batches
+keep their existing paths. The owner is the last step of somebody else's action,
 so the frame carries the accept key, the action name and the request id, and
 the owner answers the browser itself — over a socket that another node may be
 holding. The whole read is guarded for that reason: a failure that only reached

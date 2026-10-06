@@ -118,12 +118,16 @@ describe('resolveHilosLogWorkerRow', () => {
     })
   })
 
-  it('keeps a nameless node null, because that is the single-node installation', () => {
+  it('keeps the effective standalone node id', () => {
     const resolved = resolveHilosLogWorkerRow(
-      workerTableRow('-:worker-0.log', { key: 'worker-0.log', bytes: 10 }),
+      workerTableRow('standalone:worker-0.log', {
+        node: 'standalone',
+        key: 'worker-0.log',
+        bytes: 10,
+      }),
     )
 
-    expect(resolved.node).toBeNull()
+    expect(resolved.node).toBe('standalone')
   })
 
   it('takes the identity from the row key, never from inside the slot', () => {
@@ -290,9 +294,9 @@ describe('logWorkerViewerPath', () => {
     ).toBe('/hilos/logs/view/node-1/1799999000/worker-0.log')
   })
 
-  it('names the single-node installation by the dash segment the viewer reads', () => {
-    expect(logWorkerViewerPath(row({ node: null }))).toBe(
-      '/hilos/logs/view/-/live/worker-0.log',
+  it('names the standalone node in the viewer address', () => {
+    expect(logWorkerViewerPath(row({ node: 'standalone' }))).toBe(
+      '/hilos/logs/view/standalone/live/worker-0.log',
     )
   })
 

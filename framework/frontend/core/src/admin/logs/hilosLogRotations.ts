@@ -64,8 +64,8 @@ export interface HilosLogRotationRow {
   readonly rowKey: string
   /** Unix timestamp of the rotation the batch was written by. */
   readonly batchAt: number
-  /** Cluster node holding the batch, or null in a single-node installation. */
-  readonly node: string | null
+  /** Effective node id holding the batch. */
+  readonly node: string
   /** Archive directory of the batch, relative to that node's log root. */
   readonly path: string
   /**
@@ -276,9 +276,7 @@ export function resolveHilosLogRotationRow(row: TableRow): HilosLogRotationRow {
     // reference, which would strip every other field off the row (normalizer.ts).
     rowKey: String(row.rowKey),
     batchAt: readNumber(slot, ROTATION_BATCH_AT_FIELD),
-    // Null is the single-node installation and not a missing name, which is why the
-    // node reads as nullable here and the column disappears rather than emptying.
-    node: readStringOrNull(slot, ROTATION_NODE_FIELD),
+    node: readString(slot, ROTATION_NODE_FIELD),
     path: readString(slot, ROTATION_PATH_FIELD),
     // Null is a node that named no log root — an older build reporting an index
     // frame without one — and not an address that happens to be blank.
@@ -493,10 +491,8 @@ export function createHilosLogRotationsActions(
       return context.actions.dispatch(
         LOGS_TAKEOUT_CONFIRM_ACTION,
         {
-          // The empty id is the wire's word for "this node", which is what a
-          // single-node installation always sends: it names no nodes at all, so
-          // there is no id to send and none to look up on the other side.
-          nodeId: row.node ?? '',
+          // Send the effective ID even when the one-node picker is hidden.
+          nodeId: row.node,
           batchTimestamp: row.batchAt,
         },
         { replySchema: logsTakeoutConfirmReplySchema },
@@ -504,7 +500,7 @@ export function createHilosLogRotationsActions(
     },
     sendTakeoutUndo(row) {
       return context.actions.dispatch(LOGS_TAKEOUT_UNDO_ACTION, {
-        nodeId: row.node ?? '',
+        nodeId: row.node,
         batchTimestamp: row.batchAt,
       })
     },
@@ -739,25 +735,25 @@ export function rotationUndoNotice(
  * Where the batch lies, said the way an operator has to say it to reach it.
  *
  * In a cluster the node leads the address, because the batch is on that machine
- * and only on it — logs do not converge anywhere. In a single-node installation
- * there is no node to name and the address is the path alone.
+ * and only on it — logs do not converge anywhere. In a standalone installation
+ * the address is the path alone even though its node has a technical id.
  *
  * Null is a node that reported no log root: it has no address to give, and this
  * screen must not fill the gap with its OWN root — the page worker knows where
  * ITS logs live, and that directory is on the wrong machine.
  *
  * @param row The batch to address.
+ * @param clusterEnabled Whether this installation runs in cluster mode.
  */
 export function rotationTakeoutAddress(
   row: HilosLogRotationRow,
+  clusterEnabled: boolean,
 ): string | null {
   if (row.absolutePath === null) {
     return null
   }
 
-  return row.node === null
-    ? row.absolutePath
-    : `${row.node}:${row.absolutePath}`
+  return !clusterEnabled ? row.absolutePath : `${row.node}:${row.absolutePath}`
 }
 
 /**
@@ -773,20 +769,21 @@ export function rotationTakeoutAddress(
  * {@link rotationTakeoutAddress} gives.
  *
  * @param row The batch to carry off.
+ * @param clusterEnabled Whether this installation runs in cluster mode.
  */
 export function rotationTakeoutCommand(
   row: HilosLogRotationRow,
+  clusterEnabled: boolean,
 ): string | null {
-  const address = rotationTakeoutAddress(row)
+  const address = rotationTakeoutAddress(row, clusterEnabled)
   if (address === null) {
     return null
   }
 
   const batch = rotationBatchDirectoryName(row)
-  const destination =
-    row.node === null
-      ? `./cold-logs/${batch}/`
-      : `./cold-logs/${row.node}/${batch}/`
+  const destination = !clusterEnabled
+    ? `./cold-logs/${batch}/`
+    : `./cold-logs/${row.node}/${batch}/`
 
   return `rsync -a ${address} ${destination}`
 }

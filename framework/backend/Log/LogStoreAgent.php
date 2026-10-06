@@ -39,6 +39,7 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesReplyDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmReplyDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -221,8 +222,8 @@ final class LogStoreAgent extends AbstractAgent
     /** @var ?NodeLogIndexDelta Difference the last walk made, or null before the agent has started */
     private ?NodeLogIndexDelta $lastDelta = null;
 
-    /** @var ?string Cluster node this agent measures, or null in a single-node installation */
-    private ?string $nodeId = null;
+    /** @var string Effective node id this agent measures */
+    private string $nodeId = HilosClusterNode::STANDALONE_NODE_ID;
 
     /** @var array<string, LogGrowthWindow> Key → its rolling day window */
     private array $windows = [];
@@ -318,8 +319,7 @@ final class LogStoreAgent extends AbstractAgent
         // now; anything else would fire once on every start of every node.
         $this->lastRotationAt = microtime(true);
         $cluster = Hilos::$cluster;
-        $clustered = $cluster !== null && $cluster->isEnabled();
-        $this->nodeId = $clustered ? $cluster->identity()->nodeId : null;
+        $this->nodeId = $cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
         // Seeded as readable so the baseline walk stays silent on a healthy store and still says
         // one line on a broken one: a start is not a crossing, an unreadable directory is news.
         $this->index = new NodeLogIndex(

@@ -7296,14 +7296,15 @@ abstract class DaemonManager extends BaseManager implements
 
         try {
             if (Hilos::$cluster?->isEnabled() !== true) {
+                $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
                 // Published once and never again: with no cluster there is no membership to
                 // change, and the row's own presence is what records that it has been said.
-                if (isset(Hilos::$rt->hilosClusterNodes[StateHilosClusterNode::STANDALONE_NODE_ID])) {
+                if (isset(Hilos::$rt->hilosClusterNodes[$nodeId])) {
                     return;
                 }
 
                 Hilos::$rt->hilosClusterNodes->actions->publish(
-                    StateHilosClusterNode::STANDALONE_NODE_ID,
+                    $nodeId,
                     NodeRole::Master->value,
                     [],
                     null,

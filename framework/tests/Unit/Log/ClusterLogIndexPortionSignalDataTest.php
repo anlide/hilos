@@ -56,21 +56,19 @@ final class ClusterLogIndexPortionSignalDataTest extends TestCase
     }
 
     /**
-     * A single-node installation names itself with nothing at all, and the null has to arrive as a
-     * null rather than as the empty string a slot is keyed by: the two are the same key on the
-     * receiver, but only one of them is a node id a configuration could produce.
+     * A standalone slot retains its effective ID across the wire.
      */
-    public function testASlotWithoutANodeIdSurvivesTheRoundTripWithoutTakingAnotherSlot(): void
+    public function testAStandaloneSlotSurvivesTheRoundTripWithoutTakingAnotherSlot(): void
     {
         $slots = [
-            new ClusterLogNodeSlot(null, $this->fullIndex(null), self::T0),
+            new ClusterLogNodeSlot('standalone', $this->fullIndex('standalone'), self::T0),
             new ClusterLogNodeSlot('node-2', $this->fullIndex('node-2'), self::T0),
         ];
 
         $restored = $this->roundTrip(ClusterLogIndexPortionSignalData::ofSlots($slots, true));
 
         $this->assertCount(2, $restored->nodes);
-        $this->assertNull($restored->nodes[0]->nodeId);
+        $this->assertSame('standalone', $restored->nodes[0]->nodeId);
         $this->assertSame('node-2', $restored->nodes[1]->nodeId);
         $this->assertCount(2, $restored->toIndex()->nodes());
     }
@@ -173,10 +171,10 @@ final class ClusterLogIndexPortionSignalDataTest extends TestCase
     }
 
     /**
-     * @param ?string $nodeId Node the index was measured on, or null in a single-node installation
+     * @param string $nodeId Effective node ID of the index
      * @return NodeLogIndex Index with every kind of row and an unfilled day window in it
      */
-    private function fullIndex(?string $nodeId): NodeLogIndex
+    private function fullIndex(string $nodeId): NodeLogIndex
     {
         return new NodeLogIndex(
             nodeId: $nodeId,

@@ -251,6 +251,7 @@ export function HilosLogsRotationsPage({
   // The takeout dialog: how to carry one batch off, and the button that records
   // that it was.
   const [takeoutOpen, setTakeoutOpen] = useState(false)
+  const [takeoutClustered, setTakeoutClustered] = useState(false)
   // A snapshot of the row the dialog opened on, so a window re-served underneath it
   // (the page re-sends one whenever the picture moves) does not swap the batch the
   // operator is reading the address of.
@@ -261,9 +262,13 @@ export function HilosLogsRotationsPage({
       ? null
       : rotationTakeoutNotice(focusedRow)
   const takeoutAddress =
-    takeoutRow === null ? null : rotationTakeoutAddress(takeoutRow)
+    takeoutRow === null
+      ? null
+      : rotationTakeoutAddress(takeoutRow, takeoutClustered)
   const takeoutCommand =
-    takeoutRow === null ? null : rotationTakeoutCommand(takeoutRow)
+    takeoutRow === null
+      ? null
+      : rotationTakeoutCommand(takeoutRow, takeoutClustered)
 
   // Taking the word back (HIL-759). The judge is the physical batch and never a
   // timer in this tab — the node refuses only when the directory is gone.
@@ -290,6 +295,7 @@ export function HilosLogsRotationsPage({
       return
     }
     takeout.clearError()
+    setTakeoutClustered(clustered)
     setTakeoutRow(fresh)
     setTakeoutOpen(true)
   }

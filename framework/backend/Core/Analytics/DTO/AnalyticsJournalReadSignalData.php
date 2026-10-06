@@ -14,12 +14,11 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * {@see AnalyticsWriterAgent} → the {@see AnalyticsJournalAgent} of a node: the next portion of a ready file (HIL-1154).
  *
- * {@see self::$nodeId} is the address ({@see AgentSignalConfigKey::NODE_FIELD}): null or empty is
- * the writer's own node.
+ * {@see self::$nodeId} is the address ({@see AgentSignalConfigKey::NODE_FIELD}).
  */
 final class AnalyticsJournalReadSignalData extends BaseDTO implements SignalDataInterface
 {
-    /** Payload key: node whose journal is read, null for the sender's own. */
+    /** Payload key: node whose journal is read. */
     public const string nodeId = 'nodeId';
 
     /** Payload key: ready file to read, '' for the oldest ready file of that node. */
@@ -32,12 +31,12 @@ final class AnalyticsJournalReadSignalData extends BaseDTO implements SignalData
     public const string OLDEST_READY = '';
 
     /**
-     * @param ?string $nodeId Node whose journal is read, null for the sender's own
+     * @param string $nodeId Node whose journal is read
      * @param string $file Ready file to read, {@see self::OLDEST_READY} for the oldest ready file
      * @param int $offset Byte offset the portion starts at
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly string $file,
         public readonly int $offset,
     ) {
@@ -67,8 +66,13 @@ final class AnalyticsJournalReadSignalData extends BaseDTO implements SignalData
             throw new InvalidFormatException('Analytics journal read carries a negative offset');
         }
 
+        $nodeId = self::requireString($data, self::nodeId);
+        if ($nodeId === '') {
+            throw new InvalidFormatException('Analytics journal node id must not be empty');
+        }
+
         return new static(
-            nodeId: self::optionalString($data, self::nodeId),
+            nodeId: $nodeId,
             file: self::requireString($data, self::file),
             offset: $offset,
         );

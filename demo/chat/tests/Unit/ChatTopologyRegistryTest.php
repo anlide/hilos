@@ -11,6 +11,8 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -279,6 +281,8 @@ final class ChatTopologyRegistryTest extends TestCase
             DaemonCronPage::class,
             DaemonWebsocketsPage::class,
             DaemonHttpServerPage::class,
+            DaemonEnvPage::class,
+            DaemonEnvMismatchPage::class,
         ] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);

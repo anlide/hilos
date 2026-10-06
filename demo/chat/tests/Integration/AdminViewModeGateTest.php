@@ -12,6 +12,7 @@ use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Cluster\ClusterContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -140,6 +141,10 @@ final class AdminViewModeGateTest extends IntegrationTestCase
 
     private int $adminId;
 
+    private ?ClusterContext $previousCluster = null;
+
+    private string|false $previousClusterEnabled = false;
+
     /**
      * How many nodes the fixture picture holds; each one more moves the header of the log keys.
      *
@@ -151,6 +156,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousCluster = Hilos::$cluster;
+        $this->previousClusterEnabled = getenv('CLUSTER_ENABLED');
         Hilos::initBrowser();
         Hilos::initSignalRouter(new ChatSignalRouter());
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
@@ -186,6 +193,12 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         Hilos::initBrowser();
         $this->drainSignals();
         Hilos::$sr = null;
+        Hilos::$cluster = $this->previousCluster;
+        if ($this->previousClusterEnabled === false) {
+            putenv('CLUSTER_ENABLED');
+        } else {
+            putenv('CLUSTER_ENABLED=' . $this->previousClusterEnabled);
+        }
         parent::tearDown();
     }
 
@@ -536,6 +549,9 @@ final class AdminViewModeGateTest extends IntegrationTestCase
      */
     private function growTheClusterPicture(): void
     {
+        // This fixture models named cluster nodes; mode now comes from configuration, not the IDs.
+        putenv('CLUSTER_ENABLED=true');
+        Hilos::$cluster ??= new ClusterContext();
         self::$reportedNodes++;
 
         $slots = [];

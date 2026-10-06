@@ -23,7 +23,6 @@ import {
   readNumber,
   readNumberOrNull,
   readString,
-  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
@@ -40,8 +39,8 @@ export interface HilosLogKeyRow {
   readonly rowKey: string
   /** File basename of the stream, the name that survives rotation. */
   readonly key: string
-  /** Cluster node the file lives on, or null in a single-node installation. */
-  readonly node: string | null
+  /** Effective node ID of the file. */
+  readonly node: string
   /**
    * Stream class: {@link HILOS_LOG_CLASS_DAEMON}, {@link HILOS_LOG_CLASS_AGENT} or
    * {@link HILOS_LOG_CLASS_WORKER}.
@@ -183,9 +182,8 @@ export function resolveHilosLogKeyRow(row: TableRow): HilosLogKeyRow {
     // reference, which would strip every other field off the row (normalizer.ts).
     rowKey: String(row.rowKey),
     key: readString(slot, KEY_NAME_FIELD),
-    // Null is the single-node installation and not a missing name, which is why the
-    // node reads as nullable here and the column disappears rather than emptying.
-    node: readStringOrNull(slot, KEY_NODE_FIELD),
+    // Keep the node on the row even when the one-node column is hidden.
+    node: readString(slot, KEY_NODE_FIELD),
     class: readString(slot, KEY_CLASS_FIELD),
     live: readBoolean(slot, KEY_LIVE_FIELD),
     batchCount: readNumber(slot, KEY_BATCH_COUNT_FIELD),
@@ -569,9 +567,7 @@ export function logKeyViewerPath(row: HilosLogKeyRow): string {
   }
 
   return logViewerPath({
-    // The empty node is the single-node installation, which the viewer's own address
-    // builder turns into the dash segment; null here means the same thing.
-    nodeId: row.node ?? '',
+    nodeId: row.node,
     source,
     stream: row.key,
     anchorAtMs: null,

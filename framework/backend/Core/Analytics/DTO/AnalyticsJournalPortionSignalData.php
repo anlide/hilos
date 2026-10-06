@@ -20,7 +20,7 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalDataInterface
 {
-    /** Payload key: node whose journal answered, null outside a cluster. */
+    /** Payload key: node whose journal answered. */
     public const string nodeId = 'nodeId';
 
     /** Payload key: ready file the portion belongs to, '' when the node has none. */
@@ -48,7 +48,7 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
     public const string NO_READY_FILE = '';
 
     /**
-     * @param ?string $nodeId Node whose journal answered, null outside a cluster
+     * @param string $nodeId Node whose journal answered
      * @param string $file Ready file the portion belongs to, {@see self::NO_READY_FILE} when the node has none
      * @param int $offset Byte offset the portion starts at
      * @param int $nextOffset Byte offset to ask for next
@@ -58,7 +58,7 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
      * @param int $passedOver Lines omitted for exceeding the journal line limit
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly string $file,
         public readonly int $offset,
         public readonly int $nextOffset,
@@ -104,8 +104,13 @@ final class AnalyticsJournalPortionSignalData extends BaseDTO implements SignalD
             throw new InvalidFormatException('Payload carries a negative count under key ' . self::passedOver);
         }
 
+        $nodeId = self::requireString($data, self::nodeId);
+        if ($nodeId === '') {
+            throw new InvalidFormatException('Analytics journal node id must not be empty');
+        }
+
         return new static(
-            nodeId: self::optionalString($data, self::nodeId),
+            nodeId: $nodeId,
             file: self::requireString($data, self::file),
             offset: self::requireInt($data, self::offset),
             nextOffset: self::requireInt($data, self::nextOffset),

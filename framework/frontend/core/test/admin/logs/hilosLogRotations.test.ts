@@ -120,12 +120,16 @@ describe('resolveHilosLogRotationRow', () => {
     })
   })
 
-  it('keeps a nameless node null, because that is the single-node installation', () => {
+  it('keeps the effective standalone node id', () => {
     const resolved = resolveHilosLogRotationRow(
-      rotationTableRow('-:1800000000', { batchAt: 1800000000, bytes: 10 }),
+      rotationTableRow('standalone:1800000000', {
+        node: 'standalone',
+        batchAt: 1800000000,
+        bytes: 10,
+      }),
     )
 
-    expect(resolved.node).toBeNull()
+    expect(resolved.node).toBe('standalone')
   })
 
   it('keeps an unreported log root null, so no address is invented for it', () => {
@@ -385,37 +389,37 @@ describe('formatRetentionRule', () => {
 
 describe('rotationTakeoutAddress', () => {
   it('leads with the node, because the batch is on that machine and only there', () => {
-    expect(rotationTakeoutAddress(row())).toBe(
+    expect(rotationTakeoutAddress(row(), true)).toBe(
       'node-1:/var/log/hilos/archive/2027-01-15-08-00-00/',
     )
   })
 
-  it('is the path alone where there is no node to name', () => {
-    expect(rotationTakeoutAddress(row({ node: null }))).toBe(
+  it('is the path alone on a standalone installation', () => {
+    expect(rotationTakeoutAddress(row({ node: 'standalone' }), false)).toBe(
       '/var/log/hilos/archive/2027-01-15-08-00-00/',
     )
   })
 
   it('has nothing to say when the node reported no log root', () => {
-    expect(rotationTakeoutAddress(row({ absolutePath: null }))).toBeNull()
+    expect(rotationTakeoutAddress(row({ absolutePath: null }), true)).toBeNull()
   })
 })
 
 describe('rotationTakeoutCommand', () => {
   it('copies the batch into a folder named after it, under the node it came from', () => {
-    expect(rotationTakeoutCommand(row())).toBe(
+    expect(rotationTakeoutCommand(row(), true)).toBe(
       'rsync -a node-1:/var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/node-1/2027-01-15-08-00-00/',
     )
   })
 
-  it('drops the node level of the destination where there is no node', () => {
-    expect(rotationTakeoutCommand(row({ node: null }))).toBe(
+  it('drops the node level of the destination on standalone', () => {
+    expect(rotationTakeoutCommand(row({ node: 'standalone' }), false)).toBe(
       'rsync -a /var/log/hilos/archive/2027-01-15-08-00-00/ ./cold-logs/2027-01-15-08-00-00/',
     )
   })
 
   it('offers no command when there is no address to copy from', () => {
-    expect(rotationTakeoutCommand(row({ absolutePath: null }))).toBeNull()
+    expect(rotationTakeoutCommand(row({ absolutePath: null }), true)).toBeNull()
   })
 })
 
@@ -450,15 +454,15 @@ describe('createHilosLogRotationsActions', () => {
     ])
   })
 
-  it('sends the empty id for a nameless node, which is how the wire says "this one"', () => {
+  it('sends the effective ID for the standalone node', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutConfirm(
-      row({ node: null }),
+      row({ node: 'standalone' }),
     )
 
     expect(sent[0]?.payload).toEqual({
-      nodeId: '',
+      nodeId: 'standalone',
       batchTimestamp: 1800000000,
     })
   })
@@ -478,15 +482,15 @@ describe('createHilosLogRotationsActions', () => {
     ])
   })
 
-  it('withdraws from a nameless node with the empty id too', () => {
+  it('withdraws from the standalone node using its effective ID', () => {
     const sent: Array<{ action: string; payload: unknown }> = []
 
     createHilosLogRotationsActions(dispatchContext(sent)).sendTakeoutUndo(
-      row({ node: null }),
+      row({ node: 'standalone' }),
     )
 
     expect(sent[0]?.payload).toEqual({
-      nodeId: '',
+      nodeId: 'standalone',
       batchTimestamp: 1800000000,
     })
   })

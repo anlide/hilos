@@ -40,22 +40,16 @@ use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
  */
 final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalDataInterface
 {
-    /**
-     * Node key: the node in a single-node installation, which has no id of its own.
-     *
-     * The empty string, and it is the same key {@see ClusterLogIndex} slots such an installation
-     * under. It travels rather than being left out, because the segment is what the reading action
-     * is addressed by, and {@see AbstractHilosLogsViewPage} already reads it as "this node".
-     */
-    public const string SINGLE_NODE_ID = '';
-
     /** Payload key: whether anything can be read at all, null while no picture has arrived. */
     public const string available = 'available';
+
+    /** Payload key: whether this installation is running in cluster mode. */
+    public const string clusterEnabled = 'clusterEnabled';
 
     /** Payload key: the nodes the picture holds, in the order it holds them. */
     public const string nodes = 'nodes';
 
-    /** Node row key: cluster node id, {@see self::SINGLE_NODE_ID} in a single-node installation. */
+    /** Node row key: effective node id. */
     public const string nodeId = 'nodeId';
 
     /** Node row key: ascending Unix timestamps of the rotation batches the node holds. */
@@ -83,12 +77,14 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
 
     /**
      * @param ?bool $available Whether anything can be read, null while no picture has arrived
+     * @param bool $clusterEnabled Whether cluster mode is enabled
      * @param list<array{nodeId: string, available: bool, batches: list<int>,
      *     streams: list<array{key: string, class: string, live: bool, batchTimestamps: list<int>}>}> $nodes
      *     The nodes the picture holds, each with its batches and its streams
      */
     public function __construct(
         public readonly ?bool $available,
+        public readonly bool $clusterEnabled,
         public readonly array $nodes,
     ) {
     }
@@ -97,9 +93,10 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
      * Projects the cluster picture into the catalog the selects are drawn from.
      *
      * @param ?ClusterLogIndex $index Cluster picture, or null while none has arrived
+     * @param bool $clusterEnabled Whether this installation runs in cluster mode
      * @return self Catalog of every node in that picture
      */
-    public static function fromIndex(?ClusterLogIndex $index): self
+    public static function fromIndex(?ClusterLogIndex $index, bool $clusterEnabled): self
     {
         $slots = $index?->nodes() ?? [];
         $nodes = [];
@@ -109,6 +106,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
 
         return new self(
             available: self::availabilityOf($slots),
+            clusterEnabled: $clusterEnabled,
             nodes: $nodes,
         );
     }
@@ -120,6 +118,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     {
         return [
             self::available => $this->available,
+            self::clusterEnabled => $this->clusterEnabled,
             self::nodes => $this->nodes,
         ];
     }
@@ -136,6 +135,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     {
         return [
             self::available => WireField::notPersonal(),
+            self::clusterEnabled => WireField::notPersonal(),
             self::nodes => WireField::each([
                 self::nodeId => WireField::notPersonal(),
                 self::available => WireField::notPersonal(),
@@ -166,6 +166,11 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
         $available = $data[self::available] ?? null;
         $nodes = [];
         foreach (self::rows($data, self::nodes) as $row) {
+            $nodeId = self::requireString($row, self::nodeId);
+            if ($nodeId === '') {
+                throw new InvalidFormatException('Log viewer catalog node id must not be empty');
+            }
+
             $streams = [];
             foreach (self::rows($row, self::streams) as $stream) {
                 $streams[] = [
@@ -177,7 +182,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
             }
 
             $nodes[] = [
-                self::nodeId => self::requireString($row, self::nodeId),
+                self::nodeId => $nodeId,
                 self::available => self::requireBool($row, self::available),
                 self::batches => self::timestamps($row, self::batches),
                 self::streams => $streams,
@@ -188,6 +193,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
             // Anything that is not a bool reads as null — "we do not know" — rather than as false:
             // false is the claim that every node was heard from and none of them could be read.
             available: is_bool($available) ? $available : null,
+            clusterEnabled: self::requireBool($data, self::clusterEnabled),
             nodes: $nodes,
         );
     }
@@ -232,7 +238,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
     private static function nodeToArray(ClusterLogNodeSlot $slot): array
     {
         return [
-            self::nodeId => $slot->nodeId ?? self::SINGLE_NODE_ID,
+            self::nodeId => $slot->nodeId,
             self::available => $slot->index->available,
             self::batches => array_map(
                 static fn(LogBatchSummary $batch): int => $batch->timestamp,

@@ -92,6 +92,7 @@ function catalog(
 ): HilosLogViewerCatalog {
   return {
     available: true,
+    clusterEnabled: true,
     nodes: [
       {
         nodeId: 'node-1',
@@ -326,8 +327,7 @@ describe('readLogViewerAddress', () => {
     })
   })
 
-  it('reads the single-node segment as the name that node reports under', () => {
-    // The empty string, not "no node": it is what the read request is addressed by.
+  it('keeps the legacy dash until the catalog resolves its node', () => {
     expect(
       readLogViewerAddress({
         nodeId: '-',
@@ -335,7 +335,7 @@ describe('readLogViewerAddress', () => {
         stream: 'daemon.log',
       }),
     ).toEqual({
-      nodeId: '',
+      nodeId: '-',
       source: 'live',
       stream: 'daemon.log',
       anchorAtMs: null,
@@ -386,11 +386,9 @@ describe('logViewerPath', () => {
     )
   })
 
-  it('writes the single-node segment rather than an empty one', () => {
-    // An empty segment is not a segment: the slots are positional, and a skipped
-    // node would slide the source into its place.
-    expect(logViewerPath(selection({ nodeId: '' }))).toBe(
-      '/hilos/logs/view/-/live/worker-0.log',
+  it('writes the effective standalone node id', () => {
+    expect(logViewerPath(selection({ nodeId: 'standalone' }))).toBe(
+      '/hilos/logs/view/standalone/live/worker-0.log',
     )
   })
 
@@ -717,12 +715,15 @@ describe('the catalog', () => {
     expect(schema.safeParse({ followId: '7', lines: [] }).success).toBe(false)
   })
 
-  it('offers a node select only where the nodes have names', () => {
+  it('offers a node select only in cluster mode', () => {
     expect(hasLogViewerNodes(catalog())).toBe(true)
     expect(
       hasLogViewerNodes(
         catalog({
-          nodes: [{ nodeId: '', available: true, batches: [], streams: [] }],
+          clusterEnabled: false,
+          nodes: [
+            { nodeId: 'standalone', available: true, batches: [], streams: [] },
+          ],
         }),
       ),
     ).toBe(false)
@@ -852,8 +853,8 @@ describe('createHilosLogViewer', () => {
     })
   })
 
-  it('sends the single-node name as the empty string it reports under', () => {
-    const { context, actions, address } = viewer(
+  it('resolves an old standalone bookmark before reading the file', () => {
+    const { context, connection, actions, address } = viewer(
       '/hilos/logs/view/-/live/daemon.log',
     )
 
@@ -863,9 +864,64 @@ describe('createHilosLogViewer', () => {
     view.setFollow(false)
     view.start()
 
-    expect(actions.lastRead().nodeId).toBe('')
+    expect(actions.sent).toHaveLength(0)
+    connection.sendCatalog(catalog({ clusterEnabled: false, nodes: [] }))
+    connection.reconnect()
+    expect(actions.sent).toHaveLength(0)
+    connection.sendCatalog(
+      catalog({
+        clusterEnabled: false,
+        nodes: [
+          { nodeId: 'standalone', available: true, batches: [], streams: [] },
+        ],
+      }),
+    )
+
+    expect(actions.lastRead().nodeId).toBe('standalone')
     expect(actions.lastRead().source).toBe('live')
     expect(actions.lastRead().batchTimestamp).toBeNull()
+    expect(address.written).toEqual([
+      '/hilos/logs/view/standalone/live/daemon.log',
+    ])
+  })
+
+  it('reads a configured standalone node whose real id is the legacy dash', () => {
+    const { context, connection, actions, address } = viewer(
+      '/hilos/logs/view/-/live/daemon.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    view.setFollow(false)
+    view.start()
+
+    connection.sendCatalog(catalog({ clusterEnabled: false, nodes: [] }))
+    expect(actions.sent).toHaveLength(0)
+    const dashCatalog = catalog({
+      clusterEnabled: false,
+      nodes: [{ nodeId: '-', available: true, batches: [], streams: [] }],
+    })
+    connection.sendCatalog(dashCatalog)
+    expect(actions.lastRead().nodeId).toBe('-')
+    expect(actions.sent).toHaveLength(1)
+    connection.sendCatalog(dashCatalog)
+    expect(actions.sent).toHaveLength(1)
+  })
+
+  it('does not re-read a cluster node named dash on every catalog update', () => {
+    const { context, connection, actions, address } = viewer(
+      '/hilos/logs/view/-/live/daemon.log',
+    )
+    const view = createHilosLogViewer(context, address)
+    view.setFollow(false)
+    view.start()
+
+    const dashCatalog = catalog({
+      nodes: [{ nodeId: '-', available: true, batches: [], streams: [] }],
+    })
+    connection.sendCatalog(dashCatalog)
+    expect(actions.lastRead().nodeId).toBe('-')
+    expect(actions.sent).toHaveLength(1)
+    connection.sendCatalog(dashCatalog)
+    expect(actions.sent).toHaveLength(1)
   })
 
   it('rewrites the address and starts the tail when a live file is chosen', () => {

@@ -9,6 +9,7 @@ use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -101,20 +102,18 @@ final class LogAggregatorAgentTest extends TestCase
     }
 
     /**
-     * A single-node installation has no node id, and the slot it lands in collides with nothing:
-     * an empty CLUSTER_NODE_ID is refused as a configuration error, so no real node is ever called
-     * the empty string.
+     * A standalone node keeps its own slot under its effective ID.
      */
     public function testTheSingleNodeInstallationKeepsASlotOfItsOwn(): void
     {
         $agent = $this->startedAgent();
 
-        $agent->applyNodeIndex($this->nodeIndex(null, keys: [$this->key('agent-a.log', 100)]));
+        $agent->applyNodeIndex($this->nodeIndex(HilosClusterNode::STANDALONE_NODE_ID, keys: [$this->key('agent-a.log', 100)]));
         $agent->applyNodeIndex($this->nodeIndex('node-1', keys: [$this->key('agent-a.log', 500)]));
 
-        $single = $agent->clusterIndex()->node(null);
+        $single = $agent->clusterIndex()->node(HilosClusterNode::STANDALONE_NODE_ID);
         $this->assertNotNull($single);
-        $this->assertNull($single->nodeId);
+        $this->assertSame(HilosClusterNode::STANDALONE_NODE_ID, $single->nodeId);
         $this->assertSame(100, $single->index->keys[0]->totalBytes);
         $this->assertSame(2, $agent->clusterIndex()->totals()->nodeCount);
     }
@@ -249,7 +248,7 @@ final class LogAggregatorAgentTest extends TestCase
      * @return NodeLogIndex Frame as a node would send it
      */
     private function nodeIndex(
-        ?string $nodeId,
+        string $nodeId,
         bool $available = true,
         int $sampledAt = self::T0,
         array $batches = [],

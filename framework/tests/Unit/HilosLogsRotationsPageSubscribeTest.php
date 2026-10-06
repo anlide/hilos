@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\AdminViewMode\HiddenValue;
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -21,24 +22,26 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Hilos;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\LogBatchSummary;
-use Hilos\Log\NodeLogIndex;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
-use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -61,6 +64,10 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsRotationsPageSubscribeTest extends TestCase
 {
+    private ?ClusterContext $previousCluster = null;
+
+    private ?EnvAccessor $previousEnv = null;
+
     private const string ACCEPT_KEY = 'ak-rotations-1';
 
     /** A second connection, for the case where one admin's arrival must not silence another's push. */
@@ -90,6 +97,11 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousCluster = Hilos::$cluster;
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+        putenv('CLUSTER_ENABLED=true');
 
         Hilos::$sr = new SignalRouter();
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
@@ -129,6 +141,9 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         Hilos::$sr = null;
         Hilos::$browser = null;
 
+        Hilos::$cluster = $this->previousCluster;
+        Hilos::$env = $this->previousEnv;
+        putenv('CLUSTER_ENABLED');
         parent::tearDown();
     }
 
@@ -260,7 +275,8 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
      */
     public function testASingleNodeInstallationNamesNoNodes(): void
     {
-        $this->picture($this->slot(null, available: true));
+        putenv('CLUSTER_ENABLED=false');
+        $this->picture($this->slot(HilosClusterNode::STANDALONE_NODE_ID, available: true));
         $page = new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
@@ -764,12 +780,12 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
     /**
      * Builds one node's slot holding a single batch.
      *
-     * @param ?string $nodeId Node the slot belongs to, null in a single-node installation
+     * @param string $nodeId Effective node name
      * @param bool $available Whether that node could read its log store
      * @param list<int> $due Batches this node's own retention rule recommends carrying off
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
-    private function slot(?string $nodeId, bool $available, array $due = []): ClusterLogNodeSlot
+    private function slot(string $nodeId, bool $available, array $due = []): ClusterLogNodeSlot
     {
         // An unreadable store reports empty projections, the way NodeLogIndex carries the state:
         // zeros there would claim a walk that never happened.

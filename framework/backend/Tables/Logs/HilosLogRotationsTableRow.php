@@ -71,7 +71,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     /**
      * @param string $rowKey Stable row key, `<node>:<timestamp>`
      * @param int $batchAt Unix timestamp of the rotation batch
-     * @param ?string $node Cluster node holding the batch, null in a single-node installation
+     * @param string $node Node holding the batch
      * @param string $path Archive directory of the batch, relative to the node's log root
      * @param ?string $absolutePath Archive directory of the batch on its own node, null when that
      *     node named no log root
@@ -87,7 +87,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
     public function __construct(
         public string $rowKey,
         public int $batchAt,
-        public ?string $node,
+        public string $node,
         public string $path,
         public ?string $absolutePath,
         public int $daemonFileCount,
@@ -155,7 +155,7 @@ final class HilosLogRotationsTableRow extends AbstractTableRow
         return new static(
             rowKey: self::requireString($data, self::rowKey),
             batchAt: self::requireInt($data, self::batchAt),
-            node: self::optionalString($data, self::node),
+            node: self::requireString($data, self::node),
             path: self::requireString($data, self::path),
             absolutePath: self::optionalString($data, self::absolutePath),
             daemonFileCount: self::requireInt($data, self::daemonFileCount),

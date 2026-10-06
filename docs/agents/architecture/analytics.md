@@ -103,7 +103,8 @@ analytics on in all six demos".
 
 `analytics_journal` is a reserved `$fs` name, and a **node** directory: the start
 refuses it declared `CLUSTER`. Inside it the journal agent owns the subdirectory
-`<APP_ENV>/<node>` — the cluster node id, or `node` off a cluster — so the
+`<APP_ENV>/<node>` — the cluster node id, or the preserved directory name `node`
+off a cluster even when its effective ID is `standalone` or a configured ID — so the
 environments that mount one data directory (chat's do) and the nodes of one
 volume never see each other's files. Directories are `0700`, files `0600`.
 
@@ -133,7 +134,7 @@ at the source, never at the writer. A `key`, `pageKey`, `userActionKey` or
 (`RandomHelper::hex(16)`) and stored as `UNHEX()` in its binary key column.
 
 ```
-{"t":"journal","v":2,"node":"<nodeId|''>","openedTs":…}          first line of a file, by the journal agent
+{"t":"journal","v":2,"node":"<nodeId>","openedTs":…}             first line of a new file, by the journal agent
 {"t":"worker_session","key","workerIndex","monopolistic","startedTs"}
 {"t":"worker_session_stop","key","ts"}
 {"t":"agent_session","key","workerKey","agentType","agentIndex","startedTs"}
@@ -194,7 +195,10 @@ otherwise produce a record of itself.
 `AnalyticsJournalLoader` loads one file in one transaction
 ([../orm/transactions.md](../orm/transactions.md)): the records in order, the facts
 in multi-row inserts of up to 500, then the mark in `hilos_analytics_journal_file`
-(`node_id` — `''` off a cluster — and `file_name`, unique), then the commit. A file
+(`node_id` — the effective node ID on every installation — and `file_name`, unique),
+then the commit. An older standalone ready file may still have `node: ''` in its
+header; the loader reads it without rewriting it and also checks an old empty-ID
+receipt before loading it again. A file
 already marked is only confirmed again: a lost confirmation or a writer that moved
 writes nothing twice. All SQL lives in `AnalyticsStore`.
 

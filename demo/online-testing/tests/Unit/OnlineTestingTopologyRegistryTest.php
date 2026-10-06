@@ -34,6 +34,8 @@ use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
@@ -127,6 +129,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonCronPage::PAGE => DaemonCronPage::class,
             DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
             DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
+            DaemonEnvPage::PAGE => DaemonEnvPage::class,
+            DaemonEnvMismatchPage::PAGE => DaemonEnvMismatchPage::class,
             LogsOverviewPage::PAGE => LogsOverviewPage::class,
             LogsKeysPage::PAGE => LogsKeysPage::class,
             LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -545,6 +549,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonCronPage::class,
             DaemonWebsocketsPage::class,
             DaemonHttpServerPage::class,
+            DaemonEnvPage::class,
+            DaemonEnvMismatchPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);

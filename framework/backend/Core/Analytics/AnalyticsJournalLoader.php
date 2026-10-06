@@ -225,7 +225,7 @@ final class AnalyticsJournalLoader
     /**
      * Loads a ready journal file, unless an earlier load already remembered it.
      *
-     * @param string $nodeId Cluster node id of the file's node, '' outside a cluster
+     * @param string $nodeId Effective node id of the file's node
      * @param string $fileName Name of the ready file
      * @param list<string> $lines Every line of the file, in order, without line breaks
      * @param int $passedOver Lines the journal reader omitted for exceeding its limit
@@ -235,6 +235,18 @@ final class AnalyticsJournalLoader
     public function load(string $nodeId, string $fileName, array $lines, int $passedOver = 0): AnalyticsJournalLoadOutcome
     {
         if ($this->store->isFileLoaded($nodeId, $fileName)) {
+            return AnalyticsJournalLoadOutcome::alreadyLoaded();
+        }
+
+        // A standalone file loaded before HIL-1381 may survive a crash between commit and
+        // confirmation. Its header carries the old empty id, which still owns that receipt.
+        $header = isset($lines[0]) ? json_decode($lines[0], true) : null;
+        if (
+            is_array($header)
+            && ($header[AnalyticsJournalRecord::KEY_TYPE] ?? null) === AnalyticsJournalRecord::TYPE_JOURNAL
+            && ($header[AnalyticsJournalRecord::KEY_NODE] ?? null) === ''
+            && $this->store->isFileLoaded('', $fileName)
+        ) {
             return AnalyticsJournalLoadOutcome::alreadyLoaded();
         }
 

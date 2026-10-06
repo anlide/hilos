@@ -544,6 +544,7 @@ export class HilosLogsRotationsPage {
   // that it was. Only a recommended batch offers it — a kept one is not being asked
   // for, and a taken one has already been answered.
   protected readonly takeoutOpen = signal(false)
+  private readonly takeoutClustered = signal(false)
   protected readonly takeoutRow = signal<HilosLogRotationRow | null>(null)
   protected readonly takeout = createHilosTrackedAction()
   protected readonly takeoutNotice = computed(() =>
@@ -627,12 +628,16 @@ export class HilosLogsRotationsPage {
   protected readonly takeoutAddress = computed(() => {
     const row = this.takeoutRow()
 
-    return row === null ? null : rotationTakeoutAddress(row)
+    return row === null
+      ? null
+      : rotationTakeoutAddress(row, this.takeoutClustered())
   })
   protected readonly takeoutCommand = computed(() => {
     const row = this.takeoutRow()
 
-    return row === null ? null : rotationTakeoutCommand(row)
+    return row === null
+      ? null
+      : rotationTakeoutCommand(row, this.takeoutClustered())
   })
   protected readonly takeoutTitle = computed(() => {
     const row = this.takeoutRow()
@@ -717,6 +722,7 @@ export class HilosLogsRotationsPage {
       return
     }
     this.takeout.clearError()
+    this.takeoutClustered.set(this.clustered())
     this.takeoutRow.set(fresh)
     this.takeoutOpen.set(true)
   }

@@ -281,14 +281,31 @@ final class NodeLogIndexSignalDataTest extends TestCase
     }
 
     /**
-     * A single-node installation names itself with nothing at all, and the null has to arrive as a
-     * null: an empty string there would be a node id no configuration can produce.
+     * A standalone index carries its effective ID across the wire.
      */
-    public function testAnIndexWithoutANodeIdSurvivesTheRoundTrip(): void
+    public function testAStandaloneIndexSurvivesTheRoundTrip(): void
     {
-        $restored = $this->roundTrip(new NodeLogIndex(null, true, self::T0, [], [], [], []));
+        $restored = $this->roundTrip(new NodeLogIndex('standalone', true, self::T0, [], [], [], []));
 
-        $this->assertNull($restored->nodeId);
+        $this->assertSame('standalone', $restored->nodeId);
+    }
+
+    public function testAFrameWithoutANodeIdIsRefused(): void
+    {
+        $payload = $this->payload();
+        unset($payload[NodeLogIndexSignalData::nodeId]);
+
+        $this->expectException(InvalidFormatException::class);
+        NodeLogIndexSignalData::fromArray($payload);
+    }
+
+    public function testAFrameWithAnEmptyNodeIdIsRefused(): void
+    {
+        $payload = $this->payload();
+        $payload[NodeLogIndexSignalData::nodeId] = '';
+
+        $this->expectException(InvalidFormatException::class);
+        NodeLogIndexSignalData::fromArray($payload);
     }
 
     /**
@@ -298,7 +315,7 @@ final class NodeLogIndexSignalDataTest extends TestCase
     public function testTheRoundTripHoldsThroughJson(): void
     {
         $index = new NodeLogIndex(
-            nodeId: null,
+            nodeId: 'standalone',
             available: true,
             sampledAt: self::T0,
             batches: [],

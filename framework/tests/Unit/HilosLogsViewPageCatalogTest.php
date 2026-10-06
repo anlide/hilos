@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -21,6 +24,7 @@ use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Pages\Logs\DTO\HilosLogsViewCatalogSignalData;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
@@ -37,6 +41,10 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsViewPageCatalogTest extends TestCase
 {
+    private ?ClusterContext $previousCluster = null;
+
+    private ?EnvAccessor $previousEnv = null;
+
     private const string ACCEPT_KEY = 'ak-logs-view-1';
 
     /** Comfortably past the ~100ms throttle {@see AbstractHilosLogsViewPage::onAgentTick()} keeps. */
@@ -51,6 +59,11 @@ final class HilosLogsViewPageCatalogTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousCluster = Hilos::$cluster;
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+        putenv('CLUSTER_ENABLED=true');
 
         Hilos::$sr = new SignalRouter();
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
@@ -73,6 +86,9 @@ final class HilosLogsViewPageCatalogTest extends TestCase
         Hilos::$sr = null;
         Hilos::$browser = null;
 
+        Hilos::$cluster = $this->previousCluster;
+        Hilos::$env = $this->previousEnv;
+        putenv('CLUSTER_ENABLED');
         parent::tearDown();
     }
 
@@ -144,22 +160,21 @@ final class HilosLogsViewPageCatalogTest extends TestCase
     }
 
     /**
-     * An installation with no cluster reports under no name, and the empty string is the name it
-     * gets here: the segment travels in the address and in the read request, where the page already
-     * reads it as "this node". Leaving the node out instead would give the screen nothing to
-     * address its read to.
+     * A standalone installation reports its technical id without showing a node picker.
      */
-    public function testASingleNodeInstallationIsNamedByTheEmptyString(): void
+    public function testASingleNodeInstallationUsesItsEffectiveId(): void
     {
-        $this->picture($this->slot(null, available: true));
+        putenv('CLUSTER_ENABLED=false');
+        $this->picture($this->slot(HilosClusterNode::STANDALONE_NODE_ID, available: true));
         $page = new LogsViewPageCatalogTestPage(new LogsViewPageCatalogTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
 
         $catalog = $this->catalog();
         $this->assertCount(1, $catalog->nodes);
+        $this->assertFalse($catalog->clusterEnabled);
         $this->assertSame(
-            HilosLogsViewCatalogSignalData::SINGLE_NODE_ID,
+            HilosClusterNode::STANDALONE_NODE_ID,
             $catalog->nodes[0][HilosLogsViewCatalogSignalData::nodeId],
         );
     }
@@ -199,12 +214,22 @@ final class HilosLogsViewPageCatalogTest extends TestCase
     {
         $this->picture($this->slot('node-1', available: true));
 
-        $catalog = HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index());
+        $catalog = HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index(), true);
 
         $this->assertSame(
             $catalog->toArray(),
             HilosLogsViewCatalogSignalData::fromArray($catalog->toArray())->toArray(),
         );
+    }
+
+    public function testTheCatalogRefusesAnEmptyNodeId(): void
+    {
+        $this->picture($this->slot('node-1', available: true));
+        $payload = HilosLogsViewCatalogSignalData::fromIndex(ClusterLogIndexMirror::index(), true)->toArray();
+        $payload[HilosLogsViewCatalogSignalData::nodes][0][HilosLogsViewCatalogSignalData::nodeId] = '';
+
+        $this->expectException(InvalidFormatException::class);
+        HilosLogsViewCatalogSignalData::fromArray($payload);
     }
 
     /**
@@ -366,11 +391,11 @@ final class HilosLogsViewPageCatalogTest extends TestCase
     /**
      * Builds one node's slot holding a single batch and a single stream.
      *
-     * @param ?string $nodeId Node the slot belongs to, null in a single-node installation
+     * @param string $nodeId Effective node name
      * @param bool $available Whether that node could read its log store
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
-    private function slot(?string $nodeId, bool $available): ClusterLogNodeSlot
+    private function slot(string $nodeId, bool $available): ClusterLogNodeSlot
     {
         // An unreadable store reports empty projections, the way NodeLogIndex carries the state:
         // zeros there would claim a walk that never happened.

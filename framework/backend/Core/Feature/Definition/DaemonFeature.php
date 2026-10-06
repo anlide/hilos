@@ -10,12 +10,14 @@ use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 
-/** The Daemon section's six pages and three agents form one independent feature. */
+/** The Daemon section's eight pages and three agents form one independent feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -35,6 +37,8 @@ final class DaemonFeature extends FeatureDefinition
                 AbstractHilosDaemonCronPage::class,
                 AbstractHilosDaemonWebsocketsPage::class,
                 AbstractHilosDaemonHttpServerPage::class,
+                AbstractHilosDaemonEnvPage::class,
+                AbstractHilosDaemonEnvMismatchPage::class,
             ],
             requiredAgents: [
                 HilosAgentType::HILOS_DAEMON,

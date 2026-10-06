@@ -24,6 +24,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Log\ClusterLogIndex;
@@ -243,6 +244,7 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
      * @param string $acceptKey Target connection accept key
      * @param PageRouteParams $params Route parameters (unused for this page)
      * @throws InvalidArgumentException When the header signal cannot be named
+     * @throws EnvException When the cluster mode flag cannot be read
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
@@ -329,21 +331,20 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
     }
 
     /**
-     * The nodes the filter may offer, which are the ones that have a name.
-     *
-     * An installation with no node id at all reports under no name, and an empty list is how the
-     * screen is told to drop its node column and node filter rather than offer a choice of one.
+     * The nodes the filter may offer. Standalone keeps its one-node controls hidden.
      *
      * @param ?ClusterLogIndex $index Cluster picture, or null while none has arrived
      * @return list<string> Node names, in the order the picture holds them
      */
     private static function namedNodesOf(?ClusterLogIndex $index): array
     {
+        if (Hilos::$cluster?->isEnabled() !== true) {
+            return [];
+        }
+
         $nodes = [];
         foreach ($index?->nodes() ?? [] as $slot) {
-            if ($slot->nodeId !== null) {
-                $nodes[] = $slot->nodeId;
-            }
+            $nodes[] = $slot->nodeId;
         }
 
         return $nodes;
@@ -577,10 +578,10 @@ abstract class AbstractHilosLogsRotationsPage extends AbstractHilosPage
      * no node ever answered to is a stale or mistyped choice, while a node the master last saw
      * offline is the machine whose archive is being asked about.
      *
-     * An empty id is this node and is not looked up at all — a single-node install publishes
-     * itself under one, so a lookup would be asking whether this machine exists.
+     * A legacy empty id still means this node and bypasses lookup; new requests carry the
+     * effective id and are checked against the roster.
      *
-     * @param string $nodeId Node id from the request, empty for this node
+     * @param string $nodeId Node id from the request, or legacy empty for this node
      * @throws TableActionException When no such node is known, or the master last saw it offline
      * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
      */

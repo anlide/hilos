@@ -167,7 +167,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
     public const string traceFrames = 'traceFrames';
 
     /**
-     * @param ?string $nodeId Cluster node this index was measured on, or null in a single-node installation
+     * @param string $nodeId Node this index was measured on
      * @param bool $available Whether the log store could be read
      * @param int $sampledAt Unix timestamp of the walk this index was built from
      * @param list<LogBatchSummary> $batches Rotation batches, ascending by timestamp
@@ -184,7 +184,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?int $freeSpaceThresholdPercent Share of the volume the node keeps free, or null when it did not say
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly bool $available,
         public readonly int $sampledAt,
         public readonly array $batches,
@@ -273,11 +273,9 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      *
      * A row that is not an object, and a row or a field the index has no meaning without, are
      * refused rather than filled in: an index that repaired itself here would put figures in the
-     * cluster picture that no node ever measured. Two fields are allowed to be absent and neither
-     * is a measurement: {@see self::nodeId}, because a single-node installation has no id to name
-     * itself with, and {@see self::dueBatchTimestamps}, because a node predating that key still
-     * reports an index worth drawing. The three free-space fields are absent for both reasons at
-     * once (HIL-869): a node predating them says nothing, and a node that has them says nothing
+     * cluster picture that no node ever measured. The due-batch field may be absent because a node
+     * predating that key still reports an index worth drawing. The three free-space fields may be
+     * absent from older nodes (HIL-869); a node that has them can also say nothing
      * about a filesystem that did not answer.
      *
      * @param array<string, mixed> $data Wire form of one node's index
@@ -287,6 +285,11 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      */
     public static function fromArray(array $data): static
     {
+        $nodeId = self::requireString($data, self::nodeId);
+        if ($nodeId === '') {
+            throw new InvalidFormatException('Log index node id must not be empty');
+        }
+
         $batches = [];
         foreach (self::rows($data, self::batches) as $row) {
             $batches[] = self::batchFromArray($row);
@@ -303,7 +306,7 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
         }
 
         return new static(
-            nodeId: self::optionalString($data, self::nodeId),
+            nodeId: $nodeId,
             available: self::requireBool($data, self::available),
             sampledAt: self::requireInt($data, self::sampledAt),
             batches: $batches,

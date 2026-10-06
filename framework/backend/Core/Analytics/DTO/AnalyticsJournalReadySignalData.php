@@ -18,9 +18,9 @@ final class AnalyticsJournalReadySignalData extends BaseDTO implements SignalDat
     public const string nodeId = 'nodeId';
 
     /**
-     * @param ?string $nodeId Node whose journal has a ready file, null outside a cluster
+     * @param string $nodeId Node whose journal has a ready file
      */
-    public function __construct(public readonly ?string $nodeId)
+    public function __construct(public readonly string $nodeId)
     {
     }
 
@@ -39,6 +39,11 @@ final class AnalyticsJournalReadySignalData extends BaseDTO implements SignalDat
      */
     public static function fromArray(array $data): static
     {
-        return new static(self::optionalString($data, self::nodeId));
+        $nodeId = self::requireString($data, self::nodeId);
+        if ($nodeId === '') {
+            throw new InvalidFormatException('Analytics journal node id must not be empty');
+        }
+
+        return new static($nodeId);
     }
 }

@@ -20,12 +20,12 @@ namespace Hilos\Log;
 final class ClusterLogNodeSlot
 {
     /**
-     * @param ?string $nodeId Cluster node this slot holds, or null in a single-node installation
+     * @param string $nodeId Node this slot holds
      * @param NodeLogIndex $index Index as the node sent it, stored whole
      * @param int $receivedAt Unix timestamp at which the frame carrying that index arrived
      */
     public function __construct(
-        public readonly ?string $nodeId,
+        public readonly string $nodeId,
         public readonly NodeLogIndex $index,
         public readonly int $receivedAt,
     ) {

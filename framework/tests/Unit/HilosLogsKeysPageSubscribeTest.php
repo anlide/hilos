@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
@@ -13,6 +14,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
@@ -21,6 +23,7 @@ use Hilos\Log\LogKeySummary;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
 use Hilos\Pages\Logs\DTO\HilosLogsKeysSignalData;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
@@ -38,6 +41,10 @@ use PHPUnit\Framework\TestCase;
  */
 final class HilosLogsKeysPageSubscribeTest extends TestCase
 {
+    private ?ClusterContext $previousCluster = null;
+
+    private ?EnvAccessor $previousEnv = null;
+
     private const string ACCEPT_KEY = 'ak-keys-1';
 
     /** Comfortably past the ~100ms throttle {@see AbstractHilosLogsKeysPage::onAgentTick()} keeps. */
@@ -55,6 +62,11 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousCluster = Hilos::$cluster;
+        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+        putenv('CLUSTER_ENABLED=true');
 
         Hilos::$sr = new SignalRouter();
         // Binds the base facade, whose page catalog answers for the framework admin pages. The
@@ -77,6 +89,9 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
         Hilos::$sr = null;
         Hilos::$browser = null;
 
+        Hilos::$cluster = $this->previousCluster;
+        Hilos::$env = $this->previousEnv;
+        putenv('CLUSTER_ENABLED');
         parent::tearDown();
     }
 
@@ -147,7 +162,8 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
      */
     public function testASingleNodeInstallationNamesNoNodes(): void
     {
-        $this->picture($this->slot(null, available: true));
+        putenv('CLUSTER_ENABLED=false');
+        $this->picture($this->slot(HilosClusterNode::STANDALONE_NODE_ID, available: true));
         $page = new LogsKeysPageSubscribeTestPage(new LogsKeysPageSubscribeTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
@@ -341,11 +357,11 @@ final class HilosLogsKeysPageSubscribeTest extends TestCase
     /**
      * Builds one node's slot holding a single stream.
      *
-     * @param ?string $nodeId Node the slot belongs to, null in a single-node installation
+     * @param string $nodeId Effective node name
      * @param bool $available Whether that node could read its log store
      * @return ClusterLogNodeSlot Slot as the aggregator would hold it
      */
-    private function slot(?string $nodeId, bool $available): ClusterLogNodeSlot
+    private function slot(string $nodeId, bool $available): ClusterLogNodeSlot
     {
         // An unreadable store reports empty projections, the way NodeLogIndex carries the state:
         // zeros there would claim a walk that never happened.

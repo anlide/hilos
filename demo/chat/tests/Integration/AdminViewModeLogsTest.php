@@ -14,6 +14,7 @@ use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Cluster\ClusterContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
@@ -72,9 +73,17 @@ final class AdminViewModeLogsTest extends IntegrationTestCase
     /** @var list<int> People created by the fixture */
     private array $userIds = [];
 
+    private ?ClusterContext $previousCluster = null;
+
+    private string|false $previousClusterEnabled = false;
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousCluster = Hilos::$cluster;
+        $this->previousClusterEnabled = getenv('CLUSTER_ENABLED');
+        putenv('CLUSTER_ENABLED=true');
+        Hilos::$cluster ??= new ClusterContext();
         Hilos::initBrowser();
         Hilos::initSignalRouter(new ChatSignalRouter());
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
@@ -130,6 +139,12 @@ final class AdminViewModeLogsTest extends IntegrationTestCase
         if ($this->userIds !== []) {
             Database::sqlRun('DELETE FROM hilos_session WHERE user_id IN (' . implode(',', $this->userIds) . ')');
             Database::sqlRun('DELETE FROM hilos_user WHERE id IN (' . implode(',', $this->userIds) . ')');
+        }
+        Hilos::$cluster = $this->previousCluster;
+        if ($this->previousClusterEnabled === false) {
+            putenv('CLUSTER_ENABLED');
+        } else {
+            putenv('CLUSTER_ENABLED=' . $this->previousClusterEnabled);
         }
         parent::tearDown();
     }

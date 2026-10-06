@@ -69,9 +69,6 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
     /** Separator between the node and the log key inside a row key. */
     private const string ROW_KEY_SEPARATOR = ':';
 
-    /** Stands in for the node in a row key when the installation has no node id at all. */
-    private const string ROW_KEY_NODELESS = '-';
-
     /** Filters whose options this table counts: both of them, the rows being in memory already. */
     private const array FACETED_FILTERS = [self::FILTER_NODE, self::FILTER_TYPE];
 
@@ -365,12 +362,12 @@ final class HilosLogWorkersTable extends TableDefinition implements ViewportTabl
     /**
      * Builds the row key that tells one stream name on two nodes apart.
      *
-     * @param ?string $nodeId Node the file lives on, null in a single-node installation
+     * @param string $nodeId Node the file lives on
      * @param string $key File basename of the stream
      * @return string Stable row key
      */
-    private static function rowKey(?string $nodeId, string $key): string
+    private static function rowKey(string $nodeId, string $key): string
     {
-        return ($nodeId ?? self::ROW_KEY_NODELESS) . self::ROW_KEY_SEPARATOR . $key;
+        return $nodeId . self::ROW_KEY_SEPARATOR . $key;
     }
 }

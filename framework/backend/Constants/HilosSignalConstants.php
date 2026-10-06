@@ -255,6 +255,12 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos daemon HTTP server page. */
     public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_HTTP_SERVER = 'subscription_page_hilos_daemon_http_server';
 
+    /** Subscription signal for Hilos daemon node environment page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_ENV = 'subscription_page_hilos_daemon_env';
+
+    /** Subscription signal for Hilos daemon cluster environment differences page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_ENV_MISMATCH = 'subscription_page_hilos_daemon_env_mismatch';
+
     /** Subscription signal for Hilos logs overview page. */
     public const string SUBSCRIPTION_PAGE_HILOS_LOGS = 'subscription_page_hilos_logs';
 

@@ -86,7 +86,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $writer->step(self::T0 + AnalyticsWriterAgent::READ_TIMEOUT_MS);
         $this->assertNothingSent();
 
-        $writer->applyReady(new AnalyticsJournalReadySignalData(null), self::T0);
+        $writer->applyReady(new AnalyticsJournalReadySignalData(HilosClusterNode::STANDALONE_NODE_ID), self::T0);
         $writer->step(self::T0);
         $this->assertRead('', 0);
     }
@@ -101,7 +101,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $this->assertRead('', 0);
 
         $writer->applyPortion($this->portion(self::FILE, 0, 50, [
-            $this->line(AnalyticsJournalRecord::journal('', self::T0)),
+            $this->line(AnalyticsJournalRecord::journal(HilosClusterNode::STANDALONE_NODE_ID, self::T0)),
             $this->line(AnalyticsJournalRecord::workerSession(self::WORKER_KEY, 1, false, self::T0)),
         ], false), self::T0);
         $this->assertRead(self::FILE, 50);
@@ -131,7 +131,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $writer->step(self::T0);
         $this->assertRead('', 0);
         $writer->applyPortion($this->portion(self::FILE, 0, 50, [
-            $this->line(AnalyticsJournalRecord::journal('', self::T0)),
+            $this->line(AnalyticsJournalRecord::journal(HilosClusterNode::STANDALONE_NODE_ID, self::T0)),
         ], false, passedOver: 1), self::T0);
         $this->assertRead(self::FILE, 50);
         $writer->applyPortion($this->portion(self::FILE, 50, 90, [
@@ -153,15 +153,18 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $writer->step(self::T0);
         $this->assertRead('', 0);
         $writer->applyPortion($this->portion(self::FILE, 0, 50, [
-            $this->line(AnalyticsJournalRecord::journal('', self::T0)),
+            $this->line(AnalyticsJournalRecord::journal(HilosClusterNode::STANDALONE_NODE_ID, self::T0)),
         ], false, passedOver: 2), self::T0);
         $this->assertRead(self::FILE, 50);
-        $writer->applyPortion(new AnalyticsJournalPortionSignalData(null, self::FILE, 50, 50, [], false, true), self::T0);
+        $writer->applyPortion(
+            new AnalyticsJournalPortionSignalData(HilosClusterNode::STANDALONE_NODE_ID, self::FILE, 50, 50, [], false, true),
+            self::T0,
+        );
 
         $writer->step(self::T0 + 1);
         $this->assertRead('', 0);
         $writer->applyPortion($this->portion(self::SECOND_FILE, 0, 50, [
-            $this->line(AnalyticsJournalRecord::journal('', self::T0 + 1)),
+            $this->line(AnalyticsJournalRecord::journal(HilosClusterNode::STANDALONE_NODE_ID, self::T0 + 1)),
         ], true, passedOver: 1), self::T0 + 1);
         $this->assertLoaded(self::SECOND_FILE);
         $this->assertSame([['line_too_long', '1']], $this->rows(
@@ -176,7 +179,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
     {
         Database::sql(
             'INSERT INTO `hilos_analytics_journal_file` (`node_id`, `file_name`, `record_count`, `loaded_ts`) VALUES (?, ?, 1, ?)',
-            ['', self::FILE, self::T0],
+            [HilosClusterNode::STANDALONE_NODE_ID, self::FILE, self::T0],
         );
         $writer = $this->startedWriter();
         $writer->step(self::T0);
@@ -229,10 +232,15 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $writer = $this->startedWriter();
         $writer->step(self::T0);
         $this->assertRead('', 0);
-        $writer->applyPortion($this->portion(self::FILE, 0, 50, [$this->line(AnalyticsJournalRecord::journal('', self::T0))], false), self::T0);
+        $writer->applyPortion($this->portion(self::FILE, 0, 50, [
+            $this->line(AnalyticsJournalRecord::journal(HilosClusterNode::STANDALONE_NODE_ID, self::T0)),
+        ], false), self::T0);
         $this->assertRead(self::FILE, 50);
 
-        $writer->applyPortion(new AnalyticsJournalPortionSignalData(null, self::FILE, 50, 50, [], false, true), self::T0);
+        $writer->applyPortion(
+            new AnalyticsJournalPortionSignalData(HilosClusterNode::STANDALONE_NODE_ID, self::FILE, 50, 50, [], false, true),
+            self::T0,
+        );
 
         $this->assertNothingSent();
         $writer->step(self::T0 + 1);
@@ -247,7 +255,9 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $writer = $this->startedWriter();
         $writer->step(self::T0);
         $this->assertRead('', 0);
-        $writer->applyPortion($this->portion(self::FILE, 0, 50, [$this->line(AnalyticsJournalRecord::journal('', self::T0))], false), self::T0);
+        $writer->applyPortion($this->portion(self::FILE, 0, 50, [
+            $this->line(AnalyticsJournalRecord::journal(HilosClusterNode::STANDALONE_NODE_ID, self::T0)),
+        ], false), self::T0);
         $this->assertRead(self::FILE, 50);
 
         $writer->step(self::T0 + AnalyticsWriterAgent::READ_TIMEOUT_MS - 1);
@@ -266,7 +276,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      */
     public function testTwoNodesAreReadInRoundsAndMarkedUnderTheirOwnIds(): void
     {
-        $this->publishMembership('', false, 2.0);
+        $this->publishMembership(HilosClusterNode::STANDALONE_NODE_ID, false, 2.0);
         $this->publishMembership('a', true, 1.0);
         $this->publishMembership('b', true, 1.0);
         $this->publishMembership('c', false, 1.0);
@@ -299,7 +309,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      */
     public function testAnOfflineNodeDropsItsReadAndRestartsFromZeroOnReturn(): void
     {
-        $this->publishMembership('', false, 2.0);
+        $this->publishMembership(HilosClusterNode::STANDALONE_NODE_ID, false, 2.0);
         $this->publishMembership('a', true, 1.0);
         $this->publishMembership('b', true, 1.0);
         $writer = $this->startedWriter();
@@ -325,7 +335,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      */
     public function testSilenceLetsAnotherNodeProceedAndRecoveryIsLoggedOnce(): void
     {
-        $this->publishMembership('', false, 2.0);
+        $this->publishMembership(HilosClusterNode::STANDALONE_NODE_ID, false, 2.0);
         $this->publishMembership('a', true, 1.0);
         $this->publishMembership('b', true, 1.0);
         $writer = $this->startedWriter();
@@ -353,7 +363,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         $writer->applyPortion($this->portion(self::FILE, 0, 50, ['first'], false), self::T0);
         $this->assertRead(self::FILE, 50);
 
-        $writer->applyReady(new AnalyticsJournalReadySignalData(null), self::T0 + 1);
+        $writer->applyReady(new AnalyticsJournalReadySignalData(HilosClusterNode::STANDALONE_NODE_ID), self::T0 + 1);
         $this->assertRead(self::FILE, 50);
     }
 
@@ -362,7 +372,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      */
     public function testDatabaseFailurePausesOnlyTheFileNodesQueue(): void
     {
-        $this->publishMembership('', false, 2.0);
+        $this->publishMembership(HilosClusterNode::STANDALONE_NODE_ID, false, 2.0);
         $this->publishMembership('a', true, 1.0);
         $this->publishMembership('b', true, 1.0);
         $writer = $this->startedWriter();
@@ -413,7 +423,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      * @param int $nextOffset Offset after it
      * @param list<string> $lines Lines of the portion
      * @param bool $complete Whether the file ends here
-     * @param ?string $node Node whose journal answered
+     * @param string $node Node whose journal answered
      * @param int $passedOver Oversized lines omitted from this portion
      * @return AnalyticsJournalPortionSignalData Portion as the journal agent would send it
      */
@@ -423,7 +433,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
         int $nextOffset,
         array $lines,
         bool $complete,
-        ?string $node = null,
+        string $node = HilosClusterNode::STANDALONE_NODE_ID,
         int $passedOver = 0,
     ): AnalyticsJournalPortionSignalData
     {
@@ -433,7 +443,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
     /**
      * @return AnalyticsJournalPortionSignalData The answer of a journal with no ready file
      */
-    private function noReadyFile(?string $node = null): AnalyticsJournalPortionSignalData
+    private function noReadyFile(string $node = HilosClusterNode::STANDALONE_NODE_ID): AnalyticsJournalPortionSignalData
     {
         return new AnalyticsJournalPortionSignalData($node, '', 0, 0, [], false, false);
     }
@@ -442,7 +452,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
      * @param string $file File the read must name
      * @param int $offset Offset it must name
      */
-    private function assertRead(string $file, int $offset, ?string $node = null): void
+    private function assertRead(string $file, int $offset, string $node = HilosClusterNode::STANDALONE_NODE_ID): void
     {
         $data = $this->nextFrame(HilosSignalConstants::ANALYTICS_JOURNAL_READ);
         $this->assertInstanceOf(AnalyticsJournalReadSignalData::class, $data);
@@ -454,7 +464,7 @@ final class AnalyticsWriterAgentIntegrationTest extends AnalyticsSchemaIntegrati
     /**
      * @param string $file File the confirmation must name
      */
-    private function assertLoaded(string $file, ?string $node = null): void
+    private function assertLoaded(string $file, string $node = HilosClusterNode::STANDALONE_NODE_ID): void
     {
         $data = $this->nextFrame(HilosSignalConstants::ANALYTICS_JOURNAL_LOADED);
         $this->assertInstanceOf(AnalyticsJournalLoadedSignalData::class, $data);

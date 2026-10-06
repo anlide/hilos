@@ -20,6 +20,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
@@ -29,7 +31,7 @@ use PHPUnit\Framework\TestCase;
 /** Pins the real Daemon feature definition and its startup refusal contract. */
 final class DaemonFeatureActivationTest extends TestCase
 {
-    public function testDefinitionRequiresExactlySixPagesAndThreeAgentsWithoutLogs(): void
+    public function testDefinitionRequiresExactlyEightPagesAndThreeAgentsWithoutLogs(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::DAEMON);
 
@@ -41,6 +43,8 @@ final class DaemonFeatureActivationTest extends TestCase
             AbstractHilosDaemonCronPage::class,
             AbstractHilosDaemonWebsocketsPage::class,
             AbstractHilosDaemonHttpServerPage::class,
+            AbstractHilosDaemonEnvPage::class,
+            AbstractHilosDaemonEnvMismatchPage::class,
         ], $definition->requirements()->requiredPages);
         self::assertSame([
             HilosAgentType::HILOS_DAEMON,
@@ -64,6 +68,15 @@ final class DaemonFeatureActivationTest extends TestCase
             . AbstractHilosDaemonWebsocketsPage::class);
 
         DaemonFeatureMissingPageHilos::validateFeatureActivation();
+    }
+
+    public function testMissingNewEnvironmentPageRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::DAEMON is declared but no page in PAGES extends '
+            . AbstractHilosDaemonEnvMismatchPage::class);
+
+        DaemonFeatureMissingEnvPageHilos::validateFeatureActivation();
     }
 
     public function testMissingAgentRefusesStartup(): void
@@ -106,6 +119,8 @@ class DaemonFeatureCompleteHilos extends HilosFacade
         DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
         DaemonFeatureWebsocketsPage::PAGE => DaemonFeatureWebsocketsPage::class,
         DaemonFeatureHttpServerPage::PAGE => DaemonFeatureHttpServerPage::class,
+        DaemonFeatureEnvPage::PAGE => DaemonFeatureEnvPage::class,
+        DaemonFeatureEnvMismatchPage::PAGE => DaemonFeatureEnvMismatchPage::class,
     ];
 
     public const array AGENTS = [
@@ -177,6 +192,14 @@ final class DaemonFeatureHttpServerPage extends AbstractHilosDaemonHttpServerPag
 {
 }
 
+final class DaemonFeatureEnvPage extends AbstractHilosDaemonEnvPage
+{
+}
+
+final class DaemonFeatureEnvMismatchPage extends AbstractHilosDaemonEnvMismatchPage
+{
+}
+
 final class DaemonFeatureMissingPageHilos extends DaemonFeatureCompleteHilos
 {
     public const array PAGES = [
@@ -185,6 +208,21 @@ final class DaemonFeatureMissingPageHilos extends DaemonFeatureCompleteHilos
         DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
         DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
         DaemonFeatureHttpServerPage::PAGE => DaemonFeatureHttpServerPage::class,
+        DaemonFeatureEnvPage::PAGE => DaemonFeatureEnvPage::class,
+        DaemonFeatureEnvMismatchPage::PAGE => DaemonFeatureEnvMismatchPage::class,
+    ];
+}
+
+final class DaemonFeatureMissingEnvPageHilos extends DaemonFeatureCompleteHilos
+{
+    public const array PAGES = [
+        DaemonFeaturePage::PAGE => DaemonFeaturePage::class,
+        DaemonFeatureWorkersPage::PAGE => DaemonFeatureWorkersPage::class,
+        DaemonFeatureAgentsPage::PAGE => DaemonFeatureAgentsPage::class,
+        DaemonFeatureCronPage::PAGE => DaemonFeatureCronPage::class,
+        DaemonFeatureWebsocketsPage::PAGE => DaemonFeatureWebsocketsPage::class,
+        DaemonFeatureHttpServerPage::PAGE => DaemonFeatureHttpServerPage::class,
+        DaemonFeatureEnvPage::PAGE => DaemonFeatureEnvPage::class,
     ];
 }
 

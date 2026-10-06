@@ -109,7 +109,7 @@ final class AnalyticsJournalRecord
     /**
      * The first line of every journal file, written by the journal agent when it opens the file.
      *
-     * @param string $node Cluster node id of the file's node, '' outside a cluster
+     * @param string $node Effective node id of the file's node; old headers may contain ''
      * @param int $openedTs Moment the file was opened, in milliseconds
      * @return array<string, int|string> Record
      */

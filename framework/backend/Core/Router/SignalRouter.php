@@ -1912,10 +1912,7 @@ class SignalRouter
     /**
      * Tells whether a node id names the node this router runs on.
      *
-     * Off a cluster there is no local id to compare against — identity() throws there — so a
-     * named node is never this one, and the destination stays remote for the daemon to judge.
-     * That is not a lost case: off-cluster nothing publishes a non-empty id in the first place,
-     * and a sender that named one is addressing a node this installation does not have.
+     * The standalone id is local too; unknown named ids still remain remote.
      *
      * @param string $nodeId Non-empty node id read from a signal payload
      * @return bool True when the id is this node's own
@@ -1926,7 +1923,7 @@ class SignalRouter
     {
         $cluster = Hilos::$cluster;
 
-        return $cluster !== null && $cluster->isEnabled() && $cluster->identity()->nodeId === $nodeId;
+        return $cluster !== null && $cluster->localNodeId() === $nodeId;
     }
 
     /**
