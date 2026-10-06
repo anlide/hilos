@@ -36,6 +36,6 @@ Rationale: context analyzer runs in monopolistic worker that starts before DB se
 ## Moderator prompt pieces
 
 Stored in `ChatDbContext::moderatorPromptPieces` table.
-Managed via `/admin/moderator` → `ModeratorPromptPiecesTable`.
+Until framework moderation (P-475), the pieces change only through the seed.
 `ModeratorAgent` builds its system prompt from these pieces on each LLM call.
 Allows dynamic prompt tuning without restart.

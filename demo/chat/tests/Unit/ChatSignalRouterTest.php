@@ -46,9 +46,6 @@ final class ChatSignalRouterTest extends TestCase
             ChatSignalConstants::BOT_CREATE,
             ChatSignalConstants::BOT_UPDATE,
             ChatSignalConstants::BOT_DELETE,
-            ChatSignalConstants::MODERATOR_PIECE_CREATE,
-            ChatSignalConstants::MODERATOR_PIECE_UPDATE,
-            ChatSignalConstants::MODERATOR_PIECE_DELETE,
         ] as $action) {
             $destinations = $router->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
@@ -97,7 +94,7 @@ final class ChatSignalRouterTest extends TestCase
     {
         $router = new ChatSignalRouter();
 
-        foreach ([PageConstants::ADMIN_BOTS, PageConstants::ADMIN_MODERATOR] as $page) {
+        foreach ([PageConstants::ADMIN_BOTS] as $page) {
             $destinations = $router->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),

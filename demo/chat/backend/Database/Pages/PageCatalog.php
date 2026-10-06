@@ -12,9 +12,9 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 /**
  * PageCatalog - The chat demo's own admin pages and the dashboard group they are shown in.
  *
- * Two screens the framework does not know about: the library bots and the moderator's prompt
- * pieces. Each hangs off the dashboard, so it reaches the panel as a card of its own group
- * rather than as a link buried in someone else's section.
+ * One screen the framework does not know about: the library bots. It hangs off the
+ * dashboard, so it reaches the panel as a card of its own group rather than as a
+ * link buried in someone else's section.
  *
  * The captions live here rather than on the frontend for the reason the whole catalog does: a
  * heading is text in the visitor's language, and only the backend knows the language.
@@ -35,12 +35,6 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
                 PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-robot',
             ],
-            PageConstants::ADMIN_MODERATOR => [
-                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Moderation',
-                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Moderator prompt pieces and rules.',
-                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-shield-check',
-            ],
         ];
     }
 
@@ -55,7 +49,6 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::SECTION_DESCRIPTION => 'Application-specific admin areas for the chat demo.',
                 PageCatalogConstants::SECTION_ITEMS => [
                     PageConstants::ADMIN_BOTS,
-                    PageConstants::ADMIN_MODERATOR,
                 ],
             ],
         ];

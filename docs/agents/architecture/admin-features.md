@@ -142,7 +142,7 @@ mode ([admin-view-mode.md](admin-view-mode.md)) is given by the level alone — 
 opens an `ADMIN` page for looking — while an `ACCESS` guard is judged after the
 level and keeps a viewer out, so a page closed by a guard on the admin flag
 would be the one admin page a viewer cannot look at. The chat demo's
-`AdminBotsPage` and `AdminModeratorPage`, served by the library agent, declare
+`AdminBotsPage`, served by the library agent, declares
 the level and no guard (HIL-1251). Needing "signed in" rather than "admin" is the
 same line with `PageAccessLevel::AUTHENTICATED`, and never a parallel `AUTHENTICATED`
 guard.

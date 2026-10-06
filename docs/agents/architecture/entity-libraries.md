@@ -45,10 +45,9 @@ that has an instance owner.
 and also the shape the rule cuts: it registers two collections
 (`ChatDbContext::bots` and `ChatDbContext::moderatorPromptPieces`) in one
 `onStart()`, and two entities in one holder is exactly what one entity, one
-library forbids. Its two pages —
-`demo/chat/backend/Pages/AdminBotsPage.php` and
-`demo/chat/backend/Pages/AdminModeratorPage.php`, each pointing
-`SUBSCRIPTION_AGENT_TYPE` at `AgentType::LIBRARY` — are otherwise the read path
+library forbids. Its page
+`demo/chat/backend/Pages/AdminBotsPage.php`, pointing
+`SUBSCRIPTION_AGENT_TYPE` at `AgentType::LIBRARY`, is otherwise the read path
 this approach keeps.
 
 The rejected shape is hleb's `Library` task: one monopolistic class of 4224 lines

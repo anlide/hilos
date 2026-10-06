@@ -3,7 +3,6 @@
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
 STYLE-INLINE demo/chat/frontend/src/views/AdminBots/AdminBots.vue 1 # HIL-449
-STYLE-INLINE demo/chat/frontend/src/views/AdminModerator/AdminModerator.vue 1 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 8 # HIL-449
 STYLE-INLINE demo/chat/frontend/src/views/User/User.vue 1 # HIL-449
 STYLE-INLINE framework/frontend/angular/src/HilosMaintenance.ts 1 # HIL-449

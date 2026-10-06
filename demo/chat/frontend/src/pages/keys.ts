@@ -8,5 +8,4 @@
 export const PAGE_MAIN = 'main'
 export const PAGE_USER = 'user'
 export const PAGE_BOT = 'bot'
-export const PAGE_ADMIN_MODERATOR = 'admin_moderator'
 export const PAGE_ADMIN_BOTS = 'admin_bots'

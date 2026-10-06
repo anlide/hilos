@@ -13,7 +13,6 @@ use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
-use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -36,13 +35,12 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
 /**
  * ChatTableContext - App-specific table context ($table layer).
  *
- * Registers Hilos users, bots, moderator prompt pieces, settings, and backup tables.
+ * Registers Hilos users, bots, settings, and backup tables.
  * Accessed via Hilos::$table->hilosUsers, Hilos::$table->bots, etc.
  *
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosMergeCandidatesTable $hilosMergeCandidates
  * @property-read BotsTable $bots
- * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  * @property-read HilosSettingsTable $settings
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
@@ -70,7 +68,6 @@ final class ChatTableContext extends TableContext
     public const string hilosUsers = 'hilosUsers';
     public const string hilosMergeCandidates = HilosMergeCandidatesTable::TABLE;
     public const string bots = 'bots';
-    public const string moderatorPromptPieces = 'moderatorPromptPieces';
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;

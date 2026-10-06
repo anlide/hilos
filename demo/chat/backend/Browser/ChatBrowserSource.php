@@ -49,11 +49,6 @@ final class ChatBrowserSource
         BrowserSourceKey::KEY => ChatDbContext::bots,
     ];
 
-    public const array DB_MODERATOR_PROMPT_PIECES = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => ChatDbContext::moderatorPromptPieces,
-    ];
-
     public const array DB_IDENTITIES = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => ChatDbContext::identities,

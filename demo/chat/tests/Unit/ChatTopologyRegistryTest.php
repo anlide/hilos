@@ -524,9 +524,6 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => HilosPageConstants::HILOS_PROFILE_SIGN_IN,
-            ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
-            ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
-            ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
             ChatSignalConstants::BOT_UPDATE => PageConstants::ADMIN_BOTS,
             ChatSignalConstants::BOT_DELETE => PageConstants::ADMIN_BOTS,
@@ -583,9 +580,6 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => AgentType::CHAT,
-            ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
-            ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::LIBRARY,
-            ChatSignalConstants::MODERATOR_PIECE_DELETE => AgentType::LIBRARY,
             ChatSignalConstants::BOT_CREATE => AgentType::LIBRARY,
             ChatSignalConstants::BOT_UPDATE => AgentType::LIBRARY,
             ChatSignalConstants::BOT_DELETE => AgentType::LIBRARY,

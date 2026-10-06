@@ -34,16 +34,9 @@ import AuthSurface from './auth/AuthSurface.vue'
 import { hilosAuthContext } from './auth/hilosAuthContext'
 import { connection } from './bootstrap/connection'
 import { currentUserName, currentUserPhoto } from './bootstrap/session'
-import {
-  PAGE_ADMIN_BOTS,
-  PAGE_ADMIN_MODERATOR,
-  PAGE_BOT,
-  PAGE_MAIN,
-  PAGE_USER,
-} from './pages/keys'
+import { PAGE_ADMIN_BOTS, PAGE_BOT, PAGE_MAIN, PAGE_USER } from './pages/keys'
 import About from './views/About/About.vue'
 import AdminBots from './views/AdminBots/AdminBots.vue'
-import AdminModerator from './views/AdminModerator/AdminModerator.vue'
 import Bot from './views/Bot/Bot.vue'
 import License from './views/License/License.vue'
 import Main from './views/Main/Main.vue'
@@ -106,7 +99,6 @@ const pages: Record<string, Component> = {
   [PAGE_USER]: User,
   [PAGE_BOT]: Bot,
   [PAGE_ADMIN_BOTS]: AdminBots,
-  [PAGE_ADMIN_MODERATOR]: AdminModerator,
   ...hilosAdminViews(),
   [HilosPages.PROFILE]: Profile,
   [HilosPages.PROFILE_SIGN_IN]: ProfileSignIn,

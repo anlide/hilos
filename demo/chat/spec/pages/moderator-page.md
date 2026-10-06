@@ -37,7 +37,6 @@ Admin pages are split by ownership:
 | Page constant | Agent | Route | Content |
 |---|---|---|---|
 | `ADMIN` | `ChatAgent` | `/admin` | Admin dashboard |
-| `ADMIN_MODERATOR` | `LibraryAgent` | `/admin/moderator` | Moderator prompt pieces table |
 | `ADMIN_BOTS` | `LibraryAgent` | `/admin/bots` | Bot management table |
 
 Each admin page `onSubscribe` sends the relevant `Table` data.

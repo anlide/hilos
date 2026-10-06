@@ -38,9 +38,6 @@ final class ChatSignalConstants
     /** @var string Subscription page admin signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN = 'subscription_page_admin';
 
-    /** @var string Subscription page admin moderator signal name */
-    public const string SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator';
-
     /** @var string Subscription page admin bots signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
 
@@ -73,15 +70,6 @@ final class ChatSignalConstants
 
     /** @var string Bot delete signal name */
     public const string BOT_DELETE = 'bot_delete';
-
-    /** @var string Moderator piece create signal name */
-    public const string MODERATOR_PIECE_CREATE = 'moderator_piece_create';
-
-    /** @var string Moderator piece update signal name */
-    public const string MODERATOR_PIECE_UPDATE = 'moderator_piece_update';
-
-    /** @var string Moderator piece delete signal name */
-    public const string MODERATOR_PIECE_DELETE = 'moderator_piece_delete';
 
     /** @var string Guardian agent run start action name */
     public const string GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start';

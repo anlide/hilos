@@ -79,7 +79,6 @@ use Demo\Chat\Auth\ChatStepUpOperationDirectory;
 use Demo\Chat\Legal\LegalCatalog;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
-use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
@@ -173,7 +172,6 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
-use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
@@ -357,7 +355,6 @@ final class Hilos extends HilosFacade
         BotPage::PAGE => BotPage::class,
         ModeratorPage::PAGE => ModeratorPage::class,
         AdminPage::PAGE => AdminPage::class,
-        AdminModeratorPage::PAGE => AdminModeratorPage::class,
         AdminBotsPage::PAGE => AdminBotsPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
@@ -658,7 +655,6 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosUsers => HilosUsersTable::class,
         ChatTableContext::hilosMergeCandidates => HilosMergeCandidatesTable::class,
         ChatTableContext::bots => BotsTable::class,
-        ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
         ChatTableContext::settings => HilosSettingsTable::class,
         ChatTableContext::hilosBackups => HilosBackupHistoryTable::class,
         ChatTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -781,9 +777,6 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
-        AdminModeratorPage::PAGE => [
-            ChatTableContext::moderatorPromptPieces => [],
-        ],
         AdminBotsPage::PAGE => [
             ChatTableContext::bots => [],
         ],

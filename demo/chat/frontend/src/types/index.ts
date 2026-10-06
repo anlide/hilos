@@ -19,12 +19,6 @@ export {
 } from './PushSubscription.js'
 export { type Bot, BOT_TYPE, botFromFields, Bots } from './Bot'
 export {
-  type ModeratorPiece,
-  MODERATOR_PIECE_TYPE,
-  moderatorPieceFromFields,
-  ModeratorPieces,
-} from './ModeratorPiece'
-export {
   type Event,
   type EventAttachment,
   type EventMessage,

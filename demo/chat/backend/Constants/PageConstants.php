@@ -31,9 +31,6 @@ final class PageConstants
     /** @var string Admin page */
     public const string ADMIN = 'admin';
 
-    /** @var string Admin moderator page */
-    public const string ADMIN_MODERATOR = 'admin_moderator';
-
     /** @var string Admin bots page */
     public const string ADMIN_BOTS = 'admin_bots';
 

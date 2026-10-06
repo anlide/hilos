@@ -10,14 +10,12 @@ use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
-use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\BotTableRow;
 use Demo\Chat\Tables\ChatTableContext;
-use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPieceTableRow;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\SignalTypeConstants;
@@ -44,7 +42,7 @@ use JsonException;
 /**
  * Integration coverage for chat admin surfaces under the admin view mode (HIL-1259).
  *
- * Verifies that on the chat demo's administrative pages (AdminBotsPage, AdminModeratorPage,
+ * Verifies that on the chat demo's administrative pages (AdminBotsPage,
  * GuardianPage, GuardianAgentPage) non-personal fields and declarations are preserved for both
  * anonymous and signed-in non-admin viewers, and an admin receives those pages with no hidden
  * marks. A viewer's look at the people list lives with the framework users page.
@@ -58,7 +56,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     private const string GUARDIAN_AGENT_ID = 'test-guardian-agent-id';
 
     private int $botId;
-    private int $pieceId;
 
     /**
      * Initializes the chat browser context, registers truth sources, enables the view mode, and seeds data.
@@ -85,9 +82,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
             active: true,
         );
         $this->botId = (int) $bot->id;
-
-        $piece = Hilos::$db->moderatorPromptPieces->actions->create('name_rule', 'Hello, welcome to chat!');
-        $this->pieceId = (int) $piece->id;
 
         $visitor = Hilos::$db->users->actions->createWithName('Visitor of the node');
         $visitorId = (int) $visitor->id;
@@ -163,37 +157,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     }
 
     /**
-     * A viewer (anonymous or visitor) receives moderator prompt pieces with all fields shown.
-     */
-    public function testAViewerSeesModeratorPromptPiecesWithAllFieldsShown(): void
-    {
-        foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $frames = $this->subscribe(
-                AdminModeratorPage::class,
-                [],
-                $acceptKey,
-                [ChatTableContext::moderatorPromptPieces => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT)],
-            );
-            $rows = $this->window($frames, ChatTableContext::moderatorPromptPieces)[TableWindowSignalData::rows];
-            $pieceRow = null;
-            foreach ($rows as $row) {
-                if ($row[BrowserPageSignalData::rowKey] === $this->pieceId) {
-                    $pieceRow = $row;
-                    break;
-                }
-            }
-            self::assertNotNull($pieceRow, "Prompt piece row not found for {$acceptKey}");
-            $pieceSlot = $pieceRow[PagePayload::slots][ChatDbContext::moderatorPromptPieces];
-            self::assertSame($this->pieceId, $pieceSlot[ModeratorPromptPieceTableRow::id]);
-            self::assertSame('name_rule', $pieceSlot[ModeratorPromptPieceTableRow::section]);
-            self::assertSame('Hello, welcome to chat!', $pieceSlot[ModeratorPromptPieceTableRow::promptPiece]);
-            self::assertFalse(HiddenValue::isMark($pieceSlot[ModeratorPromptPieceTableRow::id]));
-            self::assertFalse(HiddenValue::isMark($pieceSlot[ModeratorPromptPieceTableRow::section]));
-            self::assertFalse(HiddenValue::isMark($pieceSlot[ModeratorPromptPieceTableRow::promptPiece]));
-        }
-    }
-
-    /**
      * A viewer receives guardian agent statuses (both list and detail) with all fields shown.
      */
     public function testAViewerSeesGuardianStatusesWithAllFieldsShown(): void
@@ -233,9 +196,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
         $frames = [
             ...$this->subscribe(AdminBotsPage::class, [], self::ADMIN_KEY, [
                 ChatTableContext::bots => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
-            ]),
-            ...$this->subscribe(AdminModeratorPage::class, [], self::ADMIN_KEY, [
-                ChatTableContext::moderatorPromptPieces => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
             ...$this->subscribe(GuardianPage::class, [], self::ADMIN_KEY),
             ...$this->subscribe(
