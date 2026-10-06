@@ -154,6 +154,82 @@ final class WorkerManagerStopCleanupTest extends TestCase
     }
 
     /**
+     * On an orderly shutdown, each agent's stop report follows every stop-hook message.
+     */
+    public function testShutdownReportsEachStoppedAgentAfterStopHookFrames(): void
+    {
+        $first = new WorkerManagerStopCleanupTestAgent('1', throwOnStop: false);
+        $second = new WorkerManagerStopCleanupTestAgent('2', throwOnStop: false);
+        $first->goodbyeAcceptKey = 'unit-stop-ak';
+        $manager = new WorkerManagerStopCleanupTestManager($first, $second);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->handleDaemonMessage(new AgentStartDTO($first->getId()));
+        $manager->handleDaemonMessage(new AgentStartDTO($second->getId()));
+
+        $manager->handleShutdown();
+        $manager->runCleanup();
+
+        $frames = $this->framesAt($daemonEnd);
+        $goodbyePosition = null;
+        $stopPositions = [];
+        $stoppedIds = [];
+        foreach ($frames as $position => $frame) {
+            if ($frame[WorkerDTO::TYPE] === WorkerAgentMessageDTO::MESSAGE_TYPE) {
+                $goodbyePosition = $position;
+            }
+            if ($frame[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STOPPED) {
+                $stopPositions[] = $position;
+                $stoppedIds[] = $frame[AgentConstants::FIELD_AGENT_ID];
+            }
+        }
+
+        $this->assertNotNull($goodbyePosition);
+        $this->assertSame([$first->getId(), $second->getId()], $stoppedIds);
+        $this->assertGreaterThan($goodbyePosition, $stopPositions[0]);
+        $this->assertGreaterThan($goodbyePosition, $stopPositions[1]);
+    }
+
+    /**
+     * Cleanup after an error still sends stop-hook frames, but leaves worker-loss reports to the master.
+     */
+    public function testCleanupWithoutShutdownSignalDoesNotReportAgentsStopped(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->handleDaemonMessage(new AgentStartDTO($agent->getId()));
+
+        $manager->runCleanup();
+
+        $this->assertSame([], array_values(array_filter(
+            $this->framesAt($daemonEnd),
+            static fn(array $frame): bool => $frame[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STOPPED,
+        )));
+    }
+
+    /**
+     * A contained stop-hook failure still completes that agent's stop and report.
+     */
+    public function testShutdownReportsAgentWhoseStopHookThrows(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent();
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->handleDaemonMessage(new AgentStartDTO($agent->getId()));
+
+        $manager->handleShutdown();
+        $manager->runCleanup();
+
+        $stopped = array_values(array_filter(
+            $this->framesAt($daemonEnd),
+            static fn(array $frame): bool => $frame[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STOPPED,
+        ));
+        $this->assertTrue($agent->stopHookCalled);
+        $this->assertCount(1, $stopped);
+        $this->assertSame($agent->getId(), $stopped[0][AgentConstants::FIELD_AGENT_ID]);
+    }
+
+    /**
      * The worker's last analytics - the stops of its agents and of itself, and whatever the batch
      * still held - leave with the same dispatch as the stop hooks' frames, before the connection
      * closes (HIL-1154); called after the close, they had nowhere to go.

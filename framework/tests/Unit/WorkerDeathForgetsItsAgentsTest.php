@@ -17,6 +17,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -155,6 +156,37 @@ final class WorkerDeathForgetsItsAgentsTest extends TestCase
         $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
 
         $this->assertSame([], $sink->reports);
+    }
+
+    public function testReportedStopsLeaveNoAgentsForTheLossSink(): void
+    {
+        $manager = new WorkerDeathTestAgentManagerDaemon();
+        $sink = new WorkerDeathTestLossSink();
+        $manager->registerAgentLossSink($sink);
+        $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER, false);
+        $manager->addAgent($this->agentId('2'), new WorkerDeathTestAgentDaemon('2'), self::HOST_WORKER, false);
+
+        $manager->handleAgentStopped(new WorkerAgentStoppedDTO($this->agentId('1')));
+        $manager->handleAgentStopped(new WorkerAgentStoppedDTO($this->agentId('2')));
+        $lost = $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
+
+        $this->assertSame([], $lost);
+        $this->assertSame([], $sink->reports);
+    }
+
+    public function testOnlyUnreportedAgentReachesTheLossSink(): void
+    {
+        $manager = new WorkerDeathTestAgentManagerDaemon();
+        $sink = new WorkerDeathTestLossSink();
+        $manager->registerAgentLossSink($sink);
+        $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER, false);
+        $manager->addAgent($this->agentId('2'), new WorkerDeathTestAgentDaemon('2'), self::HOST_WORKER, false);
+
+        $manager->handleAgentStopped(new WorkerAgentStoppedDTO($this->agentId('1')));
+        $lost = $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
+
+        $this->assertSame([$this->agentId('2')], $lost);
+        $this->assertSame([[self::HOST_WORKER, false, [$this->agentId('2')]]], $sink->reports);
     }
 
     public function testTheLossSinkIsToldAfterTheRosterIsAlreadyEmpty(): void

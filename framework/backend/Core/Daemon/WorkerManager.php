@@ -201,6 +201,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** Loop timestamp of the last parent-process check. */
     private float $lastParentCheckAt = 0.0;
 
+    /** Worker leaves because the master requested SIGTERM or SIGINT. */
+    private bool $leavingOnStopSignal = false;
+
     /** Agent manager for worker-local agent instances. */
     protected AgentManager $agentManager;
 
@@ -3051,6 +3054,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /**
      * Stops local agents, sends what their stop hooks queued, closes daemon transport, and shuts down analytics.
+     * After those frames, a worker leaving on a stop signal reports each agent stopped so the
+     * master does not mistake an orderly exit for a worker death.
      *
      * A failing agent stop hook is contained per agent, so the remaining agents,
      * the daemon transport, and analytics are always released.
@@ -3062,6 +3067,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     protected function cleanup(): void
     {
+        $stoppedAgentIds = [];
         // Stop all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             try {
@@ -3074,6 +3080,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
             Logger::info("Agent {$agentId} stopped during cleanup");
             Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
+            $stoppedAgentIds[] = $agentId;
         }
         // Clear all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
@@ -3093,6 +3100,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $this->dispatchSignals();
             } catch (Throwable $failure) {
                 $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
+            }
+            if ($this->leavingOnStopSignal) {
+                foreach ($stoppedAgentIds as $agentId) {
+                    $this->notifyAgentStopped($agentId);
+                }
             }
             try {
                 $this->flushDaemonClient();
@@ -3698,11 +3710,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /**
      * Handles a shutdown signal after the base manager sets the exit flag.
      *
-     * The base worker does not need extra signal-specific work.
+     * Only this hook means the master requested an orderly exit. Error, restart, lost-link and
+     * orphan exits leave their agents for the master's worker-loss path.
      */
     protected function onShutdownSignal(): void
     {
-        // Worker-specific shutdown logic (none needed)
+        $this->leavingOnStopSignal = true;
     }
 
     /**

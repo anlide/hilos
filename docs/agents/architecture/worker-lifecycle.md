@@ -86,6 +86,10 @@ truth sources taken back, the release of its RT sources reported — then record
 session stopped and hands the last analytics batch over (HIL-1154), then sends the master what the
 stop hooks queued together with that batch, writes its buffer out until it is empty, and only then
 disconnects (HIL-1136).
+On SIGTERM or SIGINT, after the stop hooks' frames, the worker reports each stopped agent with
+`agent_stopped`; the master removes them as stopped before the connection closes. A "Worker #N died
+hosting ..." line and its loss chain mean the worker did not report them: it died, was killed at
+the shutdown timeout, became an orphan, lost the master first, or exited on its own error.
 
 A node stops its workers in two waves when one of its agents asks for it
 (`AgentDaemonInterface::stopsAfterOtherWorkers()`, today the analytics journal agent of the node —
@@ -117,7 +121,8 @@ Sending those frames is an attempt, not a guarantee:
   going (HIL-1207).
 
 A worker that leaves while its master keeps serving — an error or an exception — is read like any
-running worker, and its frames reach their addressees.
+running worker, and its frames reach their addressees. It sends no `agent_stopped` reports on this
+path, so the master treats agents still on its roster as lost with the worker.
 
 Stopping one agent — a stop message, `shouldStop()`, the idle window — is not a departure of the
 worker: the frames its `onStop()` queued go out in the same tick.
