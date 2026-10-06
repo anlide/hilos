@@ -215,7 +215,39 @@ export function HilosProfilePhoto({ flow }: HilosProfilePhotoProps) {
               >
                 {COPY.checking}
               </p>
-            ) : null}
+            ) : (
+              <p
+                className="small text-body-secondary mt-2 invisible"
+                aria-hidden="true"
+                data-id="profile-photo-checking-idle"
+              >
+                {COPY.checking}
+              </p>
+            )}
+            <div className="d-grid mt-2">
+              {refusal !== null ? (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm"
+                  disabled={busy || checking}
+                  data-id="profile-photo-upload-another"
+                  onClick={() => input.current?.click()}
+                >
+                  {COPY.uploadAnother}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm invisible"
+                  disabled
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  data-id="profile-photo-upload-another-idle"
+                >
+                  {COPY.uploadAnother}
+                </button>
+              )}
+            </div>
           </div>
         ) : step === 'current' ? (
           <div className="text-center">

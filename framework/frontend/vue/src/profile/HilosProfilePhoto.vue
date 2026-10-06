@@ -184,6 +184,37 @@ function arrow(event: KeyboardEvent): void {
       >
         {{ COPY.checking }}
       </p>
+      <p
+        v-else
+        class="small text-body-secondary mt-2 invisible"
+        aria-hidden="true"
+        data-id="profile-photo-checking-idle"
+      >
+        {{ COPY.checking }}
+      </p>
+      <div class="d-grid mt-2">
+        <button
+          v-if="refusal !== null"
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          :disabled="busy || checking"
+          data-id="profile-photo-upload-another"
+          @click="choose"
+        >
+          {{ COPY.uploadAnother }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn btn-outline-secondary btn-sm invisible"
+          disabled
+          tabindex="-1"
+          aria-hidden="true"
+          data-id="profile-photo-upload-another-idle"
+        >
+          {{ COPY.uploadAnother }}
+        </button>
+      </div>
     </div>
     <div v-else-if="step === 'current'" class="text-center">
       <HilosAvatar :name="name" :photo="photo" size="lg" />

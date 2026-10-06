@@ -51,4 +51,58 @@ it('offers the picker, current-photo actions and an accessible crop canvas', () 
   )
   fireEvent.click(byId('profile-photo-save')!)
   expect(save).toHaveBeenCalledOnce()
+
+  expect(byId('profile-photo-checking')).toBeNull()
+  const checkingIdle = byId('profile-photo-checking-idle')
+  expect(checkingIdle).not.toBeNull()
+  expect(checkingIdle?.getAttribute('aria-hidden')).toBe('true')
+  expect(checkingIdle?.classList.contains('invisible')).toBe(true)
+
+  expect(byId('profile-photo-upload-another')).toBeNull()
+  const uploadAnotherIdle = byId(
+    'profile-photo-upload-another-idle',
+  ) as HTMLButtonElement | null
+  expect(uploadAnotherIdle).not.toBeNull()
+  expect(uploadAnotherIdle?.getAttribute('aria-hidden')).toBe('true')
+  expect(uploadAnotherIdle?.disabled).toBe(true)
+  expect(uploadAnotherIdle?.getAttribute('tabindex')).toBe('-1')
+  expect(uploadAnotherIdle?.classList.contains('invisible')).toBe(true)
+
+  act(() => flow.checking.set(true))
+  expect(byId('profile-photo-checking')?.textContent).toContain('Checking')
+  expect(byId('profile-photo-checking-idle')).toBeNull()
+  expect(byId('profile-photo-upload-another')).toBeNull()
+  expect(byId('profile-photo-upload-another-idle')).not.toBeNull()
+
+  act(() => {
+    flow.checking.set(false)
+    flow.refusal.set('Photo was rejected')
+  })
+  expect(byId('profile-photo-checking')).toBeNull()
+  expect(byId('profile-photo-checking-idle')).not.toBeNull()
+  expect(byId('profile-photo-upload-another-idle')).toBeNull()
+  const uploadAnother = byId(
+    'profile-photo-upload-another',
+  ) as HTMLButtonElement | null
+  expect(uploadAnother).not.toBeNull()
+  expect(uploadAnother?.disabled).toBe(false)
+
+  act(() => flow.busy.set(true))
+  expect(uploadAnother?.disabled).toBe(true)
+  act(() => flow.busy.set(false))
+  expect(uploadAnother?.disabled).toBe(false)
+
+  const fileInput = byId('profile-photo-input') as HTMLInputElement
+  const clickSpy = vi.spyOn(fileInput, 'click')
+  fireEvent.click(uploadAnother!)
+  expect(clickSpy).toHaveBeenCalledOnce()
+
+  fireEvent.change(fileInput, { target: { files: [] } })
+  expect(flow.pick).not.toHaveBeenCalled()
+  expect(byId('profile-photo-preview')).not.toBeNull()
+
+  const file = new File(['data'], 'new.png', { type: 'image/png' })
+  fireEvent.change(fileInput, { target: { files: [file] } })
+  expect(flow.pick).toHaveBeenCalledWith(file)
+  expect(byId('profile-photo-preview')).not.toBeNull()
 })

@@ -150,7 +150,39 @@ function mirror<T>(
             >
               {{ copy.checking }}
             </p>
+          } @else {
+            <p
+              class="small text-body-secondary mt-2 invisible"
+              aria-hidden="true"
+              data-id="profile-photo-checking-idle"
+            >
+              {{ copy.checking }}
+            </p>
           }
+          <div class="d-grid mt-2">
+            @if (refusal() !== null) {
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm"
+                [disabled]="busy() || checking()"
+                data-id="profile-photo-upload-another"
+                (click)="choose()"
+              >
+                {{ copy.uploadAnother }}
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-outline-secondary btn-sm invisible"
+                disabled
+                tabindex="-1"
+                aria-hidden="true"
+                data-id="profile-photo-upload-another-idle"
+              >
+                {{ copy.uploadAnother }}
+              </button>
+            }
+          </div>
         </div>
       } @else if (step() === 'current') {
         <div class="text-center">
