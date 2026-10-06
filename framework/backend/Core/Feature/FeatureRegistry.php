@@ -9,6 +9,7 @@ use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Feature\Definition\CodeChannelsFeature;
 use Hilos\Core\Feature\Definition\BackupFeature;
+use Hilos\Core\Feature\Definition\DaemonFeature;
 use Hilos\Core\Feature\Definition\FilesFeature;
 use Hilos\Core\Feature\Definition\HilosUsersFeature;
 use Hilos\Core\Feature\Definition\ImagesFeature;
@@ -94,6 +95,7 @@ class FeatureRegistry
             new HilosUsersFeature(),
             new BackupFeature(),
             new LogsFeature(),
+            new DaemonFeature(),
             new NotificationsFeature(),
             new NotificationDeliveryFeature(),
             new AuthThrottleFeature(),

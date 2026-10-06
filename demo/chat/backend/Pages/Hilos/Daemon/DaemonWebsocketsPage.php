@@ -12,5 +12,5 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
  */
 final class DaemonWebsocketsPage extends AbstractHilosDaemonWebsocketsPage
 {
-    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_DAEMON;
 }

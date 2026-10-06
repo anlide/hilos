@@ -7,6 +7,7 @@ namespace Demo\BinanceBtcTracker;
 use Demo\BinanceBtcTracker\Agents\BinanceBtcTrackerAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DataExportAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
@@ -16,6 +17,7 @@ use Demo\BinanceBtcTracker\Backup\BackupCatalog;
 use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
@@ -34,6 +36,12 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPa
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsRotationsPage;
@@ -60,6 +68,10 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\Feature\HilosFeature;
@@ -159,6 +171,7 @@ final class Hilos extends HilosFacade
         HilosFeature::SETTINGS,
         HilosFeature::HILOS_USERS,
         HilosFeature::LOGS,
+        HilosFeature::DAEMON,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
     ];
@@ -176,6 +189,12 @@ final class Hilos extends HilosFacade
         SettingsPage::PAGE => SettingsPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
+        DaemonPage::PAGE => DaemonPage::class,
+        DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+        DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+        DaemonCronPage::PAGE => DaemonCronPage::class,
+        DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+        DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
         LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -204,6 +223,10 @@ final class Hilos extends HilosFacade
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosDaemonAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosDaemonAgentDaemon::class,
         ],
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
@@ -265,6 +288,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => LogCarrierAgent::class,
             AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        DaemonNodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonNodeAgent::class,
+            AgentRegistryKey::DAEMON => DaemonNodeAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        DaemonCollectorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
+            AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LogAggregatorAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogAggregatorAgent::class,

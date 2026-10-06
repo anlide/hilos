@@ -14,10 +14,10 @@ the feature case and frame intervals belong to those leaves.
 ## Words
 
 - **The master frame** is what the master hands to the agent of its own node.
-- **The node agent** runs once per node (not in the code yet — HIL-1370).
-- **The collector** runs once per cluster (not in the code yet — HIL-1370).
+- **The node agent** runs once per node.
+- **The collector** runs once per cluster.
 - **The page agent** serves the section's pages; the framework class is abstract
-  and the project's subclass is empty (not in the code yet — HIL-1370).
+  and the project's subclass is empty.
 - **The node picture**, **the cluster picture** and **the mirror** name the copies
   held by the node agent, the collector and the page agent's worker, respectively.
 - **Node replica** means `SCOPE = NODE`; **leader singleton** means `CLUSTER +
@@ -246,17 +246,16 @@ measurement interval. The `.env` on disk belongs to the node agent.
 
 ## Switching The Section On
 
-The project declares the feature in `Hilos::FEATURES`
-(not in the code yet — HIL-1370). Startup requires the section's pages and its
-three agents, refusing a partial activation (not in the code yet — HIL-1370).
+The project declares the feature in `Hilos::FEATURES`.
+Startup requires the section's pages and its three agents, refusing a partial activation.
 The section is enabled in the demos that already enable `LOGS`: chat, tasks,
-polls, binance-btc-tracker and online-testing (not in the code yet — HIL-1370).
-The page agent serves the section, replacing the index agent in chat
-(not in the code yet — HIL-1370). The section's addresses carry the node
+polls, binance-btc-tracker and online-testing.
+The page agent serves the section, replacing the index agent in chat.
+The section's addresses carry the node
 (not in the code yet — HIL-1381).
 
-Today the framework has six abstract Daemon pages and chat alone has their
-concrete subclasses, served by its index agent. All six keys remain in
+The framework has six abstract Daemon pages, with thin concrete subclasses in
+all five demos. All six keys remain in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts).
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read

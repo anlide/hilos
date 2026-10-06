@@ -5,7 +5,15 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosDaemonAgent;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
@@ -180,6 +188,10 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserListConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
@@ -190,6 +202,7 @@ use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Database\Settings\Library\DTO\SettingDeleteSignalData;
@@ -253,6 +266,43 @@ use ReflectionClass;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
+    /** Pins the Daemon section's pages, owners and placement in the chat topology. */
+    public function testDaemonSectionActivation(): void
+    {
+        self::assertContains(HilosFeature::DAEMON, Hilos::featuresOf(Hilos::class));
+
+        foreach ([
+            DaemonPage::class,
+            DaemonWorkersPage::class,
+            DaemonAgentsPage::class,
+            DaemonCronPage::class,
+            DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::class,
+        ] as $page) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
+        self::assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
+        self::assertSame(DemoHilosDaemonAgentDaemon::class, AgentRegistry::daemonClass($pageAgent));
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($pageAgent));
+        self::assertSame(AgentPlacement::LEADER, AgentRegistry::placement($pageAgent));
+        self::assertFalse((new DemoHilosDaemonAgentDaemon())->requiresMonopolisticProcess());
+
+        $nodeAgent = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_NODE];
+        self::assertSame(DaemonNodeAgent::class, AgentRegistry::workerClass($nodeAgent));
+        self::assertSame(DaemonNodeAgentDaemon::class, AgentRegistry::daemonClass($nodeAgent));
+        self::assertSame(AgentScope::NODE, AgentRegistry::scope($nodeAgent));
+        self::assertFalse((new DaemonNodeAgentDaemon())->requiresMonopolisticProcess());
+
+        $collector = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_COLLECTOR];
+        self::assertSame(DaemonCollectorAgent::class, AgentRegistry::workerClass($collector));
+        self::assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
+        self::assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
+    }
+
     /** Legal administration is bound to its own worker, page routes and tables. */
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
@@ -385,6 +435,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_LOG_STORE,
             HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosAgentType::HILOS_LOG_CARRIER,
+            HilosAgentType::HILOS_DAEMON_NODE,
             AgentType::HILOS_AUTH_THROTTLE,
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
@@ -417,6 +468,7 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_SMS,
             AgentType::HILOS_PUSH,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
+            HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosAgentType::HILOS_ANALYTICS_WRITER,
         ], $policyPlaced);
     }

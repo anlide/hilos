@@ -7,6 +7,7 @@ namespace Demo\OnlineTesting\Tests\Unit;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Agents\Hilos\DataExportAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAgent;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\OnlineTesting\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
@@ -15,6 +16,7 @@ use Demo\OnlineTesting\Constants\AgentType;
 use Demo\OnlineTesting\Constants\PageConstants;
 use Demo\OnlineTesting\Core\Agent\Daemon\OnlineTestingAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
@@ -26,6 +28,12 @@ use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
@@ -52,6 +60,10 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
@@ -108,6 +120,12 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             SettingsPage::PAGE => SettingsPage::class,
+            DaemonPage::PAGE => DaemonPage::class,
+            DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+            DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+            DaemonCronPage::PAGE => DaemonCronPage::class,
+            DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
             LogsOverviewPage::PAGE => LogsOverviewPage::class,
             LogsKeysPage::PAGE => LogsKeysPage::class,
             LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -162,6 +180,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([
             AgentType::ONLINE_TESTING,
             AgentType::HILOS_INDEX,
+            AgentType::HILOS_DAEMON,
             AgentType::HILOS_LOGS,
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -171,6 +190,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_LOG_STORE,
             HilosAgentType::HILOS_LOG_CARRIER,
+            HilosAgentType::HILOS_DAEMON_NODE,
+            HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_AUTH_THROTTLE,
             HilosAgentType::HILOS_PROBE_FLEET,
@@ -330,6 +351,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosFeature::SETTINGS,
             HilosFeature::HILOS_USERS,
             HilosFeature::LOGS,
+            HilosFeature::DAEMON,
             HilosFeature::NOTIFICATIONS,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
@@ -506,6 +528,42 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
+    }
+
+    /** Pins the Daemon feature, six page routes and all three agent placements. */
+    public function testDaemonAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::DAEMON, Hilos::features());
+        foreach ([
+            DaemonPage::class,
+            DaemonWorkersPage::class,
+            DaemonAgentsPage::class,
+            DaemonCronPage::class,
+            DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
+        $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
+        $this->assertSame(DemoHilosDaemonAgentDaemon::class, AgentRegistry::daemonClass($pageAgent));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($pageAgent));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($pageAgent));
+        $this->assertFalse((new DemoHilosDaemonAgentDaemon())->requiresMonopolisticProcess());
+
+        $nodeAgent = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_NODE];
+        $this->assertSame(DaemonNodeAgent::class, AgentRegistry::workerClass($nodeAgent));
+        $this->assertSame(DaemonNodeAgentDaemon::class, AgentRegistry::daemonClass($nodeAgent));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($nodeAgent));
+        $this->assertFalse((new DaemonNodeAgentDaemon())->requiresMonopolisticProcess());
+
+        $collector = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_COLLECTOR];
+        $this->assertSame(DaemonCollectorAgent::class, AgentRegistry::workerClass($collector));
+        $this->assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
+        $this->assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testLogsAdminFeatureIsActivated(): void

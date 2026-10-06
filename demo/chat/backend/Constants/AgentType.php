@@ -47,6 +47,9 @@ final class AgentType
     /** @var string Hilos logs overview agent type */
     public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
 
+    /** Daemon section page agent type. */
+    public const string HILOS_DAEMON = HilosAgentType::HILOS_DAEMON;
+
     /** Legal administration subscriptions and aggregate reads. */
     public const string HILOS_LEGAL = HilosAgentType::HILOS_LEGAL;
 

@@ -28,6 +28,15 @@ final class HilosAgentType
     /** @var string Hilos logs overview agent (rotation metrics under daemon log archive) */
     public const string HILOS_LOGS = 'hilos_logs';
 
+    /** Daemon section page agent. */
+    public const string HILOS_DAEMON = 'hilos_daemon';
+
+    /** Daemon section agent running on every node. */
+    public const string HILOS_DAEMON_NODE = 'hilos_daemon_node';
+
+    /** Daemon section collector placed once per cluster. */
+    public const string HILOS_DAEMON_COLLECTOR = 'hilos_daemon_collector';
+
     /** @var string Hilos backup agent (monopoly owner of the backup index and storage) */
     public const string HILOS_BACKUP = 'hilos_backup';
 

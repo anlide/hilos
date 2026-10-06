@@ -7,6 +7,7 @@ namespace Demo\OnlineTesting;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Agents\Hilos\DataExportAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAgent;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\OnlineTesting\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
@@ -15,6 +16,7 @@ use Demo\OnlineTesting\Auth\OnlineTestingAuthMethodDirectory;
 use Demo\OnlineTesting\Browser\OnlineTestingBrowserContext;
 use Demo\OnlineTesting\Core\Agent\Daemon\OnlineTestingAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
@@ -28,6 +30,12 @@ use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
@@ -51,6 +59,10 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
@@ -116,6 +128,7 @@ final class Hilos extends HilosFacade
         HilosFeature::SETTINGS,
         HilosFeature::HILOS_USERS,
         HilosFeature::LOGS,
+        HilosFeature::DAEMON,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
@@ -130,6 +143,12 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        DaemonPage::PAGE => DaemonPage::class,
+        DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+        DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+        DaemonCronPage::PAGE => DaemonCronPage::class,
+        DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+        DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
         LogsOverviewPage::PAGE => LogsOverviewPage::class,
         LogsKeysPage::PAGE => LogsKeysPage::class,
         LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -157,6 +176,10 @@ final class Hilos extends HilosFacade
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosDaemonAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosDaemonAgentDaemon::class,
         ],
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
@@ -202,6 +225,16 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => LogCarrierAgent::class,
             AgentRegistryKey::DAEMON => LogCarrierAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        DaemonNodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonNodeAgent::class,
+            AgentRegistryKey::DAEMON => DaemonNodeAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        DaemonCollectorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
+            AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LogAggregatorAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogAggregatorAgent::class,

@@ -7,6 +7,7 @@ namespace Demo\BinanceBtcTracker\Tests\Unit;
 use Demo\BinanceBtcTracker\Agents\BinanceBtcTrackerAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DataExportAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
@@ -15,6 +16,7 @@ use Demo\BinanceBtcTracker\Constants\AgentType;
 use Demo\BinanceBtcTracker\Constants\PageConstants;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
@@ -31,6 +33,12 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPa
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Logs\LogsRotationsPage;
@@ -58,7 +66,12 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -135,6 +148,12 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             SettingsPage::PAGE => SettingsPage::class,
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
+            DaemonPage::PAGE => DaemonPage::class,
+            DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+            DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+            DaemonCronPage::PAGE => DaemonCronPage::class,
+            DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
             LogsOverviewPage::PAGE => LogsOverviewPage::class,
             LogsKeysPage::PAGE => LogsKeysPage::class,
             LogsWorkersPage::PAGE => LogsWorkersPage::class,
@@ -190,6 +209,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame([
             AgentType::BINANCE_BTC_TRACKER,
             AgentType::HILOS_INDEX,
+            AgentType::HILOS_DAEMON,
             AgentType::HILOS_LOGS,
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -202,6 +222,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_BACKUP,
             HilosAgentType::HILOS_LOG_STORE,
             HilosAgentType::HILOS_LOG_CARRIER,
+            HilosAgentType::HILOS_DAEMON_NODE,
+            HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_RT_SET,
@@ -377,6 +399,42 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
             Hilos::BROWSER_TABLES,
         );
+    }
+
+    /** Pins the Daemon feature, six page routes and all three agent placements. */
+    public function testDaemonAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::DAEMON, Hilos::features());
+        foreach ([
+            DaemonPage::class,
+            DaemonWorkersPage::class,
+            DaemonAgentsPage::class,
+            DaemonCronPage::class,
+            DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
+        $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
+        $this->assertSame(DemoHilosDaemonAgentDaemon::class, AgentRegistry::daemonClass($pageAgent));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($pageAgent));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($pageAgent));
+        $this->assertFalse((new DemoHilosDaemonAgentDaemon())->requiresMonopolisticProcess());
+
+        $nodeAgent = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_NODE];
+        $this->assertSame(DaemonNodeAgent::class, AgentRegistry::workerClass($nodeAgent));
+        $this->assertSame(DaemonNodeAgentDaemon::class, AgentRegistry::daemonClass($nodeAgent));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($nodeAgent));
+        $this->assertFalse((new DaemonNodeAgentDaemon())->requiresMonopolisticProcess());
+
+        $collector = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_COLLECTOR];
+        $this->assertSame(DaemonCollectorAgent::class, AgentRegistry::workerClass($collector));
+        $this->assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
+        $this->assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testLogsAdminFeatureIsActivated(): void
@@ -621,6 +679,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosFeature::SETTINGS,
                 HilosFeature::HILOS_USERS,
                 HilosFeature::LOGS,
+                HilosFeature::DAEMON,
                 HilosFeature::NOTIFICATIONS,
                 HilosFeature::NOTIFICATION_DELIVERY,
             ],

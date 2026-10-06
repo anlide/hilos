@@ -44,6 +44,9 @@ enum HilosFeature: string
     /** Log archive admin pages plus the log overview and rotation agents. */
     case LOGS = 'logs';
 
+    /** Daemon section pages served by the node, collector and page agents. */
+    case DAEMON = 'daemon';
+
     /** Durable notifications: storage, per-user preferences and the notifications page. */
     case NOTIFICATIONS = 'notifications';
 

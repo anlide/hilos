@@ -26,6 +26,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Demo\Tasks\Agents\Hilos\DataExportAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
+use Demo\Tasks\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
@@ -33,6 +34,7 @@ use Demo\Tasks\Agents\TasksAgent;
 use Demo\Tasks\Constants\AgentType;
 use Demo\Tasks\Constants\PageConstants;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
@@ -43,6 +45,12 @@ use Demo\Tasks\Hilos;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\DashboardPage;
 use Demo\Tasks\Pages\Hilos\Backup\BackupPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\Tasks\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Tasks\Pages\Hilos\Logs\LogsRotationsPage;
@@ -73,7 +81,12 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Log\LogSettingsCatalog;
@@ -359,6 +372,7 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosFeature::SETTINGS,
             HilosFeature::HILOS_USERS,
             HilosFeature::LOGS,
+            HilosFeature::DAEMON,
             HilosFeature::NOTIFICATIONS,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
@@ -625,6 +639,42 @@ final class TasksTopologyRegistryTest extends TestCase
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
         );
+    }
+
+    /** Pins the Daemon feature, six page routes and all three agent placements. */
+    public function testDaemonAdminFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::DAEMON, Hilos::features());
+        foreach ([
+            DaemonPage::class,
+            DaemonWorkersPage::class,
+            DaemonAgentsPage::class,
+            DaemonCronPage::class,
+            DaemonWebsocketsPage::class,
+            DaemonHttpServerPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
+        $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
+        $this->assertSame(DemoHilosDaemonAgentDaemon::class, AgentRegistry::daemonClass($pageAgent));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($pageAgent));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($pageAgent));
+        $this->assertFalse((new DemoHilosDaemonAgentDaemon())->requiresMonopolisticProcess());
+
+        $nodeAgent = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_NODE];
+        $this->assertSame(DaemonNodeAgent::class, AgentRegistry::workerClass($nodeAgent));
+        $this->assertSame(DaemonNodeAgentDaemon::class, AgentRegistry::daemonClass($nodeAgent));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($nodeAgent));
+        $this->assertFalse((new DaemonNodeAgentDaemon())->requiresMonopolisticProcess());
+
+        $collector = Hilos::AGENTS[HilosAgentType::HILOS_DAEMON_COLLECTOR];
+        $this->assertSame(DaemonCollectorAgent::class, AgentRegistry::workerClass($collector));
+        $this->assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
+        $this->assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testLogsAdminFeatureIsActivated(): void

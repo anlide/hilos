@@ -25,4 +25,7 @@ final class AgentType
 
     /** @var string Hilos logs agent type (serves every screen of the logs section) */
     public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
+
+    /** Daemon section page agent type. */
+    public const string HILOS_DAEMON = HilosAgentType::HILOS_DAEMON;
 }

@@ -23,6 +23,7 @@ use Demo\Chat\Agents\ChatContextAnalyzerAgent;
 use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Chat\Agents\Hilos\FilesLibraryAgent;
@@ -38,6 +39,7 @@ use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
@@ -182,6 +184,10 @@ use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
+use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
+use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
+use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
 use Hilos\Core\Analytics\AnalyticsWriterAgent;
@@ -305,6 +311,7 @@ final class Hilos extends HilosFacade
         HilosFeature::HILOS_USERS,
         HilosFeature::BACKUP,
         HilosFeature::LOGS,
+        HilosFeature::DAEMON,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
         HilosFeature::AUTH,
@@ -518,6 +525,10 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
         ],
+        DemoHilosDaemonAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosDaemonAgentDaemon::class,
+        ],
         DemoHilosLegalAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLegalAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosLegalAgentDaemon::class,
@@ -567,6 +578,16 @@ final class Hilos extends HilosFacade
         LogAggregatorAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => LogAggregatorAgent::class,
             AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        DaemonNodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonNodeAgent::class,
+            AgentRegistryKey::DAEMON => DaemonNodeAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        DaemonCollectorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
+            AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         AnalyticsWriterAgent::AGENT_TYPE => [
