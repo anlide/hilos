@@ -161,7 +161,6 @@ use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use Hilos\Utils\WorkerTickFailureLog;
-use ErrorException;
 use Throwable;
 
 /**
@@ -3097,10 +3096,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             try {
                 $this->flushDaemonClient();
-            } catch (SocketException|ErrorException $e) {
-                // In a running worker a broken socket arrives as the ErrorException that
-                // BaseManager::errorHandler() makes of socket_write()'s warning, already logged;
-                // without that handler, as the SocketException of handleSocketError().
+            } catch (SocketException $e) {
                 Logger::warning(
                     "Worker #{$this->workerIndex}: the daemon went before the stop hooks' frames were written: "
                     . get_class($e) . ' ' . $e->getMessage()

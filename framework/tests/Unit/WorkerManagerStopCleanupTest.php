@@ -25,6 +25,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Socket\Exception\Base\BrokenPipeException;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -37,6 +38,7 @@ use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Hilos;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 use ErrorException;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -184,24 +186,44 @@ final class WorkerManagerStopCleanupTest extends TestCase
     /**
      * A master that went before the worker takes the goodbye with it, and the worker still leaves.
      *
-     * The failed write is met the way a running worker meets it: its error handler turns the
-     * socket's warning into an ErrorException before the client sees the error code.
+     * The failed write is a socket exception: the call is suppressed, so the warning handler
+     * a running worker installs does not turn it into an ErrorException. The worker logs the
+     * frames it could not send once, runs the stop hook, and closes the client.
      */
     public function testCleanupLeavesQuietlyWhenTheDaemonWentFirst(): void
     {
-        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
-        $agent->goodbyeAcceptKey = 'unit-stop-ak';
-        $manager = new WorkerManagerStopCleanupTestManager($agent);
-        $manager->attachClient($this->connectedClient($daemonEnd));
-        $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
-        socket_close($daemonEnd);
-        array_pop($this->daemonEnds);
-        $this->installManagerErrorHandler();
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-stop-cleanup');
+        Logger::setLogFile($logFile);
+        try {
+            $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+            $agent->goodbyeAcceptKey = 'unit-stop-ak';
+            $manager = new WorkerManagerStopCleanupTestManager($agent);
+            $client = $this->connectedClient($daemonEnd);
+            $manager->attachClient($client);
+            $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+            socket_close($daemonEnd);
+            array_pop($this->daemonEnds);
+            $this->installManagerErrorHandler();
 
-        $manager->runCleanup();
+            $manager->runCleanup();
 
-        $this->assertTrue($agent->stopHookCalled);
-        $this->assertFalse($manager->hostsAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+            $this->assertTrue($agent->stopHookCalled);
+            $this->assertFalse($manager->hostsAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+            $this->assertTrue($manager->releasedDaemonClient());
+            $this->assertSame(DaemonConnectionState::IDLE, $client->currentState());
+            $logged = (string)file_get_contents($logFile);
+            $this->assertSame(
+                1,
+                substr_count($logged, "the daemon went before the stop hooks' frames were written"),
+            );
+            $this->assertStringContainsString(BrokenPipeException::class, $logged);
+            $this->assertStringNotContainsString(ErrorException::class, $logged);
+        } finally {
+            Logger::resetLogFile();
+            if (is_file($logFile)) {
+                unlink($logFile);
+            }
+        }
     }
 
     /**
@@ -408,6 +430,14 @@ final class WorkerManagerStopCleanupTestManager extends WorkerManager
     }
 
     /**
+     * @return bool True once cleanup has dropped the daemon client
+     */
+    public function releasedDaemonClient(): bool
+    {
+        return $this->daemonClient === null;
+    }
+
+    /**
      * @param string $agentId Agent id to look for
      * @return bool True while the manager still hosts that agent
      */
@@ -603,5 +633,13 @@ final class WorkerManagerStopCleanupTestSocketClient extends WorkerDaemonClient
     {
         $this->socket = $socket;
         $this->state = DaemonConnectionState::CONNECTED;
+    }
+
+    /**
+     * @return DaemonConnectionState Current connection state
+     */
+    public function currentState(): DaemonConnectionState
+    {
+        return $this->state;
     }
 }

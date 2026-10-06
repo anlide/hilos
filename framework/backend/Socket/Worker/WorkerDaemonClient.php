@@ -173,7 +173,8 @@ class WorkerDaemonClient extends AbstractSocket
             return;
         }
 
-        $data = socket_read($this->socket, 8192, PHP_BINARY_READ);
+        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
+        $data = @socket_read($this->socket, 8192, PHP_BINARY_READ);
 
         if ($data === '') {
             $this->loseConnection();
@@ -204,7 +205,8 @@ class WorkerDaemonClient extends AbstractSocket
             return;
         }
 
-        $written = socket_write($this->socket, $this->writeBuffer);
+        // warning-suppressed: a false return goes to handleSocketError(), which reads the error code
+        $written = @socket_write($this->socket, $this->writeBuffer);
 
         if ($written === false) {
             // handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK

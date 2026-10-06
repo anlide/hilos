@@ -15,6 +15,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Hilos;
+use Hilos\Socket\Exception\Base\BrokenPipeException;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -180,6 +181,30 @@ final class WorkerManagerTickGuardTest extends TestCase
     }
 
     /**
+     * A socket that is already lost is the connection, not a frame that failed to parse.
+     *
+     * The loop names the loss and leaves before the queue and the agent tick. A real
+     * frame that never became a message still belongs to the catch around it.
+     */
+    public function testALostConnectionLeavesBeforeTheNextMessageAndAgentTick(): void
+    {
+        $manager = new WorkerManagerTickGuardTestManager();
+        $manager->failReadWithLostConnection = true;
+        $manager->queueMessage(new WorkerManagerTickGuardTestMessage('cron'));
+        $agent = new WorkerManagerTickGuardTestAgent('1');
+        $manager->addTestAgent($agent);
+
+        $manager->run();
+
+        $this->assertSame([], $manager->handledMessageTypes);
+        $this->assertSame(0, $agent->ticks);
+        $this->assertSame([], $manager->containedFailures);
+        $logged = $this->logged();
+        $this->assertStringContainsString('Connection to daemon lost', $logged);
+        $this->assertStringNotContainsString('unparsed frame', $logged);
+    }
+
+    /**
      * @return string Everything the tick put in the journal
      */
     private function logged(): string
@@ -201,6 +226,9 @@ final class WorkerManagerTickGuardTestManager extends WorkerManager
 
     /** Whether the project's failure hook raises while answering. */
     public bool $hookFails = false;
+
+    /** Whether the scripted client drops the connection on the first read. */
+    public bool $failReadWithLostConnection = false;
 
     /** @var list<string> Types of the messages the handler saw through to the end. */
     public array $handledMessageTypes = [];
@@ -266,7 +294,9 @@ final class WorkerManagerTickGuardTestManager extends WorkerManager
 
     protected function connectToDaemon(): void
     {
-        $this->daemonClient = new WorkerManagerTickGuardTestClient($this->messages);
+        $client = new WorkerManagerTickGuardTestClient($this->messages);
+        $client->failReadWithLostConnection = $this->failReadWithLostConnection;
+        $this->daemonClient = $client;
     }
 
     protected function onTick(): void
@@ -362,6 +392,9 @@ final class WorkerManagerTickGuardTestAgent extends AbstractAgent
  */
 final class WorkerManagerTickGuardTestClient extends WorkerDaemonClient
 {
+    /** Whether the next read drops the connection and raises, as a broken socket does. */
+    public bool $failReadWithLostConnection = false;
+
     /**
      * @param list<WorkerDTO> $messages Messages to hand out, in order
      */
@@ -372,11 +405,17 @@ final class WorkerManagerTickGuardTestClient extends WorkerDaemonClient
 
     public function isConnected(): bool
     {
-        return true;
+        return $this->state === DaemonConnectionState::CONNECTED;
     }
 
     public function read(): void
     {
+        if (!$this->failReadWithLostConnection) {
+            return;
+        }
+
+        $this->state = DaemonConnectionState::LOST;
+        throw new BrokenPipeException();
     }
 
     public function write(): void
