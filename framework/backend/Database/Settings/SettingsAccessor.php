@@ -333,11 +333,7 @@ class SettingsAccessor implements ArrayAccess
         $path = $this->appendResolutionKey($key, $path);
 
         if (Hilos::$db instanceof HilosDbContext) {
-            /**
-             * @noinspection PhpPossiblePolymorphicInvocationInspection Framework-level magic settings
-             *     property on abstract HilosDbContext; runtime instance is always concrete
-             */
-            $persistedValue = Hilos::$db->settings[$key]?->value;
+            $persistedValue = Hilos::$db->settings->readPersistedValueByKeyFresh($key);
             if ($persistedValue !== null) {
                 return $persistedValue;
             }

@@ -85,6 +85,19 @@ class Settings extends DbCollection
     }
 
     /**
+     * Reads a persisted scalar setting value without consulting the held item.
+     *
+     * @param string $key Setting key
+     * @return ?string Persisted value or null when absent or unset
+     * @throws DatabaseException On database error while loading the setting
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function readPersistedValueByKeyFresh(string $key): ?string
+    {
+        return $this->objectCollection->readPersistedValueByKeyFresh($key);
+    }
+
+    /**
      * Returns orphans (settings in DB whose key is not in catalog).
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]

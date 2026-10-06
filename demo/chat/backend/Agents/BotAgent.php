@@ -45,13 +45,14 @@ use Hilos\Utils\Helpers\RandomHelper;
 final class BotAgent extends AbstractLlmChatAgent
 {
     /**
-     * @var list<string> The bot row this agent answers for, and the event it lives in. Both are
-     *     written by somebody else - the library owns the bots, the chat agent owns the events -
-     *     so this agent is a reader of them and declares itself one.
+     * @var list<string> The bot row this agent answers for, plus the events and message details
+     *     it builds its prompt from. The library owns bots and the chat agent owns the event rows,
+     *     so this agent declares itself a reader of each collection it traverses.
      */
     public const array READS_DB = [
         ChatDbContext::bots,
         ChatDbContext::events,
+        ChatDbContext::eventMessages,
     ];
 
     /**
@@ -416,17 +417,17 @@ final class BotAgent extends AbstractLlmChatAgent
             return;
         }
 
-        $options = new ChatGenerateOptions(
-            model: $this->profile->model,
-            temperature: 0.7,
-            timeoutSec: $this->profile->timeoutSec,
-            maxTokens: self::MAX_RESPONSE_TOKENS,
-        );
-
         try {
+            $this->refreshChatClientForNextRequest();
+            $options = new ChatGenerateOptions(
+                model: $this->profile->model,
+                temperature: 0.7,
+                timeoutSec: $this->profile->timeoutSec,
+                maxTokens: self::MAX_RESPONSE_TOKENS,
+            );
             $this->chatClient->startGenerate($messages, $options);
             $this->generationInFlight = true;
-        } catch (LLMException $e) {
+        } catch (HilosException $e) {
             $this->logAgentError($e->getMessage());
             $this->generationInFlight = false;
         }

@@ -6,6 +6,7 @@ namespace Hilos\LLM\Agent;
 
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -26,7 +27,7 @@ use Hilos\LLM\Routing\LlmProfile;
  */
 abstract class AbstractLlmChatAgent extends AbstractAgent
 {
-    /** Profile resolved once at construction; source of model/timeout/provider. */
+    /** Profile used by the current client; source of model/timeout/provider. */
     protected LlmProfile $profile;
 
     /** Async chat client for this agent's profile. */
@@ -85,6 +86,47 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
     protected function createChatClient(): AsyncChatLLMInterface
     {
         return ClientFactory::createChatClientForProfile($this->profile);
+    }
+
+    /**
+     * Refreshes the profile and client before starting the next request.
+     *
+     * The factory remains overridable and sees the candidate profile. A failed build
+     * restores the old profile; the active client is replaced only after success.
+     *
+     * @throws LogicException When the current client still owns a request or result
+     * @throws LLMConfigurationException When the profile or client configuration is invalid
+     * @throws EnvException When an env variable the profile names is missing or invalid
+     */
+    protected function refreshChatClientForNextRequest(): void
+    {
+        if ($this->chatClient->isBusy() || $this->chatClient->hasResult()) {
+            throw new LogicException('Cannot refresh an LLM client before its request is consumed');
+        }
+
+        $candidateProfile = Hilos::$llm->resolve($this->profileKey());
+        if (
+            $candidateProfile->key === $this->profile->key
+            && $candidateProfile->provider === $this->profile->provider
+            && $candidateProfile->url === $this->profile->url
+            && $candidateProfile->model === $this->profile->model
+            && $candidateProfile->apiKey === $this->profile->apiKey
+            && $candidateProfile->timeoutSec === $this->profile->timeoutSec
+            && $candidateProfile->placement === $this->profile->placement
+        ) {
+            return;
+        }
+
+        $previousProfile = $this->profile;
+        $this->profile = $candidateProfile;
+        try {
+            $candidateClient = $this->createChatClient();
+        } finally {
+            $this->profile = $previousProfile;
+        }
+
+        $this->chatClient = $candidateClient;
+        $this->profile = $candidateProfile;
     }
 
     /**

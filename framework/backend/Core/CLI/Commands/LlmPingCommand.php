@@ -185,9 +185,9 @@ HELP;
         $this->line('placement', $this->marked($profile->placement ?? '-', $base->placement ?? '-'));
         $this->line('api key', $this->apiKeyValue($profile, $entry));
 
-        echo "\nNote (HIL-331): this is what the profile resolves to right now. A running\n";
-        echo "agent resolved its profile in its constructor and keeps that one until it is\n";
-        echo "recreated, so a live agent may still use the previous resolution.\n";
+        echo "\nNote: this is what the profile resolves to right now. An in-flight request\n";
+        echo "keeps the profile it started with. Whether a running agent re-resolves\n";
+        echo "before its next request depends on that agent.\n";
     }
 
     /**

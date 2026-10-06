@@ -57,6 +57,23 @@ class Settings extends Objects
     }
 
     /**
+     * Reads a setting value from the database without using or changing held objects.
+     *
+     * @param string $key Setting key
+     * @return ?string Persisted value or null when absent or unset
+     * @throws DatabaseException If database query fails
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function readPersistedValueByKeyFresh(string $key): ?string
+    {
+        if ($key === '') {
+            return null;
+        }
+
+        return static::entityClass()::get([EntitySetting::key => $key])->first()?->value;
+    }
+
+    /**
      * Returns orphans (settings in DB whose key is not in catalog).
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]

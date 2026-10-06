@@ -9,14 +9,17 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
+use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\LLM\Exception\LLMResultUnavailableException;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
@@ -24,6 +27,9 @@ use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMClientBusyException;
 use Hilos\LLM\Exception\LLMRequestException;
+use Hilos\LLM\External\Chat\AsyncOpenAIChatProvider;
+use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
+use Hilos\LLM\Routing\LlmProvider;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
@@ -106,6 +112,133 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertFalse($result->allow);
             $this->assertSame('insult', $result->reason);
         } finally {
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+        }
+    }
+
+    public function testNextRequestUsesChangedModelWithoutReplacingInFlightClient(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        $setting = EntitySetting::get([EntitySetting::key => ChatSettingsConstants::DEFAULT_BOT_MODEL])->first();
+        $this->assertNotNull($setting);
+        $original = $setting->value;
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('User');
+            $acceptKey = 'moderator-refresh-ak';
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('first request', []);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $firstClient = new CompletedModerationChatClient('{"allow": true, "reason": "ok"}');
+            self::replaceChatClient($agent, $firstClient);
+            $agent->onTick();
+            $this->assertSame(1, $firstClient->startGenerateCalls);
+
+            $setting->value = '';
+            $setting->save();
+            $agent->onTick();
+            $this->assertSame($original, (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
+            $this->assertTrue($this->takeQueuedModerationResult()?->allow ?? false);
+
+            $this->clearCurrentMessageRequest($agent, $acceptKey);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('second request', []);
+            $agent->onTick();
+            $refusal = $this->takeQueuedModerationResult();
+            $this->assertNotNull($refusal);
+            $this->assertFalse($refusal->allow);
+            $this->assertSame('service_unavailable', $refusal->reason);
+            $this->assertSame(1, $firstClient->startGenerateCalls);
+
+            $this->clearCurrentMessageRequest($agent, $acceptKey);
+            $setting->value = $original;
+            $setting->save();
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('third request', []);
+            $agent->onTick();
+            $this->assertSame($original, (new ReflectionProperty($agent, 'profile'))->getValue($agent)->model);
+            $this->assertNotSame($firstClient, (new ReflectionProperty($agent, 'chatClient'))->getValue($agent));
+        } finally {
+            $setting->value = $original;
+            $setting->save();
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+        }
+    }
+
+    public function testNextRequestSwitchesLocalAddressTimeoutAndProviderTogether(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        $url = EntitySetting::get([EntitySetting::key => ChatSettingsConstants::DEFAULT_BOT_URL])->first();
+        $timeout = EntitySetting::get([EntitySetting::key => ChatSettingsConstants::DEFAULT_BOT_TIMEOUT_SEC])->first();
+        $provider = EntitySetting::get([EntitySetting::key => ChatSettingsConstants::DEFAULT_BOT_PROVIDER])->first();
+        $this->assertNotNull($url);
+        $this->assertNotNull($timeout);
+        $this->assertNotNull($provider);
+        $originalUrl = $url->value;
+        $originalTimeout = $timeout->value;
+        $originalProvider = $provider->value;
+        $originalKey = getenv(EnvConstants::LLM_EXTERNAL_API_KEY->name);
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('User');
+            $acceptKey = 'moderator-switch-ak';
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('first request', []);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $photoClient = (new ReflectionProperty($agent, 'photoClient'))->getValue($agent);
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": true, "reason": "ok"}'));
+            $agent->onTick();
+            $agent->onTick();
+            $this->assertTrue($this->takeQueuedModerationResult()?->allow ?? false);
+            $this->clearCurrentMessageRequest($agent, $acceptKey);
+
+            $url->value = 'http://alternate-local:11434';
+            $url->save();
+            $timeout->value = '12.5';
+            $timeout->save();
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('local request', []);
+            $agent->onTick();
+            $localProfile = (new ReflectionProperty($agent, 'profile'))->getValue($agent);
+            $this->assertSame(LlmProvider::LOCAL, $localProfile->provider);
+            $this->assertSame('http://alternate-local:11434', $localProfile->url);
+            $this->assertSame(12.5, $localProfile->timeoutSec);
+            $this->assertInstanceOf(AsyncOllamaChatProvider::class, (new ReflectionProperty($agent, 'chatClient'))->getValue($agent));
+            $this->clearCurrentMessageRequest($agent, $acceptKey);
+
+            putenv(EnvConstants::LLM_EXTERNAL_API_KEY->name . '=sk-test');
+            $provider->value = 'external';
+            $provider->save();
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('external request', []);
+            $agent->onTick();
+            $externalProfile = (new ReflectionProperty($agent, 'profile'))->getValue($agent);
+            $this->assertSame(LlmProvider::EXTERNAL, $externalProfile->provider);
+            $this->assertSame(Hilos::$env[EnvConstants::LLM_EXTERNAL_URL]->string(), $externalProfile->url);
+            $this->assertSame('sk-test', $externalProfile->apiKey);
+            $this->assertSame(12.5, $externalProfile->timeoutSec);
+            $this->assertInstanceOf(AsyncOpenAIChatProvider::class, (new ReflectionProperty($agent, 'chatClient'))->getValue($agent));
+            $this->assertSame($photoClient, (new ReflectionProperty($agent, 'photoClient'))->getValue($agent));
+        } finally {
+            $url->value = $originalUrl;
+            $url->save();
+            $timeout->value = $originalTimeout;
+            $timeout->save();
+            $provider->value = $originalProvider;
+            $provider->save();
+            if ($originalKey === false) {
+                putenv(EnvConstants::LLM_EXTERNAL_API_KEY->name);
+            } else {
+                putenv(EnvConstants::LLM_EXTERNAL_API_KEY->name . '=' . $originalKey);
+            }
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
         }
@@ -302,6 +435,25 @@ final class ModeratorAgentTest extends IntegrationTestCase
     {
         $property = new ReflectionProperty(ModeratorAgent::class, $propertyName);
         $property->setValue($agent, $chatClient);
+    }
+
+    private function clearCurrentMessageRequest(ModeratorAgent $agent, string $acceptKey): void
+    {
+        Hilos::$rt->connections[$acceptKey]?->actions->clearOutboundModeration();
+        $connection = Hilos::$rt->connections[$acceptKey];
+        $this->assertNotNull($connection);
+        $agent->onSignalRtSyncUpdated(
+            new RtSyncUpdatedSignalData(
+                collectionKey: ChatRtContext::connections,
+                stateId: $acceptKey,
+                row: [
+                    StateConnection::outboundModerationPhase => $connection->outboundModerationPhase,
+                    StateConnection::outboundModerationUpdatedAt => $connection->outboundModerationUpdatedAt,
+                ],
+            ),
+            'rt',
+            'rt_sync_updated',
+        );
     }
 
     private function takeQueuedPhotoVerdict(): ?ProfilePhotoVerdictSignalData

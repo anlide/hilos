@@ -18,8 +18,11 @@ vision model. `READS_RT` declares both the upload and photo-check collections;
 
 ## LLM Client
 
-Uses async `AsyncChatLLMInterface`, built once in the constructor from the
-`chat.moderation` profile (`Hilos::$llm`). Provider selected at startup:
+Uses async `AsyncChatLLMInterface`, initially built in the constructor from the
+`chat.moderation` profile (`Hilos::$llm`). Before each message or rename request,
+the agent resolves that profile again. It replaces the client only when the
+effective profile changes; the in-flight request keeps its original client.
+The provider is selected from the current settings:
 
 - External (OpenAI-compatible) if `chat_moderation_provider` is `external`.
 - Local Ollama otherwise. Its address is the first of these that is not empty:
@@ -74,11 +77,15 @@ UsersLibrary <--HILOS_PROFILE_PHOTO_VERDICT---- ModeratorAgent
 
 ## Settings
 
-Model and URL are read from DB settings through `Hilos::$setting` on each new LLM client creation.
+Model, URL, provider, and timeout are read from DB settings through `Hilos::$setting`
+before each new message or rename request. The typed accessor reads persisted
+values from DB even while this worker holds an older setting object.
 A URL setting that resolves empty — `chat_moderation_url` and its default `default_bot_url` both — is not an address: the role keeps the one env gave it, in the order under LLM Client above.
 Moderator prompt pieces are read from `ChatDbContext::moderatorPromptPieces`; CRUD ownership belongs to `LibraryAgent`.
 The `photo_rule` section supplies the vision prompt's rules. While it has no
 pieces, the moderator allows ordinary photos, drawings and logos and blocks
-nudity, graphic violence and hate symbols. The admin moderation table edits the
-same section alongside message and name rules.
-Settings change: restart moderator agent or reinitialize client.
+nudity, graphic violence and hate symbols. The pieces currently come from the
+seed; no admin editor is mounted.
+After a saved setting changes, the next request uses its new profile without a restart.
+An invalid profile returns `service_unavailable`; after correction, a later request
+can start. Photo moderation remains on its separate env-only client.

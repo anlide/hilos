@@ -10,6 +10,7 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Database\Settings\Exception\SettingNotInCatalogException;
 use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -78,6 +79,30 @@ final class SettingsAccessorTest extends IntegrationTestCase
             } finally {
                 TruthSourceRegistry::unregisterAgent(self::TEST_SETTINGS_AGENT_ID);
             }
+        }
+    }
+
+    /**
+     * Reads a peer's committed value before the held object receives DB sync.
+     */
+    public function testEffectiveValueReadsPastHeldSettingObject(): void
+    {
+        $key = ChatSettingsConstants::DEFAULT_BOT_MODEL;
+        $held = Hilos::$db->settings[$key];
+        $this->assertNotNull($held);
+        $original = $held->value;
+        $remote = EntitySetting::get([EntitySetting::key => $key])->first();
+        $this->assertNotNull($remote);
+
+        try {
+            $remote->value = 'model-from-peer';
+            $remote->save();
+
+            $this->assertSame($original, $held->value);
+            $this->assertSame('model-from-peer', Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string());
+        } finally {
+            $remote->value = $original;
+            $remote->save();
         }
     }
 

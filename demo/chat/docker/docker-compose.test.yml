@@ -197,10 +197,12 @@ services:
       # Local model (HIL-925): the stand's own model, which answers exactly what a
       # spec dictated. Only the channel prefix is given - the local model client
       # appends its completion path itself - and https is what makes it speak TLS.
-      # The per-role key and not the global LLM_LOCAL_URL: the bot and the context
-      # analyzer read the global one, and this address must not move them too.
+      # Each role uses its own address so tests can dictate moderation, analyzer,
+      # and bot answers independently without moving the global LLM_LOCAL_URL.
       - CHAT_MODERATION_URL=https://stand-gateway:18000/model
       - CHAT_PHOTO_MODERATION_URL=https://stand-gateway:18000/model
+      - CHAT_BOT_URL=https://stand-gateway:18000/model
+      - CHAT_CONTEXT_ANALYZER_URL=https://stand-gateway:18000/model
       # OAuth (HIL-924): the stand's own provider emulator, which the presets are pointed
       # at as a base - each builds <base>/<github|google>/authorize|token|userinfo from it.
       # https is kept, because the emulator speaks the TLS a real provider speaks (HIL-921).

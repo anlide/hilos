@@ -16,7 +16,8 @@ Two facts decide everything below, so read them first:
    `LLM_EXTERNAL_API_KEY` are read from env only. A settings row may switch
    *which* provider is used, never the key it uses.
 
-A settings row of `NULL` inherits: `chat_moderation_model` → `default_bot_model`
+A setting with no persisted value (no row or a `NULL` value) inherits:
+`chat_moderation_model` → `default_bot_model`
 → catalog default. So the shared `default_bot_*` rows move both roles at once.
 
 ## 0. Prerequisites, once per machine
@@ -225,18 +226,20 @@ The external client is OpenAI-compatible: `POST {base}/v1/chat/completions` with
    external API, which answers with a model error. Use `chat_bot_*` for the bot,
    or `default_bot_*` to move both roles at once.
 
-4. **Restart the daemon again.** Agents resolve their profile in the constructor,
-   so a settings change does not take effect until the agent is recreated
-   (HIL-331 tracks hot reload).
+4. Send the next message or trigger the next bot reply. The role reads the saved
+   settings before its next LLM request; a request already running finishes with
+   the profile it started with. No daemon restart is needed for a settings edit.
 
 5. Re-run the profile print from step 0 — expect `provider=external`,
    `url=https://api.openai.com`, `apiKey=(set)` — then repeat the allow / block /
    rename checks from section 1. Latency is network-bound; there is no warm-up.
 
-6. **Missing-key path.** Clear `LLM_EXTERNAL_API_KEY`, restart, and watch what a
-   user sees: the profile cannot resolve and the agent constructor throws
-   `LLMConfigurationException`. Confirm the failure is visible in the UI and not
-   just in the log.
+6. **Missing-key path.** Clear `LLM_EXTERNAL_API_KEY` and recreate the container
+   as in step 2. With the role's provider still set to `external`, its next
+   request cannot resolve a profile: moderation returns `service_unavailable`;
+   the bot logs the configuration error and publishes no reply. If an agent is
+   created while the key is missing, its constructor can also refuse to start.
+   Restore the key and recreate the container before continuing.
 
 ### Where the requests show up
 
@@ -281,10 +284,6 @@ OpenAI-compatible gateway instead.
 > roles cannot point at two different vendors simultaneously, and switching
 > vendors means editing `.env` and recreating the container. HIL-332 covers the
 > named endpoint/credential catalog that would lift this.
->
-> Changing an LLM setting needs a daemon restart either way: an agent resolves
-> its profile in its constructor, so a saved setting reaches it only on the next
-> start (HIL-331).
 
 ## Troubleshooting
 
@@ -292,7 +291,7 @@ OpenAI-compatible gateway instead.
 |---|---|
 | Message stuck in *checking* | Ollama unreachable from the container, or a cold model load still running (up to ~40 s for 3b, longer for 7b) |
 | `Moderation unavailable` | The model returned unparseable output, or the request errored — read the daemon log for the raw body |
-| Settings change had no effect | Daemon not restarted, or the row edited was `chat_*` while the effective value comes from `default_bot_*` (or the reverse) |
+| Settings change had no effect | The role has not started another LLM request, or a role-specific persisted row overrides the edited `default_bot_*` value |
 | External call fails immediately | Model name still an Ollama tag; or the URL is not `https://` |
 | Everything resolves `local` after setting `external` in `.env` | Expected — the settings row is authoritative for bot and moderation |
 | `LLM_EXTERNAL_API_KEY` empty inside the container after editing `.env` | The container was restarted, not recreated — `env_file` is only read at creation. Run `up -d` (see section 3, step 2) |

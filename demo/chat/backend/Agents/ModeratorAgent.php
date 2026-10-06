@@ -297,12 +297,6 @@ final class ModeratorAgent extends AbstractAgent
         $this->currentModerationValue = $value;
         $this->currentModerationUpdatedAt = $updatedAt;
 
-        $options = new ChatGenerateOptions(
-            model: $this->profile->model,
-            timeoutSec: $this->profile->timeoutSec,
-            maxTokens: self::MODERATION_MAX_TOKENS,
-        );
-
         try {
             $messages = $this->buildModerationMessages();
         } catch (AgentException $e) {
@@ -312,8 +306,27 @@ final class ModeratorAgent extends AbstractAgent
         }
 
         try {
+            $candidateProfile = Hilos::$llm->resolve(ChatLLMConstants::PROFILE_MODERATION);
+            if (
+                $candidateProfile->key !== $this->profile->key
+                || $candidateProfile->provider !== $this->profile->provider
+                || $candidateProfile->url !== $this->profile->url
+                || $candidateProfile->model !== $this->profile->model
+                || $candidateProfile->apiKey !== $this->profile->apiKey
+                || $candidateProfile->timeoutSec !== $this->profile->timeoutSec
+                || $candidateProfile->placement !== $this->profile->placement
+            ) {
+                $candidateClient = ClientFactory::createChatClientForProfile($candidateProfile);
+                $this->chatClient = $candidateClient;
+                $this->profile = $candidateProfile;
+            }
+            $options = new ChatGenerateOptions(
+                model: $this->profile->model,
+                timeoutSec: $this->profile->timeoutSec,
+                maxTokens: self::MODERATION_MAX_TOKENS,
+            );
             $this->chatClient->startGenerate($messages, $options);
-        } catch (LLMException $e) {
+        } catch (HilosException $e) {
             $this->logAgentError($e->getMessage());
             $this->sendCurrentModerationResult(false, self::REASON_SERVICE_UNAVAILABLE);
         }
