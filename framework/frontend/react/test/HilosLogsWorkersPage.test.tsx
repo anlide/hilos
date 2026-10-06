@@ -89,6 +89,8 @@ function makeConnection(): {
 
       return () => {}
     },
+    sendTableFacets(): void {},
+    sendTableRendered(): void {},
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -172,7 +174,7 @@ function byId(container: HTMLElement, id: string): HTMLElement | null {
 }
 
 function subLine(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('[data-id^="hilos-table-row-"] .d-lg-none')
+  return container.querySelector('[data-id^="hilos-table-card-"]')
 }
 
 describe('HilosLogsWorkersPage', () => {
@@ -220,10 +222,9 @@ describe('HilosLogsWorkersPage', () => {
       },
     )
 
-    // A search that matched nothing is the table's own state since HIL-808: the framework
-    // names the query and offers the reset, and the page's words stay for an empty store.
-    expect(byId(container, 'hilos-table-no-matches')).not.toBeNull()
-    expect(byId(container, 'hilos-table-no-matches-reset')).not.toBeNull()
+    // This frame opts into the page's own no-match wording and reset control.
+    expect(byId(container, 'hilos-log-worker-empty-nomatch')).not.toBeNull()
+    expect(byId(container, 'hilos-log-worker-clear-filters')).not.toBeNull()
     expect(byId(container, 'hilos-log-worker-empty-never')).toBeNull()
   })
 
@@ -233,7 +234,7 @@ describe('HilosLogsWorkersPage', () => {
 
     pushHeader(header({ nodes: [] }))
 
-    expect(byId(container, 'hilos-log-worker-node')).toBeNull()
+    expect(byId(container, 'hilos-table-filter-node')).toBeNull()
     expect(byId(container, 'hilos-table-sort-node')).toBeNull()
   })
 
@@ -243,7 +244,7 @@ describe('HilosLogsWorkersPage', () => {
 
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
 
-    const select = byId(container, 'hilos-log-worker-node')
+    const select = byId(container, 'hilos-table-filter-node')
     expect(select).not.toBeNull()
     expect(select?.textContent).toContain('node-2')
     expect(byId(container, 'hilos-table-sort-node')).not.toBeNull()
@@ -253,21 +254,16 @@ describe('HilosLogsWorkersPage', () => {
     const { connection, filters } = makeConnection()
     const container = mountPage(connection)
 
-    fireEvent.click(
-      byId(container, 'hilos-log-worker-type-monopolistic') as HTMLElement,
-    )
+    fireEvent.click(byId(container, 'hilos-table-filter-type') as HTMLElement)
 
     expect(filters.at(-1)).toEqual({ type: 'monopolistic' })
   })
 
-  it('offers two type buttons and no third, because the panel asks two questions', () => {
+  it('offers the monopolistic toggle in the shared bar', () => {
     const { connection } = makeConnection()
     const container = mountPage(connection)
 
-    expect(
-      container.querySelectorAll('[data-id^="hilos-log-worker-type-"]'),
-    ).toHaveLength(2)
-    expect(byId(container, 'hilos-log-worker-type-regular')).toBeNull()
+    expect(byId(container, 'hilos-table-filter-type')).not.toBeNull()
   })
 
   it('tells the monopolistic worker from an ordinary one by its badge', () => {
@@ -309,7 +305,7 @@ describe('HilosLogsWorkersPage', () => {
     pushWindow([stream()])
 
     expect(subLine(container)).not.toBeNull()
-    expect(subLine(container)?.textContent).toBe('1.5 GB')
+    expect(subLine(container)?.textContent).toContain('1.5 GB')
   })
 
   it('carries the node into that sub-line as well where nodes have names', () => {
@@ -319,7 +315,8 @@ describe('HilosLogsWorkersPage', () => {
     pushHeader(header({ nodes: ['node-1'] }))
     pushWindow([stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' })])
 
-    expect(subLine(container)?.textContent).toBe('node-1 · 1.5 GB')
+    expect(subLine(container)?.textContent).toContain('node-1')
+    expect(subLine(container)?.textContent).toContain('1.5 GB')
   })
 
   it('sends a live stream to the live file and an archived one to its last batch', () => {

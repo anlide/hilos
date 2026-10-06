@@ -90,6 +90,8 @@ function makeConnection(): {
 
       return () => {}
     },
+    sendTableFacets(): void {},
+    sendTableRendered(): void {},
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -210,13 +212,12 @@ describe('HilosLogsWorkersPage', () => {
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('nothing')
 
-    // A search that matched nothing is the table's own state since HIL-808: the framework
-    // names the query and offers the reset, and the page's words stay for an empty store.
-    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
-      true,
-    )
+    // This frame opts into the page's own no-match wording and reset control.
     expect(
-      wrapper.find('[data-id="hilos-table-no-matches-reset"]').exists(),
+      wrapper.find('[data-id="hilos-log-worker-empty-nomatch"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.find('[data-id="hilos-log-worker-clear-filters"]').exists(),
     ).toBe(true)
     expect(
       wrapper.find('[data-id="hilos-log-worker-empty-never"]').exists(),
@@ -230,7 +231,7 @@ describe('HilosLogsWorkersPage', () => {
     pushHeader(header({ nodes: [] }))
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-log-worker-node"]').exists()).toBe(
+    expect(wrapper.find('[data-id="hilos-table-filter-node"]').exists()).toBe(
       false,
     )
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
@@ -245,7 +246,7 @@ describe('HilosLogsWorkersPage', () => {
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
     await nextTick()
 
-    const select = wrapper.find('[data-id="hilos-log-worker-node"]')
+    const select = wrapper.find('[data-id="hilos-table-filter-node"]')
     expect(select.exists()).toBe(true)
     expect(select.text()).toContain('node-2')
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
@@ -257,23 +258,18 @@ describe('HilosLogsWorkersPage', () => {
     const { connection, filters } = makeConnection()
     const wrapper = mountPage(connection)
 
-    await wrapper
-      .find('[data-id="hilos-log-worker-type-monopolistic"]')
-      .trigger('click')
+    await wrapper.find('[data-id="hilos-table-filter-type"]').setValue(true)
 
     expect(filters.at(-1)).toEqual({ type: 'monopolistic' })
   })
 
-  it('offers two type buttons and no third, because the panel asks two questions', () => {
+  it('offers the monopolistic toggle in the shared bar', () => {
     const { connection } = makeConnection()
     const wrapper = mountPage(connection)
 
-    expect(wrapper.findAll('[data-id^="hilos-log-worker-type-"]')).toHaveLength(
-      2,
+    expect(wrapper.find('[data-id="hilos-table-filter-type"]').exists()).toBe(
+      true,
     )
-    expect(
-      wrapper.find('[data-id="hilos-log-worker-type-regular"]').exists(),
-    ).toBe(false)
   })
 
   it('tells the monopolistic worker from an ordinary one by its badge', async () => {
@@ -312,9 +308,9 @@ describe('HilosLogsWorkersPage', () => {
     pushWindow([stream()])
     await nextTick()
 
-    const subLine = wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none')
+    const subLine = wrapper.find('[data-id^="hilos-table-card-"]')
     expect(subLine.exists()).toBe(true)
-    expect(subLine.text()).toBe('1.5 GB')
+    expect(subLine.text()).toContain('1.5 GB')
   })
 
   it('carries the node into that sub-line as well where nodes have names', async () => {
@@ -325,9 +321,12 @@ describe('HilosLogsWorkersPage', () => {
     pushWindow([stream({ rowKey: 'node-1:worker-0.log', node: 'node-1' })])
     await nextTick()
 
-    expect(
-      wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
-    ).toBe('node-1 · 1.5 GB')
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain(
+      'node-1',
+    )
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain(
+      '1.5 GB',
+    )
   })
 
   it('sends a live stream to the live file and an archived one to its last batch', async () => {

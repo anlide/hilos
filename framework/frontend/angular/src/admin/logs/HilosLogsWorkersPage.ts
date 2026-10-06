@@ -1,15 +1,6 @@
-// HilosLogsWorkersPage — the framework Hilos by-worker page (HilosPages.LOGS_WORKERS):
-// the same stream list as the by-key page, but only the workers and with the one
-// distinction that page folds away — the monopolistic worker against the ordinary ones.
-// A row is one worker stream ON ONE NODE, so the node column, the node filter, the node
-// in the footnote and the node half of the search hint exist only where nodes have
-// names. Search, the node filter and the All / Monopolistic only switch ride the open
-// viewport filter map (server-side, no local filtering); the window is re-served by the
-// page whenever the cluster picture moves. The screen commands nothing: the only way
-// out of it is the Open button into the viewer (HIL-388). All table logic, the row
-// view-model, the empty-state discrimination and the wording are the core headless's
-// (hilosLogWorkers); this view owns only the markup, so a project mounts it by passing
-// its HilosLogWorkersContext. Bootstrap classes only (styling-rules.md).
+// HilosLogsWorkersPage draws the by-worker stream list. The core frame owns the
+// shared bar, columns, cards, and footer; this page supplies cells and its four
+// empty states. The header names nodes reactively, and Open leads to the stream viewer.
 import {
   ChangeDetectionStrategy,
   Component,
@@ -20,14 +11,7 @@ import {
 } from '@angular/core'
 import {
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
-  HILOS_LOG_WORKER_TYPE_OPTIONS,
   HilosPages,
-  WORKER_BATCH_COUNT_FIELD,
-  WORKER_BYTES_FIELD,
-  WORKER_FILTER_NODE,
-  WORKER_FILTER_TYPE,
-  WORKER_NAME_FIELD,
-  WORKER_NODE_FIELD,
   createHilosLogWorkersHeader,
   createHilosLogWorkersTable,
   formatLogWorkerState,
@@ -36,25 +20,24 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
-  logWorkersSearchPlaceholder,
   subscribeSignal,
 } from '@hilos/core'
 import type {
   HilosLogWorkerRow,
   HilosLogWorkersContext,
   HilosLogWorkersHeader,
-  HilosTableColumn,
 } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 
 /** The framework by-worker page: the worker stream list and its type distinction. */
 @Component({
   selector: 'hilos-logs-workers-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HilosAdminPage, HilosLink, HilosViewportTable],
+  imports: [HilosAdminPage, HilosLink, HilosTableCell, HilosViewportTable],
   template: `
     <hilos-admin-page [page]="page">
       <p class="text-body-secondary">
@@ -63,96 +46,37 @@ import { HilosViewportTable } from '../../HilosViewportTable.js'
         monopolistic one.
       </p>
 
-      <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
-        @if (clustered()) {
-          <div>
-            <label class="form-label" for="hilos-log-worker-node">Node</label>
-            <select
-              id="hilos-log-worker-node"
-              class="form-select"
-              [value]="nodeFilter()"
-              data-id="hilos-log-worker-node"
-              (change)="onNode($event)"
+      <hilos-viewport-table [controller]="streams().controller">
+        <ng-template hilosTableCell="key" let-row>
+          <code class="fw-semibold small">{{ row.key }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="node" let-row>{{ row.node }}</ng-template>
+        <ng-template hilosTableCell="type" let-row>
+          <span [class]="'badge ' + typeClass(row)">
+            {{ formatType(row) }}
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="live" let-row>
+          <span [class]="'badge ' + stateClass(row)">
+            {{ formatState(row) }}
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="batchCount" let-row>{{
+          row.batchCount
+        }}</ng-template>
+        <ng-template hilosTableCell="bytes" let-row>{{
+          formatWeight(row)
+        }}</ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          @if (viewerPath(row) !== '') {
+            <a
+              [hilosLink]="viewerPath(row)"
+              class="btn btn-sm btn-outline-secondary text-nowrap"
+              [attr.data-id]="'hilos-log-worker-open-' + row.rowKey"
             >
-              <option value="">All nodes</option>
-              @for (node of header()?.nodes ?? []; track node) {
-                <option [value]="node">{{ node }}</option>
-              }
-            </select>
-          </div>
-        }
-        <div
-          class="btn-group btn-group-sm"
-          role="group"
-          aria-label="Worker type"
-        >
-          @for (option of typeOptions; track option.value) {
-            <button
-              type="button"
-              class="btn btn-outline-secondary"
-              [class.active]="typeFilter() === option.value"
-              [attr.aria-pressed]="typeFilter() === option.value"
-              [attr.data-id]="
-                'hilos-log-worker-type-' + (option.value || 'all')
-              "
-              (click)="setType(option.value)"
-            >
-              {{ option.label }}
-            </button>
+              Open
+            </a>
           }
-        </div>
-      </div>
-
-      <hilos-viewport-table
-        label="Worker streams"
-        [controller]="streams().controller"
-        [columns]="columns()"
-        [searchable]="true"
-        [searchPlaceholder]="searchPlaceholder()"
-      >
-        <ng-template #row let-row>
-          <td>
-            <code class="fw-semibold small">{{ row.key }}</code>
-            <!-- The sub-line carries whatever the hidden columns were carrying, so a
-            narrow screen loses the layout and not the figures. It is there in a
-            single-node installation too, where only the weight was hidden. -->
-            <div class="small text-body-secondary d-lg-none">
-              @if (clustered()) {
-                {{ row.node }} ·
-              }
-              {{ formatWeight(row) }}
-            </div>
-          </td>
-          @if (clustered()) {
-            <td class="d-none d-lg-table-cell">{{ row.node }}</td>
-          }
-          <td>
-            <span [class]="'badge ' + typeClass(row)">
-              {{ formatType(row) }}
-            </span>
-          </td>
-          <td>
-            <span [class]="'badge ' + stateClass(row)">
-              {{ formatState(row) }}
-            </span>
-          </td>
-          <td class="text-end">{{ row.batchCount }}</td>
-          <td class="text-end d-none d-lg-table-cell">
-            {{ formatWeight(row) }}
-          </td>
-          <td class="text-end">
-            <!-- A stream that is neither live nor archived has no file to open, and
-            the headless answers with an empty address rather than a broken one. -->
-            @if (viewerPath(row) !== '') {
-              <a
-                [hilosLink]="viewerPath(row)"
-                class="btn btn-sm btn-outline-secondary text-nowrap"
-                [attr.data-id]="'hilos-log-worker-open-' + row.rowKey"
-              >
-                Open
-              </a>
-            }
-          </td>
         </ng-template>
 
         <ng-template #empty>
@@ -229,17 +153,16 @@ export class HilosLogsWorkersPage {
   readonly context = input.required<HilosLogWorkersContext>()
 
   protected readonly page = HilosPages.LOGS_WORKERS
-  protected readonly typeOptions = HILOS_LOG_WORKER_TYPE_OPTIONS
   protected readonly formatState = formatLogWorkerState
   protected readonly formatType = formatLogWorkerType
   protected readonly formatWeight = formatLogWorkerWeight
   protected readonly viewerPath = logWorkerViewerPath
 
-  protected readonly streams = computed(() =>
-    createHilosLogWorkersTable(this.context()),
-  )
   private readonly headerHandle = computed(() =>
     createHilosLogWorkersHeader(this.context()),
+  )
+  protected readonly streams = computed(() =>
+    createHilosLogWorkersTable(this.context(), this.headerHandle().header),
   )
 
   // The header and the window state, mirrored from the (per-context) core signals
@@ -247,11 +170,7 @@ export class HilosLogsWorkersPage {
   protected readonly header = signal<HilosLogWorkersHeader | null>(null)
   private readonly rowCount = signal(0)
   private readonly search = signal('')
-
-  // Domain filters: the node and the type ride the open filter map so the backend
-  // narrows the window (no local filtering). Empty clears the filter.
-  protected readonly nodeFilter = signal('')
-  protected readonly typeFilter = signal('')
+  private readonly filter = signal<Readonly<Record<string, unknown>>>({})
 
   // The node column, the node filter and the footnote's wording all follow the same
   // question: in a single-node installation a column repeating one name and a filter
@@ -260,58 +179,13 @@ export class HilosLogsWorkersPage {
     hasLogWorkerNodes(this.header()),
   )
 
-  // The search hint follows the same header, so the field never offers a dimension
-  // the list cannot match on.
-  protected readonly searchPlaceholder = computed(() =>
-    logWorkersSearchPlaceholder(this.header()),
-  )
-
-  // The sortable keys are the exported wire constants, which is where a typo would
-  // actually cost something — they travel to the backend as the sort field. The type
-  // is not among them: the mockup draws no sort on its header, and a difference of two
-  // steps does not read as an ordering — that is what the filter button is for.
-  //
-  // The node and weight columns drop out of the header below `lg`, where their values
-  // move into the sub-line of the key cell: a narrow screen gets a shorter table
-  // rather than one that scrolls sideways.
-  protected readonly columns = computed<HilosTableColumn[]>(() => [
-    { key: WORKER_NAME_FIELD, label: 'Key', sortable: true },
-    ...(this.clustered()
-      ? [
-          {
-            key: WORKER_NODE_FIELD,
-            label: 'Node',
-            sortable: true,
-            headerClass: 'd-none d-lg-table-cell',
-          },
-        ]
-      : []),
-    { key: 'type', label: 'Type' },
-    { key: 'state', label: 'State' },
-    {
-      key: WORKER_BATCH_COUNT_FIELD,
-      label: 'Batches',
-      sortable: true,
-      headerClass: 'text-end',
-    },
-    {
-      key: WORKER_BYTES_FIELD,
-      label: 'Weight',
-      sortable: true,
-      headerClass: 'text-end d-none d-lg-table-cell',
-    },
-    { key: 'open', label: '' },
-  ])
-
   // Which of the four empty states the screen is in — the discrimination is the
   // headless's, because it is the same question in all three view frameworks.
   protected readonly emptyState = computed(() =>
     logWorkersEmptyState(
       this.header(),
       this.rowCount(),
-      this.search() !== '' ||
-        this.nodeFilter() !== '' ||
-        this.typeFilter() !== '',
+      this.search() !== '' || Object.keys(this.filter()).length > 0,
     ),
   )
 
@@ -327,6 +201,7 @@ export class HilosLogsWorkersPage {
       this.header.set(headerHandle.header.get())
       this.rowCount.set(streams.controller.rows.get().length)
       this.search.set(streams.controller.search.get())
+      this.filter.set(streams.controller.filter.get())
       const unsubscribes = [
         subscribeSignal(headerHandle.header, (next) => {
           this.header.set(next)
@@ -336,6 +211,9 @@ export class HilosLogsWorkersPage {
         }),
         subscribeSignal(streams.controller.search, (next) => {
           this.search.set(next)
+        }),
+        subscribeSignal(streams.controller.filter, (next) => {
+          this.filter.set(next)
         }),
       ]
       onCleanup(() => {
@@ -362,23 +240,7 @@ export class HilosLogsWorkersPage {
     return row.live ? 'text-bg-success' : 'text-bg-light border'
   }
 
-  protected onNode(event: Event): void {
-    this.setNode((event.target as HTMLSelectElement).value)
-  }
-
-  protected setType(value: string): void {
-    this.typeFilter.set(value)
-    this.streams().controller.setFilter(WORKER_FILTER_TYPE, value)
-  }
-
   protected clearFilters(): void {
-    this.streams().controller.setSearch('')
-    this.setNode('')
-    this.setType('')
-  }
-
-  private setNode(value: string): void {
-    this.nodeFilter.set(value)
-    this.streams().controller.setFilter(WORKER_FILTER_NODE, value)
+    this.streams().controller.resetFilters()
   }
 }

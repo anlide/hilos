@@ -1,26 +1,10 @@
-// HilosLogsWorkersPage — the framework Hilos by-worker page (HilosPages.LOGS_WORKERS):
-// the same stream list as the by-key page, but only the workers and with the one
-// distinction that page folds away — the monopolistic worker against the ordinary ones.
-// A row is one worker stream ON ONE NODE, so the node column, the node filter, the node
-// in the footnote and the node half of the search hint exist only where nodes have
-// names. Search, the node filter and the All / Monopolistic only switch ride the open
-// viewport filter map (server-side, no local filtering); the window is re-served by the
-// page whenever the cluster picture moves. The screen commands nothing: the only way
-// out of it is the Open button into the viewer (HIL-388). All table logic, the row
-// view-model, the empty-state discrimination and the wording are the core headless's
-// (hilosLogWorkers); this view owns only the markup, so a project mounts it by passing
-// its HilosLogWorkersContext. Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+// HilosLogsWorkersPage draws the by-worker stream list. The core frame owns the
+// shared bar, columns, cards, and footer; this page supplies cells and its four
+// empty states. The header names nodes reactively, and Open leads to the stream viewer.
+import { useEffect, useMemo } from 'react'
 import {
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
-  HILOS_LOG_WORKER_TYPE_OPTIONS,
   HilosPages,
-  WORKER_BATCH_COUNT_FIELD,
-  WORKER_BYTES_FIELD,
-  WORKER_FILTER_NODE,
-  WORKER_FILTER_TYPE,
-  WORKER_NAME_FIELD,
-  WORKER_NODE_FIELD,
   createHilosLogWorkersHeader,
   createHilosLogWorkersTable,
   formatLogWorkerState,
@@ -29,13 +13,8 @@ import {
   hasLogWorkerNodes,
   logWorkerViewerPath,
   logWorkersEmptyState,
-  logWorkersSearchPlaceholder,
 } from '@hilos/core'
-import type {
-  HilosLogWorkerRow,
-  HilosLogWorkersContext,
-  HilosTableColumn,
-} from '@hilos/core'
+import type { HilosLogWorkerRow, HilosLogWorkersContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -46,49 +25,6 @@ import { useSignal } from '../../useSignal.js'
 export interface HilosLogsWorkersPageProps {
   /** The project context: scope stores and the connection. */
   context: HilosLogWorkersContext
-}
-
-/**
- * The sortable keys are the exported wire constants, which is where a typo would
- * actually cost something — they travel to the backend as the sort field. The type
- * is not among them: the mockup draws no sort on its header, and a difference of two
- * steps does not read as an ordering — that is what the filter button is for.
- *
- * The node and weight columns drop out of the header below `lg`, where their values
- * move into the sub-line of the key cell: a narrow screen gets a shorter table
- * rather than one that scrolls sideways.
- *
- * @param clustered Whether this installation names its nodes.
- */
-function workerColumns(clustered: boolean): HilosTableColumn[] {
-  return [
-    { key: WORKER_NAME_FIELD, label: 'Key', sortable: true },
-    ...(clustered
-      ? [
-          {
-            key: WORKER_NODE_FIELD,
-            label: 'Node',
-            sortable: true,
-            headerClass: 'd-none d-lg-table-cell',
-          },
-        ]
-      : []),
-    { key: 'type', label: 'Type' },
-    { key: 'state', label: 'State' },
-    {
-      key: WORKER_BATCH_COUNT_FIELD,
-      label: 'Batches',
-      sortable: true,
-      headerClass: 'text-end',
-    },
-    {
-      key: WORKER_BYTES_FIELD,
-      label: 'Weight',
-      sortable: true,
-      headerClass: 'text-end d-none d-lg-table-cell',
-    },
-    { key: 'open', label: '' },
-  ]
 }
 
 /**
@@ -120,12 +56,15 @@ function stateClass(row: HilosLogWorkerRow): string {
  * @param props The project context (scope stores + the connection).
  */
 export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
-  const streams = useMemo(() => createHilosLogWorkersTable(context), [context])
-  const streamsTable = streams.controller
   const headerHandle = useMemo(
     () => createHilosLogWorkersHeader(context),
     [context],
   )
+  const streams = useMemo(
+    () => createHilosLogWorkersTable(context, headerHandle.header),
+    [context, headerHandle],
+  )
+  const streamsTable = streams.controller
   const header = useSignal(headerHandle.header)
 
   // Bind the server-windowed table and start listening for the header on mount; the
@@ -142,36 +81,14 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
 
   const rows = useSignal(streamsTable.rows)
   const search = useSignal(streamsTable.search)
+  const filter = useSignal(streamsTable.filter)
 
   // The node column, the node filter and the footnote's wording all follow the same
   // question: in a single-node installation a column repeating one name and a filter
   // offering one option would both be furniture for a choice that does not exist.
   const clustered = hasLogWorkerNodes(header)
-  const columns = workerColumns(clustered)
-
-  // The search hint follows the same header, so the field never offers a dimension
-  // the list cannot match on.
-  const searchPlaceholder = logWorkersSearchPlaceholder(header)
-
-  // Domain filters: the node and the type ride the open filter map so the backend
-  // narrows the window (no local filtering). Empty clears the filter.
-  const [nodeFilter, setNodeFilter] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
-
-  function setNode(value: string): void {
-    setNodeFilter(value)
-    streamsTable.setFilter(WORKER_FILTER_NODE, value)
-  }
-
-  function setType(value: string): void {
-    setTypeFilter(value)
-    streamsTable.setFilter(WORKER_FILTER_TYPE, value)
-  }
-
   function clearFilters(): void {
-    streamsTable.setSearch('')
-    setNode('')
-    setType('')
+    streamsTable.resetFilters()
   }
 
   // Which of the four empty states the screen is in — the discrimination is the
@@ -179,7 +96,7 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
   const emptyState = logWorkersEmptyState(
     header,
     rows.length,
-    search !== '' || nodeFilter !== '' || typeFilter !== '',
+    search !== '' || Object.keys(filter).length > 0,
   )
 
   return (
@@ -190,98 +107,36 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
         monopolistic one.
       </p>
 
-      <div className="d-flex flex-wrap align-items-end gap-2 mb-3">
-        {clustered ? (
-          <div>
-            <label className="form-label" htmlFor="hilos-log-worker-node">
-              Node
-            </label>
-            <select
-              id="hilos-log-worker-node"
-              className="form-select"
-              value={nodeFilter}
-              data-id="hilos-log-worker-node"
-              onChange={(event) => setNode(event.target.value)}
-            >
-              <option value="">All nodes</option>
-              {(header?.nodes ?? []).map((node) => (
-                <option key={node} value={node}>
-                  {node}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        <div
-          className="btn-group btn-group-sm"
-          role="group"
-          aria-label="Worker type"
-        >
-          {HILOS_LOG_WORKER_TYPE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`btn btn-outline-secondary${typeFilter === option.value ? ' active' : ''}`}
-              aria-pressed={typeFilter === option.value}
-              data-id={`hilos-log-worker-type-${option.value || 'all'}`}
-              onClick={() => setType(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <HilosViewportTable
-        label="Worker streams"
         controller={streamsTable}
-        columns={columns}
-        searchable
-        searchPlaceholder={searchPlaceholder}
-        row={(row: HilosLogWorkerRow) => (
-          <>
-            <td>
-              <code className="fw-semibold small">{row.key}</code>
-              {/* The sub-line carries whatever the hidden columns were carrying, so a
-              narrow screen loses the layout and not the figures. It is there in a
-              single-node installation too, where only the weight was hidden. */}
-              <div className="small text-body-secondary d-lg-none">
-                {clustered ? `${row.node} · ` : null}
-                {formatLogWorkerWeight(row)}
-              </div>
-            </td>
-            {clustered ? (
-              <td className="d-none d-lg-table-cell">{row.node}</td>
-            ) : null}
-            <td>
-              <span className={`badge ${typeClass(row)}`}>
-                {formatLogWorkerType(row)}
-              </span>
-            </td>
-            <td>
-              <span className={`badge ${stateClass(row)}`}>
-                {formatLogWorkerState(row)}
-              </span>
-            </td>
-            <td className="text-end">{row.batchCount}</td>
-            <td className="text-end d-none d-lg-table-cell">
-              {formatLogWorkerWeight(row)}
-            </td>
-            <td className="text-end">
-              {/* A stream that is neither live nor archived has no file to open, and
-              the headless answers with an empty address rather than a broken one. */}
-              {logWorkerViewerPath(row) !== '' ? (
-                <HilosLink
-                  to={logWorkerViewerPath(row)}
-                  className="btn btn-sm btn-outline-secondary text-nowrap"
-                  data-id={`hilos-log-worker-open-${row.rowKey}`}
-                >
-                  Open
-                </HilosLink>
-              ) : null}
-            </td>
-          </>
-        )}
+        cells={{
+          key: (row: HilosLogWorkerRow) => (
+            <code className="fw-semibold small">{row.key}</code>
+          ),
+          node: (row: HilosLogWorkerRow) => row.node,
+          type: (row: HilosLogWorkerRow) => (
+            <span className={`badge ${typeClass(row)}`}>
+              {formatLogWorkerType(row)}
+            </span>
+          ),
+          live: (row: HilosLogWorkerRow) => (
+            <span className={`badge ${stateClass(row)}`}>
+              {formatLogWorkerState(row)}
+            </span>
+          ),
+          batchCount: (row: HilosLogWorkerRow) => row.batchCount,
+          bytes: (row: HilosLogWorkerRow) => formatLogWorkerWeight(row),
+          actions: (row: HilosLogWorkerRow) =>
+            logWorkerViewerPath(row) !== '' ? (
+              <HilosLink
+                to={logWorkerViewerPath(row)}
+                className="btn btn-sm btn-outline-secondary text-nowrap"
+                data-id={`hilos-log-worker-open-${row.rowKey}`}
+              >
+                Open
+              </HilosLink>
+            ) : null,
+        }}
         empty={
           emptyState === 'unknown' ? (
             <div data-id="hilos-log-worker-empty-unknown">

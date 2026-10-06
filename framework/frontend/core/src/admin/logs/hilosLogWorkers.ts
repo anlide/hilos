@@ -30,6 +30,8 @@ import { type ScopeManager } from '../../state/ScopeManager.js'
 import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from './hilosLogViewer.js'
 
@@ -71,16 +73,16 @@ export const WORKER_NAME_FIELD = 'key'
 export const WORKER_NODE_FIELD = 'node'
 
 /** Row payload key of the worker kind. */
-const WORKER_TYPE_FIELD = 'type'
+export const WORKER_TYPE_FIELD = 'type'
 
 /** Row payload key of the "still being written" flag. */
-const WORKER_LIVE_FIELD = 'live'
+export const WORKER_LIVE_FIELD = 'live'
 
 /** Row payload key of the archived batch count (also the batches column key). */
 export const WORKER_BATCH_COUNT_FIELD = 'batchCount'
 
 /** Row payload key of the newest batch the stream occurs in. */
-const WORKER_LAST_BATCH_AT_FIELD = 'lastBatchAt'
+export const WORKER_LAST_BATCH_AT_FIELD = 'lastBatchAt'
 
 /** Row payload key of the stream weight (also the weight column key and the default sort). */
 export const WORKER_BYTES_FIELD = 'bytes'
@@ -193,12 +195,86 @@ export interface HilosLogWorkersTable {
  * window; `dispose` unbinds it.
  *
  * @param context The project context (connection and scope stores).
+ * @param header The page header handle's signal, created before this table.
  * @param initialFilter The initial filter map, or none.
  */
 export function createHilosLogWorkersTable(
   context: HilosLogWorkersContext,
+  header: ReadonlySignal<HilosLogWorkersHeader | null> = createSignal<HilosLogWorkersHeader | null>(
+    null,
+  ),
   initialFilter?: Record<string, unknown>,
 ): HilosLogWorkersTable {
+  const frame: HilosTableFrame = {
+    title: 'Worker streams',
+    search: { placeholder: () => logWorkersSearchPlaceholder(header.get()) },
+    filters: () => [
+      ...(hasLogWorkerNodes(header.get())
+        ? [
+            {
+              key: WORKER_FILTER_NODE,
+              kind: 'select' as const,
+              label: 'Node',
+              anyLabel: 'All nodes',
+              options: () =>
+                (header.get()?.nodes ?? []).map((node) => ({
+                  value: node,
+                  label: node,
+                })),
+            },
+          ]
+        : []),
+      {
+        key: WORKER_FILTER_TYPE,
+        kind: 'toggle' as const,
+        label: 'Monopolistic only',
+        on: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
+      },
+    ],
+    columns: () => [
+      {
+        key: WORKER_NAME_FIELD,
+        label: 'Key',
+        sortable: true,
+        card: 'title' as const,
+      },
+      ...(hasLogWorkerNodes(header.get())
+        ? [{ key: WORKER_NODE_FIELD, label: 'Node', sortable: true }]
+        : []),
+      {
+        key: WORKER_TYPE_FIELD,
+        label: 'Type',
+        card: 'badge' as const,
+      },
+      {
+        key: WORKER_LIVE_FIELD,
+        label: 'State',
+      },
+      {
+        key: WORKER_BATCH_COUNT_FIELD,
+        label: 'Batches',
+        sortable: true,
+        headerClass: 'text-end',
+      },
+      {
+        key: WORKER_BYTES_FIELD,
+        label: 'Weight',
+        sortable: true,
+        headerClass: 'text-end',
+      },
+      {
+        key: HILOS_TABLE_ACTIONS_KEY,
+        label: '',
+        reads: [
+          WORKER_NAME_FIELD,
+          WORKER_NODE_FIELD,
+          WORKER_LIVE_FIELD,
+          WORKER_LAST_BATCH_AT_FIELD,
+        ],
+      },
+    ],
+    filteredEmpty: 'page',
+  }
   const controller = new TableViewportController<HilosLogWorkerRow>({
     resolve: resolveHilosLogWorkerRow,
     sendViewport: (descriptor) =>
@@ -208,6 +284,19 @@ export function createHilosLogWorkersTable(
         descriptor,
       ),
     initialFilter,
+    frame,
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.LOGS_WORKERS,
+        WORKERS_TABLE,
+        rendered,
+      ),
+    sendFacets: (facets) =>
+      context.connection.sendTableFacets(
+        HilosPages.LOGS_WORKERS,
+        WORKERS_TABLE,
+        facets,
+      ),
   })
   const teardown: Array<() => void> = []
 
@@ -359,26 +448,6 @@ export function logWorkersEmptyState(
 
   return filtered ? 'nomatch' : 'never'
 }
-
-/** A selectable worker kind: its wire value and a human-readable label. */
-export interface HilosLogWorkerTypeOption {
-  /** The wire value sent as the type filter (empty clears the filter). */
-  readonly value: string
-  /** The label shown in the type switch. */
-  readonly label: string
-}
-
-/**
- * The two choices the type switch offers. The empty value is "everything" and clears
- * the filter; there is no third choice for the ordinary workers, because "all" and
- * "only the monopolistic one" are the two questions this screen is opened with, and
- * the backend narrows on the monopolistic value alone.
- */
-export const HILOS_LOG_WORKER_TYPE_OPTIONS: readonly HilosLogWorkerTypeOption[] =
-  [
-    { value: '', label: 'All' },
-    { value: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC, label: 'Monopolistic only' },
-  ]
 
 /**
  * The label of one type badge.

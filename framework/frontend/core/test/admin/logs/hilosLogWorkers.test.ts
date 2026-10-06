@@ -13,7 +13,13 @@ import {
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
   HILOS_LOG_WORKER_TYPE_REGULAR,
   WORKERS_HEADER_SIGNAL,
+  WORKER_FILTER_NODE,
   WORKER_FILTER_TYPE,
+  WORKER_NAME_FIELD,
+  WORKER_NODE_FIELD,
+  WORKER_LIVE_FIELD,
+  WORKER_BATCH_COUNT_FIELD,
+  WORKER_BYTES_FIELD,
   LOGS_WORKERS_SIGNAL_SCHEMAS,
   type HilosLogWorkerRow,
   type HilosLogWorkersContext,
@@ -23,8 +29,11 @@ import {
   type HilosConnection,
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
+import { createSignal, type ReadonlySignal } from '../../../src/state/signal.js'
 import { type ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
 
 function row(overrides: Partial<HilosLogWorkerRow> = {}): HilosLogWorkerRow {
   return {
@@ -58,18 +67,43 @@ function workerTableRow(
 }
 
 /** A table bound to a connection that records the descriptors instead of sending them. */
-function tableOnAStubConnection(): {
+function tableOnAStubConnection(
+  headerSignal: ReadonlySignal<HilosLogWorkersHeader | null> = createSignal(
+    header(),
+  ),
+  initialFilter?: Record<string, unknown>,
+): {
   table: ReturnType<typeof createHilosLogWorkersTable>
   sent: Array<{
     page: string
     tableKey: string
     descriptor: TableViewportDescriptor
   }>
+  sentRendered: Array<{
+    page: string
+    tableKey: string
+    rendered: readonly string[]
+  }>
+  sentFacets: Array<{
+    page: string
+    tableKey: string
+    facets: Readonly<Record<string, readonly unknown[]>>
+  }>
 } {
   const sent: Array<{
     page: string
     tableKey: string
     descriptor: TableViewportDescriptor
+  }> = []
+  const sentRendered: Array<{
+    page: string
+    tableKey: string
+    rendered: readonly string[]
+  }> = []
+  const sentFacets: Array<{
+    page: string
+    tableKey: string
+    facets: Readonly<Record<string, readonly unknown[]>>
   }> = []
   const context: HilosLogWorkersContext = {
     connection: {
@@ -85,11 +119,34 @@ function tableOnAStubConnection(): {
 
         return true
       },
+      sendTableRendered(
+        page: string,
+        tableKey: string,
+        rendered: readonly string[],
+      ): boolean {
+        sentRendered.push({ page, tableKey, rendered })
+
+        return true
+      },
+      sendTableFacets(
+        page: string,
+        tableKey: string,
+        facets: Readonly<Record<string, readonly unknown[]>>,
+      ): boolean {
+        sentFacets.push({ page, tableKey, facets })
+
+        return true
+      },
     } as unknown as HilosConnection,
     scopes: {} as unknown as ScopeManager,
   }
 
-  return { table: createHilosLogWorkersTable(context), sent }
+  return {
+    table: createHilosLogWorkersTable(context, headerSignal, initialFilter),
+    sent,
+    sentRendered,
+    sentFacets,
+  }
 }
 
 describe('resolveHilosLogWorkerRow', () => {
@@ -172,6 +229,175 @@ describe('the worker table descriptor', () => {
     expect(sent.at(-1)?.descriptor.sort).toEqual([
       { field: 'key', direction: 'asc' },
     ])
+  })
+})
+
+describe('the worker table frame', () => {
+  it('declares its title, copy, empty state policy, and single-node columns', () => {
+    const { table } = tableOnAStubConnection(
+      createSignal(header({ nodes: [] })),
+    )
+    const frame = table.controller.frame
+
+    expect(frame.declaration?.title).toBe('Worker streams')
+    expect(frame.declaration?.filteredEmpty).toBe('page')
+    expect(frame.declaration?.empty).toBeUndefined()
+    expect(frame.searchPlaceholder.get()).toBe('Search by key…')
+
+    const columns = frame.columns.get()
+    expect(columns.map((c) => c.key)).toEqual([
+      WORKER_NAME_FIELD,
+      'type',
+      WORKER_LIVE_FIELD,
+      WORKER_BATCH_COUNT_FIELD,
+      WORKER_BYTES_FIELD,
+      HILOS_TABLE_ACTIONS_KEY,
+    ])
+    expect(columns[0]?.card).toBe('title')
+    expect(columns[1]?.card).toBe('badge')
+
+    const filters = frame.filters.get()
+    expect(filters).toHaveLength(1)
+    expect(filters[0]?.filter).toEqual({
+      key: WORKER_FILTER_TYPE,
+      kind: 'toggle',
+      label: 'Monopolistic only',
+      on: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
+    })
+  })
+
+  it('manages the type toggle filter', () => {
+    const { table, sent } = tableOnAStubConnection()
+
+    table.controller.setFilter(
+      WORKER_FILTER_TYPE,
+      HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
+    )
+    expect(sent.at(-1)?.descriptor.filter).toEqual({
+      [WORKER_FILTER_TYPE]: HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
+    })
+
+    table.controller.setFilter(WORKER_FILTER_TYPE, '')
+    expect(sent.at(-1)?.descriptor.filter).toEqual({})
+  })
+
+  it('adapts columns, filters, and search placeholder to a late cluster header', () => {
+    const headerSignal = createSignal<HilosLogWorkersHeader | null>(null)
+    const { table } = tableOnAStubConnection(headerSignal)
+
+    expect(table.controller.frame.searchPlaceholder.get()).toBe(
+      'Search by key…',
+    )
+    expect(
+      table.controller.frame.columns.get().map((c) => c.key),
+    ).not.toContain(WORKER_NODE_FIELD)
+    expect(table.controller.frame.filters.get()).toHaveLength(1)
+
+    headerSignal.set(header({ nodes: ['node-1', 'node-2'] }))
+
+    expect(table.controller.frame.searchPlaceholder.get()).toBe(
+      'Search by key or node…',
+    )
+    const colKeys = table.controller.frame.columns.get().map((c) => c.key)
+    expect(colKeys).toEqual([
+      WORKER_NAME_FIELD,
+      WORKER_NODE_FIELD,
+      'type',
+      WORKER_LIVE_FIELD,
+      WORKER_BATCH_COUNT_FIELD,
+      WORKER_BYTES_FIELD,
+      HILOS_TABLE_ACTIONS_KEY,
+    ])
+
+    const filters = table.controller.frame.filters.get()
+    expect(filters).toHaveLength(2)
+    const nodeFilter = filters[0]?.filter
+    expect(nodeFilter?.kind).toBe('select')
+    if (nodeFilter?.kind === 'select') {
+      expect(nodeFilter.key).toBe(WORKER_FILTER_NODE)
+      expect(nodeFilter.options()).toEqual([
+        { value: 'node-1', label: 'node-1' },
+        { value: 'node-2', label: 'node-2' },
+      ])
+    }
+  })
+
+  it('derives card layout and rendered keys including action reads', () => {
+    const headerSignal = createSignal(header({ nodes: ['node-1'] }))
+    const { table } = tableOnAStubConnection(headerSignal)
+
+    const card = table.controller.frame.card.get()
+    expect(card?.title?.key).toBe(WORKER_NAME_FIELD)
+    expect(card?.badge?.key).toBe('type')
+    expect(card?.fields.map((f) => f.key)).toEqual([
+      WORKER_NODE_FIELD,
+      WORKER_LIVE_FIELD,
+      WORKER_BATCH_COUNT_FIELD,
+      WORKER_BYTES_FIELD,
+    ])
+    expect(card?.actions?.key).toBe(HILOS_TABLE_ACTIONS_KEY)
+
+    const actionCol = table.controller.frame.columns
+      .get()
+      .find((c) => c.key === HILOS_TABLE_ACTIONS_KEY)
+    expect(actionCol?.reads).toEqual([
+      WORKER_NAME_FIELD,
+      WORKER_NODE_FIELD,
+      WORKER_LIVE_FIELD,
+      'lastBatchAt',
+    ])
+
+    // Node is rendered even if single-node because actions.reads requires node
+    const singleNode = tableOnAStubConnection(
+      createSignal(header({ nodes: [] })),
+    )
+    singleNode.table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      [],
+    )
+    const singleNodeRendered = singleNode.sentRendered[0]?.rendered ?? []
+    expect(singleNodeRendered).toContain(WORKER_NODE_FIELD)
+    expect(singleNodeRendered).toContain('lastBatchAt')
+  })
+
+  it('declares rendered keys and facet options once the first window lands', () => {
+    const headerSignal = createSignal(header({ nodes: ['node-1', 'node-2'] }))
+    const { table, sentRendered, sentFacets } =
+      tableOnAStubConnection(headerSignal)
+
+    expect(sentRendered).toEqual([])
+    expect(sentFacets).toEqual([])
+
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      [],
+    )
+
+    expect(sentRendered).toHaveLength(1)
+    expect(sentRendered[0]?.page).toBe(HilosPages.LOGS_WORKERS)
+    expect(sentRendered[0]?.tableKey).toBe('hilosLogWorkers')
+    expect(sentRendered[0]?.rendered).toEqual(
+      table.controller.descriptor()?.rendered,
+    )
+
+    expect(sentFacets).toHaveLength(1)
+    expect(sentFacets[0]?.page).toBe(HilosPages.LOGS_WORKERS)
+    expect(sentFacets[0]?.tableKey).toBe('hilosLogWorkers')
+    expect(sentFacets[0]?.facets).toEqual({
+      [WORKER_FILTER_NODE]: ['node-1', 'node-2'],
+    })
   })
 })
 

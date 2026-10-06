@@ -57,6 +57,20 @@ test('navigates the admin tree with no reload or reconnect', async ({
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
   expect(new URL(page.url()).pathname).toBe('/hilos/logs')
 
+  await page.getByTestId('hilos-admin-child-hilos_logs_workers').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('By worker')
+  expect(new URL(page.url()).pathname).toBe('/hilos/logs/workers')
+  await expect(page.getByTestId('hilos-table-title')).toHaveText(
+    'Worker streams',
+  )
+  await expect(page.getByTestId('hilos-table-search')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-filter-type')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
+  await page.getByTestId('hilos-breadcrumb-hilos_logs').click()
+  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Logs')
+  expect(new URL(page.url()).pathname).toBe('/hilos/logs')
+
   // The whole tour stayed in one live document on one socket.
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   expect(fullLoads).toBe(loadsAfterColdLoad)

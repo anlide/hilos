@@ -1501,7 +1501,6 @@ export {
   formatLogWorkerWeight,
   formatLogWorkerType,
   formatLogWorkerState,
-  HILOS_LOG_WORKER_TYPE_OPTIONS,
   HILOS_LOG_WORKER_TYPE_MONOPOLISTIC,
   HILOS_LOG_WORKER_TYPE_REGULAR,
   WORKERS_HEADER_SIGNAL,
@@ -1509,6 +1508,8 @@ export {
   WORKER_FILTER_TYPE,
   WORKER_NAME_FIELD,
   WORKER_NODE_FIELD,
+  WORKER_TYPE_FIELD,
+  WORKER_LIVE_FIELD,
   WORKER_BATCH_COUNT_FIELD,
   WORKER_BYTES_FIELD,
   LOGS_WORKERS_SIGNAL_SCHEMAS,
@@ -1518,7 +1519,6 @@ export {
   type HilosLogWorkersContext,
   type HilosLogWorkersTable,
   type HilosLogWorkersEmptyState,
-  type HilosLogWorkerTypeOption,
 } from './admin/logs/hilosLogWorkers.js'
 export {
   hilosLogSettingsVocabulary,

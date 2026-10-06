@@ -316,11 +316,10 @@ field; the `actions` key outranks any mark on it, that column having no value
 of its own to title a card with. The mark changes nothing on a wide screen: the
 header, the column order, and sorting never read it.
 
-The layout is derived once, with the rest of the frame, and read off
-`frame.card` — it follows from the declaration alone, which does not change over
-the life of a table, so it is not wrapped in a signal.
-Drawing the card is a view's job, all three views draw it, and
-what follows is what drawing it means.
+The layout is derived from the resolved columns and read off the
+`frame.card` signal — when dynamic columns change with the page header, the
+card layout follows. Drawing the card is a view's job, all three views draw it,
+and what follows is what drawing it means.
 
 **Which branch is seen is a matter of Bootstrap's visibility utilities, not of
 JavaScript.** The table carries `d-none d-md-block` and the cards `d-md-none`, so
