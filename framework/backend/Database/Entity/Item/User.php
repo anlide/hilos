@@ -26,6 +26,8 @@ class User extends Entity
 
     // Table meta information
     public const string _table = 'hilos_user';
+    public const bool _journaled = true;
+    public const array _journalNoise = [self::last_activity => 'Changes on every user request'];
     public const string _primary = self::id;
     public const array _columns = [
         self::id,

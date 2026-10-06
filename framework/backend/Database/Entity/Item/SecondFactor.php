@@ -43,6 +43,12 @@ class SecondFactor extends Entity
     public const string created_at = 'created_at';
 
     public const string _table = 'hilos_second_factor';
+    public const bool _journaled = true;
+    public const array _journalSecrets = [self::secret];
+    public const array _journalNoise = [
+        self::last_used_step => 'Advances with every accepted code',
+        self::last_used_at => 'Changes with every accepted code',
+    ];
     public const string _primary = self::id;
     public const array _columns = [
         self::id,

@@ -201,12 +201,14 @@ on:
 
 ## Whether the table is journaled
 
-An Entity also declares whether its table goes under the change log, and how each
-column goes in — with its value, as a fact, or not at all
-(not in the code yet — HIL-1446). A personal column takes its mode from `_pii`;
-secrets and noisy columns are named by the Entity; a binary column and the record
-key go by their type (not in the code yet — HIL-1446). A column of a journaled table
-left without a mode keeps a node from starting (not in the code yet — HIL-1446).
+An Entity also declares whether its table goes under the change log with
+`_journaled` (default `false`). `_journalSecrets` lists columns whose values and
+changes stay out; `_journalNoise` maps each excluded column to a non-empty reason
+for the screen. A personal column takes its mode from `_pii`; on a `PURGE` table,
+all other non-key, non-secret, non-noisy columns are personal. A non-personal
+binary column goes in only as a fact, and the live primary key identifies the
+record separately. A column of a journaled table left without a mode keeps a
+node from starting, including DB-only columns.
 The rule and its reasons: [../architecture/change-log.md](../architecture/change-log.md).
 
 ## Whose set the table is part of

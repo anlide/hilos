@@ -12,6 +12,7 @@ use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\DatabaseGuaranteeStartupGuard;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
+use Hilos\Database\Schema\JournalCoverageGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
@@ -130,6 +131,10 @@ final class DaemonApplication
             // refuses to come up over a schema it could not anonymize. Silent for a project that
             // takes no backup.
             AnonymizationStartupGuard::assertLiveSchemaClassified();
+
+            // A configured change-log database activates a live-column verdict even when
+            // this installation offers no backup. Read once, before the manager and loop.
+            JournalCoverageGuard::assertMountedTablesPlaced();
 
             $manager = new $daemonClass();
             $manager->boot(new DaemonContext($bootstrapDir, $projectRoot));

@@ -44,6 +44,11 @@ class Identity extends Entity
     public const string updated_at = 'updated_at';
 
     public const string _table = 'hilos_identity';
+    public const bool _journaled = true;
+    public const array _journalSecrets = [self::secret];
+    public const array _journalNoise = [
+        self::updated_at => 'Database-maintained update timestamp; the receipt already has the action time',
+    ];
     public const string _primary = self::id;
     public const array _columns = [
         self::id,

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database\Entity\Item;
 
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
@@ -42,6 +44,10 @@ use Hilos\Database\SqlSortDirection;
  * - const string _setShortPath — optional: a column beside _setVia that carries the key at the
  *   top of the table's set tree directly, so the right reads it off the row instead of walking
  *   up. Declared only where that column is kept true.
+ * - const bool _journaled — whether the table belongs to the change log.
+ * - const list<string> _journalSecrets — columns whose values and changes never enter the log.
+ * - const array<string, string> _journalNoise — columns excluded from the log, each with a
+ *   non-empty reason shown to an administrator.
  *
  * @property-read bool $_related
  */
@@ -59,6 +65,13 @@ abstract class Entity
     public const string META_SET_VIA = '_setVia';
     public const string META_SET_ROOT = '_setRoot';
     public const string META_SET_SHORT_PATH = '_setShortPath';
+    public const string META_JOURNALED = '_journaled';
+    public const string META_JOURNAL_SECRETS = '_journalSecrets';
+    public const string META_JOURNAL_NOISE = '_journalNoise';
+
+    public const bool _journaled = false;
+    public const array _journalSecrets = [];
+    public const array _journalNoise = [];
 
     // The _setVia value of a table whose rows belong to nobody's set. The leading underscore
     // is what keeps it apart from a real column: column names in this project carry none.

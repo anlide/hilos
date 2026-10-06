@@ -27,8 +27,8 @@ The database writes the journal through generated service triggers —
 `AFTER INSERT`, `AFTER UPDATE` and `AFTER DELETE` on each journaled table
 (not in the code yet — HIL-1447).
 
-The Entity declares which tables are journaled; nobody switches them on or off,
-and the screens only show what is declared (not in the code yet — HIL-1446).
+The Entity declares which tables are journaled; nobody switches them on or off.
+The screens only show what is declared (not in the code yet — HIL-1461).
 
 For attribution a journal row carries only the receipt number; the receipt says
 who acted, on whose behalf and through what (not in the code yet — HIL-1449).
@@ -40,27 +40,32 @@ Triggers are files, and the database holds exactly what those files say
 
 ## What An Entity Declares
 
-Each column of a journaled table has exactly one mode
-(not in the code yet — HIL-1446):
+`Entity::_journaled = true` puts its mounted table under the journal. The inherited
+default is `false`. `Entity::_journalSecrets` is a list of column names, and
+`Entity::_journalNoise` maps each column to a non-empty reason the screen shows.
+Each live column of a journaled table has exactly one mode:
 
 | Mode | What is written | Where it comes from |
 |---|---|---|
-| Value | Old → new | Default (not in the code yet — HIL-1446) |
-| Personal | Only the fact that it changed, no value | The Entity's `_pii`, with no second list (not in the code yet — HIL-1446) |
-| Secret — hashes, keys, codes | Nothing, neither value nor fact | Named by the Entity (not in the code yet — HIL-1446) |
-| Noisy — last activity, sign-in time, counters, the `updated_at` stamp | Nothing; an update touching only noisy columns is not written at all | Named by the Entity; mark them boldly (not in the code yet — HIL-1446) |
-| Binary | Only the fact | The column's type (not in the code yet — HIL-1446) |
-| Record key | The row's identity in the journal, not a field of it | The key (not in the code yet — HIL-1446) |
+| Value | Old → new | Explicitly in `_piiNotPersonal` and not binary |
+| Personal | Only the fact that it changed, no value | The Entity's `_pii`; all remaining columns of a `PURGE` table |
+| Secret — hashes, keys, codes | Nothing, neither value nor fact | `_journalSecrets` |
+| Noisy — last activity, sign-in time, counters, the `updated_at` stamp | Nothing; an update touching only noisy columns is not written at all (not in the code yet — HIL-1447) | `_journalNoise`, with a reason for each column |
+| Binary | Only the fact | SQL `binary`, `varbinary`, `blob` or `bit` family, after a non-personal verdict |
+| Record key | The row's identity in the journal, not a field of it | The live primary key |
 
 A column left without a mode keeps the node from starting, naming the table and
-column, just as the personal-data coverage gate does
-(not in the code yet — HIL-1446).
+column, just as the personal-data coverage gate does. The same refusal catches a
+missing primary key, a personal/secret/noisy key, an unknown secret or noise column,
+their overlap, or an empty noise reason. It reads the live SQL schema, including
+columns the ORM does not map, when the journal connection is configured. A table
+with no Entity cannot opt in through this declaration.
 
 The framework tables under the journal are `hilos_user`, `hilos_identity`,
-`hilos_second_factor` and `hilos_setting` (not in the code yet — HIL-1446).
-HIL-1446 names the declaration constants. Whether secrets have their own constant
-or follow an anonymization strategy, how a noisy column gives its reason, and how
-tables outside the ORM declare journaling are questions for that leaf.
+`hilos_second_factor` and `hilos_setting`. A secret is declared separately from
+its anonymization strategy: `NULLIFY` can describe data that is not a secret,
+and `hilos_second_factor` is purged whole. Its key still identifies a row, while
+every non-key, non-secret, non-noisy column is journaled only as a fact.
 
 In a demo, journal what a person changes by a decision, not the stream: chat bots
 are journaled, messages are not; polls are journaled, votes are not; quotes in
@@ -356,7 +361,7 @@ A receipt created through any node is read identically through any other
   only a personal change's fact and nothing of a secret
   (not in the code yet — HIL-1447).
 - Giving an administrator a “journal this table” switch moves the declaration
-  out of its owner; put it on the Entity (not in the code yet — HIL-1446).
+  out of its owner; put it on the Entity.
 - Using the April stub or TODOs as a worked example revives a rejected design;
   follow this page instead.
 - Naming here what a leaf introduces — Entity constants, journal tables and

@@ -26,6 +26,7 @@ class Setting extends Entity
     public const string value = 'value';
 
     public const string _table = 'hilos_setting';
+    public const bool _journaled = true;
     public const string _primary = self::id;
     public const array _columns = [
         self::id,
