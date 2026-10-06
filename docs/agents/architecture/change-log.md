@@ -23,9 +23,9 @@ belong to their leaf, not to this page.
 
 ## Core Rule
 
-The database writes the journal through generated service triggers —
-`AFTER INSERT`, `AFTER UPDATE` and `AFTER DELETE` on each journaled table
-(not in the code yet — HIL-1447).
+`JournalTriggerGenerator` generates service triggers — `AFTER INSERT`,
+`AFTER UPDATE` and `AFTER DELETE` on each journaled table. Their installation
+at node startup is not in the code yet — HIL-1448.
 
 The Entity declares which tables are journaled; nobody switches them on or off.
 The screens only show what is declared (not in the code yet — HIL-1461).
@@ -50,7 +50,7 @@ Each live column of a journaled table has exactly one mode:
 | Value | Old → new | Explicitly in `_piiNotPersonal` and not binary |
 | Personal | Only the fact that it changed, no value | The Entity's `_pii`; all remaining columns of a `PURGE` table |
 | Secret — hashes, keys, codes | Nothing, neither value nor fact | `_journalSecrets` |
-| Noisy — last activity, sign-in time, counters, the `updated_at` stamp | Nothing; an update touching only noisy columns is not written at all (not in the code yet — HIL-1447) | `_journalNoise`, with a reason for each column |
+| Noisy — last activity, sign-in time, counters, the `updated_at` stamp | Nothing; an update touching only noisy columns is not written at all | `_journalNoise`, with a reason for each column |
 | Binary | Only the fact | SQL `binary`, `varbinary`, `blob` or `bit` family, after a non-personal verdict |
 | Record key | The row's identity in the journal, not a field of it | The live primary key |
 
@@ -76,22 +76,20 @@ HIL-1453. The column mode for a custom trigger belongs to phase 2, HIL-1413.
 ## What A Trigger Writes
 
 - An insert records the fact that the row was created; its values are in the row
-  itself (not in the code yet — HIL-1447).
+  itself.
 - An update records only columns that actually changed, old → new; a personal
   column contributes only the fact, a secret contributes nothing, and an update
-  of noisy columns alone produces no journal row
-  (not in the code yet — HIL-1447).
+  of noisy columns alone produces no journal row.
 - A delete records a snapshot without personal or secret values, keeping the
-  column modes above (not in the code yet — HIL-1447).
+  column modes above.
 - Values follow the real column type in the live database — the ORM does not
   know lengths: numbers, short strings and dates fit in the journal row; long
-  text and JSON go into a neighboring journal table
-  (not in the code yet — HIL-1447).
-- A bridge insert or delete records that a link was added or removed
-  (not in the code yet — HIL-1447). The link appears in the history of both ends
+  text and JSON go into a neighboring journal table.
+- A bridge insert or delete records that a link was added or removed.
+  The link appears in the history of both ends
   (not in the code yet — HIL-1452).
-- A write without a receipt is allowed and produces a journal row with an empty
-  receipt number (not in the code yet — HIL-1447). The feed shows
+- A write without a receipt is allowed and produces a journal row with a NULL
+  receipt number. The feed shows
   “Unknown — a change made past the application”
   (not in the code yet — HIL-1452).
 
@@ -250,34 +248,35 @@ HIL-1449 replaces the receipt TODO, and HIL-1452 the page placeholders.
 ## Triggers Are Files
 
 As with procedures in hleb's `main/App/Routines`, each trigger has its own file
-with the latest body; its history is the file's `git blame`
-(not in the code yet — HIL-1447).
+with the latest body; its history is the file's `git blame`.
 
 The trigger names are `hilos_cl_<table>_after_insert`,
 `hilos_cl_<table>_after_update` and `hilos_cl_<table>_after_delete`; the file is
-`<trigger name>.sql`, for example `hilos_cl_hilos_user_after_update.sql`
-(not in the code yet — HIL-1447). MariaDB's 64-character identifier limit leaves
+`<trigger name>.sql`, for example `hilos_cl_hilos_user_after_update.sql`.
+MariaDB's 64-character identifier limit leaves
 42 characters for the table name. The longest table name with an Entity today is
 `hilos_second_factor_backup_code`, at 31 characters.
 
 The first line is `-- valid from migration #<N>`: N is the migration from which
-this body is valid (not in the code yet — HIL-1447).
+this body is valid.
 When a table leaves the journal, keep a tombstone — the same file, the same
-header and `DROP TRIGGER IF EXISTS` (not in the code yet — HIL-1447).
+header and `DROP TRIGGER IF EXISTS`.
 
-In the body, use `{{change_log_database}}` for the journal database name; the
-node substitutes the name at installation, so do not spell it out in the SQL
-(not in the code yet — HIL-1447).
+In the body, use `{{change_log_database}}` for the journal database name; do not
+spell out one installation's name in the SQL. The node's substitution at
+installation is not in the code yet — HIL-1448.
 
-The files live in the project's tree, including triggers on framework tables:
-the generator reads the Entity chain mounted by the project and its database's
-real column types, and the migration number belongs to the project
-(not in the code yet — HIL-1447). Framework migration stubs are copied into
-numbered project migrations. HIL-1447 chooses the directory and the developer
-command's name.
+The files live in the project's `backend/Database/Migration/Triggers` directory,
+including triggers on framework tables. `JournalTriggerGenerator` reads the Entity
+chain mounted by the project and its database's real column types; the migration
+number belongs to the project. Framework migration stubs are copied into numbered
+project migrations.
 
-Only the generator writes service triggers; the developer invokes it through a
-command (not in the code yet — HIL-1447).
+Only `db:change-log:generate` writes service trigger files. Run it after applying
+project migrations; it refuses pending or failed migrations, a mismatched live
+schema, missing journal tables and unsupported column types. It writes changed
+files atomically and leaves unchanged files, including their older valid-from
+headers, alone. It does not install SQL in the database.
 
 After migrations, the node installs all triggers from their files once, under
 the schema rollout claim, `hilos_migration_claim`
@@ -290,7 +289,7 @@ or when a trigger is not generated — phase 1 has no custom triggers
 (not in the code yet — HIL-1448).
 
 A migration changing a journaled table regenerates that table's trigger files
-in the same commit (not in the code yet — HIL-1447); otherwise the node refuses
+in the same commit; otherwise the node refuses
 to start (not in the code yet — HIL-1448).
 How to remove or rename a journaled column while old triggers still stand is
 left to HIL-1448.
@@ -354,12 +353,11 @@ A receipt created through any node is read identically through any other
 - Putting the journal in the main database loses its separate storage boundary;
   use the database named from the main one.
 - Handwriting a trigger or editing it in the database bypasses the generated
-  file; regenerate and commit the file (not in the code yet — HIL-1447).
+  file; regenerate and commit the file.
 - Spelling a database name in a trigger body ties it to one installation; use
-  `{{change_log_database}}` (not in the code yet — HIL-1447).
+  `{{change_log_database}}`.
 - A personal value or a secret in the journal violates its column modes; keep
-  only a personal change's fact and nothing of a secret
-  (not in the code yet — HIL-1447).
+  only a personal change's fact and nothing of a secret.
 - Giving an administrator a “journal this table” switch moves the declaration
   out of its owner; put it on the Entity.
 - Using the April stub or TODOs as a worked example revives a rejected design;

@@ -96,6 +96,9 @@ final class CliCommands
     /** @var string Command: Release a rollout claim left by a dead holder */
     public const string MIGRATION_RELEASE = 'db:migration:release';
 
+    /** @var string Command: Generate service trigger files for the change log */
+    public const string CHANGE_LOG_GENERATE = 'db:change-log:generate';
+
     /** @var string Command: Apply database seeds */
     public const string SEED_APPLY = 'db:seed:apply';
 

@@ -23,6 +23,7 @@ reason in its `execution()` declaration. See
 | Command | Site | Description |
 |---|---|---|
 | `db:schema:status` | `cli-read` | Check DB schema vs expected structure |
+| `db:change-log:generate` | `cli-offline-write` | Generate changed journal trigger files from the applied schema; refuses a live daemon |
 
 ## Seed commands
 

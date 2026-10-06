@@ -23,6 +23,7 @@ use Hilos\Core\CLI\Commands\BackupRestoreRunCommand;
 use Hilos\Core\CLI\Commands\BackupRunCommand;
 use Hilos\Core\CLI\Commands\BackupVerifyCommand;
 use Hilos\Core\CLI\Commands\ClusterNodesCommand;
+use Hilos\Core\CLI\Commands\ChangeLogGenerateCommand;
 use Hilos\Core\CLI\Commands\ClusterReloadCommand;
 use Hilos\Core\CLI\Commands\ClusterTestAgentPlaceCommand;
 use Hilos\Core\CLI\Commands\ClusterTestClientAttachCommand;
@@ -167,6 +168,7 @@ class CliManager
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();
         $this->commands[CliCommands::MIGRATION_RETRY] = new MigrationRetryCommand();
         $this->commands[CliCommands::MIGRATION_RELEASE] = new MigrationReleaseCommand();
+        $this->commands[CliCommands::CHANGE_LOG_GENERATE] = new ChangeLogGenerateCommand();
         $this->commands[CliCommands::SEED_APPLY] = new SeedApplyCommand();
         $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
         $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
