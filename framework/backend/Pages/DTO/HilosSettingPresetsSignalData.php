@@ -11,6 +11,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Database\Settings\Preset\SettingPreset;
 use Hilos\Database\Settings\Preset\SettingPresetDifference;
+use Hilos\Database\Settings\Preset\SettingPresetGroup;
 
 /**
  * State of one preset group as its screen draws it (server → client, HIL-762).
@@ -100,18 +101,27 @@ final class HilosSettingPresetsSignalData extends BaseDTO implements SignalDataI
      *
      * A viewer is sent the frame untyped, every field this map does not open replaced by the hidden mark
      * ({@see AbstractPage::frameForViewer()}); an admin is sent it as it is. Group and preset names come
-     * from code and are shown; the applied preset is a setting value (group selection setting), preset
-     * values are code values like catalog defaults, and differences are setting values; all of those are hidden.
+     * from code and are shown. Selection and drift need the selection key open; preset values are judged
+     * one member key at a time, so an open value can sit beside a hidden one in the same card.
      *
+     * @param SettingPresetGroup $group Group whose selection and member keys control the frame
      * @return array<string, WireField> Frame field name to where it comes from
      */
-    public static function wireFields(): array
+    public static function wireFields(SettingPresetGroup $group): array
     {
+        $members = [];
+        foreach ($group->memberKeys() as $key) {
+            $members[$key] = WireField::setting($key);
+        }
+
         return [
             self::group => WireField::notPersonal(),
+            self::selected => WireField::setting($group->selectionSettingKey),
             self::presets => WireField::each([
                 self::name => WireField::notPersonal(),
+                self::values => WireField::each($members),
             ]),
+            self::differences => WireField::setting($group->selectionSettingKey),
         ];
     }
 

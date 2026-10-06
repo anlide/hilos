@@ -34,6 +34,7 @@ final class DeliveryLogSettingsCatalog implements CatalogProviderInterface
         return [
             DeliveryLogPruner::RETENTION_SETTING_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => DeliveryLogPruner::DEFAULT_RETENTION_DAYS,
             ],
         ];

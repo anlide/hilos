@@ -21,6 +21,7 @@ final class AnalyticsSettingsCatalog implements CatalogProviderInterface
         return [
             self::JOURNAL_MAX_BYTES => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::DEFAULT_JOURNAL_MAX_BYTES,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => AnalyticsJournalCeilingRule::class,
             ],

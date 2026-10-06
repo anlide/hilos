@@ -102,8 +102,7 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     /**
      * Declares where each field of a two-factor setting row comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * Row key is not personal; value is hidden by the column verdict of settings (MASK); defaultValue is omitted
-     * and therefore hidden, as defaults are also setting values (HIL-1258).
+     * Row key is not personal; value and defaultValue follow the visibility of that settings catalog key.
      *
      * @return array<string, WireField>
      */
@@ -111,10 +110,8 @@ class HilosSecurityTwoFactorTable extends TableDefinition implements SelfSnapsho
     {
         return [
             HilosSecurityTwoFactorTableRow::rowKey => WireField::notPersonal(),
-            HilosSecurityTwoFactorTableRow::value => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
-            ),
+            HilosSecurityTwoFactorTableRow::value => WireField::settingFrom(HilosSecurityTwoFactorTableRow::rowKey),
+            HilosSecurityTwoFactorTableRow::defaultValue => WireField::settingFrom(HilosSecurityTwoFactorTableRow::rowKey),
         ];
     }
 

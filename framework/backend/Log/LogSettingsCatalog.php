@@ -94,6 +94,7 @@ final class LogSettingsCatalog implements CatalogProviderInterface
             ),
             self::ROTATION_CRON => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::envString(
                     EnvConstants::LOG_ROTATION_CRON,
                     self::ROTATION_CRON_FALLBACK,
@@ -117,16 +118,19 @@ final class LogSettingsCatalog implements CatalogProviderInterface
             // the installation writes, not how much room it means to leave itself.
             self::FREE_SPACE_THRESHOLD_PERCENT => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::freeSpaceThresholdDefault(),
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogFreeSpaceThresholdRule::class,
             ],
             self::INDEX_PUSH_INTERVAL_MS => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::pushIntervalDefault(),
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogIndexPushIntervalRule::class,
             ],
             self::WRITE_LEVEL => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::writeLevelDefault(),
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogWriteLevelRule::class,
             ],
@@ -135,6 +139,7 @@ final class LogSettingsCatalog implements CatalogProviderInterface
             // administrator picked, and the installation starts on the middle one.
             self::PRESET => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => LogSettingsPresets::NORMAL,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LogPresetNameRule::class,
             ],
@@ -200,6 +205,7 @@ final class LogSettingsCatalog implements CatalogProviderInterface
     {
         return [
             SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+            SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
             SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
             SettingsCatalogConstants::CATALOG_ENTRY_RULE => NonNegativeIntegerRule::class,
         ];

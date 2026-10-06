@@ -90,7 +90,7 @@ final class HilosSecurityStepUpTable extends TableDefinition implements SelfSnap
      * Declares where each field of a step-up row comes from, for a viewer of the admin view mode (HIL-1250).
      *
      * Operation key, label and owner come from the operation directory and are not personal;
-     * enabled is the value of the step-up setting and is hidden by its column verdict (MASK).
+     * enabled is derived from both step-up settings and needs both keys open to viewers.
      *
      * @return array<string, WireField>
      */
@@ -100,10 +100,10 @@ final class HilosSecurityStepUpTable extends TableDefinition implements SelfSnap
             HilosSecurityStepUpTableRow::operationKey => WireField::notPersonal(),
             HilosSecurityStepUpTableRow::label => WireField::notPersonal(),
             HilosSecurityStepUpTableRow::owner => WireField::notPersonal(),
-            HilosSecurityStepUpTableRow::enabled => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
-            ),
+            HilosSecurityStepUpTableRow::enabled => WireField::settings([
+                StepUpSettings::DISABLED_KEY,
+                StepUpSettings::ENABLED_KEY,
+            ]),
         ];
     }
 

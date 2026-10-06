@@ -11,6 +11,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogAggregatorAgent;
+use Hilos\Log\LogSettingsCatalog;
 
 /**
  * HilosLogsOverviewSignalData - Payload for Hilos logs overview page subscription (server → client).
@@ -220,7 +221,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
      *
      * A viewer is sent the frame untyped, with fields absent from this map replaced by the hidden
      * mark ({@see AbstractPage::frameForViewer()}). Recent message is log text with no classification
-     * at write time; freeSpaceThresholdPercent is a setting value and stays hidden until HIL-1298.
+     * at write time; freeSpaceThresholdPercent follows its settings catalog key.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
@@ -249,6 +250,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
                 self::batchesDueForTakeout => WireField::notPersonal(),
                 self::filesystemFreeBytes => WireField::notPersonal(),
                 self::filesystemTotalBytes => WireField::notPersonal(),
+                self::freeSpaceThresholdPercent => WireField::setting(LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT),
             ]),
             self::recentErrors => WireField::each([
                 self::nodeId => WireField::notPersonal(),
@@ -266,6 +268,7 @@ final class HilosLogsOverviewSignalData extends BaseDTO implements SignalDataInt
             self::recentWarningsCapped => WireField::notPersonal(),
             self::filesystemFreeBytes => WireField::notPersonal(),
             self::filesystemTotalBytes => WireField::notPersonal(),
+            self::freeSpaceThresholdPercent => WireField::setting(LogSettingsCatalog::FREE_SPACE_THRESHOLD_PERCENT),
         ];
     }
 

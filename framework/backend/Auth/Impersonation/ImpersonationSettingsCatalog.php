@@ -27,31 +27,38 @@ final class ImpersonationSettingsCatalog implements CatalogProviderInterface
         return [
             ImpersonationSettings::ALLOWED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_ALLOWED,
             ],
             ImpersonationSettings::SCOPE_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_SCOPE,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => ImpersonationScopeRule::class,
             ],
             ImpersonationSettings::ACCOUNT_ACCESS_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_ACCOUNT_ACCESS,
             ],
             ImpersonationSettings::CARRY_ADMIN_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_CARRY_ADMIN,
             ],
             ImpersonationSettings::BLOCKED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_BLOCKED,
             ],
             ImpersonationSettings::FROZEN_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_FROZEN,
             ],
             ImpersonationSettings::EQUAL_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ImpersonationSettings::DEFAULT_EQUAL,
             ],
         ];

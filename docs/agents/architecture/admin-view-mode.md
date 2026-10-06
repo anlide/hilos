@@ -355,24 +355,31 @@ nobody is asked*).
   variable turned on in production (HIL-1249) opens nothing until the verdict
   (HIL-1251), and the verdict stands on the bridge (HIL-1250) — at no step is
   there a window in which a viewer sees anything personal.
-- The owner's decisions per surface. The values of ALL settings are hidden while
-  keys, types and captions are shown; there is no marking by key —
-  `Setting.value` is `AnonymizationStrategy::MASK` whole, because the framework
-  does not know what the project put there. On every settings screen, a viewer
-  sees the key, type, caption, source, and presence of a value; the value
-  itself, the default value, and the key of a referenced default are hidden; a
-  switch-value is rendered as a hidden mark; log modes — card titles are shown,
-  the applied mode, mode values, and drift are hidden; the set of enabled
-  sign-in methods is hidden on the screen even though sent to every session —
-  one rule for setting values; OAuth providers are shown according to the
-  entity's verdict (HIL-1255). A log line shows its time, level and node, and
+- The owner's decisions per surface. A setting value, its default and its
+  default-reference key are shown to a viewer only when that setting's catalog
+  entry says `admin_view_visible => true`; missing, false, unknown and orphan
+  keys are hidden. This applies to general and section tables, the person's
+  card, log settings in overview and rotations frames, and each member of a
+  preset card. A derived value needs every source key open. A closed preset
+  member appears as Hidden within the values map, while its drift is omitted
+  altogether: even the fact of a difference would reveal a comparison. A
+  closed selection key hides both the applied name and all differences. The
+  general settings table never searches or sorts on value for a viewer,
+  including open rows, because an order or a match could reveal a closed row.
+  Keys, types, captions and the existing value source remain visible. Fixed
+  nonsecret framework keys are open; channel enablement is open, but the
+  channel's project-defined config fields and project settings stay closed
+  unless their own catalog entry opens them. `Setting.value` remains
+  `AnonymizationStrategy::MASK` for restore anonymization. At startup an open
+  key is refused if any default-reference ancestor is closed, even when its
+  current value has an override. OAuth providers follow their entity verdict
+  rather than the settings catalog (HIL-1255). A log line shows its time, level and node, and
   its text is hidden; there is no marking at write time. The logs page asks
   whether its connection is a viewer on each read or follow, forwards `hideText`
   to the file owner and removes a viewer's substring filter before forwarding:
   searching hidden text would reveal whether it contains the term. The owner
   sends a hidden mark in `text`, while `time` and `level` stay visible. A change
-  of verdict during a follow stops it with a `stopped` frame. Values of log
-  settings on these screens remain hidden under the V1 decision until HIL-1298.
+  of verdict during a follow stops it with a `stopped` frame.
   A person's name is hidden (HIL-1254). Rows
   assembled by hand past the marking are classified by the leaves of their
   sections: the people rows and the merge candidates (HIL-1254). The verifier
@@ -397,7 +404,7 @@ nobody is asked*).
   addresses, the unconfirmed password address among them; a candidate's
   sign-in methods whole, because the merge window reads the list as one value
   and the methods' types without their addresses tell a viewer nothing; the
-  grace period of a deletion, which is the value of a setting. The date a
+  grace period of a deletion when its catalog key is closed. The date a
   deletion falls due is the one computed field out of a table under `PURGE` a
   viewer is shown: `hilos_account_deletion` is erased on a restore so that the
   copy does not go on to erase a masked person, not because the date names
@@ -639,8 +646,8 @@ its e2e (`demo/binance-btc-tracker/tests/e2e/tests/communications.spec.ts`) walk
 the hub's switch and the test send. The buttons that open those dialogs and the
 retry stand on row fields — whether a field is editable, where its value comes
 from, a delivery's status: a viewer sees the delivery status, so Retry stands
-disabled for them (HIL-1256); the value of a channel field is hidden from a
-viewer, while the source and editability are shown — the edit and reset controls
+disabled for them (HIL-1256); a channel field's value follows its own catalog
+key, while the source and editability are shown — the edit and reset controls
 stand for a viewer the same as for an admin (HIL-1255).
 
 The backup section carries the viewer cases of its keep toggle and of its
@@ -657,8 +664,9 @@ The settings carry their viewer case in
 moved with HIL-1219). The log modes carry theirs as a unit of the
 setting-presets screen
 (`framework/frontend/vue/src/admin/settings/HilosSettingPresetsPage.test.ts`)
-and not as an e2e: a viewer receives the presets frame with masked fields,
-cards are rendered disabled, and none of them is lit up (HIL-1255).
+and not as an e2e: a viewer receives a frame with each closed value marked,
+closed differences omitted, and the cards' actions disabled. An open selection
+key may still light the applied card.
 
 The people section carries its viewer case in
 `demo/binance-btc-tracker/tests/e2e/tests/users.spec.ts` (HIL-1263, laid out by
@@ -676,15 +684,16 @@ The security section carries its viewer cases as units of six pages
 and in the chat e2e (`demo/chat/tests/e2e/tests/auth.spec.ts`,
 `demo/chat/tests/e2e/tests/step-up.spec.ts`,
 `demo/chat/tests/e2e/tests/second-factor.spec.ts`); what a viewer is shown in
-security fields is HIL-1255's — values and switches are hidden as marks (HIL-1255).
+security fields follow the catalog verdict for settings and the entity verdict
+for provider fields (HIL-1255, HIL-1298).
 
 ## What The View Mode Does Not Do
 
 - It is not roles (HIL-306).
 - It opens nothing to the CLI.
 - A viewer changes nothing, demo data included.
-- There is no marking of settings by key and no marking of log lines at write
-  time (declined by the owner, 2026-09-27).
+- There is no marking of log lines at write time (declined by the owner,
+  2026-09-27).
 - There is no CLI reset of the latch.
 - There are no masked values — a field is shown or it is the hidden mark.
 - It does not touch `PUBLIC` and `AUTHENTICATED` pages.

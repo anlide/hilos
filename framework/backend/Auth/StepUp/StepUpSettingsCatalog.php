@@ -20,11 +20,13 @@ final class StepUpSettingsCatalog implements CatalogProviderInterface
         return [
             StepUpSettings::DISABLED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => StepUpOperationKeysRule::class,
             ],
             StepUpSettings::ENABLED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => StepUpOperationKeysRule::class,
             ],

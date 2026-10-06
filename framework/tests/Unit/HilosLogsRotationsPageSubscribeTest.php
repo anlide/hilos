@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
@@ -20,6 +22,8 @@ use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
@@ -27,6 +31,7 @@ use Hilos\Log\DTO\LogsTakeoutConfirmSignalData;
 use Hilos\Log\DTO\LogsTakeoutUndoSignalData;
 use Hilos\Log\LogBatchSummary;
 use Hilos\Log\NodeLogIndex;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsRotationsSignalData;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
@@ -168,6 +173,43 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
         $this->assertSame(1_048_576, $header->rotationMaxLiveSizeBytes);
         $this->assertSame(7, $header->retentionKeepBatches);
         $this->assertSame(604_800, $header->retentionMaxAgeSeconds);
+    }
+
+    public function testViewerReceivesTheSameSettingVerdictsOnSubscribeAndLiveHeader(): void
+    {
+        putenv(EnvConstants::LOG_ROTATION_CRON->name . '=0 4 * * *');
+        putenv(EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name . '=3600');
+        putenv(EnvConstants::LOG_ROTATION_MAX_LIVE_SIZE_BYTES->name . '=1048576');
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_KEEP_BATCHES->name . '=7');
+        putenv(EnvConstants::LOG_ARCHIVE_RETENTION_MAX_AGE_SECONDS->name . '=604800');
+        $previousSetting = Hilos::$setting;
+        Hilos::$setting = new SettingsAccessor(MixedLogViewerCatalog::class);
+        Hilos::$browser = new LogsRotationsPageViewerBrowser();
+
+        try {
+            new LogsRotationsPageSubscribeTestPage(new LogsRotationsPageSubscribeTestAgent())
+                ->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+            $initial = Hilos::$sr?->getNextQueuedSignal();
+            $this->assertNotNull($initial);
+            $this->assertInstanceOf(WebSocketSignalData::class, $initial->data);
+            $this->assertNotNull($initial->data->data);
+            $this->assertViewerRules($initial->data->data->toArray());
+            $this->queuedSignalNames();
+
+            $this->tickPastTheThrottle();
+            $this->queuedSignalNames();
+            $this->growTheClusterPicture();
+            $this->tickPastTheThrottle();
+
+            $live = Hilos::$sr?->getNextQueuedSignal();
+            $this->assertNotNull($live);
+            $this->assertSame(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS, $live->signalName->getName());
+            $this->assertInstanceOf(WebSocketSignalData::class, $live->data);
+            $this->assertNotNull($live->data->data);
+            $this->assertViewerRules($live->data->data->toArray());
+        } finally {
+            Hilos::$setting = $previousSetting;
+        }
     }
 
     /**
@@ -646,6 +688,18 @@ final class HilosLogsRotationsPageSubscribeTest extends TestCase
     }
 
     /**
+     * @param array<string, mixed> $frame Viewer header on either delivery path
+     */
+    private function assertViewerRules(array $frame): void
+    {
+        $this->assertSame(HiddenValue::mark(), $frame[HilosLogsRotationsSignalData::rotationCron]);
+        $this->assertSame(3_600, $frame[HilosLogsRotationsSignalData::rotationMaxAgeSeconds]);
+        $this->assertSame(1_048_576, $frame[HilosLogsRotationsSignalData::rotationMaxLiveSizeBytes]);
+        $this->assertSame(7, $frame[HilosLogsRotationsSignalData::retentionKeepBatches]);
+        $this->assertSame(604_800, $frame[HilosLogsRotationsSignalData::retentionMaxAgeSeconds]);
+    }
+
+    /**
      * Takes the header the page answered a subscription with.
      *
      * @return HilosLogsRotationsSignalData Payload of the first queued signal
@@ -761,6 +815,33 @@ final class LogsRotationsPageSubscribeTestBrowser extends IdentityTestBrowser
         $this->windows[] = $viewport->tableKey;
 
         return true;
+    }
+}
+
+/** Viewer gate double for the page's own initial and live header frames. */
+final class LogsRotationsPageViewerBrowser extends IdentityTestBrowser
+{
+    public function __construct()
+    {
+        parent::__construct(null, false);
+    }
+
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return true;
+    }
+}
+
+/** Rotation catalog with one closed rule beside four open rules. */
+final class MixedLogViewerCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Test catalog */
+    public static function getCatalog(): array
+    {
+        $catalog = LogSettingsCatalog::getCatalog();
+        $catalog[LogSettingsCatalog::ROTATION_CRON][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] = false;
+
+        return $catalog;
     }
 }
 

@@ -165,6 +165,111 @@ final class SettingsAccessorDefaultReferenceTest extends TestCase
         $settings->defaultValueFor('bot_model');
     }
 
+    public function testAdminViewVisibilityRequiresExplicitTrueAndKeepsUnknownKeysHidden(): void
+    {
+        $settings = $this->settings([
+            'unmarked' => $this->entry(SettingsCatalogConstants::TYPE_STRING, 'hidden'),
+            'closed' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, 'hidden'),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => false,
+            ],
+            'open' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, 'visible'),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+        ]);
+
+        $settings->validateAdminViewVisibility();
+
+        $this->assertFalse($settings->visibleInAdminViewMode('unmarked'));
+        $this->assertFalse($settings->visibleInAdminViewMode('closed'));
+        $this->assertFalse($settings->visibleInAdminViewMode('orphan'));
+        $this->assertFalse($settings->visibleInAdminViewMode(''));
+        $this->assertTrue($settings->visibleInAdminViewMode('open'));
+    }
+
+    public function testAdminViewVisibilityRejectsNonBooleanDeclaration(): void
+    {
+        $settings = $this->settings([
+            'bad' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, 'value'),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => 'true',
+            ],
+        ]);
+
+        $this->expectException(SettingInvalidValueException::class);
+        $this->expectExceptionMessage("Setting 'bad' catalog entry 'admin_view_visible' must be boolean");
+
+        $settings->validateAdminViewVisibility();
+    }
+
+    public function testAdminViewVisibilityChecksEveryDefaultAncestorWithoutDatabase(): void
+    {
+        $settings = $this->settings([
+            'root' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, 'root value'),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => false,
+            ],
+            'middle' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, [
+                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => 'root',
+                ]),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+            'leaf' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, [
+                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => 'middle',
+                ]),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+        ]);
+
+        $this->expectException(SettingInvalidValueException::class);
+        $this->expectExceptionMessage("Setting 'middle' is visible in admin view mode but default parent 'root' is hidden");
+
+        $settings->validateAdminViewVisibility();
+    }
+
+    public function testHiddenChildMayReferenceOpenParent(): void
+    {
+        $settings = $this->settings([
+            'root' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, 'visible'),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+            'child' => $this->entry(SettingsCatalogConstants::TYPE_STRING, [
+                SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => 'root',
+            ]),
+        ]);
+
+        $settings->validateAdminViewVisibility();
+
+        $this->assertFalse($settings->visibleInAdminViewMode('child'));
+    }
+
+    public function testAdminViewVisibilityUsesTheExistingCycleRefusal(): void
+    {
+        $settings = $this->settings([
+            'first' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, [
+                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => 'second',
+                ]),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+            'second' => [
+                ...$this->entry(SettingsCatalogConstants::TYPE_STRING, [
+                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => 'first',
+                ]),
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+        ]);
+
+        $this->expectException(SettingDefaultReferenceCycleException::class);
+        $this->expectExceptionMessage('first -> second -> first');
+
+        $settings->validateAdminViewVisibility();
+    }
+
     /**
      * @param array<string, array<string, mixed>> $catalog Settings catalog
      */

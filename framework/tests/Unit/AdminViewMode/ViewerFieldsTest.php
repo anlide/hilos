@@ -9,6 +9,7 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\AdminViewMode\WireField;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * Tests the one walk that hides a fragment from a viewer of the admin view mode (HIL-1250).
@@ -153,6 +154,85 @@ final class ViewerFieldsTest extends TestCase
         );
 
         $this->assertSame(['lastActivity', 'online'], $names);
+    }
+
+    public function testASettingValueUsesItsOwnFragmentKeyAndFailsClosed(): void
+    {
+        $fields = [
+            'key' => WireField::notPersonal(),
+            'value' => WireField::settingFrom('key'),
+            'defaultValue' => WireField::settingFrom('key'),
+        ];
+        $shown = static fn(string $key): bool => $key === 'open';
+
+        $this->assertSame(
+            ['key' => 'open', 'value' => 'yes', 'defaultValue' => 'default'],
+            ViewerFields::hide(
+                ['key' => 'open', 'value' => 'yes', 'defaultValue' => 'default'],
+                $fields,
+                self::columnsShown(),
+                $shown,
+            ),
+        );
+        foreach (['closed', 'orphan', ''] as $key) {
+            $this->assertSame(
+                ['key' => $key, 'value' => HiddenValue::mark()],
+                ViewerFields::hide(['key' => $key, 'value' => 'secret'], $fields, self::columnsShown(), $shown),
+            );
+        }
+        $this->assertSame(
+            ['value' => HiddenValue::mark()],
+            ViewerFields::hide(['value' => 'secret'], $fields, self::columnsShown(), $shown),
+        );
+    }
+
+    public function testNestedSettingsUseEachElementAndAFailedResolverClosesOnlyItsValue(): void
+    {
+        $payload = ['rows' => [
+            ['key' => 'open', 'value' => 'one'],
+            ['key' => 'closed', 'value' => 'two'],
+            ['key' => 'open', 'value' => 'three'],
+        ]];
+        $fields = ['rows' => WireField::each([
+            'key' => WireField::notPersonal(),
+            'value' => WireField::settingFrom(static function (array $row): string {
+                if ($row['value'] === 'three') {
+                    throw new RuntimeException('cannot classify');
+                }
+
+                return $row['key'];
+            }),
+        ])];
+
+        $this->assertSame(
+            ['rows' => [
+                ['key' => 'open', 'value' => 'one'],
+                ['key' => 'closed', 'value' => HiddenValue::mark()],
+                ['key' => 'open', 'value' => HiddenValue::mark()],
+            ]],
+            ViewerFields::hide($payload, $fields, self::columnsShown(), static fn(string $key): bool => $key === 'open'),
+        );
+    }
+
+    public function testACombinedSettingNeedsEveryKeyAndCannotJoinViewerSearchOrSort(): void
+    {
+        $fields = [
+            'key' => WireField::notPersonal(),
+            'value' => WireField::settingFrom('key'),
+            'summary' => WireField::settings(['open', 'closed']),
+            'fixed' => WireField::setting('open'),
+        ];
+        $payload = ['key' => 'open', 'value' => 'visible', 'summary' => 'mixed', 'fixed' => 'visible'];
+
+        $this->assertSame(
+            ['key' => 'open', 'value' => 'visible', 'summary' => HiddenValue::mark(), 'fixed' => 'visible'],
+            ViewerFields::hide($payload, $fields, self::columnsShown(), static fn(string $key): bool => $key === 'open'),
+        );
+        $this->assertSame(['key'], ViewerFields::shownNames($fields, self::columnsShown()));
+        $this->assertSame(
+            ['key' => 'open', 'value' => HiddenValue::mark(), 'summary' => HiddenValue::mark(), 'fixed' => HiddenValue::mark()],
+            ViewerFields::hide($payload, $fields, self::columnsShown()),
+        );
     }
 
     public function testTheMarkIsTellableFromARealValue(): void

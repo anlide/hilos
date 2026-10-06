@@ -430,7 +430,7 @@ test("shows a person's standing on the card and in the takeover strip", async ({
 test.describe('the people section in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  test("a guest opens every window of a person's card and has nothing to send from it", async ({
+  test("a guest opens the available windows of a person's card and has nothing to send from them", async ({
     browser,
     page,
   }) => {
@@ -452,23 +452,13 @@ test.describe('the people section in the admin view mode', () => {
 
       await setAdminViewMode(true)
 
-      // 1. User card: the takeover window
+      // This demo has no impersonation catalog keys, so the viewer sees no takeover section.
       await gotoPage(page, `/hilos/user/${userBId}`)
-      await clickSubmit(page.getByTestId('hilos-user-impersonate-open'))
-      await expect(
-        page.getByTestId('hilos-user-impersonate-step-up'),
-      ).toHaveCount(0)
-      const impersonateConfirm = page.getByTestId(
-        'hilos-user-impersonate-confirm',
+      await expect(page.getByTestId('hilos-user-impersonate-open')).toHaveCount(
+        0,
       )
-      await expect(impersonateConfirm).toBeDisabled()
-      await expect(impersonateConfirm).toHaveAttribute(
-        'aria-describedby',
-        /(^| )hilos-view-mode-strip-text( |$)/,
-      )
-      await clickSubmit(page.getByTestId('hilos-user-impersonate-cancel'))
 
-      // 2. User card: lifecycle modals (admin, block, deletion)
+      // 1. User card: lifecycle modals (admin, block, deletion)
       await gotoPage(page, `/hilos/user/${userAId}`)
       for (const key of ['admin', 'block', 'deletion'] as const) {
         await clickSubmit(page.getByTestId(`hilos-user-${key}-open`))
@@ -486,7 +476,7 @@ test.describe('the people section in the admin view mode', () => {
         await clickSubmit(page.getByTestId('hilos-user-lifecycle-cancel'))
       }
 
-      // 3. User card: rename modal
+      // 2. User card: rename modal
       await clickSubmit(page.getByTestId('hilos-user-edit'))
       await expect(page.getByTestId('hilos-user-save')).toBeDisabled()
       await clickSubmit(page.getByTestId('hilos-user-cancel'))

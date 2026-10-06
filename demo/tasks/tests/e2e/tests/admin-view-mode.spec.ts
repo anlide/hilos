@@ -106,24 +106,26 @@ test('a guest reads the view-mode strip on the account screens and the acceptanc
   }
 })
 
-// The value of a setting is kept from a viewer (HIL-1258), so the window shows
-// the hidden mark in place of the list and holds no draft (HIL-1260).
-test('a guest opens a legal setting, reads its value as hidden and has nothing to save it with', async ({
+// The fixed legal key is open to a viewer (HIL-1298); editing remains locked.
+test('a guest opens a legal setting, reads its value and cannot save it', async ({
   page,
 }) => {
   await setAdminViewMode(true)
   await gotoPage(page, '/hilos/legal/settings', PAGE_READY)
   await expect(
+    shownByTestId(page, 'legal-setting-value-legal.consent_form'),
+  ).toContainText('Checkbox')
+  await expect(
     shownByTestId(page, 'legal-setting-value-legal.consent_form').getByTestId(
       'hilos-hidden',
     ),
-  ).toHaveText('Hidden')
+  ).toHaveCount(0)
   await clickSubmit(
     shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
   )
   const dialog = page.getByTestId('modal')
-  await expect(dialog.getByTestId('hilos-hidden')).toHaveText('Hidden')
-  await expect(page.getByTestId('legal-setting-input')).toHaveCount(0)
+  await expect(dialog.getByTestId('hilos-hidden')).toHaveCount(0)
+  await expect(page.getByTestId('legal-setting-input')).toBeVisible()
   const save = page.getByTestId('legal-setting-save')
   await expect(save).toBeDisabled()
   await expect(save).toHaveAttribute(

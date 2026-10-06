@@ -21,6 +21,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -35,6 +37,7 @@ use Hilos\HilosException;
 use Hilos\Pages\DTO\HilosSettingPresetsSignalData;
 use Hilos\Pages\DTO\SettingPresetApplyActionDTO;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
+use Throwable;
 
 /**
  * Base class for an admin page offering the presets of its section (HIL-762).
@@ -144,7 +147,7 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
 
         $signalName = static::subscriptionSignalName();
         foreach (array_keys(self::$subscribers[$page]) as $acceptKey) {
-            $frame = static::frameForViewer($acceptKey, $data, HilosSettingPresetsSignalData::wireFields());
+            $frame = static::presetFrameForViewer($acceptKey, $data);
             if ($frame === null) {
                 continue;
             }
@@ -218,7 +221,7 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
-        $frame = static::frameForViewer($acceptKey, static::buildPresetsSignalData(), HilosSettingPresetsSignalData::wireFields());
+        $frame = static::presetFrameForViewer($acceptKey, static::buildPresetsSignalData());
         if ($frame === null) {
             return;
         }
@@ -241,6 +244,44 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
     protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {
         self::$subscribers[static::PAGE][$acceptKey] = true;
+    }
+
+    /**
+     * Builds one guarded group frame, omitting the very fact of drift for closed member keys.
+     *
+     * @param string $acceptKey Connection the frame goes to
+     * @param HilosSettingPresetsSignalData $data Complete state before viewer filtering
+     * @return ?SignalDataInterface Admin frame, viewer frame, or null when the gate refuses delivery
+     * @throws LogicException When the page names no preset group provider
+     */
+    private static function presetFrameForViewer(string $acceptKey, HilosSettingPresetsSignalData $data): ?SignalDataInterface
+    {
+        $frame = static::frameForViewer($acceptKey, $data, HilosSettingPresetsSignalData::wireFields(static::presetGroup()));
+        if (!$frame instanceof SignalData) {
+            return $frame;
+        }
+
+        $wire = $frame->toArray();
+        $differences = $wire[HilosSettingPresetsSignalData::differences] ?? null;
+        if (is_array($differences) && array_is_list($differences)) {
+            $wire[HilosSettingPresetsSignalData::differences] = array_values(array_filter(
+                $differences,
+                static function (mixed $difference): bool {
+                    $key = is_array($difference) ? ($difference[HilosSettingPresetsSignalData::key] ?? null) : null;
+                    if (!is_string($key) || $key === '') {
+                        return false;
+                    }
+
+                    try {
+                        return Hilos::$setting?->visibleInAdminViewMode($key) === true;
+                    } catch (Throwable) {
+                        return false;
+                    }
+                },
+            ));
+        }
+
+        return new SignalData($wire);
     }
 
     /**

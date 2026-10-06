@@ -134,15 +134,15 @@ final class AdminViewModeLogsTest extends IntegrationTestCase
         parent::tearDown();
     }
 
-    public function testViewersSeeClusterFactsButNotLogTextOrSettingsAcrossTheScreens(): void
+    public function testViewersSeeClusterFactsAndOpenSettingsButNotLogTextAcrossTheScreens(): void
     {
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
             $overview = $this->frame($this->subscribe(LogsOverviewPage::class, $acceptKey), HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS);
             self::assertFalse(HiddenValue::isMark($overview[HilosLogsOverviewSignalData::available]));
-            self::assertTrue(HiddenValue::isMark($overview[HilosLogsOverviewSignalData::freeSpaceThresholdPercent]));
+            self::assertNull($overview[HilosLogsOverviewSignalData::freeSpaceThresholdPercent]);
             $node = $overview[HilosLogsOverviewSignalData::nodes][0];
             $recentError = $overview[HilosLogsOverviewSignalData::recentErrors][0];
-            self::assertTrue(HiddenValue::isMark($node[HilosLogsOverviewSignalData::freeSpaceThresholdPercent]));
+            self::assertIsInt($node[HilosLogsOverviewSignalData::freeSpaceThresholdPercent]);
             self::assertTrue(HiddenValue::isMark($recentError[HilosLogsOverviewSignalData::message]));
             self::assertSame(2, $overview[HilosLogsOverviewSignalData::recentErrors][0][HilosLogsOverviewSignalData::traceFrames]);
             self::assertTrue(HiddenValue::isMark(
@@ -184,7 +184,7 @@ final class AdminViewModeLogsTest extends IntegrationTestCase
                 HilosLogsRotationsSignalData::retentionKeepBatches,
                 HilosLogsRotationsSignalData::retentionMaxAgeSeconds,
             ] as $field) {
-                self::assertTrue(HiddenValue::isMark($rotation[$field]));
+                self::assertFalse(HiddenValue::isMark($rotation[$field]));
             }
 
             $catalog = $this->frame($this->subscribe(LogsViewPage::class, $acceptKey), HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW);

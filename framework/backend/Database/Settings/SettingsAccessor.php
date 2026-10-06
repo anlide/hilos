@@ -102,6 +102,63 @@ class SettingsAccessor implements ArrayAccess
     }
 
     /**
+     * Reports whether a cataloged setting may show its value to an admin view mode viewer.
+     *
+     * Unknown keys, including orphaned database rows, remain hidden.
+     *
+     * @param string $key Setting key
+     * @return bool Whether the value is explicitly visible
+     */
+    public function visibleInAdminViewMode(string $key): bool
+    {
+        return $key !== ''
+            && ($this->getCatalog()[$key][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] ?? null) === true;
+    }
+
+    /**
+     * Validates visibility declarations and every default-reference ancestor of an open setting.
+     *
+     * This reads only catalog metadata. A persisted override cannot make a hidden ancestor safe to reveal.
+     *
+     * @throws SettingException When a visibility declaration or an open setting's default chain is invalid
+     */
+    public function validateAdminViewVisibility(): void
+    {
+        foreach ($this->getCatalog() as $key => $entry) {
+            $flag = $entry[SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] ?? null;
+            if (array_key_exists(SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE, $entry) && !is_bool($flag)) {
+                throw new SettingInvalidValueException(
+                    "Setting '{$key}' catalog entry '"
+                    . SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE
+                    . "' must be boolean",
+                );
+            }
+        }
+
+        foreach ($this->getCatalog() as $key => $entry) {
+            if (($entry[SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] ?? false) !== true) {
+                continue;
+            }
+
+            $current = $key;
+            $path = [];
+            while (true) {
+                $path = $this->appendResolutionKey($current, $path);
+                $parent = $this->defaultReferenceKeyFor($current);
+                if ($parent === null) {
+                    break;
+                }
+                if (!$this->visibleInAdminViewMode($parent)) {
+                    throw new SettingInvalidValueException(
+                        "Setting '{$current}' is visible in admin view mode but default parent '{$parent}' is hidden",
+                    );
+                }
+                $current = $parent;
+            }
+        }
+    }
+
+    /**
      * Returns the catalog type for a setting key.
      *
      * @param string $key Setting key

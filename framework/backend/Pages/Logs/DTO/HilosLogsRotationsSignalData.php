@@ -13,6 +13,7 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogArchiveRetentionPolicy;
 use Hilos\Log\LogRotationTriggerPolicy;
 use Hilos\Log\LogSettingsResolver;
+use Hilos\Log\LogSettingsCatalog;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 
 /**
@@ -99,8 +100,8 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
     /**
      * Declares where each field of this frame comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * Availability and nodes describe the cluster. The five rotation and retention settings stay
-     * hidden from a viewer until their catalog-based classification in HIL-1298.
+     * Availability and nodes describe the cluster. Rotation and retention values follow their
+     * catalog keys' viewer verdicts.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
@@ -109,6 +110,11 @@ final class HilosLogsRotationsSignalData extends BaseDTO implements SignalDataIn
         return [
             self::available => WireField::notPersonal(),
             self::nodes => WireField::notPersonal(),
+            self::rotationCron => WireField::setting(LogSettingsCatalog::ROTATION_CRON),
+            self::rotationMaxAgeSeconds => WireField::setting(LogSettingsCatalog::ROTATION_MAX_AGE_SECONDS),
+            self::rotationMaxLiveSizeBytes => WireField::setting(LogSettingsCatalog::ROTATION_MAX_LIVE_SIZE_BYTES),
+            self::retentionKeepBatches => WireField::setting(LogSettingsCatalog::ARCHIVE_RETENTION_KEEP_BATCHES),
+            self::retentionMaxAgeSeconds => WireField::setting(LogSettingsCatalog::ARCHIVE_RETENTION_MAX_AGE_SECONDS),
         ];
     }
 

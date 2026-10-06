@@ -16,11 +16,13 @@ final class LegalSettingsCatalog implements CatalogProviderInterface
         return [
             LegalSettings::CONSENT_FORM_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => LegalSettings::CONSENT_FORM_CHECKBOX,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LegalConsentFormRule::class,
             ],
             LegalSettings::REFUSAL_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => LegalSettings::REFUSAL_FREEZE,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => LegalRefusalRule::class,
             ],

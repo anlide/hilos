@@ -5,6 +5,7 @@ import {
   denyConsent,
   signInAs,
   signUpAs,
+  shownByTestId,
   waitForProviderWindow,
   watchHeight,
   watchTop,
@@ -1796,19 +1797,21 @@ async function remainingSeconds(countdown: Locator): Promise<number> {
 test.describe('in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  test('a guest opens sign-in methods and finds the switches replaced with hidden marks', async ({
+  test('a guest sees the open sign-in switch but cannot change it', async ({
     page,
   }) => {
     await setAdminViewMode(true)
     await gotoPage(page, '/hilos/security/sign-in-methods', PAGE_READY)
+    const enabled = shownByTestId(
+      page,
+      'hilos-sign-in-method-enabled-magic_link',
+    )
+    await expect(enabled).toBeVisible()
+    await expect(enabled).toBeDisabled()
     await expect(
-      page.getByTestId('hilos-sign-in-method-enabled-magic_link'),
+      shownByTestId(page, 'hilos-table-row-magic_link').getByTestId(
+        'hilos-hidden',
+      ),
     ).toHaveCount(0)
-    await expect(
-      page
-        .getByTestId('hilos-table-row-magic_link')
-        .getByTestId('hilos-hidden')
-        .first(),
-    ).toBeVisible()
   })
 })

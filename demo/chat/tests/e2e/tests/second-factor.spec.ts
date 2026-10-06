@@ -223,10 +223,10 @@ test.describe('in the admin view mode', () => {
     await clickSubmit(
       shownByTestId(page, 'hilos-2fa-edit-auth.second_factor.required'),
     )
-    await expect(page.getByTestId('hilos-2fa-input')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-2fa-input')).toBeVisible()
     await expect(
-      page.getByTestId('modal').getByTestId('hilos-hidden').first(),
-    ).toBeVisible()
+      page.getByTestId('modal').getByTestId('hilos-hidden'),
+    ).toHaveCount(0)
     const save = page.getByTestId('hilos-2fa-save')
     await expect(save).toBeDisabled()
     await expect(save).toHaveAttribute(

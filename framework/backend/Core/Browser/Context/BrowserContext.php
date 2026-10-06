@@ -1352,9 +1352,13 @@ abstract class BrowserContext
         $hidden = [];
         foreach ($slots as $slotKey => $slot) {
             if (!is_array($slot)) {
+                $keyedSlot = [$slotKey => $slot];
+                if ($keyField !== null && $slotKey !== $keyField) {
+                    $keyedSlot[$keyField] = $rowKey;
+                }
                 $hidden[$slotKey] = $slotKey === $keyField && self::isRowKey($slot, $rowKey)
                     ? $slot
-                    : $this->hideForViewer([$slotKey => $slot], $fields)[$slotKey];
+                    : $this->hideForViewer($keyedSlot, $fields)[$slotKey];
             } elseif ($slot !== [] && array_is_list($slot)) {
                 $hidden[$slotKey] = array_map(
                     fn(mixed $element): array => is_array($element)
@@ -1381,7 +1385,12 @@ abstract class BrowserContext
      */
     private function rowFragmentForViewer(array $fragment, array $fields, ?string $keyField, int|string $rowKey): array
     {
-        $hidden = $this->hideForViewer($fragment, $fields);
+        $hasKey = $keyField !== null && array_key_exists($keyField, $fragment);
+        $classified = !$hasKey && $keyField !== null ? [$keyField => $rowKey, ...$fragment] : $fragment;
+        $hidden = $this->hideForViewer($classified, $fields);
+        if (!$hasKey && $keyField !== null) {
+            unset($hidden[$keyField]);
+        }
         if ($keyField !== null && array_key_exists($keyField, $fragment) && self::isRowKey($fragment[$keyField], $rowKey)) {
             $hidden[$keyField] = $fragment[$keyField];
         }
@@ -6241,7 +6250,12 @@ abstract class BrowserContext
      */
     public function hideForViewer(array $payload, array $fields): array
     {
-        return ViewerFields::hide($payload, $fields, $this->viewerColumnShown(...));
+        return ViewerFields::hide(
+            $payload,
+            $fields,
+            $this->viewerColumnShown(...),
+            static fn(string $key): bool => Hilos::$setting?->visibleInAdminViewMode($key) === true,
+        );
     }
 
     /**

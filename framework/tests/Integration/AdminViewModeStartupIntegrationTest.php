@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\AdminViewMode\AdminViewModeLatchFile;
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\AdminViewMode\AdminViewModeStartup;
@@ -12,9 +13,13 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseSql;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Migration;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
+use RuntimeException;
 
 /**
  * The admin view mode decided at the start of a node, against a real log directory and the live
@@ -130,6 +135,31 @@ final class AdminViewModeStartupIntegrationTest extends FrameworkIntegrationTest
         $this->assertNull(AdminViewModeLatchFile::read($this->logRoot, 'unused', 'unused'));
         $this->assertNull(AdminViewModeLatchTable::read());
         $this->assertStringContainsString('WARNING: Admin view mode: on in production', $this->journal());
+    }
+
+    public function testSettingsVisibilityIsRejectedBeforeTheDatabaseFactoryRuns(): void
+    {
+        $previousSetting = Hilos::$setting;
+        $previousDb = Hilos::$db;
+        Hilos::$setting = null;
+        Hilos::$db = null;
+        VisibilityStartupTestHilos::$dbFactoryCalls = 0;
+
+        try {
+            try {
+                VisibilityStartupTestHilos::init();
+                $this->fail('An open setting with a hidden default parent must refuse startup');
+            } catch (SettingInvalidValueException $e) {
+                $this->assertStringContainsString('open_child', $e->getMessage());
+                $this->assertStringContainsString('hidden_parent', $e->getMessage());
+            }
+
+            $this->assertSame(0, VisibilityStartupTestHilos::$dbFactoryCalls);
+            $this->assertNull(Hilos::$db);
+        } finally {
+            Hilos::$setting = $previousSetting;
+            Hilos::$db = $previousDb;
+        }
     }
 
     public function testAFileAloneKeepsTheModeOffAndTheRowIsWrittenBackFromIt(): void
@@ -268,5 +298,54 @@ final class AdminViewModeStartupIntegrationTest extends FrameworkIntegrationTest
             unlink($path . '/' . $entry);
         }
         rmdir($path);
+    }
+}
+
+/** Facade whose settings declaration must stop initialization before a DB context is built. */
+final class VisibilityStartupTestHilos extends Hilos
+{
+    protected const string SETTINGS_CATALOG = VisibilityStartupTestCatalog::class;
+
+    public static int $dbFactoryCalls = 0;
+
+    public static function validateTopology(): void
+    {
+    }
+
+    public static function validateFeatureActivation(): void
+    {
+    }
+
+    /**
+     * @return HilosDbContext No context: the settings declaration must refuse first
+     * @throws RuntimeException If startup wrongly reaches the DB factory
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        self::$dbFactoryCalls++;
+
+        throw new RuntimeException('DB factory reached before settings visibility validation');
+    }
+}
+
+/** The open child of a hidden default-reference parent that startup must refuse. */
+final class VisibilityStartupTestCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Settings declaration under test */
+    public static function getCatalog(): array
+    {
+        return [
+            'open_child' => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => [
+                    SettingsCatalogConstants::CATALOG_DEFAULT_SETTING_KEY => 'hidden_parent',
+                ],
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+            'hidden_parent' => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'value',
+            ],
+        ];
     }
 }

@@ -62,7 +62,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * Verifies that on settings, preset modes, communications, and security administration surfaces declarations,
  * descriptors, and readiness/layer indicators are preserved for both anonymous and signed-in non-admin viewers,
- * setting values (including defaults and switch states) are masked, and an admin receives all pages with no hidden marks.
+ * explicitly open framework settings are visible, project keys and orphans remain hidden, and an admin sees every value.
  */
 final class AdminViewModeSettingsTest extends IntegrationTestCase
 {
@@ -73,7 +73,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
 
     private const string TOKEN_SETTING_OVERRIDE = 'viewer-must-not-see-7f3c';
     private const string TOKEN_ORPHAN_SETTING = 'orphan-secret-must-not-leak';
-    private const string TOKEN_OAUTH_REDIRECT = 'https://oauth.example.com/callback?secret=7f3c';
+    private const string TOKEN_OAUTH_REDIRECT = 'https://oauth.example.com/callback';
 
     private const string OVERRIDE_SETTING_KEY = SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING;
     private const string ORPHAN_SETTING_KEY = 'chat.test.orphan.setting';
@@ -176,9 +176,9 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
     }
 
     /**
-     * A viewer receives settings, communications, and security surfaces with metadata visible and values masked.
+     * A viewer receives open framework values, while project values and orphans remain hidden.
      */
-    public function testAViewerSeesSettingsAndSecuritySurfacesWithUnmaskedMetadataAndMaskedValues(): void
+    public function testAViewerSeesSettingsAndSecuritySurfacesWithPerKeyValueVisibility(): void
     {
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
             $settingsFrames = $this->subscribe(SettingsPage::class, [], $acceptKey, [
@@ -217,8 +217,8 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             self::assertNotInstanceOf(HilosSettingPresetsSignalData::class, $logsFrameData);
             $logsData = $logsFrameData->toArray();
             self::assertSame(LogSettingsPresets::GROUP, $logsData[HilosSettingPresetsSignalData::group]);
-            self::assertTrue(HiddenValue::isMark($logsData[HilosSettingPresetsSignalData::selected]));
-            self::assertTrue(HiddenValue::isMark($logsData[HilosSettingPresetsSignalData::differences]));
+            self::assertSame(LogSettingsPresets::NORMAL, $logsData[HilosSettingPresetsSignalData::selected]);
+            self::assertIsArray($logsData[HilosSettingPresetsSignalData::differences]);
             self::assertNotEmpty($logsData[HilosSettingPresetsSignalData::presets]);
             foreach ($logsData[HilosSettingPresetsSignalData::presets] as $preset) {
                 self::assertContains($preset[HilosSettingPresetsSignalData::name], [
@@ -227,7 +227,10 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                     LogSettingsPresets::INVESTIGATION,
                 ]);
                 self::assertFalse(HiddenValue::isMark($preset[HilosSettingPresetsSignalData::name]));
-                self::assertTrue(HiddenValue::isMark($preset[HilosSettingPresetsSignalData::values]));
+                self::assertIsArray($preset[HilosSettingPresetsSignalData::values]);
+                foreach ($preset[HilosSettingPresetsSignalData::values] as $value) {
+                    self::assertFalse(HiddenValue::isMark($value));
+                }
             }
 
             $commFrames = $this->subscribe(CommunicationsPage::class, [], $acceptKey, [
@@ -243,7 +246,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 self::assertFalse(HiddenValue::isMark($slot[HilosCommunicationsChannelsTableRow::configured]));
                 self::assertIsInt($slot[HilosCommunicationsChannelsTableRow::missingFields]);
                 self::assertFalse(HiddenValue::isMark($slot[HilosCommunicationsChannelsTableRow::missingFields]));
-                self::assertTrue(HiddenValue::isMark($slot[HilosCommunicationsChannelsTableRow::enabled]));
+                self::assertIsBool($slot[HilosCommunicationsChannelsTableRow::enabled]);
             }
 
             $channelFieldsFrames = $this->subscribe(CommunicationsChannelPage::class, [], $acceptKey, [
@@ -277,7 +280,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 if ($slot[HilosSecuritySignInMethodsTableRow::providerKey] !== null) {
                     self::assertFalse(HiddenValue::isMark($slot[HilosSecuritySignInMethodsTableRow::providerKey]));
                 }
-                self::assertTrue(HiddenValue::isMark($slot[HilosSecuritySignInMethodsTableRow::enabled]));
+                self::assertIsBool($slot[HilosSecuritySignInMethodsTableRow::enabled]);
             }
 
             $stepUpFrames = $this->subscribe(SecurityStepUpPage::class, [], $acceptKey, [
@@ -290,7 +293,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityStepUpTableRow::operationKey]));
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityStepUpTableRow::label]));
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityStepUpTableRow::owner]));
-                self::assertTrue(HiddenValue::isMark($slot[HilosSecurityStepUpTableRow::enabled]));
+                self::assertIsBool($slot[HilosSecurityStepUpTableRow::enabled]);
             }
 
             $twoFactorFrames = $this->subscribe(SecurityTwoFactorPage::class, [], $acceptKey, [
@@ -301,8 +304,8 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             foreach ($twoFactorRows as $row) {
                 $slot = self::rowSlot($row);
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::rowKey]));
-                self::assertTrue(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::value]));
-                self::assertTrue(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::defaultValue]));
+                self::assertFalse(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::value]));
+                self::assertFalse(HiddenValue::isMark($slot[HilosSecurityTwoFactorTableRow::defaultValue]));
             }
 
             $oauthFrames = $this->subscribe(SecurityOAuthPage::class, [], $acceptKey, [
@@ -315,7 +318,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             self::assertSame(OAuthSettingsCatalog::REDIRECT_URI_KEY, $redirectSlot[HilosSecurityOAuthRedirectTableRow::rowKey]);
             self::assertFalse(HiddenValue::isMark($redirectSlot[HilosSecurityOAuthRedirectTableRow::source]));
             self::assertFalse(HiddenValue::isMark($redirectSlot[HilosSecurityOAuthRedirectTableRow::setState]));
-            self::assertTrue(HiddenValue::isMark($redirectSlot[HilosSecurityOAuthRedirectTableRow::value]));
+            self::assertSame(self::TOKEN_OAUTH_REDIRECT, $redirectSlot[HilosSecurityOAuthRedirectTableRow::value]);
 
             $providerRows = $this->window($oauthFrames, ChatTableContext::hilosSecurityOauthProviders)[TableWindowSignalData::rows];
             self::assertNotEmpty($providerRows);
@@ -365,8 +368,8 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             foreach ($impersonationRows as $row) {
                 $slot = self::rowSlot($row);
                 self::assertFalse(HiddenValue::isMark($slot[HilosSecurityImpersonationTableRow::rowKey]));
-                self::assertTrue(HiddenValue::isMark($slot[HilosSecurityImpersonationTableRow::value]));
-                self::assertTrue(HiddenValue::isMark($slot[HilosSecurityImpersonationTableRow::defaultValue]));
+                self::assertFalse(HiddenValue::isMark($slot[HilosSecurityImpersonationTableRow::value]));
+                self::assertFalse(HiddenValue::isMark($slot[HilosSecurityImpersonationTableRow::defaultValue]));
             }
 
             $allViewerFrames = [
@@ -384,7 +387,7 @@ final class AdminViewModeSettingsTest extends IntegrationTestCase
             $json = json_encode(self::payloads($allViewerFrames), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
             self::assertStringNotContainsString(self::TOKEN_SETTING_OVERRIDE, $json);
             self::assertStringNotContainsString(self::TOKEN_ORPHAN_SETTING, $json);
-            self::assertStringNotContainsString(self::TOKEN_OAUTH_REDIRECT, $json);
+            self::assertStringContainsString(self::TOKEN_OAUTH_REDIRECT, $json);
         }
     }
 

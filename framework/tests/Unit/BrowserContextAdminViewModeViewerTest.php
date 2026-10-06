@@ -9,6 +9,8 @@ use Hilos\AdminViewMode\WireField;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Backup\BackupConstants;
+use Hilos\Auth\Method\AuthMethodSettings;
+use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -18,6 +20,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
@@ -40,6 +43,8 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
 
     private ?SignalRouter $previousSignalRouter = null;
 
+    private ?SettingsAccessor $previousSetting = null;
+
     /** Temporary main log file the journal lines are read back from */
     private string $logFile = '';
 
@@ -47,6 +52,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
     {
         $this->previousRt = Hilos::$rt;
         $this->previousSignalRouter = Hilos::$sr;
+        $this->previousSetting = Hilos::$setting;
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new ViewerTestRtContext();
         Hilos::$rt->mountFeatureRuntime([]);
@@ -64,6 +70,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
         RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
+        Hilos::$setting = $this->previousSetting;
         Hilos::$db = null;
         Hilos::initBrowser();
         Hilos::resetBrowser();
@@ -181,6 +188,22 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
                 'nick' => HiddenValue::mark(),
             ],
             $hidden,
+        );
+    }
+
+    public function testSettingValuesUseTheCatalogVerdictOnEveryViewerDelivery(): void
+    {
+        Hilos::$setting = new SettingsAccessor(AuthMethodSettingsCatalog::class);
+        $browser = new ViewerTestBrowser(7, false);
+        $fields = ['value' => WireField::settingFrom('key')];
+
+        $this->assertSame(
+            ['key' => HiddenValue::mark(), 'value' => 'password'],
+            $browser->hideForViewer(['key' => AuthMethodSettings::DISABLED_KEY, 'value' => 'password'], $fields),
+        );
+        $this->assertSame(
+            ['key' => HiddenValue::mark(), 'value' => HiddenValue::mark()],
+            $browser->hideForViewer(['key' => 'demo.secret', 'value' => 'token'], $fields),
         );
     }
 

@@ -91,9 +91,8 @@ class HilosLegalSettingsTable extends TableDefinition implements SelfSnapshotTab
     /**
      * Declares where each field of the row comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * The row key comes from the settings catalog ({@see LegalSettings::KEYS}); value is declared as a column
-     * and hidden by its column verdict (MASK); defaultValue from the catalog is omitted from the map and therefore
-     * hidden, as defaults are also setting values and all setting values are hidden from viewers (HIL-1258).
+     * The row key comes from the settings catalog ({@see LegalSettings::KEYS}); value and defaultValue
+     * are shown only when that key explicitly opens its value to viewers.
      *
      * @return array<string, WireField>
      */
@@ -101,10 +100,8 @@ class HilosLegalSettingsTable extends TableDefinition implements SelfSnapshotTab
     {
         return [
             HilosLegalSettingsTableRow::rowKey => WireField::notPersonal(),
-            HilosLegalSettingsTableRow::value => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
-            ),
+            HilosLegalSettingsTableRow::value => WireField::settingFrom(HilosLegalSettingsTableRow::rowKey),
+            HilosLegalSettingsTableRow::defaultValue => WireField::settingFrom(HilosLegalSettingsTableRow::rowKey),
         ];
     }
 

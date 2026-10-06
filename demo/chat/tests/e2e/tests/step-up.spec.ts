@@ -258,19 +258,18 @@ test('asks before removing rights once the administrator switches it on', async 
 test.describe('in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  test('a guest opens step-up operations and finds the switches replaced with hidden marks', async ({
+  test('a guest sees the open step-up switch but cannot change it', async ({
     page,
   }) => {
     await setAdminViewMode(true)
     await gotoPage(page, '/hilos/security/2fa/step-up', PAGE_READY)
+    const enabled = shownByTestId(page, 'hilos-step-up-switch-change_name')
+    await expect(enabled).toBeVisible()
+    await expect(enabled).toBeDisabled()
     await expect(
-      page.getByTestId('hilos-step-up-switch-change_name'),
+      shownByTestId(page, 'hilos-table-row-change_name').getByTestId(
+        'hilos-hidden',
+      ),
     ).toHaveCount(0)
-    await expect(
-      page
-        .getByTestId('hilos-table-row-change_name')
-        .getByTestId('hilos-hidden')
-        .first(),
-    ).toBeVisible()
   })
 })

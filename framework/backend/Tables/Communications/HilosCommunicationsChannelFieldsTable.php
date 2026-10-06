@@ -138,8 +138,7 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
      * Declares where each field of a channel-config field row comes from, for a viewer of the admin view mode (HIL-1250).
      *
      * Field identity, channel, descriptor label, type, source, secret and editable flags are not personal;
-     * value is hidden by the column verdict of settings (MASK), whichever layer it resolved from (settings,
-     * env, or descriptor default) - env and default values are also setting values; secret values never leave the server anyway.
+     * value follows its setting key's viewer verdict; secret fields have no catalog key and remain hidden.
      *
      * @return array<string, WireField>
      */
@@ -154,9 +153,8 @@ class HilosCommunicationsChannelFieldsTable extends TableDefinition implements S
             HilosCommunicationsChannelFieldsTableRow::valueSource => WireField::notPersonal(),
             HilosCommunicationsChannelFieldsTableRow::secret => WireField::notPersonal(),
             HilosCommunicationsChannelFieldsTableRow::editable => WireField::notPersonal(),
-            HilosCommunicationsChannelFieldsTableRow::value => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
+            HilosCommunicationsChannelFieldsTableRow::value => WireField::settingFrom(
+                HilosCommunicationsChannelFieldsTableRow::rowKey,
             ),
         ];
     }

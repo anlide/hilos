@@ -143,7 +143,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         $data = $this->pageData($frames);
         self::assertIsString($data[PageCatalogConstants::WIRE_PAGE_LABEL]);
         self::assertIsArray($data[PageCatalogConstants::WIRE_PAGE_BREADCRUMB]);
-        self::assertTrue(HiddenValue::isMark($data[UserPage::ACCOUNT_DELETION_GRACE_DAYS]));
+        self::assertIsInt($data[UserPage::ACCOUNT_DELETION_GRACE_DAYS]);
         $standing = $data[UserPage::ACCOUNT_STANDING];
         self::assertSame(AccountStandingKind::BLOCKED->value, $standing[AccountStanding::shown]);
         self::assertTrue($standing[AccountStanding::blocked]);

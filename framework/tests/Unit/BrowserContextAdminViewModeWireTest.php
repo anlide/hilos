@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\AdminViewMode\WireField;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Backup\Anonymization\AnonymizationStrategy;
 use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Constants\SignalTypeConstants;
@@ -56,6 +57,8 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Hilos;
@@ -88,6 +91,7 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
 
     protected function tearDown(): void
     {
+        WireTestTable::$settingName = false;
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(DeclarativeDbWireTestDbContext::BADGES));
         Hilos::$rt = null;
         Hilos::$sr = null;
@@ -255,6 +259,39 @@ final class BrowserContextAdminViewModeWireTest extends TestCase
         $window = $this->nextSignal(SignalTypeConstants::TABLE_WINDOW, TableWindowSignalData::class);
         $this->assertSame(1, $window->totalCount);
         $this->assertSame([self::hiddenRow('beta')], $window->rows);
+    }
+
+    public function testRowDependentSettingValueCannotLeakThroughSortSearchOrHiddenDelta(): void
+    {
+        $previousSetting = Hilos::$setting;
+        Hilos::$setting = new SettingsAccessor(WireSettingVisibilityCatalog::class);
+        WireTestTable::$settingName = true;
+
+        try {
+            $browser = $this->boot(viewer: true, searchable: ['name' => 'name', 'key' => 'key']);
+            $viewport = $this->sendWindow($browser, TableSortOrderDTO::of(new TableSortDTO('name')), 'Anna');
+            $this->assertNull($viewport->sort);
+            $this->assertNotContains('name', $viewport->shownFields);
+            $this->assertSame(0, $this->nextSignal(SignalTypeConstants::TABLE_WINDOW, TableWindowSignalData::class)->totalCount);
+
+            $this->sendWindow($browser, null);
+            $window = $this->nextSignal(SignalTypeConstants::TABLE_WINDOW, TableWindowSignalData::class);
+            $this->assertSame('Olena', $window->rows[0][PagePayload::slots][WireTestTable::SLOT_PERSON]['name']);
+            $this->assertSame(HiddenValue::mark(), $window->rows[1][PagePayload::slots][WireTestTable::SLOT_PERSON]['name']);
+
+            WireTestTable::$rows['beta'] = WireTestRow::sample('beta', name: 'New secret');
+            $browser->record(SourceChange::dbUpdated(WireTestTable::SOURCE_KEY, 'beta', ['name' => 'New secret']));
+            $browser->flushToSignalRouter();
+            $this->assertNull(Hilos::$sr?->getNextQueuedSignal(), 'A hidden setting edit must not move the delivered digest');
+
+            WireTestTable::$rows['alpha'] = WireTestRow::sample('alpha', name: 'New visible');
+            $browser->record(SourceChange::dbUpdated(WireTestTable::SOURCE_KEY, 'alpha', ['name' => 'New visible']));
+            $browser->flushToSignalRouter();
+            $delta = $this->nextSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, TableViewportDeltaDTO::class);
+            $this->assertSame('New visible', $delta->row[PagePayload::slots][WireTestTable::SLOT_PERSON]['name']);
+        } finally {
+            Hilos::$setting = $previousSetting;
+        }
     }
 
     public function testAnAdminStillSearchesEveryDeclaredField(): void
@@ -748,6 +785,9 @@ final class WireTestTable extends TableDefinition implements SelfSnapshotTable
     /** @var array<string, string> Fields the table declares the search over */
     public static array $searchable = [];
 
+    /** Whether this case treats the name as a row-dependent setting value */
+    public static bool $settingName = false;
+
     /**
      * @return array<string, WireField> The last activity from its column, the name from its, presence computed
      */
@@ -755,7 +795,9 @@ final class WireTestTable extends TableDefinition implements SelfSnapshotTable
     {
         return [
             'seen' => WireField::column(HilosDbContext::users, 'lastActivity'),
-            'name' => WireField::column(HilosDbContext::users, 'name'),
+            'name' => self::$settingName
+                ? WireField::settingFrom('key')
+                : WireField::column(HilosDbContext::users, 'name'),
             'online' => WireField::notPersonal(),
             'members' => WireField::each(['online' => WireField::notPersonal()]),
         ];
@@ -1395,5 +1437,29 @@ final class DeclarativeDbWireTestItem extends DbItem
             DeclarativeDbWireTestObject::rank => $this->_object->rank,
             default => parent::__get($name),
         };
+    }
+}
+
+/** One open and two closed row keys for the mixed viewer table. */
+final class WireSettingVisibilityCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Test catalog */
+    public static function getCatalog(): array
+    {
+        return [
+            'alpha' => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'Olena',
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+            'beta' => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'Anna',
+            ],
+            'gamma' => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'Petro',
+            ],
+        ];
     }
 }

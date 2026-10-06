@@ -17,6 +17,7 @@ import {
   LOGS_SETTINGS_SIGNAL_SCHEMAS,
   LOG_SETTINGS_SIGNAL,
 } from '../../../src/admin/logs/hilosLogSettings.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 
 const MIB = 1024 * 1024
 const DAY = 86400
@@ -205,6 +206,24 @@ describe('hilosLogSettingsVocabulary.valueLines', () => {
         [LOG_SETTING_RETENTION_MAX_AGE]: 0,
       }),
     ).toContain('keeps batches with no age limit')
+  })
+
+  it('names each hidden setting beside its mark while keeping open values readable', () => {
+    expect(
+      hilosLogSettingsVocabulary.valueLines({
+        ...RECIPE.normal,
+        [LOG_SETTING_WRITE_LEVEL]: HIDDEN_VALUE,
+        [LOG_SETTING_ROTATION_CRON]: HIDDEN_VALUE,
+        [LOG_SETTING_ROTATION_MAX_AGE]: HIDDEN_VALUE,
+        [LOG_SETTING_RETENTION_MAX_AGE]: HIDDEN_VALUE,
+      }),
+    ).toEqual([
+      'Write level: Hidden',
+      'Rotation schedule: Hidden',
+      'rotates at 512 MiB',
+      'Batch retention: Hidden',
+      'Rotation age: Hidden',
+    ])
   })
 })
 

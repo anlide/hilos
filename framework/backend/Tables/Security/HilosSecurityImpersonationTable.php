@@ -109,8 +109,7 @@ class HilosSecurityImpersonationTable extends TableDefinition implements SelfSna
     /**
      * Declares where each field of an impersonation setting row comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * Row key is not personal; value is hidden by the column verdict of settings (MASK); defaultValue is omitted
-     * and therefore hidden, as defaults are also setting values (HIL-1258).
+     * Row key is not personal; value and defaultValue follow the visibility of that settings catalog key.
      *
      * @return array<string, WireField>
      */
@@ -118,9 +117,9 @@ class HilosSecurityImpersonationTable extends TableDefinition implements SelfSna
     {
         return [
             HilosSecurityImpersonationTableRow::rowKey => WireField::notPersonal(),
-            HilosSecurityImpersonationTableRow::value => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
+            HilosSecurityImpersonationTableRow::value => WireField::settingFrom(HilosSecurityImpersonationTableRow::rowKey),
+            HilosSecurityImpersonationTableRow::defaultValue => WireField::settingFrom(
+                HilosSecurityImpersonationTableRow::rowKey,
             ),
         ];
     }

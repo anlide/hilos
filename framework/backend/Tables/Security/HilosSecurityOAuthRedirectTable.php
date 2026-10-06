@@ -105,7 +105,7 @@ class HilosSecurityOAuthRedirectTable extends TableDefinition implements SelfSna
     /**
      * Declares where each field of the return-address row comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * Row key, source layer and set-state flag are not personal; value is hidden by the column verdict of settings (MASK).
+     * Row key, source layer and set-state flag are not personal; value follows its catalog key's viewer verdict.
      *
      * @return array<string, WireField>
      */
@@ -115,10 +115,7 @@ class HilosSecurityOAuthRedirectTable extends TableDefinition implements SelfSna
             HilosSecurityOAuthRedirectTableRow::rowKey => WireField::notPersonal(),
             HilosSecurityOAuthRedirectTableRow::source => WireField::notPersonal(),
             HilosSecurityOAuthRedirectTableRow::setState => WireField::notPersonal(),
-            HilosSecurityOAuthRedirectTableRow::value => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
-            ),
+            HilosSecurityOAuthRedirectTableRow::value => WireField::settingFrom(HilosSecurityOAuthRedirectTableRow::rowKey),
         ];
     }
 

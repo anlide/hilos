@@ -35,6 +35,7 @@ final class OAuthSettingsCatalog implements CatalogProviderInterface
         return [
             self::REDIRECT_URI_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
             ],
         ];

@@ -759,7 +759,7 @@ test.describe('in the admin view mode', () => {
   test('a guest opens a setting, sees the hidden mark in the modal and has nothing to edit or save', async ({
     page,
   }) => {
-    const key = 'notifications.delivery_log.retention_days'
+    const key = 'example_string'
 
     await setAdminViewMode(true)
     await openSettings(page)

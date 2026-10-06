@@ -57,7 +57,7 @@ use JsonException;
  * Verifies that on the legal admin pages (LegalPage, LegalDocumentPage, LegalRevisionPage,
  * LegalAcceptancesPage, LegalSettingsPage) catalog definitions, checks, revisions and counts
  * are preserved for both anonymous and signed-in non-admin viewers, personal fields (name, email)
- * and setting values and defaults are hidden, and an admin receives all pages with no hidden marks.
+ * remain hidden, fixed legal settings are visible, and an admin receives all pages with no hidden marks.
  */
 final class AdminViewModeLegalTest extends IntegrationTestCase
 {
@@ -191,8 +191,8 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
                 self::assertCount(1, $settingRow[PagePayload::slots]);
                 $settingSlot = reset($settingRow[PagePayload::slots]);
                 self::assertSame($key, $settingSlot[HilosLegalSettingsTableRow::rowKey]);
-                self::assertTrue(HiddenValue::isMark($settingSlot[HilosLegalSettingsTableRow::value]));
-                self::assertTrue(HiddenValue::isMark($settingSlot[HilosLegalSettingsTableRow::defaultValue]));
+                self::assertIsString($settingSlot[HilosLegalSettingsTableRow::value]);
+                self::assertIsString($settingSlot[HilosLegalSettingsTableRow::defaultValue]);
             }
         }
     }
@@ -325,9 +325,9 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
     }
 
     /**
-     * A viewer receives legal settings with setting keys preserved and both values and defaults masked.
+     * A viewer receives the fixed legal settings with keys, values and defaults shown.
      */
-    public function testAViewerSeesLegalSettingsWithSettingKeysAndMaskedValuesAndDefaults(): void
+    public function testAViewerSeesLegalSettingsWithSettingKeysValuesAndDefaults(): void
     {
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
             $frames = $this->subscribe(
@@ -346,8 +346,8 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
                 self::assertCount(1, $settingRow[PagePayload::slots]);
                 $settingSlot = reset($settingRow[PagePayload::slots]);
                 self::assertSame($key, $settingSlot[HilosLegalSettingsTableRow::rowKey]);
-                self::assertTrue(HiddenValue::isMark($settingSlot[HilosLegalSettingsTableRow::value]));
-                self::assertTrue(HiddenValue::isMark($settingSlot[HilosLegalSettingsTableRow::defaultValue]));
+                self::assertIsString($settingSlot[HilosLegalSettingsTableRow::value]);
+                self::assertIsString($settingSlot[HilosLegalSettingsTableRow::defaultValue]);
             }
         }
     }

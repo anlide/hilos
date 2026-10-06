@@ -49,6 +49,7 @@ final class ChannelSettingsCatalog implements CatalogProviderInterface
         foreach ($channels as $channel => $descriptor) {
             $catalog[$descriptor->enabledSettingKey()] = [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ];
 

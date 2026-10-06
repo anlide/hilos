@@ -29,11 +29,13 @@ final class AuthMethodSettingsCatalog implements CatalogProviderInterface
         return [
             AuthMethodSettings::DISABLED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '',
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => AuthMethodsDisabledRule::class,
             ],
             PasskeyAddressPolicy::SETTING_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
         ];

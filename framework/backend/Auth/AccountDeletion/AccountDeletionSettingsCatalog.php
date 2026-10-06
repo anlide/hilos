@@ -26,6 +26,7 @@ final class AccountDeletionSettingsCatalog implements CatalogProviderInterface
         return [
             AccountDeletionSettings::GRACE_DAYS_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => AccountDeletionSettings::DEFAULT_GRACE_DAYS,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => AccountDeletionGraceDaysRule::class,
             ],

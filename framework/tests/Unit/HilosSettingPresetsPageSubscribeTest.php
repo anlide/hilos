@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -20,6 +22,7 @@ use Hilos\Database\Settings\Exception\SettingAccessorUnavailableException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\Preset\SettingPresetChangeSubscriber;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Log\LogSettingsPresets;
@@ -111,6 +114,66 @@ final class HilosSettingPresetsPageSubscribeTest extends TestCase
         $this->assertCount(3, $state->presets);
         $this->assertCount(1, $state->differences);
         $this->assertSame(LogSettingsCatalog::WRITE_LEVEL, $state->differences[0]->key);
+    }
+
+    public function testViewerFramesKeepOpenPresetValuesAndOmitClosedDriftOnSubscribeAndPush(): void
+    {
+        Hilos::$setting = new SettingPresetsPageTestAccessor(MixedVisibilityPresetCatalog::class);
+        Hilos::$browser = new SettingPresetsPageViewerBrowser();
+        $preset = LogSettingsPresets::presetGroup()->presetByName(LogSettingsPresets::NORMAL);
+        $this->assertNotNull($preset);
+        SettingPresetsPageTestAccessor::$values = [
+            ...$preset->values,
+            LogSettingsCatalog::PRESET => LogSettingsPresets::NORMAL,
+            LogSettingsCatalog::WRITE_LEVEL => 'DEBUG',
+            LogSettingsCatalog::ROTATION_CRON => '0 5 * * *',
+        ];
+
+        $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $initial = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($initial);
+        $this->assertInstanceOf(WebSocketSignalData::class, $initial->data);
+        $this->assertNotNull($initial->data->data);
+        $this->assertViewerMixedPresetFrame($initial->data->data->toArray());
+        $this->queuedSignalNames();
+
+        $this->announceASettingsWrite();
+        SettingPresetsPageTestPage::onAgentTick(new SettingPresetsPageTestAgent());
+        $live = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($live);
+        $this->assertInstanceOf(WebSocketSignalData::class, $live->data);
+        $this->assertNotNull($live->data->data);
+        $this->assertViewerMixedPresetFrame($live->data->data->toArray());
+    }
+
+    public function testClosedSelectionHidesTheAppliedNameAndAllDrift(): void
+    {
+        Hilos::$setting = new SettingPresetsPageTestAccessor(ClosedSelectionPresetCatalog::class);
+        Hilos::$browser = new SettingPresetsPageViewerBrowser();
+        $this->applyNormalWithOneDrift();
+
+        $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $frame = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($frame);
+        $this->assertInstanceOf(WebSocketSignalData::class, $frame->data);
+        $this->assertNotNull($frame->data->data);
+        $wire = $frame->data->data->toArray();
+
+        $this->assertSame(HiddenValue::mark(), $wire[HilosSettingPresetsSignalData::selected]);
+        $this->assertSame(HiddenValue::mark(), $wire[HilosSettingPresetsSignalData::differences]);
+    }
+
+    public function testAdminFrameKeepsClosedCatalogValuesAndDifferences(): void
+    {
+        Hilos::$setting = new SettingPresetsPageTestAccessor(MixedVisibilityPresetCatalog::class);
+        $this->applyNormalWithOneDrift();
+
+        $this->page()->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $state = $this->groupState();
+
+        $this->assertSame('DEBUG', $state->differences[0]->currentValue);
+        $this->assertSame(LogSettingsCatalog::WRITE_LEVEL, $state->differences[0]->key);
+        $this->assertSame('INFO', $state->presets[1]->values[LogSettingsCatalog::WRITE_LEVEL]);
     }
 
     public function testATickPushesNothingWhileNoSettingsWriteHasBeenAnnounced(): void
@@ -292,6 +355,21 @@ final class HilosSettingPresetsPageSubscribeTest extends TestCase
 
         return $names;
     }
+
+    /**
+     * @param array<string, mixed> $wire A viewer's initial or live preset frame
+     */
+    private function assertViewerMixedPresetFrame(array $wire): void
+    {
+        $this->assertSame(LogSettingsPresets::NORMAL, $wire[HilosSettingPresetsSignalData::selected]);
+        $normal = $wire[HilosSettingPresetsSignalData::presets][1][HilosSettingPresetsSignalData::values];
+        $this->assertSame(HiddenValue::mark(), $normal[LogSettingsCatalog::WRITE_LEVEL]);
+        $this->assertSame('0 3 * * *', $normal[LogSettingsCatalog::ROTATION_CRON]);
+        $this->assertSame(
+            [LogSettingsCatalog::ROTATION_CRON],
+            array_column($wire[HilosSettingPresetsSignalData::differences], HilosSettingPresetsSignalData::key),
+        );
+    }
 }
 
 /**
@@ -336,5 +414,45 @@ final class SettingPresetsPageTestAccessor extends SettingsAccessor
     public function effectiveValueFor(string $key): mixed
     {
         return self::$values[$key] ?? parent::effectiveValueFor($key);
+    }
+}
+
+/** One closed member in an otherwise open preset group. */
+final class MixedVisibilityPresetCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Test catalog */
+    public static function getCatalog(): array
+    {
+        $catalog = LogSettingsCatalog::getCatalog();
+        $catalog[LogSettingsCatalog::WRITE_LEVEL][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] = false;
+
+        return $catalog;
+    }
+}
+
+/** Selection itself closed while the members stay open. */
+final class ClosedSelectionPresetCatalog implements CatalogProviderInterface
+{
+    /** @return array<string, array<string, mixed>> Test catalog */
+    public static function getCatalog(): array
+    {
+        $catalog = LogSettingsCatalog::getCatalog();
+        $catalog[LogSettingsCatalog::PRESET][SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] = false;
+
+        return $catalog;
+    }
+}
+
+/** Page gate double whose connection views the admin section. */
+final class SettingPresetsPageViewerBrowser extends IdentityTestBrowser
+{
+    public function __construct()
+    {
+        parent::__construct(null, false);
+    }
+
+    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    {
+        return true;
     }
 }

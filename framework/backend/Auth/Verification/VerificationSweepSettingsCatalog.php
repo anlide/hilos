@@ -29,11 +29,13 @@ final class VerificationSweepSettingsCatalog implements CatalogProviderInterface
         return [
             VerificationSweepSettings::RETENTION_SECONDS_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $window,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => VerificationRetentionRule::class,
             ],
             VerificationSweepSettings::SWEEP_CRON_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => VerificationSweepSettings::DEFAULT_SWEEP_CRON,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => VerificationSweepCronRule::class,
             ],

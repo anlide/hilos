@@ -21,6 +21,7 @@ import {
 } from '../settings/hilosSettingPresets.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { formatDurationInWords } from '../../format/duration.js'
+import { isHiddenValue } from '../../state/hiddenValue.js'
 
 /** Server→client signal `type` carrying the group (PHP `SUBSCRIPTION_PAGE_HILOS_LOGS_SETTINGS`). */
 export const LOG_SETTINGS_SIGNAL = 'subscription_page_hilos_logs_settings'
@@ -334,8 +335,11 @@ export const hilosLogSettingsVocabulary: HilosSettingPresetsVocabulary = {
   valueLines(values) {
     const lines: string[] = []
     if (LOG_SETTING_WRITE_LEVEL in values) {
+      const level = values[LOG_SETTING_WRITE_LEVEL]
       lines.push(
-        `writes ${formatLogWriteLevel(values[LOG_SETTING_WRITE_LEVEL])}`,
+        isHiddenValue(level)
+          ? 'Write level: Hidden'
+          : `writes ${formatLogWriteLevel(level)}`,
       )
     }
     if (
@@ -346,23 +350,33 @@ export const hilosLogSettingsVocabulary: HilosSettingPresetsVocabulary = {
       // rather than listed among the ones that fire.
       const axes: string[] = []
       const schedule = values[LOG_SETTING_ROTATION_CRON]
-      if (schedule !== '') {
+      if (isHiddenValue(schedule)) {
+        lines.push('Rotation schedule: Hidden')
+      } else if (schedule !== '') {
         axes.push(formatLogRotationSchedule(schedule))
       }
       const size = values[LOG_SETTING_ROTATION_MAX_LIVE_SIZE]
-      if (size !== 0) {
+      if (isHiddenValue(size)) {
+        lines.push('Rotation size: Hidden')
+      } else if (size !== 0) {
         axes.push(sizeTail(size))
       }
-      lines.push(
-        axes.length === 0
-          ? 'rotates only when the node restarts'
-          : `rotates ${axes.join(' or ')}`,
-      )
+      if (axes.length > 0) {
+        lines.push(`rotates ${axes.join(' or ')}`)
+      } else if (!isHiddenValue(schedule) && !isHiddenValue(size)) {
+        lines.push('rotates only when the node restarts')
+      }
     }
     if (LOG_SETTING_RETENTION_MAX_AGE in values) {
+      const retention = values[LOG_SETTING_RETENTION_MAX_AGE]
       lines.push(
-        `keeps batches ${retentionTail(values[LOG_SETTING_RETENTION_MAX_AGE])}`,
+        isHiddenValue(retention)
+          ? 'Batch retention: Hidden'
+          : `keeps batches ${retentionTail(retention)}`,
       )
+    }
+    if (isHiddenValue(values[LOG_SETTING_ROTATION_MAX_AGE])) {
+      lines.push('Rotation age: Hidden')
     }
 
     // An axis switched off is not named on a card, as on the Rotations screen

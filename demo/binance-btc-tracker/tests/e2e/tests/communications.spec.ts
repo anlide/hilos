@@ -133,20 +133,19 @@ async function saveChannelField(tab: Page, value: string): Promise<void> {
 test.describe('the communications section in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  test('a guest finds the channel switch replaced by a hidden mark and the test send disabled', async ({
+  test('a guest sees the channel switch but cannot use it or send a test', async ({
     page,
   }) => {
     await setAdminViewMode(true)
     await gotoPage(page, '/hilos/communications', PAGE_READY)
     await expect(page.getByTestId('page-error')).toHaveCount(0)
 
-    await expect(page.getByTestId('hilos-channel-enabled-sms')).toHaveCount(0)
+    const enabled = shownByTestId(page, 'hilos-channel-enabled-sms')
+    await expect(enabled).toBeVisible()
+    await expect(enabled).toBeDisabled()
     await expect(
-      page
-        .getByTestId('hilos-table-row-sms')
-        .getByTestId('hilos-hidden')
-        .first(),
-    ).toBeVisible()
+      shownByTestId(page, 'hilos-table-row-sms').getByTestId('hilos-hidden'),
+    ).toHaveCount(0)
 
     await shownByTestId(page, 'hilos-channel-configure-sms').click()
     await expect(page.getByTestId('hilos-admin-title')).toHaveText('Channel')

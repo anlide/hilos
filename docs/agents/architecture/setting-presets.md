@@ -170,6 +170,13 @@ one.
   by the section's frontend vocabulary out of those three fields. Units,
   plurals and language folded into the payload would make the mechanism useless
   to the next section, whose settings are counted in something else.
+- **A viewer receives each member by its own settings catalog verdict.** An
+  explicitly open value is sent as it is; a closed or unknown key becomes
+  Hidden inside the preset's values map. A closed member's difference is not
+  sent, including its key, because the fact of drift would reveal a comparison
+  of hidden values. The applied name and all differences require the selection
+  key to be open. The admin receives the complete frame. The same rule runs on
+  the first frame and on every push.
 - **An unknown selection is a state, not a fault.** `selected` is `null` when
   the stored name is not one the recipe declares — a preset renamed or dropped
   after somebody applied it. No card is lit, there are no differences, and any

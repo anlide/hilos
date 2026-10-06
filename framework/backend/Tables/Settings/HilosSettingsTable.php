@@ -252,14 +252,10 @@ final class HilosSettingsTable extends TableDefinition implements SelfSnapshotTa
                 ObjectSetting::type,
             ),
             HilosSettingTableRow::valueSource => WireField::notPersonal(),
-            HilosSettingTableRow::value => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
-            ),
-            HilosSettingTableRow::overrideValue => WireField::column(
-                HilosDbContext::settings,
-                ObjectSetting::value,
-            ),
+            HilosSettingTableRow::value => WireField::settingFrom(HilosSettingTableRow::key),
+            HilosSettingTableRow::overrideValue => WireField::settingFrom(HilosSettingTableRow::key),
+            HilosSettingTableRow::defaultValue => WireField::settingFrom(HilosSettingTableRow::key),
+            HilosSettingTableRow::defaultReferenceKey => WireField::settingFrom(HilosSettingTableRow::key),
         ];
     }
 

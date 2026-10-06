@@ -1133,6 +1133,7 @@ abstract class Hilos implements TruthSourceOwner
         if (static::$setting === null) {
             static::$setting = static::createSetting();
         }
+        static::$setting->validateAdminViewVisibility();
 
         if (static::$db === null) {
             static::$db = static::createDb();

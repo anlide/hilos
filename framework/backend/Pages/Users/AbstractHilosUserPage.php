@@ -7,6 +7,7 @@ namespace Hilos\Pages\Users;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\Impersonation\DTO\ImpersonationCardSettings;
+use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
@@ -297,8 +298,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * The impersonation settings decide whether the card has its takeover section and for whom its
      * button is switched off (HIL-1170); no frame follows them - a setting changed while the card is
      * open is caught by the server's refusal in the same words. A viewer of the admin view mode is
-     * shown the standing and the impersonation settings ({@see self::dataFields()}) and the grace
-     * period hidden.
+     * shown the standing, and the settings only when their catalog keys are open.
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
@@ -324,17 +324,23 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * Declares what of the card's data a viewer of the admin view mode is shown.
      *
      * The standing goes by the one map its live frame uses too ({@see AccountStanding::wireFields()},
-     * HIL-1254). The impersonation settings are settings of the installation, not facts about the
-     * person on the card (HIL-1170). The grace period of a deletion is left out and so hidden: it is
-     * the value of a setting, and the values of settings are hidden from a viewer.
+     * HIL-1254). The impersonation summary is sent only when every key behind its fields is open.
      *
      * @return array<string, WireField> Data key to where it comes from
      */
     protected function dataFields(): array
     {
         return [
+            self::ACCOUNT_DELETION_GRACE_DAYS => WireField::setting(AccountDeletionSettings::GRACE_DAYS_KEY),
             self::ACCOUNT_STANDING => WireField::each(AccountStanding::wireFields()),
-            self::IMPERSONATION => WireField::notPersonal(),
+            self::IMPERSONATION => WireField::settings([
+                ImpersonationSettings::ALLOWED_KEY,
+                ImpersonationSettings::SCOPE_KEY,
+                ImpersonationSettings::CARRY_ADMIN_KEY,
+                ImpersonationSettings::BLOCKED_KEY,
+                ImpersonationSettings::FROZEN_KEY,
+                ImpersonationSettings::EQUAL_KEY,
+            ]),
         ];
     }
 
