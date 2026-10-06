@@ -22,9 +22,12 @@ use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
+use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
+use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
+use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
@@ -50,11 +53,14 @@ use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifica
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\Actions\Collection\AccessLogEntriesActions;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
+use Hilos\Database\Actions\Collection\CountriesActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
 use Hilos\Database\Actions\Collection\LegalAcceptancesActions;
 use Hilos\Database\Actions\Collection\LegalAcceptanceExportsActions;
 use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\FileVariantsActions;
+use Hilos\Database\Actions\Collection\LanguagesActions;
+use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
@@ -73,10 +79,13 @@ use Hilos\Database\Actions\Collection\UserRenamesActions;
 use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
+use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\LegalAcceptanceExportActions;
 use Hilos\Database\Actions\Item\FileActions;
 use Hilos\Database\Actions\Item\FileVariantActions;
+use Hilos\Database\Actions\Item\LanguageActions;
+use Hilos\Database\Actions\Item\LocaleActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\Actions\Item\SecondFactorActions;
@@ -132,6 +141,9 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionLegalAcceptanceExports $legalAcceptanceExports Administrators' files of acceptance records
  * @property-read DbCollectionFiles $files
  * @property-read DbCollectionFileVariants $fileVariants
+ * @property-read DbCollectionLanguages $languages
+ * @property-read DbCollectionCountries $countries
+ * @property-read DbCollectionLocales $locales
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -194,6 +206,12 @@ abstract class HilosDbContext extends DbContext
     public const string file = 'file';
     public const string fileVariants = 'fileVariants';
     public const string fileVariant = 'fileVariant';
+    public const string languages = 'languages';
+    public const string language = 'language';
+    public const string countries = 'countries';
+    public const string country = 'country';
+    public const string locales = 'locales';
+    public const string locale = 'locale';
 
     /**
      * The layer names a refusal of a framework extension calls the three declared classes by;
@@ -259,6 +277,8 @@ abstract class HilosDbContext extends DbContext
      * The files registry (HIL-336) loads by row id and by the files library's bounded batch of
      * unbound rows, never as a full set, so it stays inert for projects that do not activate the
      * hilos_file table. Its image copies load by original file and stay inert without their table too (HIL-141).
+     * Languages, countries and locales load whole on first read. Mounting their collections
+     * does not read their tables, so a project without those tables stays inert until asked.
      *
      * People load by key when a session, page or library asks for a person. A question about
      * everyone uses DbCollectionUsers::listAll(); mounting users stays inert where nobody signs in.
@@ -441,6 +461,27 @@ abstract class HilosDbContext extends DbContext
             DbCollectionFileVariants::class,
             FileVariantsActions::class,
             FileVariantActions::class,
+        );
+        $this->mountFramework(
+            self::languages,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionLanguages::class,
+            LanguagesActions::class,
+            LanguageActions::class,
+        );
+        $this->mountFramework(
+            self::countries,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionCountries::class,
+            CountriesActions::class,
+            CountryActions::class,
+        );
+        $this->mountFramework(
+            self::locales,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionLocales::class,
+            LocalesActions::class,
+            LocaleActions::class,
         );
         $this->mountFramework(
             self::users,

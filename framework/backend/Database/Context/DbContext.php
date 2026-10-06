@@ -266,15 +266,13 @@ abstract class DbContext
      * Re-reads one collection from the database and drops its cached DbItems.
      *
      * Used by DB_SYNC_CLEARED apply to follow a remote deleteAll() truncate. The
-     * physical DELETE already ran in the originating process, so after a legitimate
-     * clear this re-read returns nothing and costs one empty SELECT. It is a re-read
-     * rather than a blind blanking so that applying the same clear twice converges on
-     * whatever the table now holds instead of leaving the mirror stuck empty over rows
-     * written after the truncate.
+     * physical DELETE already ran in the originating process. A previously full
+     * collection re-reads now; one still cold waits for its first read. Both then
+     * converge on whatever the table holds, including rows written after the truncate.
      *
      * @param string $name Collection name (e.g. users, events)
-     * @throws LogicException When the collection entity class is not configured (eager reload)
-     * @throws DatabaseException If reloading an eager collection from the database fails
+     * @throws LogicException When a previously full collection has no entity collection class
+     * @throws DatabaseException If reloading a previously full collection fails
      */
     public function reHydrateCollection(string $name): void
     {
@@ -287,12 +285,12 @@ abstract class DbContext
      *
      * Used when the DB was replaced under the live process (external db-reset or
      * restore): each object collection is reset to its fresh post-initDB state
-     * (eager collections reload now, lazy ones on next access) and each DbItem
+     * (previously full collections reload now, unread ones on next access) and each DbItem
      * wrapper cache is dropped so it does not return stale items. Does not touch
      * the DB generation baseline; callers that detected a change refresh it.
      *
-     * @throws LogicException When a represented collection entity class is not configured (eager reload)
-     * @throws DatabaseException If reloading an eager collection from the fresh DB fails
+     * @throws LogicException When a previously full collection has no entity collection class
+     * @throws DatabaseException If reloading a previously full collection from the fresh DB fails
      * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function reHydrateDbBackedCollections(): void

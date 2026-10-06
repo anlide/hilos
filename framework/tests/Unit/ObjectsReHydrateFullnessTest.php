@@ -14,10 +14,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * A collection declared full stays full across a re-read (HIL-670).
  *
- * Fullness comes from two different places and they are not the same fact. An eager collection
- * is full by STRATEGY, and a reset has always reloaded it. A lazy collection somebody called
- * {@see Objects::preloadAll()} on is full by DECLARATION: something asked for the whole set and
- * is now drawing a list from it.
+ * Fullness has two sources. A collection loaded by its first-read promise is full after that
+ * read, and a reset reloads it. A lazy collection passed to {@see Objects::preloadAll()} is
+ * full by declaration: something asked for the whole set and is drawing a list from it.
  *
  * The reset used to remember only the first, which was harmless while the only thing that
  * triggered it was a restore. It stops being harmless once a peer link triggers it too: after a
@@ -78,13 +77,33 @@ final class ObjectsReHydrateFullnessTest extends TestCase
     /**
      * @throws HilosException When the collection refuses to be loaded
      */
-    public function testAnEagerCollectionReloadsAsItAlwaysDid(): void
+    public function testAReadWholeCollectionReloads(): void
     {
         $collection = ReHydrateFullnessObjects::eagerWithTableRows([1, 2]);
         $collection->loadAllFromDB();
 
         $collection->reHydrate();
 
+        $this->assertTrue($collection->isAllLoaded());
+    }
+
+    /**
+     * A catalog absent from an installation is safe to mount because no DB statement runs
+     * before its first read. A restore must preserve that cold state too.
+     *
+     * @throws HilosException When the collection refuses to be loaded
+     */
+    public function testAnUnreadWholeOnFirstReadCollectionStaysColdAcrossAReRead(): void
+    {
+        $collection = ReHydrateFullnessObjects::eagerWithTableRows([1, 2]);
+        $this->assertSame(0, $collection->loadCount());
+
+        $collection->reHydrate();
+        $this->assertSame(0, $collection->loadCount());
+        $this->assertFalse($collection->isAllLoaded());
+
+        $this->assertNotNull($collection->first());
+        $this->assertSame(1, $collection->loadCount());
         $this->assertTrue($collection->isAllLoaded());
     }
 }

@@ -45,9 +45,9 @@ the framework prefix `hilos_`.
 
 | Table | Columns and meaning |
 |---|---|
-| `hilos_language` | `id`; `code` — unique ISO 639-1 code; `native_name` — the language's own name; `rtl` — writing direction, a property of the language rather than the locale; `enabled` (not in the code yet — HIL-104). |
-| `hilos_country` | `id`; `code` — unique ISO 3166-1 alpha-2 code, in the catalog's case (`us`); `currency_symbol` — for display; `currency_code` — three-letter ISO 4217 code, for calculations; `default_locale_id` — a locale of this country, or empty to take formats from the language; `enabled` (not in the code yet — HIL-104). |
-| `hilos_locale` | `id`; `code` — composed from the pair (`en-GB`), or the language code alone (`en`) without a country; `language_id`; `country_id` — empty for the language's countryless locale; seven formats — date, time, number, phone, address, measures (metric/imperial), sorting; `enabled`. The pair is unique; HIL-104 chooses the seven format column names (not in the code yet — HIL-104). |
+| `hilos_language` | `id`; `code` — unique ISO 639-1 code; `native_name` — the language's own name; `rtl` — writing direction, a property of the language rather than the locale; `enabled`. |
+| `hilos_country` | `id`; `code` — unique ISO 3166-1 alpha-2 code, in the catalog's case (`us`); `currency_symbol` — for display; `currency_code` — three-letter ISO 4217 code, for calculations; `default_locale_id` — a locale of this country, or empty to take formats from the language; `enabled`. A composite database key on (`id`, `default_locale_id`) holds the default to a locale of this country. |
+| `hilos_locale` | `id`; `code` — composed by creation from the pair (`en-GB`), or the language code alone (`en`) without a country; `language_id`; `country_id` — empty for the language's countryless locale; `date_format`, `time_format`, `number_format`, `phone_format`, `address_format`, `measurement_system` (`metric` / `imperial`), `collation`; `enabled`. The pair is unique. |
 | `hilos_language_name` | `id`; `language_id` — whose name; `in_language_id` — the language it is written in; `locale_id` — empty for the base name, otherwise an override for one locale of the writing language; `name`; `locked` (not in the code yet — HIL-1468). |
 | `hilos_country_name` | `id`; `country_id` — whose name; `language_id` — the language it is written in; `locale_id` — the same base/override rule; `name`; `locked` (not in the code yet — HIL-1468). |
 
@@ -71,7 +71,7 @@ A language's own name is `native_name`; its names table is for names in other
 languages.
 
 Every column of `hilos_language`, `hilos_country` and `hilos_locale` is declared
-nonpersonal in `_piiNotPersonal` (not in the code yet — HIL-104).
+nonpersonal in `_piiNotPersonal`.
 Every column of the two names tables has the same verdict
 (not in the code yet — HIL-1468).
 Under [backup anonymization](backup-anonymization.md), a restore leaves such
@@ -150,6 +150,10 @@ its own rule below.
 `enabled` belongs to a language, country or locale. Those rows have no lock:
 the switch protects them. A switched-off row is fully editable except for its
 code.
+
+The item actions of all three tables refuse edits of switched-on rows, whoever
+calls them. The section and reflow share that write door; switching on or off
+always remains available.
 
 - The server refuses to edit a switched-on language, and its edit form is
   disabled with the instruction to switch off, edit and switch on
@@ -298,6 +302,10 @@ The handshake follows the admin view mode precedent in
 the default language is always there.
 
 ## Deleting
+
+The database refuses deletion while a locale references its language or country,
+or while a country selects the locale as its default. The deletion checks below
+will give those refusals their user-facing text.
 
 - A language can be deleted only when it has no locales and no names written
   by a person, whether naming that language or written in it

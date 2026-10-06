@@ -1178,18 +1178,18 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * db-reset or restore), or another process reported a truncate.
      *
      * Unlike clearInMemory(), which drops rows this process just deleted itself, this
-     * re-reads the DB so the daemon stops holding rows it only assumes.
+     * re-reads a table that was already loaded whole, so the daemon stops holding rows
+     * it only assumes. A collection still cold waits for its first read.
      *
-     * Two collections reload at once: an eager one (LAZY_STRATEGY_NONE), and a lazy one that
-     * somebody had declared full by {@see preloadAll()}. The second is the one worth naming
-     * (HIL-670): fullness there is a declaration, not a strategy, and something is drawing a
-     * list from it on the strength of that declaration. A reset that only remembered the
-     * strategy would leave such a collection quietly no longer whole, and a list drawn from it
-     * would be missing rows with nothing to say so. Every other lazy collection drops its rows
-     * and fetches them from the fresh DB on next access, exactly as before.
+     * A collection already loaded whole reloads now, whether it was loaded by the first-read
+     * promise of LAZY_STRATEGY_NONE or by {@see preloadAll()} (HIL-670). The latter's fullness
+     * is a declaration: something is drawing a list from it. A reset that forgot it would leave
+     * that list missing rows. A LAZY_STRATEGY_NONE collection nobody read stays cold, as it was
+     * when mounted (HIL-104); otherwise a restore would read tables the project never created.
+     * Every other lazy collection drops its rows and fetches them on next access.
      *
-     * @throws LogicException When the entity collection class is not configured (eager reload)
-     * @throws DatabaseException If reloading the full collection from the fresh DB fails (eager reload)
+     * @throws LogicException When the entity collection class is not configured for a full reload
+     * @throws DatabaseException If reloading the full collection from the fresh DB fails
      * @throws HilosException When the concrete collection refuses to be loaded directly
      */
     public function reHydrate(): void
@@ -1205,7 +1205,7 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         // read would pin an empty mirror over a non-empty table for the process lifetime.
         $this->_allLoaded = false;
 
-        if ($this->_lazyStrategy === self::LAZY_STRATEGY_NONE || $wasAllLoaded) {
+        if ($wasAllLoaded) {
             $this->loadAllFromDB();
         }
     }
