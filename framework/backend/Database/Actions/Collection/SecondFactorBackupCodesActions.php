@@ -48,6 +48,26 @@ class SecondFactorBackupCodesActions extends DbActions
     }
 
     /**
+     * Moves backup codes, preserving their spent status inside the account-merge transaction.
+     *
+     * @param int $fromUserId Folded account
+     * @param int $toUserId Surviving account
+     * @throws WriteNotAllowedException When the caller cannot update both sets
+     * @throws CreateNotAllowedException Never for persisted rows; declared by sync
+     * @throws DatabaseException When reading or moving a row fails
+     * @throws InvalidArgumentException When a query or sync frame is invalid
+     * @throws SourceChangeSubscriberException When a change subscriber fails
+     * @throws ObjectGetIdStringNotImplementedException When a moved row has no key
+     */
+    public function rePointToUser(int $fromUserId, int $toUserId): void
+    {
+        $this->ensureCanWriteSet((string)$fromUserId, TruthSourceOperation::Update);
+        $this->ensureCanWriteSet((string)$toUserId, TruthSourceOperation::Update);
+
+        $this->objectCollection->rePointToUser($fromUserId, $toUserId);
+    }
+
+    /**
      * Deletes a person's whole set.
      *
      * @param int $userId Person

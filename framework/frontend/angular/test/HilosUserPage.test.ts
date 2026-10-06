@@ -76,6 +76,8 @@ function userContext(
   stepUp: 'skip' | 'ask' | 'refused' = 'skip',
   options: {
     detailHasPassword?: boolean
+    detailHasSecondFactor?: boolean
+    candidateHasSecondFactor?: boolean
     detailUnverifiedPasswordAddress?: string | null
     candidateHasPassword?: boolean
     candidateUnverifiedPasswordAddress?: string | null
@@ -112,6 +114,7 @@ function userContext(
   page.tables.upsert('userDetail', 1, {
     users: { type: 'user', id: 1 },
     connections: { presence: 'online', onlineSessionCount: 1 },
+    secondFactors: { hasSecondFactor: options.detailHasSecondFactor ?? false },
     identities: {
       hasPassword: options.detailHasPassword ?? false,
       unverifiedPasswordAddress:
@@ -149,6 +152,7 @@ function userContext(
                 },
               ],
           hasPassword: options.candidateHasPassword ?? false,
+          hasSecondFactor: options.candidateHasSecondFactor ?? false,
           unverifiedPasswordAddress:
             options.candidateUnverifiedPasswordAddress ?? null,
         },
@@ -158,7 +162,7 @@ function userContext(
       rowKey: 99,
       slots: {
         users: { id: 99, name: 'Admin', lastActivity: null },
-        merge: { identities: [], hasPassword: false },
+        merge: { identities: [], hasPassword: false, hasSecondFactor: false },
       },
     },
   ]
@@ -767,6 +771,8 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
     stepUp: 'skip' | 'ask' | 'refused',
     options: {
       detailHasPassword?: boolean
+      detailHasSecondFactor?: boolean
+      candidateHasSecondFactor?: boolean
       detailUnverifiedPasswordAddress?: string | null
       candidateHasPassword?: boolean
       candidateUnverifiedPasswordAddress?: string | null

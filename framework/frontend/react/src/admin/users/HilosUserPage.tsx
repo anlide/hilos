@@ -57,6 +57,9 @@ import {
   createHilosUserPhoto,
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY,
+  hilosSecondFactorFateChoices,
+  type HilosSecondFactorFate,
   hilosPasswordFateChoices,
   keepMineRowEdit,
   openRowEdit,
@@ -424,6 +427,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const [passwordFate, setPasswordFate] = useState<HilosPasswordFate | null>(
     null,
   )
+  const [secondFactorFate, setSecondFactorFate] =
+    useState<HilosSecondFactorFate | null>(null)
   const selectedEntry = candidateRows.find(
     (entry) => entry.row?.id === selectedCandidateId,
   )
@@ -435,12 +440,22 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const passwordChoiceRequired =
     detail?.hasPassword === true && selectedCandidate?.hasPassword === true
   const passwordChoices = hilosPasswordFateChoices(detail, selectedCandidate)
+  const secondFactorChoices = hilosSecondFactorFateChoices(
+    detail,
+    selectedCandidate,
+  )
+  useEffect(() => {
+    setSecondFactorFate(null)
+  }, [detail?.hasSecondFactor, selectedCandidate?.hasSecondFactor])
   const mergeGone = mergeStep === 2 && selectedCandidate === null
   const mergeDisabled =
     mergeAction.busy ||
     mergeGone ||
     selectedCandidate === null ||
-    (passwordChoiceRequired && passwordFate === null)
+    (passwordChoiceRequired && passwordFate === null) ||
+    typeof detail?.hasSecondFactor !== 'boolean' ||
+    typeof selectedCandidate?.hasSecondFactor !== 'boolean' ||
+    (secondFactorChoices.length > 0 && secondFactorFate === null)
 
   useEffect(
     () => () => {
@@ -505,6 +520,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     setSelectedCandidateId(null)
     setSelectedSnapshot(null)
     setPasswordFate(null)
+    setSecondFactorFate(null)
     mergeOpeningRef.current = true
     setMergeOpening(true)
     const proof = await mergeStepUp.open('merge')
@@ -545,6 +561,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     }
     setSelectedCandidateId(row.id)
     setPasswordFate(null)
+    setSecondFactorFate(null)
     mergeAction.clearError()
   }
 
@@ -566,7 +583,13 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }
 
   async function submitMerge(): Promise<void> {
-    if (!detail || !selectedCandidate || mergeDisabled) {
+    if (
+      !detail ||
+      !selectedCandidate ||
+      mergeDisabled ||
+      typeof detail.hasSecondFactor !== 'boolean' ||
+      typeof selectedCandidate.hasSecondFactor !== 'boolean'
+    ) {
       return
     }
     const fate = passwordChoiceRequired
@@ -574,7 +597,14 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       : undefined
     if (
       await mergeAction.run(
-        accountMerge.merge(detail.id, selectedCandidate.id, fate),
+        accountMerge.merge(
+          detail.id,
+          selectedCandidate.id,
+          fate,
+          secondFactorFate ?? undefined,
+          detail.hasSecondFactor,
+          selectedCandidate.hasSecondFactor,
+        ),
       )
     ) {
       closeMerge()
@@ -1325,6 +1355,62 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               <p className="text-danger" data-id="hilos-user-merge-gone">
                 No longer available
               </p>
+            ) : null}
+            <p
+              data-id="hilos-user-merge-second-factor-summary"
+              role="status"
+              aria-live="polite"
+            >
+              {HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor}{' '}
+              {detail?.hasSecondFactor === true
+                ? 'Yes'
+                : detail?.hasSecondFactor === false
+                  ? 'No'
+                  : 'Hidden'}
+              . {HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser}{' '}
+              {summaryCandidate?.hasSecondFactor === true
+                ? 'Yes'
+                : summaryCandidate?.hasSecondFactor === false
+                  ? 'No'
+                  : 'Hidden'}
+              .
+            </p>
+            {secondFactorChoices.length > 0 ? (
+              <fieldset className="mb-3">
+                <legend className="h6">
+                  {HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend}
+                </legend>
+                <p className="form-text">
+                  {HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.trusts}
+                </p>
+                {secondFactorChoices.map((choice) => (
+                  <div className="form-check" key={choice.value}>
+                    <input
+                      id={`hilos-user-merge-second-factor-${choice.value}-field`}
+                      className="form-check-input"
+                      type="radio"
+                      name="hilos-user-merge-second-factor"
+                      value={choice.value}
+                      checked={secondFactorFate === choice.value}
+                      data-id={`hilos-user-merge-second-factor-${choice.value}`}
+                      onChange={() => setSecondFactorFate(choice.value)}
+                      aria-describedby={`hilos-user-merge-second-factor-${choice.value}-consequence`}
+                    />
+                    <label
+                      className="form-check-label"
+                      htmlFor={`hilos-user-merge-second-factor-${choice.value}-field`}
+                    >
+                      {choice.label}
+                    </label>
+                    <p
+                      className="form-text"
+                      id={`hilos-user-merge-second-factor-${choice.value}-consequence`}
+                    >
+                      {choice.consequence}
+                    </p>
+                  </div>
+                ))}
+              </fieldset>
             ) : null}
             {passwordChoiceRequired ? (
               <fieldset className="mb-3">

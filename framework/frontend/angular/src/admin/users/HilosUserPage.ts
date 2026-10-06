@@ -68,6 +68,9 @@ import {
   createHilosUserPhoto,
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY,
+  hilosSecondFactorFateChoices,
+  type HilosSecondFactorFate,
   hilosPasswordFateChoices,
   hiddenAsWord,
   isHiddenValue,
@@ -769,6 +772,77 @@ function noticeText(live: RowEditState<UserEditFields>): string {
               No longer available
             </p>
           }
+          <p
+            data-id="hilos-user-merge-second-factor-summary"
+            role="status"
+            aria-live="polite"
+          >
+            {{ secondFactorCopy.survivor }}
+            {{
+              detail()?.hasSecondFactor === true
+                ? 'Yes'
+                : detail()?.hasSecondFactor === false
+                  ? 'No'
+                  : 'Hidden'
+            }}. {{ secondFactorCopy.loser }}
+            {{
+              mergeSummaryCandidate()?.hasSecondFactor === true
+                ? 'Yes'
+                : mergeSummaryCandidate()?.hasSecondFactor === false
+                  ? 'No'
+                  : 'Hidden'
+            }}.
+          </p>
+          @if (secondFactorChoices().length > 0) {
+            <fieldset class="mb-3">
+              <legend class="h6">{{ secondFactorCopy.legend }}</legend>
+              <p class="form-text">{{ secondFactorCopy.trusts }}</p>
+              @for (choice of secondFactorChoices(); track choice.value) {
+                <div class="form-check">
+                  <input
+                    [id]="
+                      'hilos-user-merge-second-factor-' +
+                      choice.value +
+                      '-field'
+                    "
+                    class="form-check-input"
+                    type="radio"
+                    name="hilos-user-merge-second-factor"
+                    [value]="choice.value"
+                    [checked]="secondFactorFate() === choice.value"
+                    [attr.data-id]="
+                      'hilos-user-merge-second-factor-' + choice.value
+                    "
+                    (change)="secondFactorFate.set(choice.value)"
+                    [attr.aria-describedby]="
+                      'hilos-user-merge-second-factor-' +
+                      choice.value +
+                      '-consequence'
+                    "
+                  />
+                  <label
+                    class="form-check-label"
+                    [for]="
+                      'hilos-user-merge-second-factor-' +
+                      choice.value +
+                      '-field'
+                    "
+                    >{{ choice.label }}</label
+                  >
+                  <p
+                    class="form-text"
+                    [id]="
+                      'hilos-user-merge-second-factor-' +
+                      choice.value +
+                      '-consequence'
+                    "
+                  >
+                    {{ choice.consequence }}
+                  </p>
+                </div>
+              }
+            </fieldset>
+          }
           @if (passwordChoiceRequired()) {
             <fieldset class="mb-3">
               <legend class="h6">
@@ -884,6 +958,7 @@ export class HilosUserPage {
   protected readonly nameMin = 2
   protected readonly nameMax = 64
   protected readonly passwordCopy = HILOS_ACCOUNT_MERGE_PASSWORD_COPY
+  protected readonly secondFactorCopy = HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY
   protected readonly hiddenAsWord = hiddenAsWord
   protected readonly isHiddenValue = isHiddenValue
 
@@ -991,6 +1066,9 @@ export class HilosUserPage {
     null,
   )
   protected readonly passwordFate = signal<HilosPasswordFate | null>(null)
+  protected readonly secondFactorFate = signal<HilosSecondFactorFate | null>(
+    null,
+  )
   protected readonly mergeAction = createHilosTrackedAction()
   protected readonly mergeStepUp = computed(() =>
     createHilosUserCardStepUp(this.context(), () => {
@@ -1026,6 +1104,9 @@ export class HilosUserPage {
   protected readonly passwordChoices = computed(() =>
     hilosPasswordFateChoices(this.detail(), this.selectedCandidate()),
   )
+  protected readonly secondFactorChoices = computed(() =>
+    hilosSecondFactorFateChoices(this.detail(), this.selectedCandidate()),
+  )
   protected readonly mergeGone = computed(
     () => this.mergeStep() === 2 && this.selectedCandidate() === null,
   )
@@ -1034,7 +1115,11 @@ export class HilosUserPage {
       this.mergeAction.busy() ||
       this.mergeGone() ||
       this.selectedCandidate() === null ||
-      (this.passwordChoiceRequired() && this.passwordFate() === null),
+      (this.passwordChoiceRequired() && this.passwordFate() === null) ||
+      typeof this.detail()?.hasSecondFactor !== 'boolean' ||
+      typeof this.selectedCandidate()?.hasSecondFactor !== 'boolean' ||
+      (this.secondFactorChoices().length > 0 &&
+        this.secondFactorFate() === null),
   )
 
   protected readonly editing = signal(false)
@@ -1260,6 +1345,20 @@ export class HilosUserPage {
       focusWindow(this.impersonateBody()?.nativeElement)
     })
 
+    let previousSurvivorFactor: Hideable<boolean> | undefined
+    let previousLoserFactor: Hideable<boolean> | undefined
+    effect(() => {
+      const survivorFactor = this.detail()?.hasSecondFactor
+      const loserFactor = this.selectedCandidate()?.hasSecondFactor
+      if (
+        survivorFactor !== previousSurvivorFactor ||
+        loserFactor !== previousLoserFactor
+      ) {
+        previousSurvivorFactor = survivorFactor
+        previousLoserFactor = loserFactor
+        untracked(() => this.secondFactorFate.set(null))
+      }
+    })
     effect(() => {
       const rows = this.mergeRows()
       untracked(() => {
@@ -1456,6 +1555,7 @@ export class HilosUserPage {
     this.selectedCandidateId.set(null)
     this.selectedSnapshot.set(null)
     this.passwordFate.set(null)
+    this.secondFactorFate.set(null)
     this.mergeOpening.set(true)
     const proof = await this.mergeStepUp().open('merge')
     this.mergeOpening.set(false)
@@ -1494,6 +1594,7 @@ export class HilosUserPage {
     }
     this.selectedCandidateId.set(row.id)
     this.passwordFate.set(null)
+    this.secondFactorFate.set(null)
     this.mergeAction.clearError()
   }
 
@@ -1518,7 +1619,14 @@ export class HilosUserPage {
   protected async submitMerge(): Promise<void> {
     const survivor = this.detail()
     const loser = this.selectedCandidate()
-    if (!survivor || !loser || !this.accountMerge || this.mergeDisabled()) {
+    if (
+      !survivor ||
+      !loser ||
+      !this.accountMerge ||
+      this.mergeDisabled() ||
+      typeof survivor.hasSecondFactor !== 'boolean' ||
+      typeof loser.hasSecondFactor !== 'boolean'
+    ) {
       return
     }
     const fate = this.passwordChoiceRequired()
@@ -1526,7 +1634,14 @@ export class HilosUserPage {
       : undefined
     if (
       await this.mergeAction.run(
-        this.accountMerge.merge(survivor.id, loser.id, fate),
+        this.accountMerge.merge(
+          survivor.id,
+          loser.id,
+          fate,
+          this.secondFactorFate() ?? undefined,
+          survivor.hasSecondFactor,
+          loser.hasSecondFactor,
+        ),
       )
     ) {
       this.onMergeOpenChange(false)

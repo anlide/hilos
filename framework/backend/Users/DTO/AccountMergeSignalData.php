@@ -29,6 +29,9 @@ final class AccountMergeSignalData extends BaseDTO implements HandoverAskInterfa
      * @param int $survivorUserId Survivor user id that absorbs the loser
      * @param int $loserUserId Loser user id folded into the survivor
      * @param ?string $passwordFate Password-fate backed value, or null when unnamed
+     * @param ?string $secondFactorFate Second-factor choice, or null when unnecessary
+     * @param bool $expectedSurvivorHasSecondFactor Confirmed-app presence shown for the survivor
+     * @param bool $expectedLoserHasSecondFactor Confirmed-app presence shown for the loser
      * @param string $replySignal Agent-signal name the library reports back under
      * @param string $acceptKey Initiating connection accept key
      * @param ?string $requestId Client-minted tracked request id, or null when untracked
@@ -39,6 +42,9 @@ final class AccountMergeSignalData extends BaseDTO implements HandoverAskInterfa
         public readonly int $survivorUserId,
         public readonly int $loserUserId,
         public readonly ?string $passwordFate,
+        public readonly ?string $secondFactorFate,
+        public readonly bool $expectedSurvivorHasSecondFactor,
+        public readonly bool $expectedLoserHasSecondFactor,
         public readonly string $replySignal,
         public readonly string $acceptKey,
         public readonly ?string $requestId,
@@ -58,6 +64,9 @@ final class AccountMergeSignalData extends BaseDTO implements HandoverAskInterfa
             'survivorUserId' => $this->survivorUserId,
             'loserUserId' => $this->loserUserId,
             'passwordFate' => $this->passwordFate,
+            'secondFactorFate' => $this->secondFactorFate,
+            'expectedSurvivorHasSecondFactor' => $this->expectedSurvivorHasSecondFactor,
+            'expectedLoserHasSecondFactor' => $this->expectedLoserHasSecondFactor,
             'replySignal' => $this->replySignal,
             'acceptKey' => $this->acceptKey,
             'requestId' => $this->requestId,
@@ -79,6 +88,9 @@ final class AccountMergeSignalData extends BaseDTO implements HandoverAskInterfa
             survivorUserId: self::requireInt($data, 'survivorUserId'),
             loserUserId: self::requireInt($data, 'loserUserId'),
             passwordFate: self::optionalString($data, 'passwordFate'),
+            secondFactorFate: self::optionalString($data, 'secondFactorFate'),
+            expectedSurvivorHasSecondFactor: self::requireBool($data, 'expectedSurvivorHasSecondFactor'),
+            expectedLoserHasSecondFactor: self::requireBool($data, 'expectedLoserHasSecondFactor'),
             replySignal: self::requireString($data, 'replySignal'),
             acceptKey: self::requireString($data, 'acceptKey'),
             requestId: self::optionalString($data, 'requestId'),

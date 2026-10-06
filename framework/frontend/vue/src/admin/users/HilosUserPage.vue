@@ -61,6 +61,9 @@ import {
   createHilosMergeCandidates,
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
+  HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY,
+  hilosSecondFactorFateChoices,
+  type HilosSecondFactorFate,
   hilosPasswordFateChoices,
   HilosPages,
   hiddenAsWord,
@@ -354,6 +357,7 @@ const mergeStep = ref<1 | 2>(1)
 const selectedCandidateId = ref<number | null>(null)
 const selectedSnapshot = ref<HilosMergeCandidateRow | null>(null)
 const passwordFate = ref<HilosPasswordFate | null>(null)
+const secondFactorFate = ref<HilosSecondFactorFate | null>(null)
 
 const selectedCandidate = computed(() => {
   const selected = mergeRows.value.find(
@@ -375,6 +379,19 @@ const passwordChoiceRequired = computed(
 const passwordChoices = computed(() =>
   hilosPasswordFateChoices(detail.value, selectedCandidate.value),
 )
+const secondFactorChoices = computed(() =>
+  hilosSecondFactorFateChoices(detail.value, selectedCandidate.value),
+)
+watch(
+  [
+    () => detail.value?.hasSecondFactor,
+    () => selectedCandidate.value?.hasSecondFactor,
+  ],
+  () => {
+    secondFactorFate.value = null
+  },
+  { flush: 'sync' },
+)
 const mergeGone = computed(
   () => mergeStep.value === 2 && selectedCandidate.value === null,
 )
@@ -383,7 +400,10 @@ const mergeDisabled = computed(
     mergeAction.busy.value ||
     mergeGone.value ||
     selectedCandidate.value === null ||
-    (passwordChoiceRequired.value && passwordFate.value === null),
+    (passwordChoiceRequired.value && passwordFate.value === null) ||
+    typeof detail.value?.hasSecondFactor !== 'boolean' ||
+    typeof selectedCandidate.value?.hasSecondFactor !== 'boolean' ||
+    (secondFactorChoices.value.length > 0 && secondFactorFate.value === null),
 )
 
 watch(mergeRows, () => {
@@ -411,6 +431,7 @@ async function openMerge(): Promise<void> {
   selectedCandidateId.value = null
   selectedSnapshot.value = null
   passwordFate.value = null
+  secondFactorFate.value = null
   mergeOpening.value = true
   mergeProof.value = await mergeStepUp.open('merge')
   mergeOpening.value = false
@@ -446,6 +467,7 @@ function chooseCandidate(row: HilosMergeCandidateRow): void {
   }
   selectedCandidateId.value = row.id
   passwordFate.value = null
+  secondFactorFate.value = null
   mergeAction.clearError()
 }
 
@@ -469,13 +491,30 @@ function previousMergeStep(): void {
 async function submitMerge(): Promise<void> {
   const survivor = detail.value
   const loser = selectedCandidate.value
-  if (!survivor || !loser || mergeDisabled.value) {
+  if (
+    !survivor ||
+    !loser ||
+    mergeDisabled.value ||
+    typeof survivor.hasSecondFactor !== 'boolean' ||
+    typeof loser.hasSecondFactor !== 'boolean'
+  ) {
     return
   }
   const fate = passwordChoiceRequired.value
     ? (passwordFate.value ?? undefined)
     : undefined
-  if (await mergeAction.run(accountMerge.merge(survivor.id, loser.id, fate))) {
+  if (
+    await mergeAction.run(
+      accountMerge.merge(
+        survivor.id,
+        loser.id,
+        fate,
+        secondFactorFate.value ?? undefined,
+        survivor.hasSecondFactor,
+        loser.hasSecondFactor,
+      ),
+    )
+  ) {
     closeMerge()
   }
 }
@@ -1177,6 +1216,62 @@ watch(error, (reason) => {
         <p v-if="mergeGone" class="text-danger" data-id="hilos-user-merge-gone">
           No longer available
         </p>
+        <p
+          data-id="hilos-user-merge-second-factor-summary"
+          role="status"
+          aria-live="polite"
+        >
+          {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor }}
+          {{
+            detail?.hasSecondFactor === true
+              ? 'Yes'
+              : detail?.hasSecondFactor === false
+                ? 'No'
+                : 'Hidden'
+          }}. {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser }}
+          {{
+            mergeSummaryCandidate?.hasSecondFactor === true
+              ? 'Yes'
+              : mergeSummaryCandidate?.hasSecondFactor === false
+                ? 'No'
+                : 'Hidden'
+          }}.
+        </p>
+        <fieldset v-if="secondFactorChoices.length > 0" class="mb-3">
+          <legend class="h6">
+            {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend }}
+          </legend>
+          <p class="form-text">
+            {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.trusts }}
+          </p>
+          <div
+            v-for="choice in secondFactorChoices"
+            :key="choice.value"
+            class="form-check"
+          >
+            <input
+              :id="`hilos-user-merge-second-factor-${choice.value}-field`"
+              v-model="secondFactorFate"
+              class="form-check-input"
+              type="radio"
+              name="hilos-user-merge-second-factor"
+              :value="choice.value"
+              :data-id="`hilos-user-merge-second-factor-${choice.value}`"
+              :aria-describedby="`hilos-user-merge-second-factor-${choice.value}-consequence`"
+            />
+            <label
+              class="form-check-label"
+              :for="`hilos-user-merge-second-factor-${choice.value}-field`"
+              >{{ choice.label }}</label
+            >
+            <p
+              :id="`hilos-user-merge-second-factor-${choice.value}-consequence`"
+              class="form-text"
+            >
+              {{ choice.consequence }}
+            </p>
+          </div>
+        </fieldset>
         <fieldset v-if="passwordChoiceRequired" class="mb-3">
           <legend class="h6">
             {{ HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend }}

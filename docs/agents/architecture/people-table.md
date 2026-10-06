@@ -180,12 +180,20 @@ HIL-1202 confirms this choice as the pattern for the other person keys.
 The table is the sessions library's whole, and the whole operation is framework
 code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts
 may be merged — both exist, neither is folded already (`assertMergeable()`) —
-then the passwords, then one transaction: the ways in, the project's own rows
+then the password and second-factor choices, then one transaction: the ways in,
+the second-factor sets and the project's own rows
 (`applyAccountMerge()`, the one seam a project answers), and the tombstone. The
 tombstone writes the merge row FIRST and the loser's block flag second: the
 merge-candidates table hears of the merge by the change of the person's row, and
 reads "is this account merged" from the table at that moment. The flag is
 written straight, not as a block: a merged loser is not a punished person.
+
+The second-factor choice is independent of the password choice. A protected
+loser requires an explicit transfer, or retaining the survivor's existing
+protection when both have one. All five second-factor tables leave no rows on
+the loser; the removal delay never becomes shorter. The live reset refusals,
+trust revocation and session consequences are specified in
+[second-factor.md](second-factor.md#account-merge).
 
 A folded account is refused, both ways, the admin flag and the block
 (`applyAdminGrant()`, `applyAccountBlock()`), an administrator's deletion after

@@ -23,6 +23,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
      * @param array<string, mixed> $userFields User payload, including its numeric id
      * @param list<array{type: string, identifier: string, provider: ?string, verified: bool}> $identities Safe identity metadata
      * @param bool $hasPassword Whether the account has a password identity
+     * @param bool $hasSecondFactor Whether the account has a confirmed authenticator
      * @param ?int $exactUserId User id only when it exactly matches a numeric search term
      * @param ?string $unverifiedPasswordAddress Address of an unconfirmed password that a merge will remove instead of demoting
      */
@@ -30,6 +31,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         public readonly array $userFields,
         public readonly array $identities,
         public readonly bool $hasPassword,
+        public readonly bool $hasSecondFactor,
         public readonly ?int $exactUserId = null,
         public readonly ?string $unverifiedPasswordAddress = null,
     ) {
@@ -55,6 +57,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         return $this->userFields + [
             HilosMergeCandidatesTable::FIELD_IDENTITIES => $this->identities,
             HilosMergeCandidatesTable::FIELD_HAS_PASSWORD => $this->hasPassword,
+            HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR => $this->hasSecondFactor,
             HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS => $this->unverifiedPasswordAddress,
             self::identityAddresses => implode(' ', array_column($this->identities, 'identifier')),
             self::exactUserId => $this->exactUserId,
@@ -71,11 +74,13 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         self::requireInt($data, HilosUserTableRow::id);
         $identities = self::optionalArray($data, HilosMergeCandidatesTable::FIELD_IDENTITIES) ?? [];
         $hasPassword = self::requireBool($data, HilosMergeCandidatesTable::FIELD_HAS_PASSWORD);
+        $hasSecondFactor = self::requireBool($data, HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR);
         $exactUserId = self::optionalInt($data, self::exactUserId);
         $unverifiedPasswordAddress = self::optionalString($data, HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS);
         unset(
             $data[HilosMergeCandidatesTable::FIELD_IDENTITIES],
             $data[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD],
+            $data[HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR],
             $data[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS],
             $data[self::identityAddresses],
             $data[self::exactUserId],
@@ -86,6 +91,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
             userFields: $data,
             identities: $identities,
             hasPassword: $hasPassword,
+            hasSecondFactor: $hasSecondFactor,
             exactUserId: $exactUserId,
             unverifiedPasswordAddress: $unverifiedPasswordAddress,
         );

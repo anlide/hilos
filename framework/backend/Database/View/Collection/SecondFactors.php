@@ -25,6 +25,21 @@ class SecondFactors extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectSecondFactors::class;
 
     /**
+     * Reads the merge's two sets under a nonwaiting row lock and drops stale wrappers.
+     * Called only inside the merge transaction, before any ordinary reads.
+     *
+     * @param int $survivorId Surviving account
+     * @param int $loserId Folded account
+     * @throws DatabaseException When a set is busy or its rows cannot be locked
+     * @throws LogicException When the collection class constants are not configured
+     */
+    public function lockForMerge(int $survivorId, int $loserId): void
+    {
+        $this->objectCollection->lockForMerge($survivorId, $loserId);
+        $this->clearCache();
+    }
+
+    /**
      * Lists every authenticator of a person, unfinished enrolments included.
      *
      * @param int $userId Person

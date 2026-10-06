@@ -176,6 +176,11 @@ use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\AccountErasure;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
+use Hilos\Users\SecondFactorFate;
+use Hilos\Users\SecondFactorOutcome;
+use Hilos\Auth\SecondFactor\SecondFactorResetWait;
+use Hilos\Auth\SecondFactor\SecondFactorGroup;
+use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -323,16 +328,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::verifications => [TruthSourceOperation::Remove],
         // Borrowed for the account erasure, held by this library in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        HilosDbContext::secondFactors => [TruthSourceOperation::Remove],
+        HilosDbContext::secondFactors => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // Borrowed for the account erasure, held by this library in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // Borrowed for the account erasure, held by this library in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
-        // Borrowed for the account erasure, held by this library in one transaction.
+        // Full ownership: merging upserts the survivor's wait and erasure removes the row in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
         // TODO(HIL-1407): step-up writes move to the person's own agent; also credited by a sign-in the block refused.
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         // Borrowed for the account erasure, held by this library in one transaction.
@@ -5153,7 +5158,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $passwordFate = is_string($namedFate) ? PasswordFate::tryFrom($namedFate) : null;
 
         try {
-            $summary = $this->mergeAccounts($survivorId, $loserId, $passwordFate);
+            $namedSecondFactor = $data->payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] ?? null;
+            $secondFactorFate = is_string($namedSecondFactor) ? SecondFactorFate::tryFrom($namedSecondFactor) : null;
+            if ($namedSecondFactor !== null && $secondFactorFate === null) {
+                throw new ValidationException('Unknown account-merge second-factor fate');
+            }
+            $summary = $this->mergeAccounts($survivorId, $loserId, $passwordFate, $secondFactorFate);
         } catch (Throwable $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
@@ -5219,7 +5229,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             ) {
                 throw new ValidationException(self::ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE);
             }
-            $summary = $this->mergeAccounts($request->survivorUserId, $request->loserUserId, $passwordFate);
+            $secondFactorFate = $request->secondFactorFate === null
+                ? null : SecondFactorFate::tryFrom($request->secondFactorFate);
+            if ($request->secondFactorFate !== null && $secondFactorFate === null) {
+                throw new ValidationException('Unknown account-merge second-factor fate');
+            }
+            $summary = $this->mergeAccounts(
+                $request->survivorUserId,
+                $request->loserUserId,
+                $passwordFate,
+                $secondFactorFate,
+                $request->expectedSurvivorHasSecondFactor,
+                $request->expectedLoserHasSecondFactor,
+            );
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
@@ -5278,7 +5300,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param int $survivorId Survivor user id that absorbs the loser
      * @param int $loserId Loser user id folded into the survivor
      * @param ?PasswordFate $passwordFate Whose password to keep, or null when nobody named one
-     * @return AccountMergeSummary Counts of what moved, and whose password the account kept
+     * @param ?SecondFactorFate $secondFactorFate Protection to preserve when the loser has a confirmed app
+     * @param ?bool $expectedSurvivorHasSecondFactor Browser's snapshot, or null for the console
+     * @param ?bool $expectedLoserHasSecondFactor Browser's snapshot, or null for the console
+     * @return AccountMergeSummary Counts and the password and second-factor outcomes
      * @throws ValidationException When a guard rejects the merge, a project's own among them
      * @throws NotImplementedException When the project has not wired the merge seam
      * @throws ItemNotFoundForUpdateException When the loser row went missing between the guard and the tombstone
@@ -5286,8 +5311,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
      * @throws HilosException On database or truth-source failure (transaction rolled back)
      */
-    private function mergeAccounts(int $survivorId, int $loserId, ?PasswordFate $passwordFate): AccountMergeSummary
-    {
+    private function mergeAccounts(
+        int $survivorId,
+        int $loserId,
+        ?PasswordFate $passwordFate,
+        ?SecondFactorFate $secondFactorFate,
+        ?bool $expectedSurvivorHasSecondFactor = null,
+        ?bool $expectedLoserHasSecondFactor = null,
+    ): AccountMergeSummary {
         if ($survivorId === $loserId) {
             throw new ValidationException('Cannot merge a user into itself');
         }
@@ -5302,9 +5333,72 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         Database::transactionStart();
         try {
+            Hilos::$db->secondFactors->lockForMerge($survivorId, $loserId);
+            Hilos::$db->secondFactorBackupCodes->lockForMerge($survivorId, $loserId);
+            Hilos::$db->secondFactorResets->lockForMerge($survivorId, $loserId);
+            Hilos::$db->secondFactorSettings->lockForMerge($survivorId, $loserId);
+            Hilos::$db->secondFactorTrusts->lockForMerge($survivorId, $loserId);
+            // Lock every set before the first consistent read; source frames may still be in transit.
+            foreach ([
+                HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
+                HilosDbContext::secondFactorResets, HilosDbContext::secondFactorSettings, HilosDbContext::secondFactorTrusts,
+            ] as $collection) {
+                Hilos::$db->reHydrateCollection($collection);
+            }
+            $survivorHasSecondFactor = Hilos::$db->secondFactors->confirmedOf($survivorId) !== [];
+            $loserHasSecondFactor = Hilos::$db->secondFactors->confirmedOf($loserId) !== [];
+            if (
+                ($expectedSurvivorHasSecondFactor !== null && $expectedSurvivorHasSecondFactor !== $survivorHasSecondFactor)
+                || ($expectedLoserHasSecondFactor !== null && $expectedLoserHasSecondFactor !== $loserHasSecondFactor)
+            ) {
+                throw new ValidationException('Second-factor protection changed. Review the accounts and choose again.');
+            }
+            if ($loserHasSecondFactor && $secondFactorFate === null) {
+                throw new ValidationException('Choose second-factor protection: survivor or both (--second-factor on the console).');
+            }
+            if (!$loserHasSecondFactor && $secondFactorFate !== null) {
+                throw new ValidationException('The loser has no confirmed authenticator. Remove the second-factor choice.');
+            }
+            if ($secondFactorFate === SecondFactorFate::SURVIVOR && !$survivorHasSecondFactor) {
+                throw new ValidationException("The survivor has no confirmed authenticator. Transfer the loser's protection or cancel.");
+            }
+            if ($loserHasSecondFactor && Hilos::$db->secondFactorResets->liveOf($loserId) !== null) {
+                throw new ValidationException('The loser has a pending second-factor removal. Cancel it or wait for it to finish.');
+            }
+            if ($secondFactorFate === SecondFactorFate::BOTH && Hilos::$db->secondFactorResets->liveOf($survivorId) !== null) {
+                throw new ValidationException('The survivor has a pending second-factor removal. Cancel it or wait for it to finish.');
+            }
+
             $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
             Hilos::$db->passkeyCredentials->rePointToUser($loserId, $survivorId);
             Hilos::$db->accessLogEntries->actions->rePointToUser($loserId, $survivorId);
+            if ($secondFactorFate === SecondFactorFate::BOTH) {
+                $policy = SecondFactorPolicy::current();
+                $now = time();
+                $waitDays = max(
+                    SecondFactorResetWait::of($survivorId)->effectiveDays($policy, $now),
+                    SecondFactorResetWait::of($loserId)->effectiveDays($policy, $now),
+                );
+                Hilos::$db->secondFactors->actions->rePointConfirmedToUser($loserId, $survivorId);
+                Hilos::$db->secondFactorBackupCodes->actions->rePointToUser($loserId, $survivorId);
+                Hilos::$db->secondFactors->unconfirmedOf($loserId)?->actions->delete();
+                Hilos::$db->secondFactorSettings->actions->setResetWait($survivorId, $waitDays, null, null);
+            } else {
+                Hilos::$db->secondFactors->actions->deleteForUser($loserId);
+                Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($loserId);
+            }
+            Hilos::$db->secondFactorResets->actions->deleteForUser($loserId);
+            Hilos::$db->secondFactorSettings->actions->deleteForUser($loserId);
+            Hilos::$db->secondFactorTrusts->actions->deleteForUser($loserId);
+            if ($loserHasSecondFactor) {
+                Hilos::$db->secondFactorTrusts->actions->deleteForUser($survivorId);
+            }
+            $secondFactorKept = match (true) {
+                $secondFactorFate === SecondFactorFate::BOTH && $survivorHasSecondFactor => SecondFactorOutcome::BOTH,
+                $secondFactorFate === SecondFactorFate::BOTH => SecondFactorOutcome::LOSER,
+                $survivorHasSecondFactor => SecondFactorOutcome::SURVIVOR,
+                default => SecondFactorOutcome::NONE,
+            };
             $rowsMoved = $this->applyAccountMerge($survivorId, $loserId);
             $this->foldAccount($survivorId, $loserId);
             Database::transactionCommit();
@@ -5335,8 +5429,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         ]));
 
         $this->killUserSessions($loserId);
+        if ($secondFactorKept === SecondFactorOutcome::LOSER) {
+            $this->killUserSessions($survivorId);
+        }
+        $this->sendToGroup(
+            HilosSignalConstants::HILOS_SECOND_FACTOR_STATE,
+            SecondFactorGroup::forUser($survivorId),
+            SecondFactorStateProjector::stateFor($survivorId),
+        );
 
-        return new AccountMergeSummary($identitiesMoved, $rowsMoved, $passwordKept);
+        return new AccountMergeSummary($identitiesMoved, $rowsMoved, $passwordKept, $secondFactorKept);
     }
 
     /**

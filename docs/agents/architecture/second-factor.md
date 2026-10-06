@@ -42,7 +42,7 @@ has a submit of its own in flight.
 | `hilos_second_factor` | users library | apps: base32 secret, last accepted step, confirmed or not |
 | `hilos_second_factor_backup_code` | users library | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library | removals: when asked, when due, the cancel token, last notice |
-| `hilos_second_factor_setting` | users library | the person's removal wait and a shorter one not yet in force |
+| `hilos_second_factor_setting` | session holder; users library has Add/Update | the person's removal wait and a shorter one not yet in force |
 | `hilos_second_factor_trust` | session holder | a browser (session row) trusted for a person until a moment |
 
 Every race is judged by the database: a code step is taken with
@@ -58,6 +58,37 @@ a copy of the database already holds the app secret, so it already opens the
 factor, and the link only cancels a removal. Hashing it would leave a reminder
 with nothing to repeat. The token stays out of the object, the view and the
 browser. The first notice and every daily reminder carry the same link.
+
+## Account merge
+
+The administrator chooses the folded account's protection in the merge window;
+`account:merge --second-factor=survivor|both` makes the same choice. With no
+confirmed app on the loser, no choice is sent. With only the loser protected,
+only an explicit transfer is allowed. With both protected, keep the survivor's
+apps and codes alone, or accept either account's apps and unused backup codes.
+The survivor never loses its existing factor.
+
+The session holder moves confirmed apps and backup codes, preserving spent
+status, in the merge transaction. It removes the loser's unfinished enrollment,
+reset history, personal setting and trusts. A live removal on the loser refuses
+the merge; adding its protection also refuses a live removal on the survivor.
+The longer effective removal wait survives and pending shortening is cleared.
+All five sets are locked without waiting before the transaction rereads them;
+a busy set refuses the operation. Browser requests also carry the two presence
+flags shown in the summary, and a mismatch refuses without writing.
+
+The holder needs full ownership of settings to upsert that wait and erase a
+person atomically. The users library keeps only Add/Update for personal wait
+changes; no shared-full-owner exception is needed. These set operations remain
+at the holder when ordinary personal edits move to instance owners; see
+[instance-owners.md](instance-owners.md#operations-over-many-instances).
+
+The loser's sessions end after commit. When its factor first protects the
+survivor, the survivor's sessions end too. A confirmed loser factor revokes
+trusts of both accounts; otherwise only the loser's trusts go. The survivor's
+profile receives its updated section after commit. Merge tables expose only
+confirmed-app presence, hidden from an admin-view-mode viewer, never secrets,
+codes or app labels.
 
 ## Trust
 

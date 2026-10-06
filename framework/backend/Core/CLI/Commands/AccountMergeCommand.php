@@ -10,6 +10,8 @@ use Hilos\Database\Identity\PasswordFate;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\SecondFactorFate;
+use Hilos\Users\SecondFactorOutcome;
 
 /**
  * Merges one populated account into another through the daemon command channel (HIL-378).
@@ -80,6 +82,13 @@ Options:
   --password=survivor  keep the survivor's password
   --password=loser     keep the loser's password
   --password=none      keep neither; the person sets one anew in their profile
+  --second-factor=survivor  keep only the survivor's apps and backup codes
+  --second-factor=both      keep confirmed apps and backup codes from both accounts
+
+  --second-factor is required only when the loser has a confirmed authenticator.
+  With no authenticator on the survivor, only both is allowed; its sessions end.
+  A pending factor removal on the loser, or on the survivor with both, refuses
+  the merge. Trust of both accounts is revoked when the loser has a factor.
 
 Examples:
   php cli.php account:merge 3 7
@@ -126,6 +135,17 @@ HELP;
             $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] = $passwordFate->value;
         }
 
+        if (isset($options[AccountMergeCommandConstants::OPTION_SECOND_FACTOR])) {
+            $secondFactorRaw = $options[AccountMergeCommandConstants::OPTION_SECOND_FACTOR];
+            $secondFactorFate = is_string($secondFactorRaw) ? SecondFactorFate::tryFrom($secondFactorRaw) : null;
+            if ($secondFactorFate === null) {
+                echo "Unknown --second-factor value (expected survivor or both)\n";
+
+                return ExitCode::INVALID_ARGUMENT;
+            }
+            $payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] = $secondFactorFate->value;
+        }
+
         echo "Merging user #{$loserId} into #{$survivorId}...\n";
 
         try {
@@ -148,6 +168,9 @@ HELP;
 
         echo "Reply (ok): merged user #{$loserId} into #{$survivorId} ({$this->describeTransfer($reply)})\n";
         echo 'Password: ' . $this->passwordOutcome($reply) . "\n";
+        $namedOutcome = $reply->payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_KEPT] ?? null;
+        $secondFactorKept = is_string($namedOutcome) ? SecondFactorOutcome::tryFrom($namedOutcome) : null;
+        echo 'Second factor: ' . ($secondFactorKept?->describe() ?? 'not reported by the daemon') . "\n";
 
         return ExitCode::SUCCESS;
     }

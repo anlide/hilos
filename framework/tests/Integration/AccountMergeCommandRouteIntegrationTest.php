@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\SecondFactorCommands;
+use Hilos\Auth\SecondFactor\Base32;
+use Hilos\Auth\SecondFactor\Totp;
+use mysqli;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
@@ -15,6 +21,10 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Feature\Definition\AuthFeature;
+use Hilos\Runtime\State\Item\HilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
@@ -42,6 +52,10 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\SecondFactorFate;
+use Hilos\Users\SecondFactorOutcome;
+use Hilos\Users\AccountMergeSummary;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Users\AdminAudience;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -131,6 +145,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         'hilos_setting',
         'hilos_step_up',
         'hilos_second_factor',
+        'hilos_second_factor_backup_code',
+        'hilos_second_factor_reset',
+        'hilos_second_factor_setting',
+        'hilos_second_factor_trust',
         'hilos_access_log',
     ];
 
@@ -191,6 +209,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      */
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(HilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::unregisterDaemon(HilosSessionToastStack::RT_COLLECTION);
         TruthSourceRegistry::unregisterAgent(self::LIBRARY_ID);
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::LIBRARY_ID));
         $this->previousAppClass::initBrowser();
@@ -573,7 +593,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         $result = $this->consumeMergeAnswer();
         self::assertSame(self::ACCEPT_KEY, $result->acceptKey);
         self::assertSame(
-            'Merged #12 into #11. Moved: sign-in methods 1, notes 3.',
+            'Merged #12 into #11. Moved: sign-in methods 1, notes 3. No confirmed authenticator remains.',
             $result->successMessage,
         );
         self::assertNull($result->error);
@@ -750,6 +770,287 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertSame(self::SURVIVOR_USER_ID, self::survivorOf(self::LOSER_USER_ID));
     }
 
+    /** @return iterable<string, array{bool, bool, ?SecondFactorFate, SecondFactorOutcome, bool}> Protection combinations */
+    public static function protectionCombinations(): iterable
+    {
+        foreach ([false, true] as $browser) {
+            $door = $browser ? 'browser ' : 'console ';
+            yield $door . 'neither' => [false, false, null, SecondFactorOutcome::NONE, $browser];
+            yield $door . 'survivor only' => [true, false, null, SecondFactorOutcome::SURVIVOR, $browser];
+            yield $door . 'loser only' => [false, true, SecondFactorFate::BOTH, SecondFactorOutcome::LOSER, $browser];
+            yield $door . 'keep survivor' => [true, true, SecondFactorFate::SURVIVOR, SecondFactorOutcome::SURVIVOR, $browser];
+            yield $door . 'keep both' => [true, true, SecondFactorFate::BOTH, SecondFactorOutcome::BOTH, $browser];
+        }
+    }
+
+    /**
+     * @param bool $survivorProtected Survivor starts with an app
+     * @param bool $loserProtected Loser starts with an app
+     * @param ?SecondFactorFate $fate Explicit administrator choice
+     * @param SecondFactorOutcome $outcome Expected protection after the merge
+     * @param bool $browser Whether to drive the browser entry point
+     * @throws HilosException When seeding, merging or reading back fails
+     */
+    #[DataProvider('protectionCombinations')]
+    public function testMergePreservesTheChosenProtectionAtomically(
+        bool $survivorProtected,
+        bool $loserProtected,
+        ?SecondFactorFate $fate,
+        SecondFactorOutcome $outcome,
+        bool $browser,
+    ): void {
+        if ($survivorProtected) {
+            self::seedFactor(self::SURVIVOR_USER_ID);
+        }
+        if ($loserProtected) {
+            self::seedFactor(self::LOSER_USER_ID);
+        }
+        self::seedFactor(self::LOSER_USER_ID, false);
+        foreach ([self::SURVIVOR_USER_ID, self::LOSER_USER_ID] as $userId) {
+            Database::sqlRun(
+                'INSERT INTO hilos_second_factor_backup_code (user_id, code, used_at) VALUES (?, ?, NULL), (?, ?, NOW())',
+                [$userId, 'live' . $userId, $userId, 'spent' . $userId],
+            );
+            Database::sqlRun(
+                'INSERT INTO hilos_second_factor_trust (session_id, user_id, trusted_until) VALUES (1, ?, NOW() + INTERVAL 1 DAY)',
+                [$userId],
+            );
+        }
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor_setting (user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from)'
+                . ' VALUES (?, 20, 1, NOW() + INTERVAL 1 DAY)',
+            [self::LOSER_USER_ID],
+        );
+        self::seedReset(self::LOSER_USER_ID, false);
+        self::seedSession('a1000000000000000000000000001293a', self::SURVIVOR_USER_ID);
+        self::seedSession('a2000000000000000000000000001293a', self::LOSER_USER_ID);
+        $loserIdentity = $this->seedMagicLink(self::LOSER_USER_ID);
+
+        TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, 'framework-test-agent');
+        if ($browser) {
+            self::openAdministratorsTab();
+            self::confirmMerge();
+            $payload = $this->browserRequest()->toArray();
+            $payload['secondFactorFate'] = $fate?->value;
+            $payload['expectedSurvivorHasSecondFactor'] = $survivorProtected;
+            $payload['expectedLoserHasSecondFactor'] = $loserProtected;
+            (new AccountMergeRouteTestAgent())->onSignalAgent(
+                new AgentSignalData(AccountMergeSignalData::fromArray($payload)), '', HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+            );
+            $answer = $this->consumeMergeAnswer();
+            self::assertNull($answer->error);
+            self::assertStringContainsString($outcome->describe(), $answer->successMessage);
+        } else {
+            $this->sendCommand(new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID, secondFactorFate: $fate);
+            $reply = $this->consumeReply();
+            self::assertTrue($reply->isOk(), json_encode($reply->payload));
+            self::assertSame($outcome, AccountMergeSummary::fromArray($reply->payload)->secondFactorKept);
+        }
+        self::assertSame(self::SURVIVOR_USER_ID, $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserIdentity)?->userId);
+        self::assertCount(
+            (int)$survivorProtected + (int)($fate === SecondFactorFate::BOTH),
+            Hilos::$db->secondFactors->confirmedOf(self::SURVIVOR_USER_ID),
+        );
+        foreach ([
+            'hilos_second_factor', 'hilos_second_factor_backup_code', 'hilos_second_factor_reset',
+            'hilos_second_factor_setting', 'hilos_second_factor_trust',
+        ] as $table) {
+            self::assertSame(0, self::secondFactorRowCount($table, self::LOSER_USER_ID), $table);
+        }
+        self::assertSame($loserProtected ? 0 : 1, self::secondFactorRowCount('hilos_second_factor_trust', self::SURVIVOR_USER_ID));
+        self::assertSame(
+            $fate === SecondFactorFate::BOTH ? 4 : 2,
+            self::secondFactorRowCount('hilos_second_factor_backup_code', self::SURVIVOR_USER_ID),
+        );
+        if ($fate === SecondFactorFate::BOTH) {
+            self::assertSame(20, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->resetWaitDays);
+            self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->pendingResetWaitDays);
+            self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::SURVIVOR_USER_ID, 'spent12'));
+            self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::SURVIVOR_USER_ID, 'live12'));
+        } else {
+            self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]);
+        }
+        self::assertSame(
+            $outcome === SecondFactorOutcome::LOSER ? null : self::SURVIVOR_USER_ID,
+            self::boundUserId('a1000000000000000000000000001293a'),
+        );
+        self::assertNull(self::boundUserId('a2000000000000000000000000001293a'));
+        $proof = new SecondFactorCommands(new AccountMergeUsersClaimTestAgent());
+        if ($survivorProtected) {
+            $proof->assertProof(self::SURVIVOR_USER_ID, Totp::codeAt(str_repeat((string)self::SURVIVOR_USER_ID, 10), intdiv(time(), 30)), false);
+        }
+        if ($fate === SecondFactorFate::BOTH) {
+            $proof->assertProof(self::SURVIVOR_USER_ID, Totp::codeAt(str_repeat((string)self::LOSER_USER_ID, 10), intdiv(time(), 30)), false);
+            $proof->assertProof(self::SURVIVOR_USER_ID, 'live12', true);
+            self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::SURVIVOR_USER_ID, 'live12'));
+        }
+    }
+
+    /** @return iterable<string, array{bool, bool, ?SecondFactorFate}> Invalid choices */
+    public static function refusedProtectionChoices(): iterable
+    {
+        yield 'choice required' => [false, true, null];
+        yield 'cannot discard sole factor' => [false, true, SecondFactorFate::SURVIVOR];
+        yield 'no factor to add' => [true, false, SecondFactorFate::BOTH];
+        yield 'no factor to discard' => [false, false, SecondFactorFate::SURVIVOR];
+    }
+
+    /**
+     * @param bool $survivorProtected Survivor starts protected
+     * @param bool $loserProtected Loser starts protected
+     * @param ?SecondFactorFate $fate Invalid or absent choice
+     * @throws HilosException When seeding or merging fails
+     */
+    #[DataProvider('refusedProtectionChoices')]
+    public function testInvalidProtectionChoicesMoveNothing(bool $survivorProtected, bool $loserProtected, ?SecondFactorFate $fate): void
+    {
+        if ($survivorProtected) {
+            self::seedFactor(self::SURVIVOR_USER_ID);
+        }
+        if ($loserProtected) {
+            self::seedFactor(self::LOSER_USER_ID);
+        }
+        $identity = $this->seedMagicLink(self::LOSER_USER_ID);
+        $this->sendCommand(new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID, secondFactorFate: $fate);
+        self::assertNotSame('', $this->refusal());
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertSame(self::LOSER_USER_ID, $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $identity)?->userId);
+    }
+
+    /** @throws HilosException When seeding or merging fails */
+    public function testAPendingResetRefusesTheMergeWithoutWriting(): void
+    {
+        self::seedFactor(self::LOSER_USER_ID);
+        self::seedReset(self::LOSER_USER_ID, true);
+        $this->sendCommand(new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID, secondFactorFate: SecondFactorFate::BOTH);
+        self::assertStringContainsString('pending second-factor removal', $this->refusal());
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertCount(1, Hilos::$db->secondFactors->confirmedOf(self::LOSER_USER_ID));
+    }
+
+    /** @throws HilosException When seeding or merging fails */
+    public function testSecondFactorTransferRollsBackWithTheProjectRows(): void
+    {
+        self::seedFactor(self::LOSER_USER_ID);
+        Database::sqlRun('INSERT INTO hilos_second_factor_backup_code (user_id, code) VALUES (?, ?)', [self::LOSER_USER_ID, 'rollback']);
+        $agent = new AccountMergeRouteTestAgent();
+        $agent->failTheRowMove = true;
+        $this->consumeQueuedSeedFrames();
+        $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID, secondFactorFate: SecondFactorFate::BOTH);
+        self::assertSame('The project could not move its rows', $this->refusal());
+        self::assertSame([], $this->drainedDbFrameTypes);
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+        self::assertCount(1, Hilos::$db->secondFactors->confirmedOf(self::LOSER_USER_ID));
+        self::assertCount(0, Hilos::$db->secondFactors->confirmedOf(self::SURVIVOR_USER_ID));
+        self::assertSame(1, self::secondFactorRowCount('hilos_second_factor_backup_code', self::LOSER_USER_ID));
+        self::assertNull(Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]);
+    }
+
+    /** @throws HilosException When seeding or merging fails */
+    public function testAStaleBrowserProtectionSnapshotIsRefused(): void
+    {
+        self::openAdministratorsTab();
+        self::confirmMerge();
+        $request = $this->browserRequest();
+        self::seedFactor(self::LOSER_USER_ID, false);
+        self::assertSame([], Hilos::$db->secondFactors->confirmedOf(self::LOSER_USER_ID));
+        Database::sqlRun('UPDATE hilos_second_factor SET confirmed_at = NOW() WHERE user_id = ?', [self::LOSER_USER_ID]);
+        (new AccountMergeRouteTestAgent())->onSignalAgent(new AgentSignalData($request), '', HilosSignalConstants::HILOS_ACCOUNT_MERGE);
+        self::assertStringContainsString('protection changed', $this->consumeMergeAnswer()->error);
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+    }
+
+    /**
+     * @param int $userId Owner of the fixture
+     * @param bool $confirmed Whether the app is confirmed
+     * @throws DatabaseException When the fixture cannot be inserted
+     */
+    private static function seedFactor(int $userId, bool $confirmed = true): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at) VALUES (?, ?, ?, ?)',
+            [$userId, 'merge-app', Base32::encode(str_repeat((string)$userId, 10)), $confirmed ? date('Y-m-d H:i:s') : null],
+        );
+    }
+
+    /**
+     * @param int $userId Owner of the fixture
+     * @param bool $live Whether the removal still stands
+     * @throws DatabaseException When the fixture cannot be inserted
+     */
+    private static function seedReset(int $userId, bool $live): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_second_factor_reset (user_id, requested_at, effective_at, notified_at, canceled_at)'
+                . ' VALUES (?, NOW(), NOW() + INTERVAL 1 DAY, NOW(), ?)',
+            [$userId, $live ? null : date('Y-m-d H:i:s')],
+        );
+    }
+
+    /**
+     * @param string $table Fixture table
+     * @param int $userId Person whose rows are counted
+     * @return int Persisted rows
+     * @throws DatabaseException When the query fails
+     */
+    private static function secondFactorRowCount(string $table, int $userId): int
+    {
+        return (int)Database::sql('SELECT COUNT(*) AS n FROM `' . $table . '` WHERE user_id = ?', [$userId])->firstRow()['n'];
+    }
+
+    /** @throws HilosException When configuring or writing the setting fails */
+    public function testTheUsersLibraryCanUpsertTheWaitButCannotRemoveIt(): void
+    {
+        TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, 'framework-test-agent');
+        TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, self::LIBRARY_ID);
+        OwnershipDeclaration::claimDb(AccountMergeUsersClaimTestAgent::class, 'merge-users-claim');
+        try {
+            Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 20, null, null);
+            Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 30, null, null);
+            self::assertSame(30, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->resetWaitDays);
+            $this->expectException(WriteNotAllowedException::class);
+            Hilos::$db->secondFactorSettings->actions->deleteForUser(self::SURVIVOR_USER_ID);
+        } finally {
+            TruthSourceRegistry::unregisterAgent('merge-users-claim');
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent('merge-users-claim'));
+        }
+    }
+
+    /** @throws HilosException When seeding or merging fails */
+    public function testAConcurrentFactorWriterRefusesTheMergeWithoutWaiting(): void
+    {
+        self::seedFactor(self::LOSER_USER_ID);
+        $config = Database::getConnectionConfig(Database::getCurrentIndex());
+        $peer = new mysqli($config->host, $config->user, $config->password, $config->database, $config->port, $config->socket);
+        try {
+            $peer->begin_transaction();
+            $peer->query('SELECT id FROM hilos_second_factor WHERE user_id = 12 FOR UPDATE');
+            $this->sendCommand(
+                new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID,
+                secondFactorFate: SecondFactorFate::BOTH,
+            );
+            self::assertStringContainsString('NOWAIT', $this->refusal());
+            self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+            self::assertCount(1, Hilos::$db->secondFactors->confirmedOf(self::LOSER_USER_ID));
+        } finally {
+            $peer->rollback();
+            $peer->close();
+        }
+    }
+
+    /** @throws HilosException When seeding or merging fails */
+    public function testAddingProtectionRefusesTheSurvivorsPendingRemoval(): void
+    {
+        self::seedFactor(self::LOSER_USER_ID);
+        self::seedReset(self::SURVIVOR_USER_ID, true);
+        $this->sendCommand(
+            new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID,
+            secondFactorFate: SecondFactorFate::BOTH,
+        );
+        self::assertStringContainsString('survivor has a pending', $this->refusal());
+        self::assertNull(self::survivorOf(self::LOSER_USER_ID));
+    }
+
     /**
      * Runs one merge command the way the daemon routes it.
      *
@@ -757,6 +1058,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      * @param int $survivorId Survivor user id that absorbs the loser
      * @param int $loserId Loser user id folded into the survivor
      * @param ?PasswordFate $passwordFate Fate the operator named, or null when they named none
+     * @param ?SecondFactorFate $secondFactorFate Protection the operator chose
      * @throws HilosException When the command handler itself fails
      */
     private function sendCommand(
@@ -764,6 +1066,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         int $survivorId,
         int $loserId,
         ?PasswordFate $passwordFate = null,
+        ?SecondFactorFate $secondFactorFate = null,
     ): void {
         $payload = [
             AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
@@ -771,6 +1074,10 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         ];
         if ($passwordFate !== null) {
             $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] = $passwordFate->value;
+        }
+
+        if ($secondFactorFate !== null) {
+            $payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] = $secondFactorFate->value;
         }
 
         $agent->onSignalCommand(
@@ -844,6 +1151,9 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             survivorUserId: self::SURVIVOR_USER_ID,
             loserUserId: self::LOSER_USER_ID,
             passwordFate: $passwordFate?->value,
+            secondFactorFate: null,
+            expectedSurvivorHasSecondFactor: false,
+            expectedLoserHasSecondFactor: false,
             replySignal: HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE,
             acceptKey: self::ACCEPT_KEY,
             requestId: 'request-1',
@@ -1019,13 +1329,17 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     /**
      * Mounts the runtime of the administrator's one tab, the browser a browser merge is asked from.
      *
-     * Only the browser's cases mount it: the operator's command has no tab, and a runtime with
-     * nothing but connections in it would stand in the way of the sign-out the command does.
+     * The sign-in runtime also carries the rotations and toasts that session teardown uses.
+     *
+     * @throws HilosException When the feature runtime cannot be mounted
      */
     private static function openAdministratorsTab(): void
     {
         $rt = new AccountMergeRouteTestRtContext();
+        $rt->mountFeatureRuntime([new AuthFeature()]);
         $rt->configure();
+        RtTruthSourceRegistry::registerDaemon(HilosSessionRotation::RT_COLLECTION);
+        RtTruthSourceRegistry::registerDaemon(HilosSessionToastStack::RT_COLLECTION);
         $rt->bindStateCollectionNames();
         Hilos::$rt = $rt;
     }
@@ -1345,4 +1659,9 @@ final class AccountMergeRouteTestMergeOffCatalog implements CatalogProviderInter
 
         return $catalog;
     }
+}
+
+/** The production users-library ownership declaration, without starting an agent. */
+final class AccountMergeUsersClaimTestAgent extends AbstractUsersLibraryAgent
+{
 }

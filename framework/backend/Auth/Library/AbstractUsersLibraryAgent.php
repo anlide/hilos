@@ -263,7 +263,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactors => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorBackupCodes => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorResets => TruthSourceOperation::ALL,
-        HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
+        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,

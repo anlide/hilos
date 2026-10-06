@@ -19,6 +19,7 @@ use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\AccountDeletion as ObjectAccountDeletion;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -82,6 +83,7 @@ final class HilosUserDetailBrowserTable
             self::ACCOUNT_DELETIONS_SOURCE,
             self::CONNECTIONS_SOURCE,
             self::IDENTITIES_SOURCE,
+            self::SECOND_FACTORS_SOURCE,
         ],
         BrowserTableConfigKey::ROWS => [
             [
@@ -135,6 +137,13 @@ final class HilosUserDetailBrowserTable
                 ],
             ],
             [
+                BrowserTableFieldKey::SOURCE => self::SECOND_FACTORS_SOURCE,
+                BrowserTableFieldKey::ROW_KEY => ObjectSecondFactor::userId,
+                BrowserTableFieldKey::WHERE => [ObjectSecondFactor::userId => self::TABLE_USER_ID],
+                BrowserTableFieldKey::FIELDS => [ObjectSecondFactor::userId],
+                BrowserTableFieldKey::COMPUTED => [HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR],
+            ],
+            [
                 BrowserTableFieldKey::SOURCE => self::ACCOUNT_DELETIONS_SOURCE,
                 BrowserTableFieldKey::ROW_KEY => ObjectAccountDeletion::userId,
                 BrowserTableFieldKey::WHERE => [
@@ -164,6 +173,10 @@ final class HilosUserDetailBrowserTable
     private const array CONNECTIONS_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => self::CONNECTIONS,
+    ];
+    private const array SECOND_FACTORS_SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => HilosDbContext::secondFactors,
     ];
     private const array IDENTITIES_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,

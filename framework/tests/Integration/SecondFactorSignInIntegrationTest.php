@@ -25,6 +25,10 @@ use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\CliCommands;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\SecondFactorFate;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -223,6 +227,44 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $this->reseedAndHold();
         $this->expectException(ValidationException::class);
         $this->confirm(BackupCodeGenerator::display('abcdefghjk'), backupCode: true);
+    }
+
+    /** @throws HilosException When the merge or a sign-in step fails */
+    public function testMergedProtectionGuardsTheSurvivorsNextSignIn(): void
+    {
+        Database::sqlRun((string)file_get_contents(
+            dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_hilos_passkey_credential.sql',
+        ));
+        try {
+            Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (78, 'Folded')");
+            Hilos::$db->secondFactors->actions->startEnrolment(78, 'Transferred', Base32::encode(self::SECRET_BYTES))
+                ->actions->confirm('Transferred');
+            Hilos::$db->secondFactorBackupCodes->actions->issueSet(78, ['abcdefghjk']);
+            $this->holder->onSignalCommand(new CommandRequestDTO('merge-sign-in', CliCommands::ACCOUNT_MERGE, [
+                AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => self::USER_ID,
+                AccountMergeCommandConstants::FIELD_LOSER_USER_ID => 78,
+                AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE => SecondFactorFate::BOTH->value,
+            ]), '', '');
+            $this->drain();
+            $this->assertSame(self::USER_ID, Hilos::$db->userMerges[78]?->survivorUserId);
+            $this->grant();
+            $this->assertNull($this->lastStateFrame()?->userId);
+            $this->assertSame(SecondFactorPendingMode::VERIFY, Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->pendingSecondFactorMode);
+            $this->drain();
+            $this->confirm($this->currentCode());
+            $this->forwardToHolder();
+            $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId);
+
+            $this->reseedAndHold();
+            $this->confirm('ABCDE-FGHJK', backupCode: true);
+            $this->forwardToHolder();
+            $this->assertSame(self::USER_ID, $this->lastStateFrame()?->userId);
+            $this->reseedAndHold();
+            $this->expectException(ValidationException::class);
+            $this->confirm('ABCDE-FGHJK', backupCode: true);
+        } finally {
+            Database::sqlRun('DROP TABLE IF EXISTS hilos_passkey_credential');
+        }
     }
 
     /**
@@ -766,6 +808,16 @@ final class SecondFactorTestHolder extends AbstractSessionsLibraryAgent
 {
     public function onStop(): void
     {
+    }
+
+    /**
+     * @param int $survivorUserId Surviving account
+     * @param int $loserUserId Folded account
+     * @return array<string, int> This fixture has no project rows
+     */
+    protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
+    {
+        return [];
     }
 }
 

@@ -98,6 +98,7 @@ use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Files\HilosFiles;
@@ -2263,6 +2264,14 @@ abstract class BrowserContext
             }
         }
 
+        if ($field === HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR) {
+            try {
+                return Hilos::$db->secondFactors->confirmedOf((int)$rowKey) !== [];
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Second-factor presence could not be resolved', $exception);
+            }
+        }
+
         if ($field === HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS) {
             try {
                 return HilosMergeCandidatesTable::unverifiedPasswordAddress(
@@ -3015,7 +3024,12 @@ abstract class BrowserContext
                 if ($isAnchor) {
                     return null;
                 }
-                continue;
+                if ($browserKey !== HilosUserDetailBrowserTable::TABLE || $sourceKey !== HilosDbContext::secondFactors) {
+                    continue;
+                }
+                // The card answers whether this person has an app even when the set is empty.
+                // Keep the same fragment fields so a viewer's mask does not reveal that absence.
+                $items = [[ObjectSecondFactor::userId => (int)$rowKey]];
             }
 
             if ($isAnchor) {

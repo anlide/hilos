@@ -51,4 +51,13 @@ final class AccountMergeCommandConstants
 
     /** @var string Option name: whose password to keep, on the merge command line */
     public const string OPTION_PASSWORD = 'password';
+
+    /** @var string Option name: how to preserve the folded account's second factor */
+    public const string OPTION_SECOND_FACTOR = 'second-factor';
+
+    /** @var string Request key: the administrator's second-factor choice */
+    public const string FIELD_SECOND_FACTOR_FATE = 'secondFactorFate';
+
+    /** @var string Reply key: whose confirmed second factors remain */
+    public const string FIELD_SECOND_FACTOR_KEPT = 'secondFactorKept';
 }

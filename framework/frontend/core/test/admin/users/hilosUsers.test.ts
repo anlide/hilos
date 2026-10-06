@@ -64,6 +64,26 @@ function userStore(): {
 }
 
 describe('resolveHilosMergeCandidateRow', () => {
+  it('preserves hidden protection instead of treating it as an unprotected account', () => {
+    const { scopes, users } = userStore()
+    const row: TableRow = {
+      rowKey: '7',
+      slots: { merge: { hasSecondFactor: { _hidden: true } } },
+    }
+    expect(resolveHilosMergeCandidateRow(row, users).hasSecondFactor).toBe(
+      HIDDEN_VALUE,
+    )
+    scopes.page()?.tables.upsert('userDetail', 7, {
+      secondFactors: { hasSecondFactor: { _hidden: true } },
+    })
+    const detail = createHilosUserDetail({ scopes, users } as HilosUsersContext)
+    expect(detail.get()?.hasSecondFactor).toBe(HIDDEN_VALUE)
+    scopes.page()?.tables.upsert('userDetail', 7, {
+      secondFactors: { hasSecondFactor: true },
+    })
+    expect(detail.get()?.hasSecondFactor).toBe(true)
+  })
+
   it('folds the user entity and safe identity slot into a candidate', () => {
     const { scopes, users } = userStore()
     scopes
@@ -86,6 +106,7 @@ describe('resolveHilosMergeCandidateRow', () => {
             },
           ],
           hasPassword: true,
+          hasSecondFactor: false,
           unverifiedPasswordAddress: 'loser@example.test',
         },
       },
@@ -104,6 +125,7 @@ describe('resolveHilosMergeCandidateRow', () => {
         },
       ],
       hasPassword: true,
+      hasSecondFactor: false,
       unverifiedPasswordAddress: 'loser@example.test',
     })
   })
@@ -123,6 +145,7 @@ describe('resolveHilosMergeCandidateRow', () => {
         merge: {
           identities: [],
           hasPassword: true,
+          hasSecondFactor: false,
         },
       },
     }
@@ -138,6 +161,7 @@ describe('resolveHilosMergeCandidateRow', () => {
         merge: {
           identities: [],
           hasPassword: true,
+          hasSecondFactor: false,
           unverifiedPasswordAddress: { _hidden: true },
         },
       },
@@ -162,6 +186,7 @@ describe('resolveHilosMergeCandidateRow', () => {
         merge: {
           identities: { _hidden: true },
           hasPassword: true,
+          hasSecondFactor: false,
           unverifiedPasswordAddress: null,
         },
       },
@@ -248,6 +273,7 @@ describe('createHilosUserDetail', () => {
       users: { type: 'user', id: 1 },
       identities: {
         hasPassword: true,
+        hasSecondFactor: false,
         unverifiedPasswordAddress: 'survivor@example.test',
       },
     })
@@ -260,6 +286,7 @@ describe('createHilosUserDetail', () => {
       users: { type: 'user', id: 1 },
       identities: {
         hasPassword: true,
+        hasSecondFactor: false,
         unverifiedPasswordAddress: { _hidden: true },
       },
     })
@@ -354,6 +381,9 @@ describe('createHilosMergeCandidates', () => {
     candidates.controller.setSearch('loser@example.test')
 
     expect(sent).toHaveLength(2)
+    expect(sent.at(-1)?.descriptor.rendered).toEqual(
+      expect.arrayContaining(['hasPassword', 'hasSecondFactor']),
+    )
     expect(sent.at(-1)).toMatchObject({
       page: 'hilos_user',
       tableKey: 'mergeCandidates',
@@ -403,19 +433,38 @@ describe('createHilosAccountMerge', () => {
 
   it('omits passwordFate when the accounts do not need a choice', () => {
     const { context, calls } = recordingContext()
-    createHilosAccountMerge(context).merge(12, 57)
+    createHilosAccountMerge(context).merge(
+      12,
+      57,
+      undefined,
+      undefined,
+      false,
+      false,
+    )
 
     expect(calls).toEqual([
       {
         action: 'hilos_user_merge',
-        payload: { survivorUserId: 12, loserUserId: 57 },
+        payload: {
+          survivorUserId: 12,
+          loserUserId: 57,
+          expectedSurvivorHasSecondFactor: false,
+          expectedLoserHasSecondFactor: false,
+        },
       },
     ])
   })
 
   it('sends the named password fate when both accounts have a password', () => {
     const { context, calls } = recordingContext()
-    createHilosAccountMerge(context).merge(12, 57, 'loser')
+    createHilosAccountMerge(context).merge(
+      12,
+      57,
+      'loser',
+      undefined,
+      false,
+      false,
+    )
 
     expect(calls).toEqual([
       {
@@ -424,6 +473,8 @@ describe('createHilosAccountMerge', () => {
           survivorUserId: 12,
           loserUserId: 57,
           passwordFate: 'loser',
+          expectedSurvivorHasSecondFactor: false,
+          expectedLoserHasSecondFactor: false,
         },
       },
     ])
@@ -753,6 +804,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     presence: 'online',
     onlineSessionCount: 1,
     hasPassword: true,
+    hasSecondFactor: false,
     admin: false,
     block: false,
     deletionEffectiveAt: null,
@@ -1219,6 +1271,7 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     presence: 'online',
     onlineSessionCount: 1,
     hasPassword: true,
+    hasSecondFactor: false,
     admin: false,
     block: false,
     deletionEffectiveAt: null,

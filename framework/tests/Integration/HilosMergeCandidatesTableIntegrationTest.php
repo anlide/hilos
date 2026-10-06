@@ -16,6 +16,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -58,6 +59,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
 
         TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::MERGE_OWNER_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::all(), self::MERGE_OWNER_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::secondFactors, TruthSourceKeys::all(), self::MERGE_OWNER_AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::MERGE_OWNER_AGENT_ID);
     }
 
@@ -67,6 +69,24 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
         TruthSourceRegistry::unregisterAgent(self::MERGE_OWNER_AGENT_ID);
 
         parent::tearDown();
+    }
+
+    /** @throws HilosException When a factor or the table cannot be read */
+    public function testConfirmedFactorChangesRebuildTheCandidateRow(): void
+    {
+        $this->seedPeople();
+        $factor = Hilos::$db->secondFactors->actions->startEnrolment(self::BETA, 'App', 'JBSWY3DPEHPK3PXP');
+        $id = (string)$factor->id;
+        $table = $this->table();
+        $change = SourceChange::dbCreated(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::userId => self::BETA]);
+        self::assertFalse($table->buildMutationForSourceEvent($change)->row->toArray()[HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR]);
+        $factor->actions->confirm('App');
+        $change = SourceChange::dbUpdated(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::confirmedAt => date('Y-m-d H:i:s')]);
+        self::assertTrue($table->buildMutationForSourceEvent($change)->row->toArray()[HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR]);
+        $factor->actions->delete();
+        $change = SourceChange::dbDeleted(HilosDbContext::secondFactors, $id, [ObjectSecondFactor::userId => self::BETA]);
+        self::assertFalse($table->buildMutationForSourceEvent($change)->row->toArray()[HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR]);
+        self::assertArrayNotHasKey(HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR, $table->wireFields());
     }
 
     /**
@@ -185,6 +205,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
                     HilosMergeCandidatesTable::SLOT_MERGE => [
                         HilosMergeCandidatesTable::FIELD_IDENTITIES => [$identity],
                         HilosMergeCandidatesTable::FIELD_HAS_PASSWORD => true,
+                        HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR => false,
                         HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS => null,
                     ],
                 ],
@@ -193,6 +214,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
                 userFields: $userFields,
                 identities: [$identity],
                 hasPassword: true,
+                hasSecondFactor: false,
             )),
         );
     }
@@ -206,6 +228,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
             userFields: [HilosUserTableRow::id => 7, HilosUserTableRow::name => 'Candidate'],
             identities: [],
             hasPassword: true,
+                hasSecondFactor: false,
             exactUserId: 7,
             unverifiedPasswordAddress: 'candidate@example.test',
         );

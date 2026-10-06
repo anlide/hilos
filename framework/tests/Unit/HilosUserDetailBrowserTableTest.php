@@ -52,6 +52,11 @@ final class HilosUserDetailBrowserTableTest extends TestCase
         BrowserSourceKey::KEY => HilosDbContext::identities,
     ];
 
+    private const array SECOND_FACTORS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => HilosDbContext::secondFactors,
+    ];
+
     public function testTheCardKeepsTheWireNamesTheFrontendReads(): void
     {
         $this->assertSame('userDetail', HilosUserDetailBrowserTable::TABLE);
@@ -62,6 +67,7 @@ final class HilosUserDetailBrowserTableTest extends TestCase
                 self::ACCOUNT_DELETIONS,
                 self::CONNECTIONS,
                 self::IDENTITIES,
+                self::SECOND_FACTORS,
             ],
             HilosUserDetailBrowserTable::BROWSER[BrowserTableConfigKey::SOURCES],
         );
@@ -143,6 +149,13 @@ final class HilosUserDetailBrowserTableTest extends TestCase
             $row[BrowserTableFieldKey::COMPUTED],
         );
         $this->assertSame([HilosMergeCandidatesTable::FIELD_HAS_PASSWORD], $row[BrowserTableFieldKey::NOT_PERSONAL]);
+    }
+
+    public function testSecondFactorPresenceRemainsHiddenForViewers(): void
+    {
+        $row = $this->rowOf(self::SECOND_FACTORS);
+        $this->assertSame([HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR], $row[BrowserTableFieldKey::COMPUTED]);
+        $this->assertArrayNotHasKey(BrowserTableFieldKey::NOT_PERSONAL, $row);
     }
 
     public function testTheDeletionRowComputesTheScheduledDate(): void

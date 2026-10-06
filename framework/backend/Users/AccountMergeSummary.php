@@ -35,11 +35,13 @@ final readonly class AccountMergeSummary
      * @param int $identitiesMoved Sign-in identities re-pointed to the survivor
      * @param array<string, int> $rowsMoved Rows re-pointed to the survivor, per family the project names
      * @param PasswordFate $passwordKept Whose password the account ended up with
+     * @param SecondFactorOutcome $secondFactorKept Whose authenticators and backup codes remain
      */
     public function __construct(
         public int $identitiesMoved,
         public array $rowsMoved,
         public PasswordFate $passwordKept,
+        public SecondFactorOutcome $secondFactorKept,
     ) {
     }
 
@@ -61,7 +63,7 @@ final readonly class AccountMergeSummary
             $message .= ", {$family} {$moved}";
         }
 
-        return $message . '.';
+        return $message . '. ' . $this->secondFactorKept->describe();
     }
 
     /**
@@ -95,7 +97,13 @@ final readonly class AccountMergeSummary
             throw new InvalidFormatException('Merge summary carries no password outcome');
         }
 
-        return new self($identitiesMoved, self::readRowMap($rowsMoved), $fate);
+        $namedOutcome = $data[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_KEPT] ?? null;
+        $outcome = is_string($namedOutcome) ? SecondFactorOutcome::tryFrom($namedOutcome) : null;
+        if ($outcome === null) {
+            throw new InvalidFormatException('Merge summary carries no second-factor outcome');
+        }
+
+        return new self($identitiesMoved, self::readRowMap($rowsMoved), $fate, $outcome);
     }
 
     /**
@@ -130,6 +138,7 @@ final readonly class AccountMergeSummary
             AccountMergeCommandConstants::FIELD_IDENTITIES_MOVED => $this->identitiesMoved,
             AccountMergeCommandConstants::FIELD_ROWS_MOVED => $this->rowsMoved,
             AccountMergeCommandConstants::FIELD_PASSWORD_KEPT => $this->passwordKept->value,
+            AccountMergeCommandConstants::FIELD_SECOND_FACTOR_KEPT => $this->secondFactorKept->value,
         ];
     }
 }

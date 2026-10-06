@@ -44,6 +44,24 @@ class SecondFactorResets extends Objects
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorResets::class;
     public const string COLLECTION_KEY = HilosDbContext::secondFactorResets;
 
+    /**
+     * Locks both account sets before merge reads them, without waiting for another writer.
+     * The caller must hold a transaction; this read neither opens nor commits one.
+     *
+     * @param int $survivorId Surviving account
+     * @param int $loserId Folded account
+     * @throws DatabaseException When a set is busy or its rows cannot be locked
+     */
+    public function lockForMerge(int $survivorId, int $loserId): void
+    {
+        Database::sql(
+            'SELECT `' . EntitySecondFactorReset::user_id . '` FROM `' . EntitySecondFactorReset::_table
+                . '` WHERE `' . EntitySecondFactorReset::user_id . '` IN (?, ?) ORDER BY `'
+                . EntitySecondFactorReset::user_id . '` FOR UPDATE NOWAIT',
+            [$survivorId, $loserId],
+        );
+    }
+
     /** SQL condition naming a request that still stands. */
     private const string LIVE_CONDITION = '`' . EntitySecondFactorReset::canceled_at . '` IS NULL AND `'
         . EntitySecondFactorReset::completed_at . '` IS NULL';

@@ -132,6 +132,9 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertSame($this->personId, $connections[HilosConnection::userId]);
         self::assertSame(HilosUserPresenceSummary::PRESENCE_ONLINE, $connections[HilosUserPresenceSummary::presence]);
         self::assertSame(1, $connections[HilosUserPresenceSummary::onlineSessionCount]);
+        self::assertTrue(HiddenValue::isMark(
+            $slots[HilosDbContext::secondFactors][HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR],
+        ));
         $identities = $slots[HilosDbContext::identities];
         self::assertTrue($identities[HilosMergeCandidatesTable::FIELD_HAS_PASSWORD]);
         self::assertTrue(HiddenValue::isMark($identities[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS]));

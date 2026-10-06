@@ -10,6 +10,7 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Constants\TimeConstants;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\SecondFactorTrusts as EntitySecondFactorTrusts;
 use Hilos\Database\Entity\Collection\EntityCollection;
@@ -38,6 +39,24 @@ class SecondFactorTrusts extends Objects
     public const string OBJECT_CLASS = ObjectSecondFactorTrust::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorTrusts::class;
     public const string COLLECTION_KEY = HilosDbContext::secondFactorTrusts;
+
+    /**
+     * Locks both account sets before merge reads them, without waiting for another writer.
+     * The caller must hold a transaction; this read neither opens nor commits one.
+     *
+     * @param int $survivorId Surviving account
+     * @param int $loserId Folded account
+     * @throws DatabaseException When a set is busy or its rows cannot be locked
+     */
+    public function lockForMerge(int $survivorId, int $loserId): void
+    {
+        Database::sql(
+            'SELECT `' . EntitySecondFactorTrust::user_id . '` FROM `' . EntitySecondFactorTrust::_table
+                . '` WHERE `' . EntitySecondFactorTrust::user_id . '` IN (?, ?) ORDER BY `'
+                . EntitySecondFactorTrust::user_id . '` FOR UPDATE NOWAIT',
+            [$survivorId, $loserId],
+        );
+    }
 
     /**
      * Trusts a browser for a person until a moment, writing the pair or moving its end.

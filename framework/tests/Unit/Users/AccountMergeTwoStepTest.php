@@ -22,6 +22,7 @@ use Hilos\Hilos;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Users\DTO\AccountMergeActionDTO;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\SecondFactorFate;
 use PHPUnit\Framework\TestCase;
 
 /** Unit tests for the page → sessions-library → page merge handover (HIL-411). */
@@ -60,7 +61,7 @@ final class AccountMergeTwoStepTest extends TestCase
         $page->onAction(
             'accept-1',
             HilosSignalConstants::HILOS_USER_MERGE,
-            new AccountMergeActionDTO(12, 57, PasswordFate::LOSER),
+            new AccountMergeActionDTO(12, 57, PasswordFate::LOSER, SecondFactorFate::BOTH, true, true),
         );
 
         $signal = Hilos::$sr->getNextQueuedSignal();
@@ -68,6 +69,10 @@ final class AccountMergeTwoStepTest extends TestCase
         self::assertSame(HilosSignalConstants::HILOS_ACCOUNT_MERGE, $signal->signalName->getName());
         self::assertInstanceOf(AgentSignalData::class, $signal->data);
         self::assertInstanceOf(AccountMergeSignalData::class, $signal->data->data);
+        self::assertEquals($signal->data->data, AccountMergeSignalData::fromArray($signal->data->data->toArray()));
+        self::assertSame('both', $signal->data->data->secondFactorFate);
+        self::assertTrue($signal->data->data->expectedSurvivorHasSecondFactor);
+        self::assertTrue($signal->data->data->expectedLoserHasSecondFactor);
         self::assertSame(12, $signal->data->data->survivorUserId);
         self::assertSame(57, $signal->data->data->loserUserId);
         self::assertSame(PasswordFate::LOSER->value, $signal->data->data->passwordFate);

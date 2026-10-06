@@ -31,6 +31,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\Database\View\Item\Identity as DbIdentity;
@@ -56,12 +57,14 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     public const string SLOT_MERGE = 'merge';
     public const string FIELD_IDENTITIES = 'identities';
     public const string FIELD_HAS_PASSWORD = 'hasPassword';
+    public const string FIELD_HAS_SECOND_FACTOR = 'hasSecondFactor';
     public const string FIELD_UNVERIFIED_PASSWORD_ADDRESS = 'unverifiedPasswordAddress';
     public const string FIELD_NAME = 'name';
     public const array BROWSER = [
         BrowserTableConfigKey::SOURCES => [
             AbstractHilosUsersTable::USERS_SOURCE,
             self::IDENTITIES_SOURCE,
+            self::SECOND_FACTORS_SOURCE,
             self::MERGES_SOURCE,
         ],
         BrowserTableConfigKey::ROWS => [
@@ -73,6 +76,12 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
                 BrowserTableFieldKey::FIELDS => [
                     ObjectIdentity::userId,
                 ],
+            ],
+            [
+                BrowserTableFieldKey::SOURCE => self::SECOND_FACTORS_SOURCE,
+                BrowserTableFieldKey::ROW_KEY => ObjectSecondFactor::userId,
+                BrowserTableFieldKey::MANY => true,
+                BrowserTableFieldKey::FIELDS => [ObjectSecondFactor::userId],
             ],
             [
                 BrowserTableFieldKey::SOURCE => self::MERGES_SOURCE,
@@ -87,6 +96,10 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     private const array IDENTITIES_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => HilosDbContext::identities,
+    ];
+    private const array SECOND_FACTORS_SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => HilosDbContext::secondFactors,
     ];
     private const array MERGES_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
@@ -120,6 +133,17 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
         }
         if ($change->sourceKey === HilosDbContext::userMerges) {
             return $this->mutationForMerge($change);
+        }
+        if ($change->sourceKey === HilosDbContext::secondFactors) {
+            $userId = $change->row[ObjectSecondFactor::userId]
+                ?? Hilos::$db->secondFactors[(int)$change->sourceId]?->userId;
+            if ($userId === null) {
+                return null;
+            }
+            $user = $this->candidateRowForUserId((int)$userId);
+
+            return $user === null ? $this->mutation(TableMutationType::Delete, (int)$userId)
+                : $this->mutation(TableMutationType::Update, (int)$userId, $this->candidateRow($user));
         }
 
         return null;
@@ -160,6 +184,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
                 self::SLOT_MERGE => [
                     self::FIELD_IDENTITIES => $row->identities,
                     self::FIELD_HAS_PASSWORD => $row->hasPassword,
+                    self::FIELD_HAS_SECOND_FACTOR => $row->hasSecondFactor,
                     self::FIELD_UNVERIFIED_PASSWORD_ADDRESS => $row->unverifiedPasswordAddress,
                 ],
             ],
@@ -431,6 +456,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
             userFields: $userFields,
             identities: $identities,
             hasPassword: $password !== null,
+            hasSecondFactor: Hilos::$db->secondFactors->confirmedOf($user->id) !== [],
             exactUserId: $normalizedSearch !== null
                 && ctype_digit($normalizedSearch)
                 && (int) $normalizedSearch === $user->id

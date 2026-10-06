@@ -73,6 +73,8 @@ function userContext(
   accountMerge = false,
   options: {
     detailHasPassword?: boolean
+    detailHasSecondFactor?: boolean
+    candidateHasSecondFactor?: boolean
     detailUnverifiedPasswordAddress?: string | null
     candidateHasPassword?: boolean
     candidateUnverifiedPasswordAddress?: string | null
@@ -104,6 +106,7 @@ function userContext(
   page.tables.upsert('userDetail', 1, {
     users: { type: 'user', id: 1 },
     connections: { presence: 'online', onlineSessionCount: 1 },
+    secondFactors: { hasSecondFactor: options.detailHasSecondFactor ?? false },
     identities: {
       hasPassword: options.detailHasPassword ?? false,
       unverifiedPasswordAddress:
@@ -171,6 +174,7 @@ function userContext(
                 },
               ],
           hasPassword: options.candidateHasPassword ?? false,
+          hasSecondFactor: options.candidateHasSecondFactor ?? false,
           unverifiedPasswordAddress:
             options.candidateUnverifiedPasswordAddress ?? null,
         },
@@ -180,7 +184,7 @@ function userContext(
       rowKey: 99,
       slots: {
         users: { type: 'user', id: 99 },
-        merge: { identities: [], hasPassword: false },
+        merge: { identities: [], hasPassword: false, hasSecondFactor: false },
       },
     },
   ]
@@ -427,6 +431,63 @@ describe('HilosUserPage rename modal', () => {
     ).toBe(true)
   })
 
+  it('requires an independent protection choice and clears it when the live summary changes', async () => {
+    const scopes = new ScopeManager()
+    const world = userContext(true, {
+      scopes,
+      detailHasPassword: true,
+      candidateHasPassword: true,
+      detailHasSecondFactor: true,
+      candidateHasSecondFactor: true,
+    })
+    const wrapper = mount(HilosUserPage, {
+      props: { context: markRaw(world.context) },
+      attachTo: document.body,
+      global: { provide: { [hilosRouterKey as symbol]: router() } },
+    })
+    mounted.push(wrapper)
+    await nextTick()
+    modalEl('hilos-user-merge-open')?.click()
+    await flushPromises()
+    modalEl('hilos-user-merge-row-2')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-next')?.click()
+    await nextTick()
+    modalEl('hilos-user-merge-fate-survivor')?.click()
+    await nextTick()
+    const submit = () =>
+      modalEl('hilos-user-merge-confirm') as HTMLButtonElement
+    expect(submit().disabled).toBe(true)
+    modalEl('hilos-user-merge-second-factor-both')?.click()
+    await nextTick()
+    expect(submit().disabled).toBe(false)
+    scopes.page()?.tables.upsert('userDetail', 1, {
+      secondFactors: { hasSecondFactor: false },
+    })
+    await nextTick()
+    expect(submit().disabled).toBe(true)
+    expect(modalEl('hilos-user-merge-second-factor-survivor')).toBeNull()
+    expect(document.body.textContent).toContain('current sessions will end')
+    modalEl('hilos-user-merge-second-factor-both')?.click()
+    await nextTick()
+    submit().click()
+    expect(world.sent.at(-1)).toMatchObject({
+      action: 'hilos_user_merge',
+      data: {
+        secondFactorFate: 'both',
+        expectedSurvivorHasSecondFactor: false,
+        expectedLoserHasSecondFactor: true,
+      },
+    })
+    world.answerMerge('Protection changed')
+    await flushPromises()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(
+      (modalEl('hilos-user-merge-second-factor-both') as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+  })
+
   it('drives password choice, tracked outcomes, and a candidate leaving live', async () => {
     const passwordWorld = userContext(true, {
       detailHasPassword: true,
@@ -467,7 +528,13 @@ describe('HilosUserPage rename modal', () => {
     modalEl('hilos-user-merge-confirm')?.click()
     expect(passwordWorld.sent.at(-1)).toMatchObject({
       action: 'hilos_user_merge',
-      data: { survivorUserId: 1, loserUserId: 2, passwordFate: 'loser' },
+      data: {
+        survivorUserId: 1,
+        loserUserId: 2,
+        passwordFate: 'loser',
+        expectedSurvivorHasSecondFactor: false,
+        expectedLoserHasSecondFactor: false,
+      },
     })
     passwordWorld.answerMerge('Merge refused')
     await nextTick()
@@ -508,7 +575,12 @@ describe('HilosUserPage rename modal', () => {
     modalEl('hilos-user-merge-confirm')?.click()
     expect(plainWorld.sent.at(-1)).toMatchObject({
       action: 'hilos_user_merge',
-      data: { survivorUserId: 1, loserUserId: 2 },
+      data: {
+        survivorUserId: 1,
+        loserUserId: 2,
+        expectedSurvivorHasSecondFactor: false,
+        expectedLoserHasSecondFactor: false,
+      },
     })
     plainWorld.answerMerge()
     await flushPromises()

@@ -5097,7 +5097,7 @@ final class TopologyNarrowDbCoOwnerAgent extends TopologyTestAgent
     public const string AGENT_TYPE = 'narrow_db_co_owner_agent';
 
     public const array OWNS_DB = [
-        'shared_users' => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        'shared_users' => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 }
 

@@ -123,6 +123,8 @@ export interface HilosUserRow {
 export interface HilosUserDetailRow extends HilosUserRow {
   /** Whether the account currently owns a password identity. */
   readonly hasPassword: boolean
+  /** Confirmed-app presence, hidden from a viewer of the admin view mode. */
+  readonly hasSecondFactor: Hideable<boolean>
   /**
    * Sign-in address of the unconfirmed password identity, or null when the password is
    * confirmed, absent, or hidden from a viewer of the admin view mode.
@@ -168,6 +170,8 @@ export interface HilosMergeCandidateRow {
   readonly identities: Hideable<readonly HilosMergeCandidateIdentity[]>
   /** Whether the candidate currently owns a password identity. */
   readonly hasPassword: boolean
+  /** Confirmed-app presence, hidden from a viewer of the admin view mode. */
+  readonly hasSecondFactor: Hideable<boolean>
   /**
    * Sign-in address of the unconfirmed password identity, or null when the password is
    * confirmed, absent, or hidden from a viewer of the admin view mode.
@@ -177,6 +181,60 @@ export interface HilosMergeCandidateRow {
 
 /** Password identity outcome when both accounts currently own a password. */
 export type HilosPasswordFate = 'survivor' | 'loser' | 'none'
+
+/** Protection an administrator preserves when folding a protected account. */
+export type HilosSecondFactorFate = 'survivor' | 'both'
+
+/** One safe protection choice and its consequences. */
+export interface HilosSecondFactorFateChoice {
+  readonly value: HilosSecondFactorFate
+  readonly label: string
+  readonly consequence: string
+}
+
+/**
+ * Choices preserving the survivor's factor and the loser's protected ways in.
+ * @param survivor The account that remains.
+ * @param loser The account being folded.
+ */
+export function hilosSecondFactorFateChoices(
+  survivor: Pick<HilosUserDetailRow, 'hasSecondFactor'> | null | undefined,
+  loser: Pick<HilosMergeCandidateRow, 'hasSecondFactor'> | null | undefined,
+): readonly HilosSecondFactorFateChoice[] {
+  if (
+    loser?.hasSecondFactor !== true ||
+    typeof survivor?.hasSecondFactor !== 'boolean'
+  )
+    return []
+  const both: HilosSecondFactorFateChoice = {
+    value: 'both',
+    label: survivor.hasSecondFactor
+      ? 'Add the other account’s protection'
+      : 'Transfer the other account’s protection',
+    consequence: survivor.hasSecondFactor
+      ? 'A code from an authenticator app or an unused backup code of either account will open the survivor.'
+      : 'Every sign-in method of the survivor will require the other account’s authenticator app or an unused backup code. The survivor’s current sessions will end.',
+  }
+  return survivor.hasSecondFactor
+    ? [
+        {
+          value: 'survivor',
+          label: 'Keep only the survivor’s protection',
+          consequence:
+            'The other account’s apps and backup codes will be deleted. Its moved sign-in methods will require the survivor’s code.',
+        },
+        both,
+      ]
+    : [both]
+}
+
+/** Shared explanation of the two accounts' current protection. */
+export const HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY = {
+  legend: 'Second-factor protection',
+  survivor: 'Survivor has a confirmed authenticator:',
+  loser: 'Other account has a confirmed authenticator:',
+  trusts: 'Trusted browsers of both accounts will be forgotten.',
+} as const
 
 /**
  * Row payload key of the live presence, inside the inline `connections` slot.
@@ -201,6 +259,7 @@ const USER_SLOT = 'users'
 /** Field of the user entity carrying the display name (`userFromFields`). */
 const USER_NAME_FIELD = 'name'
 const USER_IDENTITIES_SLOT = 'identities'
+const USER_SECOND_FACTORS_SLOT = 'secondFactors'
 const USER_DELETION_SLOT = 'accountDeletions'
 const USER_PHOTO_SLOT = 'userPhotos'
 /** Row payload key of the published photo URL in the admin card's photo slot. */
@@ -221,6 +280,9 @@ export const USER_IDENTITIES_FIELD = 'identities'
 
 /** Candidate/detail-row payload key of password presence. */
 export const USER_HAS_PASSWORD_FIELD = 'hasPassword'
+
+/** Candidate/detail-row payload key of confirmed second-factor presence. */
+export const USER_HAS_SECOND_FACTOR_FIELD = 'hasSecondFactor'
 
 /** Candidate/detail-row payload key of an unconfirmed password identity's sign-in address. */
 export const USER_UNVERIFIED_PASSWORD_ADDRESS_FIELD =
@@ -351,11 +413,17 @@ export interface HilosAccountMerge {
    * @param survivorUserId The account that remains.
    * @param loserUserId The account merged into the survivor.
    * @param passwordFate Which password remains, only when the choice is required.
+   * @param secondFactorFate Whose protection remains, only when the loser has an app.
+   * @param expectedSurvivorHasSecondFactor Confirmed-app presence shown for the survivor.
+   * @param expectedLoserHasSecondFactor Confirmed-app presence shown for the loser.
    */
   merge(
     survivorUserId: number,
     loserUserId: number,
-    passwordFate?: HilosPasswordFate,
+    passwordFate: HilosPasswordFate | undefined,
+    secondFactorFate: HilosSecondFactorFate | undefined,
+    expectedSurvivorHasSecondFactor: boolean,
+    expectedLoserHasSecondFactor: boolean,
   ): ActionHandle
 }
 
@@ -450,6 +518,10 @@ export function resolveHilosMergeCandidateRow<TUser extends User>(
     identities,
     hasPassword:
       merge === undefined ? false : readBoolean(merge, USER_HAS_PASSWORD_FIELD),
+    hasSecondFactor:
+      typeof merge?.[USER_HAS_SECOND_FACTOR_FIELD] === 'boolean'
+        ? (merge[USER_HAS_SECOND_FACTOR_FIELD] as boolean)
+        : HIDDEN_VALUE,
     unverifiedPasswordAddress:
       merge === undefined
         ? null
@@ -610,7 +682,7 @@ const MERGE_CANDIDATE_COLUMNS: HilosTableColumnOf<HilosMergeCandidateRow>[] = [
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     source: MERGE_SLOT,
-    reads: [USER_HAS_PASSWORD_FIELD],
+    reads: [USER_HAS_PASSWORD_FIELD, USER_HAS_SECOND_FACTOR_FIELD],
   },
   { key: 'name', label: 'Account', card: 'title' },
   {
@@ -785,6 +857,9 @@ export function createHilosUserDetail<TUser extends User>(
     }
     const row = rows[0]
     const identities = recordSlot(row.slots[USER_IDENTITIES_SLOT])
+    const secondFactor = recordSlot(row.slots[USER_SECOND_FACTORS_SLOT])?.[
+      USER_HAS_SECOND_FACTOR_FIELD
+    ]
     const ref = row.slots[USER_SLOT] as EntityRef | undefined
     const user = ref ? context.users.signal(ref).get() : undefined
     const deletion = recordSlot(row.slots[USER_DELETION_SLOT])
@@ -798,6 +873,8 @@ export function createHilosUserDetail<TUser extends User>(
       block: user?.block ?? false,
       deletionEffectiveAt:
         deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
+      hasSecondFactor:
+        typeof secondFactor === 'boolean' ? secondFactor : HIDDEN_VALUE,
       hasPassword:
         identities === undefined
           ? false
@@ -1103,11 +1180,21 @@ export function createHilosAccountMerge(
   context: HilosUsersContext,
 ): HilosAccountMerge {
   return {
-    merge(survivorUserId, loserUserId, passwordFate) {
+    merge(
+      survivorUserId,
+      loserUserId,
+      passwordFate,
+      secondFactorFate,
+      expectedSurvivorHasSecondFactor,
+      expectedLoserHasSecondFactor,
+    ) {
       return context.actions.dispatch(HILOS_USER_MERGE_ACTION, {
         survivorUserId,
         loserUserId,
         ...(passwordFate === undefined ? {} : { passwordFate }),
+        ...(secondFactorFate === undefined ? {} : { secondFactorFate }),
+        expectedSurvivorHasSecondFactor,
+        expectedLoserHasSecondFactor,
       })
     },
   }
