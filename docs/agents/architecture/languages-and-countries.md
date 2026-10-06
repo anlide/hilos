@@ -224,24 +224,29 @@ that design rejected it: the lock here protects a person's edit from reflow.
 
 ## The Built-In Catalog
 
-The catalog is a constant in the framework sources, shipped with the framework
-version, so its changes are visible in the upgrade diff
-(not in the code yet — HIL-1469).
+The catalog is five private array constants in
+[`BuiltInI18nCatalog`](../../../framework/backend/I18n/Catalog/BuiltInI18nCatalog.php),
+shipped with the framework version so changes are visible in the upgrade diff.
 The expected size is about 152 KB, below the 1 MiB heavy-file guard in
 [framework development](../framework-development.md).
 
 | Contents | Size and values |
 |---|---|
-| Languages | 50: code, own name, `rtl` (not in the code yet — HIL-1469). |
-| Countries | 51: currency symbol and code (not in the code yet — HIL-1469). |
-| Locales | 128, including 8 countryless locales, with seven formats (not in the code yet — HIL-1469). |
-| Country defaults | 87 default locales for countries (not in the code yet — HIL-1469). |
-| Country names | 2,550 (51 × 50) (not in the code yet — HIL-1469). |
+| Languages | 50: code, own name, `rtl`. |
+| Countries | 51: currency symbol and code. |
+| Locales | 128, including 8 countryless locales, with seven formats. |
+| Country defaults | 87 default locales for countries. |
+| Country names | 2,550 (51 × 50). |
 
 The catalog supplies no language names. Its fingerprint changes with every
-catalog edit (not in the code yet — HIL-1469).
-HIL-1469 chooses the constant and fingerprint shapes and the source of the
-ISO 4217 currency codes; this page does not give them implementation names.
+catalog edit. The fingerprint hashes all five recursively sorted maps as JSON,
+then SHA-256; `I18nCatalogFingerprint` fixes that representation for reflow.
+The currency-code map uses current tender currencies from Unicode CLDR 48.2;
+the symbols and the other four groups come from the local hleb catalog.
+The 87 country defaults preserve source hints even when a country is outside
+the 51 built-in countries or the suggested locale has no built-in row: 38
+country keys are outside that set and 21 locale references are absent. A
+consumer checks that the suggested locale row exists before offering it.
 
 ## The Reflow
 

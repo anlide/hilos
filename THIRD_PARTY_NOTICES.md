@@ -1,5 +1,18 @@
 # Third-party notices
 
+## Unicode CLDR country currencies
+
+The 51 country-to-ISO-4217 currency-code mappings in
+`framework/backend/I18n/Catalog/BuiltInI18nCatalog.php` are derived from the
+current tender currency for each region in
+[Unicode CLDR 48.2 supplementalData.xml](https://github.com/unicode-org/cldr/blob/release-48-2/common/supplemental/supplementalData.xml).
+Copyright © 1991–2026 Unicode, Inc. Used under the
+[Unicode License v3](https://www.unicode.org/license.txt).
+
+The languages, country currency symbols, locales, country default locales and
+country names in that catalog are ported from the local hleb source,
+`/home/cloud/hleb/main/Service/Constant/Languages.php`.
+
 ## Common passwords
 
 `framework/data/common-passwords.txt` is derived from the UK NCSC's 2019
