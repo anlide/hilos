@@ -2,6 +2,9 @@
   "/_hilos/data-export": {
     "target": "http://polls-daemon-local:8090"
   },
+  "/_hilos/legal-acceptances-export": {
+    "target": "http://polls-daemon-local:8090"
+  },
   "/ws": {
     "target": "http://polls-daemon-local:8092",
     "ws": true

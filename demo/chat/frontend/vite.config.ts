@@ -54,6 +54,12 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_DATA_EXPORT_TARGET || 'http://chat-local:8090',
           changeOrigin: true,
         },
+        // Same-origin download: keep page and legal acceptances export on one
+        // origin; in test/prod nginx does the same.
+        '/_hilos/legal-acceptances-export': {
+          target: env.VITE_DATA_EXPORT_TARGET || 'http://chat-local:8090',
+          changeOrigin: true,
+        },
         // Same-origin WebSocket: serving the page and the socket from the same
         // origin lets the session cookie (SameSite=Strict) and rotation ticket
         // ride the connection without cross-site issues; in test/prod nginx does the same.

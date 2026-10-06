@@ -62,6 +62,13 @@ export default defineConfig(({ mode }) => {
             env.VITE_DATA_EXPORT_TARGET || 'http://tasks-daemon-local:8090',
           changeOrigin: true,
         },
+        // Same-origin download: keep page and legal acceptances export on one
+        // origin; in test/prod nginx does the same.
+        '/_hilos/legal-acceptances-export': {
+          target:
+            env.VITE_DATA_EXPORT_TARGET || 'http://tasks-daemon-local:8090',
+          changeOrigin: true,
+        },
         '/ws': {
           target: env.VITE_WS_TARGET || 'http://tasks-daemon-local:8092',
           ws: true,
