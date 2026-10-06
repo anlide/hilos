@@ -166,12 +166,12 @@ final class RenameFeedTest extends IntegrationTestCase
     }
 
     /**
-     * Hands the users library the rename both admin surfaces forward, and returns its answer.
+     * Hands the users library the rename the framework user card forwards, and returns its answer.
      *
      * @param int $userId Person to rename
      * @param string $name Name the administrator typed
      * @param int $adminUserId Administrator behind the submit
-     * @return HandoverAnswerSignalData The one answer the library addressed to the surface
+     * @return HandoverAnswerSignalData The one answer the library addressed to the card
      * @throws HilosException When the frame handler fails
      */
     private function askAdminRename(int $userId, string $name, int $adminUserId): HandoverAnswerSignalData
@@ -180,10 +180,10 @@ final class RenameFeedTest extends IntegrationTestCase
             new AgentSignalData(data: new AdminRenameSignalData(
                 userId: $userId,
                 name: $name,
-                replySignal: ChatSignalConstants::USER_ADMIN_RENAME_DONE,
+                replySignal: HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
                 acceptKey: self::ADMIN_ACCEPT_KEY,
                 requestId: null,
-                action: ChatSignalConstants::USER_UPDATE,
+                action: HilosSignalConstants::HILOS_USER_UPDATE,
                 successMessage: null,
                 adminUserId: $adminUserId,
             )),
@@ -194,7 +194,7 @@ final class RenameFeedTest extends IntegrationTestCase
 
         $answers = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            if ($signal->signalName->getName() === ChatSignalConstants::USER_ADMIN_RENAME_DONE
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE
                 && $signal->data instanceof AgentSignalData
                 && $signal->data->data instanceof HandoverAnswerSignalData) {
                 $answers[] = $signal->data->data;

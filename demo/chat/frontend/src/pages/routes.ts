@@ -3,17 +3,18 @@
 // @hilos/core, so this file only declares the chat's own pages;
 // `createAppPageRouter` mounts the `hilos_*` admin pages under them.
 //
-// The three admin screens answer under /hilos/app/: the `app` segment says
-// "application screen, not framework screen", so a Hilos page added later cannot
-// collide with one of them by construction. Their page keys do not change with
-// the address — a key is identity on the wire, a path is not.
+// The chat's own admin screens answer under /hilos/app/: bots and moderation.
+// The `app` segment says "application screen, not
+// framework screen", so a Hilos page added later cannot collide with one of
+// them by construction. Their page keys do not change with the address — a
+// key is identity on the wire, a path is not. The people list is the
+// framework's /hilos/users.
 import { createAppPageRouter, type HilosRouteDeclaration } from '@hilos/core'
 
 import {
   PAGE_MAIN,
   PAGE_USER,
   PAGE_BOT,
-  PAGE_ADMIN_USERS,
   PAGE_ADMIN_MODERATOR,
   PAGE_ADMIN_BOTS,
 } from './keys'
@@ -28,7 +29,6 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
   [PAGE_MAIN]: { path: '/', admin: false },
   [PAGE_USER]: { path: '/user/{id}', admin: false },
   [PAGE_BOT]: { path: '/bot/{id}', admin: false },
-  [PAGE_ADMIN_USERS]: { path: '/hilos/app/users', admin: true },
   [PAGE_ADMIN_MODERATOR]: { path: '/hilos/app/moderator', admin: true },
   [PAGE_ADMIN_BOTS]: { path: '/hilos/app/bots', admin: true },
 }

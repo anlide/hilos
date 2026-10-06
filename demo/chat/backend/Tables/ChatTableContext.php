@@ -11,7 +11,6 @@ use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
@@ -37,10 +36,9 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
 /**
  * ChatTableContext - App-specific table context ($table layer).
  *
- * Registers admin users, Hilos users, bots, moderator prompt pieces, settings, and backup tables.
- * Accessed via Hilos::$table->adminUsers, Hilos::$table->hilosUsers, Hilos::$table->bots, etc.
+ * Registers Hilos users, bots, moderator prompt pieces, settings, and backup tables.
+ * Accessed via Hilos::$table->hilosUsers, Hilos::$table->bots, etc.
  *
- * @property-read AdminUsersTable $adminUsers
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosMergeCandidatesTable $hilosMergeCandidates
  * @property-read BotsTable $bots
@@ -69,7 +67,6 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  */
 final class ChatTableContext extends TableContext
 {
-    public const string adminUsers = 'adminUsers';
     public const string hilosUsers = 'hilosUsers';
     public const string hilosMergeCandidates = HilosMergeCandidatesTable::TABLE;
     public const string bots = 'bots';

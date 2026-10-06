@@ -16,7 +16,7 @@ import { signUp } from '../helpers/session'
 // HIL-1260: on every admin screen the viewer reads one strip saying the screen
 // may be looked at and not changed, and what the server keeps from them reads
 // as one mark, "Hidden" — a guest's look at the people who accepted the terms
-// and at the chat's users names nobody.
+// and at the people list names nobody.
 //
 // The lever is node-wide; every test here leaves it off, failed or not.
 
@@ -74,7 +74,7 @@ test('a guest reads the view-mode strip on the admin screens and the personal da
   const screens = [
     { path: '/hilos', hidden: null },
     { path: '/hilos/legal/acceptances', hidden: 'legal-acceptances-table' },
-    { path: '/hilos/app/users', hidden: 'admin-users-view' },
+    { path: '/hilos/users', hidden: 'hilos-viewport-table' },
   ]
   for (const screen of screens) {
     await gotoPage(page, screen.path, PAGE_READY)
@@ -149,8 +149,8 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toHaveAttribute('data-access', 'view')
 
-  await gotoPage(page, '/hilos/app/users', PAGE_READY)
-  await expect(page.getByTestId('admin-users-view')).toBeVisible()
+  await gotoPage(page, '/hilos/users', PAGE_READY)
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('page-error')).toHaveCount(0)
   const strip = page.getByTestId('view-mode-banner')
   await expect(strip).toBeVisible()
@@ -160,7 +160,7 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   await setAdmin(userId, true)
   await expect(gear).toHaveAttribute('data-access', 'full')
   await expectPageReady(page)
-  await expect(page.getByTestId('admin-users-view')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(strip).toHaveCount(0)
 
   // The revoke with the mode on answers the view rather than a 403, and the
@@ -169,6 +169,6 @@ test('a signed-in non-admin views the people, is granted the full section and ta
   await expect(gear).toHaveAttribute('data-access', 'view')
   await expectPageReady(page)
   await expect(page.getByTestId('page-error')).toHaveCount(0)
-  await expect(page.getByTestId('admin-users-view')).toBeVisible()
+  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(strip).toBeVisible()
 })

@@ -12,9 +12,9 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
 /**
  * PageCatalog - The chat demo's own admin pages and the dashboard group they are shown in.
  *
- * Three screens the framework does not know about: the application's users, its library bots,
- * and the moderator's prompt pieces. Each hangs off the dashboard, so it reaches the panel as a
- * card of its own group rather than as a link buried in someone else's section.
+ * Two screens the framework does not know about: the library bots and the moderator's prompt
+ * pieces. Each hangs off the dashboard, so it reaches the panel as a card of its own group
+ * rather than as a link buried in someone else's section.
  *
  * The captions live here rather than on the frontend for the reason the whole catalog does: a
  * heading is text in the visitor's language, and only the backend knows the language.
@@ -29,12 +29,6 @@ final class PageCatalog implements PageCatalogProviderInterface
     public static function pages(): array
     {
         return [
-            PageConstants::ADMIN_USERS => [
-                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',
-                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Application users: presence, activity, and rename.',
-                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
-                PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-people',
-            ],
             PageConstants::ADMIN_BOTS => [
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
                 PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Library bots: profiles, status, and behavior.',
@@ -60,7 +54,6 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::SECTION_TITLE => 'Chat administration',
                 PageCatalogConstants::SECTION_DESCRIPTION => 'Application-specific admin areas for the chat demo.',
                 PageCatalogConstants::SECTION_ITEMS => [
-                    PageConstants::ADMIN_USERS,
                     PageConstants::ADMIN_BOTS,
                     PageConstants::ADMIN_MODERATOR,
                 ],

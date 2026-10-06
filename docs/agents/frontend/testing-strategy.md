@@ -186,10 +186,10 @@ the rename, the tab conflict and the narrow screen. Everything else of
 over people, and they go with settings, people and admin: framework-level
 tests, in the owner's words on the HIL-1209 interview, not chat's.
 
-Three pieces of that area stayed in chat by the same rule — a spec lives on the
-side of the feature it is about. `admin-users.spec` is chat's own "Users"
-screen (`/hilos/app/users`, its own table), which binance-btc-tracker does not
-have. The test that switches on the confirmation before removing rights sits in
+Two pieces of that area stayed in chat by the same rule — a spec lives on the
+side of the feature it is about. The two-tab rename conflict on the framework
+people card is `users.spec` in binance-btc-tracker, which already carries that
+screen. The test that switches on the confirmation before removing rights sits in
 `step-up.spec`: its subject is the switch, and the switch lives in the Security
 Center, on the account side. `admin-view-mode.spec` is the shell's gear over
 chat's screen; where every viewer e2e lies is the table in

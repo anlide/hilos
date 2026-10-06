@@ -11,12 +11,10 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
-use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
 use Demo\Chat\Tables\Bot\BotTableRow;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPieceTableRow;
@@ -47,9 +45,9 @@ use JsonException;
  * Integration coverage for chat admin surfaces under the admin view mode (HIL-1259).
  *
  * Verifies that on the chat demo's administrative pages (AdminBotsPage, AdminModeratorPage,
- * AdminUsersPage, GuardianPage, GuardianAgentPage) non-personal fields and declarations are
- * preserved for both anonymous and signed-in non-admin viewers, personal fields (user name)
- * are masked with HiddenValue, and an admin receives all pages with no hidden marks.
+ * GuardianPage, GuardianAgentPage) non-personal fields and declarations are preserved for both
+ * anonymous and signed-in non-admin viewers, and an admin receives those pages with no hidden
+ * marks. A viewer's look at the people list lives with the framework users page.
  */
 final class AdminViewModeChatAdminTest extends IntegrationTestCase
 {
@@ -61,7 +59,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
 
     private int $botId;
     private int $pieceId;
-    private int $personId;
 
     /**
      * Initializes the chat browser context, registers truth sources, enables the view mode, and seeds data.
@@ -91,9 +88,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
 
         $piece = Hilos::$db->moderatorPromptPieces->actions->create('name_rule', 'Hello, welcome to chat!');
         $this->pieceId = (int) $piece->id;
-
-        $person = Hilos::$db->users->actions->createWithName('Olena Kovalenko');
-        $this->personId = (int) $person->id;
 
         $visitor = Hilos::$db->users->actions->createWithName('Visitor of the node');
         $visitorId = (int) $visitor->id;
@@ -200,48 +194,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     }
 
     /**
-     * A viewer sees chat users with the name hidden, and id, lastActivity, and presence shown.
-     *
-     * @throws JsonException When JSON serialization fails
-     */
-    public function testAViewerSeesChatUsersWithTheNameHiddenAndActivityAndPresenceShown(): void
-    {
-        foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
-            $frames = $this->subscribe(
-                AdminUsersPage::class,
-                [],
-                $acceptKey,
-                [ChatTableContext::adminUsers => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT)],
-            );
-            $rows = $this->window($frames, ChatTableContext::adminUsers)[TableWindowSignalData::rows];
-            $userRow = null;
-            foreach ($rows as $row) {
-                if ($row[BrowserPageSignalData::rowKey] === $this->personId) {
-                    $userRow = $row;
-                    break;
-                }
-            }
-            self::assertNotNull($userRow, "User row not found for {$acceptKey}");
-            $slots = $userRow[PagePayload::slots];
-            $userSlot = $slots[ChatDbContext::users];
-            self::assertTrue(HiddenValue::isMark($userSlot[AdminUserTableRow::name]));
-            self::assertSame($this->personId, $userSlot[AdminUserTableRow::id]);
-            self::assertArrayHasKey(AdminUserTableRow::lastActivity, $userSlot);
-            self::assertFalse(HiddenValue::isMark($userSlot[AdminUserTableRow::lastActivity]));
-            $connSlot = $slots[ChatRtContext::connections];
-            self::assertArrayHasKey(AdminUserTableRow::presence, $connSlot);
-            self::assertFalse(HiddenValue::isMark($connSlot[AdminUserTableRow::presence]));
-            self::assertArrayHasKey(AdminUserTableRow::onlineSessionCount, $connSlot);
-            self::assertFalse(HiddenValue::isMark($connSlot[AdminUserTableRow::onlineSessionCount]));
-            self::assertStringNotContainsString(
-                'Olena Kovalenko',
-                json_encode(self::payloads($frames), JSON_THROW_ON_ERROR),
-                "Olena Kovalenko found in frames for {$acceptKey}",
-            );
-        }
-    }
-
-    /**
      * A viewer receives guardian agent statuses (both list and detail) with all fields shown.
      */
     public function testAViewerSeesGuardianStatusesWithAllFieldsShown(): void
@@ -272,7 +224,7 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
     }
 
     /**
-     * An admin receives all five chat admin pages with real data and no hidden marks.
+     * An admin receives the chat admin pages with real data and no hidden marks.
      *
      * @throws JsonException When JSON serialization fails
      */
@@ -285,9 +237,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
             ...$this->subscribe(AdminModeratorPage::class, [], self::ADMIN_KEY, [
                 ChatTableContext::moderatorPromptPieces => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
             ]),
-            ...$this->subscribe(AdminUsersPage::class, [], self::ADMIN_KEY, [
-                ChatTableContext::adminUsers => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT),
-            ]),
             ...$this->subscribe(GuardianPage::class, [], self::ADMIN_KEY),
             ...$this->subscribe(
                 GuardianAgentPage::class,
@@ -296,16 +245,6 @@ final class AdminViewModeChatAdminTest extends IntegrationTestCase
             ),
         ];
 
-        $userRows = $this->window($frames, ChatTableContext::adminUsers)[TableWindowSignalData::rows];
-        $userRow = null;
-        foreach ($userRows as $row) {
-            if ($row[BrowserPageSignalData::rowKey] === $this->personId) {
-                $userRow = $row;
-                break;
-            }
-        }
-        self::assertNotNull($userRow, 'Admin user row was not found in window');
-        self::assertSame('Olena Kovalenko', $userRow[PagePayload::slots][ChatDbContext::users][AdminUserTableRow::name]);
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode(self::payloads($frames), JSON_THROW_ON_ERROR));
     }
 

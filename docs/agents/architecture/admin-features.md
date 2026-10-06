@@ -78,8 +78,8 @@ logic, or the action routing. Those are framework-owned.
 ### Mode 2 — Project-owned feature, by pattern
 
 For an app-specific admin table that deliberately diverges from a framework one:
-`admin_users` in the chat demo is the live reference (a users-like table built on
-purpose to differ from `hilos_users`). The project owns the concrete entity but
+the chat demo's bots table is the live reference (a project-owned table beside
+the framework's `hilos_users`). The project owns the concrete entity but
 reuses the SAME generic bases — `TableDefinition` browser-merge, the page-action
 CRUD lifecycle. The project writes only the row shape, the declared DB/RT
 sources, and the field mapping; never the engine.
@@ -142,11 +142,9 @@ mode ([admin-view-mode.md](admin-view-mode.md)) is given by the level alone — 
 opens an `ADMIN` page for looking — while an `ACCESS` guard is judged after the
 level and keeps a viewer out, so a page closed by a guard on the admin flag
 would be the one admin page a viewer cannot look at. The chat demo's
-`AdminUsersPage`, served by the chat agent, `AdminBotsPage` and
-`AdminModeratorPage`, served by the library agent, all declare the level and no
-guard; the user table had an `ACCESS` guard on `User::admin` and dropped it for
-the mode (HIL-1251). Needing "signed in" rather than "admin" is the same line
-with `PageAccessLevel::AUTHENTICATED`, and never a parallel `AUTHENTICATED`
+`AdminBotsPage` and `AdminModeratorPage`, served by the library agent, declare
+the level and no guard (HIL-1251). Needing "signed in" rather than "admin" is the
+same line with `PageAccessLevel::AUTHENTICATED`, and never a parallel `AUTHENTICATED`
 guard.
 
 Closing a page is a behavior change for its tests too: an e2e that used to walk
@@ -260,8 +258,8 @@ carries `id`, `admin`, `block`, `name`, `lastActivity`; with it `@hilos/core`
 ships `userFromFields` and `USER_ENTITY_TYPE`, so a project binds only its
 collection and extends the type only with a field of its own.
 
-`admin_users` is NOT a hilos-users extension — it is a separate, project-owned
-table (Mode 2). Keep the two distinct; the framework feature is the panel
+A project's own admin table (Mode 2) is not a hilos-users extension. The chat
+demo's bots table is that separate table; the framework feature is the panel
 operators, the project table is the project's own.
 
 The account card requires `applyAccountBlock()` on the sessions library,
@@ -319,7 +317,7 @@ final class AppBrowserContext extends BrowserContext
   a graduated base reach them; read the facade at the point of use
   (framework-development.md Core rule).
 - Do not fold a project's divergent admin table (Mode 2) into the framework
-  feature; keep `admin_users` separate from `hilos_users`.
+  feature; the chat demo's bots table stays separate from `hilos_users`.
 
 ## Exceptions
 

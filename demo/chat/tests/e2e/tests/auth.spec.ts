@@ -1728,7 +1728,7 @@ test('re-decides an open admin page when the person signs out, in place', async 
 }) => {
   const { userId } = await signUp(page)
   await setAdmin(userId, true)
-  await gotoPage(page, '/hilos/app/users')
+  await gotoPage(page, '/hilos/users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
   let fullLoads = 0
@@ -1742,9 +1742,8 @@ test('re-decides an open admin page when the person signs out, in place', async 
   // the view hid itself: this component draws unconditionally.
   await expectPageRefused(page)
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('admin-users-view')).toHaveCount(0)
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-  expect(new URL(page.url()).pathname).toBe('/hilos/app/users')
+  expect(new URL(page.url()).pathname).toBe('/hilos/users')
   expect(fullLoads).toBe(0)
 
   // Revoke so the shared-DB user does not stay admin for later specs.

@@ -365,7 +365,6 @@ final class ChatAgent extends AbstractAgent
                 return;
             case ChatSignalConstants::MODERATION_RESULT:
             case ChatSignalConstants::ATTACHMENTS_PUBLISHED:
-            case ChatSignalConstants::USER_ADMIN_RENAME_DONE:
                 // Both belong to a page this agent merely serves: the frame is routed here
                 // because that is where the page lives, and the page router hands it on. Named
                 // rather than left to the default, which would log a stranger on every one.

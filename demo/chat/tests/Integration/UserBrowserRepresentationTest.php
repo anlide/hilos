@@ -7,7 +7,6 @@ namespace Demo\Chat\Tests\Integration;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Tables\Users\HilosUserTableRow;
@@ -35,17 +34,9 @@ final class UserBrowserRepresentationTest extends IntegrationTestCase
             $this->assertSame(2, $hilosRow[HilosUserTableRow::onlineSessionCount]);
             $this->assertSame('online', $hilosRow[HilosUserTableRow::presence]);
 
-            $adminRow = Hilos::$table->adminUsers->rowFromUser($user)->toArray();
-            $this->assertSame(2, $adminRow[AdminUserTableRow::onlineSessionCount]);
-            $this->assertSame('online', $adminRow[AdminUserTableRow::presence]);
-
             $hilosSnapshot = Hilos::$table->hilosUsers->getFullSnapshot()->toArray();
             $hilosSnapshotRow = $this->findRowByUserId($hilosSnapshot[TableConstants::RESULT_KEY_ROWS], $user->id);
             $this->assertSame(2, $hilosSnapshotRow[HilosUserTableRow::onlineSessionCount]);
-
-            $adminSnapshot = Hilos::$table->adminUsers->getFullSnapshot()->toArray();
-            $adminSnapshotRow = $this->findRowByUserId($adminSnapshot[TableConstants::RESULT_KEY_ROWS], $user->id);
-            $this->assertSame(2, $adminSnapshotRow[AdminUserTableRow::onlineSessionCount]);
         } finally {
             Hilos::$rt->connections->actions->clear();
         }

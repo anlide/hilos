@@ -44,7 +44,8 @@ read the canonical spec before editing.
 
 1. Decide the mode. Mode 1 = framework-owned feature (settings / hilos-users /
    roles): the project activates, configures, and uses it. Mode 2 = project-owned
-   table by pattern (admin_users): the project owns the entity over shared bases.
+   table by pattern (the chat demo's bots table): the project owns the entity
+   over shared bases.
 2. Keep the generic engine (table merge, page subscribe, action lifecycle) in the
    framework; put only content-binding in the project — catalog, extra fields, a
    bound collection, one `SUBSCRIPTION_AGENT_TYPE`, topology registration.
@@ -78,8 +79,8 @@ read the canonical spec before editing.
 - Never run `git commit` or `git push`.
 - Do not copy a framework admin table's query/merge/mutation/action code into a
   project to activate the feature; bind content to the framework table instead.
-- Keep `admin_users` (Mode 2, project-owned) separate from `hilos_users`
-  (Mode 1, framework-owned); do not fold one into the other.
+- Keep a project's own table (Mode 2, the chat demo's bots) separate from
+  `hilos_users` (Mode 1, framework-owned); do not fold one into the other.
 - The verifier circle belongs to the freeze, not to backup, and a framework-owned
   section may have no line in `FEATURES` at all (Mode 1 of the graduation spec).
 - Do not pass `Hilos::$db`/`$rt`/`$setting`/`$table` through constructors to reach

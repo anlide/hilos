@@ -520,7 +520,6 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => HilosPageConstants::HILOS_PROFILE_SIGN_IN,
-            ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
@@ -580,7 +579,6 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame([
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_LINK_OAUTH_START => AgentType::CHAT,
-            ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::LIBRARY,
             ChatSignalConstants::MODERATOR_PIECE_DELETE => AgentType::LIBRARY,
@@ -641,7 +639,6 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
                 ChatSignalConstants::ATTACHMENTS_PUBLISHED => PageConstants::MAIN,
-                ChatSignalConstants::USER_ADMIN_RENAME_DONE => PageConstants::ADMIN_USERS,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SETTINGS,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => HilosPageConstants::HILOS_BACKUP,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE
@@ -672,7 +669,6 @@ final class ChatTopologyRegistryTest extends TestCase
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
                 ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
-                ChatSignalConstants::USER_ADMIN_RENAME_DONE => AgentType::CHAT,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,

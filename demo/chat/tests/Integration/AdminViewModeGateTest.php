@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
-use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
@@ -20,7 +18,6 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\ActionRouteConfig;
-use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
@@ -32,7 +29,6 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Object\Item\User;
 use Hilos\Log\ClusterLogIndexMirror;
@@ -74,8 +70,6 @@ final class AdminViewModeGateTest extends IntegrationTestCase
 
     /** A second admin on the log keys, whose frame proves the tick pushed at all */
     private const string WITNESS_KEY = 'admin-view-mode-gate-witness';
-
-    private const string REQUEST_ID = 'admin-view-mode-gate-request';
 
     /** Comfortably past the ~100ms throttle {@see AbstractHilosLogsKeysPage::onAgentTick()} keeps. */
     private const int PAST_THE_TICK_THROTTLE_MICROSECONDS = 150_000;
@@ -140,7 +134,6 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'setting_preset_apply',
         'setting_reset',
         'setting_update',
-        'user_update',
     ];
 
     private int $visitorId;
@@ -219,42 +212,9 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         }
     }
 
-    public function testATrackedRenameFromAViewerIsRefusedImpersonallyAndRenamesNobody(): void
-    {
-        $person = Hilos::$db->users->actions->createWithName('Olena Kovalenko');
-
-        $this->dispatch(
-            AdminUsersPage::PAGE,
-            self::VISITOR_KEY,
-            ChatSignalConstants::USER_UPDATE,
-            [User::id => (int) $person->id, User::name => 'Renamed by a viewer'],
-            self::REQUEST_ID,
-        );
-
-        $error = $this->frameTo(self::VISITOR_KEY, SignalConstants::ACTION_ERROR);
-        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
-        self::assertSame(self::REQUEST_ID, $error->requestId);
-        self::assertSame(ActionViewModeException::ERROR_CODE, $error->errorCode);
-        self::assertSame(SignalConstants::ACTION_FAILED_REASON, $error->reason);
-        self::assertNull($error->errorType);
-        self::assertNull($error->errorDetail);
-        self::assertSame('Olena Kovalenko', Hilos::$db->users[(int) $person->id]?->name);
-    }
-
     public function testAnUntrackedRenameFromAViewerIsAnsweredWithTheImpersonalSentence(): void
     {
         $person = Hilos::$db->users->actions->createWithName('Olena Kovalenko');
-
-        $this->dispatch(
-            AdminUsersPage::PAGE,
-            self::ANONYMOUS_KEY,
-            ChatSignalConstants::USER_UPDATE,
-            [User::id => (int) $person->id, User::name => 'Renamed by a viewer'],
-        );
-
-        $error = $this->frameTo(self::ANONYMOUS_KEY, ChatSignalConstants::TABLE_ACTION_ERROR);
-        self::assertInstanceOf(TableActionErrorSignalData::class, $error);
-        self::assertSame(SignalConstants::ACTION_FAILED_REASON, $error->message);
 
         $this->dispatch(
             UserPage::PAGE,
@@ -271,7 +231,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
 
     public function testAViewerSubscribesToAnAdminPageOfTheFrameworkAndOfTheProject(): void
     {
-        foreach ([UsersPage::class, AdminUsersPage::class, AdminBotsPage::class] as $pageClass) {
+        foreach ([UsersPage::class, AdminBotsPage::class] as $pageClass) {
             foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY] as $acceptKey) {
                 self::assertAnsweredWithThePage($this->subscribe($pageClass, $acceptKey), "{$pageClass} for {$acceptKey}");
             }
@@ -282,7 +242,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
     {
         $this->switchMode(false);
 
-        foreach ([UsersPage::class, AdminUsersPage::class, AdminBotsPage::class] as $pageClass) {
+        foreach ([UsersPage::class, AdminBotsPage::class] as $pageClass) {
             self::assertSame(401, $this->subscriptionError($this->subscribe($pageClass, self::ANONYMOUS_KEY))->httpCode, $pageClass);
             self::assertSame(403, $this->subscriptionError($this->subscribe($pageClass, self::VISITOR_KEY))->httpCode, $pageClass);
         }

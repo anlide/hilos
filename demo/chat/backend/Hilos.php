@@ -81,7 +81,6 @@ use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\AdminPage;
-use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
@@ -169,7 +168,6 @@ use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\ModeratorPage;
 use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
@@ -357,7 +355,6 @@ final class Hilos extends HilosFacade
         BotPage::PAGE => BotPage::class,
         ModeratorPage::PAGE => ModeratorPage::class,
         AdminPage::PAGE => AdminPage::class,
-        AdminUsersPage::PAGE => AdminUsersPage::class,
         AdminModeratorPage::PAGE => AdminModeratorPage::class,
         AdminBotsPage::PAGE => AdminBotsPage::class,
         DashboardPage::PAGE => DashboardPage::class,
@@ -654,7 +651,6 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
-        ChatTableContext::adminUsers => AdminUsersTable::class,
         ChatTableContext::hilosUsers => HilosUsersTable::class,
         ChatTableContext::hilosMergeCandidates => HilosMergeCandidatesTable::class,
         ChatTableContext::bots => BotsTable::class,
@@ -781,9 +777,6 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
-        AdminUsersPage::PAGE => [
-            ChatTableContext::adminUsers => [],
-        ],
         AdminModeratorPage::PAGE => [
             ChatTableContext::moderatorPromptPieces => [],
         ],

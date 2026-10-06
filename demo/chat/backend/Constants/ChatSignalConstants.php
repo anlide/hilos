@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
-use Hilos\Constants\HilosSignalConstants;
-
 /**
  * ChatSignalConstants - Chat signal name constants.
  *
@@ -40,9 +38,6 @@ final class ChatSignalConstants
     /** @var string Subscription page admin signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN = 'subscription_page_admin';
 
-    /** @var string Subscription page admin users signal name */
-    public const string SUBSCRIPTION_PAGE_ADMIN_USERS = 'subscription_page_admin_users';
-
     /** @var string Subscription page admin moderator signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator';
 
@@ -70,19 +65,6 @@ final class ChatSignalConstants
     public const string BOT_MESSAGE = 'bot_message';
 
     // ── Table actions (client → server) ──────────────────────────────────
-    /** @var string User update signal name */
-    public const string USER_UPDATE = 'user_update';
-
-    /**
-     * @var string Users library → admin users page: the rename is done, or refused (HIL-771)
-     *
-     * The ask is the framework's {@see HilosSignalConstants::HILOS_USER_ADMIN_RENAME}, carrying
-     * this name as the one to answer under (HIL-1001). It is the ANSWER name that keeps the two
-     * chat surfaces apart: a frame answered by a page is routed to the agent serving THAT page,
-     * and the admin users table and the Hilos user-detail page are served by different agents.
-     */
-    public const string USER_ADMIN_RENAME_DONE = 'user_admin_rename_done';
-
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';
 

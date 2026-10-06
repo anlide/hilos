@@ -196,8 +196,9 @@ change the body of that question, not the mode around it.
   project-owned alike — is in it. A page's `ACCESS` guard is judged after the
   level, as always, and does not let a viewer through, so a page closed by a
   guard alone stays closed to one. An admin page is therefore closed by the
-  `ADMIN` level, not by a guard on the admin flag: the chat demo's user table,
-  the one page that had such a guard, dropped it and keeps the level alone.
+  `ADMIN` level, not by a guard on the admin flag. Closing a page with a guard
+  on the admin flag would keep a viewer out; the level alone is what lets one
+  look (HIL-1251).
 - Taking the rights away or giving them back switches an open page by the
   re-decision that already re-sends it
   ([page-access-control.md](page-access-control.md), *Re-deciding an OPEN
@@ -613,7 +614,7 @@ carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
 
 | Demo | Kit | Side | Looks (mode on) | Refused (mode off) |
 |---|---|---|---|---|
-| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/app/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `auth` (sign-in methods), `step-up`, `second-factor`, `legal-admin` (the Legal setting window), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
+| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `auth` (sign-in methods), `step-up`, `second-factor`, `legal-admin` (the Legal setting window), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
 | binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
 | tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window) | `auth`, `a11y` (no gear) |
 | ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |

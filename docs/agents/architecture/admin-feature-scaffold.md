@@ -8,9 +8,9 @@ live in [admin-features.md](admin-features.md); this file is the per-feature
 generation order.
 
 **Scope: framework-owned features only.** A project's own divergent admin table
-(`admin_users`, Mode 2) is not scaffolded here — that is authoring a new feature,
-not activating a framework one. See [admin-features.md](admin-features.md) Mode 2
-for that.
+(the chat demo's bots table, Mode 2) is not scaffolded here — that is authoring
+a new feature, not activating a framework one. See
+[admin-features.md](admin-features.md) Mode 2 for that.
 
 ## Core Rule
 
