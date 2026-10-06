@@ -30,6 +30,7 @@ use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
@@ -331,6 +332,9 @@ final class ChatTopologyRegistryTest extends TestCase
         $catalog = SettingsCatalog::getCatalog();
         foreach (LegalSettings::KEYS as $key) {
             $this->assertSame(LegalSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
+        foreach (ThemeSettingsCatalog::KEYS as $key) {
+            $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
         }
     }
 

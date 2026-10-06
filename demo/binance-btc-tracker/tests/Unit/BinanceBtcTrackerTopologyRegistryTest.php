@@ -83,6 +83,7 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\HilosException;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
@@ -367,6 +368,9 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         // project catalog does not know is written and then treated as an orphan (HIL-857).
         $catalog = BinanceBtcTrackerSettingsCatalog::getCatalog();
         $this->assertSame(LogSettingsCatalog::getCatalog(), array_intersect_key($catalog, LogSettingsCatalog::getCatalog()));
+        foreach (ThemeSettingsCatalog::KEYS as $key) {
+            $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
         // The toast spec writes an example key through the same screen (HIL-1224).
         $this->assertArrayHasKey(SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN, $catalog);
     }

@@ -23,6 +23,7 @@ use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
  * SettingsCatalog - Project settings catalog.
@@ -135,6 +136,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             FilesSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
+            ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),

@@ -14,6 +14,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
  * BinanceBtcTrackerSettingsCatalog - Project settings catalog for the binance-btc-tracker demo.
@@ -22,9 +23,10 @@ use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
  * through Hilos::$setting->catalog(). Keys present in the DB but absent here are treated as
  * orphans.
  *
- * The catalog is deliberately narrow: it carries what an activated feature requires, plus the
- * framework example keys. Two features refuse to start without their fragment - the logs section
- * needs the rotation thresholds and the logging modes its screens write, and notification
+ * The catalog is deliberately narrow: it carries what an activated feature requires, the
+ * framework example keys, and the shared theme settings. Two features refuse to start without
+ * their fragment - the logs section needs the rotation thresholds and the logging modes its
+ * screens write, and notification
  * delivery needs one block per registered channel and the delivery-journal keys. The three
  * example keys are what the settings and toast specs write, so no spec has to invent a
  * project-specific setting. The sign-in fragments are left out on purpose: no spec of this demo
@@ -62,6 +64,7 @@ final class BinanceBtcTrackerSettingsCatalog implements CatalogProviderInterface
             ChannelSettingsCatalog::entriesFor(BinanceBtcTrackerDeliveryChannelRegistry::all()),
             DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
+            ThemeSettingsCatalog::getCatalog(),
         );
     }
 }

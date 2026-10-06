@@ -45,6 +45,8 @@ use Hilos\Tables\Settings\DTO\HilosSettingAddActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingDeleteActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingUpdateActionDTO;
+use Hilos\Tables\Settings\HilosSettingTableRow;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -244,6 +246,93 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             $this->assertNull(Hilos::$db->settings[self::UNSEEDED_CATALOG_KEY]);
         }, [self::UNSEEDED_CATALOG_KEY]);
+    }
+
+    /** Both theme keys use the existing page, writer and catalog placeholder rows. */
+    public function testThemeSettingsCanBeAddedUpdatedAndReset(): void
+    {
+        $switchKey = ThemeSettingsCatalog::SWITCHING_ENABLED_KEY;
+        $defaultKey = ThemeSettingsCatalog::DEFAULT_THEME_KEY;
+
+        $this->withSettingsWriter(function () use ($switchKey, $defaultKey): void {
+            $this->deleteSettingIfExists($switchKey);
+            $this->deleteSettingIfExists($defaultKey);
+
+            $this->assertTrue(Hilos::$setting[$switchKey]->bool());
+            $this->assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[$defaultKey]->string());
+            foreach ([$switchKey => '1', $defaultKey => ThemeSettingsCatalog::SYSTEM] as $key => $default) {
+                $row = Hilos::$table->settings->rowForKey($key);
+                $this->assertNull($row?->id);
+                $this->assertSame($default, $row?->value);
+                $this->assertSame($default, $row?->defaultValue);
+                $this->assertNull($row?->overrideValue);
+                $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $row?->valueSource);
+            }
+
+            $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO($switchKey, false)));
+            $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO($defaultKey, ThemeSettingsCatalog::DARK)));
+            $this->assertFalse(Hilos::$setting[$switchKey]->bool());
+            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[$defaultKey]->string());
+            $this->assertSame('0', Hilos::$db->settings[$switchKey]?->value);
+            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$defaultKey]?->value);
+            foreach ([$switchKey => '0', $defaultKey => ThemeSettingsCatalog::DARK] as $key => $override) {
+                $row = Hilos::$table->settings->rowForKey($key);
+                $this->assertNotNull($row?->id);
+                $this->assertSame($override, $row?->value);
+                $this->assertSame($override, $row?->overrideValue);
+                $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_OVERRIDE, $row?->valueSource);
+            }
+
+            $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_UPDATE,
+                new HilosSettingUpdateActionDTO($switchKey, true)));
+            $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_UPDATE,
+                new HilosSettingUpdateActionDTO($defaultKey, ThemeSettingsCatalog::LIGHT)));
+            $this->assertTrue(Hilos::$setting[$switchKey]->bool());
+            $this->assertSame(ThemeSettingsCatalog::LIGHT, Hilos::$setting[$defaultKey]->string());
+            $this->assertSame('1', Hilos::$db->settings[$switchKey]?->value);
+            $this->assertSame(ThemeSettingsCatalog::LIGHT, Hilos::$db->settings[$defaultKey]?->value);
+
+            $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_RESET,
+                new HilosSettingResetActionDTO($switchKey)));
+            $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_RESET,
+                new HilosSettingResetActionDTO($defaultKey)));
+            $this->assertNull(Hilos::$db->settings[$switchKey]);
+            $this->assertNull(Hilos::$db->settings[$defaultKey]);
+            $this->assertTrue(Hilos::$setting[$switchKey]->bool());
+            $this->assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[$defaultKey]->string());
+            foreach (ThemeSettingsCatalog::KEYS as $key) {
+                $row = Hilos::$table->settings->rowForKey($key);
+                $this->assertNull($row?->id);
+                $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $row?->valueSource);
+            }
+        }, ThemeSettingsCatalog::KEYS);
+    }
+
+    /** Invalid defaults are refused before either creating a row or changing one. */
+    public function testThemeDefaultRefusalPreservesTheStoredValue(): void
+    {
+        $key = ThemeSettingsCatalog::DEFAULT_THEME_KEY;
+
+        $this->withSettingsWriter(function () use ($key): void {
+            $this->deleteSettingIfExists($key);
+            $this->assertSame('Choose light, dark or system', $this->submit(
+                'theme-invalid-ak', HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO($key, 'blue'),
+            ));
+            $this->assertNull(Hilos::$db->settings[$key]);
+            $this->assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[$key]->string());
+
+            $this->assertNull($this->submit('theme-valid-ak', HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO($key, ThemeSettingsCatalog::DARK)));
+            $this->assertSame('Choose light, dark or system', $this->submit(
+                'theme-invalid-ak', HilosSignalConstants::SETTING_UPDATE,
+                new HilosSettingUpdateActionDTO($key, 'Dark'),
+            ));
+            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$key]?->value);
+            $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[$key]->string());
+        }, [$key]);
     }
 
     public function testResetActionRejectsOrphan(): void

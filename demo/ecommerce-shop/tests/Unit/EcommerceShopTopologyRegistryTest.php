@@ -52,6 +52,7 @@ use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\HilosException;
@@ -525,7 +526,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_STRING,
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_INTEGER,
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
+            ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
+            ThemeSettingsCatalog::DEFAULT_THEME_KEY,
         ], array_keys($catalog));
+        foreach (ThemeSettingsCatalog::KEYS as $key) {
+            $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
     }
 
     /** The people are a bound framework feature: the demo binds its presence source and the card's table (HIL-1225). */

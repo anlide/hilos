@@ -20,6 +20,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 
 use Hilos\DataExport\DataExportHttp;
 use Hilos\Constants\HttpConstants;
@@ -145,6 +146,9 @@ final class TasksTopologyRegistryTest extends TestCase
         $catalog = TasksSettingsCatalog::getCatalog();
         foreach (LegalSettings::KEYS as $key) {
             $this->assertSame(LegalSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
+        foreach (ThemeSettingsCatalog::KEYS as $key) {
+            $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
         }
     }
 

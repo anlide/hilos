@@ -76,6 +76,7 @@ use Hilos\HilosException;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogCarrierAgent;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Log\LogStoreAgent;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
@@ -508,6 +509,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             $this->assertArrayHasKey($key, $catalog);
         }
         $this->assertSame([], array_diff_key(LogSettingsCatalog::getCatalog(), $catalog));
+        foreach (ThemeSettingsCatalog::KEYS as $key) {
+            $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);
+        }
         $this->assertSame(UserPage::PAGE, Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_USER_UPDATE]);
     }
 

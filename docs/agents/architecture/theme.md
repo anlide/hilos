@@ -112,11 +112,13 @@ No `index.html` carries a hand-written copy; a project never writes its own.
 
 Declare two keys in the framework's settings catalog:
 
-- whether people may switch the theme, **on** by default;
-- the default theme, `light`, `dark` or `system`, **system** by default.
+- `theme.switching_enabled`: whether people may switch the theme, a boolean
+  **true** by default;
+- `theme.default`: the default theme, a string accepting exactly `light`,
+  `dark` or `system`, **system** by default.
 
-These keys and defaults land together (not in the code yet — HIL-1426). As
-settings, they take effect at once on every node, with nothing restarted; see
+These keys and defaults live in `ThemeSettingsCatalog`. As settings, they take
+effect at once on every node, with nothing restarted; see
 "Settings and catalogs" in [framework-development.md](../framework-development.md).
 
 Every connected tab, a guest's too, receives both in the handshake and again as a
@@ -153,9 +155,10 @@ the Appearance section and its values and refuses changes
 
 ## Contract Gate
 
-The theme touches catalog keys, a person's stored pick, the handshake field,
-two frames — settings to everyone and a person's pick to their sessions — and
-browser-value keys. Pass the contract gate in the leaf that lands each surface.
+The catalog keys are `theme.switching_enabled` and `theme.default` (HIL-1426).
+The theme also touches a person's stored pick, the handshake field, two frames —
+settings to everyone and a person's pick to their sessions — and browser-value
+keys. Pass the contract gate in the leaf that lands each remaining surface.
 This specification leaves their names to those leaves: do not invent them here.
 The leaf that lands a surface writes its names into this file in the same commit
 that clears its marker.

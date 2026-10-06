@@ -15,15 +15,16 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
  * PollsSettingsCatalog - Project settings catalog for the polls demo.
  *
  * Declares the allowed setting keys, their types, and default values; the
  * framework reads it back through Hilos::$setting->catalog(). Keys present in the
- * DB but absent here are treated as orphans. The demo ships only the framework
- * example keys — enough to exercise the settings admin feature end to end without
- * inventing project-specific configuration — plus the log keys the logging modes
+ * DB but absent here are treated as orphans. The demo ships the framework
+ * example and theme keys — enough to exercise the settings admin feature end to end
+ * without inventing project-specific configuration — plus the log keys the logging modes
  * screen writes, which would become orphans the moment they are saved if the
  * activated feature's own catalog were not merged in here.
  *
@@ -54,6 +55,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             ],
         ],
             LogSettingsCatalog::getCatalog(),
+            ThemeSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),
