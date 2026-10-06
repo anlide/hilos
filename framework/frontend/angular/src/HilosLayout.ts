@@ -224,12 +224,28 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
                   <a
                     [hilosLink]="adminHref"
                     class="nav-link d-inline-flex align-items-center p-0 fs-5"
+                    [class.position-relative]="adminAccess() === 'view'"
                     data-id="nav-admin"
                     [attr.data-access]="adminAccess()"
-                    aria-label="Hilos dashboard"
+                    [attr.aria-label]="adminLabel()"
+                    [attr.title]="
+                      adminAccess() === 'view' ? adminLabel() : null
+                    "
                   >
-                    <i class="bi bi-gear-fill" aria-hidden="true"></i>
-                    <span class="visually-hidden">Hilos dashboard</span>
+                    <i
+                      class="bi bi-gear-fill"
+                      [class.text-info-emphasis]="adminAccess() === 'view'"
+                      aria-hidden="true"
+                    ></i>
+                    @if (adminAccess() === 'view') {
+                      <span
+                        class="position-absolute top-100 start-100 translate-middle bg-body-tertiary lh-1 rounded-circle"
+                        aria-hidden="true"
+                      >
+                        <i class="bi bi-eye" aria-hidden="true"></i>
+                      </span>
+                    }
+                    <span class="visually-hidden">{{ adminLabel() }}</span>
                   </a>
                 }
               }
@@ -482,7 +498,7 @@ export class HilosLayout {
    */
   readonly toastCorner = input<HilosToastCorner>('bottom-end')
 
-  // The admin gear (HIL-1253): drawn for an admin and, on a node in the admin
+  // The admin gear (HIL-1253, HIL-1289): drawn for an admin and, on a node in the admin
   // view mode, for a viewer who may look and not act; the core derives which
   // from the session's admin flag and the node's mode, so the project feeds it
   // nothing. It leads to the same dashboard either way - the server decides
@@ -490,6 +506,11 @@ export class HilosLayout {
   // restated here as a literal.
   protected readonly adminAccess = hilosSignal(hilosAdminAccess)
   protected readonly adminHref = HILOS_PAGE_ROUTES[HilosPages.DASHBOARD]
+  protected readonly adminLabel = computed(() =>
+    this.adminAccess() === 'view'
+      ? `Hilos dashboard — ${this.viewModeCopy.mark}`
+      : 'Hilos dashboard',
+  )
   // The footer's public framework pages, their labels, and their hrefs are owned
   // by the framework (routing/hilosPages), so every project's footer offers the
   // same links and a project supplies only each page's content component.

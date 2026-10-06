@@ -39,6 +39,11 @@ test('a guest without an account sees the admin gear and opens the admin section
   const gear = page.getByTestId('nav-admin')
   await expect(gear).toBeVisible()
   await expect(gear).toHaveAttribute('data-access', 'view')
+  await expect(gear).toHaveAttribute(
+    'aria-label',
+    'Hilos dashboard — View mode',
+  )
+  await expect(gear.locator('.bi-eye')).toBeVisible()
 
   await gear.click()
   await expectPageReady(page)

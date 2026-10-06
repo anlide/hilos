@@ -700,6 +700,19 @@ describe('HilosLayout admin gear', () => {
     expect(link?.getAttribute('data-access')).toBe('full')
     expect(link?.getAttribute('href')).toBe('/hilos')
     expect(link?.getAttribute('aria-label')).toBe('Hilos dashboard')
+    expect(link?.getAttribute('title')).toBeNull()
+    expect(link?.querySelector('.visually-hidden')?.textContent).toBe(
+      'Hilos dashboard',
+    )
+    expect(
+      link
+        ?.querySelector('.bi-gear-fill')
+        ?.classList.contains('text-info-emphasis'),
+    ).toBe(false)
+    expect(
+      link?.querySelector('.bi-gear-fill')?.getAttribute('aria-hidden'),
+    ).toBe('true')
+    expect(link?.querySelectorAll('.bi-eye')).toHaveLength(0)
   })
 
   it.each([
@@ -716,6 +729,25 @@ describe('HilosLayout admin gear', () => {
       expect(link).not.toBeNull()
       expect(link?.getAttribute('data-access')).toBe('view')
       expect(link?.getAttribute('href')).toBe('/hilos')
+      expect(link?.getAttribute('aria-label')).toBe(
+        'Hilos dashboard — View mode',
+      )
+      expect(link?.getAttribute('title')).toBe('Hilos dashboard — View mode')
+      expect(link?.querySelector('.visually-hidden')?.textContent).toBe(
+        'Hilos dashboard — View mode',
+      )
+      expect(
+        link
+          ?.querySelector('.bi-gear-fill')
+          ?.classList.contains('text-info-emphasis'),
+      ).toBe(true)
+      expect(
+        link?.querySelector('.bi-gear-fill')?.getAttribute('aria-hidden'),
+      ).toBe('true')
+      expect(link?.querySelectorAll('.bi-eye')).toHaveLength(1)
+      expect(link?.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
     },
   )
 
@@ -728,15 +760,44 @@ describe('HilosLayout admin gear', () => {
     act(() => {
       session.handshake(greeting({ id: 7, admin: true }, true))
     })
-    expect(surface(container, 'nav-admin')?.getAttribute('data-access')).toBe(
-      'full',
+    const fullLinks = container.querySelectorAll('[data-id="nav-admin"]')
+    expect(fullLinks).toHaveLength(1)
+    const fullLink = fullLinks[0]
+    expect(fullLink.getAttribute('data-access')).toBe('full')
+    expect(fullLink.getAttribute('aria-label')).toBe('Hilos dashboard')
+    expect(fullLink.getAttribute('title')).toBeNull()
+    expect(fullLink.querySelector('.visually-hidden')?.textContent).toBe(
+      'Hilos dashboard',
     )
+    expect(
+      fullLink
+        .querySelector('.bi-gear-fill')
+        ?.classList.contains('text-info-emphasis'),
+    ).toBe(false)
+    expect(fullLink.querySelectorAll('.bi-eye')).toHaveLength(0)
 
     act(() => {
       session.handshake(greeting({ id: 7, admin: false }, true))
     })
-    expect(surface(container, 'nav-admin')?.getAttribute('data-access')).toBe(
-      'view',
+    const viewLinks = container.querySelectorAll('[data-id="nav-admin"]')
+    expect(viewLinks).toHaveLength(1)
+    const viewLink = viewLinks[0]
+    expect(viewLink.getAttribute('data-access')).toBe('view')
+    expect(viewLink.getAttribute('aria-label')).toBe(
+      'Hilos dashboard — View mode',
+    )
+    expect(viewLink.getAttribute('title')).toBe('Hilos dashboard — View mode')
+    expect(viewLink.querySelector('.visually-hidden')?.textContent).toBe(
+      'Hilos dashboard — View mode',
+    )
+    expect(
+      viewLink
+        .querySelector('.bi-gear-fill')
+        ?.classList.contains('text-info-emphasis'),
+    ).toBe(true)
+    expect(viewLink.querySelectorAll('.bi-eye')).toHaveLength(1)
+    expect(viewLink.querySelector('.bi-eye')?.getAttribute('aria-hidden')).toBe(
+      'true',
     )
   })
 

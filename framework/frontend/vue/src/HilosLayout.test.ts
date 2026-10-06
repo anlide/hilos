@@ -683,6 +683,13 @@ describe('HilosLayout admin gear', () => {
     expect(link.attributes('data-access')).toBe('full')
     expect(link.attributes('href')).toBe('/hilos')
     expect(link.attributes('aria-label')).toBe('Hilos dashboard')
+    expect(link.attributes('title')).toBeUndefined()
+    expect(link.find('.visually-hidden').text()).toBe('Hilos dashboard')
+    expect(link.find('.bi-gear-fill').classes()).not.toContain(
+      'text-info-emphasis',
+    )
+    expect(link.find('.bi-gear-fill').attributes('aria-hidden')).toBe('true')
+    expect(link.findAll('.bi-eye')).toHaveLength(0)
   })
 
   it.each([
@@ -697,6 +704,15 @@ describe('HilosLayout admin gear', () => {
     expect(link.exists()).toBe(true)
     expect(link.attributes('data-access')).toBe('view')
     expect(link.attributes('href')).toBe('/hilos')
+    expect(link.attributes('aria-label')).toBe('Hilos dashboard — View mode')
+    expect(link.attributes('title')).toBe('Hilos dashboard — View mode')
+    expect(link.find('.visually-hidden').text()).toBe(
+      'Hilos dashboard — View mode',
+    )
+    expect(link.find('.bi-gear-fill').classes()).toContain('text-info-emphasis')
+    expect(link.find('.bi-gear-fill').attributes('aria-hidden')).toBe('true')
+    expect(link.findAll('.bi-eye')).toHaveLength(1)
+    expect(link.find('.bi-eye').attributes('aria-hidden')).toBe('true')
   })
 
   it('turns the gear full on a grant and back to view on a revoke, live', async () => {
@@ -707,15 +723,34 @@ describe('HilosLayout admin gear', () => {
 
     session.handshake(greeting({ id: 7, admin: true }, true))
     await flushPromises()
-    expect(
-      mounted?.find('[data-id="nav-admin"]').attributes('data-access'),
-    ).toBe('full')
+    expect(mounted?.findAll('[data-id="nav-admin"]')).toHaveLength(1)
+    const fullLink = mounted!.find('[data-id="nav-admin"]')
+    expect(fullLink.attributes('data-access')).toBe('full')
+    expect(fullLink.attributes('aria-label')).toBe('Hilos dashboard')
+    expect(fullLink.attributes('title')).toBeUndefined()
+    expect(fullLink.find('.visually-hidden').text()).toBe('Hilos dashboard')
+    expect(fullLink.find('.bi-gear-fill').classes()).not.toContain(
+      'text-info-emphasis',
+    )
+    expect(fullLink.findAll('.bi-eye')).toHaveLength(0)
 
     session.handshake(greeting({ id: 7, admin: false }, true))
     await flushPromises()
-    expect(
-      mounted?.find('[data-id="nav-admin"]').attributes('data-access'),
-    ).toBe('view')
+    expect(mounted?.findAll('[data-id="nav-admin"]')).toHaveLength(1)
+    const viewLink = mounted!.find('[data-id="nav-admin"]')
+    expect(viewLink.attributes('data-access')).toBe('view')
+    expect(viewLink.attributes('aria-label')).toBe(
+      'Hilos dashboard — View mode',
+    )
+    expect(viewLink.attributes('title')).toBe('Hilos dashboard — View mode')
+    expect(viewLink.find('.visually-hidden').text()).toBe(
+      'Hilos dashboard — View mode',
+    )
+    expect(viewLink.find('.bi-gear-fill').classes()).toContain(
+      'text-info-emphasis',
+    )
+    expect(viewLink.findAll('.bi-eye')).toHaveLength(1)
+    expect(viewLink.find('.bi-eye').attributes('aria-hidden')).toBe('true')
   })
 
   it('draws no gear under the maintenance surface', () => {

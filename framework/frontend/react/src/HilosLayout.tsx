@@ -268,12 +268,16 @@ export function HilosLayout({
     void keepAccount.run(keepMyAccount())
   }
 
-  // The admin gear (HIL-1253): drawn for an admin and, on a node in the admin
+  // The admin gear (HIL-1253, HIL-1289): drawn for an admin and, on a node in the admin
   // view mode, for a viewer who may look and not act; the core derives which
   // from the session's admin flag and the node's mode, so the project feeds it
   // nothing. It leads to the same dashboard either way - the server decides
   // what each is shown.
   const adminAccess = useSignal(hilosAdminAccess)
+  const adminLabel =
+    adminAccess === 'view'
+      ? `Hilos dashboard — ${HILOS_VIEW_MODE_COPY.mark}`
+      : 'Hilos dashboard'
 
   const signedIn = useSignal(hilosSignedIn)
   const signOutAction = useTrackedAction()
@@ -461,14 +465,26 @@ export function HilosLayout({
                     )}
                     {adminAccess !== 'none' ? (
                       <HilosLink
-                        className="nav-link d-inline-flex align-items-center p-0 fs-5"
+                        className={`nav-link d-inline-flex align-items-center p-0 fs-5${adminAccess === 'view' ? ' position-relative' : ''}`}
                         to={ADMIN_HREF}
                         data-id="nav-admin"
                         data-access={adminAccess}
-                        aria-label="Hilos dashboard"
+                        aria-label={adminLabel}
+                        title={adminAccess === 'view' ? adminLabel : undefined}
                       >
-                        <i className="bi bi-gear-fill" aria-hidden="true" />
-                        <span className="visually-hidden">Hilos dashboard</span>
+                        <i
+                          className={`bi bi-gear-fill${adminAccess === 'view' ? ' text-info-emphasis' : ''}`}
+                          aria-hidden="true"
+                        />
+                        {adminAccess === 'view' && (
+                          <span
+                            className="position-absolute top-100 start-100 translate-middle bg-body-tertiary lh-1 rounded-circle"
+                            aria-hidden="true"
+                          >
+                            <i className="bi bi-eye" aria-hidden="true" />
+                          </span>
+                        )}
+                        <span className="visually-hidden">{adminLabel}</span>
                       </HilosLink>
                     ) : null}
                   </>

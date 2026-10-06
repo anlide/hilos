@@ -247,11 +247,16 @@ const onReconsentRetry = (): void => {
   void hilosLegalReconsent.load()
 }
 
-// The admin gear (HIL-1253): drawn for an admin and, on a node in the admin view
+// The admin gear (HIL-1253, HIL-1289): drawn for an admin and, on a node in the admin view
 // mode, for a viewer who may look and not act; the core derives which from the
 // session's admin flag and the node's mode, so the project feeds it nothing. It
 // leads to the same dashboard either way - the server decides what each is shown.
 const adminAccess = useSignal(hilosAdminAccess)
+const adminLabel = computed(() =>
+  adminAccess.value === 'view'
+    ? `Hilos dashboard — ${HILOS_VIEW_MODE_COPY.mark}`
+    : 'Hilos dashboard',
+)
 const { busy: signOutBusy, run: runSignOut } = useTrackedAction()
 const onSignOut = (): void => {
   if (signOutBusy.value) {
@@ -451,13 +456,26 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             <HilosLink
               v-if="adminAccess !== 'none'"
               class="nav-link d-inline-flex align-items-center p-0 fs-5"
+              :class="{ 'position-relative': adminAccess === 'view' }"
               :to="adminHref"
               data-id="nav-admin"
               :data-access="adminAccess"
-              aria-label="Hilos dashboard"
+              :aria-label="adminLabel"
+              :title="adminAccess === 'view' ? adminLabel : undefined"
             >
-              <i class="bi bi-gear-fill" aria-hidden="true"></i>
-              <span class="visually-hidden">Hilos dashboard</span>
+              <i
+                class="bi bi-gear-fill"
+                :class="{ 'text-info-emphasis': adminAccess === 'view' }"
+                aria-hidden="true"
+              ></i>
+              <span
+                v-if="adminAccess === 'view'"
+                class="position-absolute top-100 start-100 translate-middle bg-body-tertiary lh-1 rounded-circle"
+                aria-hidden="true"
+              >
+                <i class="bi bi-eye" aria-hidden="true"></i>
+              </span>
+              <span class="visually-hidden">{{ adminLabel }}</span>
             </HilosLink>
           </template>
           <span
