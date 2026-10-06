@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
+use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
@@ -11,11 +14,13 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
@@ -32,7 +37,9 @@ use Hilos\I18n\MeasurementSystem;
 /** Reference rows and their action doors against the live framework schema. */
 final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
 {
-    private const array TABLES = ['hilos_language', 'hilos_country', 'hilos_locale'];
+    private const array TABLES = [
+        'hilos_language', 'hilos_country', 'hilos_locale', 'hilos_language_name', 'hilos_country_name',
+    ];
     private const string OWNER_AGENT_ID = 'test-agent:i18n-library';
 
     private ?DbContext $previousDb = null;
@@ -58,6 +65,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::languages, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::countries, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::locales, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::languageNames, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
+        TruthSourceRegistry::register(HilosDbContext::countryNames, TruthSourceKeys::all(), self::OWNER_AGENT_ID);
         ExecutionContext::setCurrentAgentId(self::OWNER_AGENT_ID);
         SourceChangeBus::reset();
         $this->changes = new I18nChangeRecorder();
@@ -351,6 +360,249 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $row->actions->switchOff();
             $this->assertSame($before + 2, $this->changes->count);
             $this->assertFalse($row->enabled);
+        }
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testLanguageNamesKeepLiteralValuesAndDeleteTheirOverrides(): void
+    {
+        $named = Hilos::$db->languages->actions->create('fr', 'Français', false);
+        $writing = Hilos::$db->languages->actions->create('en', 'English', false);
+        $locale = self::createLocale($writing, null);
+
+        $base = Hilos::$db->languageNames->actions->createManual($named, $writing, null, '');
+        $this->assertSame('', $base->name);
+        $this->assertTrue($base->locked);
+        $this->assertNull($base->locale);
+        $this->assertSame($named->id, $base->language->id);
+        $this->assertSame($writing->id, $base->inLanguage->id);
+        $this->assertSame($base->id, Hilos::$db->languageNames->findBase($named->id, $writing->id)?->id);
+        $this->assertSame($base->id, Hilos::$db->languageNames[$base->id]?->id);
+
+        $override = Hilos::$db->languageNames->actions->createManual($named, $writing, $locale, 'French');
+        $this->assertSame($locale->id, $override->locale?->id);
+        $this->assertSame(
+            $override->id,
+            Hilos::$db->languageNames->findOverride($named->id, $writing->id, $locale->id)?->id,
+        );
+        $override->actions->edit('');
+        $this->assertSame('', $override->name);
+        $override->actions->delete();
+        $this->assertNull(Hilos::$db->languageNames[$override->id]);
+        $this->assertNotNull(Hilos::$db->languageNames[$base->id]);
+
+        $another = Hilos::$db->languageNames->actions->createManual($named, $writing, $locale, 'Français');
+        $base->actions->delete();
+        $this->assertNull(Hilos::$db->languageNames[$base->id]);
+        $this->assertNull(Hilos::$db->languageNames[$another->id]);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testCountryNamesHaveCatalogAndManualWriteDoors(): void
+    {
+        $writing = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($writing, $country);
+
+        $base = Hilos::$db->countryNames->actions->createCatalogBase($country, $writing, 'United Kingdom');
+        $this->assertFalse($base->locked);
+        $this->assertSame($country->id, $base->country->id);
+        $this->assertSame($writing->id, $base->language->id);
+        $this->assertSame($base->id, Hilos::$db->countryNames->findBase($country->id, $writing->id)?->id);
+        $this->assertTrue($base->actions->refreshFromCatalog('Britain'));
+        $this->assertSame('Britain', $base->name);
+        $base->actions->edit('');
+        $this->assertTrue($base->locked);
+        $this->assertSame('', $base->name);
+        $this->assertFalse($base->actions->refreshFromCatalog('Ignored'));
+        $this->assertSame('', $base->name);
+
+        $override = Hilos::$db->countryNames->actions->createManual($country, $writing, $locale, 'UK');
+        $this->assertTrue($override->locked);
+        $this->assertSame($locale->id, $override->locale?->id);
+        $this->assertSame(
+            $override->id,
+            Hilos::$db->countryNames->findOverride($country->id, $writing->id, $locale->id)?->id,
+        );
+        try {
+            $override->actions->refreshFromCatalog('No');
+            $this->fail('Catalog refresh of an override must be refused');
+        } catch (ValidationException) {
+            $this->assertSame('UK', $override->name);
+        }
+        $base->actions->delete();
+        $this->assertNull(Hilos::$db->countryNames[$override->id]);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testNameActionsRejectMissingBaseForeignLocaleAndWideName(): void
+    {
+        $named = Hilos::$db->languages->actions->create('fr', 'Français', false);
+        $writing = Hilos::$db->languages->actions->create('en', 'English', false);
+        $foreign = Hilos::$db->languages->actions->create('de', 'Deutsch', false);
+        $foreignLocale = self::createLocale($foreign, null);
+        $ownLocale = self::createLocale($writing, null);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+
+        foreach ([HilosDbContext::languageNames, HilosDbContext::countryNames] as $key) {
+            $subject = $key === HilosDbContext::languageNames ? $named : $country;
+            try {
+                Hilos::$db->$key->actions->createManual($subject, $writing, $ownLocale, 'Orphan');
+                $this->fail('An override without a base must be refused');
+            } catch (ValidationException) {
+                $this->assertNull(Hilos::$db->$key->findBase($subject->id, $writing->id));
+            }
+            $base = Hilos::$db->$key->actions->createManual($subject, $writing, null, 'Base');
+            try {
+                Hilos::$db->$key->actions->createManual($subject, $writing, $foreignLocale, 'Wrong language');
+                $this->fail('A locale of another writing language must be refused');
+            } catch (ValidationException) {
+                $this->assertSame('Base', $base->name);
+            }
+            try {
+                Hilos::$db->$key->actions->createManual($subject, $writing, null, str_repeat('x', 256));
+                $this->fail('A name exceeding VARCHAR(255) must be refused');
+            } catch (ValidationException) {
+                $this->assertSame('Base', $base->name);
+            }
+        }
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testGeneratedSlotRefusesRawDuplicateBaseAndOverride(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $country);
+        Hilos::$db->languageNames->actions->createManual($language, $language, null, 'English');
+        Hilos::$db->languageNames->actions->createManual($language, $language, $locale, 'English GB');
+        Hilos::$db->countryNames->actions->createManual($country, $language, null, 'United Kingdom');
+        Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'Britain');
+
+        foreach ([
+            ['hilos_language_name', $language->id, $language->id, 'in_language_id'],
+            ['hilos_country_name', $country->id, $language->id, 'language_id'],
+        ] as [$table, $subjectId, $writingId, $writingColumn]) {
+            $subjectColumn = $table === 'hilos_language_name' ? 'language_id' : 'country_id';
+            foreach ([null, $locale->id] as $localeId) {
+                try {
+                    Database::sqlRun(
+                        "INSERT INTO `{$table}` (`{$subjectColumn}`, `{$writingColumn}`, `locale_id`, `name`)"
+                            . ' VALUES (?, ?, ?, ?)',
+                        [$subjectId, $writingId, $localeId, 'Duplicate'],
+                    );
+                    $this->fail('The generated slot must reject a duplicate, including a null base slot');
+                } catch (DuplicateEntryException) {
+                    $this->assertNotNull($localeId === null
+                        ? ($table === 'hilos_language_name'
+                            ? Hilos::$db->languageNames->findBase($subjectId, $writingId)
+                            : Hilos::$db->countryNames->findBase($subjectId, $writingId))
+                        : ($table === 'hilos_language_name'
+                            ? Hilos::$db->languageNames->findOverride($subjectId, $writingId, $localeId)
+                            : Hilos::$db->countryNames->findOverride($subjectId, $writingId, $localeId)));
+                }
+            }
+        }
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testNamesProtectParentsAndOtherAgentsCannotWrite(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $country);
+        $languageName = Hilos::$db->languageNames->actions->createManual($language, $language, null, 'English');
+        $countryName = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Britain');
+        Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'UK');
+
+        foreach ([
+            ['hilos_language', $language->id], ['hilos_country', $country->id], ['hilos_locale', $locale->id],
+        ] as [$table, $id]) {
+            try {
+                Database::sqlRun("DELETE FROM `{$table}` WHERE `id` = ?", [$id]);
+                $this->fail('A name must protect its referenced parent');
+            } catch (ForeignKeyConstraintException) {
+                $this->assertNotNull(Hilos::$db->languageNames[$languageName->id]);
+            }
+        }
+
+        ExecutionContext::setCurrentAgentId('test-agent:outsider');
+        try {
+            Hilos::$db->languageNames->actions->createManual($language, $language, null, 'No');
+            $this->fail('A foreign agent must not create a name');
+        } catch (CreateNotAllowedException) {
+            $this->assertSame('English', $languageName->name);
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::OWNER_AGENT_ID);
+        }
+        ExecutionContext::setCurrentAgentId('test-agent:outsider');
+        try {
+            $countryName->actions->edit('No');
+            $this->fail('A foreign agent must not edit a name');
+        } catch (WriteNotAllowedException) {
+            $this->assertSame('Britain', $countryName->name);
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::OWNER_AGENT_ID);
+        }
+        ExecutionContext::setCurrentAgentId('test-agent:outsider');
+        try {
+            $languageName->actions->delete();
+            $this->fail('A foreign agent must not delete a name');
+        } catch (WriteNotAllowedException) {
+            $this->assertSame('English', $languageName->name);
+        } finally {
+            ExecutionContext::setCurrentAgentId(self::OWNER_AGENT_ID);
+        }
+        $this->assertSame('Britain', $countryName->name);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testFailedBaseDeletionRestoresOverridesAndCachedRows(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $country);
+        $base = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Britain');
+        $override = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'UK');
+
+        Database::sqlRun('DROP TABLE IF EXISTS `test_hil_1468_name_blocker`');
+        Database::sqlRun('CREATE TABLE `test_hil_1468_name_blocker` ('
+            . ' `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,'
+            . ' `name_id` INT UNSIGNED NOT NULL,'
+            . ' CONSTRAINT `fk_test_hil_1468_name_blocker` FOREIGN KEY (`name_id`) REFERENCES `hilos_country_name` (`id`)'
+            . ') ENGINE=InnoDB');
+        try {
+            Database::sqlRun('INSERT INTO `test_hil_1468_name_blocker` (`name_id`) VALUES (?)', [$base->id]);
+            try {
+                $base->actions->delete();
+                $this->fail('A restricted base deletion must roll back its override deletion');
+            } catch (ForeignKeyConstraintException) {
+                $this->assertSame($base->id, Hilos::$db->countryNames[$base->id]?->id);
+                $this->assertSame($override->id, Hilos::$db->countryNames[$override->id]?->id);
+                $this->assertSame($override->id, Hilos::$db->countryNames->findOverride(
+                    $country->id, $language->id, $locale->id,
+                )?->id);
+            }
+        } finally {
+            Database::sqlRun('DROP TABLE IF EXISTS `test_hil_1468_name_blocker`');
+        }
+    }
+
+    /** @throws HilosException When a PII verdict or live schema read fails */
+    public function testEveryNameColumnHasANonpersonalVerdict(): void
+    {
+        $registry = PiiRegistry::collect();
+        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $schemas = LiveSchemaReader::read($index);
+        AnonymizationCoverageValidator::validateLiveSchema($registry, [
+            $index => [
+                'hilos_language_name' => $schemas['hilos_language_name'],
+                'hilos_country_name' => $schemas['hilos_country_name'],
+            ],
+        ]);
+        foreach (['hilos_language_name', 'hilos_country_name'] as $table) {
+            $this->assertSame([], $registry->strategiesFor($index, $table));
+            $this->assertContains('locale_slot', $registry->notPersonalColumns($index, $table));
         }
     }
 

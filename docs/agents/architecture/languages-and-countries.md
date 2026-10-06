@@ -48,8 +48,8 @@ the framework prefix `hilos_`.
 | `hilos_language` | `id`; `code` — unique ISO 639-1 code; `native_name` — the language's own name; `rtl` — writing direction, a property of the language rather than the locale; `enabled`. |
 | `hilos_country` | `id`; `code` — unique ISO 3166-1 alpha-2 code, in the catalog's case (`us`); `currency_symbol` — for display; `currency_code` — three-letter ISO 4217 code, for calculations; `default_locale_id` — a locale of this country, or empty to take formats from the language; `enabled`. A composite database key on (`id`, `default_locale_id`) holds the default to a locale of this country. |
 | `hilos_locale` | `id`; `code` — composed by creation from the pair (`en-GB`), or the language code alone (`en`) without a country; `language_id`; `country_id` — empty for the language's countryless locale; `date_format`, `time_format`, `number_format`, `phone_format`, `address_format`, `measurement_system` (`metric` / `imperial`), `collation`; `enabled`. The pair is unique. |
-| `hilos_language_name` | `id`; `language_id` — whose name; `in_language_id` — the language it is written in; `locale_id` — empty for the base name, otherwise an override for one locale of the writing language; `name`; `locked` (not in the code yet — HIL-1468). |
-| `hilos_country_name` | `id`; `country_id` — whose name; `language_id` — the language it is written in; `locale_id` — the same base/override rule; `name`; `locked` (not in the code yet — HIL-1468). |
+| `hilos_language_name` | `id`; `language_id` — whose name; `in_language_id` — the language it is written in; `locale_id` — empty for the base name, otherwise an override for one locale of the writing language; `name`; `locked`; generated `locale_slot` for uniqueness. |
+| `hilos_country_name` | `id`; `country_id` — whose name; `language_id` — the language it is written in; `locale_id` — the same base/override rule; `name`; `locked`; generated `locale_slot` for uniqueness. |
 
 There is no `name`, `subdomain` or `sort_order` column on a language (owner's
 decisions, 2026-09-11–12). There is no single name for a language: names are
@@ -61,19 +61,19 @@ a language code, and translation strings will do so in Phase 2. Renaming it
 would move three subsystems, so it stays immutable in every row state.
 
 For each pair of *what is named × the language it is written in*, allow one
-base name and at most one override per locale; a unique index with a nullable
-locale column alone does not reject duplicate base names, and HIL-1468 chooses
-the enforcement mechanism (not in the code yet — HIL-1468).
+base name and at most one override per locale. Both tables store a generated
+`locale_slot = COALESCE(locale_id, 0)` and use a unique key on the named subject,
+writing language and slot, so a second base name is refused by the database too.
 The override's locale must belong to the language the name is written in — for
 example, a country's English name may have `the United States` as its `en-GB`
-override (not in the code yet — HIL-1468).
+override. An override needs an existing base name for that subject and writing
+language; the actions check both conditions before inserting it.
 A language's own name is `native_name`; its names table is for names in other
 languages.
 
 Every column of `hilos_language`, `hilos_country` and `hilos_locale` is declared
 nonpersonal in `_piiNotPersonal`.
-Every column of the two names tables has the same verdict
-(not in the code yet — HIL-1468).
+Every column of the two names tables, including generated `locale_slot`, has the same verdict.
 Under [backup anonymization](backup-anonymization.md), a restore leaves such
 columns unchanged; under [admin view mode](admin-view-mode.md), the viewer can
 see them all.

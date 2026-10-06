@@ -15,12 +15,14 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\AccountDeletions as DbCollectionAccountDeletions;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
+use Hilos\Database\View\Collection\CountryNames as DbCollectionCountryNames;
 use Hilos\Database\View\Collection\DataExports as DbCollectionDataExports;
 use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
+use Hilos\Database\View\Collection\LanguageNames as DbCollectionLanguageNames;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
@@ -98,7 +100,9 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::files => DbCollectionFiles::class,
         HilosDbContext::fileVariants => DbCollectionFileVariants::class,
         HilosDbContext::languages => DbCollectionLanguages::class,
+        HilosDbContext::languageNames => DbCollectionLanguageNames::class,
         HilosDbContext::countries => DbCollectionCountries::class,
+        HilosDbContext::countryNames => DbCollectionCountryNames::class,
         HilosDbContext::locales => DbCollectionLocales::class,
         HilosDbContext::users => DbCollectionUsers::class,
         HilosDbContext::userRenames => DbCollectionUserRenames::class,

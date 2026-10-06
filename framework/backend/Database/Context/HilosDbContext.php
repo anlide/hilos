@@ -23,10 +23,12 @@ use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptan
 use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
 use Hilos\Database\View\Collection\AuthBlocks as DbCollectionAuthBlocks;
 use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
+use Hilos\Database\View\Collection\CountryNames as DbCollectionCountryNames;
 use Hilos\Database\View\Collection\Files as DbCollectionFiles;
 use Hilos\Database\View\Collection\FileVariants as DbCollectionFileVariants;
 use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
+use Hilos\Database\View\Collection\LanguageNames as DbCollectionLanguageNames;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
@@ -54,12 +56,14 @@ use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifier
 use Hilos\Database\Actions\Collection\AccessLogEntriesActions;
 use Hilos\Database\Actions\Collection\AccountDeletionsActions;
 use Hilos\Database\Actions\Collection\CountriesActions;
+use Hilos\Database\Actions\Collection\CountryNamesActions;
 use Hilos\Database\Actions\Collection\DataExportsActions;
 use Hilos\Database\Actions\Collection\LegalAcceptancesActions;
 use Hilos\Database\Actions\Collection\LegalAcceptanceExportsActions;
 use Hilos\Database\Actions\Collection\FilesActions;
 use Hilos\Database\Actions\Collection\FileVariantsActions;
 use Hilos\Database\Actions\Collection\LanguagesActions;
+use Hilos\Database\Actions\Collection\LanguageNamesActions;
 use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
@@ -80,11 +84,13 @@ use Hilos\Database\Actions\Collection\UsersActions;
 use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\CountryActions;
+use Hilos\Database\Actions\Item\CountryNameActions;
 use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\LegalAcceptanceExportActions;
 use Hilos\Database\Actions\Item\FileActions;
 use Hilos\Database\Actions\Item\FileVariantActions;
 use Hilos\Database\Actions\Item\LanguageActions;
+use Hilos\Database\Actions\Item\LanguageNameActions;
 use Hilos\Database\Actions\Item\LocaleActions;
 use Hilos\Database\Actions\Item\NotificationActions;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
@@ -142,7 +148,9 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionFiles $files
  * @property-read DbCollectionFileVariants $fileVariants
  * @property-read DbCollectionLanguages $languages
+ * @property-read DbCollectionLanguageNames $languageNames
  * @property-read DbCollectionCountries $countries
+ * @property-read DbCollectionCountryNames $countryNames
  * @property-read DbCollectionLocales $locales
  */
 abstract class HilosDbContext extends DbContext
@@ -208,8 +216,12 @@ abstract class HilosDbContext extends DbContext
     public const string fileVariant = 'fileVariant';
     public const string languages = 'languages';
     public const string language = 'language';
+    public const string languageNames = 'languageNames';
+    public const string languageName = 'languageName';
     public const string countries = 'countries';
     public const string country = 'country';
+    public const string countryNames = 'countryNames';
+    public const string countryName = 'countryName';
     public const string locales = 'locales';
     public const string locale = 'locale';
 
@@ -470,11 +482,25 @@ abstract class HilosDbContext extends DbContext
             LanguageActions::class,
         );
         $this->mountFramework(
+            self::languageNames,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionLanguageNames::class,
+            LanguageNamesActions::class,
+            LanguageNameActions::class,
+        );
+        $this->mountFramework(
             self::countries,
             Objects::LAZY_STRATEGY_NONE,
             DbCollectionCountries::class,
             CountriesActions::class,
             CountryActions::class,
+        );
+        $this->mountFramework(
+            self::countryNames,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionCountryNames::class,
+            CountryNamesActions::class,
+            CountryNameActions::class,
         );
         $this->mountFramework(
             self::locales,
