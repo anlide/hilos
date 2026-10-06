@@ -33,8 +33,7 @@ and the screens only show what is declared (not in the code yet — HIL-1446).
 For attribution a journal row carries only the receipt number; the receipt says
 who acted, on whose behalf and through what (not in the code yet — HIL-1449).
 
-The journal lives in its own database on the same server
-(not in the code yet — HIL-1445).
+The journal lives in its own database on the same server.
 
 Triggers are files, and the database holds exactly what those files say
 (not in the code yet — HIL-1448).
@@ -154,11 +153,11 @@ screen shows “deleted user #N”, as analytics does
 ## Where The Journal Lives
 
 The journal has its own database on the same MariaDB server — a trigger cannot
-write to another server (not in the code yet — HIL-1445).
+write to another server.
 
 Its name is the main database's name plus `-change-log`: `hilos-demo-chat` becomes
 `hilos-demo-chat-change-log`, and `hilos-framework-test-1` becomes
-`hilos-framework-test-1-change-log` (not in the code yet — HIL-1445).
+`hilos-framework-test-1-change-log`.
 
 The name cannot be one constant shared by all installations: integration tests
 have [a database per piece](../testing.md), named by
@@ -166,32 +165,72 @@ have [a database per piece](../testing.md), named by
 in a database name in `GRANT` is a wildcard for one character.
 
 The journal has no foreign keys onto data rows: otherwise deleting a row would
-either be refused or erase its history (not in the code yet — HIL-1445).
-The large append-only tables have monthly partitions
-(not in the code yet — HIL-1445).
+either be refused or erase its history. The four append-only tables have monthly
+partitions over `created_at` in UTC, with `p_future` catching writes after the
+prepared window. The project migration creates `p_future`; before `Hilos::init`,
+chat's Docker bootstrap extends the current month and the following 24 under the
+primary database's `hilos_migration_claim`. It runs no DDL when the window is
+already complete. A node that runs past it keeps writing to `p_future`; its next
+bootstrap reorganizes that partition and moves those rows into their months.
 
-A receipt refers to a person softly, without a foreign key
-(not in the code yet — HIL-1445). MariaDB 11.4 does not allow foreign keys on
+A receipt refers to a person softly, without a foreign key. MariaDB 11.4 does not allow foreign keys on
 partitioned tables, and a partition brought back from an archive could name a
 person who has been erased. See
 [Foreign Keys Onto The Person](people-table.md#foreign-keys-onto-the-person).
 
-Phase 1 keeps the journal in the database forever. Archiving and retention
-belong to HIL-1413. Who creates the database and grants access on an existing
-volume, who adds next month's partition, and how its schema is rolled out are
-HIL-1445's decisions.
+The six tables are two stable dictionaries (`hilos_change_log_table`,
+`hilos_change_log_field`) and four append-only tables: receipts
+(`hilos_change_log_receipt`), one row per changed record (`hilos_change_log`),
+one row per changed field (`hilos_change_log_change`), and long values
+(`hilos_change_log_value`). The latter four have composite `PRIMARY KEY
+(id,created_at)`. No foreign keys point at a partitioned table. The field
+dictionary alone has a foreign key to the table dictionary. The receipt carries
+soft actor, subject and session numbers; the log carries a canonical record key
+and nullable hash. Field rows distinguish inline, fact-only and long values;
+their presence flags distinguish an absent side from SQL NULL. The new verdict
+for every column is `ChangeLogTablesWithoutEntity` on connection 1.
+
+A fresh chat local or test volume runs `init-change-log.sh` and grants the app
+access to exactly the derived database. An existing local volume needs the
+repeatable root bootstrap before the new code starts:
+
+```bash
+docker compose -f demo/chat/docker/docker-compose.local.yml exec mysql-local \
+  /usr/local/bin/provision-change-log.sh
+```
+
+An external MariaDB operator does the same two statements, with the actual
+main name, app user and host. Escape `_` and `%` in the database part of the
+`GRANT` identifier because MariaDB treats them as patterns there:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `<main>-change-log`
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+GRANT ALL PRIVILEGES ON `<escaped-main>-change-log`.* TO '<app-user>'@'<app-host>';
+```
+
+Without the schema or its grant, chat's connection 1 refuses startup and names
+the needed database. Migration 085 in chat's primary track creates the six
+tables in that schema and drops the April tables from the primary database only
+when all four are empty; down checks every new table before restoring the April
+form. Applied migration 016 stays unchanged. `test:db:reset` recreates the pair
+and prepares partitions. Phase 1 retains rows forever; archiving and retention
+belong to HIL-1413.
+
+The backup creator dumps both configured connections. It records the primary
+migration level for the derived journal connection as well: asking the migrator
+for a level on connection 1 would create its framework tables there. HIL-1451
+owns the restore policy for the pair; a dump alone does not settle it.
 
 Only triggers write journal rows; the section reads them through its own agent
 (not in the code yet — HIL-1452). Whether that reader uses Entities or SQL, and
 how many instances of the agent run, belong to HIL-1452.
 
-**The April placeholder is not the model.** It is still in:
+**The April placeholder is not the model.** Its remaining traces are:
 
-- `framework/backend/Database/Migration/Stub/create_hilos_change_log.sql` and
-  `framework/backend/Database/Migration/Stub/create_hilos_change_log_down.sql`;
 - `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`;
-- the `hilos_change_log*` verdicts in
-  `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php`;
+- its temporary compatibility verdicts in
+  `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php` until HIL-1451;
 - the `SET @hilos_user_id` TODO in
   `framework/backend/Core/Page/AbstractHilosPage.php`;
 - the TODOs in `framework/backend/Pages/ChangeLog/`:
@@ -199,10 +238,9 @@ how many instances of the agent run, belong to HIL-1452.
   and `AbstractHilosChangeLogTablePage.php`.
 
 That shape describes a person number on every row, retention cleanup,
-`track_values`, foreign keys, `hilos_change_log` / `hilos_change_log_value` and an
-administrator's dry run. It is superseded, not a worked example to copy.
-HIL-1445 replaces the schema and verdicts, HIL-1449 the receipt TODO, and
-HIL-1452 the page placeholders.
+`track_values`, foreign keys, and an administrator's dry run. It is superseded,
+not a worked example to copy. The framework stub now holds the six-table form;
+HIL-1449 replaces the receipt TODO, and HIL-1452 the page placeholders.
 
 ## Triggers Are Files
 
@@ -307,9 +345,9 @@ A receipt created through any node is read identically through any other
 - Leaving a number in `@hilos_receipt` after a write gives a later write the wrong
   attribution; clear it after the write (not in the code yet — HIL-1449).
 - A foreign key from the journal onto a data row endangers the history; keep a
-  soft reference (not in the code yet — HIL-1445).
+  soft reference.
 - Putting the journal in the main database loses its separate storage boundary;
-  use the database named from the main one (not in the code yet — HIL-1445).
+  use the database named from the main one.
 - Handwriting a trigger or editing it in the database bypasses the generated
   file; regenerate and commit the file (not in the code yet — HIL-1447).
 - Spelling a database name in a trigger body ties it to one installation; use

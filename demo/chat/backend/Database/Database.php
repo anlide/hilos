@@ -8,6 +8,7 @@ use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Database as BaseDatabase;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
@@ -76,18 +77,15 @@ final class Database extends BaseDatabase
             Hilos::init();
         }
 
-        // Additional database connections can be configured here
-        // Example for secondary database:
-        // self::configure(
-        //     index: 1,
-        //     host: Hilos::$env[EnvConstants::DB_SECONDARY_HOST]->string(),
-        //     user: Hilos::$env[EnvConstants::DB_SECONDARY_USERNAME]->string(),
-        //     password: Hilos::$env[EnvConstants::DB_SECONDARY_PASSWORD]->string(),
-        //     database: Hilos::$env[EnvConstants::DB_SECONDARY_DATABASE]->string(),
-        //     port: Hilos::$env[EnvConstants::DB_SECONDARY_PORT]->int(),
-        //     charset: DatabaseConnectionDefaults::CHARSET,
-        // );
-        // self::connect(1);
-        // self::sql(DatabaseConnectionDefaults::setNamesSql());
+        self::configure(
+            index: ChangeLogDatabase::CONNECTION_INDEX,
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: ChangeLogDatabase::configuredName(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
+            charset: DatabaseConnectionDefaults::CHARSET,
+        );
+        self::connect(ChangeLogDatabase::CONNECTION_INDEX, retryOnConnectionError: $retryConnection);
     }
 }

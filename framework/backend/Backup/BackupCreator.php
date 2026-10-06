@@ -13,8 +13,10 @@ use Hilos\Backup\Exception\BackupException;
 use Hilos\Backup\Ship\BackupArchiveEncryptor;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
@@ -653,25 +655,37 @@ final class BackupCreator
     private function dumpAllConnections(BackupScope $scope, string $workDir, BackupReferenceRegistry $references): array
     {
         $connections = [];
-        foreach (Database::getConfiguredIndices() as $index) {
-            Database::useConnection($index);
-            if (!Database::isConnected($index)) {
-                Database::connect($index);
+        $originalIndex = Database::getCurrentIndex();
+        try {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            $primaryMigrationIndex = Migration::getCurrentIndex();
+            foreach (Database::getConfiguredIndices() as $index) {
+                Database::useConnection($index);
+                if (!Database::isConnected($index)) {
+                    Database::connect($index);
+                }
+
+                $config = Database::getConnectionConfig($index);
+                $sqlPath = $workDir . '/' . self::SQL_FILE_PREFIX . $index . self::SQL_FILE_SUFFIX;
+                // The derived journal has no migration track of its own. Asking Migration for
+                // its level there would create four framework tables in the six-table schema.
+                $migrationIndex = $index === DatabaseConnectionDefaults::PRIMARY_INDEX
+                    || ChangeLogDatabase::isJournalConnection($index, $config->database)
+                    ? $primaryMigrationIndex
+                    : Migration::getCurrentIndex();
+
+                $this->dumpConnection(
+                    $scope,
+                    $config,
+                    $sqlPath,
+                    $references->tablesForConnection($index),
+                    self::scopeMarkerIndex($scope, $migrationIndex),
+                );
+
+                $connections[] = new BackupConnectionMeta($index, $config->database, $migrationIndex);
             }
-
-            $config = Database::getConnectionConfig($index);
-            $sqlPath = $workDir . '/' . self::SQL_FILE_PREFIX . $index . self::SQL_FILE_SUFFIX;
-            $migrationIndex = Migration::getCurrentIndex();
-
-            $this->dumpConnection(
-                $scope,
-                $config,
-                $sqlPath,
-                $references->tablesForConnection($index),
-                self::scopeMarkerIndex($scope, $migrationIndex),
-            );
-
-            $connections[] = new BackupConnectionMeta($index, $config->database, $migrationIndex);
+        } finally {
+            Database::useConnection($originalIndex);
         }
 
         return $connections;

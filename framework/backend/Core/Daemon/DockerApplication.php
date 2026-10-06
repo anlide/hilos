@@ -48,6 +48,7 @@ final class DockerApplication
      * @param string $projectRoot Project root that holds .env
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param callable(): void $databaseInit Database connect (without Hilos init) run before migrations
+     * @param ?callable(): void $postMigration Project DDL after migrations and before Hilos initialization
      * @return never
      */
     public static function run(
@@ -55,9 +56,15 @@ final class DockerApplication
         string $projectRoot,
         string $hilosClass,
         callable $databaseInit,
+        ?callable $postMigration = null,
     ): void {
         try {
-            EntrypointPrelude::run($hilosClass, $projectRoot, static function () use ($bootstrapDir, $hilosClass, $databaseInit): void {
+            EntrypointPrelude::run($hilosClass, $projectRoot, static function () use (
+                $bootstrapDir,
+                $hilosClass,
+                $databaseInit,
+                $postMigration,
+            ): void {
                 // Connect the database first; migrations must run before Hilos accesses any table.
                 $databaseInit();
 
@@ -72,6 +79,10 @@ final class DockerApplication
                 $applied = Migration::migrateUp(holder: MigrationClaimHolder::nodeStart());
                 if ($applied > 0) {
                     Logger::info("Applied {$applied} migration(s) on startup");
+                }
+
+                if ($postMigration !== null) {
+                    $postMigration();
                 }
 
                 // Initialize Hilos now that the schema is ready.

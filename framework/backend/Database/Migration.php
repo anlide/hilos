@@ -2,6 +2,7 @@
 
 namespace Hilos\Database;
 
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
@@ -523,6 +524,13 @@ class Migration
      */
     private static function runSqlWithDelimiter(string $content): void
     {
+        if (str_contains($content, '{{change_log_database}}')) {
+            $content = str_replace(
+                '{{change_log_database}}',
+                ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName()),
+                $content,
+            );
+        }
         $delimiter = ';';
         $lines = explode("\n", $content);
         $statement = '';
@@ -546,6 +554,7 @@ class Migration
             // Check if statement is complete
             if (str_ends_with(rtrim($line), $delimiter)) {
                 // Remove delimiter from statement
+                $statement = rtrim($statement);
                 if ($delimiter !== ';') {
                     $statement = substr($statement, 0, -strlen($delimiter));
                 } else {

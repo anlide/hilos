@@ -1,6 +1,27 @@
 -- HIL-1445: journal tables in the separately provisioned change log database.
 -- Keep the primary migration track; the known token is expanded by Migration.
 
+-- The applied 016 migration may contain history. Refuse to discard any of it.
+DELIMITER $$
+CREATE OR REPLACE PROCEDURE `hilos_migration_085_old_log_empty`()
+BEGIN
+    IF EXISTS (SELECT 1 FROM `hilos_change_log_table`) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'hilos_change_log_table is not empty';
+    END IF;
+    IF EXISTS (SELECT 1 FROM `hilos_change_log_field`) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'hilos_change_log_field is not empty';
+    END IF;
+    IF EXISTS (SELECT 1 FROM `hilos_change_log`) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'hilos_change_log is not empty';
+    END IF;
+    IF EXISTS (SELECT 1 FROM `hilos_change_log_value`) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'hilos_change_log_value is not empty';
+    END IF;
+END$$
+DELIMITER ;
+CALL `hilos_migration_085_old_log_empty`();
+DROP PROCEDURE `hilos_migration_085_old_log_empty`;
+
 CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_table` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `name` VARCHAR(64) NOT NULL,
@@ -85,3 +106,8 @@ CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_value` (
 PARTITION BY RANGE COLUMNS (`created_at`) (
     PARTITION `p_future` VALUES LESS THAN (MAXVALUE)
 );
+
+DROP TABLE `hilos_change_log_value`;
+DROP TABLE `hilos_change_log`;
+DROP TABLE `hilos_change_log_field`;
+DROP TABLE `hilos_change_log_table`;

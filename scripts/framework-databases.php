@@ -7,6 +7,7 @@ require_once __DIR__ . '/framework-pieces.php';
 $databases = [];
 for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
     $databases[] = frameworkPieceDatabase($piece);
+    $databases[] = frameworkPieceDatabase($piece) . '-change-log';
 }
 
 $script = <<<'SH'

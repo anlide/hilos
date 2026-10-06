@@ -10,9 +10,11 @@ use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
 use Hilos\Backup\Anonymization\AnonymizationStartupGuard;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Backup\BackupConstants;
 use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\UnclassifiedLiveSchemaException;
 use Hilos\Database\Database;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\SqlParamCollection;
 
@@ -33,8 +35,11 @@ use Hilos\Database\SqlParamCollection;
  */
 final class PiiRegistryCoverageTest extends IntegrationTestCase
 {
-    /** The demo runs on the single primary connection. */
+    /** The ORM and its original test rows live on the primary connection. */
     private const int CONNECTION_INDEX = 0;
+
+    /** The separately provisioned journal has exactly six tables at this layer. */
+    private const int CHANGE_LOG_TABLE_COUNT = 6;
 
     /**
      * Lower bound on the tables read out of the live schema, so an introspection query
@@ -78,26 +83,24 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
      */
     public function testRegistryCoversLiveSchema(): void
     {
-        $schemas = LiveSchemaReader::read(self::CONNECTION_INDEX);
-
-        $this->assertGreaterThanOrEqual(
-            self::MIN_LIVE_TABLE_COUNT,
-            count($schemas),
-            'The live schema read back fewer tables than the demo creates; the introspection '
-            . 'query, not the registry, is what to look at first',
-        );
-
         $registry = PiiRegistry::collect();
-        AnonymizationCoverageValidator::validateArchiveTables(
-            $registry,
-            [self::CONNECTION_INDEX => array_keys($schemas)],
-        );
-        AnonymizationCompatibilityValidator::validate(
-            $registry,
-            self::CONNECTION_INDEX,
-            $schemas,
-            self::maxPrimaryKey(...),
-        );
+        try {
+            foreach ([self::CONNECTION_INDEX, ChangeLogDatabase::CONNECTION_INDEX] as $index) {
+                $schemas = LiveSchemaReader::read($index);
+                $minimum = $index === self::CONNECTION_INDEX
+                    ? self::MIN_LIVE_TABLE_COUNT
+                    : self::CHANGE_LOG_TABLE_COUNT;
+                $this->assertGreaterThanOrEqual(
+                    $minimum,
+                    count($schemas),
+                    "Connection {$index} returned fewer live tables than its migrations create",
+                );
+                AnonymizationCoverageValidator::validateArchiveTables($registry, [$index => array_keys($schemas)]);
+                AnonymizationCompatibilityValidator::validate($registry, $index, $schemas, self::maxPrimaryKey(...));
+            }
+        } finally {
+            Database::useConnection(self::CONNECTION_INDEX);
+        }
     }
 
     /**
@@ -175,6 +178,100 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             $this->assertSame('User ' . $probeId, self::probeUserName($probeId));
         } finally {
             Database::transactionRollback();
+        }
+    }
+
+    /**
+     * A restored journal retains its shape and history while removing personal values.
+     *
+     * @throws AnonymizationConfigException When a strategy cannot be expressed for a journal column
+     * @throws DatabaseException When a journal insert, anonymization statement, or read fails
+     */
+    public function testJournalValuesAreAnonymized(): void
+    {
+        $index = ChangeLogDatabase::CONNECTION_INDEX;
+        $schemas = LiveSchemaReader::read($index);
+        $registry = PiiRegistry::collect();
+        $builder = new AnonymizationSqlBuilder(self::TEST_SALT);
+        Database::transactionStart();
+        try {
+            Database::sql("INSERT INTO `hilos_change_log_table` (`name`) VALUES ('pii_probe_table')");
+            $tableId = Database::lastInsertId();
+            Database::sql(
+                "INSERT INTO `hilos_change_log_field` (`table_id`, `name`) VALUES (?, 'pii_probe_field')",
+                [$tableId],
+            );
+            $fieldId = Database::lastInsertId();
+            Database::sql(
+                "INSERT INTO `hilos_change_log_receipt` "
+                . "(`created_at`, `actor_user_id`, `subject_user_id`, `session_id`, `channel`, `action`, `agent`, `source`) "
+                . "VALUES (UTC_TIMESTAMP(6), 12, 13, 14, 'web', 'update', 'private agent', 'private source')",
+            );
+            $receiptId = Database::lastInsertId();
+            Database::sql(
+                "INSERT INTO `hilos_change_log` "
+                . "(`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`) "
+                . "VALUES (UTC_TIMESTAMP(6), ?, ?, 'private key', UNHEX(SHA2('private key', 256)), 'update')",
+                [$receiptId, $tableId],
+            );
+            $logId = Database::lastInsertId();
+            Database::sql(
+                "INSERT INTO `hilos_change_log_change` "
+                . "(`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`) "
+                . "VALUES (UTC_TIMESTAMP(6), ?, ?, 'inline', 1, 1, 'old private', 'new private')",
+                [$logId, $fieldId],
+            );
+            Database::sql(
+                "INSERT INTO `hilos_change_log_change` "
+                . "(`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`) "
+                . "VALUES (UTC_TIMESTAMP(6), ?, ?, 'long', 1, 1)",
+                [$logId, $fieldId],
+            );
+            $longChangeId = Database::lastInsertId();
+            Database::sql(
+                "INSERT INTO `hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`) "
+                . "VALUES (UTC_TIMESTAMP(6), ?, 'old long private', 'new long private')",
+                [$longChangeId],
+            );
+
+            foreach ($registry->declaredTables($index) as $table) {
+                $schema = $schemas[$table] ?? null;
+                if ($schema === null) {
+                    continue;
+                }
+                $statement = $builder->updateStatement($schema, $registry->strategiesFor($index, $table) ?? []);
+                if ($statement !== null) {
+                    Database::sqlRun($statement);
+                }
+            }
+
+            Database::sql('SELECT `actor_user_id`, `subject_user_id`, `session_id`, `agent`, `source` '
+                . 'FROM `hilos_change_log_receipt` WHERE `id` = ?', [$receiptId]);
+            $receipt = Database::row();
+            $this->assertNull($receipt['actor_user_id']);
+            $this->assertNull($receipt['subject_user_id']);
+            $this->assertNull($receipt['session_id']);
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $receipt['agent']);
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $receipt['source']);
+
+            Database::sql('SELECT `record_key`, `record_key_hash` FROM `hilos_change_log` WHERE `id` = ?', [$logId]);
+            $log = Database::row();
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $log['record_key']);
+            $this->assertNull($log['record_key_hash']);
+
+            Database::sql('SELECT `old_value`, `new_value` FROM `hilos_change_log_change` '
+                . "WHERE `log_id` = ? AND `kind` = 'inline'", [$logId]);
+            $change = Database::row();
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $change['old_value']);
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $change['new_value']);
+
+            Database::sql('SELECT `old_value`, `new_value` FROM `hilos_change_log_value` WHERE `change_id` = ?', [$longChangeId]);
+            $value = Database::row();
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $value['old_value']);
+            $this->assertSame(BackupConstants::ANONYMIZATION_MASK, $value['new_value']);
+        } finally {
+            Database::transactionRollback();
+            Database::useConnection(self::CONNECTION_INDEX);
         }
     }
 

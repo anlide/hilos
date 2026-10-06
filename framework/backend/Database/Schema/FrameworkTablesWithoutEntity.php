@@ -29,12 +29,13 @@ use Hilos\Database\MigrationClaim;
  *   a daemon ({@see AdminViewModeStartup}), before any agent exists.
  *   **`hilos_database_marker`** is created there as well, and is written by the start of a
  *   daemon in a cluster ({@see DatabaseMarker}), before the peer port opens.
- * - **The change-log tables** record what changed in the other tables; a row of theirs
- *   is written by the log, not loaded as a domain object.
+ * - **The April change-log tables**, if an older installation still has them on its
+ *   primary database, retain their verdict until HIL-1451 settles old archive restore.
+ *   The new separate schema is classified by {@see ChangeLogTablesWithoutEntity}.
  * - **The analytics tables** are append-only facts and their dictionaries, written in
  *   bulk on the hot path.
  *
- * Entity classes for the change-log tables belong to HIL-351. Whether any analytics
+ * The new change-log tables stay outside the ORM. Whether any analytics
  * table gets an Entity is an Analytics Phase-2 question, HIL-1402; its standing decision
  * is ORM only over aggregate tables, with raw facts staying on raw SQL. Until then,
  * the tables are declared here rather than passing unnoticed.
@@ -69,7 +70,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      * Kept in step with the DDL the framework ships:
      * {@see Migration::initialize()} for `migration`, `hilos_migration_claim`,
      * `hilos_admin_view_mode_latch` and `hilos_database_marker`, and the
-     * `create_hilos_analytics.sql` / `create_hilos_change_log.sql` stubs for the rest.
+     * `create_hilos_analytics.sql` and the applied April change-log migration for the rest.
      * Applied on every database in the registry because those four are created on every
      * migrated database; a table a project does not create on a given database is simply
      * never seen by the gates, so the framework may classify everything it ships.

@@ -34,6 +34,8 @@ services:
       - /var/lib/mysql
     volumes:
       - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+      - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
+      - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
