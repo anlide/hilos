@@ -15,6 +15,9 @@ use Hilos\Cluster\Placement\AgentLocationKind;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementRegistry;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -58,6 +61,25 @@ final class ClusterPlacementViewTest extends TestCase
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
 
         parent::tearDown();
+    }
+
+    public function testPlacementRevisionChangesOnlyWhenTheViewChanges(): void
+    {
+        $registry = new PlacementRegistry();
+        $record = new PlacementRecord('render', '9', 'node-b', PlacementState::Unplaced);
+        self::assertSame(0, $registry->revision());
+        $registry->put($record);
+        self::assertSame(1, $registry->revision());
+        $registry->put(new PlacementRecord('render', '9', 'node-b', PlacementState::Unplaced));
+        self::assertSame(1, $registry->revision());
+        $registry->put($record->withState(PlacementState::Started));
+        self::assertSame(2, $registry->revision());
+        $registry->forget('missing');
+        self::assertSame(2, $registry->revision());
+        $registry->clear();
+        self::assertSame(3, $registry->revision());
+        $registry->clear();
+        self::assertSame(3, $registry->revision());
     }
 
     public function testANonLeaderAnswersLookupsFromTheViewItWasHanded(): void

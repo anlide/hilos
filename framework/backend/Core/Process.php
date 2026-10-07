@@ -269,6 +269,21 @@ class Process
     }
 
     /**
+     * @return ?int Running child PID, or null when the OS cannot report one or the child has stopped
+     */
+    public function getPid(): ?int
+    {
+        try {
+            $status = $this->getStatus();
+        } catch (FailedToGetStatusException) {
+            return null;
+        }
+
+        $pid = $status['pid'] ?? null;
+        return $status[self::STATUS_RUNNING] === true && is_int($pid) && $pid > 0 ? $pid : null;
+    }
+
+    /**
      * Get the process exit code.
      *
      * @return ?int Exit code, or null if the process has not terminated or it could not be determined

@@ -50,6 +50,7 @@ use Hilos\Cluster\RtSyncSink;
 use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
@@ -122,6 +123,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateRound;
+use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
@@ -322,6 +324,10 @@ abstract class DaemonManager extends BaseManager implements
     /** @var float Seconds between attempts at a policy placement that has not taken */
     private const float POLICY_PLACEMENT_RETRY_SEC = 5.0;
 
+    private const float PROCESS_ROSTER_COALESCE_SECONDS = 0.5;
+    private const float PROCESS_ROSTER_REANNOUNCE_SECONDS = 60.0;
+    private const int PROCESS_ROSTER_ROWS_PER_PASS = 100;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -472,6 +478,22 @@ abstract class DaemonManager extends BaseManager implements
      */
     private DaemonStatus $daemonStatus;
 
+    /** Bounded builder of one whole process roster, created before the main loop. */
+    private DaemonProcessRosterBuilder $processRosterBuilder;
+
+    private int $processRosterWorkerRevision = -1;
+    private int $processRosterAgentRevision = -1;
+    private int $processRosterPlacementRevision = -1;
+    private int $processRosterPlacementIdentity = -1;
+    private bool $processRosterWasLeader = false;
+    private bool $processRosterBuilding = false;
+    private bool $processRosterForce = false;
+    private float $processRosterChangedAt = 0.0;
+    private float $processRosterLastSentAt = 0.0;
+    private float $processRosterRetryAt = 0.0;
+    private ?string $processRosterBuildProblem = null;
+    private ?string $processRosterDeliveryProblem = null;
+
     /**
      * Initializes daemon manager.
      *
@@ -486,6 +508,7 @@ abstract class DaemonManager extends BaseManager implements
         // Here and not in boot(): this constructor call starts the uptime clock the operator
         // reads, and the daemon is born when the master process is, not when it finishes binding.
         $this->daemonStatus = new DaemonStatus();
+        $this->processRosterBuilder = new DaemonProcessRosterBuilder(new ProcessMetricsReader());
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
         $this->protectedModeEntryGate = new ProtectedModeEntryGate();
         $this->probeFleetSupervisor = new ProbeFleetSupervisor();
@@ -873,6 +896,10 @@ abstract class DaemonManager extends BaseManager implements
             // Every master may accept browsers; a slave never opens its WebSocket.
             $this->tickReadiness();
 
+            // One bounded step of the process frame, only while its source changed or the
+            // minute-long whole-frame repair is due. The fast path reads four scalars.
+            $this->tickProcessRoster($loopStartTime);
+
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
         // anything, and it is the one this hold was written for (HIL-1000).
@@ -969,6 +996,116 @@ abstract class DaemonManager extends BaseManager implements
             }
         } catch (RandomException $exception) {
             $this->requestEntropyStop($exception);
+        }
+    }
+
+    /**
+     * Advances one bounded roster build, discarding it whenever an input revision changes.
+     *
+     * @param float $now Start time of this main-loop pass
+     */
+    private function tickProcessRoster(float $now): void
+    {
+        if ($this->shouldExit) {
+            return;
+        }
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze !== null && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->processRosterBuilding = false;
+            $this->processRosterForce = true;
+            return;
+        }
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null || !$this->agentManagerDaemon->isAgentStarted(HilosAgentType::HILOS_DAEMON_NODE)) {
+            return;
+        }
+
+        try {
+            // A failed leadership read is not a license to publish the leader's
+            // authoritative empty unplaced list from a follower.
+            $leader = Hilos::$cluster?->amLeader() ?? true;
+            $placementRegistry = $leader ? Hilos::$cluster?->placement()?->registry() : null;
+            $placementIdentity = $placementRegistry === null ? 0 : spl_object_id($placementRegistry);
+            $placementRevision = $placementRegistry?->revision() ?? 0;
+            $workerRevision = $workerServer->rosterRevision();
+            $agentRevision = $this->agentManagerDaemon->rosterRevision();
+            if (
+                $workerRevision !== $this->processRosterWorkerRevision
+                || $agentRevision !== $this->processRosterAgentRevision
+                || $placementRevision !== $this->processRosterPlacementRevision
+                || $placementIdentity !== $this->processRosterPlacementIdentity
+                || $leader !== $this->processRosterWasLeader
+            ) {
+                $this->processRosterWorkerRevision = $workerRevision;
+                $this->processRosterAgentRevision = $agentRevision;
+                $this->processRosterPlacementRevision = $placementRevision;
+                $this->processRosterPlacementIdentity = $placementIdentity;
+                $this->processRosterWasLeader = $leader;
+                $this->processRosterChangedAt = $now;
+                $this->processRosterBuilding = false;
+            }
+            if ($now < $this->processRosterRetryAt && !$this->processRosterForce) {
+                return;
+            }
+            if (!$this->processRosterBuilding) {
+                if (
+                    !$this->processRosterForce
+                    && $this->processRosterLastSentAt > 0.0
+                    && $this->processRosterChangedAt <= $this->processRosterLastSentAt
+                    && $now - $this->processRosterLastSentAt < self::PROCESS_ROSTER_REANNOUNCE_SECONDS
+                ) {
+                    return;
+                }
+                if (
+                    !$this->processRosterForce
+                    && $this->processRosterLastSentAt > 0.0
+                    && $this->processRosterChangedAt > $this->processRosterLastSentAt
+                    && $now - $this->processRosterChangedAt < self::PROCESS_ROSTER_COALESCE_SECONDS
+                ) {
+                    return;
+                }
+                $this->processRosterBuilder->start($workerServer, $this->agentManagerDaemon, $placementRegistry, $leader);
+                $this->processRosterBuilding = true;
+            }
+            $this->processRosterBuilder->advance(self::PROCESS_ROSTER_ROWS_PER_PASS);
+            $roster = $this->processRosterBuilder->result();
+            if ($roster === null) {
+                return;
+            }
+            if (
+                $workerServer->rosterRevision() !== $workerRevision
+                || $this->agentManagerDaemon->rosterRevision() !== $agentRevision
+                || ($placementRegistry?->revision() ?? 0) !== $placementRevision
+                || (Hilos::$cluster?->amLeader() ?? true) !== $leader
+            ) {
+                $this->processRosterBuilding = false;
+                $this->processRosterChangedAt = $now;
+                return;
+            }
+
+            $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+            $this->sendToAgent(
+                HilosAgentType::HILOS_DAEMON_NODE,
+                null,
+                HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
+                new DaemonMasterProcessRosterSignalData($nodeId, $roster),
+            );
+            $this->processRosterLastSentAt = $now;
+            $this->processRosterBuilding = false;
+            $this->processRosterForce = false;
+            if ($this->processRosterBuildProblem !== null) {
+                Logger::info('Daemon process roster build recovered');
+                $this->processRosterBuildProblem = null;
+            }
+        } catch (Throwable $failure) {
+            $problem = get_class($failure) . ': ' . $failure->getMessage();
+            if ($problem !== $this->processRosterBuildProblem) {
+                Logger::error('Daemon process roster build failed: ' . $problem);
+                $this->processRosterBuildProblem = $problem;
+            }
+            $this->processRosterBuilding = false;
+            $this->processRosterForce = false;
+            $this->processRosterRetryAt = $now + self::PROCESS_ROSTER_REANNOUNCE_SECONDS;
         }
     }
 
@@ -1285,6 +1422,9 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentStarted(string $agentId): void
     {
+        if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
+            $this->processRosterForce = true;
+        }
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
             if ($parked->agentId === $agentId) {
@@ -1663,6 +1803,9 @@ abstract class DaemonManager extends BaseManager implements
                     break;
                 case AgentDeliveryOutcome::Held:
                 case AgentDeliveryOutcome::Delivered:
+                    if ($signalName === HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER) {
+                        $this->processRosterDeliveryProblem = null;
+                    }
                     break;
             }
         } catch (Throwable $e) {
@@ -5031,6 +5174,12 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function reportMasterSignalDropped(string $signalName, string $addressee, string $reason): void
     {
+        if ($signalName === HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER) {
+            if ($reason === $this->processRosterDeliveryProblem) {
+                return;
+            }
+            $this->processRosterDeliveryProblem = $reason;
+        }
         $line = "Master signal '{$signalName}' to {$addressee} dropped: {$reason}";
 
         if ($this->shouldExit) {

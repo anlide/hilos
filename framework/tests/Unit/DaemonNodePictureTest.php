@@ -8,7 +8,12 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
@@ -70,5 +75,47 @@ final class DaemonNodePictureTest extends TestCase
 
         $this->expectException(InvalidFormatException::class);
         DaemonNodePictureSignalData::fromArray(['nodeId' => 'n1', 'role' => 'leader', 'sampledAt' => 12]);
+    }
+
+    public function testMasterFrameReplacesProcessesAndChangesTheNextWholeReport(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $roster = new DaemonProcessRoster([], [], 1);
+        $wire = new DaemonMasterProcessRosterSignalData('standalone', $roster);
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: DaemonMasterProcessRosterSignalData::fromArray($wire->toArray())),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
+        );
+        $agent->reportIfDue(microtime(true) + 6.0);
+        $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
+        self::assertEquals($roster, $reported->picture->processes);
+    }
+
+    public function testForeignSenderOrNodeIsRefused(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        foreach ([
+            [SignalSource::AGENT, 'standalone'],
+            [SignalSource::DAEMON, 'other-node'],
+        ] as [$sender, $nodeId]) {
+            try {
+                $agent->onSignalAgent(
+                    new AgentSignalData(data: new DaemonMasterProcessRosterSignalData($nodeId, new DaemonProcessRoster([], null, 0))),
+                    $sender,
+                    HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
+                );
+                self::fail('Foreign master roster was accepted');
+            } catch (AgentException) {
+            }
+        }
+        $agent->reportIfDue(microtime(true) + 6.0);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 }

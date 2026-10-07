@@ -34,8 +34,8 @@ For the declarations and valid combinations, read
 ## Core Rule
 
 Keep what a node's processes produce in the producing process's memory and hand
-it on as a whole frame. The master hands its frame to its node agent
-(not in the code yet — HIL-1372). The node agent hands its picture to the collector,
+it on as a whole frame. The master hands its frame to its node agent.
+The node agent hands its picture to the collector,
 and the collector hands whole node slots to the page agent.
 
 None of these pictures belongs in RT: it would duplicate an owner and replicate
@@ -46,15 +46,15 @@ The master says what it already knows; it does not search for data for the secti
 
 ## What Only The Master Knows
 
-The last column names the leaf that puts the fact into the master frame; the
-middle column describes today's source, not an already implemented frame.
+The last column names the delivery in the master frame; an unfinished delivery
+names the leaf that will add it.
 
 | Fact | Where it lives today | Delivery in the master frame |
 |---|---|---|
-| Workers | `WorkerServer::$workers` in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | Worker roster (not in the code yet — HIL-1372) |
-| Agent instances and their workers | [AgentManagerDaemon](../../../framework/backend/Core/Agent/Daemon/AgentManagerDaemon.php) | Agent roster (not in the code yet — HIL-1372) |
-| Placement and “unplaced” | [PlacementRegistry](../../../framework/backend/Cluster/Placement/PlacementRegistry.php), held by the leader | Comes in the leader node's frame (not in the code yet — HIL-1372) |
-| Worker crashes in the last 24 hours | No source yet | The “restarts today” tile counts crashes, excluding a button restart and a daemon restart (not in the code yet — HIL-1372) |
+| Workers | `WorkerServer::$workers` in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | Sorted live worker roster with nullable PID and RSS |
+| Agent instances and their workers | [AgentManagerDaemon](../../../framework/backend/Core/Agent/Daemon/AgentManagerDaemon.php) | Started agents joined to live workers, with declared scope and placement |
+| Placement and “unplaced” | [PlacementRegistry](../../../framework/backend/Cluster/Placement/PlacementRegistry.php), held by the leader | Sorted `runsNowhere()` ids in the leader's frame; null on other nodes |
+| Worker crashes in the last 24 hours | In-memory loss and replacement tracker in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | `workerRestarts24h` counts successful replacements after unexpected loss, not a daemon or agent restart |
 | Cron rules and last run | [CronRule](../../../framework/backend/Core/Daemon/Cron/CronRule.php) and its `lastRun`; only the leader executes cron | Cron picture (not in the code yet — HIL-1375) |
 | HTTP server, including agent addresses | One [HttpServer](../../../framework/backend/Socket/Server/HttpServer.php) per daemon; no request counters there yet | HTTP counters (not in the code yet — HIL-1376) |
 | Process measurements | [DaemonStatusSource](../../../framework/backend/Core/Daemon/DaemonStatusSource.php), implemented by `DaemonManager::daemonStatusSnapshot()` | Process samples (not in the code yet — HIL-1373) |
@@ -67,9 +67,9 @@ A worker may read the file; the master loop may not.
 
 ## The Master Frame
 
-The master hands the whole frame to the agent of its own node through its signal
-router (not in the code yet — HIL-1372). The node agent accepts that frame only
-from its own master (not in the code yet — HIL-1372).
+The master hands the whole frame to the agent of its own node through
+`MasterSignalSender::sendToAgent()`. The node agent accepts that frame only
+from its own master and for its own node ID.
 The existing precedent is `AnalyticsJournalOutbox::flush()` and the master's
 dispatch of that batch to its own journal agent — [analytics.md](analytics.md),
 *The Chain*. Routing remains declarative; see
@@ -85,24 +85,25 @@ dispatch of that batch to its own journal agent — [analytics.md](analytics.md)
   [../runtime/rt-context.md](../runtime/rt-context.md), *The truth source is unique
   per cluster, not per process*.
 
-Measurements leave every interval (not in the code yet — HIL-1372).
-The parts that grow with the number of agent instances — workers, instances,
-placement and cron rules — leave on change and once a minute to repair a lost
-frame; they are never packed on every measurement interval
-(not in the code yet — HIL-1372). There may be thousands of instances; apply
+Frequent process measurements join the frame with HIL-1373 (not in the code yet).
+The roster parts that grow with the number of agent instances — workers,
+instances and placement — leave on change and once a minute to repair a lost
+frame; they are never packed on every measurement interval. They are built in
+bounded passes, and a changed source revision discards the unfinished build.
+Cron rules join later with HIL-1375 (not in the code yet). There may be thousands of instances; apply
 [../antipatterns/heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md),
 *Work proportional to something that grows*.
 
-Do not await a reply or retry a frame: the next whole frame repairs a lost one
-(not in the code yet — HIL-1372). A restarted node agent waits for the next frame,
-and the screen says “no picture yet” for that node, not zero
-(not in the code yet — HIL-1372).
+Do not await a reply or retry a frame: the next whole frame repairs a lost one.
+A restarted node agent gets a new full frame after it starts; until then its
+`processes` field is null, distinct from a known `workers: []`. The future screen
+says “no picture yet” for an absent node picture (not in the code yet — HIL-1383).
 
 While the node's freeze row holds, the master sends no frames: the freeze has
-stopped the node agent (not in the code yet — HIL-1372).
+stopped the node agent.
 The precedent is the collector in the master in [analytics.md](analytics.md),
 *The Freeze*. Report a delivery refusal once when the outcome changes, not on
-each frame (not in the code yet — HIL-1372), following the third rule in
+each frame, following the third rule in
 [logs.md](logs.md), *Rules This Feature Proved, Wider Than Logs*.
 
 ## The Circulation

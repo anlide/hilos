@@ -73,6 +73,9 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     /** @var array<string, true> Ids of agents that reported agent_started, so their onStart has completed */
     private array $startedAgentIds = [];
 
+    /** Membership and started-status revision for the master's process roster. */
+    private int $rosterRevision = 0;
+
     /**
      * @var ?ReHydrateRound Barrier of the re-hydrate announcement in flight, null when none is.
      *
@@ -264,6 +267,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     {
         $this->agentDaemons[$agentId] = $agentDaemon;
         $this->agentToWorker[$agentId] = $this->calculateWorkerId($workerIndex, $isMonopolistic);
+        $this->rosterRevision++;
     }
 
     /**
@@ -271,6 +275,9 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function removeAgent(string $agentId): void
     {
+        if (isset($this->agentDaemons[$agentId])) {
+            $this->rosterRevision++;
+        }
         unset($this->agentDaemons[$agentId]);
         unset($this->agentToWorker[$agentId]);
         unset($this->startedAgentIds[$agentId]);
@@ -342,6 +349,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function getAgentCount(): int
     {
         return count($this->agentDaemons);
+    }
+
+    /** @return int Revision of membership and started status */
+    public function rosterRevision(): int
+    {
+        return $this->rosterRevision;
     }
 
     /**
@@ -430,6 +443,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
         $this->getAgent($agentId)?->onStart();
         $this->startedAgentIds[$agentId] = true;
+        $this->rosterRevision++;
         $workerIndex = $this->getAgentWorkerInfo($agentId)?->workerIndex ?? 'unknown';
 
         Logger::info("Agent '{$agentId}' started on worker #{$workerIndex}");

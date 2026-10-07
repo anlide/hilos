@@ -5,14 +5,21 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosDaemonAgent;
 use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
+use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonAgentPicture;
+use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
@@ -26,13 +33,16 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
     private float $startedAt;
     private ?SignalRouter $previousRouter = null;
     private ?RtContext $previousRt = null;
+    private ?ClusterContext $previousCluster = null;
 
     protected function setUp(): void
     {
         $this->previousRouter = Hilos::$sr;
         $this->previousRt = Hilos::$rt;
+        $this->previousCluster = Hilos::$cluster;
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = null;
+        Hilos::$cluster = null;
         ClusterDaemonPictureMirror::forgetPicture();
         $this->startedAt = microtime(true);
     }
@@ -45,6 +55,7 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         }
         Hilos::$sr = $this->previousRouter;
         Hilos::$rt = $this->previousRt;
+        Hilos::$cluster = $this->previousCluster;
         parent::tearDown();
     }
 
@@ -129,6 +140,43 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         $this->report($restarted, 'n2', NodeRole::Slave);
         $restarted->fanOutIfDue($this->at(31.0));
         self::assertSame([], $this->drain());
+    }
+
+    public function testMasterRosterReachesNodeCollectorAndMirrorAsOneWholeSlot(): void
+    {
+        $node = new DaemonNodeAgent();
+        $node->onStart();
+        $this->drain(); // The first base report is lost; the new whole report repairs it.
+        $roster = new DaemonProcessRoster([
+            new DaemonWorkerPicture(1, 'regular', 101, 4096, [new DaemonAgentPicture('a', 'node', 'node')]),
+        ], [], 1);
+        $master = new DaemonMasterProcessRosterSignalData('standalone', $roster);
+        $node->onSignalAgent(
+            new AgentSignalData(data: DaemonMasterProcessRosterSignalData::fromArray($master->toArray())),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
+        );
+        $node->reportIfDue($this->at(6.0));
+        $reports = $this->drain();
+        self::assertCount(1, $reports);
+        $nodeFrame = $reports[0]->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $nodeFrame);
+
+        $collector = $this->collector();
+        $collector->onSignalAgent(
+            new AgentSignalData(data: DaemonNodePictureSignalData::fromArray($nodeFrame->toArray())),
+            'agent/hilos_daemon_node',
+            HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT,
+        );
+        $pages = new DaemonPictureFanOutProbeAgent();
+        ClusterDaemonPictureMirror::addViewer('ak');
+        $pages->tickAt($this->at(6.1));
+        $this->carryClaim($collector);
+        $this->carryPortion($pages);
+
+        $mirrorRoster = ClusterDaemonPictureMirror::picture()?->node('standalone')?->slot?->picture->processes;
+        self::assertEquals($roster, $mirrorRoster);
+        self::assertSame(1, $mirrorRoster?->workerRestarts24h);
     }
 
     private function collector(): DaemonCollectorAgent

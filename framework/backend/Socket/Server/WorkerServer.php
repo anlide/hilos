@@ -24,6 +24,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Daemon\ContainedFailure;
+use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\Core\Daemon\LiveConnectionRoster;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
@@ -38,6 +39,7 @@ use Hilos\Core\Agent\Exception\AgentNotLinkedToWorkerException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
@@ -102,6 +104,17 @@ abstract class WorkerServer extends AbstractServer implements
      *     "type:index"), values: WorkerConstants::FIELD_WORKER_*
      */
     private array $workers = [];
+
+    /** Live worker membership revision for the master's process roster. */
+    private int $rosterRevision = 0;
+
+    /** @var array<int, true> Worker indexes lost unexpectedly and awaiting a replacement start */
+    private array $lostWorkersAwaitingReplacement = [];
+
+    /** @var list<int> Successful replacement times in this master's lifetime */
+    private array $workerRestartTimes = [];
+
+    private const int RESTART_WINDOW_SECONDS = 86400;
 
     /** @var array<int> Available worker indices (sorted, can be reused) */
     private array $availableIndices = [];
@@ -483,9 +496,65 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private function removeWorker(string $key, string $type, int $index): void
     {
+        if (!isset($this->workers[$key])) {
+            return;
+        }
+        if (!$this->preparingShutdown) {
+            $this->lostWorkersAwaitingReplacement[$index] = true;
+        }
         unset($this->workers[$key]);
         $this->availableIndices[] = $index;
         sort($this->availableIndices); // Keep sorted
+        $this->rosterRevision++;
+    }
+
+    /** @return int Revision of live worker membership */
+    public function rosterRevision(): int
+    {
+        return $this->rosterRevision;
+    }
+
+    /**
+     * @return list<DaemonWorkerPicture> Live worker identities; RSS and agent lists are filled by the frame builder
+     * @throws InvalidFormatException When an internally tracked worker has invalid identity fields
+     */
+    public function liveWorkerPictures(): array
+    {
+        $workers = [];
+        foreach ($this->workers as $worker) {
+            $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
+            try {
+                $status = $process->getStatus();
+            } catch (FailedToGetStatusException) {
+                continue;
+            }
+            if ($status[Process::STATUS_RUNNING] !== true) {
+                continue;
+            }
+            $workers[] = new DaemonWorkerPicture(
+                $worker[WorkerConstants::FIELD_WORKER_INDEX],
+                $worker[WorkerConstants::FIELD_WORKER_TYPE],
+                $process->getPid(),
+                null,
+                [],
+            );
+        }
+        usort($workers, static fn (DaemonWorkerPicture $left, DaemonWorkerPicture $right): int => $left->index <=> $right->index);
+        return $workers;
+    }
+
+    /**
+     * @param ?int $now Time for pruning; current time by default
+     * @return int Successful crash replacements still inside the rolling window
+     */
+    public function workerRestarts24h(?int $now = null): int
+    {
+        $cutoff = ($now ?? time()) - self::RESTART_WINDOW_SECONDS;
+        $this->workerRestartTimes = array_values(array_filter(
+            $this->workerRestartTimes,
+            static fn (int $startedAt): bool => $startedAt > $cutoff,
+        ));
+        return count($this->workerRestartTimes);
     }
 
     /**
@@ -962,9 +1031,22 @@ abstract class WorkerServer extends AbstractServer implements
             WorkerConstants::FIELD_WORKER_TYPE => $type,
             WorkerConstants::FIELD_WORKER_INDEX => $workerIndex,
         ];
+        $this->recordWorkerStarted($workerIndex);
 
         // Log worker start
         Logger::info("Worker #{$workerIndex} started [type={$type}]");
+    }
+
+    /**
+     * @param int $workerIndex Index of a child successfully started by proc_open
+     */
+    protected function recordWorkerStarted(int $workerIndex): void
+    {
+        $this->rosterRevision++;
+        if (isset($this->lostWorkersAwaitingReplacement[$workerIndex])) {
+            unset($this->lostWorkersAwaitingReplacement[$workerIndex]);
+            $this->workerRestartTimes[] = time();
+        }
     }
 
     /**

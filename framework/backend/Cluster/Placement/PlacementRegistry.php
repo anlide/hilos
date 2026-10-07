@@ -18,6 +18,9 @@ final class PlacementRegistry
     /** @var array<string, PlacementRecord> Placed agents keyed by agent id */
     private array $records = [];
 
+    /** Changes to the tracked placement view, checked without walking its records. */
+    private int $revision = 0;
+
     /**
      * Upserts a placement record, replacing any earlier record for the same agent.
      *
@@ -25,7 +28,17 @@ final class PlacementRegistry
      */
     public function put(PlacementRecord $record): void
     {
-        $this->records[$record->agentId()] = $record;
+        $id = $record->agentId();
+        $old = $this->records[$id] ?? null;
+        if (
+            $old !== null
+            && $old->nodeId === $record->nodeId
+            && $old->state === $record->state
+        ) {
+            return;
+        }
+        $this->records[$id] = $record;
+        $this->revision++;
     }
 
     /**
@@ -35,7 +48,11 @@ final class PlacementRegistry
      */
     public function forget(string $agentId): void
     {
+        if (!isset($this->records[$agentId])) {
+            return;
+        }
         unset($this->records[$agentId]);
+        $this->revision++;
     }
 
     /**
@@ -64,7 +81,17 @@ final class PlacementRegistry
      */
     public function clear(): void
     {
+        if ($this->records === []) {
+            return;
+        }
         $this->records = [];
+        $this->revision++;
+    }
+
+    /** @return int Revision of this leader-side view */
+    public function revision(): int
+    {
+        return $this->revision;
     }
 
     /**

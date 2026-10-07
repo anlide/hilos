@@ -38,6 +38,15 @@ final class ProcessTest extends TestCase
         self::assertNull($process->getTermSignal());
     }
 
+    public function testPidIsAvailableOnlyWhileTheChildRuns(): void
+    {
+        $process = new Process('sh', ['-c', 'sleep 0.1']);
+        self::assertGreaterThan(0, $process->getPid());
+
+        $this->waitUntilStopped($process);
+        self::assertNull($process->getPid());
+    }
+
     /**
      * @param Process $process Process to poll
      */

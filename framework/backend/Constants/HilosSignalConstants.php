@@ -2270,6 +2270,9 @@ final class HilosSignalConstants
     /** Full snapshot or changed whole node views from the collector to the page agent (HIL-1371). */
     public const string DAEMON_CLUSTER_PICTURE_PORTION = 'daemon_cluster_picture_portion';
 
+    /** Whole live process roster from a master to its own Daemon node agent (HIL-1372). */
+    public const string DAEMON_MASTER_PROCESS_ROSTER = 'daemon_master_process_roster';
+
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';

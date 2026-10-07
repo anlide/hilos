@@ -16,6 +16,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
     public const string nodeId = 'nodeId';
     public const string role = 'role';
     public const string sampledAt = 'sampledAt';
+    public const string processes = 'processes';
 
     public function __construct(public readonly NodeDaemonPicture $picture)
     {
@@ -28,6 +29,9 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
             self::nodeId => $this->picture->nodeId,
             self::role => $this->picture->role->value,
             self::sampledAt => $this->picture->sampledAt,
+            self::processes => $this->picture->processes === null
+                ? null
+                : DaemonMasterProcessRosterSignalData::rosterToArray($this->picture->processes),
         ];
     }
 
@@ -44,6 +48,13 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
             throw new InvalidFormatException('Daemon node picture carries an empty node id or invalid role');
         }
 
-        return new static(new NodeDaemonPicture($nodeId, $role, self::requireInt($data, self::sampledAt)));
+        $processes = self::requireNullableArray($data, self::processes);
+
+        return new static(new NodeDaemonPicture(
+            $nodeId,
+            $role,
+            self::requireInt($data, self::sampledAt),
+            $processes === null ? null : DaemonMasterProcessRosterSignalData::rosterFromArray($processes),
+        ));
     }
 }

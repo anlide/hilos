@@ -7,7 +7,13 @@ namespace Hilos\Core\Agent\Hilos;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
+use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Hilos;
@@ -18,6 +24,10 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 final class DaemonNodeAgent extends AbstractHilosAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_DAEMON_NODE;
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => DaemonMasterProcessRosterSignalData::class,
+    ];
 
     private const float CHANGE_INTERVAL_SECONDS = 5.0;
     private const float REANNOUNCE_INTERVAL_SECONDS = 60.0;
@@ -55,6 +65,39 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         if (!$this->picture->sameContent($picture)) {
             $this->picture = $picture;
             $this->dirty = true;
+        }
+    }
+
+    /**
+     * @param AgentSignalData $data Parsed master frame
+     * @param string $sender Full sender address
+     * @param string $name Signal name
+     * @throws InvalidAgentSignalPayloadException When the declared payload was not hydrated
+     * @throws AgentException When the frame is not from this node's master
+     * @throws AgentUnknownSignalException When the signal is not this agent's
+     * @throws InvalidArgumentException When the replacement names another node
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER:
+                $roster = $data->data;
+                if (!$roster instanceof DaemonMasterProcessRosterSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonMasterProcessRosterSignalData::class, $roster);
+                }
+                if ($sender !== SignalSource::DAEMON || $roster->nodeId !== $this->picture->nodeId) {
+                    throw new AgentException('Daemon process roster must come from this node\'s master');
+                }
+                $this->updatePicture(new NodeDaemonPicture(
+                    $this->picture->nodeId,
+                    $this->picture->role,
+                    $this->picture->sampledAt,
+                    $roster->roster,
+                ));
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
         }
     }
 
