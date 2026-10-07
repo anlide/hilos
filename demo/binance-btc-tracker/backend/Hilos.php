@@ -56,6 +56,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18nPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Lists\LanguagesListPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\CountryDetailPage;
@@ -115,6 +116,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -204,6 +206,7 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -384,6 +387,7 @@ final class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         BinanceBtcTrackerTableContext::settings => HilosSettingsTable::class,
+        BinanceBtcTrackerTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         BinanceBtcTrackerTableContext::hilosUsers => HilosUsersTable::class,
         BinanceBtcTrackerTableContext::hilosLogKeys => HilosLogKeysTable::class,
         BinanceBtcTrackerTableContext::hilosLogRotations => HilosLogRotationsTable::class,
@@ -416,6 +420,9 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             BinanceBtcTrackerTableContext::settings => [],
+        ],
+        AppearancePage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosAppearanceSettings => [],
         ],
         UsersPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosUsers => [],

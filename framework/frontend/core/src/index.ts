@@ -1200,6 +1200,18 @@ export {
   type HilosSettingsActions,
 } from './admin/settings/hilosSettings.js'
 export {
+  APPEARANCE_ROW_KEY_FIELD,
+  APPEARANCE_VALUE_FIELD,
+  APPEARANCE_DEFAULT_VALUE_FIELD,
+  HILOS_APPEARANCE_SETTINGS_TABLE,
+  HilosAppearanceSettingKey,
+  createHilosAppearanceTable,
+  resolveHilosAppearanceSettingRow,
+  type HilosAppearanceContext,
+  type HilosAppearanceSettingRow,
+  type HilosAppearanceTable,
+} from './admin/appearance/hilosAppearance.js'
+export {
   settingPresetsSignalSchemas,
   createHilosSettingPresets,
   createHilosSettingPresetsActions,

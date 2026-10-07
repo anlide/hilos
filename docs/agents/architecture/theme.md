@@ -152,7 +152,8 @@ Switching off has three consequences everywhere at once:
 
 Neither value is secret — every guest receives both. The admin view mode shows
 the Appearance section and its values and refuses changes
-(not in the code yet — HIL-1435, HIL-1440, HIL-1441); follow
+in Vue (HIL-1435); React and Angular remain to be built in HIL-1440 and
+HIL-1441. The page has no write actions yet (HIL-1438, HIL-1439); follow
 [admin-view-mode.md](admin-view-mode.md).
 
 ## Not In Hilos

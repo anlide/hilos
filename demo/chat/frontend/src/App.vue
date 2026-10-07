@@ -58,6 +58,7 @@ import User from './views/User/User.vue'
 // itself — the rest render the framework default, never recopied per project
 // (page-module-structure.md). Each page is still its own module file.
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
+import HilosAppearance from './views/Hilos/Appearance/Appearance.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
 import HilosBackup from './views/Hilos/Backup/Backup.vue'
@@ -115,6 +116,7 @@ const pages: Record<string, Component> = {
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
   [HilosPages.SETTINGS]: HilosSettings,
+  [HilosPages.APPEARANCE]: HilosAppearance,
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
   [HilosPages.BACKUP]: HilosBackup,

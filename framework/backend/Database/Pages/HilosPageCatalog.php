@@ -338,6 +338,12 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-sliders',
         ],
+        HilosPageConstants::HILOS_APPEARANCE => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Appearance',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Theme switching and the default theme.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-palette',
+        ],
         HilosPageConstants::HILOS_OPERATIONS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Operations',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Sitemap generation, static HTML builds, and maintenance tasks.',
@@ -532,6 +538,7 @@ final class HilosPageCatalog
             PageCatalogConstants::SECTION_DESCRIPTION => 'Runtime, maintenance, backups, and observability.',
             PageCatalogConstants::SECTION_ITEMS => [
                 HilosPageConstants::HILOS_SETTINGS,
+                HilosPageConstants::HILOS_APPEARANCE,
                 HilosPageConstants::HILOS_OPERATIONS,
                 HilosPageConstants::HILOS_DAEMON,
                 HilosPageConstants::HILOS_LOGS,

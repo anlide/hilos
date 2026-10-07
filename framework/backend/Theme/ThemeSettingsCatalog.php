@@ -31,11 +31,13 @@ final class ThemeSettingsCatalog implements CatalogProviderInterface
             self::SWITCHING_ENABLED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::DEFAULT_SWITCHING_ENABLED,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
             ],
             self::DEFAULT_THEME_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::DEFAULT_THEME,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => ThemeDefaultRule::class,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
             ],
         ];
     }

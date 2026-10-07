@@ -14,6 +14,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -60,6 +61,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosLegalRevisionsTable $hilosLegalRevisions
  * @property-read HilosLegalAcceptancesTable $hilosLegalAcceptances
  * @property-read HilosLegalSettingsTable $hilosLegalSettings
+ * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  * @property-read HilosSecurityImpersonationTable $hilosSecurityImpersonation
  */
@@ -69,6 +71,7 @@ final class ChatTableContext extends TableContext
     public const string hilosMergeCandidates = HilosMergeCandidatesTable::TABLE;
     public const string bots = 'bots';
     public const string settings = HilosSettingsTable::TABLE;
+    public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;

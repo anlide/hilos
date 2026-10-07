@@ -45,6 +45,9 @@ final class HilosPageConstants
     /** @var string Hilos settings page */
     public const string HILOS_SETTINGS = 'hilos_settings';
 
+    /** @var string Theme appearance settings page */
+    public const string HILOS_APPEARANCE = 'hilos_appearance';
+
     /** @var string Hilos internationalization hub */
     public const string HILOS_I18N = 'hilos_i18n';
 

@@ -7,6 +7,7 @@ namespace Demo\BinanceBtcTracker\Tables;
 use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -33,6 +34,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
+ * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
@@ -46,6 +48,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
+    public const string hilosAppearanceSettings = HilosAppearanceSettingsTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;

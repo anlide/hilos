@@ -36,6 +36,7 @@ import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue
 import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
 import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
+import HilosAppearance from './views/Hilos/Appearance/Appearance.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
 import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
@@ -65,6 +66,7 @@ const pages: Record<string, Component> = {
   [HilosPages.BACKUP]: HilosBackup,
   [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.SETTINGS]: HilosSettings,
+  [HilosPages.APPEARANCE]: HilosAppearance,
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
   [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,

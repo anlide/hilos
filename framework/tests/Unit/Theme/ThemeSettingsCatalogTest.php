@@ -43,11 +43,13 @@ final class ThemeSettingsCatalogTest extends TestCase
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
             ],
             ThemeSettingsCatalog::DEFAULT_THEME_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ThemeSettingsCatalog::SYSTEM,
                 SettingsCatalogConstants::CATALOG_ENTRY_RULE => ThemeDefaultRule::class,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
             ],
         ], ThemeSettingsCatalog::getCatalog());
     }

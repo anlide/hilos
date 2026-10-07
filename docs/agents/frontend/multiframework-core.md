@@ -122,6 +122,10 @@ the `data-id` sites in `HilosI18nLanguageHeader.vue` and
 `HilosI18nLanguagePage.vue`, and that page's root export. Other Vue pages and
 all SDK primitives still require counterparts; remove the exception when those
 pages land.
+HIL-1435 likewise builds Vue Appearance before React/Angular (HIL-1440/1441).
+P-511 temporarily excludes only the `data-id` sites in
+`HilosAppearancePage.vue` and that page's root export; remove this exception
+when both view layers land.
 Two thin extra consumers *prove* the core is agnostic; a Vue-only codebase cannot
 (one consumer hides leaked assumptions). These demos are the simplest of the
 project's planned demos, so they double as real demos and as portability proofs.

@@ -29,6 +29,7 @@ use Demo\BinanceBtcTracker\Groups\Hilos\NotificationsGroup;
 use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
@@ -95,6 +96,7 @@ use Hilos\Push\PushSubscriptionAction;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -162,6 +164,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             BackupPage::PAGE => BackupPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
+            AppearancePage::PAGE => AppearancePage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
             CountriesListPage::PAGE => CountriesListPage::class,
@@ -358,6 +361,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             BackupPage::class,
             MaintenancePage::class,
             SettingsPage::class,
+            AppearancePage::class,
             UsersPage::class,
             UserPage::class,
             CommunicationsPage::class,
@@ -450,6 +454,16 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(
             [BinanceBtcTrackerTableContext::settings => []],
             Hilos::PAGE_TABLES[SettingsPage::PAGE],
+        );
+        $this->assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
+        $this->assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosAppearanceSettingsTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosAppearanceSettings],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosAppearanceSettings => []],
+            Hilos::PAGE_TABLES[AppearancePage::PAGE],
         );
         // The rotation spec writes its thresholds through the settings screen, and a key the
         // project catalog does not know is written and then treated as an orphan (HIL-857).

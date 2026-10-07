@@ -37,6 +37,7 @@ class HilosPageFactory extends AbstractPageFactory
         HilosPageConstants::HILOS_PROFILE => true,
         HilosPageConstants::HILOS_PROFILE_SECURITY => true,
         HilosPageConstants::HILOS_SETTINGS => true,
+        HilosPageConstants::HILOS_APPEARANCE => true,
         HilosPageConstants::HILOS_I18N => true,
         HilosPageConstants::HILOS_I18N_LANGUAGES => true,
         HilosPageConstants::HILOS_I18N_COUNTRIES => true,

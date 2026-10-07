@@ -86,6 +86,7 @@ use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Pages\Hilos\AboutPage;
+use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
@@ -223,6 +224,7 @@ use Hilos\Push\Delivery\PushDeliveryChannelAgentDaemon;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
@@ -353,6 +355,7 @@ final class Hilos extends HilosFacade
         AdminBotsPage::PAGE => AdminBotsPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        AppearancePage::PAGE => AppearancePage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -651,6 +654,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosMergeCandidates => HilosMergeCandidatesTable::class,
         ChatTableContext::bots => BotsTable::class,
         ChatTableContext::settings => HilosSettingsTable::class,
+        ChatTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         ChatTableContext::hilosBackups => HilosBackupHistoryTable::class,
         ChatTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         ChatTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
@@ -781,6 +785,9 @@ final class Hilos extends HilosFacade
         ],
         SettingsPage::PAGE => [
             ChatTableContext::settings => [],
+        ],
+        AppearancePage::PAGE => [
+            ChatTableContext::hilosAppearanceSettings => [],
         ],
         BackupPage::PAGE => [
             ChatTableContext::hilosBackups => [],

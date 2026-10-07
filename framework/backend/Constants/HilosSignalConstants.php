@@ -162,6 +162,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos settings page. */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 
+    /** Subscription signal for Hilos appearance page. */
+    public const string SUBSCRIPTION_PAGE_HILOS_APPEARANCE = 'subscription_page_hilos_appearance';
+
     /** Subscription signal for Hilos i18n hub page. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N = 'subscription_page_hilos_i18n';
 

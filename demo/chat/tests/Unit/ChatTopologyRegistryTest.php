@@ -21,11 +21,13 @@ use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
+use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
+use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
@@ -323,6 +325,21 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(DaemonCollectorAgentDaemon::class, AgentRegistry::daemonClass($collector));
         self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
         self::assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
+    }
+
+    /** Appearance reuses the index agent and the framework's self-snapshot table. */
+    public function testAppearanceAdminFeatureIsActivated(): void
+    {
+        self::assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
+        self::assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(
+            HilosAppearanceSettingsTable::class,
+            Hilos::TABLES[ChatTableContext::hilosAppearanceSettings],
+        );
+        self::assertSame(
+            [ChatTableContext::hilosAppearanceSettings => []],
+            Hilos::PAGE_TABLES[AppearancePage::PAGE],
+        );
     }
 
     /** Legal administration is bound to its own worker, page routes and tables. */
