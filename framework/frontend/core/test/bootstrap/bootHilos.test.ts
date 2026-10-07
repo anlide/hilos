@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bootHilos } from '../../src/bootstrap/bootHilos.js'
 import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
@@ -14,6 +14,7 @@ import { hilosSignedIn } from '../../src/session/signOut.js'
 import { hilosAdminAccess } from '../../src/session/adminAccess.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { hilosToasts } from '../../src/state/toasts.js'
+import { hilosThemeMode, hilosThemePick } from '../../src/theme/themeState.js'
 import {
   type ConnectionState,
   type HilosConnection,
@@ -97,6 +98,34 @@ describe('bootHilos', () => {
   afterEach(() => {
     // The stack is the shared singleton every boot binds to.
     hilosToasts.clear()
+    vi.unstubAllGlobals()
+  })
+
+  it('binds cached theme and applies it before connect, with no DOM required', () => {
+    const attributes = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => (key === 'hilos.theme.pick' ? 'dark' : null),
+      setItem: () => {},
+    })
+    vi.stubGlobal('document', {
+      documentElement: {
+        setAttribute: (key: string, value: string) =>
+          attributes.set(key, value),
+      },
+    })
+    const connection = fakeConnection()
+    const connect = connection.connect
+    connection.connect = function (): void {
+      expect(hilosThemePick.get()).toBe('dark')
+      expect(hilosThemeMode.get()).toBe('dark')
+      expect(attributes.get('data-bs-theme')).toBe('dark')
+      connect.call(this)
+    }
+    boot(connection)
+    expect(connection.connectCalls).toBe(1)
+
+    vi.stubGlobal('document', undefined)
+    expect(() => boot(fakeConnection())).not.toThrow()
   })
 
   it.each([false, true])(

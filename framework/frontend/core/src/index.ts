@@ -259,6 +259,16 @@ export {
   HILOS_BROWSER_VALUES,
 } from './browser/browserValues.js'
 export {
+  resolveThemeMode,
+  type ThemeMode,
+  type ThemePick,
+} from './theme/themeRule.js'
+export {
+  hilosThemeMode,
+  hilosThemePick,
+  setHilosThemePick,
+} from './theme/themeState.js'
+export {
   PageSubscription,
   type PageSubscriptionConnection,
 } from './subscription/PageSubscription.js'

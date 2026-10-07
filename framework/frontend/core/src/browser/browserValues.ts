@@ -15,7 +15,12 @@ import { OAUTH_PROVIDER_BROWSER_VALUE } from '../auth/oauthLogin.js'
 import { SESSION_ROTATE_BROWSER_VALUE } from '../connection/createHilosConnection.js'
 import { PROTECTED_MODE_HINT_BROWSER_VALUE } from '../connection/maintenanceHint.js'
 import { PROTECTED_MODE_PASS_BROWSER_VALUE } from '../connection/protectedModePass.js'
+import {
+  THEME_PICK_BROWSER_VALUE,
+  THEME_SETTINGS_BROWSER_VALUE,
+} from '../theme/themeBrowser.js'
 import { browserStorage } from './browserStorage.js'
+import { announceBrowserValueErased } from './browserValueChanges.js'
 import {
   type HilosBrowserValue,
   type HilosBrowserValueContext,
@@ -32,6 +37,8 @@ export const HILOS_BROWSER_VALUES: readonly HilosBrowserValue[] = [
   PROTECTED_MODE_PASS_BROWSER_VALUE,
   PROTECTED_MODE_HINT_BROWSER_VALUE,
   SESSION_ROTATE_BROWSER_VALUE,
+  THEME_PICK_BROWSER_VALUE,
+  THEME_SETTINGS_BROWSER_VALUE,
 ]
 
 /**
@@ -73,6 +80,7 @@ export function eraseBrowserValues(
     }
     if (eraseBrowserValue(value.store, key)) {
       swept.push(value.label)
+      announceBrowserValueErased(key)
     }
   }
 

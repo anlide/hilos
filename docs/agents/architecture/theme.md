@@ -34,17 +34,20 @@ Apply this rule in this order:
 3. Otherwise, there is no pick → use the default theme.
 4. If that gave `system` → use the system's color scheme.
 
-Implement the rule as one function of `@hilos/core`; build the head script from
-that same function (not in the code yet — HIL-1430, HIL-1431). A hand-written copy
-of the rule anywhere is forbidden: the first frame and the running app must
+`@hilos/core` implements this as the pure
+`resolveThemeMode(pick, settings, systemDark): ThemeMode` function. Build the head
+script from that same function (not in the code yet — HIL-1431). A hand-written
+copy of the rule anywhere is forbidden: the first frame and the running app must
 make the same decision.
 
 Follow the system through the `change` event of
-`matchMedia('(prefers-color-scheme: dark)')`, never by polling
-(not in the code yet — HIL-1430).
+`matchMedia('(prefers-color-scheme: dark)')`, never by polling. If matchMedia is
+unavailable, `system` resolves to light until a browser can supply its preference.
 
-The core exposes two live values: the pick, one of the four states, and the theme
-the page wears (not in the code yet — HIL-1430). The header and the profile mark
+The core exposes `hilosThemePick: ReadonlySignal<ThemePick>` and
+`hilosThemeMode: ReadonlySignal<ThemeMode>`; `setHilosThemePick(pick)` changes the
+current tab and remembers the pick. `ThemePick` is `light | dark | system | null`;
+`ThemeMode` is `light | dark`. The header and the profile mark
 the **position**; a person who never picked sees the default's position marked
 as the default, which the worn theme alone cannot tell
 (not in the code yet — HIL-1433, HIL-1434, HIL-1440, HIL-1441).
@@ -52,8 +55,8 @@ as the default, which the worn theme alone cannot tell
 ## Who Sets It
 
 Express the theme as `data-bs-theme` on `<html>`, written by the framework's head
-script before the app loads, then by one `core/dom` effect
-(not in the code yet — HIL-1430, HIL-1431). Follow "Shared DOM effects" in
+script before the app loads (not in the code yet — HIL-1431), then by the one
+`core/dom/applyTheme` effect bound by `bootHilos`. Follow "Shared DOM effects" in
 [multiframework-core.md](../frontend/multiframework-core.md).
 
 No view, component, demo or project writes `data-bs-theme`, on `<html>` or on any
@@ -61,10 +64,11 @@ other element. A subtree pinned to one mode is a pinned color by another name.
 
 ## Where A Pick Lives
 
-- **A guest:** keep the pick in localStorage as a value declared with
-  `browserValue`; the erase on `/privacy` erases it, and tabs of one browser
-  follow each other through the `storage` event
-  (not in the code yet — HIL-1430). Follow "What this browser keeps" in
+- **A guest:** keep the pick under `hilos.theme.pick` in localStorage, declared
+  with `browserValue`; its value is exactly `light`, `dark` or `system`, and an
+  absent key means no choice. The erase on `/privacy` removes it and informs the
+  current tab; other tabs follow through the `storage` event (including a clear
+  event with no key). Follow "What this browser keeps" in
   [core-and-connection.md](../frontend/core-and-connection.md).
 - **A signed-in person:** keep the pick in the account. Only the person's own
   agent writes it, like every other edit of their own content; the truth source
@@ -126,8 +130,15 @@ frame right after a write that moved either. Follow the path of
 `hilos_auth_methods`: `SettingsLibraryAgent::settle()` compares the frame before
 and after a write and calls `sendToAllConnected()` when it changed
 ([SettingsLibraryAgent.php](../../../framework/backend/Database/Settings/Library/SettingsLibraryAgent.php)).
-The browser remembers both settings for the
-head script (not in the code yet — HIL-1430).
+The browser remembers both settings under `hilos.theme.settings` as one complete
+JSON pair for the head script. `bootHilos` reads both browser values after
+binding the session scope and before connecting; each valid handshake or live
+frame replaces the settings pair in memory and in the cache. Missing or invalid
+data leaves the last valid pair in place. Unreadable browser values fall back to
+no pick and the catalog defaults `true/system`; refused writes do not stop the
+current tab. The privacy sweep removes both values through the browser registry.
+The replacement session's handshake can immediately fill the settings cache
+again with the server's current pair; the guest's erased choice stays absent.
 
 Switching off has three consequences everywhere at once:
 
@@ -137,7 +148,7 @@ Switching off has three consequences everywhere at once:
   (not in the code yet — HIL-1434, HIL-1440, HIL-1441);
 - everyone wears the default, while people's picks in accounts and browsers are
   kept, not erased, and come back when switching is on again
-  (not in the code yet — HIL-1430).
+  as soon as the settings frame arrives.
 
 Neither value is secret — every guest receives both. The admin view mode shows
 the Appearance section and its values and refuses changes
@@ -159,17 +170,16 @@ The catalog keys are `theme.switching_enabled` and `theme.default` (HIL-1426).
 The installation settings use `data.themeSettings` in the handshake and
 `hilos_theme_settings` as the live frame. Both carry the complete pair
 `{switchingEnabled: bool, defaultTheme: 'light'|'dark'|'system'}` (HIL-1428).
-The theme also touches a person's stored pick, its frame to their sessions,
-and browser-value keys. Pass the contract gate in the leaf that lands each
-remaining surface. This specification leaves their names to those leaves: do
-not invent them here.
+The browser-value keys are `hilos.theme.pick` and `hilos.theme.settings`
+(HIL-1430). The theme also touches a person's stored pick and its frame to their
+sessions. Pass the contract gate in the leaf that lands each remaining surface.
+This specification leaves their names to those leaves: do not invent them here.
 The leaf that lands a surface writes its names into this file in the same commit
 that clears its marker.
 
 ## Validation
 
-- Unit-test the rule function, including the four pick states and switching off
-  (not in the code yet — HIL-1430).
+- Unit-test the rule function, including the four pick states and switching off.
 - Check the painting rule with `STYLE-THEME-PINNED`; see "Theming" in
   [styling-rules.md](../frontend/styling-rules.md) for the guard's scope and landing
   markers.

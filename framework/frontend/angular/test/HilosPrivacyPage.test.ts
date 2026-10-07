@@ -10,6 +10,7 @@ import {
   ActionError,
   browserValue,
   createSignal,
+  HILOS_BROWSER_VALUES,
   type ActionHandle,
   type ActionLifecycle,
   type HilosBrowserValue,
@@ -133,8 +134,8 @@ describe('HilosPrivacyPage', () => {
       ),
     ].map((item) => item.textContent)
 
-    expect(listed).toHaveLength(5)
-    expect(listed[4]).toBe('The theme this browser was last set to')
+    expect(listed).toHaveLength(HILOS_BROWSER_VALUES.length + 1)
+    expect(listed.at(-1)).toBe('The theme this browser was last set to')
   })
 
   it('sweeps the browser and drops the live pass before the action goes out', async () => {

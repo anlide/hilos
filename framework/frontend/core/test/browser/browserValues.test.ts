@@ -5,6 +5,10 @@ import {
   eraseBrowserValues,
   HILOS_BROWSER_VALUES,
 } from '../../src/browser/browserValues.js'
+import {
+  THEME_PICK_STORAGE_KEY,
+  THEME_SETTINGS_STORAGE_KEY,
+} from '../../src/theme/themeBrowser.js'
 
 /** The smallest thing that answers like a `Storage`, plus a switch to make it refuse. */
 function fakeStorage(options: { throws?: boolean } = {}): Storage {
@@ -81,7 +85,13 @@ describe('the framework registry', () => {
   it('is assembled with no browser anywhere in sight', () => {
     // The whole module graph was imported by this file with none of the three
     // globals installed: /privacy is prerendered, and a declaration is data.
-    expect(HILOS_BROWSER_VALUES).toHaveLength(4)
+    expect(HILOS_BROWSER_VALUES).toHaveLength(6)
+    expect(HILOS_BROWSER_VALUES.map((value) => value.key)).toContain(
+      THEME_PICK_STORAGE_KEY,
+    )
+    expect(HILOS_BROWSER_VALUES.map((value) => value.key)).toContain(
+      THEME_SETTINGS_STORAGE_KEY,
+    )
   })
 
   it('names every value in a line a person can read', () => {
@@ -110,6 +120,20 @@ describe('eraseBrowserValues', () => {
 
   afterEach(() => {
     uninstallBrowser()
+  })
+
+  it('erases both theme values from the framework registry', () => {
+    globalThis.localStorage.setItem(THEME_PICK_STORAGE_KEY, 'dark')
+    globalThis.localStorage.setItem(THEME_SETTINGS_STORAGE_KEY, '{}')
+
+    const swept = eraseBrowserValues(HILOS_BROWSER_VALUES, noCookieName)
+
+    expect(globalThis.localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBeNull()
+    expect(
+      globalThis.localStorage.getItem(THEME_SETTINGS_STORAGE_KEY),
+    ).toBeNull()
+    expect(swept).toContain('Your theme choice in this browser')
+    expect(swept).toContain('Remembered theme settings for this site')
   })
 
   it('takes a session key out of session storage and nowhere else', () => {

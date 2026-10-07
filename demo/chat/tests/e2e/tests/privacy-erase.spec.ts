@@ -24,6 +24,10 @@ const OAUTH_PROVIDER_KEY = 'hilos.oauth.provider'
 /** A key the framework declares in local storage (`maintenanceHint.ts`). */
 const MAINTENANCE_HINT_KEY = 'hilos.protectedMode.hint'
 
+/** The guest's position and the last settings pair (`themeBrowser.ts`). */
+const THEME_PICK_KEY = 'hilos.theme.pick'
+const THEME_SETTINGS_KEY = 'hilos.theme.settings'
+
 /**
  * Read one cookie matching a predicate out of the context's jar.
  *
@@ -49,13 +53,24 @@ test('the erase empties this browser and moves it onto a new session', async ({
   // Seed one value in each store the registry names, through the very keys the
   // framework declares — a spec that seeded keys of its own would prove the sweep
   // erases what the spec wrote, not what the framework keeps.
-  await page.evaluate(
-    ([provider, hint]) => {
+  const serverSettings = await page.evaluate(
+    ([provider, hint, pick, settings]) => {
+      const receivedSettings = localStorage.getItem(settings)
       sessionStorage.setItem(provider, 'github')
       localStorage.setItem(hint, '1')
+      localStorage.setItem(pick, 'dark')
+      localStorage.setItem(settings, 'stale browser copy')
+
+      return receivedSettings
     },
-    [OAUTH_PROVIDER_KEY, MAINTENANCE_HINT_KEY],
+    [
+      OAUTH_PROVIDER_KEY,
+      MAINTENANCE_HINT_KEY,
+      THEME_PICK_KEY,
+      THEME_SETTINGS_KEY,
+    ],
   )
+  expect(serverSettings).not.toBeNull()
 
   // The identifier this browser arrived with: what the erase must change.
   const arrived = await cookieValue(context, isSessionCookie)
@@ -67,7 +82,13 @@ test('the erase empties this browser and moves it onto a new session', async ({
   await expect(page.getByTestId('privacy-erase-list')).toBeVisible()
   await expect(
     page.getByTestId('privacy-erase-list').locator('li'),
-  ).toHaveCount(4)
+  ).toHaveCount(6)
+  await expect(page.getByTestId('privacy-erase-list')).toContainText(
+    'Your theme choice in this browser',
+  )
+  await expect(page.getByTestId('privacy-erase-list')).toContainText(
+    'Remembered theme settings for this site',
+  )
 
   const confirm = page.getByTestId('privacy-erase-confirm')
   await confirm.scrollIntoViewIfNeeded()
@@ -84,15 +105,17 @@ test('the erase empties this browser and moves it onto a new session', async ({
   await expect(done).toContainText('not account deletion')
   await expect(page.getByTestId('privacy-erase-partial')).toHaveCount(0)
 
-  // The browser half: both stores let go of what the registry named.
+  // The browser half: the guest's choice and the other seeded values are gone.
+  // The settings cache is filled again by the new session's handshake below.
   const kept = await page.evaluate(
-    ([provider, hint]) => [
+    ([provider, hint, pick]) => [
       sessionStorage.getItem(provider),
       localStorage.getItem(hint),
+      localStorage.getItem(pick),
     ],
-    [OAUTH_PROVIDER_KEY, MAINTENANCE_HINT_KEY],
+    [OAUTH_PROVIDER_KEY, MAINTENANCE_HINT_KEY, THEME_PICK_KEY],
   )
-  expect(kept).toEqual([null, null])
+  expect(kept).toEqual([null, null, null])
 
   // The server half: the value arrives on the 101 of the reconnect the rotation
   // ticket triggers, a round trip after the outcome above was drawn.
@@ -100,6 +123,16 @@ test('the erase empties this browser and moves it onto a new session', async ({
     const now = await cookieValue(context, isSessionCookie)
     expect(now).not.toBe('')
     expect(now).not.toBe(arrived)
+  }).toPass()
+
+  // The stale local copy was erased; the server's complete pair replaced it
+  // when the replacement session connected.
+  await expect(async () => {
+    const remembered = await page.evaluate(
+      (key) => localStorage.getItem(key),
+      THEME_SETTINGS_KEY,
+    )
+    expect(remembered).toBe(serverSettings)
   }).toPass()
 
   // And the person is still on the page they walked to, reading what it said.
