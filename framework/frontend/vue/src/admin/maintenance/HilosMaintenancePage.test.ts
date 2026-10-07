@@ -166,6 +166,9 @@ function seededContext(
 
       return true
     },
+    sendTableRendered(): boolean {
+      return true
+    },
     on(
       event: string,
       listener: (signal: { data: unknown }) => void,
@@ -301,7 +304,7 @@ async function openAndType(
   wrapper: Awaited<ReturnType<typeof mountPage>>,
   typed: string,
 ): Promise<void> {
-  await wrapper.get('[data-id="hilos-maintenance-circle-add"]').trigger('click')
+  await wrapper.get('[data-id="hilos-table-main-action"]').trigger('click')
   await nextTick()
   const field = addField() as HTMLInputElement
   field.value = typed
@@ -334,6 +337,27 @@ describe('HilosMaintenancePage', () => {
     expect(mark('+10000000001')?.textContent).toBe(
       HILOS_MAINTENANCE_CIRCLE_COPY.offline,
     )
+    expect(
+      document.querySelector(
+        '[data-id="hilos-table-cards"] [data-id="hilos-maintenance-circle-online-ann@example.test"]',
+      )?.textContent,
+    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.online)
+    expect(
+      document
+        .querySelector('[data-id="hilos-table-title"]')
+        ?.textContent?.trim(),
+    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.title)
+    expect(
+      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
+    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.rule)
+    expect(
+      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
+    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.volatile)
+    expect(
+      document
+        .querySelector('[data-id="hilos-table-count"]')
+        ?.textContent?.trim(),
+    ).toBe('1 – 2 of 2')
   })
 
   it('moves the mark in place when the live row changes', async () => {
@@ -359,7 +383,35 @@ describe('HilosMaintenancePage', () => {
     const wrapper = await mountPage(context)
 
     expect(wrapper.findAll('[data-id^="hilos-table-row-"]').length).toBe(0)
-    expect(wrapper.text()).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.empty)
+    expect(wrapper.text()).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.empty.title)
+    expect(wrapper.text()).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.empty.hint)
+    expect(wrapper.find('[data-id="hilos-table-main-action"]').text()).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
+    )
+    const emptyActions = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        'table [data-id="hilos-table-empty-action"]',
+      ),
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-empty-action"]',
+      ),
+    ]
+    expect(emptyActions).toHaveLength(2)
+    for (const action of emptyActions) {
+      expect(action.textContent?.trim()).toBe(
+        HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
+      )
+      action.click()
+      await nextTick()
+      expect(addField()).not.toBeNull()
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-id="hilos-maintenance-circle-add-cancel"]',
+        )
+        ?.click()
+      await nextTick()
+      expect(addField()).toBeNull()
+    }
   })
 
   it('offers adding a member and removing one', async () => {
@@ -367,7 +419,7 @@ describe('HilosMaintenancePage', () => {
     const wrapper = await mountPage(context)
     const panel = wrapper.get('[data-id="hilos-maintenance-circle-panel"]')
 
-    expect(panel.get('[data-id="hilos-maintenance-circle-add"]').text()).toBe(
+    expect(panel.get('[data-id="hilos-table-main-action"]').text()).toBe(
       HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
     )
     expect(trash('ann@example.test').getAttribute('aria-label')).toBe(
@@ -591,9 +643,7 @@ describe('HilosMaintenancePage', () => {
       ?.click()
     await settled()
     expect(addField()).toBeNull()
-    await wrapper
-      .get('[data-id="hilos-maintenance-circle-add"]')
-      .trigger('click')
+    await wrapper.get('[data-id="hilos-table-main-action"]').trigger('click')
     await nextTick()
 
     expect(addField()?.value).toBe('')
@@ -714,7 +764,7 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     const wrapper = await mountPage(context)
 
     const addButton = wrapper.get<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-add"]',
+      '[data-id="hilos-table-main-action"]',
     )
     expect(addButton.element.disabled).toBe(false)
 

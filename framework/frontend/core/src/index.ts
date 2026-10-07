@@ -1294,6 +1294,7 @@ export {
   type HilosMaintenanceActions,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceCircleTable,
+  type HilosMaintenanceCircleTableView,
   type HilosMaintenanceContext,
 } from './admin/maintenance/hilosMaintenance.js'
 export {

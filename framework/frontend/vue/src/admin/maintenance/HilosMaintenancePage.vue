@@ -19,11 +19,8 @@ import {
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
   isHiddenValue,
-  MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
-  MAINTENANCE_CIRCLE_ONLINE_FIELD,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
@@ -43,7 +40,9 @@ const props = defineProps<{
   context: HilosMaintenanceContext
 }>()
 
-const circle = createHilosMaintenanceCircleTable(props.context)
+const circle = createHilosMaintenanceCircleTable(props.context, {
+  openAdd: openCircleAdd,
+})
 const circleTable = circle.controller
 // The row the remove dialog holds in focus, as it stands now — undefined once it is gone.
 const focusedRow = useSignal(circleTable.focusedRow)
@@ -161,92 +160,45 @@ async function submitCircleRemove(): Promise<void> {
     closeCircleRemove()
   }
 }
-
-const circleColumns: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
-  {
-    key: MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
-    label: HILOS_MAINTENANCE_CIRCLE_COPY.addressColumn,
-    sortable: true,
-  },
-  {
-    key: MAINTENANCE_CIRCLE_ONLINE_FIELD,
-    label: HILOS_MAINTENANCE_CIRCLE_COPY.onlineColumn,
-  },
-  {
-    key: 'actions',
-    label: '',
-    headerClass: 'text-end',
-    // The remove button and its confirmation name the address.
-    reads: [MAINTENANCE_CIRCLE_IDENTIFIER_FIELD],
-  },
-]
 </script>
 
 <template>
   <HilosAdminPage :page="HilosPages.MAINTENANCE">
     <div class="card mb-3" data-id="hilos-maintenance-circle-panel">
       <div class="card-body">
-        <div
-          class="d-flex align-items-start justify-content-between gap-2 flex-wrap"
+        <HilosViewportTable
+          data-id="hilos-maintenance-circle-table"
+          :controller="circleTable"
         >
-          <div>
-            <div class="fw-semibold">
-              {{ HILOS_MAINTENANCE_CIRCLE_COPY.title }}
-            </div>
-            <div class="small text-body-secondary">
-              {{ HILOS_MAINTENANCE_CIRCLE_COPY.rule }}
-            </div>
-            <div class="small text-body-secondary">
-              {{ HILOS_MAINTENANCE_CIRCLE_COPY.volatile }}
-            </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-outline-primary btn-sm text-nowrap"
-            data-id="hilos-maintenance-circle-add"
-            @click="openCircleAdd"
-          >
-            {{ HILOS_MAINTENANCE_CIRCLE_COPY.addButton }}
-          </button>
-        </div>
-        <div class="mt-3">
-          <HilosViewportTable
-            data-id="hilos-maintenance-circle-table"
-            :label="HILOS_MAINTENANCE_CIRCLE_COPY.title"
-            :controller="circleTable"
-            :columns="circleColumns"
-            :empty-text="HILOS_MAINTENANCE_CIRCLE_COPY.empty"
-          >
-            <template #row="{ row }">
-              <td :data-id="`hilos-maintenance-circle-row-${circleKey(row)}`">
-                <HilosHideable :value="row.identifier" />
-              </td>
-              <td>
-                <span
-                  :class="row.online ? 'text-success' : 'text-body-secondary'"
-                  :data-id="`hilos-maintenance-circle-online-${circleKey(row)}`"
-                  >{{
-                    row.online
-                      ? HILOS_MAINTENANCE_CIRCLE_COPY.online
-                      : HILOS_MAINTENANCE_CIRCLE_COPY.offline
-                  }}</span
-                >
-              </td>
-              <td class="text-end">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  :title="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
-                  :aria-label="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
-                  :data-id="`hilos-maintenance-circle-remove-${circleKey(row)}`"
-                  @click="openCircleRemove(row)"
-                >
-                  <i class="bi bi-trash" aria-hidden="true"></i>
-                </button>
-              </td>
-            </template>
-          </HilosViewportTable>
-        </div>
+          <template #cell-identifier="{ row }">
+            <span :data-id="`hilos-maintenance-circle-row-${circleKey(row)}`">
+              <HilosHideable :value="row.identifier" />
+            </span>
+          </template>
+          <template #cell-online="{ row }">
+            <span
+              :class="row.online ? 'text-success' : 'text-body-secondary'"
+              :data-id="`hilos-maintenance-circle-online-${circleKey(row)}`"
+              >{{
+                row.online
+                  ? HILOS_MAINTENANCE_CIRCLE_COPY.online
+                  : HILOS_MAINTENANCE_CIRCLE_COPY.offline
+              }}</span
+            >
+          </template>
+          <template #cell-actions="{ row }">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              :title="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
+              :aria-label="HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle"
+              :data-id="`hilos-maintenance-circle-remove-${circleKey(row)}`"
+              @click="openCircleRemove(row)"
+            >
+              <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
+          </template>
+        </HilosViewportTable>
       </div>
     </div>
 

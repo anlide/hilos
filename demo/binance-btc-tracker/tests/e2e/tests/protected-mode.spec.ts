@@ -8,6 +8,7 @@ import {
   clearMaintenanceCircle,
   maintenanceCircleOnline,
   maintenanceCircleRow,
+  shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf, sessionToken } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode'
@@ -1073,10 +1074,12 @@ test.describe('the maintenance section in the admin view mode', () => {
     ).toBeVisible()
     await expect(guest.getByTestId('page-error')).toHaveCount(0)
 
-    await expect(
-      guest.getByTestId('hilos-maintenance-circle-add'),
-    ).toBeEnabled()
-    await guest.getByTestId('hilos-maintenance-circle-add').click()
+    const add = shownByTestId(
+      guest.getByTestId('hilos-maintenance-circle-table'),
+      'hilos-table-main-action',
+    )
+    await expect(add).toBeEnabled()
+    await add.click()
     const field = guest.getByTestId('hilos-maintenance-circle-add-field')
     await expect(field).toBeEnabled()
     await field.fill('')
@@ -1094,12 +1097,13 @@ test.describe('the maintenance section in the admin view mode', () => {
     await expect(field).toBeHidden()
 
     const table = guest.getByTestId('hilos-maintenance-circle-table')
-    await table
-      .getByTestId('hilos-table-loading')
-      .waitFor({ state: 'detached' })
-    const removeButton = table
-      .getByTestId(/^hilos-maintenance-circle-remove-/)
-      .first()
+    await shownByTestId(table, 'hilos-table-loading').waitFor({
+      state: 'hidden',
+    })
+    const removeButton = shownByTestId(
+      table,
+      /^hilos-maintenance-circle-remove-/,
+    )
     await expect(removeButton).toBeEnabled()
     await removeButton.click()
     const removeConfirm = guest.getByTestId(

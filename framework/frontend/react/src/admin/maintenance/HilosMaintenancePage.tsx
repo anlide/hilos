@@ -4,18 +4,18 @@
 // focus and reports a removal in another tab; the list and its online marks stay
 // live. The table, row view-model, actions and words belong to the core headless.
 // A project supplies only HilosMaintenanceContext. Bootstrap classes only.
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   isHiddenValue,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
@@ -35,24 +35,6 @@ export interface HilosMaintenancePageProps {
   context: HilosMaintenanceContext
 }
 
-const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
-  {
-    key: MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
-    label: HILOS_MAINTENANCE_CIRCLE_COPY.addressColumn,
-    sortable: true,
-  },
-  {
-    key: MAINTENANCE_CIRCLE_ONLINE_FIELD,
-    label: HILOS_MAINTENANCE_CIRCLE_COPY.onlineColumn,
-  },
-  {
-    key: 'actions',
-    label: '',
-    headerClass: 'text-end',
-    reads: [MAINTENANCE_CIRCLE_IDENTIFIER_FIELD],
-  },
-]
-
 /**
  * What tells a circle row apart in its data-ids: the address, or the membership
  * id while the address is hidden — every hidden row would share one otherwise.
@@ -71,9 +53,19 @@ function circleKey(row: HilosMaintenanceCircleRow): string {
  * @param props The project's connection, scopes and action lifecycle.
  */
 export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
+  const [circleAddOpen, setCircleAddOpen] = useState(false)
+  const [circleAddIdentifier, setCircleAddIdentifier] = useState('')
+  const circleAdd = useTrackedAction()
+  const clearCircleAddError = circleAdd.clearError
+  const openCircleAdd = useCallback(() => {
+    clearCircleAddError()
+    setCircleAddIdentifier('')
+    setCircleAddOpen(true)
+  }, [clearCircleAddError])
   const circle = useMemo(
-    () => createHilosMaintenanceCircleTable(context),
-    [context],
+    () =>
+      createHilosMaintenanceCircleTable(context, { openAdd: openCircleAdd }),
+    [context, openCircleAdd],
   )
   const actions = useMemo(
     () => createHilosMaintenanceActions(context),
@@ -87,9 +79,6 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
     return () => circle.dispose()
   }, [circle])
 
-  const [circleAddOpen, setCircleAddOpen] = useState(false)
-  const [circleAddIdentifier, setCircleAddIdentifier] = useState('')
-  const circleAdd = useTrackedAction()
   const [circleRemoveOpen, setCircleRemoveOpen] = useState(false)
   const [circleRemoveRow, setCircleRemoveRow] =
     useState<HilosMaintenanceCircleRow | null>(null)
@@ -99,12 +88,6 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
   // Our own echo can make the row a placeholder before the action ack arrives.
   const removeGone =
     circleRemoveRow !== null && !circleRemove.busy && removeLive === undefined
-
-  function openCircleAdd(): void {
-    circleAdd.clearError()
-    setCircleAddIdentifier('')
-    setCircleAddOpen(true)
-  }
 
   function closeCircleAdd(): void {
     setCircleAddOpen(false)
@@ -153,69 +136,43 @@ export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
     <HilosAdminPage page={HilosPages.MAINTENANCE}>
       <div className="card mb-3" data-id="hilos-maintenance-circle-panel">
         <div className="card-body">
-          <div className="d-flex align-items-start justify-content-between gap-2 flex-wrap">
-            <div>
-              <div className="fw-semibold">
-                {HILOS_MAINTENANCE_CIRCLE_COPY.title}
-              </div>
-              <div className="small text-body-secondary">
-                {HILOS_MAINTENANCE_CIRCLE_COPY.rule}
-              </div>
-              <div className="small text-body-secondary">
-                {HILOS_MAINTENANCE_CIRCLE_COPY.volatile}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn btn-outline-primary btn-sm text-nowrap"
-              data-id="hilos-maintenance-circle-add"
-              onClick={openCircleAdd}
-            >
-              {HILOS_MAINTENANCE_CIRCLE_COPY.addButton}
-            </button>
-          </div>
-          <div className="mt-3">
-            <HilosViewportTable
-              dataId="hilos-maintenance-circle-table"
-              label={HILOS_MAINTENANCE_CIRCLE_COPY.title}
-              controller={circle.controller}
-              columns={CIRCLE_COLUMNS}
-              emptyText={HILOS_MAINTENANCE_CIRCLE_COPY.empty}
-              row={(row) => (
-                <>
-                  <td
-                    data-id={`hilos-maintenance-circle-row-${circleKey(row)}`}
-                  >
-                    <HilosHideable value={row.identifier} />
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        row.online ? 'text-success' : 'text-body-secondary'
-                      }
-                      data-id={`hilos-maintenance-circle-online-${circleKey(row)}`}
-                    >
-                      {row.online
-                        ? HILOS_MAINTENANCE_CIRCLE_COPY.online
-                        : HILOS_MAINTENANCE_CIRCLE_COPY.offline}
-                    </span>
-                  </td>
-                  <td className="text-end">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-danger"
-                      title={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
-                      aria-label={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
-                      data-id={`hilos-maintenance-circle-remove-${circleKey(row)}`}
-                      onClick={() => openCircleRemove(row)}
-                    >
-                      <i className="bi bi-trash" aria-hidden="true" />
-                    </button>
-                  </td>
-                </>
-              )}
-            />
-          </div>
+          <HilosViewportTable
+            dataId="hilos-maintenance-circle-table"
+            controller={circle.controller}
+            cells={{
+              [MAINTENANCE_CIRCLE_IDENTIFIER_FIELD]: (row) => (
+                <span
+                  data-id={`hilos-maintenance-circle-row-${circleKey(row)}`}
+                >
+                  <HilosHideable value={row.identifier} />
+                </span>
+              ),
+              [MAINTENANCE_CIRCLE_ONLINE_FIELD]: (row) => (
+                <span
+                  className={
+                    row.online ? 'text-success' : 'text-body-secondary'
+                  }
+                  data-id={`hilos-maintenance-circle-online-${circleKey(row)}`}
+                >
+                  {row.online
+                    ? HILOS_MAINTENANCE_CIRCLE_COPY.online
+                    : HILOS_MAINTENANCE_CIRCLE_COPY.offline}
+                </span>
+              ),
+              [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-danger"
+                  title={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
+                  aria-label={HILOS_MAINTENANCE_CIRCLE_COPY.removeTitle}
+                  data-id={`hilos-maintenance-circle-remove-${circleKey(row)}`}
+                  onClick={() => openCircleRemove(row)}
+                >
+                  <i className="bi bi-trash" aria-hidden="true" />
+                </button>
+              ),
+            }}
+          />
         </div>
       </div>
 

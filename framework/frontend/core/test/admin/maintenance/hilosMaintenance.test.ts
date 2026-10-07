@@ -3,14 +3,28 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
+  HILOS_MAINTENANCE_CIRCLE_COPY,
+  MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
+  MAINTENANCE_CIRCLE_ONLINE_FIELD,
+  type HilosMaintenanceCircleTableView,
   type HilosMaintenanceContext,
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+
+/** A view whose main action records that it was pressed. */
+function circleView(pressed: string[] = []): HilosMaintenanceCircleTableView {
+  return {
+    openAdd: () => {
+      pressed.push('openAdd')
+    },
+  }
+}
 
 /** Build a circle row whose inline `verifierCircle` slot carries the given fields. */
 function circleRow(
@@ -70,11 +84,14 @@ describe('createHilosMaintenanceCircleTable', () => {
       sendTableViewport: (page: string, tableKey: string) =>
         sent.push({ page, tableKey }) > 0,
     } as unknown as HilosConnection
-    const circle = createHilosMaintenanceCircleTable({
-      connection,
-      scopes: new ScopeManager(),
-      actions: {} as unknown as ActionLifecycle,
-    })
+    const circle = createHilosMaintenanceCircleTable(
+      {
+        connection,
+        scopes: new ScopeManager(),
+        actions: {} as unknown as ActionLifecycle,
+      },
+      circleView(),
+    )
 
     circle.start()
     // The first window rides the page's own answer; a request for it again goes to the
@@ -93,14 +110,18 @@ describe('createHilosMaintenanceCircleTable', () => {
     const focus: Array<{ page: string; tableKey: string; rowKey: string }> = []
     const connection = {
       sendTableViewport: () => true,
+      sendTableRendered: () => true,
       sendTableRowFocus: (page: string, tableKey: string, rowKey: string) =>
         focus.push({ page, tableKey, rowKey }) > 0,
     } as unknown as HilosConnection
-    const circle = createHilosMaintenanceCircleTable({
-      connection,
-      scopes: new ScopeManager(),
-      actions: {} as unknown as ActionLifecycle,
-    })
+    const circle = createHilosMaintenanceCircleTable(
+      {
+        connection,
+        scopes: new ScopeManager(),
+        actions: {} as unknown as ActionLifecycle,
+      },
+      circleView(),
+    )
     circle.controller.ingestSubscriptionWindow(
       [
         circleRow('7', {
@@ -133,6 +154,99 @@ describe('createHilosMaintenanceCircleTable', () => {
         rowKey: '',
       },
     ])
+  })
+
+  it('declares the bar, the sortable address, and the empty circle', () => {
+    const pressed: string[] = []
+    const connection = {
+      sendTableViewport: () => true,
+      sendTableRendered: () => true,
+      sendTableRowFocus: () => true,
+    } as unknown as HilosConnection
+    const circle = createHilosMaintenanceCircleTable(
+      {
+        connection,
+        scopes: new ScopeManager(),
+        actions: {} as unknown as ActionLifecycle,
+      },
+      circleView(pressed),
+    )
+    const declaration = circle.controller.frame.declaration
+    const columns = circle.controller.frame.columns.get()
+
+    expect(declaration?.title).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.title)
+    expect(declaration?.subtitle).toBe(
+      `${HILOS_MAINTENANCE_CIRCLE_COPY.rule} ${HILOS_MAINTENANCE_CIRCLE_COPY.volatile}`,
+    )
+    expect(declaration?.search).toBeUndefined()
+    expect(declaration?.filters).toBeUndefined()
+    expect(declaration?.bulkActions).toBeUndefined()
+    expect(declaration?.mainAction?.label).toBe(
+      HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
+    )
+    expect(declaration?.empty).toEqual(HILOS_MAINTENANCE_CIRCLE_COPY.empty)
+    declaration?.mainAction?.press()
+    expect(pressed).toEqual(['openAdd'])
+    expect(columns.map((column) => column.key)).toEqual([
+      MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
+      MAINTENANCE_CIRCLE_ONLINE_FIELD,
+      HILOS_TABLE_ACTIONS_KEY,
+    ])
+    expect(columns[0]?.sortable).toBe(true)
+    expect(columns[0]?.card).toBe('title')
+    expect(columns[1]?.card).toBe('badge')
+    expect(columns[2]?.reads).toEqual([MAINTENANCE_CIRCLE_IDENTIFIER_FIELD])
+  })
+
+  it('tells the server which fields the columns draw once the cold window lands', () => {
+    const rendered: Array<{
+      page: string
+      tableKey: string
+      rendered: readonly string[]
+    }> = []
+    const connection = {
+      sendTableViewport: () => true,
+      sendTableRendered: (
+        page: string,
+        tableKey: string,
+        fields: readonly string[],
+      ) => rendered.push({ page, tableKey, rendered: fields }) > 0,
+      sendTableRowFocus: () => true,
+    } as unknown as HilosConnection
+    const circle = createHilosMaintenanceCircleTable(
+      {
+        connection,
+        scopes: new ScopeManager(),
+        actions: {} as unknown as ActionLifecycle,
+      },
+      circleView(),
+    )
+
+    expect(rendered).toEqual([])
+    circle.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      10,
+      undefined,
+      [],
+    )
+
+    expect(rendered).toEqual([
+      {
+        page: 'hilos_maintenance',
+        tableKey: 'hilosVerifierCircle',
+        rendered: [
+          MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
+          MAINTENANCE_CIRCLE_ONLINE_FIELD,
+        ],
+      },
+    ])
+    expect(circle.controller.descriptor()?.rendered).toEqual(
+      rendered[0]?.rendered,
+    )
   })
 })
 

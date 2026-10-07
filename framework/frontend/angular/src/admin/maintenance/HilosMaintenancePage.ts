@@ -18,12 +18,9 @@ import {
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HilosPages,
   isHiddenValue,
-  MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
-  MAINTENANCE_CIRCLE_ONLINE_FIELD,
   subscribeSignal,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
-  type HilosTableColumnOf,
 } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
@@ -32,27 +29,10 @@ import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
-
-const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
-  {
-    key: MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
-    label: HILOS_MAINTENANCE_CIRCLE_COPY.addressColumn,
-    sortable: true,
-  },
-  {
-    key: MAINTENANCE_CIRCLE_ONLINE_FIELD,
-    label: HILOS_MAINTENANCE_CIRCLE_COPY.onlineColumn,
-  },
-  {
-    key: 'actions',
-    label: '',
-    headerClass: 'text-end',
-    reads: [MAINTENANCE_CIRCLE_IDENTIFIER_FIELD],
-  },
-]
 
 /** The verifier circle, with dialogs that close only on the server's answer. */
 @Component({
@@ -65,6 +45,7 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
     HilosHiddenMark,
     HilosHideable,
     HilosModal,
+    HilosTableCell,
     HilosViewportTable,
     LoadingButton,
   ],
@@ -72,71 +53,43 @@ const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
     <hilos-admin-page [page]="page">
       <div class="card mb-3" data-id="hilos-maintenance-circle-panel">
         <div class="card-body">
-          <div
-            class="d-flex align-items-start justify-content-between gap-2 flex-wrap"
+          <hilos-viewport-table
+            dataId="hilos-maintenance-circle-table"
+            [controller]="circle().controller"
           >
-            <div>
-              <div class="fw-semibold">{{ circleCopy.title }}</div>
-              <div class="small text-body-secondary">{{ circleCopy.rule }}</div>
-              <div class="small text-body-secondary">
-                {{ circleCopy.volatile }}
-              </div>
-            </div>
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm text-nowrap"
-              data-id="hilos-maintenance-circle-add"
-              (click)="openCircleAdd()"
-            >
-              {{ circleCopy.addButton }}
-            </button>
-          </div>
-          <div class="mt-3">
-            <hilos-viewport-table
-              dataId="hilos-maintenance-circle-table"
-              [label]="circleCopy.title"
-              [controller]="circle().controller"
-              [columns]="circleColumns"
-              [emptyText]="circleCopy.empty"
-            >
-              <ng-template #row let-row>
-                <td
-                  [attr.data-id]="
-                    'hilos-maintenance-circle-row-' + circleKey(row)
-                  "
-                >
-                  <hilos-hideable [value]="row.identifier" />
-                </td>
-                <td>
-                  <span
-                    [class]="
-                      row.online ? 'text-success' : 'text-body-secondary'
-                    "
-                    [attr.data-id]="
-                      'hilos-maintenance-circle-online-' + circleKey(row)
-                    "
-                    >{{
-                      row.online ? circleCopy.online : circleCopy.offline
-                    }}</span
-                  >
-                </td>
-                <td class="text-end">
-                  <button
-                    type="button"
-                    class="btn btn-sm btn-outline-danger"
-                    [title]="circleCopy.removeTitle"
-                    [attr.aria-label]="circleCopy.removeTitle"
-                    [attr.data-id]="
-                      'hilos-maintenance-circle-remove-' + circleKey(row)
-                    "
-                    (click)="openCircleRemove(row)"
-                  >
-                    <i class="bi bi-trash" aria-hidden="true"></i>
-                  </button>
-                </td>
-              </ng-template>
-            </hilos-viewport-table>
-          </div>
+            <ng-template hilosTableCell="identifier" let-row>
+              <span
+                [attr.data-id]="
+                  'hilos-maintenance-circle-row-' + circleKey(row)
+                "
+              >
+                <hilos-hideable [value]="row.identifier" />
+              </span>
+            </ng-template>
+            <ng-template hilosTableCell="online" let-row>
+              <span
+                [class]="row.online ? 'text-success' : 'text-body-secondary'"
+                [attr.data-id]="
+                  'hilos-maintenance-circle-online-' + circleKey(row)
+                "
+                >{{ row.online ? circleCopy.online : circleCopy.offline }}</span
+              >
+            </ng-template>
+            <ng-template hilosTableCell="actions" let-row>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                [title]="circleCopy.removeTitle"
+                [attr.aria-label]="circleCopy.removeTitle"
+                [attr.data-id]="
+                  'hilos-maintenance-circle-remove-' + circleKey(row)
+                "
+                (click)="openCircleRemove(row)"
+              >
+                <i class="bi bi-trash" aria-hidden="true"></i>
+              </button>
+            </ng-template>
+          </hilos-viewport-table>
         </div>
       </div>
 
@@ -254,10 +207,11 @@ export class HilosMaintenancePage {
 
   protected readonly page = HilosPages.MAINTENANCE
   protected readonly isHiddenValue = isHiddenValue
-  protected readonly circleColumns = CIRCLE_COLUMNS
   protected readonly circleCopy = HILOS_MAINTENANCE_CIRCLE_COPY
   protected readonly circle = computed(() =>
-    createHilosMaintenanceCircleTable(this.context()),
+    createHilosMaintenanceCircleTable(this.context(), {
+      openAdd: () => this.openCircleAdd(),
+    }),
   )
   private readonly actions = computed(() =>
     createHilosMaintenanceActions(this.context()),

@@ -30,6 +30,11 @@ import { type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
 // Wire keys: the framework verifier circle table and its single inline slot, named
@@ -124,9 +129,14 @@ export const HILOS_MAINTENANCE_CIRCLE_COPY = {
   /** The one property of the list that surprises people afterwards. */
   volatile:
     'The circle itself does not survive a restore - afterwards the one stored in the archive applies.',
-  /** What an empty circle means, in the terms of what happens after an operation. */
-  empty:
-    'The circle is empty - after an operation only somebody you hand a code to can check the system.',
+  /**
+   * What an empty circle means, drawn by the table's own empty state: the
+   * headline, and the line under it about what happens after an operation.
+   */
+  empty: {
+    title: 'The circle is empty',
+    hint: 'After an operation only somebody you hand a code to can check the system.',
+  },
   /** Label of the address column. */
   addressColumn: 'Address',
   /** Label of the online mark column. */
@@ -135,7 +145,7 @@ export const HILOS_MAINTENANCE_CIRCLE_COPY = {
   online: 'signed in',
   /** Row mark for a member who holds none. */
   offline: 'not signed in',
-  /** Label of the button in the block's header that opens the add dialog. */
+  /** Label of the table's main action, which opens the add dialog. */
   addButton: 'Add a verifier',
   /** Title of the add dialog. */
   addTitle: 'Add a verifier',
@@ -171,6 +181,32 @@ export const HILOS_MAINTENANCE_CIRCLE_COPY = {
   removeRefusalTitle: "Couldn't remove the verifier",
 } as const
 
+/**
+ * The columns of the verifier circle, declared once for every view. The address
+ * is the card's title and the signed-in mark its badge; the remove control
+ * names the address it confirms, and the membership id stays the row key.
+ */
+const CIRCLE_COLUMNS: HilosTableColumnOf<HilosMaintenanceCircleRow>[] = [
+  {
+    key: MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
+    label: HILOS_MAINTENANCE_CIRCLE_COPY.addressColumn,
+    sortable: true,
+    card: 'title',
+  },
+  {
+    key: MAINTENANCE_CIRCLE_ONLINE_FIELD,
+    label: HILOS_MAINTENANCE_CIRCLE_COPY.onlineColumn,
+    card: 'badge',
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    reads: [MAINTENANCE_CIRCLE_IDENTIFIER_FIELD],
+  },
+]
+
 /** Read a row slot as an inline record, or undefined when it is not one. */
 function recordSlot(slot: unknown): Record<string, unknown> | undefined {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
@@ -202,6 +238,12 @@ export function resolveHilosMaintenanceCircleRow(
   }
 }
 
+/** What the view lends the circle table: the press of its declared main action. */
+export interface HilosMaintenanceCircleTableView {
+  /** Open the page's add dialog — what the table's main action does. */
+  readonly openAdd: () => void
+}
+
 /** The circle table handle a maintenance view drives: the controller plus its mount lifecycle. */
 export interface HilosMaintenanceCircleTable {
   /** The server-windowed controller the view renders rows, descriptor, and pending from. */
@@ -213,24 +255,56 @@ export interface HilosMaintenanceCircleTable {
 }
 
 /**
+ * What the circle table declares about its frame: the block's title, the two
+ * sentences that used to stand under it, one main action, and no search or
+ * filters. The main action opens the page's add dialog; the dialog belongs to
+ * the view, and the frame only lends it the press.
+ *
+ * @param view What the view lends: the press that opens its add dialog.
+ * @returns The frame declaration.
+ */
+function circleFrame(view: HilosMaintenanceCircleTableView): HilosTableFrame {
+  return {
+    title: HILOS_MAINTENANCE_CIRCLE_COPY.title,
+    subtitle: `${HILOS_MAINTENANCE_CIRCLE_COPY.rule} ${HILOS_MAINTENANCE_CIRCLE_COPY.volatile}`,
+    columns: CIRCLE_COLUMNS,
+    mainAction: {
+      label: HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
+      press: view.openAdd,
+    },
+    empty: HILOS_MAINTENANCE_CIRCLE_COPY.empty,
+  }
+}
+
+/**
  * The server-windowed controller for the verifier circle table on the maintenance page.
  * Rows resolve through {@link resolveHilosMaintenanceCircleRow}; the backend orders the
  * first window by address, so the list reads the way the administrator typed it rather
  * than by the order memberships happened to be made. The table hands a row into focus to
  * the dialog confirming its removal, so the dialog sees the row leave in another tab.
+ * The first window of a cold entry tells the server which fields the columns draw.
  *
  * @param context The project context (connection and scope stores).
+ * @param view What the view lends the table: the press of its main action.
  */
 export function createHilosMaintenanceCircleTable(
   context: HilosMaintenanceContext,
+  view: HilosMaintenanceCircleTableView,
 ): HilosMaintenanceCircleTable {
   const controller = new TableViewportController<HilosMaintenanceCircleRow>({
     resolve: resolveHilosMaintenanceCircleRow,
+    frame: circleFrame(view),
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
         HilosPages.MAINTENANCE,
         HILOS_MAINTENANCE_CIRCLE_TABLE,
         descriptor,
+      ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.MAINTENANCE,
+        HILOS_MAINTENANCE_CIRCLE_TABLE,
+        rendered,
       ),
     sendFocus: (rowKey) =>
       context.connection.sendTableRowFocus(

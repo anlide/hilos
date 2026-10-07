@@ -5,6 +5,8 @@ import {
   clearMaintenanceCircle,
   dismissToasts,
   maintenanceCircleRow,
+  shownByTestId,
+  sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
@@ -45,6 +47,25 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await expect(
     page
+      .locator('table')
+      .getByTestId(`hilos-maintenance-circle-row-${memberEmail}`),
+  ).toBeVisible()
+  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+
+  // Cards are the narrow shape of the same table. Both branches are mounted;
+  // only the cards are on screen, and the page does not scroll sideways.
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+  await expect(
+    page
+      .getByTestId('hilos-table-cards')
+      .getByTestId(`hilos-maintenance-circle-row-${memberEmail}`),
+  ).toBeVisible()
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
+  await page.setViewportSize(desktop)
+
+  await expect(
+    page
       .getByTestId('hilos-toasts')
       .getByText(`${memberEmail} added to the circle.`),
   ).toBeVisible()
@@ -53,7 +74,10 @@ test('naming a verifier shows the row, and refuses an unproven address and a rep
   // An address nobody has proven: the dialog stays, the refusal is its first line and
   // the typed address is still there; the toast in the corner is the second addressee.
   const unproven = uniqueEmail()
-  await page.getByTestId('hilos-maintenance-circle-add').click()
+  await shownByTestId(
+    page.getByTestId('hilos-maintenance-circle-table'),
+    'hilos-table-main-action',
+  ).click()
   const dialog = page.getByTestId('modal')
   const field = dialog.getByTestId('hilos-maintenance-circle-add-field')
   const confirm = dialog.getByTestId('hilos-maintenance-circle-add-confirm')

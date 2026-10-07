@@ -1,5 +1,7 @@
 import type { Locator, Page } from '@playwright/test'
 
+import { shownByTestId } from './table.js'
+
 // Maintenance section steps shared by all three SDKs, whose data-id controls match.
 // These expect the operator's page on /hilos/maintenance. Only an address somebody
 // has confirmed can be named to the verifier circle.
@@ -28,7 +30,12 @@ export async function addToMaintenanceCircle(
   page: Page,
   identifier: string,
 ): Promise<void> {
-  await page.getByTestId('hilos-maintenance-circle-add').click()
+  // The bar's button, the one on screen: the empty state offers the same press
+  // under another handle, and a declared table never draws the bar twice.
+  await shownByTestId(
+    page.getByTestId('hilos-maintenance-circle-table'),
+    'hilos-table-main-action',
+  ).click()
 
   const field = page.getByTestId('hilos-maintenance-circle-add-field')
   await field.waitFor({ state: 'visible' })
@@ -73,17 +80,19 @@ export async function confirmMaintenanceCircleRemoval(
  * so a neighbour that failed before cleanup may leave a member named. Without a clear,
  * circleAdmitted can count somebody this case never named. The first window is waited
  * for rather than assumed: an empty list and rows not yet delivered look alike. The
- * search is scoped to the circle table so the modal's own confirm button, which
- * shares the removal prefix, cannot be taken for a row's.
+ * search is scoped to the circle table, and to the copy on screen, so the modal's
+ * own confirm button, and the hidden card's, cannot be taken for a row's.
  *
  * @param page The operator's page, already on the maintenance section.
  */
 export async function clearMaintenanceCircle(page: Page): Promise<void> {
   const table = page.getByTestId('hilos-maintenance-circle-table')
   await table.waitFor({ state: 'visible' })
-  await table.getByTestId('hilos-table-loading').waitFor({ state: 'detached' })
+  // The skeleton stands in the table and in the cards at once. The visible one
+  // is the branch on screen; both leave together when the window arrives.
+  await shownByTestId(table, 'hilos-table-loading').waitFor({ state: 'hidden' })
 
-  const removals = table.getByTestId(/^hilos-maintenance-circle-remove-/)
+  const removals = shownByTestId(table, /^hilos-maintenance-circle-remove-/)
   for (let guard = 0; guard < CIRCLE_CLEAR_LIMIT; guard++) {
     if ((await removals.count()) === 0) {
       break
@@ -111,7 +120,9 @@ export async function clearMaintenanceCircle(page: Page): Promise<void> {
  * @param identifier The address the member was named by.
  */
 export function maintenanceCircleRow(page: Page, identifier: string): Locator {
-  return page.getByTestId(`hilos-maintenance-circle-row-${identifier}`)
+  // The visible copy. A count of zero — the row gone from both branches — is
+  // the plain getByTestId, which sees the hidden copy too (table.ts).
+  return shownByTestId(page, `hilos-maintenance-circle-row-${identifier}`)
 }
 
 /**
@@ -124,5 +135,5 @@ export function maintenanceCircleOnline(
   page: Page,
   identifier: string,
 ): Locator {
-  return page.getByTestId(`hilos-maintenance-circle-online-${identifier}`)
+  return shownByTestId(page, `hilos-maintenance-circle-online-${identifier}`)
 }

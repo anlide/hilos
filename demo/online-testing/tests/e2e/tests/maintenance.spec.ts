@@ -6,6 +6,7 @@ import {
   confirmMaintenanceCircleRemoval,
   dismissToasts,
   maintenanceCircleRow,
+  shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
@@ -45,10 +46,10 @@ test('taking a verifier out removes the row, and a dialog over a row taken out i
   await expect(maintenanceCircleRow(tabB, email)).toBeVisible()
 
   // A opens the dialog over the row: it names the address and Remove is live.
-  await page
-    .getByTestId('hilos-maintenance-circle-table')
-    .getByTestId(`hilos-maintenance-circle-remove-${email}`)
-    .click()
+  await shownByTestId(
+    page.getByTestId('hilos-maintenance-circle-table'),
+    `hilos-maintenance-circle-remove-${email}`,
+  ).click()
   const dialogA = page.getByTestId('modal')
   const confirmA = page.getByTestId('hilos-maintenance-circle-remove-confirm')
   await expect(confirmA).toBeEnabled()
@@ -56,12 +57,16 @@ test('taking a verifier out removes the row, and a dialog over a row taken out i
 
   // B takes the member out: the row leaves B's table over the live table, and the
   // ack's own sentence is B's toast.
-  await tabB
-    .getByTestId('hilos-maintenance-circle-table')
-    .getByTestId(`hilos-maintenance-circle-remove-${email}`)
-    .click()
+  await shownByTestId(
+    tabB.getByTestId('hilos-maintenance-circle-table'),
+    `hilos-maintenance-circle-remove-${email}`,
+  ).click()
   await confirmMaintenanceCircleRemoval(tabB)
-  await expect(maintenanceCircleRow(tabB, email)).toHaveCount(0)
+  // Both copies, the hidden one included: a visible-only count would pass
+  // while the other branch still drew the row.
+  await expect(
+    tabB.getByTestId(`hilos-maintenance-circle-row-${email}`),
+  ).toHaveCount(0)
   await expect(
     tabB
       .getByTestId('hilos-toasts')

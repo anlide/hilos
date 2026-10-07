@@ -165,6 +165,9 @@ function seededContext(
 
       return true
     },
+    sendTableRendered(): boolean {
+      return true
+    },
     on(
       event: string,
       listener: (signal: { data: unknown }) => void,
@@ -299,9 +302,7 @@ function openAndType(
   typed: string,
 ): void {
   document
-    .querySelector<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-add"]',
-    )
+    .querySelector<HTMLButtonElement>('[data-id="hilos-table-main-action"]')
     ?.click()
   fixture.detectChanges()
   const field = addField() as HTMLInputElement
@@ -339,6 +340,27 @@ describe('HilosMaintenancePage', () => {
     expect(mark('+10000000001')?.textContent).toBe(
       HILOS_MAINTENANCE_CIRCLE_COPY.offline,
     )
+    expect(
+      document.querySelector(
+        '[data-id="hilos-table-cards"] [data-id="hilos-maintenance-circle-online-ann@example.test"]',
+      )?.textContent,
+    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.online)
+    expect(
+      document
+        .querySelector('[data-id="hilos-table-title"]')
+        ?.textContent?.trim(),
+    ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.title)
+    expect(
+      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
+    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.rule)
+    expect(
+      document.querySelector('[data-id="hilos-table-subtitle"]')?.textContent,
+    ).toContain(HILOS_MAINTENANCE_CIRCLE_COPY.volatile)
+    expect(
+      document
+        .querySelector('[data-id="hilos-table-count"]')
+        ?.textContent?.trim(),
+    ).toBe('1 – 2 of 2')
   })
 
   it('moves the mark in place when the live row changes', async () => {
@@ -369,8 +391,35 @@ describe('HilosMaintenancePage', () => {
       ).length,
     ).toBe(0)
     expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      HILOS_MAINTENANCE_CIRCLE_COPY.empty,
+      HILOS_MAINTENANCE_CIRCLE_COPY.empty.title,
     )
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      HILOS_MAINTENANCE_CIRCLE_COPY.empty.hint,
+    )
+    const emptyActions = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        'table [data-id="hilos-table-empty-action"]',
+      ),
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '[data-id="hilos-table-cards"] [data-id="hilos-table-empty-action"]',
+      ),
+    ]
+    expect(emptyActions).toHaveLength(2)
+    for (const action of emptyActions) {
+      expect(action.textContent?.trim()).toBe(
+        HILOS_MAINTENANCE_CIRCLE_COPY.addButton,
+      )
+      action.click()
+      fixture.detectChanges()
+      expect(addField()).not.toBeNull()
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-id="hilos-maintenance-circle-add-cancel"]',
+        )
+        ?.click()
+      fixture.detectChanges()
+      expect(addField()).toBeNull()
+    }
   })
 
   it('offers adding a member and removing one', async () => {
@@ -382,7 +431,7 @@ describe('HilosMaintenancePage', () => {
 
     expect(
       panel
-        ?.querySelector('[data-id="hilos-maintenance-circle-add"]')
+        ?.querySelector('[data-id="hilos-table-main-action"]')
         ?.textContent?.trim(),
     ).toBe(HILOS_MAINTENANCE_CIRCLE_COPY.addButton)
     expect(trash('ann@example.test').getAttribute('aria-label')).toBe(
@@ -609,9 +658,7 @@ describe('HilosMaintenancePage', () => {
     await settled(fixture)
     expect(addField()).toBeNull()
     document
-      .querySelector<HTMLButtonElement>(
-        '[data-id="hilos-maintenance-circle-add"]',
-      )
+      .querySelector<HTMLButtonElement>('[data-id="hilos-table-main-action"]')
       ?.click()
     fixture.detectChanges()
 
@@ -733,7 +780,7 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     const fixture = mountPage(context)
 
     const addButton = document.querySelector<HTMLButtonElement>(
-      '[data-id="hilos-maintenance-circle-add"]',
+      '[data-id="hilos-table-main-action"]',
     )
     expect(addButton?.disabled).toBe(false)
 
