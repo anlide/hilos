@@ -16,6 +16,7 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Notification\ChatDeliveryChannelRegistry;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
@@ -161,7 +162,15 @@ final class ChatSignalRouterTest extends TestCase
     {
         $router = new ChatSignalRouter();
 
-        foreach ([PageConstants::BOT, PageConstants::HILOS_I18N_LANGUAGES] as $page) {
+        foreach ([
+            PageConstants::BOT,
+            PageConstants::HILOS_I18N_LANGUAGES,
+            HilosPageConstants::HILOS_I18N_LANGUAGE,
+            HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES,
+            HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES,
+            HilosPageConstants::HILOS_I18N_COUNTRY,
+            HilosPageConstants::HILOS_I18N_COUNTRY_NAMES,
+        ] as $page) {
             $destinations = $router->getDestinations(new SignalDTO(
                 new SignalSource(SignalSource::WEBSOCKET),
                 new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),

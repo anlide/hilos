@@ -93,6 +93,11 @@ use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
@@ -133,6 +138,11 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
             CountriesListPage::PAGE => CountriesListPage::class,
+            LanguageDetailPage::PAGE => LanguageDetailPage::class,
+            LanguageNamesPage::PAGE => LanguageNamesPage::class,
+            LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+            CountryDetailPage::PAGE => CountryDetailPage::class,
+            CountryNamesPage::PAGE => CountryNamesPage::class,
             DaemonPage::PAGE => DaemonPage::class,
             DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
             DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
@@ -241,7 +251,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         }
     }
 
-    /** The three registered i18n shells route to one placed framework library. */
+    /** The i18n section and five detail pages route to one placed framework library. */
     public function testI18nSectionUsesFrameworkLibrary(): void
     {
         $this->assertContains(HilosFeature::I18N, Hilos::features());
@@ -249,12 +259,24 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             I18nPage::PAGE,
             LanguagesListPage::PAGE,
             CountriesListPage::PAGE,
+            LanguageDetailPage::PAGE,
+            LanguageNamesPage::PAGE,
+            LanguageLocalesPage::PAGE,
+            CountryDetailPage::PAGE,
+            CountryNamesPage::PAGE,
         ], array_values(array_filter(
             array_keys(Hilos::PAGES),
             static fn (string $page): bool => str_starts_with($page, I18nPage::PAGE),
         )));
 
-        foreach ([I18nPage::class, LanguagesListPage::class, CountriesListPage::class] as $page) {
+        foreach ([
+            I18nPage::class, LanguagesListPage::class, CountriesListPage::class,
+            LanguageDetailPage::class,
+            LanguageNamesPage::class,
+            LanguageLocalesPage::class,
+            CountryDetailPage::class,
+            CountryNamesPage::class,
+        ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
         }

@@ -51,7 +51,10 @@ export const HilosPages = {
   I18N_ACTIONS: 'hilos_i18n_actions',
   I18N_EMAILS: 'hilos_i18n_emails',
   I18N_LANGUAGE: 'hilos_i18n_language',
+  I18N_LANGUAGE_NAMES: 'hilos_i18n_language_names',
+  I18N_LANGUAGE_LOCALES: 'hilos_i18n_language_locales',
   I18N_COUNTRY: 'hilos_i18n_country',
+  I18N_COUNTRY_NAMES: 'hilos_i18n_country_names',
   I18N_UI_PAGE: 'hilos_i18n_ui_page',
   I18N_GROUP: 'hilos_i18n_group',
   I18N_ACTION: 'hilos_i18n_action',
@@ -168,11 +171,23 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.I18N_ACTIONS]: { path: '/hilos/i18n/actions', admin: true },
   [HilosPages.I18N_EMAILS]: { path: '/hilos/i18n/emails', admin: true },
   [HilosPages.I18N_LANGUAGE]: {
-    path: '/hilos/i18n/languages/{languageId}',
+    path: '/hilos/i18n/languages/{languageCode}',
+    admin: true,
+  },
+  [HilosPages.I18N_LANGUAGE_NAMES]: {
+    path: '/hilos/i18n/languages/{languageCode}/names',
+    admin: true,
+  },
+  [HilosPages.I18N_LANGUAGE_LOCALES]: {
+    path: '/hilos/i18n/languages/{languageCode}/locales',
     admin: true,
   },
   [HilosPages.I18N_COUNTRY]: {
-    path: '/hilos/i18n/countries/{countryId}',
+    path: '/hilos/i18n/countries/{countryCode}',
+    admin: true,
+  },
+  [HilosPages.I18N_COUNTRY_NAMES]: {
+    path: '/hilos/i18n/countries/{countryCode}/names',
     admin: true,
   },
   [HilosPages.I18N_UI_PAGE]: {

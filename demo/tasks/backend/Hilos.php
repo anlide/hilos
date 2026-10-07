@@ -69,6 +69,11 @@ use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
 use Demo\Tasks\Pages\Hilos\I18nPage;
 use Demo\Tasks\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Tasks\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Tasks\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Tasks\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Tasks\Pages\Hilos\TermsPage;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
@@ -202,6 +207,11 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        LanguageNamesPage::PAGE => LanguageNamesPage::class,
+        LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        CountryNamesPage::PAGE => CountryNamesPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         DaemonPage::PAGE => DaemonPage::class,

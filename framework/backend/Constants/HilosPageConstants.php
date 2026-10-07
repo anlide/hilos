@@ -72,8 +72,17 @@ final class HilosPageConstants
     /** @var string Hilos I18n — single language */
     public const string HILOS_I18N_LANGUAGE = 'hilos_i18n_language';
 
+    /** @var string Hilos I18n — names of one language */
+    public const string HILOS_I18N_LANGUAGE_NAMES = 'hilos_i18n_language_names';
+
+    /** @var string Hilos I18n — locales of one language */
+    public const string HILOS_I18N_LANGUAGE_LOCALES = 'hilos_i18n_language_locales';
+
     /** @var string Hilos I18n — single country */
     public const string HILOS_I18N_COUNTRY = 'hilos_i18n_country';
+
+    /** @var string Hilos I18n — names of one country */
+    public const string HILOS_I18N_COUNTRY_NAMES = 'hilos_i18n_country_names';
 
     /** @var string Hilos I18n — single UI page */
     public const string HILOS_I18N_UI_PAGE = 'hilos_i18n_ui_page';

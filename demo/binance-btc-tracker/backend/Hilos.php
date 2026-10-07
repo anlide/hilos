@@ -58,6 +58,11 @@ use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18nPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
@@ -201,6 +206,11 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        LanguageNamesPage::PAGE => LanguageNamesPage::class,
+        LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        CountryNamesPage::PAGE => CountryNamesPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         DaemonPage::PAGE => DaemonPage::class,

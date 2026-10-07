@@ -150,8 +150,18 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_I18N_LANGUAGE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single language: locale settings and status.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single language: code, native name, and writing direction.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGES,
+        ],
+        HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language names',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How this language is named in each of the other languages.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGE,
+        ],
+        HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Language locales',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Formats of this language, per country.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGE,
         ],
         HilosPageConstants::HILOS_I18N_COUNTRIES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Countries',
@@ -160,8 +170,13 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_I18N_COUNTRY => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Country',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single country: locale, currency, and formatting.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'A single country: currency, default locale, and state.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_COUNTRIES,
+        ],
+        HilosPageConstants::HILOS_I18N_COUNTRY_NAMES => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Country names',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How this country is named in each language.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_COUNTRY,
         ],
         HilosPageConstants::HILOS_I18N_ENTITIES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Entities',

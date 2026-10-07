@@ -6,6 +6,11 @@ import {
   type NavigationEnvironment,
 } from '../../src/routing/HilosRouter.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
+import {
+  HilosPages,
+  HILOS_ROUTE_DECLARATIONS,
+} from '../../src/routing/hilosPages.js'
+import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
 import { type PageSubscriptionError } from '../../src/protocol/pageError.js'
 import {
   type HilosDashboardSection,
@@ -125,6 +130,62 @@ function fakePages() {
 }
 
 describe('unbuilt pages', () => {
+  it('refuses five i18n detail addresses before a subscription in every SDK', () => {
+    const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      for (const [page, path, params] of [
+        [
+          HilosPages.I18N_LANGUAGE,
+          '/hilos/i18n/languages/en',
+          { languageCode: 'en' },
+        ],
+        [
+          HilosPages.I18N_LANGUAGE_NAMES,
+          '/hilos/i18n/languages/en/names',
+          { languageCode: 'en' },
+        ],
+        [
+          HilosPages.I18N_LANGUAGE_LOCALES,
+          '/hilos/i18n/languages/en/locales',
+          { languageCode: 'en' },
+        ],
+        [
+          HilosPages.I18N_COUNTRY,
+          '/hilos/i18n/countries/pl',
+          { countryCode: 'pl' },
+        ],
+        [
+          HilosPages.I18N_COUNTRY_NAMES,
+          '/hilos/i18n/countries/pl/names',
+          { countryCode: 'pl' },
+        ],
+      ] as const) {
+        const { env } = fakeEnvironment(path)
+        const { pages, calls, refused } = fakePages()
+        const navigator = createHilosRouter(
+          i18nRouter,
+          pages,
+          env,
+          undefined,
+          hilosUnbuiltPages(layer),
+        )
+        navigator.start()
+
+        expect(navigator.currentRoute.get()).toEqual({
+          page,
+          params,
+          admin: true,
+        })
+        expect(refused).toEqual([page])
+        expect(calls).toEqual([])
+        expect(navigator.resolvePath(page, params)).toBeUndefined()
+        navigator.stop()
+      }
+    }
+  })
+
   it('refuses a cold entry and resolves no address for it', () => {
     const { env } = fakeEnvironment('/hilos')
     const { pages, calls, refused } = fakePages()

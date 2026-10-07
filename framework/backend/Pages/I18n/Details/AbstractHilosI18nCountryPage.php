@@ -7,7 +7,6 @@ namespace Hilos\Pages\I18n\Details;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageReach;
 
 /**
@@ -15,7 +14,7 @@ use Hilos\Core\Page\PageReach;
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage).
  */
-abstract class AbstractHilosI18nCountryPage extends AbstractHilosPage
+abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCodePage
 {
     public const string PAGE = HilosPageConstants::HILOS_I18N_COUNTRY;
 

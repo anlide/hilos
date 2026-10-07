@@ -9,6 +9,66 @@ import {
 } from '../../src/routing/hilosPages.js'
 
 describe('HILOS_ROUTE_DECLARATIONS', () => {
+  it('addresses all five i18n detail pages by code', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    const addresses = [
+      [
+        HilosPages.I18N_LANGUAGE,
+        'hilos_i18n_language',
+        '/hilos/i18n/languages/{languageCode}',
+        { languageCode: 'en' },
+        '/hilos/i18n/languages/en',
+      ],
+      [
+        HilosPages.I18N_LANGUAGE_NAMES,
+        'hilos_i18n_language_names',
+        '/hilos/i18n/languages/{languageCode}/names',
+        { languageCode: 'en' },
+        '/hilos/i18n/languages/en/names',
+      ],
+      [
+        HilosPages.I18N_LANGUAGE_LOCALES,
+        'hilos_i18n_language_locales',
+        '/hilos/i18n/languages/{languageCode}/locales',
+        { languageCode: 'en' },
+        '/hilos/i18n/languages/en/locales',
+      ],
+      [
+        HilosPages.I18N_COUNTRY,
+        'hilos_i18n_country',
+        '/hilos/i18n/countries/{countryCode}',
+        { countryCode: 'pl' },
+        '/hilos/i18n/countries/pl',
+      ],
+      [
+        HilosPages.I18N_COUNTRY_NAMES,
+        'hilos_i18n_country_names',
+        '/hilos/i18n/countries/{countryCode}/names',
+        { countryCode: 'pl' },
+        '/hilos/i18n/countries/pl/names',
+      ],
+    ] as const
+
+    for (const [page, key, template, params, path] of addresses) {
+      expect(page).toBe(key)
+      expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+        path: template,
+        admin: true,
+      })
+      expect(resolveHilosPath(page, params)).toBe(path)
+      expect(router.match(path)).toEqual({ page, params, admin: true })
+    }
+
+    expect(router.match('/hilos/i18n/languages').page).toBe(
+      HilosPages.I18N_LANGUAGES,
+    )
+    expect(router.match('/hilos/i18n/countries').page).toBe(
+      HilosPages.I18N_COUNTRIES,
+    )
+  })
+
   it('routes Daemon children through a required node segment', () => {
     const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,

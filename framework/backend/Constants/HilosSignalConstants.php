@@ -189,8 +189,17 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos i18n language detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_LANGUAGE = 'subscription_page_hilos_i18n_language';
 
+    /** Subscription signal for Hilos i18n language names. */
+    public const string SUBSCRIPTION_PAGE_HILOS_I18N_LANGUAGE_NAMES = 'subscription_page_hilos_i18n_language_names';
+
+    /** Subscription signal for Hilos i18n language locales. */
+    public const string SUBSCRIPTION_PAGE_HILOS_I18N_LANGUAGE_LOCALES = 'subscription_page_hilos_i18n_language_locales';
+
     /** Subscription signal for Hilos i18n country detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_COUNTRY = 'subscription_page_hilos_i18n_country';
+
+    /** Subscription signal for Hilos i18n country names. */
+    public const string SUBSCRIPTION_PAGE_HILOS_I18N_COUNTRY_NAMES = 'subscription_page_hilos_i18n_country_names';
 
     /** Subscription signal for Hilos i18n UI page detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_UI_PAGE = 'subscription_page_hilos_i18n_ui_page';

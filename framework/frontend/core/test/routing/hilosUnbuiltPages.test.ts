@@ -29,12 +29,21 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('keeps the i18n section and both lists unbuilt in every view layer', () => {
+  it('keeps the i18n section, lists, and five detail pages unbuilt in every view layer', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const unbuilt = hilosUnbuiltPages(layer)
-      expect(unbuilt.has(HilosPages.I18N)).toBe(true)
-      expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(true)
-      expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(true)
+      for (const page of [
+        HilosPages.I18N,
+        HilosPages.I18N_LANGUAGES,
+        HilosPages.I18N_COUNTRIES,
+        HilosPages.I18N_LANGUAGE,
+        HilosPages.I18N_LANGUAGE_NAMES,
+        HilosPages.I18N_LANGUAGE_LOCALES,
+        HilosPages.I18N_COUNTRY,
+        HilosPages.I18N_COUNTRY_NAMES,
+      ]) {
+        expect(unbuilt.has(page)).toBe(true)
+      }
     }
   })
 

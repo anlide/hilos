@@ -109,6 +109,11 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
 use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Chat\Pages\Hilos\I18n\Lists\LanguagesListPage;
 use Demo\Chat\Pages\Hilos\I18nPage;
@@ -350,6 +355,11 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        LanguageNamesPage::PAGE => LanguageNamesPage::class,
+        LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        CountryNamesPage::PAGE => CountryNamesPage::class,
         GuardianPage::PAGE => GuardianPage::class,
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,

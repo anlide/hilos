@@ -200,7 +200,7 @@ final class AbstractPagePageResponseEmitTest extends TestCase
 
         $this->assertSame('Russian', $data[PageCatalogConstants::WIRE_PAGE_LABEL]);
         $this->assertSame(
-            'A single language: locale settings and status.',
+            'A single language: code, native name, and writing direction.',
             $data[PageCatalogConstants::WIRE_PAGE_LEAD],
         );
     }

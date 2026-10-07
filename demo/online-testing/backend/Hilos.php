@@ -51,6 +51,11 @@ use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\SettingsPage;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\OnlineTesting\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\OnlineTesting\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\OnlineTesting\Pages\Hilos\TermsPage;
 use Demo\OnlineTesting\Pages\Hilos\Users\UserPage;
@@ -157,6 +162,11 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        LanguageNamesPage::PAGE => LanguageNamesPage::class,
+        LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        CountryNamesPage::PAGE => CountryNamesPage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,

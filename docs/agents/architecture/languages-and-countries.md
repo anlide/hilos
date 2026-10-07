@@ -331,8 +331,8 @@ by someone or referenced by a translation string belong to HIL-1424.
 
 A language or country is addressed by code, not row number. A code never
 changes; a row number can change on a reload of the data, and a URL can be
-sent by mail. Code addresses and the three new names/locales page keys land
-together (not in the code yet — HIL-1473).
+sent by mail. Code addresses and the three new names/locales page keys are registered
+together (HIL-1473). The browser views remain unbuilt until their own leaves.
 
 | Page key | Route |
 |---|---|

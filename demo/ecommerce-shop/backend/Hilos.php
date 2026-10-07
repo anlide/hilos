@@ -35,6 +35,11 @@ use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
@@ -141,6 +146,11 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        LanguageNamesPage::PAGE => LanguageNamesPage::class,
+        LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        CountryNamesPage::PAGE => CountryNamesPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,

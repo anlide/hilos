@@ -67,6 +67,11 @@ use Demo\Polls\Pages\Hilos\PrivacyPage;
 use Demo\Polls\Pages\Hilos\SettingsPage;
 use Demo\Polls\Pages\Hilos\I18nPage;
 use Demo\Polls\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Polls\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Polls\Pages\Hilos\I18n\Details\CountryNamesPage;
+use Demo\Polls\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\Polls\Pages\Hilos\I18n\Details\LanguageLocalesPage;
+use Demo\Polls\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Polls\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Polls\Pages\Hilos\TermsPage;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
@@ -196,6 +201,11 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        LanguageNamesPage::PAGE => LanguageNamesPage::class,
+        LanguageLocalesPage::PAGE => LanguageLocalesPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        CountryNamesPage::PAGE => CountryNamesPage::class,
         DaemonPage::PAGE => DaemonPage::class,
         DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
         DaemonAgentsPage::PAGE => DaemonAgentsPage::class,

@@ -30,6 +30,12 @@ final class HilosPageRouteParams
     /** Route param for the Daemon section's node child pages. */
     public const string HILOS_DAEMON_NODE_ID = 'nodeId';
 
+    /** Route param for language detail pages. */
+    public const string HILOS_I18N_LANGUAGE_CODE = 'languageCode';
+
+    /** Route param for country detail pages. */
+    public const string HILOS_I18N_COUNTRY_CODE = 'countryCode';
+
     /** Legal document and revision route parameters. */
     public const string HILOS_LEGAL_DOCUMENT_KEY = 'documentKey';
     public const string HILOS_LEGAL_REVISION_ID = 'revisionId';

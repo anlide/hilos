@@ -32,7 +32,7 @@ final class HilosPageCatalogTest extends TestCase
      * catalog is a name and a lead an administrator will read, so it arrives by somebody writing
      * it down here as well.
      */
-    private const int CATALOG_ENTRIES = 81;
+    private const int CATALOG_ENTRIES = 84;
 
     /** Number of dashboard sections carried over in the same transfer. */
     private const int TRANSFERRED_SECTIONS = 5;
@@ -135,5 +135,16 @@ final class HilosPageCatalogTest extends TestCase
             'Env mismatch',
             HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH][PageCatalogConstants::CATALOG_ENTRY_LABEL],
         );
+    }
+
+    public function testI18nDetailPagesFollowTheirParent(): void
+    {
+        foreach ([
+            HilosPageConstants::HILOS_I18N_LANGUAGE_NAMES => HilosPageConstants::HILOS_I18N_LANGUAGE,
+            HilosPageConstants::HILOS_I18N_LANGUAGE_LOCALES => HilosPageConstants::HILOS_I18N_LANGUAGE,
+            HilosPageConstants::HILOS_I18N_COUNTRY_NAMES => HilosPageConstants::HILOS_I18N_COUNTRY,
+        ] as $page => $parent) {
+            self::assertSame($parent, HilosPageCatalog::CATALOG[$page][PageCatalogConstants::CATALOG_ENTRY_PARENT]);
+        }
     }
 }
