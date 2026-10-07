@@ -7,7 +7,6 @@ namespace Hilos\Auth\Library;
 use Hilos\DataExport\DTO\DataExportStateSignalData;
 use Hilos\DataExport\DataExportNotifier;
 use Hilos\DataExport\DataExportStateProjector;
-use Hilos\DataExport\DataExportGroup;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
@@ -1331,22 +1330,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function publishSessionState(SessionStateSignalData $state): void
     {
         $card = $this->accountBlockedNotice($state->sessionToken);
-        if ($card === null) {
-            foreach ($state->acceptKeys as $acceptKey) {
-                $held = Hilos::$sr?->groupSubscriptionName($acceptKey, DataExportGroup::NAME);
-                if ($held !== null && ($state->userId === null || $held !== DataExportGroup::forUser($state->userId))) {
-                    DataExportGroup::leave($acceptKey, $this->getAgentSignalSource());
-                }
-            }
-        }
-        if ($card !== null) {
-            $blockedUserId = Hilos::$db->sessions->findByToken($state->sessionToken)?->blockedUserId;
-            if ($blockedUserId !== null) {
-                foreach ($state->acceptKeys as $acceptKey) {
-                    DataExportGroup::join($acceptKey, $blockedUserId, $this->getAgentSignalSource());
-                }
-            }
-        }
         $standing = $state->userId === null ? null : AccountStandingResolver::of($state->userId);
         if ($standing !== null) {
             $this->publishedStanding[$state->userId] ??= $standing;

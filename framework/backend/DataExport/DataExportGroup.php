@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\DataExport;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Group\DTO\GroupJoinSignalData;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
@@ -64,6 +66,11 @@ final class DataExportGroup
 
     /**
      * Removes memberships belonging to a block notice the browser no longer holds.
+     *
+     * The end of the "Access closed" card's membership, said when an anonymous tab is answered
+     * without the card ({@see AbstractAgent::sendHandshakeResponse()}): closing the card changes
+     * no person, so the rule that a change of person drops every group of a connection
+     * ({@see GroupMembership::leaveAll()}, HIL-1284) does not cover it.
      *
      * @param string $acceptKey Connection leaving its previous export group
      * @param SignalSourceInterface $source Session holder announcing the leave

@@ -17,6 +17,7 @@ use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
 use Hilos\Cluster\Peer\DTO\PeerHandshakeDTO;
+use Hilos\Cluster\Peer\DTO\PeerGroupLeaveAllDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
@@ -459,6 +460,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
             $frame instanceof PeerConnectionDropDTO => $this->onConnectionDrop($frame),
             $frame instanceof PeerPageAccessReassessDTO => $this->onPageAccessReassess($frame),
+            $frame instanceof PeerGroupLeaveAllDTO => $this->onGroupLeaveAll($frame),
             $frame instanceof PeerHttpReplyDTO => $this->onHttpReply($frame),
             $frame instanceof PeerCommandReplyDTO => $this->onCommandReply($frame),
             $frame instanceof PeerConnectionsSnapshotDTO => $this->onConnectionsSnapshot($frame),
@@ -978,6 +980,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('page access re-decision');
         $this->server->onPageAccessReassessReceived($this, $frame);
+    }
+
+    /**
+     * Hands a cross-node group leave-all to this node's server (HIL-1284).
+     *
+     * @param PeerGroupLeaveAllDTO $frame Incoming leave-all frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onGroupLeaveAll(PeerGroupLeaveAllDTO $frame): void
+    {
+        $this->requireHandshaked('group leave-all');
+        $this->server->onGroupLeaveAllReceived($this, $frame);
     }
 
     /**

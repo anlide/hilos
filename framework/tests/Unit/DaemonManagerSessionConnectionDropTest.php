@@ -231,6 +231,13 @@ final class SessionConnectionDropTestMesh implements ClientMesh
     }
 
     /**
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    public function broadcastGroupLeaveAll(array $acceptKeys): void
+    {
+    }
+
+    /**
      * @param string $nodeId Target node
      * @param list<string> $acceptKeys Connection snapshot
      */

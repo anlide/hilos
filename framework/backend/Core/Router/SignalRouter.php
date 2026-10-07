@@ -16,6 +16,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
@@ -728,6 +729,20 @@ class SignalRouter
     public function unsubscribeFromGroup(string $group, WebSocketGroupUnsubscribeSignalDTO $data): void
     {
         $this->subscriptions->unsubscribeFromGroup($data->acceptKey, $group);
+    }
+
+    /**
+     * Drops every group membership of a connection, leaving its page subscription alone.
+     *
+     * The person behind the connection changed (HIL-1284): {@see GroupMembership::leaveAll()}
+     * clears this process's mirror through here, and every master and worker does the same on
+     * the `group_leave_all` frame.
+     *
+     * @param string $acceptKey Client accept key
+     */
+    public function unsubscribeFromAllGroups(string $acceptKey): void
+    {
+        $this->subscriptions->unsubscribeFromAllGroups($acceptKey);
     }
 
     /**

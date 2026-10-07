@@ -32,6 +32,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
@@ -134,6 +135,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRtSourceReleasedDTO::MESSAGE_TYPE => WorkerRtSourceReleasedDTO::fromArray($data),
             WorkerSourceInterestDTO::MESSAGE_TYPE => WorkerSourceInterestDTO::fromArray($data),
             WorkerGroupJoinDTO::MESSAGE_TYPE => WorkerGroupJoinDTO::fromArray($data),
+            WorkerGroupLeaveAllDTO::MESSAGE_TYPE => WorkerGroupLeaveAllDTO::fromArray($data),
             WorkerRtSnapshotMessageDTO::MESSAGE_TYPE => WorkerRtSnapshotMessageDTO::fromArray($data),
             WorkerDbInterestReadyMessageDTO::MESSAGE_TYPE => WorkerDbInterestReadyMessageDTO::fromArray($data),
             WorkerRtStalenessMessageDTO::MESSAGE_TYPE => WorkerRtStalenessMessageDTO::fromArray($data),

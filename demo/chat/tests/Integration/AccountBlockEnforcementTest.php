@@ -324,7 +324,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->assertNotNull($response);
         $this->assertSame($userId, $response->selfId);
         $this->assertNull($response->accountBlocked);
-        self::assertSame(DataExportGroup::forUser($userId), Hilos::$sr->groupSubscriptionName('unblock-ak', DataExportGroup::NAME));
+        // Coming back in is a change of person on the tab, and that drops every group it held -
+        // the card's export membership too (HIL-1284); a profile page lets it back in.
+        self::assertNull(Hilos::$sr->groupSubscriptionName('unblock-ak', DataExportGroup::NAME));
         $this->assertSame([
             'event' => 'account_block_lifted',
             'user' => $userId,

@@ -280,6 +280,24 @@ final class SubscriptionRegistry
     }
 
     /**
+     * Removes every group subscription of a client and nothing else.
+     *
+     * The person behind a connection changing ends every group membership it held
+     * (HIL-1284); the page subscription, table windows, facet requests, focus and
+     * delivery marks belong to the page and stay, so this is not {@see unsubscribeFromAll()}.
+     *
+     * @param string $acceptKey Client accept key
+     */
+    public function unsubscribeFromAllGroups(string $acceptKey): void
+    {
+        if ($acceptKey === '') {
+            return;
+        }
+
+        unset($this->groups[$acceptKey]);
+    }
+
+    /**
      * Removes all page and group subscriptions for a client.
      *
      * @param string $acceptKey Client accept key

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -47,16 +49,27 @@ abstract class HilosConnectionActions extends RtActions
      * binds its live connections to the logged-in user id, logout reverts them to
      * null.
      *
+     * The person behind a connection changing ends every group membership it held
+     * (HIL-1284, {@see GroupMembership::leaveAll()}): the next person in the same tab
+     * must not be handed the previous person's group frames. Writing the same person
+     * again is not a change and leaves the groups alone.
+     *
      * @param ?int $userId Authenticated user id, or null for anonymous
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws InvalidArgumentException When the group leave-all announcement cannot be named
      */
     public function bindUser(?int $userId): void
     {
         $this->ensureCanWrite();
 
+        $changed = $this->state->userId !== $userId;
         $this->state->userId = $userId;
 
         $this->sync();
+
+        if ($changed) {
+            GroupMembership::leaveAll($this->state->acceptKey);
+        }
     }
 }

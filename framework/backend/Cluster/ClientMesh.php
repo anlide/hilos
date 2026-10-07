@@ -79,6 +79,18 @@ interface ClientMesh
     public function broadcastPageAccessReassess(SignalDTO $signal): void;
 
     /**
+     * Asks every other node, slaves included, to drop every group membership of connections
+     * whose person changed (HIL-1284).
+     *
+     * Broadcast rather than addressed: a membership is written on the master of the node whose
+     * agent admitted the join, which the sender cannot know. Delivery is best-effort, as with
+     * {@see broadcastClientFanout()}.
+     *
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    public function broadcastGroupLeaveAll(array $acceptKeys): void;
+
+    /**
      * Hands one node the whole set of browser connections this node holds.
      *
      * Addressed, and sent off the handshake rather than off membership: a node is a member as

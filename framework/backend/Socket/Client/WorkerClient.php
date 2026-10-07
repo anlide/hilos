@@ -41,6 +41,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\DTO\WorkerLogWriteLevelDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
@@ -234,6 +235,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSourceReleasedDTO => $this->handleWorkerRtSourceReleasedMessage($workerDTO),
             $workerDTO instanceof WorkerSourceInterestDTO => $this->handleWorkerSourceInterestMessage($workerDTO),
             $workerDTO instanceof WorkerGroupJoinDTO => $this->handleGroupJoinMessage($workerDTO),
+            $workerDTO instanceof WorkerGroupLeaveAllDTO => $this->handleGroupLeaveAllMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
@@ -588,6 +590,27 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             group: $dto->data->group,
             params: $dto->data->params,
         ));
+    }
+
+    /**
+     * Drops every group membership of connections whose person changed, then has it fanned out (HIL-1284).
+     *
+     * Applied to the master's registry at receipt, as {@see handleGroupJoinMessage()} records a
+     * join, so the two take effect in the order the worker sent them. Queued instead, the leave
+     * would be overtaken by the join the same worker sends right after it - the block notice's
+     * export group - and would then erase that join on its way through. Only the fan-out to the
+     * other workers and the other nodes is queued, naming this worker as the one to skip.
+     *
+     * @param WorkerGroupLeaveAllDTO $dto Connections leaving every group
+     * @throws InvalidArgumentException When the queued fan-out carries an empty name
+     */
+    private function handleGroupLeaveAllMessage(WorkerGroupLeaveAllDTO $dto): void
+    {
+        foreach ($dto->data->acceptKeys as $acceptKey) {
+            Hilos::$sr?->unsubscribeFromAllGroups($acceptKey);
+        }
+
+        $this->agentManager->handleWorkerGroupLeaveAll($dto, $this->getWorkerIndex());
     }
 
     /**

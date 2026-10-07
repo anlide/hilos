@@ -47,6 +47,7 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Group\DTO\GroupJoinSignalData;
+use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Group\GroupSubscriptionDispatcher;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
@@ -130,6 +131,7 @@ use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
@@ -608,6 +610,18 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     break;
                 }
                 PageAccessReassessment::sweepThisWorkerConnections($data->acceptKeys);
+                break;
+
+            case WorkerConstants::MESSAGE_GROUP_LEAVE_ALL:
+                if (!$data instanceof WorkerGroupLeaveAllDTO) {
+                    Logger::error("unsubscribeFromAllGroups - unexpected type: " . get_class($data));
+                    break;
+                }
+                // Another worker's connection changed person, or another node's (HIL-1284): this
+                // mirror drops every group of it, as the master's registry already has.
+                foreach ($data->data->acceptKeys as $acceptKey) {
+                    Hilos::$sr?->unsubscribeFromAllGroups($acceptKey);
+                }
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
@@ -3545,6 +3559,18 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     $this->daemonClient->send(new WorkerGroupJoinDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - group join carries invalid data: ' . get_class($signal->data));
+                }
+                continue;
+            }
+
+            // A group leave-all takes the same road, and its place in this queue is the point:
+            // it leaves ahead of the handshake answer and of the joins queued after it, and the
+            // master applies it at receipt, so no join that follows can be erased by it (HIL-1284).
+            if ($signalType === SignalTypeConstants::GROUP_LEAVE_ALL) {
+                if ($signal->data instanceof GroupLeaveAllSignalData) {
+                    $this->daemonClient->send(new WorkerGroupLeaveAllDTO($signal->data));
+                } else {
+                    Logger::error('dispatchQueuedSignalsToDaemon - group leave-all carries invalid data: ' . get_class($signal->data));
                 }
                 continue;
             }

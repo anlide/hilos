@@ -80,6 +80,17 @@ interface ClientSignalSink
     public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void;
 
     /**
+     * Drops every group membership of connections whose person changed on another node (HIL-1284).
+     *
+     * Clears this node's registry and every one of its workers' mirrors; a key held nowhere here
+     * is matched by nobody, and the announcement is not forwarded.
+     *
+     * @param string $originNodeId Id of the announcing node
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    public function deliverGroupLeaveAll(string $originNodeId, array $acceptKeys): void;
+
+    /**
      * Hands the whole set of browser connections this node holds to a node the mesh has just
      * linked to.
      *

@@ -15,6 +15,7 @@ use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
+use Hilos\Cluster\Peer\DTO\PeerGroupLeaveAllDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Cluster\Peer\PeerLink;
@@ -349,6 +350,35 @@ final class PeerServerClientDeliveryTest extends TestCase
         }
     }
 
+    public function testAGroupLeaveAllIsDeliveredToTheLocalSink(): void
+    {
+        $sink = $this->registerSink();
+        $server = $this->makeServer();
+
+        $server->onGroupLeaveAllReceived($this->makeLink($server), new PeerGroupLeaveAllDTO('node-b', ['ak-1', 'ak-2']));
+
+        $this->assertSame([['node-b', ['ak-1', 'ak-2']]], $sink->groupLeaves);
+    }
+
+    public function testAGroupLeaveAllWithoutALocalSinkIsContained(): void
+    {
+        $server = $this->makeServer();
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-peer-group-leave-');
+        Logger::setLogFile($logFile);
+
+        try {
+            $server->onGroupLeaveAllReceived($this->makeLink($server), new PeerGroupLeaveAllDTO('node-b', ['ak-1']));
+
+            $this->assertStringContainsString(
+                "Dropping peer group leave-all from node 'node-b': no local client signal sink registered",
+                (string)file_get_contents($logFile),
+            );
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+    }
+
     /**
      * Builds the application signal a forwarded frame carries.
      *
@@ -392,6 +422,9 @@ final class PeerServerClientDeliveryTest extends TestCase
 
             /** @var list<array{0: string, 1: string}> Received page re-decision announcements */
             public array $pageReassessments = [];
+
+            /** @var list<array{0: string, 1: list<string>}> Received group leave-alls */
+            public array $groupLeaves = [];
 
             /**
              * @param string $acceptKey Accept key of the connection to deliver to
@@ -441,6 +474,15 @@ final class PeerServerClientDeliveryTest extends TestCase
             public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void
             {
                 $this->pageReassessments[] = [$originNodeId, $signal->signalName->getName()];
+            }
+
+            /**
+             * @param string $originNodeId Announcing node
+             * @param list<string> $acceptKeys Connections leaving every group
+             */
+            public function deliverGroupLeaveAll(string $originNodeId, array $acceptKeys): void
+            {
+                $this->groupLeaves[] = [$originNodeId, $acceptKeys];
             }
 
             /**

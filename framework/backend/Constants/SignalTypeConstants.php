@@ -158,6 +158,9 @@ final class SignalTypeConstants
     /** @var string Group join signal type (worker -> own daemon: record this membership) */
     public const string GROUP_JOIN = 'group_join';
 
+    /** @var string Group leave-all signal type (worker -> own daemon, daemon -> its workers: drop every group membership of these connections) */
+    public const string GROUP_LEAVE_ALL = 'group_leave_all';
+
     /** @var string User action signal type */
     public const string ACTION = 'action';
 

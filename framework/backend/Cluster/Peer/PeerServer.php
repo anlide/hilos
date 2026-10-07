@@ -29,6 +29,7 @@ use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydratedDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerGroupLeaveAllDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
@@ -2855,6 +2856,45 @@ final class PeerServer extends AbstractTlsServer implements
         } catch (Throwable $e) {
             Logger::warning(
                 "Failed to deliver peer page access re-decision from node '{$frame->originNodeId}': {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Asks every other node to drop every group membership of connections whose person changed.
+     *
+     * Implements {@see ClientMesh}. Sent to slaves too: the membership is written on the master
+     * of the node whose agent admitted the join, and that may be any node (HIL-1284).
+     *
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    public function broadcastGroupLeaveAll(array $acceptKeys): void
+    {
+        $this->broadcastToNodes(new PeerGroupLeaveAllDTO($this->localIdentity->nodeId, $acceptKeys));
+    }
+
+    /**
+     * Gives a received group leave-all to the local daemon without forwarding it.
+     *
+     * @param PeerLink $link Link the announcement arrived on
+     * @param PeerGroupLeaveAllDTO $frame Received leave-all frame
+     */
+    public function onGroupLeaveAllReceived(PeerLink $link, PeerGroupLeaveAllDTO $frame): void
+    {
+        $sink = Hilos::$cluster?->clientSignalSink();
+        if ($sink === null) {
+            Logger::warning(
+                "Dropping peer group leave-all from node '{$frame->originNodeId}':"
+                . ' no local client signal sink registered',
+            );
+            return;
+        }
+
+        try {
+            $sink->deliverGroupLeaveAll($frame->originNodeId, $frame->acceptKeys);
+        } catch (Throwable $e) {
+            Logger::warning(
+                "Failed to deliver peer group leave-all from node '{$frame->originNodeId}': {$e->getMessage()}",
             );
         }
     }

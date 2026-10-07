@@ -268,6 +268,11 @@ export function bindNotificationsScope(
   // membership), on a refusal, and on a frame saying the mode holds the
   // connection (see the protectedMode listener below).
   let joinedFor: number | null = null
+  // The person the store's rows belong to. A different person in the same tab -
+  // a sign-out, a sign-in, an impersonation - starts the bell from nothing: the
+  // server has already dropped every group of this connection (HIL-1284), and
+  // the rows on screen are the previous person's.
+  let boundUserId = userId.get()
   // Whether the current socket's handshake has answered — see the note above.
   // TODO(HIL-599): the server now holds a frame from a connection it has not been
   // told about yet and judges it once the identity lands, so this hold is a second
@@ -294,12 +299,18 @@ export function bindNotificationsScope(
    *
    * The frame type is common to every group, so the name is what tells them apart,
    * and the payload is validated here rather than at the parse boundary for the
-   * same reason: only this binder knows what shape its own group answers with.
+   * same reason: only this binder knows what shape its own group answers with. The
+   * full name is matched, not its head: it names the person the join was sent for.
    *
    * @param answer The group-join answer as it arrived.
    */
   function ingestJoinAnswer(answer: GroupResponse): void {
-    if (!answer.group.startsWith(NOTIFICATION_GROUP_PREFIX)) {
+    // Only the answer to the join this tab holds now: a late answer to the previous
+    // person's join, or another group's, must not fill the bell (HIL-1284).
+    if (
+      joinedFor === null ||
+      answer.group !== `${NOTIFICATION_GROUP_PREFIX}${joinedFor}`
+    ) {
       return
     }
     const snapshot = notificationSnapshotSchema.safeParse(answer.payload ?? {})
@@ -360,7 +371,15 @@ export function bindNotificationsScope(
   })
   // A login upgrades the session on a socket that already answered, so the id
   // arrives without a handshake behind it; re-check the join whenever it changes.
-  subscribeSignal(userId, () => {
+  // A different person also empties the store and forgets the join, so the same
+  // person signing out and back in on this socket joins again (HIL-1284). A socket
+  // that dropped and came back is the same person, and keeps the rows.
+  subscribeSignal(userId, (uid) => {
+    if (uid !== boundUserId) {
+      boundUserId = uid
+      joinedFor = null
+      store.clear()
+    }
     maybeJoin()
   })
 }

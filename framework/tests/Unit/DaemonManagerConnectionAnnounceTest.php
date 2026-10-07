@@ -275,6 +275,13 @@ final class DaemonManagerConnectionAnnounceTestMesh implements ClientMesh
     }
 
     /**
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    public function broadcastGroupLeaveAll(array $acceptKeys): void
+    {
+    }
+
+    /**
      * @param string $nodeId Node this one can now reach
      * @param list<string> $acceptKeys Every accept key this node holds right now
      */

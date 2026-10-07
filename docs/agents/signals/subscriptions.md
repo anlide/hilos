@@ -71,6 +71,23 @@ Sent on page leave or WS close.
 PAGE_UNSUBSCRIBE / GROUP_UNSUBSCRIBE
 ```
 
+**A group membership does not outlive the person behind the connection (HIL-1284).**
+Writing a new person on a connection — `HilosConnectionActions::bindUser()` with a
+user id other than the one it held: sign-out, sign-in, the start and end of an
+impersonation from the browser or the CLI, a block — ends EVERY group membership of
+that connection, on every master of the cluster and in every worker mirror
+(`GroupMembership::leaveAll()`: the worker frame `group_leave_all`, which the master
+applies at receipt and fans out to its other workers, and the peer frame
+`peer_group_leave_all` to every other node). Writing the same person again is not a
+change and leaves the groups alone. The connection is let back in by whoever lets it
+in today: the client (the notification bell joins the new person's group) and the
+page's answer (the joins a page makes in `onSubscribeAfterResponse()` when it is
+re-answered for the new person). The membership of the "Access closed" card's data
+export joins AFTER the leave, in `AbstractAgent::sendHandshakeResponse()`, and ends
+with the card. The rule hangs on the change of person, not on a group — a group
+addressed by nobody is covered just the same, and a new group addressed by the person
+gets it without a line of its own.
+
 ## One subscription answers everything the page renders
 
 One page subscription answers in **one** `page_response` frame (PHP

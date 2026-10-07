@@ -71,6 +71,7 @@ use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Group\DTO\GroupSubscriptionErrorSignalData;
 use Hilos\Core\Group\GroupErrorCode;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -187,6 +188,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
@@ -2684,6 +2686,25 @@ abstract class DaemonManager extends BaseManager implements
                 }
             }
 
+            // A group leave-all was applied to this master's registry when the worker's frame
+            // arrived (HIL-1284); what is left is the fan-out. Every OTHER worker of the node
+            // clears its mirror - the sender cleared its own before sending, and may have joined
+            // again since - and every other node clears its registry and its workers' mirrors,
+            // because a membership is written on the master of the node whose agent admitted the
+            // join, not the node holding the socket.
+            if ($signal->signalType->getType() === SignalTypeConstants::GROUP_LEAVE_ALL) {
+                if ($signal->data instanceof GroupLeaveAllSignalData) {
+                    $this->writeFrameToWorkers(
+                        $workerServer,
+                        new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData($signal->data->acceptKeys)),
+                        exceptWorkerIndex: $signal->data->exceptWorkerIndex,
+                    );
+                    $this->announceGroupLeaveAllToPeers($peerServer, $signal->data->acceptKeys);
+                } else {
+                    Logger::error('dispatchSignals - group leave-all carries invalid data: ' . get_class($signal->data));
+                }
+            }
+
             // The by-session criterion ends here, in the one process that can answer it (HIL-911):
             // which sockets carry a session is known where they were accepted. The session becomes
             // the accept keys of this node's connections, and the workers are handed the
@@ -3046,22 +3067,32 @@ abstract class DaemonManager extends BaseManager implements
      * snapshot goes out, so a worker missing from it here is one that has not asked yet - and a
      * frame it has not asked for is one it could not apply.
      *
+     * A frame can also leave one worker out by index: a group leave-all is not handed back to
+     * the worker that sent it, which cleared its own mirror before sending and may have joined
+     * again since (HIL-1284).
+     *
      * @param WorkerServer $workerServer Worker server instance
      * @param WorkerDTO $dto Frame to write to each worker link
      * @param ?string $kind Source kind of the collection the frame belongs to, or null when it belongs to none
      * @param ?string $collectionKey Collection the frame belongs to, or null when it belongs to none
+     * @param ?int $exceptWorkerIndex Worker the frame is not written to, or null to write to every worker
      */
     private function writeFrameToWorkers(
         WorkerServer $workerServer,
         WorkerDTO $dto,
         ?string $kind = null,
         ?string $collectionKey = null,
+        ?int $exceptWorkerIndex = null,
     ): void {
         $frame = null;
         $readerMap = $this->agentManagerDaemon->workerReaderMap();
 
         foreach ($workerServer->getClients() as $client) {
             if (!$client instanceof WorkerClient) {
+                continue;
+            }
+
+            if ($exceptWorkerIndex !== null && $client->getWorkerIndex() === $exceptWorkerIndex) {
                 continue;
             }
 
@@ -4960,6 +4991,30 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Drops every group membership of connections whose person changed on another node (HIL-1284).
+     *
+     * Applied on arrival, to this master's registry and to every worker of the node: none of them
+     * sent the frame, so none can have joined again since. Not queued and not forwarded - the
+     * announcing node broadcast it to every node itself.
+     *
+     * @param string $originNodeId Id of the announcing node
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    public function deliverGroupLeaveAll(string $originNodeId, array $acceptKeys): void
+    {
+        foreach ($acceptKeys as $acceptKey) {
+            Hilos::$sr->unsubscribeFromAllGroups($acceptKey);
+        }
+
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer === null) {
+            return;
+        }
+
+        $this->writeFrameToWorkers($workerServer, new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData($acceptKeys)));
+    }
+
+    /**
      * Hands one node the browser connections this node holds.
      *
      * Protected, and taking the port rather than finding it, for the reason
@@ -5277,6 +5332,17 @@ abstract class DaemonManager extends BaseManager implements
     protected function announcePageAccessReassessToPeers(?ClientMesh $mesh, SignalDTO $signal): void
     {
         $mesh?->broadcastPageAccessReassess($signal);
+    }
+
+    /**
+     * Broadcasts a group leave-all to every other node, slaves included (HIL-1284).
+     *
+     * @param ?ClientMesh $mesh Peer server of this node, or null off-cluster
+     * @param list<string> $acceptKeys Connections leaving every group
+     */
+    protected function announceGroupLeaveAllToPeers(?ClientMesh $mesh, array $acceptKeys): void
+    {
+        $mesh?->broadcastGroupLeaveAll($acceptKeys);
     }
 
     /**

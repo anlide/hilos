@@ -20,6 +20,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
@@ -53,6 +54,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\DataExport\DataExportGroup;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
@@ -524,12 +526,22 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * with the project (HIL-710), and the guarantee had to move to where the project sends
      * from rather than be lost with the trait.
      *
+     * The card's data-export membership is settled here too (HIL-303): a tab showing the card
+     * joins the export group of the blocked person, and an anonymous tab that no longer shows
+     * it leaves. It joins AFTER the change of person has dropped every group of the connection
+     * ({@see GroupMembership::leaveAll()}, HIL-1284) - the project settles the connection row
+     * before it sends this response - so the leave cannot erase it; and closing the card changes
+     * no person, so the leave of its membership has to be said here rather than by that rule.
+     *
      * @param string $signalName Project handshake-response signal name the frontend routes on
      * @param string $acceptKey Accept key of the connection being told
      * @param HandshakeResponseSignalData $identity Who the session is, as handshakeIdentity() builds it
      * @param SessionStateSignalData $state Session state frame the response answers
-     * @throws InvalidArgumentException When the signal name is empty
-     * @throws DatabaseException When a sign-in method, impersonation or theme setting cannot be read
+     * @throws InvalidArgumentException When the signal name is empty, the card's export membership
+     *     cannot be announced, or the session row read for the card does not match its collection
+     * @throws DatabaseException When the session behind the card, or a sign-in method, impersonation
+     *     or theme setting cannot be read
+     * @throws LogicException When the session collection is not configured
      * @throws SettingException When a sign-in method, impersonation or theme setting is invalid
      */
     public function sendHandshakeResponse(
@@ -538,6 +550,15 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
         HandshakeResponseSignalData $identity,
         SessionStateSignalData $state,
     ): void {
+        if ($state->accountBlocked !== null) {
+            $blockedUserId = Hilos::$db->sessions->findByToken($state->sessionToken)?->blockedUserId;
+            if ($blockedUserId !== null) {
+                DataExportGroup::join($acceptKey, $blockedUserId, $this->getAgentSignalSource());
+            }
+        } elseif ($state->userId === null) {
+            DataExportGroup::leave($acceptKey, $this->getAgentSignalSource());
+        }
+
         $this->sendToUser(
             $signalName,
             $acceptKey,

@@ -11,6 +11,7 @@ use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\SignalName;
@@ -38,6 +39,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
@@ -617,6 +619,28 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             signalType: new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS),
             signalName: new SignalName(SignalConstants::PAGE_ACCESS_REASSESS_CONNECTIONS),
             signalData: new PageAccessReassessConnectionsSignalData($dto->acceptKeys),
+        );
+    }
+
+    /**
+     * Queues the fan-out of a group leave-all a worker announced (HIL-1284).
+     *
+     * Only the fan-out queues: the leave itself was applied to this master's registry at receipt
+     * ({@see WorkerClient}). The queued signal names the sender, so the master hands the frame to
+     * every OTHER worker of the node - the sender cleared its own mirror before sending and may
+     * have joined again since, and the frame written back to it would erase that join.
+     *
+     * @param WorkerGroupLeaveAllDTO $dto Connections leaving every group
+     * @param int $senderWorkerIndex Index of the worker that sent the frame
+     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     */
+    public function handleWorkerGroupLeaveAll(WorkerGroupLeaveAllDTO $dto, int $senderWorkerIndex): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::GROUP_LEAVE_ALL),
+            signalName: new SignalName(SignalTypeConstants::GROUP_LEAVE_ALL),
+            signalData: new GroupLeaveAllSignalData($dto->data->acceptKeys, exceptWorkerIndex: $senderWorkerIndex),
         );
     }
 

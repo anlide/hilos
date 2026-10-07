@@ -12,11 +12,14 @@ use Hilos\Cluster\Peer\DTO\PeerConnectionDropDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsDeltaDTO;
 use Hilos\Cluster\Peer\DTO\PeerConnectionsSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerGroupLeaveAllDTO;
 use Hilos\Cluster\Peer\DTO\PeerHttpReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -27,6 +30,8 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -344,6 +349,70 @@ final class PeerClientFramesTest extends TestCase
             PeerDTO::TYPE => PeerPageAccessReassessDTO::MESSAGE_TYPE,
             PeerPageAccessReassessDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
         ]));
+    }
+
+    public function testAGroupLeaveAllRoundTripsThroughTheWire(): void
+    {
+        $parsed = PeerDTO::fromWire((new PeerGroupLeaveAllDTO('node-A', ['ak-1', 'ak-2']))->toJson());
+
+        $this->assertInstanceOf(PeerGroupLeaveAllDTO::class, $parsed);
+        $this->assertSame('node-A', $parsed->originNodeId);
+        $this->assertSame(['ak-1', 'ak-2'], $parsed->acceptKeys);
+    }
+
+    public function testAGroupLeaveAllRejectsAnEmptyKeyList(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerGroupLeaveAllDTO::MESSAGE_TYPE,
+            PeerGroupLeaveAllDTO::FIELD_ORIGIN_NODE_ID => 'node-A',
+            PeerGroupLeaveAllDTO::FIELD_ACCEPT_KEYS => [],
+        ]));
+    }
+
+    public function testAGroupLeaveAllRejectsAMissingOriginNodeId(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerDTO::fromWire(json_encode([
+            PeerDTO::TYPE => PeerGroupLeaveAllDTO::MESSAGE_TYPE,
+            PeerGroupLeaveAllDTO::FIELD_ACCEPT_KEYS => ['ak-1'],
+        ]));
+    }
+
+    /**
+     * The worker-link twin travels both ways with one shape: the sender's frame names nobody to
+     * skip, and the master's fan-out to the other workers names nobody either.
+     */
+    public function testAWorkerGroupLeaveAllRoundTripsThroughTheWorkerLink(): void
+    {
+        $parsed = WorkerDTO::factoryWorkerDTO(
+            (new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData(['ak-1'], exceptWorkerIndex: 2)))->toJson(),
+        );
+
+        $this->assertInstanceOf(WorkerGroupLeaveAllDTO::class, $parsed);
+        $this->assertSame(['ak-1'], $parsed->data->acceptKeys);
+        $this->assertSame(2, $parsed->data->exceptWorkerIndex);
+
+        $bare = WorkerDTO::factoryWorkerDTO((new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData(['ak-1'])))->toJson());
+        $this->assertInstanceOf(WorkerGroupLeaveAllDTO::class, $bare);
+        $this->assertNull($bare->data->exceptWorkerIndex);
+    }
+
+    public function testAWorkerGroupLeaveAllRejectsAnEmptyOrMalformedKeyList(): void
+    {
+        foreach ([[], ['ak-1', ''], ['ak-1', 3]] as $acceptKeys) {
+            try {
+                WorkerDTO::factoryWorkerDTO((string)json_encode([
+                    WorkerDTO::TYPE => WorkerGroupLeaveAllDTO::MESSAGE_TYPE,
+                    WorkerGroupLeaveAllDTO::FIELD_PAYLOAD => [GroupLeaveAllSignalData::acceptKeys => $acceptKeys],
+                ]));
+                $this->fail('a leave-all naming no connection, or a malformed one, was read');
+            } catch (InvalidFormatException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 
     /**

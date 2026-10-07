@@ -366,6 +366,90 @@ describe('notification binder', () => {
     return sentFrames().filter((f) => f.type === 'group_subscribe')
   }
 
+  /** Answer the bell's join for one person with a snapshot of one unread row. */
+  function answerJoin(userId: number, id: number): void {
+    MockWebSocket.last.message(
+      frame('group_response', {
+        group: `${NOTIFICATION_GROUP}:${userId}`,
+        payload: { recent: [row({ id, userId })], unreadCount: 1 },
+      }),
+    )
+  }
+
+  // HIL-1284: the server drops every group of a connection whose person changed,
+  // so the bell starts from nothing for the next person in the same tab.
+
+  it('empties the bell and joins nothing when the person signs out', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+    answerJoin(42, 1)
+
+    userId.set(null)
+
+    expect(store.notifications.get()).toEqual([])
+    expect(store.unreadCount.get()).toBe(0)
+    expect(joins()).toHaveLength(1)
+  })
+
+  it('joins again when the same person signs back in on the same socket', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+    answerJoin(42, 1)
+
+    userId.set(null)
+    userId.set(42)
+
+    expect(joins()).toHaveLength(2)
+    answerJoin(42, 3)
+    expect(store.notifications.get().map((n) => n.id)).toEqual([3])
+  })
+
+  it("joins the next person's bell and drops a late answer for the previous one", () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+    answerJoin(42, 1)
+
+    userId.set(43)
+
+    expect(store.notifications.get()).toEqual([])
+    expect(joins()).toHaveLength(2)
+
+    // An answer to the previous person's join, arriving late, is not the bell's.
+    answerJoin(42, 9)
+    expect(store.notifications.get()).toEqual([])
+
+    answerJoin(43, 5)
+    expect(store.notifications.get().map((n) => n.id)).toEqual([5])
+  })
+
+  it('keeps the rows of the same person across a reconnect', () => {
+    const { connection, store, userId } = boot()
+    connection.connect()
+    MockWebSocket.last.open()
+    answerSession()
+    userId.set(42)
+    answerJoin(42, 1)
+
+    MockWebSocket.last.drop()
+    vi.advanceTimersByTime(1000)
+    MockWebSocket.last.open()
+    answerSession()
+
+    expect(store.notifications.get().map((n) => n.id)).toEqual([1])
+    expect(joins()).toEqual([
+      { type: 'group_subscribe', group: NOTIFICATION_GROUP },
+    ])
+  })
+
   it('joins when the verification window lets in a tab loaded under the freeze', () => {
     const { connection, userId } = boot()
     connection.connect()

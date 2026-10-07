@@ -35,8 +35,10 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * index cannot help with, since which browsers a fan-out reaches is answered by each node's
  * own subscription registry rather than by an address; the sibling-drop frame
  * ({@see PeerConnectionDropDTO}) asks every master to close rotated-session sockets
- * it holds, and the page access re-decision frame ({@see PeerPageAccessReassessDTO})
- * carries an announcement to every node's workers; the reply frames
+ * it holds, the page access re-decision frame ({@see PeerPageAccessReassessDTO})
+ * carries an announcement to every node's workers, and the group leave-all frame
+ * ({@see PeerGroupLeaveAllDTO}) drops every group membership of connections whose person
+ * changed on every node; the reply frames
  * ({@see PeerHttpReplyDTO}, {@see PeerCommandReplyDTO}) return agent answers directly to the
  * node holding a parked connection; the claim frames
  * ({@see PeerRtClaimsDTO}, {@see PeerRtClaimsQueryDTO}, {@see PeerRtClaimRefusedDTO}) carry the
@@ -123,6 +125,7 @@ abstract class PeerDTO extends BaseDTO
             PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),
             PeerConnectionDropDTO::MESSAGE_TYPE => PeerConnectionDropDTO::fromArray($data),
             PeerPageAccessReassessDTO::MESSAGE_TYPE => PeerPageAccessReassessDTO::fromArray($data),
+            PeerGroupLeaveAllDTO::MESSAGE_TYPE => PeerGroupLeaveAllDTO::fromArray($data),
             PeerHttpReplyDTO::MESSAGE_TYPE => PeerHttpReplyDTO::fromArray($data),
             PeerCommandReplyDTO::MESSAGE_TYPE => PeerCommandReplyDTO::fromArray($data),
             PeerConnectionsSnapshotDTO::MESSAGE_TYPE => PeerConnectionsSnapshotDTO::fromArray($data),

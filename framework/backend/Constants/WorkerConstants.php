@@ -162,6 +162,9 @@ final class WorkerConstants
     /** @var string Group join a worker admitted (worker -> daemon); canonical value in SignalTypeConstants */
     public const string MESSAGE_GROUP_JOIN = SignalTypeConstants::GROUP_JOIN;
 
+    /** @var string Group leave-all for connections whose person changed (both ways); canonical value in SignalTypeConstants */
+    public const string MESSAGE_GROUP_LEAVE_ALL = SignalTypeConstants::GROUP_LEAVE_ALL;
+
     /** @var string Protected-mode enable request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_ENABLE = 'worker_protected_mode_enable';
 
