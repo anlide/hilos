@@ -276,7 +276,18 @@ final class ImpersonationTest extends IntegrationTestCase
             $this->assertSame($targetId, $response->selfId);
             $this->assertSame($adminId, $response->impersonatorId);
             $this->assertSame($adminName, $response->impersonatorName);
-            $this->assertSame(['viewOnly' => false, 'carryAdmin' => false], $response->impersonationPolicy);
+            $this->assertSame(
+                [
+                    'viewOnly' => false,
+                    'carryAdmin' => false,
+                    'allowed' => true,
+                    'accountAccess' => false,
+                    'blocked' => true,
+                    'frozen' => true,
+                    'equal' => true,
+                ],
+                $response->impersonationPolicy,
+            );
         } finally {
             Hilos::$rt->connections->actions->clear();
         }

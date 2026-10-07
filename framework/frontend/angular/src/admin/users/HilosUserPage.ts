@@ -631,6 +631,8 @@ function noticeText(live: RowEditState<UserEditFields>): string {
               [loading]="impersonateAction.loading()"
               [disabled]="
                 impersonateAction.busy() ||
+                impersonation() === null ||
+                impersonation()?.disabled ||
                 detail()?.id !== impersonateTarget()?.userId
               "
               data-id="hilos-user-impersonate-confirm"
@@ -1414,6 +1416,27 @@ export class HilosUserPage {
         }
       })
     })
+
+    effect(() => {
+      const section = this.impersonation()
+      const target = this.impersonateTarget()
+      if (target === null) {
+        return
+      }
+      if (
+        (section === null || section.disabled) &&
+        !this.impersonateAction.busy()
+      ) {
+        this.impersonateTarget.set(null)
+        return
+      }
+      if (section !== null && target.section !== section) {
+        this.impersonateTarget.set({
+          userId: target.userId,
+          section,
+        })
+      }
+    })
   }
 
   protected async openImpersonate(): Promise<void> {
@@ -1457,8 +1480,11 @@ export class HilosUserPage {
   // only closes the window; a refusal stays in it, and the driver toasts it.
   protected async submitImpersonate(): Promise<void> {
     const target = this.impersonateTarget()
+    const section = this.impersonation()
     if (
       target === null ||
+      section === null ||
+      section.disabled ||
       this.impersonateAction.busy() ||
       this.detail()?.id !== target.userId
     )

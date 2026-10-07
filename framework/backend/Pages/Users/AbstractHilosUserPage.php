@@ -296,9 +296,8 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * The standing is the one verdict the card reads its block, freeze and scheduled deletion from
      * (HIL-945); later changes arrive as {@see HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE}.
      * The impersonation settings decide whether the card has its takeover section and for whom its
-     * button is switched off (HIL-1170); no frame follows them - a setting changed while the card is
-     * open is caught by the server's refusal in the same words. A viewer of the admin view mode is
-     * shown the standing, and the settings only when their catalog keys are open.
+     * button is switched off (HIL-1170); later changes arrive as {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY}
+     * (HIL-1307). A viewer of the admin view mode is shown the standing, and the settings only when their catalog keys are open.
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person

@@ -1243,7 +1243,7 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
     }
   })
 
-  it('is read by the card lifecycle from the page data', () => {
+  it('is read by the card lifecycle from the page data when no session policy is present', () => {
     const { scopes, users } = userStore()
     const lifecycle = createHilosUserLifecycle({
       scopes,
@@ -1259,7 +1259,175 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
       frozen: true,
       equal: true,
     })
+    expect(lifecycle.impersonation.get()).toStrictEqual({
+      allowed: true,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+  })
+
+  it('overrides initial page data with live session policy and translates viewOnly to scope', () => {
+    const { scopes, users } = userStore()
+    const lifecycle = createHilosUserLifecycle({
+      scopes,
+      users,
+    } as HilosUsersContext)
+
+    scopes.page()?.data.set('impersonation', {
+      allowed: true,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
     expect(lifecycle.impersonation.get()?.allowed).toBe(true)
+    expect(lifecycle.impersonation.get()?.scope).toBe('act')
+
+    // Live frame arrives in session slot with viewOnly=true and allowed=false.
+    scopes.session.data.set('impersonationPolicy', {
+      viewOnly: true,
+      carryAdmin: true,
+      allowed: false,
+      accountAccess: true,
+      blocked: false,
+      frozen: false,
+      equal: false,
+    })
+
+    expect(lifecycle.impersonation.get()).toStrictEqual({
+      allowed: false,
+      scope: 'view',
+      carryAdmin: true,
+      blocked: false,
+      frozen: false,
+      equal: false,
+    })
+  })
+
+  it('does not overwrite newer live session policy with older stale page response payload', () => {
+    const { scopes, users } = userStore()
+    const lifecycle = createHilosUserLifecycle({
+      scopes,
+      users,
+    } as HilosUsersContext)
+
+    // Newer live frame already landed in session.
+    scopes.session.data.set('impersonationPolicy', {
+      viewOnly: false,
+      carryAdmin: false,
+      allowed: false,
+      accountAccess: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+    expect(lifecycle.impersonation.get()).toBeNull()
+
+    // Stale page response arrives afterwards with older allowed=true.
+    scopes.page()?.data.set('impersonation', {
+      allowed: true,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+
+    expect(lifecycle.impersonation.get()?.allowed).toBe(false)
+  })
+
+  it('preserves hidden page data verdict and does not fall back to session policy', () => {
+    const { scopes, users } = userStore()
+    const lifecycle = createHilosUserLifecycle({
+      scopes,
+      users,
+    } as HilosUsersContext)
+
+    // Session has an active policy that allows impersonation.
+    scopes.session.data.set('impersonationPolicy', {
+      viewOnly: false,
+      carryAdmin: false,
+      allowed: true,
+      accountAccess: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+
+    // But page data was marked hidden for view-mode viewer.
+    scopes.page()?.data.set('impersonation', HIDDEN_VALUE)
+
+    expect(lifecycle.impersonation.get()).toBeNull()
+  })
+
+  it('ignores accountAccess in section projection and updates section dynamically', () => {
+    const { scopes, users } = userStore()
+    const lifecycle = createHilosUserLifecycle({
+      scopes,
+      users,
+    } as HilosUsersContext)
+
+    scopes.page()?.data.set('impersonation', {
+      allowed: true,
+      scope: 'act',
+      carryAdmin: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+    scopes.session.data.set('impersonationPolicy', {
+      viewOnly: false,
+      carryAdmin: false,
+      allowed: true,
+      accountAccess: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+
+    const detail: HilosUserDetailRow = {
+      id: 5,
+      name: 'Maria',
+      lastActivity: null,
+      presence: 'online',
+      onlineSessionCount: 1,
+      hasPassword: true,
+      hasSecondFactor: false,
+      admin: false,
+      block: false,
+      deletionEffectiveAt: null,
+      unverifiedPasswordAddress: null,
+    }
+
+    const sectionOff = hilosUserImpersonationSection(
+      detail,
+      99,
+      lifecycle.impersonation.get(),
+    )
+    expect(sectionOff?.hint).toBe(
+      'You will see the product through their eyes, without your admin rights',
+    )
+
+    // accountAccess toggled to true: section projection is identical.
+    scopes.session.data.set('impersonationPolicy', {
+      viewOnly: false,
+      carryAdmin: false,
+      allowed: true,
+      accountAccess: true,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    })
+    const sectionOn = hilosUserImpersonationSection(
+      detail,
+      99,
+      lifecycle.impersonation.get(),
+    )
+    expect(sectionOn).toStrictEqual(sectionOff)
   })
 })
 

@@ -151,7 +151,15 @@ final class HandshakeResponseSignalDataTest extends TestCase
             ->withAccountBlocked(null)
             ->withAccountStanding(null)
             ->withAdminViewMode(false)
-            ->withImpersonationPolicy(['viewOnly' => true, 'carryAdmin' => false])
+            ->withImpersonationPolicy([
+                'viewOnly' => true,
+                'carryAdmin' => false,
+                'allowed' => true,
+                'accountAccess' => true,
+                'blocked' => false,
+                'frozen' => false,
+                'equal' => false,
+            ])
             ->withSessionContext(123, null, ['email' => true, 'phone' => false], [], false);
 
         $this->assertSame($url, $stamped->toArray()['entities']['currentUser']['photo']);
@@ -621,8 +629,16 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testTheImpersonationPolicyTravelsInTheDataSectionAndSurvivesTheRoundtrip(): void
     {
-        // The installation's fact rides every response, the anonymous one included (HIL-1170).
-        $policy = ['viewOnly' => true, 'carryAdmin' => false];
+        // The installation's fact rides every response, the anonymous one included (HIL-1170, HIL-1307).
+        $policy = [
+            'viewOnly' => true,
+            'carryAdmin' => false,
+            'allowed' => true,
+            'accountAccess' => false,
+            'blocked' => true,
+            'frozen' => true,
+            'equal' => true,
+        ];
         $anonymous = new HandshakeResponseSignalData()->withImpersonationPolicy($policy);
         $signedIn = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false, impersonatorId: 7, impersonatorName: 'Root')
             ->withImpersonationPolicy($policy);
@@ -654,7 +670,15 @@ final class HandshakeResponseSignalDataTest extends TestCase
             ->withAccountBlocked(null)
             ->withAccountStanding(self::STANDING)
             ->withAdminViewMode(true)
-            ->withImpersonationPolicy(['viewOnly' => false, 'carryAdmin' => true]);
+            ->withImpersonationPolicy([
+                'viewOnly' => false,
+                'carryAdmin' => true,
+                'allowed' => true,
+                'accountAccess' => false,
+                'blocked' => true,
+                'frozen' => true,
+                'equal' => true,
+            ]);
 
         $this->assertSame($settings, $data->themeSettings);
         $this->assertSame($settings, HandshakeResponseSignalData::fromArray($data->toArray())->themeSettings);
@@ -672,7 +696,15 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testTheImpersonationPolicySurvivesEveryOtherAxisOfTheStamp(): void
     {
-        $policy = ['viewOnly' => false, 'carryAdmin' => true];
+        $policy = [
+            'viewOnly' => false,
+            'carryAdmin' => true,
+            'allowed' => true,
+            'accountAccess' => false,
+            'blocked' => true,
+            'frozen' => true,
+            'equal' => true,
+        ];
         $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria', selfAdmin: false)
             ->withImpersonationPolicy($policy)
             ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
@@ -685,7 +717,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertTrue($data->adminViewMode);
     }
 
-    public function testRoundtripRejectsAnImpersonationPolicyWithoutItsTwoFlags(): void
+    public function testRoundtripRejectsAnImpersonationPolicyWithoutItsSevenFlags(): void
     {
         $payload = new HandshakeResponseSignalData()->toArray();
         $payload['data']['impersonationPolicy'] = ['viewOnly' => true];

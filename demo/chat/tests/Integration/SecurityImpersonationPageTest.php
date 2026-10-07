@@ -20,16 +20,17 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Settings\Library\DTO\SettingResetSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Pages\Security\DTO\HilosImpersonationScopeSetActionDTO;
 use Hilos\Pages\Security\DTO\HilosImpersonationSwitchSetActionDTO;
 
 /**
- * Integration coverage for the impersonation settings page (HIL-1170).
+ * Integration coverage for the impersonation settings page (HIL-1170, HIL-1307).
  *
  * The page narrows a write to its own keys and forwards it; the settings library writes it under
- * the key's rule and, when "only look" or the carried admin rights moved, tells every connection
- * the new policy. Both halves run here in one process against the real catalog and database, the
+ * the key's rule and, when any of the seven settings changed, tells every connection
+ * the new policy snapshot. Both halves run here in one process against the real catalog and database, the
  * frame carried across by hand as the step-up switches' suite carries it
  * ({@see SecurityStepUpSwitchTest}).
  */
@@ -55,10 +56,13 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
         $this->withSettingsWriter(function (): void {
             $this->assertNull($this->switch(ImpersonationSettings::ALLOWED_KEY, false));
             $this->assertFalse(ImpersonationSettings::isAllowed());
-            $this->assertSame([], $this->policyFrames, 'Whether impersonation exists redraws no open tab');
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertFalse($this->policyFrames[0]->allowed);
 
             $this->assertNull($this->switch(ImpersonationSettings::ALLOWED_KEY, true));
             $this->assertTrue(ImpersonationSettings::isAllowed());
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertTrue($this->policyFrames[0]->allowed);
         });
     }
 
@@ -72,7 +76,18 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
 
             $this->assertTrue(ImpersonationSettings::isViewOnly());
             $this->assertCount(1, $this->policyFrames);
-            $this->assertSame(['viewOnly' => true, 'carryAdmin' => false], $this->policyFrames[0]->toArray());
+            $this->assertSame(
+                [
+                    'viewOnly' => true,
+                    'carryAdmin' => false,
+                    'allowed' => true,
+                    'accountAccess' => false,
+                    'blocked' => true,
+                    'frozen' => true,
+                    'equal' => true,
+                ],
+                $this->policyFrames[0]->toArray(),
+            );
         });
     }
 
@@ -83,20 +98,93 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
 
             $this->assertTrue(ImpersonationSettings::carriesAdmin());
             $this->assertCount(1, $this->policyFrames);
-            $this->assertSame(['viewOnly' => false, 'carryAdmin' => true], $this->policyFrames[0]->toArray());
+            $this->assertSame(
+                [
+                    'viewOnly' => false,
+                    'carryAdmin' => true,
+                    'allowed' => true,
+                    'accountAccess' => false,
+                    'blocked' => true,
+                    'frozen' => true,
+                    'equal' => true,
+                ],
+                $this->policyFrames[0]->toArray(),
+            );
+        });
+    }
+
+    public function testEveryOtherSwitchIsToldToEveryConnection(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->assertNull($this->switch(ImpersonationSettings::ACCOUNT_ACCESS_KEY, true));
+            $this->assertTrue(ImpersonationSettings::allowsAccountAccess());
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertTrue($this->policyFrames[0]->accountAccess);
+
+            $this->assertNull($this->switch(ImpersonationSettings::BLOCKED_KEY, false));
+            $this->assertFalse(ImpersonationSettings::allowsBlocked());
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertFalse($this->policyFrames[0]->blocked);
+
+            $this->assertNull($this->switch(ImpersonationSettings::FROZEN_KEY, false));
+            $this->assertFalse(ImpersonationSettings::allowsFrozen());
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertFalse($this->policyFrames[0]->frozen);
+
+            $this->assertNull($this->switch(ImpersonationSettings::EQUAL_KEY, false));
+            $this->assertFalse(ImpersonationSettings::allowsEqual());
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertFalse($this->policyFrames[0]->equal);
+        });
+    }
+
+    public function testResetSendsTheFullDefaultPolicyOnce(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->assertNull($this->switch(ImpersonationSettings::BLOCKED_KEY, false));
+            $this->assertFalse(ImpersonationSettings::allowsBlocked());
+
+            new SettingsLibraryAgent()->onSignalAgent(
+                new AgentSignalData(new SettingResetSignalData(
+                    replySignal: HilosSignalConstants::HILOS_IMPERSONATION_SETTING_WRITE_DONE,
+                    acceptKey: self::ACCEPT_KEY,
+                    requestId: null,
+                    action: HilosSignalConstants::SETTING_RESET,
+                    successMessage: null,
+                    key: ImpersonationSettings::BLOCKED_KEY,
+                )),
+                'agent',
+                HilosSignalConstants::HILOS_SETTING_RESET,
+            );
+
+            $this->assertNull($this->answer());
+            $this->assertTrue(ImpersonationSettings::allowsBlocked());
+            $this->assertCount(1, $this->policyFrames);
+            $this->assertSame(
+                [
+                    'viewOnly' => false,
+                    'carryAdmin' => false,
+                    'allowed' => true,
+                    'accountAccess' => false,
+                    'blocked' => true,
+                    'frozen' => true,
+                    'equal' => true,
+                ],
+                $this->policyFrames[0]->toArray(),
+            );
         });
     }
 
     public function testAWriteThatLeavesThePolicyAloneSendsNoPolicy(): void
     {
         $this->withSettingsWriter(function (): void {
-            $this->assertNull($this->switch(ImpersonationSettings::BLOCKED_KEY, false));
             $this->assertNull($this->submit(
                 HilosSignalConstants::SECURITY_IMPERSONATION_SCOPE_SET,
                 new HilosImpersonationScopeSetActionDTO(ImpersonationSettings::SCOPE_ACT),
             ));
+            $this->assertSame([], $this->policyFrames);
 
-            $this->assertFalse(ImpersonationSettings::allowsBlocked());
+            $this->assertNull($this->switch(ImpersonationSettings::ALLOWED_KEY, true));
             $this->assertSame([], $this->policyFrames);
         });
     }
@@ -110,6 +198,7 @@ final class SecurityImpersonationPageTest extends IntegrationTestCase
             ));
 
             $this->assertNull(Hilos::$db->settings[ImpersonationSettings::SCOPE_KEY]);
+            $this->assertSame([], $this->policyFrames);
         });
     }
 

@@ -9,6 +9,7 @@ import {
   bindAdminAccess,
   bindLegalReconsent,
   createSignal,
+  DEFAULT_IMPERSONATION_POLICY,
   formatCalendarDate,
   HILOS_IMPERSONATION_STRIP_TEXT_ID,
   HilosPages,
@@ -316,7 +317,12 @@ describe('HilosLayout impersonation strip', () => {
   function takeoverWith(viewOnly: boolean): Record<string, unknown> {
     return {
       ...TAKEOVER,
-      data: { impersonationPolicy: { viewOnly, carryAdmin: false } },
+      data: {
+        impersonationPolicy: {
+          ...DEFAULT_IMPERSONATION_POLICY,
+          viewOnly,
+        },
+      },
     }
   }
 

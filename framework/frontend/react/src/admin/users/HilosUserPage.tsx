@@ -302,11 +302,15 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const impersonateBody = useRef<HTMLDivElement>(null)
   useEffect(() => focusWindow(impersonateBody.current), [impersonateProof])
   const impersonationSettings = useSignal(lifecycle.impersonation)
-  const impersonation = hilosUserImpersonationSection(
-    detail,
-    lifecycleUserId,
-    impersonationSettings,
-    standing,
+  const impersonation = useMemo(
+    () =>
+      hilosUserImpersonationSection(
+        detail,
+        lifecycleUserId,
+        impersonationSettings,
+        standing,
+      ),
+    [detail, lifecycleUserId, impersonationSettings, standing],
   )
   const [impersonateTarget, setImpersonateTarget] = useState<{
     userId: number
@@ -353,6 +357,25 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     if (!impersonateAction.busy) showImpersonateTarget(null)
   }
 
+  useEffect(() => {
+    if (impersonateTargetRef.current === null) {
+      return
+    }
+    if (
+      (impersonation === null || impersonation.disabled) &&
+      !impersonateAction.busy
+    ) {
+      showImpersonateTarget(null)
+      return
+    }
+    if (impersonation !== null) {
+      showImpersonateTarget({
+        userId: impersonateTargetRef.current.userId,
+        section: impersonation,
+      })
+    }
+  }, [impersonation, impersonateAction.busy])
+
   // Authoritative-backend: what the takeover changes — the strip, and this
   // session becoming the person — arrives with the rebound session, so a success
   // only closes the window; a refusal stays in it, and the driver toasts it.
@@ -360,6 +383,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     const target = impersonateTarget
     if (
       target === null ||
+      impersonation === null ||
+      impersonation.disabled ||
       impersonateAction.busy ||
       detail?.id !== target.userId
     )
@@ -1032,6 +1057,8 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 loading={impersonateAction.loading}
                 disabled={
                   impersonateAction.busy ||
+                  impersonation === null ||
+                  impersonation.disabled ||
                   detail?.id !== impersonateTarget?.userId
                 }
                 data-id="hilos-user-impersonate-confirm"

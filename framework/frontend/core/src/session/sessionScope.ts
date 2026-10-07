@@ -114,12 +114,11 @@ const ADMIN_VIEW_MODE_KEY = 'adminViewMode'
 
 /**
  * Plain session-scope key carrying the installation's impersonation policy
- * (HIL-1170): whether inside a takeover the administrator only looks, and
- * whether they carry their own admin rights in. Written by every handshake and
- * again by {@link SIGNAL_IMPERSONATION_POLICY} whenever either moves, so one key
- * holds the live answer.
+ * (HIL-1170, HIL-1307): the scope, carried admin rights and installation-wide
+ * card guards. Written by every handshake and again by
+ * {@link SIGNAL_IMPERSONATION_POLICY} whenever a setting moves.
  */
-const IMPERSONATION_POLICY_KEY = 'impersonationPolicy'
+export const IMPERSONATION_POLICY_KEY = 'impersonationPolicy'
 
 /** Plain session-scope key shared by theme settings from the handshake and live frame (HIL-1428). */
 const THEME_SETTINGS_KEY = 'themeSettings'
@@ -184,9 +183,9 @@ export const SIGNAL_CODE_DELIVERY = 'hilos_code_delivery'
 
 /**
  * The settings library → every connection: the impersonation policy, sent after
- * a write that moved "only look" or the carried admin rights (PHP
- * `HILOS_IMPERSONATION_POLICY`, HIL-1170). A tab open inside a takeover redraws
- * its strip, its switched-off buttons and its gear without a reload.
+ * a write that moved any impersonation setting (PHP
+ * `HILOS_IMPERSONATION_POLICY`, HIL-1170, HIL-1307). Open cards, takeover strips,
+ * switched-off buttons and the admin gear redraw without a reload.
  */
 export const SIGNAL_IMPERSONATION_POLICY = 'hilos_impersonation_policy'
 
@@ -194,13 +193,32 @@ export const SIGNAL_IMPERSONATION_POLICY = 'hilos_impersonation_policy'
 export const impersonationPolicySchema = z.looseObject({
   viewOnly: z.boolean(),
   carryAdmin: z.boolean(),
+  allowed: z.boolean(),
+  accountAccess: z.boolean(),
+  blocked: z.boolean(),
+  frozen: z.boolean(),
+  equal: z.boolean(),
 })
 
 /**
- * The installation's impersonation policy (HIL-1170): whether inside a takeover
- * the administrator only looks, and whether they carry their own admin rights in.
+ * The installation's impersonation policy (HIL-1170, HIL-1307): whether inside a takeover
+ * the administrator only looks, and whether they carry their own admin rights in,
+ * plus the installation-wide card guards.
  */
 export type ImpersonationPolicy = z.infer<typeof impersonationPolicySchema>
+
+/**
+ * Defaults until a valid policy frame or handshake lands (HIL-1307).
+ */
+export const DEFAULT_IMPERSONATION_POLICY: ImpersonationPolicy = Object.freeze({
+  viewOnly: false,
+  carryAdmin: false,
+  allowed: true,
+  accountAccess: false,
+  blocked: true,
+  frozen: true,
+  equal: true,
+})
 
 /** The settings library → every connection when either theme setting changes (HIL-1428). */
 export const SIGNAL_THEME_SETTINGS = 'hilos_theme_settings'
@@ -552,10 +570,25 @@ export function bindSessionScope(
       // the rising session may close the surface exactly by that read. One frame
       // late is the surface closing over the sentence it exists to show. The
       // second pass rewrites the same values, which notifies nobody.
-      ingest(scopes.session, { data: payload.data ?? {} })
-      ingest(scopes.session, payload, {
-        entityTypes: { [slot]: entityType, [impersonatedBySlot]: entityType },
-      })
+      const plainData = { ...(payload.data ?? {}) }
+      if (IMPERSONATION_POLICY_KEY in plainData) {
+        const parsedPolicy = impersonationPolicySchema.safeParse(
+          plainData[IMPERSONATION_POLICY_KEY],
+        )
+        if (parsedPolicy.success) {
+          plainData[IMPERSONATION_POLICY_KEY] = parsedPolicy.data
+        } else {
+          delete plainData[IMPERSONATION_POLICY_KEY]
+        }
+      }
+      ingest(scopes.session, { data: plainData })
+      ingest(
+        scopes.session,
+        { ...payload, data: plainData },
+        {
+          entityTypes: { [slot]: entityType, [impersonatedBySlot]: entityType },
+        },
+      )
     }
     if (signal.type === SIGNAL_AUTH_METHODS) {
       // The same keys the handshake writes (HIL-427, HIL-1105): a surface reads
@@ -583,10 +616,14 @@ export function bindSessionScope(
       })
     }
     if (signal.type === SIGNAL_IMPERSONATION_POLICY) {
-      // The handshake and the live frame share one slot (HIL-1170).
-      ingest(scopes.session, {
-        data: { [IMPERSONATION_POLICY_KEY]: signal.data },
-      })
+      // The handshake and the live frame share one slot (HIL-1170, HIL-1307).
+      // A malformed frame does not overwrite the active value.
+      const parsed = impersonationPolicySchema.safeParse(signal.data)
+      if (parsed.success) {
+        ingest(scopes.session, {
+          data: { [IMPERSONATION_POLICY_KEY]: parsed.data },
+        })
+      }
     }
     if (signal.type === SIGNAL_THEME_SETTINGS) {
       ingest(scopes.session, {
@@ -1076,11 +1113,10 @@ export function sessionAdminViewMode(
 }
 
 /**
- * The installation's impersonation policy as the last handshake or policy frame
- * said it (HIL-1170).
+ * The installation's impersonation policy as the last valid handshake or policy
+ * frame said it (HIL-1170, HIL-1307).
  *
- * Absent, null or unreadable reads as the defaults — act, rights not carried —
- * which is the behavior the product had before the settings existed.
+ * Absent, null or unreadable reads as the installation defaults.
  *
  * @param scopes The application's scope-partitioned stores.
  */
@@ -1093,8 +1129,16 @@ export function sessionImpersonationPolicy(
     const parsed = impersonationPolicySchema.safeParse(slot.get())
 
     return parsed.success
-      ? { viewOnly: parsed.data.viewOnly, carryAdmin: parsed.data.carryAdmin }
-      : { viewOnly: false, carryAdmin: false }
+      ? {
+          viewOnly: parsed.data.viewOnly,
+          carryAdmin: parsed.data.carryAdmin,
+          allowed: parsed.data.allowed,
+          accountAccess: parsed.data.accountAccess,
+          blocked: parsed.data.blocked,
+          frozen: parsed.data.frozen,
+          equal: parsed.data.equal,
+        }
+      : DEFAULT_IMPERSONATION_POLICY
   })
 }
 

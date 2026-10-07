@@ -13,9 +13,9 @@ use Hilos\Database\Settings\Exception\SettingException;
  *
  * Whether the card has the section at all, the words of its row and its confirmation - only look,
  * with or without the administrator's own rights - and which people the button is switched off
- * for. They arrive in the card's first answer, the way the deletion's grace period does; a setting
- * changed while the card is open is caught by the server's refusal in the same words, so no frame
- * of its own follows them. They are settings of the installation, not facts about the person.
+ * for. They arrive in the card's first answer, the way the deletion's grace period does; later
+ * setting changes arrive live as {@see ImpersonationPolicySignalData} (HIL-1307). They are settings
+ * of the installation, not facts about the person.
  */
 final readonly class ImpersonationCardSettings
 {

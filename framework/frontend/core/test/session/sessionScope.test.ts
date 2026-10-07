@@ -19,6 +19,7 @@ import {
   sessionAccountStanding,
   sessionSecondFactorPolicy,
   sessionImpersonationPolicy,
+  DEFAULT_IMPERSONATION_POLICY,
   sessionThemeSettings,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
@@ -962,56 +963,119 @@ describe('a sign-in held on its second factor (HIL-494)', () => {
   })
 })
 
-describe('the impersonation policy (HIL-1170)', () => {
+describe('the impersonation policy (HIL-1170, HIL-1307)', () => {
   it('reads the defaults until a handshake says otherwise', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     bindSessionScope(connection as unknown as HilosConnection, scopes)
     const policy = sessionImpersonationPolicy(scopes)
 
-    // Nothing said yet: act, rights not carried — the product before the settings.
-    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: false })
+    // Nothing said yet: defaults from ImpersonationSettings.
+    expect(policy.get()).toStrictEqual(DEFAULT_IMPERSONATION_POLICY)
+
+    const fullPolicy = {
+      viewOnly: true,
+      carryAdmin: true,
+      allowed: true,
+      accountAccess: false,
+      blocked: false,
+      frozen: true,
+      equal: false,
+    }
 
     connection.emitHandshakeResponse({
-      data: { impersonationPolicy: { viewOnly: true, carryAdmin: true } },
+      data: { impersonationPolicy: fullPolicy },
     })
-    expect(policy.get()).toStrictEqual({ viewOnly: true, carryAdmin: true })
+    expect(policy.get()).toStrictEqual(fullPolicy)
 
-    // An unreadable node falls back to the defaults rather than guessing.
+    // An unreadable node on initial empty slot falls back to the defaults rather than guessing.
+    const emptyScopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, emptyScopes)
+    const emptyPolicy = sessionImpersonationPolicy(emptyScopes)
+
     connection.emitHandshakeResponse({
       data: { impersonationPolicy: { viewOnly: 'yes', carryAdmin: true } },
     })
-    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: false })
+    expect(emptyPolicy.get()).toStrictEqual(DEFAULT_IMPERSONATION_POLICY)
 
     connection.emitHandshakeResponse({ data: { impersonationPolicy: null } })
-    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: false })
+    expect(emptyPolicy.get()).toStrictEqual(DEFAULT_IMPERSONATION_POLICY)
   })
 
   it('registers the policy frame and shares its slot with every handshake', () => {
     const schema = SESSION_SIGNAL_SCHEMAS[SIGNAL_IMPERSONATION_POLICY]
     expect(SIGNAL_IMPERSONATION_POLICY).toBe('hilos_impersonation_policy')
-    expect(
-      schema.safeParse({ viewOnly: true, carryAdmin: false }).success,
-    ).toBe(true)
+    const valid = {
+      viewOnly: true,
+      carryAdmin: false,
+      allowed: true,
+      accountAccess: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    }
+    expect(schema.safeParse(valid).success).toBe(true)
     expect(schema.safeParse({ viewOnly: true }).success).toBe(false)
+    expect(schema.safeParse({ ...valid, viewOnly: 'yes' }).success).toBe(false)
+
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     bindSessionScope(connection as unknown as HilosConnection, scopes)
     const policy = sessionImpersonationPolicy(scopes)
-    connection.emitHandshakeResponse({
-      data: { impersonationPolicy: { viewOnly: false, carryAdmin: false } },
-    })
 
-    connection.emit(SIGNAL_IMPERSONATION_POLICY, {
+    const initial = {
+      viewOnly: false,
+      carryAdmin: false,
+      allowed: true,
+      accountAccess: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    }
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: initial },
+    })
+    expect(policy.get()).toStrictEqual(initial)
+
+    const liveUpdated = {
       viewOnly: true,
       carryAdmin: false,
-    })
-    expect(policy.get()).toStrictEqual({ viewOnly: true, carryAdmin: false })
+      allowed: false,
+      accountAccess: true,
+      blocked: false,
+      frozen: false,
+      equal: false,
+    }
+    connection.emit(SIGNAL_IMPERSONATION_POLICY, liveUpdated)
+    expect(policy.get()).toStrictEqual(liveUpdated)
 
-    connection.emitHandshakeResponse({
-      data: { impersonationPolicy: { viewOnly: false, carryAdmin: true } },
+    // A malformed live frame does not overwrite the active value.
+    connection.emit(SIGNAL_IMPERSONATION_POLICY, {
+      viewOnly: false,
+      carryAdmin: true,
     })
-    expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: true })
+    expect(policy.get()).toStrictEqual(liveUpdated)
+
+    // A malformed reconnect handshake does not overwrite the active value.
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: { invalid: true } },
+    })
+    expect(policy.get()).toStrictEqual(liveUpdated)
+
+    // A valid reconnect handshake updates the slot.
+    const reconnected = {
+      viewOnly: false,
+      carryAdmin: true,
+      allowed: true,
+      accountAccess: false,
+      blocked: true,
+      frozen: true,
+      equal: true,
+    }
+    connection.emitHandshakeResponse({
+      data: { impersonationPolicy: reconnected },
+    })
+    expect(policy.get()).toStrictEqual(reconnected)
   })
 })
 

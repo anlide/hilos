@@ -76,7 +76,12 @@ test('switching impersonation off takes the takeover off the card, and on brings
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
   const personPage = await personContext.newPage()
+  let settingsPage: Page | null = null
   let switchedOff = false
+  let cardLoads = 0
+  page.on('load', () => {
+    cardLoads += 1
+  })
   try {
     await signUpAdmin(page)
     const person = await signUp(personPage)
@@ -85,23 +90,27 @@ test('switching impersonation off takes the takeover off the card, and on brings
 
     await gotoPage(page, card)
     await expect(open).toBeVisible()
+    const loadsBeforeSettings = cardLoads
 
-    await setAllowed(page, false)
+    settingsPage = await page.context().newPage()
+    await setAllowed(settingsPage, false)
     switchedOff = true
-    await gotoPage(page, card)
-    await expect(page.getByTestId('hilos-user-id')).toHaveText(
-      String(person.userId),
-    )
     await expect(open).toHaveCount(0)
+    expect(new URL(page.url()).pathname).toBe(card)
+    expect(cardLoads).toBe(loadsBeforeSettings)
 
-    await setAllowed(page, true)
+    await setAllowed(settingsPage, true)
     switchedOff = false
-    await gotoPage(page, card)
     await expect(open).toBeVisible()
     await expect(open).toBeEnabled()
+    expect(new URL(page.url()).pathname).toBe(card)
+    expect(cardLoads).toBe(loadsBeforeSettings)
   } finally {
-    if (switchedOff) {
-      await setAllowed(page, true)
+    if (switchedOff && settingsPage) {
+      await setAllowed(settingsPage, true)
+    }
+    if (settingsPage) {
+      await settingsPage.close()
     }
     await personContext.close()
   }

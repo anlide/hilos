@@ -319,13 +319,32 @@ function closeImpersonate(): void {
   if (!impersonateAction.busy.value) impersonateTarget.value = null
 }
 
+watch(impersonation, (section) => {
+  if (impersonateTarget.value === null) {
+    return
+  }
+  if ((section === null || section.disabled) && !impersonateAction.busy.value) {
+    impersonateTarget.value = null
+    return
+  }
+  if (section !== null) {
+    impersonateTarget.value = {
+      userId: impersonateTarget.value.userId,
+      section,
+    }
+  }
+})
+
 // Authoritative-backend: what the takeover changes — the strip, and this
 // session becoming the person — arrives with the rebound session, so a success
 // only closes the window; a refusal stays in it, and the driver toasts it.
 async function submitImpersonate(): Promise<void> {
   const target = impersonateTarget.value
+  const section = impersonation.value
   if (
     target === null ||
+    section === null ||
+    section.disabled ||
     impersonateAction.busy.value ||
     detail.value?.id !== target.userId
   )
@@ -1002,6 +1021,8 @@ watch(error, (reason) => {
           :loading="impersonateAction.loading.value"
           :disabled="
             impersonateAction.busy.value ||
+            impersonation === null ||
+            impersonation.disabled ||
             detail?.id !== impersonateTarget?.userId
           "
           data-id="hilos-user-impersonate-confirm"

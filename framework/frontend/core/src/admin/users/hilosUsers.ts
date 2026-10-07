@@ -48,6 +48,8 @@ import {
   type HilosStandingTone,
 } from '../../session/accountStanding.js'
 import {
+  IMPERSONATION_POLICY_KEY,
+  impersonationPolicySchema,
   readHilosAccountStanding,
   sessionUserId,
   type HilosAccountStanding,
@@ -1237,12 +1239,36 @@ export function createHilosUserLifecycle(
 ): HilosUserLifecycle {
   const graceDays = context.scopes.pageDataSignal(USER_DELETION_GRACE_DAYS_KEY)
   const impersonation = context.scopes.pageDataSignal(USER_IMPERSONATION_KEY)
+  const sessionPolicySlot = context.scopes.session.data.signal(
+    IMPERSONATION_POLICY_KEY,
+  )
 
   return {
     currentUserId: sessionUserId(context.scopes),
-    impersonation: computedSignal(() =>
-      readHilosUserImpersonationSettings(impersonation.get()),
-    ),
+    impersonation: computedSignal(() => {
+      const pageSettings = readHilosUserImpersonationSettings(
+        impersonation.get(),
+      )
+      if (pageSettings === null) {
+        return null
+      }
+      const rawSlot = sessionPolicySlot.get()
+      const parsedSession = impersonationPolicySchema.safeParse(rawSlot)
+      if (parsedSession.success) {
+        const policy = parsedSession.data
+
+        return {
+          allowed: policy.allowed,
+          scope: policy.viewOnly ? 'view' : 'act',
+          carryAdmin: policy.carryAdmin,
+          blocked: policy.blocked,
+          frozen: policy.frozen,
+          equal: policy.equal,
+        }
+      }
+
+      return pageSettings
+    }),
     graceDays: computedSignal(() => {
       const value = graceDays.get()
 

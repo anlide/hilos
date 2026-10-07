@@ -5,6 +5,7 @@ import {
 } from '../../src/session/adminAccess.js'
 import {
   bindSessionScope,
+  DEFAULT_IMPERSONATION_POLICY,
   type SessionScopeOptions,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
@@ -154,7 +155,7 @@ describe('hilosAdminAccess', () => {
       },
       data: {
         adminViewMode: false,
-        impersonationPolicy: { viewOnly: false, carryAdmin },
+        impersonationPolicy: { ...DEFAULT_IMPERSONATION_POLICY, carryAdmin },
       },
     })
 
@@ -171,7 +172,10 @@ describe('hilosAdminAccess', () => {
       entities: { currentUser: { id: 7, name: 'Olena', admin: false } },
       data: {
         adminViewMode: false,
-        impersonationPolicy: { viewOnly: false, carryAdmin: true },
+        impersonationPolicy: {
+          ...DEFAULT_IMPERSONATION_POLICY,
+          carryAdmin: true,
+        },
       },
     })
 

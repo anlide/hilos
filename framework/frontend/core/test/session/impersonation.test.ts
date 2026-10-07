@@ -12,6 +12,7 @@ import {
 } from '../../src/session/impersonation.js'
 import {
   bindSessionScope,
+  DEFAULT_IMPERSONATION_POLICY,
   SIGNAL_IMPERSONATION_POLICY,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
@@ -162,7 +163,9 @@ describe('a takeover that only looks (HIL-1170)', () => {
   function takeoverWith(viewOnly: boolean): Record<string, unknown> {
     return {
       ...TAKEOVER,
-      data: { impersonationPolicy: { viewOnly, carryAdmin: false } },
+      data: {
+        impersonationPolicy: { ...DEFAULT_IMPERSONATION_POLICY, viewOnly },
+      },
     }
   }
 
@@ -173,7 +176,12 @@ describe('a takeover that only looks (HIL-1170)', () => {
     unbind = booted.unbind
     booted.connection.emitHandshakeResponse({
       entities: { currentUser: { id: 1, name: 'Ada' } },
-      data: { impersonationPolicy: { viewOnly: true, carryAdmin: false } },
+      data: {
+        impersonationPolicy: {
+          ...DEFAULT_IMPERSONATION_POLICY,
+          viewOnly: true,
+        },
+      },
     })
 
     expect(hilosImpersonation.get()).toBeNull()
@@ -201,8 +209,8 @@ describe('a takeover that only looks (HIL-1170)', () => {
     expect(hilosTakeoverViewOnly.get()).toBe(false)
 
     booted.connection.emit(SIGNAL_IMPERSONATION_POLICY, {
+      ...DEFAULT_IMPERSONATION_POLICY,
       viewOnly: true,
-      carryAdmin: false,
     })
     expect(hilosImpersonation.get()?.viewOnly).toBe(true)
     expect(hilosTakeoverViewOnly.get()).toBe(true)

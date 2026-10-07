@@ -300,6 +300,8 @@ export {
   sessionSecondFactorPolicy,
   sessionImpersonationPolicy,
   impersonationPolicySchema,
+  DEFAULT_IMPERSONATION_POLICY,
+  IMPERSONATION_POLICY_KEY,
   sessionThemeSettings,
   themeSettingsSchema,
   SIGNAL_AUTH_METHODS,

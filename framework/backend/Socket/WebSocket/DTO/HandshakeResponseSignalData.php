@@ -123,13 +123,12 @@ use Hilos\Users\AccountStandingResolver;
  * null, an absent key and anything but true as off - the same fail-closed default the admin flag
  * takes. The framework stamps it ({@see withAdminViewMode()}) on every send path.
  *
- * `impersonationPolicy` is the pair of impersonation settings an open tab draws a takeover by
- * (HIL-1170, {@see ImpersonationPolicySignalData}): whether inside a takeover the administrator only
- * looks, and whether they carry their own admin rights inside. Like the view mode it is the
+ * `impersonationPolicy` is the set of impersonation settings an open tab draws a takeover and card by
+ * (HIL-1170, HIL-1307, {@see ImpersonationPolicySignalData}): allowed, scope/view-only, carried rights,
+ * account access, and whether blocked, frozen or equal accounts may be taken over. Like the view mode it is the
  * installation's fact and rides every response; a change between handshakes arrives on
  * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY}. Null means the stamp never ran; the
- * surface reads it as the defaults - act, rights not carried. The framework stamps it
- * ({@see withImpersonationPolicy()}) on every send path.
+ * surface reads it as the defaults. The framework stamps it ({@see withImpersonationPolicy()}) on every send path.
  *
  * `themeSettings` is the installation's switching flag and default theme (HIL-1428,
  * {@see ThemeSettingsSignalData}). The framework stamps it on the anonymous and authenticated
@@ -208,7 +207,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
      *     Standing of the person the session acts as ({@see AccountStanding}), or null when it is anonymous
      * @param ?bool $adminViewMode Whether this node is in the admin view mode, or null before the framework stamp
-     * @param ?array{viewOnly: bool, carryAdmin: bool} $impersonationPolicy Impersonation policy of the installation,
+     * @param ?array{viewOnly: bool, carryAdmin: bool, allowed: bool, accountAccess: bool,
+     *     blocked: bool, frozen: bool, equal: bool} $impersonationPolicy Impersonation policy of the installation,
      *     or null before the framework stamp
      * @param ?array{switchingEnabled: bool, defaultTheme: string} $themeSettings Theme settings of the installation,
      *     or null before the framework stamp
@@ -377,7 +377,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * The axis of the view mode's kind: the installation's fact, which the project does not read, so
      * the framework stamps it on every send path and the project never builds it.
      *
-     * @param array{viewOnly: bool, carryAdmin: bool} $impersonationPolicy Impersonation policy in force
+     * @param array{viewOnly: bool, carryAdmin: bool, allowed: bool, accountAccess: bool,
+     *     blocked: bool, frozen: bool, equal: bool} $impersonationPolicy Impersonation policy in force
      * @return self The same response carrying that policy
      */
     public function withImpersonationPolicy(array $impersonationPolicy): self

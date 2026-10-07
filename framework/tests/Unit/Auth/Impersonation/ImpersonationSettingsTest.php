@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\Impersonation;
 
 use Hilos\Auth\Impersonation\DTO\ImpersonationCardSettings;
+use Hilos\Auth\Impersonation\DTO\ImpersonationPolicySignalData;
 use Hilos\Auth\Impersonation\ImpersonationScopeRule;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
@@ -95,6 +97,18 @@ final class ImpersonationSettingsTest extends TestCase
             ],
             ImpersonationCardSettings::current()->toArray(),
         );
+        self::assertSame(
+            [
+                ImpersonationPolicySignalData::viewOnly => true,
+                ImpersonationPolicySignalData::carryAdmin => true,
+                ImpersonationPolicySignalData::allowed => false,
+                ImpersonationPolicySignalData::accountAccess => true,
+                ImpersonationPolicySignalData::blocked => false,
+                ImpersonationPolicySignalData::frozen => false,
+                ImpersonationPolicySignalData::equal => false,
+            ],
+            ImpersonationPolicySignalData::current()->toArray(),
+        );
     }
 
     public function testTheSwitchesAreEveryKeyButTheScope(): void
@@ -114,6 +128,63 @@ final class ImpersonationSettingsTest extends TestCase
         self::assertSame('Choose view only or view and act', ImpersonationScopeRule::validate(true));
     }
 
+    public function testPolicySignalDataExactRoundtrip(): void
+    {
+        $wire = [
+            ImpersonationPolicySignalData::viewOnly => true,
+            ImpersonationPolicySignalData::carryAdmin => false,
+            ImpersonationPolicySignalData::allowed => true,
+            ImpersonationPolicySignalData::accountAccess => false,
+            ImpersonationPolicySignalData::blocked => true,
+            ImpersonationPolicySignalData::frozen => false,
+            ImpersonationPolicySignalData::equal => true,
+        ];
+
+        $restored = ImpersonationPolicySignalData::fromArray($wire);
+
+        self::assertTrue($restored->viewOnly);
+        self::assertFalse($restored->carryAdmin);
+        self::assertTrue($restored->allowed);
+        self::assertFalse($restored->accountAccess);
+        self::assertTrue($restored->blocked);
+        self::assertFalse($restored->frozen);
+        self::assertTrue($restored->equal);
+        self::assertSame($wire, $restored->toArray());
+    }
+
+    public function testPolicySignalDataRejectsMissingKey(): void
+    {
+        $wire = [
+            ImpersonationPolicySignalData::viewOnly => true,
+            ImpersonationPolicySignalData::carryAdmin => false,
+            ImpersonationPolicySignalData::allowed => true,
+            ImpersonationPolicySignalData::accountAccess => false,
+            ImpersonationPolicySignalData::blocked => true,
+            ImpersonationPolicySignalData::frozen => false,
+        ];
+
+        $this->expectException(InvalidFormatException::class);
+
+        ImpersonationPolicySignalData::fromArray($wire);
+    }
+
+    public function testPolicySignalDataRejectsNonBooleanKey(): void
+    {
+        $wire = [
+            ImpersonationPolicySignalData::viewOnly => true,
+            ImpersonationPolicySignalData::carryAdmin => false,
+            ImpersonationPolicySignalData::allowed => 'true',
+            ImpersonationPolicySignalData::accountAccess => false,
+            ImpersonationPolicySignalData::blocked => true,
+            ImpersonationPolicySignalData::frozen => false,
+            ImpersonationPolicySignalData::equal => true,
+        ];
+
+        $this->expectException(InvalidFormatException::class);
+
+        ImpersonationPolicySignalData::fromArray($wire);
+    }
+
     /**
      * Asserts the seven readers answer the behavior the product had before the settings existed.
      */
@@ -127,6 +198,18 @@ final class ImpersonationSettingsTest extends TestCase
         self::assertTrue(ImpersonationSettings::allowsBlocked());
         self::assertTrue(ImpersonationSettings::allowsFrozen());
         self::assertTrue(ImpersonationSettings::allowsEqual());
+        self::assertSame(
+            [
+                ImpersonationPolicySignalData::viewOnly => false,
+                ImpersonationPolicySignalData::carryAdmin => false,
+                ImpersonationPolicySignalData::allowed => true,
+                ImpersonationPolicySignalData::accountAccess => false,
+                ImpersonationPolicySignalData::blocked => true,
+                ImpersonationPolicySignalData::frozen => true,
+                ImpersonationPolicySignalData::equal => true,
+            ],
+            ImpersonationPolicySignalData::current()->toArray(),
+        );
     }
 
     /**

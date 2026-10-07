@@ -1153,6 +1153,87 @@ describe('HilosUserPage impersonation (HIL-1170)', () => {
     expect(byId('hilos-user-impersonate-step-up')).toBeNull()
     expect(byId('hilos-user-impersonate-confirm')).not.toBeNull()
   })
+
+  it('updates an open confirmation and closes it when impersonation becomes unavailable', async () => {
+    const context = userContext(true, false, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    renderPage(context)
+    await click('hilos-user-impersonate-open')
+    expect(byId('modal')).not.toBeNull()
+
+    // Changing allowed to false via live session policy closes the window and hides the section.
+    act(() => {
+      context.scopes.session.data.set('impersonationPolicy', {
+        viewOnly: false,
+        carryAdmin: false,
+        allowed: false,
+        accountAccess: false,
+        blocked: true,
+        frozen: true,
+        equal: true,
+      })
+    })
+    await settle()
+
+    expect(byId('modal')).toBeNull()
+    expect(byId('hilos-user-impersonate-open')).toBeNull()
+
+    // Bringing allowed back to true restores the section.
+    act(() => {
+      context.scopes.session.data.set('impersonationPolicy', {
+        viewOnly: false,
+        carryAdmin: false,
+        allowed: true,
+        accountAccess: false,
+        blocked: true,
+        frozen: true,
+        equal: true,
+      })
+    })
+    await settle()
+    expect(byId('hilos-user-impersonate-open')).not.toBeNull()
+
+    // Open the window again; updating the policy to equal=false when target user is an admin closes the window.
+    await click('hilos-user-impersonate-open')
+    expect(byId('modal')).not.toBeNull()
+
+    act(() => {
+      context.scopes.session.data.set('impersonationPolicy', {
+        viewOnly: true,
+        carryAdmin: false,
+        allowed: true,
+        accountAccess: false,
+        blocked: true,
+        frozen: true,
+        equal: true,
+      })
+    })
+    await settle()
+    expect(byId('modal')?.textContent).toContain(
+      'You will only look: nothing can be changed',
+    )
+
+    act(() => {
+      context.scopes
+        .page()
+        ?.entities.upsert({ type: 'user', id: 1 }, { admin: true })
+      context.scopes.session.data.set('impersonationPolicy', {
+        viewOnly: false,
+        carryAdmin: false,
+        allowed: true,
+        accountAccess: false,
+        blocked: true,
+        frozen: true,
+        equal: false,
+      })
+    })
+    await settle()
+
+    expect(byId('modal')).toBeNull()
+    const open = byId('hilos-user-impersonate-open') as HTMLButtonElement
+    expect(open.disabled).toBe(true)
+  })
 })
 
 describe('HilosUserPage standing (HIL-945)', () => {
