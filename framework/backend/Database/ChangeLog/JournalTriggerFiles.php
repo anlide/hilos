@@ -12,6 +12,7 @@ use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
 use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
+use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 
 /** The project-owned directory of generated service trigger files. */
@@ -50,6 +51,73 @@ final class JournalTriggerFiles
         $names = array_keys($tables);
         sort($names);
         return $names;
+    }
+
+    /**
+     * Reads and validates the entire directory against the generator before any SQL is applied.
+     * The migration header may be older than the current plan when the body is unchanged.
+     *
+     * @param list<JournalTriggerFile> $plan Complete canonical generator output
+     * @param int $migrationIndex Highest applied migration
+     * @return list<JournalTriggerFile> Validated files in generator order
+     * @throws DatabaseException When a file is missing, extra, unreadable or differs from the generator
+     */
+    public static function readAll(array $plan, int $migrationIndex): array
+    {
+        $path = self::path();
+        $expected = [];
+        foreach ($plan as $file) {
+            $expected[$file->name . self::FILE_SUFFIX] = $file;
+        }
+
+        try {
+            $entries = FsPath::entries($path);
+        } catch (FsException $e) {
+            throw new DatabaseException("Journal trigger directory {$path}: " . $e->getMessage(), previous: $e);
+        }
+        $problems = [];
+        $files = [];
+        foreach ($entries as $entry) {
+            if (!str_ends_with(strtolower($entry), self::FILE_SUFFIX)) {
+                continue;
+            }
+            if (!isset($expected[$entry])) {
+                $problems[] = "{$entry}: not in the journal trigger generator plan";
+                continue;
+            }
+            try {
+                $content = FsPath::read($path . '/' . $entry);
+            } catch (FsException $e) {
+                throw new DatabaseException("Journal trigger {$entry}: " . $e->getMessage(), previous: $e);
+            }
+            if (preg_match('/\A-- valid from migration #(0|[1-9][0-9]*)\n(.*)\n\z/sD', $content, $matches) !== 1) {
+                $problems[] = "{$entry}: invalid migration header or file format";
+                continue;
+            }
+            $validFrom = filter_var($matches[1], FILTER_VALIDATE_INT);
+            if ($validFrom === false || $validFrom > $migrationIndex) {
+                $problems[] = "{$entry}: valid-from migration {$matches[1]} exceeds applied level {$migrationIndex}";
+                continue;
+            }
+            $canonical = $expected[$entry];
+            // Exact equality also proves there is one expected CREATE/DROP statement; splitting
+            // SQL on semicolons would break the generated BEGIN...END compound statement.
+            if ($matches[2] !== $canonical->body) {
+                $problems[] = "{$entry}: body differs from the journal trigger generator; regenerate the file";
+                continue;
+            }
+            $files[$entry] = new JournalTriggerFile($canonical->name, $canonical->body, $validFrom, $canonical->tombstone);
+        }
+        foreach ($expected as $entry => $_file) {
+            if (!in_array($entry, $entries, true)) {
+                $problems[] = "{$entry}: missing journal trigger file";
+            }
+        }
+        if ($problems !== []) {
+            throw new DatabaseException('Journal trigger files refused: ' . implode('; ', $problems));
+        }
+
+        return array_map(static fn(string $entry): JournalTriggerFile => $files[$entry], array_keys($expected));
     }
 
     /**

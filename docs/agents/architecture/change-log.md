@@ -24,8 +24,8 @@ belong to their leaf, not to this page.
 ## Core Rule
 
 `JournalTriggerGenerator` generates service triggers — `AFTER INSERT`,
-`AFTER UPDATE` and `AFTER DELETE` on each journaled table. Their installation
-at node startup is not in the code yet — HIL-1448.
+`AFTER UPDATE` and `AFTER DELETE` on each journaled table.
+`JournalTriggerInstaller` installs them at node startup after migrations.
 
 The Entity declares which tables are journaled; nobody switches them on or off.
 The screens only show what is declared (not in the code yet — HIL-1461).
@@ -35,8 +35,7 @@ who acted, on whose behalf and through what (not in the code yet — HIL-1449).
 
 The journal lives in its own database on the same server.
 
-Triggers are files, and the database holds exactly what those files say
-(not in the code yet — HIL-1448).
+Triggers are files, and the database holds exactly what those files say.
 
 ## What An Entity Declares
 
@@ -263,8 +262,8 @@ When a table leaves the journal, keep a tombstone — the same file, the same
 header and `DROP TRIGGER IF EXISTS`.
 
 In the body, use `{{change_log_database}}` for the journal database name; do not
-spell out one installation's name in the SQL. The node's substitution at
-installation is not in the code yet — HIL-1448.
+spell out one installation's name in the SQL. The installer substitutes the
+quoted derived database name only for execution and live-catalog comparison.
 
 The files live in the project's `backend/Database/Migration/Triggers` directory,
 including triggers on framework tables. `JournalTriggerGenerator` reads the Entity
@@ -278,26 +277,52 @@ schema, missing journal tables and unsupported column types. It writes changed
 files atomically and leaves unchanged files, including their older valid-from
 headers, alone. It does not install SQL in the database.
 
-After migrations, the node installs all triggers from their files once, under
-the schema rollout claim, `hilos_migration_claim`
-(not in the code yet — HIL-1448). The existing claim is described in
+For a project with the journal connection configured, `DockerApplication` runs
+this sequence before starting a daemon, worker or socket:
+
+1. Connect the databases and take the primary `hilos_migration_claim`.
+2. Apply project migrations.
+3. Run `postMigration`; chat prepares journal partitions through
+   `ChangeLogPartitions::ensureUnderClaim()`, without taking the claim again.
+4. Initialize Hilos so the generator reads the project's mounted Entities.
+5. Validate the complete trigger-file set against `JournalTriggerGenerator::plan()`.
+6. Read every trigger in the primary database, reconcile it and verify the result.
+7. Release the claim, including on failure, then start the daemon watchdog loop.
+
+`Migration::migrateUp(afterRollout: ...)` holds that one claim through steps 3–6
+even with no pending migrations. Callers without the hook keep their existing
+no-pending fast path. Projects without the journal connection keep their former
+startup sequence. The claim is described in
 [Nodes that start together](../orm/migrations.md#nodes-that-start-together-hil-1228).
 
-The node refuses to start and names the trigger when the database has one
-without a file, when a file disagrees with what the generator would write today,
-or when a trigger is not generated — phase 1 has no custom triggers
-(not in the code yet — HIL-1448).
+Before any trigger DDL, the installer checks all files: the complete three-event
+set and tombstones, exact names, the first-line header with N no later than the
+applied migration level, and the exact generated CREATE or DROP statement. An
+unchanged body may keep an older N; the header does not make it drift. The
+installer never rewrites source files. It refuses a missing or extra SQL file,
+a body differing from the generator, or any live primary-database trigger
+without a file, and names the offending files or triggers. Phase 1 admits no
+custom triggers, whatever their prefix.
+
+A matching live trigger stays untouched. An absent trigger is created, a changed
+one is dropped and recreated, and a tombstone removes its old trigger if present.
+The comparison reads table, event, AFTER timing and the statement body from
+`INFORMATION_SCHEMA.TRIGGERS`; server-added DEFINER and SHOW CREATE formatting
+are not drift. A final catalog read must match the active files exactly and
+contain none of the tombstones. MariaDB does not roll back trigger DDL: a failure
+names the trigger and refuses startup; the next start safely completes the set.
+The unused `Migration::applyRoutines()` and its path configuration are removed;
+existing Routines files are not executed by this mechanism.
 
 A migration changing a journaled table regenerates that table's trigger files
-in the same commit; otherwise the node refuses
-to start (not in the code yet — HIL-1448).
-How to remove or rename a journaled column while old triggers still stand is
-left to HIL-1448.
+in the same commit; otherwise the node refuses to start. For incompatible DDL,
+including dropping or renaming a journaled column, place all migration DML on
+that table **before** the DDL, while its old triggers still work. Do not write
+that table again in the migration batch before final trigger installation. The
+new files target the completed schema. A DML statement that reaches a broken old
+trigger fails the migration and startup normally; do not disable the journal to
+let it through. Migration receipt attribution belongs to HIL-1449.
 
-The existing SQL-files seam is `Migration::applyRoutines()` in
-`framework/backend/Database/Migration.php`; it has no caller today. Making it
-the installation point or replacing it belongs to HIL-1448
-(not in the code yet — HIL-1448).
 Custom project triggers, their header declaration and their five safeguards
 belong to phase 2, HIL-1413.
 

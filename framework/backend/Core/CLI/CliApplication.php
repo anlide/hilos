@@ -12,7 +12,6 @@ use Hilos\Core\CLI\Commands\CommandExecutionSite;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Database\Database;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
-use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Hilos;
 use Hilos\Log\LogWriteLevelApplier;
@@ -74,9 +73,8 @@ final class CliApplication
 
             LogWriteLevelApplier::applyFromEnv();
 
-            // The schema track is named by the prelude, which every process runs; the routines
-            // and seeds are configured here, by the entrypoint that applies them.
-            Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
+            // The schema track is named by the prelude; this entrypoint configures the files
+            // written by the trigger generator and applied by the seed command.
             JournalTriggerFiles::setPath($bootstrapDir . '/../Database/Migration/Triggers');
             Seed::setSeedPath($bootstrapDir . '/../Database/Migration/Seed');
 

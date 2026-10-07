@@ -44,22 +44,39 @@ final class ChangeLogPartitions
         $originalIndex = Database::getCurrentIndex();
         Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
         try {
-            if ($at === null) {
-                Database::sql("SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-01') AS `month_start`");
-                $monthStart = (string)Database::field('month_start');
-                $at = new DateTimeImmutable($monthStart, new DateTimeZone('UTC'));
-            }
-            $month = $at->setTimezone(new DateTimeZone('UTC'))->modify('first day of this month')->setTime(0, 0);
             $holder ??= MigrationClaimHolder::process();
             MigrationClaim::take($holder);
             try {
-                Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
-                foreach (self::TABLES as $table) {
-                    self::ensureTable($table, $month);
-                }
+                self::ensureUnderClaim($at);
             } finally {
                 Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
                 MigrationClaim::release($holder);
+            }
+        } finally {
+            Database::useConnection($originalIndex);
+        }
+    }
+
+    /**
+     * The caller already holds the primary schema rollout claim and releases it afterward.
+     * This entry neither takes it again nor releases it, and restores the active connection.
+     *
+     * @param ?DateTimeImmutable $at UTC month to prepare; database UTC now when null
+     * @throws DatabaseException When a table or partition differs or DDL fails
+     */
+    public static function ensureUnderClaim(?DateTimeImmutable $at = null): void
+    {
+        $originalIndex = Database::getCurrentIndex();
+        try {
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            if ($at === null) {
+                Database::sql("SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-01') AS `month_start`");
+                $at = new DateTimeImmutable((string)Database::field('month_start'), new DateTimeZone('UTC'));
+            }
+            $month = $at->setTimezone(new DateTimeZone('UTC'))->modify('first day of this month')->setTime(0, 0);
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            foreach (self::TABLES as $table) {
+                self::ensureTable($table, $month);
             }
         } finally {
             Database::useConnection($originalIndex);

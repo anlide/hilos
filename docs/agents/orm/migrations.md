@@ -52,10 +52,12 @@ a target that had none is left without one — the marker is the database's name
   holder dies, but MariaDB Galera refuses `GET_LOCK` outright (since 10.6.13 / 10.11.3), and a
   multi-primary cluster on MariaDB is Galera: the node would not start at all there. One
   behavior on every topology outweighs the cleanup the row costs, listed below.
-- **Taken only when there is something to apply.** A database already at the code's level is
-  read without the claim and takes none. Otherwise the level is read again under the claim —
-  another holder may have rolled the schema out meanwhile — and the claim is given up whether
-  the rollout succeeds or fails. `db:migration:up`, `:down`, `:retry`, a restore and
+- **Taken for migrations or startup completion.** Without an `afterRollout` hook,
+  `Migration::migrateUp()` takes no claim when the database is already at the code's level.
+  With the hook it always takes the claim, runs pending migrations and then the hook before
+  release. A journal-enabled watchdog uses this for partition preparation, Hilos initialization
+  and trigger installation. The level is read again under the claim — another holder may
+  have rolled the schema out meanwhile — and the claim is given up on success or failure. `db:migration:up`, `:down`, `:retry`, a restore and
   `test:db:reset` take the same claim; `recordAppliedLevel()` does not.
 - **Waiting has no deadline.** A waiting process reads the row once a second and names the
   holder in its log on the first poll and every 30th after it: `Waiting for the schema rollout
@@ -179,9 +181,14 @@ php cli.php db:seed:apply 001
   ([../architecture/backup-anonymization.md](../architecture/backup-anonymization.md))
 - A migration that changes a table under the change log regenerates that table's
   trigger files with `db:change-log:generate` in the same commit. A node will not
-  start on a trigger file that disagrees with what the generator writes today
-  (not in the code yet — HIL-1448); see
-  [../architecture/change-log.md](../architecture/change-log.md)
+  start on a trigger file that disagrees with what the generator writes today; see
+  [../architecture/change-log.md](../architecture/change-log.md).
+- Before incompatible DDL on a journaled table (including DROP/RENAME of a column),
+  finish all migration DML on that table while the old triggers still work. After
+  the DDL, do not write that table again in the migration batch before final trigger
+  installation. Commit the new generated trigger files with the migration. If DML
+  reaches a broken old trigger, keep the normal failed-migration refusal; do not
+  disable journaling or catch the error to let the write pass.
 
 ## Test reset
 

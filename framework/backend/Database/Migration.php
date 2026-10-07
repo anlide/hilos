@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database;
 
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
@@ -12,6 +14,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Utils\Helpers\TimeHelper;
+use Throwable;
 
 /**
  * SQL migration track management with up/down SQL files.
@@ -23,9 +26,6 @@ class Migration
 
     /** @var string Migration track name */
     private static string $migrationName = 'main';
-
-    /** @var ?string Path to routines (stored procedures) directory */
-    private static ?string $routinesPath = null;
 
     /**
      * Whether the migration table is ensured, keyed by database connection index.
@@ -53,14 +53,6 @@ class Migration
     public static function setMigrationName(string $name): void
     {
         self::$migrationName = $name;
-    }
-
-    /**
-     * @param string $path Path to routines directory
-     */
-    public static function setRoutinesPath(string $path): void
-    {
-        self::$routinesPath = rtrim($path, '/\\');
     }
 
     /**
@@ -289,22 +281,25 @@ class Migration
     /**
      * Applies the pending migrations under the schema rollout claim ({@see MigrationClaim}).
      *
-     * The level is read without the claim, and a database already at the target takes no claim
-     * at all; otherwise the level is read again under the claim, because another holder may have
-     * rolled the schema out while this one waited. The claim is given up on success and on
-     * failure alike, so the next holder sees a failed migration at once instead of waiting.
+     * With an afterRollout hook, even an up-to-date database takes the claim and holds it
+     * through the hook. Without one, the existing no-pending fast path takes no claim.
+     * The level is read again after waiting; the claim is released on success or failure.
      *
      * @param ?int $targetIndex Target migration index (null applies through latest)
      * @param ?MigrationClaimHolder $holder Who takes the claim; this process when null
+     * @param ?callable(): void $afterRollout Startup work after migrations, before releasing the claim
      * @return int Number of migrations applied
-     * @throws DatabaseException When migration file is missing, unreadable, or SQL fails
+     * @throws DatabaseException When a migration file, SQL or the afterRollout hook fails
      * @throws EnvException When the holder name cannot read CLUSTER_NODE_ID
      * @throws MigrationMarkedFailedException When the next migration is marked failed by an earlier run
      * @throws MigrationNumberTakenTwiceException When a number of the track is taken by more than one file
      * @throws MigrationSkippedBelowLevelException When files below the database's level were never applied to it
      */
-    public static function migrateUp(?int $targetIndex = null, ?MigrationClaimHolder $holder = null): int
-    {
+    public static function migrateUp(
+        ?int $targetIndex = null,
+        ?MigrationClaimHolder $holder = null,
+        ?callable $afterRollout = null,
+    ): int {
         self::initialize();
         self::refuseInconsistentTrack();
 
@@ -314,10 +309,11 @@ class Migration
             $targetIndex = !empty($availableMigrations) ? max($availableMigrations) : 0;
         }
 
-        if (self::pendingMigrations($availableMigrations, self::getCurrentIndex(), $targetIndex) === []) {
+        if ($afterRollout === null && self::pendingMigrations($availableMigrations, self::getCurrentIndex(), $targetIndex) === []) {
             return 0;
         }
 
+        $connectionIndex = Database::getCurrentIndex();
         $holder ??= MigrationClaimHolder::process();
         MigrationClaim::take($holder);
         try {
@@ -328,8 +324,17 @@ class Migration
                 $applied++;
             }
 
+            if ($afterRollout !== null) {
+                try {
+                    $afterRollout();
+                } catch (Throwable $e) {
+                    throw new DatabaseException('Schema rollout completion failed: ' . $e->getMessage(), previous: $e);
+                }
+            }
+
             return $applied;
         } finally {
+            Database::useConnection($connectionIndex);
             MigrationClaim::release($holder);
         }
     }
@@ -575,33 +580,6 @@ class Migration
         $statement = trim($statement);
         if (!empty($statement)) {
             Database::sql($statement);
-        }
-    }
-
-    /**
-     * Executes each .sql file in the configured routines path.
-     *
-     * @throws DatabaseException When SQL execution fails
-     */
-    public static function applyRoutines(): void
-    {
-        if (self::$routinesPath === null || !is_dir(self::$routinesPath)) {
-            return;
-        }
-
-        $files = glob(self::$routinesPath . '/*.sql');
-        if ($files === false) {
-            return;
-        }
-
-        foreach ($files as $file) {
-            try {
-                $content = FsPath::read($file);
-            } catch (FsException) {
-                continue;
-            }
-
-            self::runSqlWithDelimiter($content);
         }
     }
 

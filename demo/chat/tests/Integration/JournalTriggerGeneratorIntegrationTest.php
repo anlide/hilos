@@ -17,7 +17,7 @@ use Hilos\Database\Migration;
 use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournalColumnPlacement;
 
-/** Generated SQL is installed only for this test; the production installer belongs to HIL-1448. */
+/** Exercises generated SQL on mixed column modes; startup reconciliation has its own integration suite. */
 final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
 {
     private const string FIXTURE_TABLE = 'hilos_cl_fixture';

@@ -95,7 +95,8 @@ final class MigrationClaimIntegrationTest extends FrameworkIntegrationTestCase
         MigrationClaim::clear();
         // The migration table is shared with every other suite against this database, so the
         // fixture's row leaves with the fixture.
-        Database::sql('DELETE FROM `migration` WHERE `index` = ?', [self::FIXTURE_MIGRATION_INDEX]);
+        Database::sql('DELETE FROM `migration` WHERE `index` IN (?, ?)',
+            [self::FIXTURE_MIGRATION_INDEX, self::FIXTURE_MIGRATION_INDEX + 1]);
         Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
 
         Logger::resetLogFile();
@@ -131,6 +132,72 @@ final class MigrationClaimIntegrationTest extends FrameworkIntegrationTestCase
         $this->assertNull(MigrationClaim::current());
     }
 
+    public function testAnUpToDateStartupStillHoldsTheClaimThroughoutItsHook(): void
+    {
+        $this->listFixtureMigration();
+        Migration::recordAppliedLevel(self::FIXTURE_MIGRATION_INDEX);
+        $calls = 0;
+        $this->assertSame(0, Migration::migrateUp(
+            holder: MigrationClaimHolder::nodeStart(),
+            afterRollout: function () use (&$calls): void {
+                $calls++;
+                $this->assertSame(self::NODE, MigrationClaim::current()?->holder);
+                $this->assertSame(self::FIXTURE_MIGRATION_INDEX, Migration::getCurrentIndex());
+            },
+        ));
+        $this->assertSame(1, $calls);
+        $this->assertNull(MigrationClaim::current());
+    }
+
+    public function testTheHookRunsOnceAfterEveryPendingMigrationUnderTheSameClaim(): void
+    {
+        $this->listFixtureMigration();
+        file_put_contents(
+            $this->migrationRoot . '/' . self::MIGRATION_TRACK . '/' . (self::FIXTURE_MIGRATION_INDEX + 1) . '_up.sql',
+            'INSERT INTO `' . self::PROBE_TABLE . '` (`id`) SELECT `id` FROM `' . MigrationClaim::TABLE . '`;',
+        );
+        $calls = 0;
+        $this->assertSame(2, Migration::migrateUp(
+            holder: MigrationClaimHolder::nodeStart(),
+            afterRollout: function () use (&$calls): void {
+                $calls++;
+                $this->assertSame(self::NODE, MigrationClaim::current()?->holder);
+                $this->assertSame(self::FIXTURE_MIGRATION_INDEX + 1, Migration::getCurrentIndex());
+                Database::sql('SELECT `id` FROM `' . self::PROBE_TABLE . '`');
+                $this->assertSame(MigrationClaim::CLAIM_ID, (int)Database::field('id'));
+            },
+        ));
+        $this->assertSame(1, $calls);
+        $this->assertNull(MigrationClaim::current());
+    }
+
+    public function testHookFailureReleasesTheClaimOnItsOriginalConnectionAndCanRetry(): void
+    {
+        $this->listFixtureMigration();
+        $primary = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        Database::configure(self::FRESH_INDEX, $primary->host, $primary->user, $primary->password,
+            $primary->database, $primary->port, $primary->charset);
+        try {
+            Migration::migrateUp(afterRollout: static function (): void {
+                Database::useConnection(self::FRESH_INDEX);
+                throw new DatabaseException('hilos_cl_probe_after_insert: injected DDL refusal');
+            });
+            $this->fail('The hook must refuse the rollout');
+        } catch (DatabaseException $e) {
+            $this->assertStringContainsString('hilos_cl_probe_after_insert', $e->getMessage());
+        }
+        $this->assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
+        $this->assertNull(MigrationClaim::current());
+        $this->assertSame(self::FIXTURE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        $calls = 0;
+        $this->assertSame(0, Migration::migrateUp(afterRollout: function () use (&$calls): void {
+            $calls++;
+            $this->assertNotNull(MigrationClaim::current());
+        }));
+        $this->assertSame(1, $calls);
+        $this->assertNull(MigrationClaim::current());
+    }
+
     public function testAMigrationAnEarlierRunLeftFailedIsRefusedByNameAndTheClaimGivenUp(): void
     {
         $this->listFixtureMigration();
@@ -140,7 +207,9 @@ final class MigrationClaimIntegrationTest extends FrameworkIntegrationTestCase
         );
 
         try {
-            Migration::migrateUp();
+            Migration::migrateUp(afterRollout: function (): void {
+                $this->fail('A failed migration must not reach the rollout hook');
+            });
             $this->fail('A migration marked failed must refuse the rollout');
         } catch (MigrationMarkedFailedException $refusal) {
             $this->assertStringContainsString(

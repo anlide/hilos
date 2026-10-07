@@ -12,7 +12,7 @@ use Hilos\Database\Schema\JournalColumnPlacement;
 /** Builds deterministic, installation-independent SQL for the three journal events. */
 final class JournalTriggerRenderer
 {
-    private const string DATABASE_TOKEN = '{{change_log_database}}';
+    public const string DATABASE_TOKEN = '{{change_log_database}}';
     private const int MAX_TRIGGER_NAME_LENGTH = 64;
 
     /**

@@ -11,6 +11,10 @@ use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\ChangeLog\JournalTriggerFiles;
+use Hilos\Database\ChangeLog\JournalTriggerInstaller;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
@@ -48,7 +52,7 @@ final class DockerApplication
      * @param string $projectRoot Project root that holds .env
      * @param class-string<Hilos> $hilosClass Project Hilos facade whose catalogs drive env/cluster init
      * @param callable(): void $databaseInit Database connect (without Hilos init) run before migrations
-     * @param ?callable(): void $postMigration Project DDL after migrations and before Hilos initialization
+     * @param ?callable(): void $postMigration Project DDL before Hilos init; already under the claim when the journal is active
      * @return never
      */
     public static function run(
@@ -68,25 +72,33 @@ final class DockerApplication
                 // Connect the database first; migrations must run before Hilos accesses any table.
                 $databaseInit();
 
-                // The schema track is named by the prelude, which every process runs; only the
-                // routines are configured here, by the one entrypoint that applies them.
-                Migration::setRoutinesPath($bootstrapDir . '/../Database/Migration/Routines');
-
                 // Run migrations once on startup (creates tables before Hilos accesses them), under
                 // the rollout claim in the database: of the nodes starting together on one database
                 // one rolls the schema out and the rest wait for it (HIL-1228).
                 Migration::initialize();
-                $applied = Migration::migrateUp(holder: MigrationClaimHolder::nodeStart());
+                $journalActive = in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true);
+                $afterRollout = null;
+                if ($journalActive) {
+                    JournalTriggerFiles::setPath($bootstrapDir . '/../Database/Migration/Triggers');
+                    $afterRollout = static function () use ($postMigration, $hilosClass): void {
+                        if ($postMigration !== null) {
+                            $postMigration();
+                        }
+                        $hilosClass::init();
+                        JournalTriggerInstaller::apply();
+                    };
+                }
+                $applied = Migration::migrateUp(holder: MigrationClaimHolder::nodeStart(), afterRollout: $afterRollout);
                 if ($applied > 0) {
                     Logger::info("Applied {$applied} migration(s) on startup");
                 }
 
-                if ($postMigration !== null) {
-                    $postMigration();
+                if (!$journalActive) {
+                    if ($postMigration !== null) {
+                        $postMigration();
+                    }
+                    $hilosClass::init();
                 }
-
-                // Initialize Hilos now that the schema is ready.
-                $hilosClass::init();
             });
 
             // The watchdog is the first to touch the log directory - the startup rotation and the

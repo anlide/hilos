@@ -8,7 +8,6 @@ use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Hilos\Core\Daemon\DockerApplication;
 use Hilos\Database\ChangeLog\ChangeLogPartitions;
-use Hilos\Database\MigrationClaimHolder;
 
 /**
  * Docker Watchdog - Process manager (PID 1) for a chat demo container.
@@ -23,5 +22,5 @@ DockerApplication::run(
     projectRoot: dirname(__DIR__, 2),
     hilosClass: Hilos::class,
     databaseInit: static fn () => Database::initialize(initHilos: false, retryConnection: true),
-    postMigration: static fn () => ChangeLogPartitions::ensure(holder: MigrationClaimHolder::nodeStart()),
+    postMigration: static fn () => ChangeLogPartitions::ensureUnderClaim(),
 );
