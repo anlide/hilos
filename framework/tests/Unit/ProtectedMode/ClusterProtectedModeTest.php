@@ -890,6 +890,38 @@ final class ClusterProtectedModeTest extends TestCase
         $this->assertSame([['sendEnable', 'node-z']], $this->mesh->calls);
     }
 
+    public function testDirectWindowIsRefusedLocallyBeforeAnyClusterEntry(): void
+    {
+        $data = new ProtectedModeEnableSignalData(
+            'maintenance', null, null, 'index', null, self::SELF,
+            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+
+        $this->coordinator->requestEnable($data);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], $this->mesh->calls);
+        $this->assertSame([], $this->coordinator->pendingNodeIds());
+        $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt?->hilosProtectedModeRuntime?->phase);
+        $this->assertSame(ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER, $this->relay->refusedCalls[0]['reason']);
+    }
+
+    public function testPeerDirectWindowIsRefusedBeforeLeaderMutatesState(): void
+    {
+        $this->coordinator->onBecameLeader();
+        $data = new ProtectedModeEnableSignalData(
+            'maintenance', null, null, 'index', null, 'node-b',
+            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+
+        $this->coordinator->onEnable('node-b', $data);
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([
+            ['sendRefused', 'node-b', ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER],
+        ], $this->mesh->calls);
+    }
+
     public function testInitiatorDropsEnableRequestWhenNoLeaderIsKnown(): void
     {
         $this->mesh->leader = null;
@@ -1829,6 +1861,13 @@ final class FakeProtectedModeExecutor implements ProtectedModeExecutor
         $this->activatingAcceptKey = $initiatorAcceptKey;
         $this->activatingSessionTokenHash = $freeze->initiatorSessionTokenHash;
         $this->freeze = $freeze;
+    }
+
+    public function enterVerificationWindow(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+    ): void {
+        $this->calls[] = 'enterVerificationWindow';
     }
 
     public function enterActive(): void

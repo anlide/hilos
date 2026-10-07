@@ -7,6 +7,7 @@ namespace Hilos\ProtectedMode;
 use Hilos\Constants\TimeConstants;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
 /**
@@ -38,6 +39,8 @@ use Hilos\Utils\Logger;
  * single-node installation has. Giving a leader's broadcast the same hold means holding a
  * cluster-wide decision on one node's local roster, and that is a question about the quiesce
  * protocol rather than about this door.
+ * A direct verification window does not stop a roster and skips this wait, but still follows an
+ * enable already held at the gate.
  */
 final class ProtectedModeEntryGate
 {
@@ -66,6 +69,12 @@ final class ProtectedModeEntryGate
         if ($held !== null) {
             $this->pendingEnable = null;
             $this->enter($held);
+            $this->enter($data);
+
+            return;
+        }
+
+        if ($data->entryMode === ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
             $this->enter($data);
 
             return;

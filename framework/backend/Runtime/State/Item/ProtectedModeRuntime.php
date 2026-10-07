@@ -12,10 +12,9 @@ use Hilos\ProtectedMode\VerifierCircleSnapshot;
  * ProtectedModeRuntime - the singleton runtime state of the protected mode subsystem.
  *
  * Framework-owned runtime state registered by the project as a single item, mirroring
- * {@see BackupRuntime}. It tracks whether the cluster is quiescing for a destructive
- * operation (restore today, other initiators later) so the master's welcome path and
- * the browser page guards can lock every connection out, the initiator's included, and
- * let the initiator and the pass holders back in for the verification window.
+ * {@see BackupRuntime}. It tracks an ordinary freeze for a destructive operation or a
+ * direct verification window, so the master's welcome path and browser page guards can
+ * keep visitors out while admitting the initiator, circle and code holders in the window.
  *
  * The truth source is the leader daemon: the leader gates every state decision behind
  * {@see ClusterContext::amLeader()} and drives the two-phase freeze
@@ -47,7 +46,14 @@ final class ProtectedModeRuntime extends RtState
     /** Phase value: initiator finished, the leader is lifting the freeze. */
     public const string PHASE_DEACTIVATING = 'deactivating';
 
+    /** Entry through the ordinary two-phase freeze. */
+    public const string ENTRY_MODE_FREEZE = 'freeze';
+
+    /** Entry straight into the verification window without stopping agents. */
+    public const string ENTRY_MODE_VERIFICATION_WINDOW = 'verification_window';
+
     public const string phase = 'phase';
+    public const string entryMode = 'entryMode';
     public const string operation = 'operation';
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
     public const string initiatorSessionTokenHash = 'initiatorSessionTokenHash';
@@ -67,6 +73,9 @@ final class ProtectedModeRuntime extends RtState
 
     /** Current lifecycle phase of the protected mode. */
     public string $phase = self::PHASE_INACTIVE;
+
+    /** How this window was entered, or null when inactive. */
+    public ?string $entryMode = null;
 
     /** Operation name the initiator is running, or null when inactive. */
     public ?string $operation = null;
@@ -178,6 +187,11 @@ final class ProtectedModeRuntime extends RtState
     {
         $instance = new static();
         $instance->phase = self::requireString($row, self::phase);
+        $instance->entryMode = self::validateEntryMode(
+            array_key_exists(self::entryMode, $row)
+                ? self::optionalString($row, self::entryMode)
+                : ($instance->phase === self::PHASE_INACTIVE ? null : self::ENTRY_MODE_FREEZE),
+        );
         $instance->operation = self::optionalString($row, self::operation);
         $instance->initiatorAcceptKey = self::optionalString($row, self::initiatorAcceptKey);
         $instance->initiatorSessionTokenHash = self::optionalString($row, self::initiatorSessionTokenHash);
@@ -208,6 +222,7 @@ final class ProtectedModeRuntime extends RtState
     public function applyDiff(array $diff): void
     {
         $this->phase = self::patchString($diff, self::phase, $this->phase);
+        $this->entryMode = self::validateEntryMode(self::patchOptionalString($diff, self::entryMode, $this->entryMode));
         $this->operation = self::patchOptionalString($diff, self::operation, $this->operation);
         $this->initiatorAcceptKey = self::patchOptionalString($diff, self::initiatorAcceptKey, $this->initiatorAcceptKey);
         $this->initiatorSessionTokenHash = self::patchOptionalString($diff, self::initiatorSessionTokenHash, $this->initiatorSessionTokenHash);
@@ -415,6 +430,7 @@ final class ProtectedModeRuntime extends RtState
     {
         return [
             self::phase => $this->phase,
+            self::entryMode => $this->entryMode,
             self::operation => $this->operation,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
             self::initiatorSessionTokenHash => $this->initiatorSessionTokenHash,
@@ -429,6 +445,23 @@ final class ProtectedModeRuntime extends RtState
             self::circleSessionTokenHashes => $this->circleSessionTokenHashes,
             self::circleNamedCount => $this->circleNamedCount,
         ];
+    }
+
+    /**
+     * @param ?string $entryMode Serialized entry mode
+     * @return ?string Valid entry mode
+     * @throws InvalidFormatException When the serialized entry mode is unknown
+     */
+    private static function validateEntryMode(?string $entryMode): ?string
+    {
+        if ($entryMode !== null && !in_array($entryMode, [
+            self::ENTRY_MODE_FREEZE,
+            self::ENTRY_MODE_VERIFICATION_WINDOW,
+        ], true)) {
+            throw new InvalidFormatException("Unknown protected-mode entry mode '{$entryMode}'");
+        }
+
+        return $entryMode;
     }
 
     /**

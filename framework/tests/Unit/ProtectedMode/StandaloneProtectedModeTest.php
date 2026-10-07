@@ -78,6 +78,59 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->assertNull($this->executor->freeze?->initiatorNodeId);
     }
 
+    public function testDirectEntrySignalsReadyWithoutWalkingTheRoster(): void
+    {
+        $this->mode->requestEnable($this->enableData(entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW));
+
+        $this->assertSame(['enterVerificationWindow', 'notifyInitiatorReady'], $this->executor->calls);
+    }
+
+    public function testDirectWindowFinishesOnFirstCircleIncludingEmptyPhotograph(): void
+    {
+        $this->enterDirectWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->withDaemonTruthSource(function (): void {
+            $this->mode->requestCircle($this->circleData(0, []));
+            $this->mode->requestCircle($this->circleData(1, ['late-hash']));
+        });
+
+        $this->assertSame(['finishVerifying'], $this->executor->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+        $this->assertSame(0, Hilos::$rt?->hilosProtectedModeRuntime?->circleNamedCount);
+    }
+
+    public function testDirectWindowRepeatAnswersReadyAndCrossEntryRefuses(): void
+    {
+        $this->enterDirectWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->mode->requestEnable($this->enableData(entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW));
+        $this->mode->requestEnable($this->enableData());
+        $this->mode->requestEnable(new ProtectedModeEnableSignalData(
+            'other-operation', 'accept-9', null, self::INITIATOR_TYPE, self::INITIATOR_INDEX, null,
+            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ));
+        $this->mode->requestEnable($this->enableData('chat', null, StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW));
+
+        $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame(3, count($this->relay->refusedCalls));
+        $this->assertSame(ProtectedModeRefusalCopy::ANOTHER_OPERATION, $this->relay->refusedCalls[0]['reason']);
+        $this->assertSame(ProtectedModeRefusalCopy::ANOTHER_OPERATION, $this->relay->refusedCalls[1]['reason']);
+        $this->assertSame(ProtectedModeRefusalCopy::FOREIGN_FREEZE, $this->relay->refusedCalls[2]['reason']);
+    }
+
+    public function testDirectWindowRejectsRefreezeAndLiftsImmediately(): void
+    {
+        $this->enterDirectWindowOnTheRuntimeRow();
+        $this->executor->calls = [];
+
+        $this->mode->requestRefreeze(new ProtectedModeRefreezeSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame(['enterInactive', 'finishLift'], $this->executor->calls);
+    }
+
     public function testTheStoppedRosterMarksTheFreezeActiveAndSignalsTheInitiator(): void
     {
         $this->mode->requestEnable($this->enableData());
@@ -678,6 +731,20 @@ final class StandaloneProtectedModeTest extends TestCase
         $this->withDaemonTruthSource(static fn() => $view->actions->enterVerifying());
     }
 
+    private function enterDirectWindowOnTheRuntimeRow(): void
+    {
+        $this->mode->requestEnable($this->enableData(entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW));
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        $this->withDaemonTruthSource(static fn() => $view->actions->enterVerificationWindow(
+            new ProtectedModeQuiesceData('restore', self::INITIATOR_TYPE, self::INITIATOR_INDEX, null, null),
+            'accept-9',
+        ));
+    }
+
     /**
      * Runs a write with the daemon registered as the runtime truth source, and drops it after.
      *
@@ -699,11 +766,13 @@ final class StandaloneProtectedModeTest extends TestCase
     /**
      * @param string $agentType Agent type asking to enter, the recorded initiator by default
      * @param ?int $agentIndex Agent index asking to enter
+     * @param string $entryMode Entry variant
      * @return ProtectedModeEnableSignalData Enable request of the single-node initiator
      */
     private function enableData(
         string $agentType = self::INITIATOR_TYPE,
         ?int $agentIndex = self::INITIATOR_INDEX,
+        string $entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
     ): ProtectedModeEnableSignalData {
         return new ProtectedModeEnableSignalData(
             operation: 'restore',
@@ -712,6 +781,7 @@ final class StandaloneProtectedModeTest extends TestCase
             initiatorAgentType: $agentType,
             initiatorAgentIndex: $agentIndex,
             initiatorNodeId: null,
+            entryMode: $entryMode,
         );
     }
 
@@ -793,6 +863,13 @@ final class FakeStandaloneExecutor implements ProtectedModeExecutor
         $this->activatingAcceptKey = $initiatorAcceptKey;
         $this->activatingSessionTokenHash = $freeze->initiatorSessionTokenHash;
         $this->freeze = $freeze;
+    }
+
+    public function enterVerificationWindow(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+    ): void {
+        $this->calls[] = 'enterVerificationWindow';
     }
 
     public function enterActive(): void

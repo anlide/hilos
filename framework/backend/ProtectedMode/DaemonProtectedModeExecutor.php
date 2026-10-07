@@ -15,6 +15,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 use JsonException;
@@ -113,6 +114,25 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     }
 
     /**
+     * @param ProtectedModeQuiesceData $freeze Operation and initiator identity
+     * @param ?string $initiatorAcceptKey Initiating connection, or null for CLI entry
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function enterVerificationWindow(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+    ): void {
+        $view = $this->runtimeView();
+        if ($view === null) {
+            return;
+        }
+
+        $view->actions->enterVerificationWindow($freeze, $initiatorAcceptKey);
+        $this->persistFreeze($view);
+    }
+
+    /**
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
      */
@@ -166,7 +186,7 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
                 title: $copy->title,
                 message: $copy->message,
                 acceptsPass: true,
-                passIssued: false,
+                passIssued: $view->passHashes !== [],
             ),
             $view->initiatorAcceptKey,
             $view->initiatorSessionTokenHash,
@@ -174,8 +194,10 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
     }
 
     /**
-     * The frames {@see enterVerifying()} owes everyone the window lets in once the roster is back:
-     * the operator and every member of the circle photographed at the freeze.
+     * Completes the window after the ordinary roster resumes or the direct circle photo arrives.
+     *
+     * Direct entry first tells the locked-out connections about the stub. Both entry modes then
+     * tell the initiating browser and photographed circle personally, followed by page reassessment.
      */
     public function finishVerifying(): void
     {
@@ -184,22 +206,29 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
-        // This phase is where the window's own people come back in, and it has to be pushed:
-        // entering the freeze tore no connection down, so every tab of the operator and of each
-        // circle member is standing on the stub and would stand there for the whole window waiting
-        // for an F5 nobody told them to press - the reload lets a circle member in on the 101, and
-        // a reload changing what a tab is let into is the defect (HIL-912). The frame is the
-        // opposite of the broadcast enterVerifying() sent - active: false, the mode does not hold
-        // you - and it goes to the session so that all its tabs leave the stub at the same moment.
-        // It is a second frame rather than one broadcast without the exclusion, because a personal
-        // frame racing the general one would arrive in either order, and losing that race leaves
-        // the operator on the stub in a system that is running again. The circle is not excluded
-        // from that broadcast at all: it went out with the phase, before the roster, so this frame
-        // lands after it.
+        if ($view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $copy = ProtectedModeStubCopy::forOperation($view->operation);
+            Hilos::$cluster?->protectedModeClientNotifier()?->notifyProtectedModeLockedOutState(
+                new ProtectedModeStateSignalData(
+                    active: true,
+                    operation: $view->operation,
+                    title: $copy->title,
+                    message: $copy->message,
+                    acceptsPass: true,
+                    passIssued: $view->passHashes !== [],
+                ),
+            );
+        }
+
+        // The window's own people need a personal verdict for every open tab, followed by a fresh
+        // answer for its pages. In an ordinary freeze their tabs stand on the stub until the
+        // roster resumes; in a direct window they may still be on a live page. Either way an
+        // addressed active:false frame follows the general window frame, so neither a late
+        // broadcast nor a reload can put an admitted browser back on the stub (HIL-912).
         // acceptsPass stays true: it carries the row's own bit, and a client reading active: false
         // without it takes the frame for a lift and reloads itself back out of the window.
-        // passIssued is read off the row as well: the window opens before anything is minted
-        // (HIL-718), but this frame waits for the roster, and a pass can be minted meanwhile.
+        // passIssued is read off the row as well: a pass may have been minted before the roster
+        // returned or before the direct circle photograph arrived.
         // The stub copy stays null for the reason the frame exists - these tabs are leaving the
         // stub - and the banner sentence rides instead: it is what they render once they are out,
         // and it is the same $copy, read from the other side (HIL-736).
@@ -368,6 +397,8 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
             return;
         }
 
+        $directWindow = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+
         $view->actions->enterInactive();
 
         // Removed only once the row itself says inactive, and never before: a daemon that dies
@@ -375,13 +406,14 @@ final class DaemonProtectedModeExecutor implements ProtectedModeExecutor
         // lifts again in one command. The other order would open the node on a crash mid-lift.
         $this->forgetPersistedFreeze();
 
-        // Bring back the agents stopped on entry (mirror of enterActivating's freeze) now the
-        // freeze has lifted; the freezer replays exactly the set it stopped on this node.
-        Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
+        // Only the ordinary freeze has a stopped roster to bring back. Direct entry stopped none.
+        if (!$directWindow) {
+            Hilos::$cluster?->protectedModeAgentFreezer()?->resumeAgentsForProtectedMode();
+        }
     }
 
     /**
-     * The frame {@see enterInactive()} owes once the roster it asked for is back.
+     * The frame owed once the ordinary roster is back, or immediately after direct lift.
      */
     public function finishLift(): void
     {

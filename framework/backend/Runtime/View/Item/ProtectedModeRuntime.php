@@ -23,6 +23,7 @@ use Hilos\HilosException;
  * @extends RtItem<StateProtectedModeRuntime>
  *
  * @property-read string $phase Current lifecycle phase of the protected mode
+ * @property-read ?string $entryMode How the mode was entered; null when inactive
  * @property-read ?string $operation Operation the initiator is running; null when inactive
  * @property-read ?string $initiatorAcceptKey Accept key admitted in the verification window; null when none
  * @property-read ?string $initiatorSessionTokenHash Hash of the initiator browser's session token; null when none
@@ -59,6 +60,7 @@ final class ProtectedModeRuntime extends RtItem
     {
         return match ($name) {
             StateProtectedModeRuntime::phase => $this->_state->phase,
+            StateProtectedModeRuntime::entryMode => $this->_state->entryMode,
             StateProtectedModeRuntime::operation => $this->_state->operation,
             StateProtectedModeRuntime::initiatorAcceptKey => $this->_state->initiatorAcceptKey,
             StateProtectedModeRuntime::initiatorSessionTokenHash => $this->_state->initiatorSessionTokenHash,

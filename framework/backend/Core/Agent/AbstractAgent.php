@@ -855,6 +855,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @param string $initiatorAcceptKey Accept key of the connection driving the operation
      * @param ?string $initiatorSessionTokenHash Hash of the session token behind that connection, or null when
      *                                           the operation was asked for by something with no browser at all
+     * @param string $entryMode Freeze or direct verification-window entry
      * @throws EnvException When a cluster environment value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
      * @throws InvalidArgumentException When the signal name or the queued signal is malformed
@@ -863,7 +864,15 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
         string $operation,
         string $initiatorAcceptKey,
         ?string $initiatorSessionTokenHash,
+        string $entryMode = ProtectedModeRuntime::ENTRY_MODE_FREEZE,
     ): void {
+        if (!in_array($entryMode, [
+            ProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ], true)) {
+            throw new InvalidArgumentException("Unknown protected-mode entry mode '{$entryMode}'");
+        }
+
         $cluster = Hilos::$cluster;
         $clustered = $cluster !== null && $cluster->isEnabled();
 
@@ -879,6 +888,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 initiatorAgentType: $this->getType(),
                 initiatorAgentIndex: $index === null ? null : (int)$index,
                 initiatorNodeId: $clustered ? $cluster->identity()->nodeId : null,
+                entryMode: $entryMode,
             ),
         );
     }

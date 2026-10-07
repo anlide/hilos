@@ -16,6 +16,7 @@ final class ProtectedModeRefusalCopy
     public const string FOREIGN_FREEZE = 'The freeze on this node belongs to another operation';
     public const string NO_LEADER = 'The cluster has no leader right now; try again in a moment';
     public const string NO_RUNTIME_ROW = 'This node cannot enter protected mode';
+    public const string DIRECT_WINDOW_ON_CLUSTER = 'The verification window cannot be opened directly on a cluster yet';
 
     private function __construct()
     {

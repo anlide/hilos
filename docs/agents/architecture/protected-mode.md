@@ -9,8 +9,8 @@ only connection left through is the one driving the operation. Its machinery is
 `framework/backend/ProtectedMode/`; the two entries are
 `StandaloneProtectedMode` (single node) and `ClusterProtectedMode` (leader plus
 followers).
-The same mode also closes visitors out by hand, straight into its verification window,
-with no operation or agent stop behind it (*Manual Maintenance*) (not in the code yet — HIL-1355).
+The same mode also supports an agent's direct request for the verification window:
+visitors are held outside while the agents keep running (*Manual Maintenance*).
 
 ## Core Rule
 
@@ -50,10 +50,18 @@ without the `hilos_verifier_circle` migration — the second invariant of
 Entering goes one way and one way only:
 
 ```
-Agent::requestProtectedModeEnable(operation, acceptKey)
+Agent::requestProtectedModeEnable(operation, acceptKey, sessionHash, entryMode = 'freeze')
   → PROTECTED_MODE_ENABLE signal → WorkerManager → WorkerProtectedModeEnableDTO
   → WorkerClient → Hilos::$cluster->protectedMode()->requestEnable()
 ```
+
+The nested enable payload carries `entryMode`: `freeze` keeps the two-phase
+restore path, and `verification_window` enters `verifying` directly on a single
+node. Old payloads without the key mean `freeze`. A cluster refuses a direct
+window before any pending entry, RT write, file write or roster stop; both the
+local request and a peer enable are guarded. The worker envelope and route stay
+the same. The runtime row records `entryMode` while occupied and clears it on
+lift; an old version-one state file without it means `freeze` while occupied.
 
 A CLI command never enters the mode itself. It sends its request down the
 command channel to the agent that owns the operation — `backup:restore-request`
@@ -556,8 +564,8 @@ adds a reason of its own, and it is why the photograph is taken
 has an answer — the circle table lives in the database a restore rewrites, and
 afterwards the archive's own circle applies — and resolving a person to a
 session later would mean reading a session table the restore has replaced.
-Manual maintenance is the exception: the node is not quiesced, and the photograph at closing
-is chosen by rule rather than forced by a swap; see *Manual Maintenance* (not in the code yet — HIL-1355).
+Direct entry is the exception: the node is not quiesced, and the photograph at
+closing is chosen by rule rather than forced by a swap; see *Manual Maintenance*.
 
 The read and the write sit on opposite sides of a process boundary and neither
 may cross it. The circle is three database queries, which the master is forbidden
@@ -581,22 +589,23 @@ does every frame of the window, and that authorization is all either half
 checks: neither reads the phase.
 
 Whatever the operation, the photograph is taken for the initiator of the
-freeze, on the freeze's own ready path; a restore is today's only destructive
+mode, on its ready path; a restore is today's only destructive
 operation, not a condition. `WorkerManager::handleProtectedModeReady()` takes it
 before it calls the initiator's `onProtectedModeReady()` — the relay is the one
 point every ready passes on its way to any initiator, while the hook is
 overridden without `parent::` — and queues the frame, so whatever the hook
 queues next, a test drive's answer to its enter among it, leaves after the
-circle. Until HIL-1118 two carriers each took it in their own hook, the backup
+circle. An empty photograph is sent too: in a direct window the master must
+receive it before it can finish opening, and a failed read is logged and sent
+as an empty photograph. Until HIL-1118 two carriers each took it in their own hook, the backup
 agent and the test drive, each under a declaration of its own; declared by one
 agent, the read was refused in every other worker, the initiator's included
 (HIL-1096). Now it is read by one rule — a process-wide read of the framework,
 *Readers Past The Agent* in [truth-source.md](truth-source.md) — and no
 initiator declares it. A photograph that could not be taken is a line in the
 initiator's error log and nothing to the operator, a refused read named apart
-from any other failure — past the seam the refusal cannot happen, and a database
-failure there fails the operation itself, which is reported — so the row then
-carries `circleNamedCount = 0`.
+from any other failure. The empty photograph still completes a direct entry,
+so the row then carries `circleNamedCount = 0`.
 
 Without `HilosFeature::BACKUP` the circle loses nothing: the freeze alone admits
 its member, and the Maintenance section shows it the same way. Somebody is named
@@ -705,7 +714,12 @@ same entry since HIL-1128: there is no application to keep the operator in, so
 its tabs go to the same stub as everyone's. The verification window is the one caller that
 excludes, and it excludes in order to say the opposite: `enterVerifying()`
 broadcasts the stub to everyone still outside, and `finishVerifying()` then
-addresses the initiator's session on its own (see below). `announcePassIssued()`
+addresses the initiator's session on its own (see below). Direct entry writes
+`verifying` and sends ready without a roster walk. Once the worker's circle
+frame arrives, `finishVerifying()` first sends the window frame to connections
+the row still locks out, then sends the personal frames. A repeated direct
+enable may cause another worker photograph, but the master ignores it and does
+not send another set of frames. `announcePassIssued()`
 spares nobody by argument, because its frame is the one whose verdict is meant
 for the held alone: it goes to every connection the row still locks out, and to
 nobody else. An exclusion would have to list everybody the window has let in —
@@ -729,7 +743,8 @@ of the window instead of into it. The same crossing, in
 pages answered again (see below, HIL-912).
 
 **The operator and the circle are carried back in the same way, and by the same
-delivery (HIL-718, HIL-912).** Once the roster is back, `finishVerifying()` sends a
+delivery (HIL-718, HIL-912).** After the ordinary roster is back, or immediately
+after the direct window's photograph, `finishVerifying()` sends a
 frame addressed to the initiator's session and to every session of the circle
 photographed at the freeze: `active: false` with `acceptsPass: true`, `passIssued`
 read off the row because a pass can be minted while the roster comes back. The
@@ -800,17 +815,17 @@ one rather than a re-subscribe, is the client half in
 
 ## Manual Maintenance: The Window Without An Operation (HIL-1291)
 
-Manual maintenance takes the row from `inactive` straight to `verifying`, skipping
-`activating` and `active`: no agents stop or restart and no unstopped writer is
-silenced (not in the code yet — HIL-1355). The window already permits agent starts
+An agent requesting `verification_window` takes the row from `inactive` straight
+to `verifying`, skipping `activating` and `active`: no agents stop or restart and
+no unstopped writer is silenced. The window already permits agent starts
 (`WorkerServer::protectedModeRefusesStart()`); writer silence already applies only
 in `activating` / `active` (`ProtectedModeRuntime::silencesUnstoppedWriters()`).
 Why skip the full freeze: the writer rule in *The Freeze Is Also The Window For
 Repairing What The Operation Broke* explains the discarded node analytics journal
 (counted as restore loss) and dropped durable mail deliveries until silence ends.
 Stopping and restarting agents would also put the initiating browser on the stub.
-The owner's rule is "the door is closed, the house keeps working": no manual path
-to full freeze, through either repeat enable or close-back (not in the code yet — HIL-1355).
+The owner's rule is "the door is closed, the house keeps working": a direct
+window cannot become a full freeze through repeat enable or refreeze.
 
 The index agent owns entry, disable of its manual window and code minting, with
 stated refusals (not in the code yet — HIL-1356); its test open already requires
@@ -819,12 +834,19 @@ names distinct from backup's `protected-mode:*` and the test-only `test:*`, sinc
 a command routes to one agent type (not in the code yet — HIL-1357). Enable prints
 no code; a lost reply is checked through `protected-mode:inspect` (not in the code yet — HIL-1357).
 
-Visitors get the stub; inside are the initiating browser (when closed by button),
-the circle photographed at closing, and code holders (not in the code yet — HIL-1355).
+Visitors get the stub; inside are the initiating browser (when one exists),
+the circle photographed at closing, and code holders. The master waits for the
+worker's photograph, including an empty one, before it sends the locked-out
+frame and personal admission frames. The `passIssued` bit is read from the row,
+so a code minted before the photograph is not hidden by the opening frame.
 The browser uses the same accept-key and session halves; two nulls never meet,
 so CLI entry has no initiating browser. With the node running and no database
 swap, the photograph's moment is chosen by rule: a circle member arriving later
-or named during the window enters by code (not in the code yet — HIL-1355).
+or named during the window enters by code.
+
+The initiator agent may disable its direct window. The row becomes `inactive`,
+the state file is removed, and the lift frame goes to every connection at once.
+There is no stopped roster to resume and no lifted-roster hook to wait for.
 
 Any admitted admin may open the system from Maintenance: the page and agent check
 admin rights and that the window is manual (not in the code yet — HIL-1363).

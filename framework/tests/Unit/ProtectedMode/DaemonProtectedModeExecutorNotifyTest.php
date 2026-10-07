@@ -11,6 +11,7 @@ use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
@@ -188,6 +189,46 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         // The operator is left out of this one because the next frame says the opposite to them.
         $this->assertSame('accept-7', $excludedKey);
         $this->assertSame('session-hash-7', $excludedSession);
+    }
+
+    public function testDirectWindowKeepsAgentsRunningAndCompletesAfterCirclePhoto(): void
+    {
+        $freezer = new RecordingDirectWindowFreezer();
+        Hilos::$cluster?->registerProtectedModeAgentFreezer($freezer);
+        $this->executor->enterVerificationWindow(
+            $this->freeze()->withInitiatorSessionTokenHash('session-hash-7'),
+            'accept-7',
+        );
+
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $view?->phase);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $view?->entryMode);
+        $this->assertNull($view?->activatedAt);
+        $this->assertNotNull($view?->startedAt);
+        $this->assertSame($view?->startedAt, $view?->progressAt);
+        $this->assertSame([], $this->notifier->lockedOutFrames);
+        $this->assertSame([], $this->notifier->sessionFrames);
+        $this->assertFalse($view?->silencesUnstoppedWriters());
+        $this->assertSame([], $freezer->calls);
+
+        $view?->actions->admitCircle(new VerifierCircleSnapshot(2, ['session-hash-circle']));
+        $view?->actions->issuePass('pass-hash');
+        $this->executor->finishVerifying();
+
+        $this->assertSame(['locked', 'state:session-hash-7', 'reassess:session-hash-7',
+            'state:session-hash-circle', 'reassess:session-hash-circle'], $this->notifier->windowEvents);
+        $this->assertTrue($this->notifier->lockedOutFrames[0]->active);
+        $this->assertTrue($this->notifier->lockedOutFrames[0]->acceptsPass);
+        $this->assertTrue($this->notifier->lockedOutFrames[0]->passIssued);
+        $this->assertFalse($this->notifier->sessionFrames[0][0]->active);
+        $this->assertTrue($this->notifier->sessionFrames[0][0]->passIssued);
+
+        $this->executor->enterInactive();
+        $this->executor->finishLift();
+        $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, $view?->phase);
+        $this->assertNull($view?->entryMode);
+        $this->assertFalse($this->notifier->frames[0][0]->active);
+        $this->assertSame([], $freezer->calls);
     }
 
     public function testTheWindowCarriesEveryTabOfTheOperatorBackInWithoutAReload(): void
@@ -633,6 +674,9 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
     /** @var list<string> Ordered state and page reassessment events */
     public array $admissionEvents = [];
 
+    /** @var list<string> Ordered direct-window frames and page reassessments */
+    public array $windowEvents = [];
+
     public function notifyProtectedModeState(
         ProtectedModeStateSignalData $state,
         ?string $excludeAcceptKey,
@@ -647,6 +691,7 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
     ): void {
         $this->sessionFrames[] = [$state, $sessionTokenHash];
         $this->admissionEvents[] = 'state:' . $sessionTokenHash;
+        $this->windowEvents[] = 'state:' . $sessionTokenHash;
     }
 
     /**
@@ -655,6 +700,7 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
     public function notifyProtectedModeLockedOutState(ProtectedModeStateSignalData $state): void
     {
         $this->lockedOutFrames[] = $state;
+        $this->windowEvents[] = 'locked';
     }
 
     /**
@@ -664,6 +710,28 @@ final class RecordingClientNotifier implements ProtectedModeClientNotifier
     {
         $this->reassessedSessions[] = $sessionTokenHash;
         $this->admissionEvents[] = 'reassess:' . $sessionTokenHash;
+        $this->windowEvents[] = 'reassess:' . $sessionTokenHash;
+    }
+}
+
+final class RecordingDirectWindowFreezer implements ProtectedModeAgentFreezer
+{
+    /** @var list<string> Roster calls */
+    public array $calls = [];
+
+    public function stopAgentsForProtectedMode(string $initiatorAgentType, ?string $initiatorAgentIndex): void
+    {
+        $this->calls[] = 'stop';
+    }
+
+    public function resumeAgentsForProtectedMode(): void
+    {
+        $this->calls[] = 'resume';
+    }
+
+    public function agentsStillStarting(): array
+    {
+        return [];
     }
 }
 

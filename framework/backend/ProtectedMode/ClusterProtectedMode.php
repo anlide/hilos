@@ -203,6 +203,16 @@ final class ClusterProtectedMode implements
      */
     public function requestEnable(ProtectedModeEnableSignalData $data): void
     {
+        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            Hilos::$cluster?->protectedModeInitiatorRelay()?->deliverProtectedModeRefused(
+                $data->initiatorAgentType,
+                $data->initiatorAgentIndex === null ? null : (string)$data->initiatorAgentIndex,
+                ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER,
+            );
+
+            return;
+        }
+
         if ($this->isLeader) {
             $this->onEnable($this->selfNodeId, $data);
             return;
@@ -451,6 +461,12 @@ final class ClusterProtectedMode implements
      */
     public function onEnable(string $fromNodeId, ProtectedModeEnableSignalData $data): void
     {
+        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::DIRECT_WINDOW_ON_CLUSTER);
+
+            return;
+        }
+
         if (!$this->isLeader) {
             Logger::warning("Protected mode: dropping enable from '{$fromNodeId}' — node '{$this->selfNodeId}' is not the leader");
             $this->signalInitiatorRefused($fromNodeId, $data, ProtectedModeRefusalCopy::NO_LEADER);

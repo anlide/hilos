@@ -21,16 +21,16 @@ use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
 /**
- * The single-node freeze: protected mode for an installation running without a cluster.
+ * The single-node protected mode: ordinary freeze and direct verification window.
  *
  * It is the {@see ClusterProtectedMode} state machine with everything peer-shaped removed. With no
  * followers there is no quiesce round to wait for and no pendingNodes to track, and with no
- * leadership there is nothing to gate on, so the whole entry collapses into one walk: freeze the
+ * leadership there is nothing to gate on, so an ordinary entry collapses into one walk: freeze the
  * node, and once its roster has stopped ({@see onRosterStopped()}) mark it active and tell the
  * initiator to go. The local half is shared verbatim with the clustered path - the same
  * {@see ProtectedModeExecutor} writes the same {@see ProtectedModeRuntime} row and stops the same
- * agents - so a project sees identical behavior whether or not it clusters, which is the whole
- * point of this class existing.
+ * agents. Direct entry is single-node only: it writes verifying immediately, leaves agents running,
+ * and completes its visitor and personal frames after the worker's circle photograph arrives.
  *
  * Two guards mirror the cluster's for the same reasons. A repeat enable is never re-run while the
  * roster is still standing, because re-entering the freeze re-rolls the stopped-agent roster the
@@ -70,6 +70,9 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      */
     private bool $readyOwed = false;
 
+    /** Whether the direct window has accepted its one verifier-circle photograph. */
+    private bool $directCircleReceived = false;
+
     /**
      * @param ProtectedModeExecutor $executor Local-node port that writes the phase and stops agents
      */
@@ -92,12 +95,17 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             $this->answerFreezeAlreadyHeld($this->activeFreeze, $data);
             return;
         }
-        if ($this->runtimeView() === null) {
+        $view = $this->runtimeView();
+        if ($view === null) {
             Logger::error(
                 "Protected mode: cannot enter for '{$data->operation}' requested by agent "
                 . "'{$data->initiatorAgentType}' — this process holds no protected mode runtime state"
             );
             $this->deliverRefusal($data, ProtectedModeRefusalCopy::NO_RUNTIME_ROW);
+            return;
+        }
+        if ($view->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->deliverRefusal($data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
             return;
         }
 
@@ -108,6 +116,14 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             null,
             $data->initiatorSessionTokenHash,
         );
+
+        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->directCircleReceived = false;
+            $this->executor->enterVerificationWindow($this->activeFreeze, $data->initiatorAcceptKey);
+            $this->executor->notifyInitiatorReady();
+
+            return;
+        }
 
         $this->readyOwed = true;
         $this->executor->enterActivating($this->activeFreeze, $data->initiatorAcceptKey);
@@ -126,10 +142,17 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             return;
         }
 
-        $this->executor->enterDeactivating();
+        $directWindow = $this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+        if (!$directWindow) {
+            $this->executor->enterDeactivating();
+        }
         $this->executor->enterInactive();
+        if ($directWindow) {
+            $this->executor->finishLift();
+        }
         $this->activeFreeze = null;
         $this->readyOwed = false;
+        $this->directCircleReceived = false;
     }
 
     /**
@@ -221,16 +244,15 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     }
 
     /**
-     * Records the verifier circle photographed for this node's initiator under the freeze (HIL-643).
+     * Records the verifier circle photographed for this node's initiator (HIL-643).
      *
      * Authorized by the recorded initiator like every other request here, and for a sharper reason
      * than most: the payload is a list of session hashes that the verification window will let in
      * unasked, so a stranger agent able to send one could name whoever it liked.
      *
-     * Fail-closed on {@see StateProtectedModeRuntime::PHASE_ACTIVE} because that is the phase the
-     * photograph is taken from - the initiator is told ready from {@see onRosterStopped()},
-     * having quiesced - and a circle written outside a settled freeze would sit on the row waiting
-     * for a window whose entry clears it anyway.
+     * An ordinary freeze accepts the photograph only in active, after the roster stopped. Direct
+     * entry accepts it in verifying and finishes the window on the first photograph, including an
+     * empty one. Later photographs cannot replace the admitted circle or resend browser frames.
      *
      * @param ProtectedModeCircleSignalData $data Initiator identity and the circle photographed for it
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -241,13 +263,31 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         if (!$this->initiatorMayDrive($data->initiatorAgentType, $data->initiatorAgentIndex, 'circle')) {
             return;
         }
-        if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_ACTIVE, 'circle')) {
+        $view = $this->runtimeView();
+        if ($view === null || !in_array($view->phase, [
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+        ], true)) {
+            Logger::warning("Protected mode: dropping circle — the mode is '{$view?->phase}', not active or a direct window");
+            return;
+        }
+        if (
+            $view->phase === StateProtectedModeRuntime::PHASE_VERIFYING
+            && $view->entryMode !== StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+        ) {
+            return;
+        }
+        if ($view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW && $this->directCircleReceived) {
             return;
         }
 
-        $this->runtimeView()?->actions->admitCircle(
+        $view->actions->admitCircle(
             new VerifierCircleSnapshot($data->namedCount, $data->sessionTokenHashes),
         );
+        if ($view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->directCircleReceived = true;
+            $this->executor->finishVerifying();
+        }
     }
 
     /**
@@ -267,6 +307,10 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
             return;
         }
         if (!$this->phaseIs(StateProtectedModeRuntime::PHASE_VERIFYING, 'refreeze')) {
+            return;
+        }
+        if ($this->runtimeView()?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            Logger::warning('Protected mode: dropping refreeze — a direct verification window cannot be frozen');
             return;
         }
 
@@ -314,7 +358,12 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
      */
     public function onRosterResumed(): void
     {
-        $phase = $this->runtimeView()?->phase;
+        $view = $this->runtimeView();
+        if ($view?->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            return;
+        }
+
+        $phase = $view?->phase;
         if ($phase === StateProtectedModeRuntime::PHASE_VERIFYING) {
             $this->executor->finishVerifying();
         } elseif ($phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
@@ -363,6 +412,23 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
         ) {
             Logger::warning("Protected mode: dropping enable — a '{$freeze->operation}' freeze is already in flight");
             $this->deliverRefusal($data, ProtectedModeRefusalCopy::FOREIGN_FREEZE);
+            return;
+        }
+
+        if ($view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            if (
+                $data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+                && $data->operation === $freeze->operation
+            ) {
+                $this->executor->notifyInitiatorReady();
+            } else {
+                $this->deliverRefusal($data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
+            }
+
+            return;
+        }
+        if ($data->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW) {
+            $this->deliverRefusal($data, ProtectedModeRefusalCopy::ANOTHER_OPERATION);
             return;
         }
 

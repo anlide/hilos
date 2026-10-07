@@ -1109,22 +1109,21 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Photographs the verifier circle for the initiator of a freeze and hands it to the master.
+     * Photographs the verifier circle for the initiator and hands it to the master.
      *
      * Read here and written there: the circle is three database queries, which the master is
-     * forbidden, and the freeze row is the master's to write, so only hashes and a count travel -
-     * under the initiator's name, which is what the master checks the frame against. Nothing is
-     * sent for a circle that names nobody, and an empty intersection under a named circle is
-     * written down, because afterwards it reads exactly like "nobody was named".
+     * forbidden, and the mode row is the master's to write, so only hashes and a count travel -
+     * under the initiator's name, which is what the master checks the frame against. A photograph
+     * is sent even when nobody was named: the direct window must receive one before it can finish
+     * opening. The count distinguishes that from a named circle with nobody online.
      *
      * Queued rather than sent, for the order it keeps: whatever the hook queues next - the test
-     * drive's answer to its enter - leaves after the circle, so a caller told the node is frozen
+     * drive's answer to its enter - leaves after the circle, so a caller told the mode is ready
      * already reads the circle admitted.
      *
-     * A photograph that cannot be taken stops nothing: the freeze stands and the operation behind
-     * it was asked for. It is a line in the initiator's own error log and nothing to the operator,
-     * so the row keeps a named count of zero; a refused read is named apart from any other
-     * failure, because the empty photograph it leaves looks like a circle nobody filled.
+     * A failed read is logged on the initiator and sent as an empty photograph, so a direct window
+     * still completes. The row then carries a named count of zero; the log distinguishes an empty
+     * circle from a read that failed.
      *
      * @param AgentInterface $initiator Agent the ready is addressed to
      * @throws InvalidArgumentException When the circle frame to this node's master cannot be named
@@ -1139,18 +1138,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 'Protected mode cannot photograph the verifier circle here: ' . $refusal->getMessage(),
             );
 
-            return;
+            $snapshot = new VerifierCircleSnapshot(0, []);
         } catch (Throwable $e) {
             Logger::logAgentError(
                 $initiator->getId(),
                 'Protected mode could not photograph the verifier circle: ' . $e->getMessage(),
             );
 
-            return;
-        }
-
-        if ($snapshot->namedCount === 0) {
-            return;
+            $snapshot = new VerifierCircleSnapshot(0, []);
         }
 
         $index = $initiator->getIndex();

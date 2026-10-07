@@ -60,6 +60,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = $row->phase;
+        $this->state->entryMode = $row->entryMode;
         $this->state->operation = $row->operation;
         $this->state->initiatorAcceptKey = null;
         $this->state->initiatorSessionTokenHash = $row->initiatorSessionTokenHash;
@@ -104,6 +105,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = StateProtectedModeRuntime::PHASE_ACTIVATING;
+        $this->state->entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE;
         $this->state->operation = $freeze->operation;
         $this->state->initiatorAcceptKey = $initiatorAcceptKey;
         $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
@@ -113,6 +115,39 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->startedAt = time();
         $this->state->activatedAt = null;
         $this->state->progressAt = null;
+        $this->state->passHashes = [];
+        $this->state->admittedSessionTokenHashes = [];
+        $this->state->circleSessionTokenHashes = [];
+        $this->state->circleNamedCount = 0;
+        $this->sync();
+    }
+
+    /**
+     * Opens a window directly while leaving the node's agents running.
+     *
+     * @param ProtectedModeQuiesceData $freeze Operation and initiator identity
+     * @param ?string $initiatorAcceptKey Initiating connection, or null for CLI entry
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function enterVerificationWindow(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+    ): void {
+        $this->ensureCanWrite();
+
+        $now = time();
+        $this->state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
+        $this->state->entryMode = StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+        $this->state->operation = $freeze->operation;
+        $this->state->initiatorAcceptKey = $initiatorAcceptKey;
+        $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
+        $this->state->initiatorAgentType = $freeze->initiatorAgentType;
+        $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
+        $this->state->initiatorNodeId = $freeze->initiatorNodeId;
+        $this->state->startedAt = $now;
+        $this->state->activatedAt = null;
+        $this->state->progressAt = $now;
         $this->state->passHashes = [];
         $this->state->admittedSessionTokenHashes = [];
         $this->state->circleSessionTokenHashes = [];
@@ -241,13 +276,12 @@ final class ProtectedModeRuntimeActions extends RtActions
     }
 
     /**
-     * Writes the verifier circle photographed at the freeze, whole.
+     * Writes the verifier circle photographed on the initiator's ready relay, whole.
      *
      * Whole rather than one hash at a time, which is what tells it apart from
-     * {@see admitSession()}: the circle is read once, under the freeze and before the database is
-     * replaced, so there is exactly one moment when the list is known and no second one to add to
-     * it. Writing it as a list also makes the write idempotent for free - a second photograph of
-     * the same hall overwrites the first instead of doubling it.
+     * {@see admitSession()}: for a restore it is read under the freeze and before the database is
+     * replaced; for direct entry it is read at closing. The standalone switch accepts only the
+     * first direct photograph, so a repeat ready cannot replace who was admitted.
      *
      * A freeze of an installation that named nobody writes nothing and syncs nothing: the row is
      * already empty there - both ways into the freeze clear it - so the diff to every worker on
@@ -255,7 +289,7 @@ final class ProtectedModeRuntimeActions extends RtActions
      * came out empty, because the count is the difference between "nobody was named" and "nobody
      * named was online", and only the row can still tell them apart afterwards.
      *
-     * @param VerifierCircleSnapshot $snapshot Circle photographed under the freeze, before the swap
+     * @param VerifierCircleSnapshot $snapshot Circle photographed on the initiator's ready relay
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
@@ -302,6 +336,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->phase = StateProtectedModeRuntime::PHASE_INACTIVE;
+        $this->state->entryMode = null;
         $this->state->operation = null;
         $this->state->initiatorAcceptKey = null;
         $this->state->initiatorSessionTokenHash = null;

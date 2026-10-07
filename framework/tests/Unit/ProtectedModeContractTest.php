@@ -32,6 +32,7 @@ final class ProtectedModeContractTest extends TestCase
 
         $this->assertSame(ProtectedModeRuntime::ID, $runtime->getId());
         $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, $runtime->phase);
+        $this->assertNull($runtime->entryMode);
         $this->assertNull($runtime->operation);
         $this->assertNull($runtime->initiatorAcceptKey);
         $this->assertNull($runtime->initiatorAgentIndex);
@@ -47,6 +48,7 @@ final class ProtectedModeContractTest extends TestCase
     {
         $row = [
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_FREEZE,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-9',
             ProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-9',
@@ -73,6 +75,7 @@ final class ProtectedModeContractTest extends TestCase
     {
         $row = [
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAcceptKey => 'accept-initiator',
             ProtectedModeRuntime::initiatorSessionTokenHash => 'session-hash-initiator',
@@ -91,6 +94,47 @@ final class ProtectedModeContractTest extends TestCase
         $runtime = ProtectedModeRuntime::fromRow($row);
 
         $this->assertSame($row, $runtime->toArray());
+    }
+
+    public function testLegacyRuntimeRowInfersFreezeOnlyWhileOccupied(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        unset($row[ProtectedModeRuntime::entryMode]);
+
+        $this->assertNull(ProtectedModeRuntime::fromRow($row)->entryMode);
+        $row[ProtectedModeRuntime::phase] = ProtectedModeRuntime::PHASE_VERIFYING;
+        $this->assertSame(
+            ProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            ProtectedModeRuntime::fromRow($row)->entryMode,
+        );
+    }
+
+    public function testRuntimeRejectsUnknownEntryModeInRow(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        $row[ProtectedModeRuntime::entryMode] = 'unknown';
+
+        $this->expectException(InvalidFormatException::class);
+        ProtectedModeRuntime::fromRow($row);
+    }
+
+    public function testRuntimeRejectsUnknownEntryModeInDiff(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        ProtectedModeRuntime::create()->applyDiff([ProtectedModeRuntime::entryMode => 'unknown']);
+    }
+
+    public function testRuntimeDiffCarriesDirectEntryAndClearsItOnLift(): void
+    {
+        $runtime = ProtectedModeRuntime::create();
+        $runtime->applyDiff([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ]);
+
+        $this->assertSame(ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $runtime->entryMode);
+        $runtime->applyDiff([ProtectedModeRuntime::entryMode => null]);
+        $this->assertNull($runtime->entryMode);
     }
 
     public function testRuntimeRefusesARowThatCarriesNoLists(): void
@@ -410,6 +454,37 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame('backup', $restored->initiatorAgentType);
         $this->assertSame(0, $restored->initiatorAgentIndex);
         $this->assertSame('node-a', $restored->initiatorNodeId);
+        $this->assertSame(ProtectedModeRuntime::ENTRY_MODE_FREEZE, $restored->entryMode);
+    }
+
+    public function testEnableSignalDataAcceptsDirectEntryAndDefaultsOldPayloadToFreeze(): void
+    {
+        $data = new ProtectedModeEnableSignalData(
+            operation: 'maintenance',
+            initiatorAcceptKey: null,
+            initiatorSessionTokenHash: null,
+            initiatorAgentType: 'index',
+            initiatorAgentIndex: null,
+            initiatorNodeId: null,
+            entryMode: ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+
+        $this->assertSame($data->entryMode, ProtectedModeEnableSignalData::fromArray($data->toArray())->entryMode);
+        $oldPayload = $data->toArray();
+        unset($oldPayload[ProtectedModeEnableSignalData::entryMode]);
+        $this->assertSame(
+            ProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            ProtectedModeEnableSignalData::fromArray($oldPayload)->entryMode,
+        );
+    }
+
+    public function testEnableSignalDataRejectsUnknownEntryMode(): void
+    {
+        $payload = (new ProtectedModeEnableSignalData('restore', null, null, 'backup', null, null))->toArray();
+        $payload[ProtectedModeEnableSignalData::entryMode] = 'other';
+
+        $this->expectException(InvalidFormatException::class);
+        ProtectedModeEnableSignalData::fromArray($payload);
     }
 
     public function testEnableSignalDataKeepsNullAgentIndex(): void

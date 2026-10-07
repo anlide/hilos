@@ -13,6 +13,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -80,7 +81,23 @@ final class ProtectedModeAgentTriggerTest extends TestCase
         $this->assertSame('restore-initiator', $signal->data->initiatorAgentType);
         $this->assertSame(7, $signal->data->initiatorAgentIndex, 'Agent index is carried as an int');
         $this->assertSame('node-a', $signal->data->initiatorNodeId, 'The freeze names this node as initiator');
+        $this->assertSame(ProtectedModeRuntime::ENTRY_MODE_FREEZE, $signal->data->entryMode);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'Exactly one signal is queued');
+    }
+
+    public function testAgentCanRequestTheDirectWindowThroughTheSameSignal(): void
+    {
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+
+        new ProtectedModeTriggerTestAgent(null)->enable(
+            'maintenance', '', null, ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertInstanceOf(ProtectedModeEnableSignalData::class, $signal?->data);
+        $this->assertSame(ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $signal->data->entryMode);
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_ENABLE, $signal->signalType->getType());
     }
 
     public function testEnableFromSingletonAgentCarriesNullIndex(): void
@@ -166,10 +183,16 @@ final class ProtectedModeTriggerTestAgent extends AbstractAgent
      * @param string $operation Operation the freeze protects
      * @param string $initiatorAcceptKey Accept key of the driving connection
      * @param ?string $initiatorSessionTokenHash Hash of the session behind it, or null when it carries none
+     * @param string $entryMode Entry variant
      */
-    public function enable(string $operation, string $initiatorAcceptKey, ?string $initiatorSessionTokenHash = null): void
+    public function enable(
+        string $operation,
+        string $initiatorAcceptKey,
+        ?string $initiatorSessionTokenHash = null,
+        string $entryMode = ProtectedModeRuntime::ENTRY_MODE_FREEZE,
+    ): void
     {
-        $this->requestProtectedModeEnable($operation, $initiatorAcceptKey, $initiatorSessionTokenHash);
+        $this->requestProtectedModeEnable($operation, $initiatorAcceptKey, $initiatorSessionTokenHash, $entryMode);
     }
 
     public function disable(): void

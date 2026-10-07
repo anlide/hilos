@@ -30,6 +30,9 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     /** Payload key: the operation name the initiator will run. */
     public const string operation = 'operation';
 
+    /** Payload key: how the protected mode is entered. */
+    public const string entryMode = 'entryMode';
+
     /** Payload key: the initiator connection's accept key. */
     public const string initiatorAcceptKey = 'initiatorAcceptKey';
 
@@ -56,6 +59,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
      * @param ?int $initiatorAgentIndex Agent index, or null for a singleton agent
      * @param ?string $initiatorNodeId Node id that hosts the initiator agent, or null on a
      *                                 single-node installation, which has no node ids at all
+     * @param string $entryMode Freeze or direct verification-window entry
      */
     public function __construct(
         public readonly string $operation,
@@ -64,6 +68,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
         public readonly string $initiatorAgentType,
         public readonly ?int $initiatorAgentIndex,
         public readonly ?string $initiatorNodeId,
+        public readonly string $entryMode = ProtectedModeRuntime::ENTRY_MODE_FREEZE,
     ) {
     }
 
@@ -74,6 +79,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     {
         return [
             self::operation => $this->operation,
+            self::entryMode => $this->entryMode,
             self::initiatorAcceptKey => $this->initiatorAcceptKey,
             self::initiatorSessionTokenHash => $this->initiatorSessionTokenHash,
             self::initiatorAgentType => $this->initiatorAgentType,
@@ -85,10 +91,20 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
     /**
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload names no operation or no initiator agent type
+     * @throws InvalidFormatException When the payload names no operation or initiator agent type, or an unknown entry mode
      */
     public static function fromArray(array $data): static
     {
+        $entryMode = array_key_exists(self::entryMode, $data)
+            ? self::requireString($data, self::entryMode)
+            : ProtectedModeRuntime::ENTRY_MODE_FREEZE;
+        if (!in_array($entryMode, [
+            ProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ], true)) {
+            throw new InvalidFormatException("Unknown protected-mode entry mode '{$entryMode}'");
+        }
+
         return new static(
             operation: self::requireString($data, self::operation),
             initiatorAcceptKey: self::optionalString($data, self::initiatorAcceptKey),
@@ -96,6 +112,7 @@ final class ProtectedModeEnableSignalData extends BaseDTO implements SignalDataI
             initiatorAgentType: self::requireString($data, self::initiatorAgentType),
             initiatorAgentIndex: self::optionalInt($data, self::initiatorAgentIndex),
             initiatorNodeId: self::optionalString($data, self::initiatorNodeId),
+            entryMode: $entryMode,
         );
     }
 }

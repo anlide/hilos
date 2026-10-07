@@ -43,6 +43,19 @@ interface ProtectedModeExecutor
     ): void;
 
     /**
+     * Writes a direct verification window and persists it without touching the agent roster.
+     *
+     * @param ProtectedModeQuiesceData $freeze Operation and initiator identity
+     * @param ?string $initiatorAcceptKey Initiating connection, or null for CLI entry
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this node's master is not the truth source
+     */
+    public function enterVerificationWindow(
+        ProtectedModeQuiesceData $freeze,
+        ?string $initiatorAcceptKey,
+    ): void;
+
+    /**
      * Marks the freeze active locally once every agent it stops has stopped.
      *
      * A single node and the leader write it at the end of the round, a follower on its leader's
@@ -81,15 +94,12 @@ interface ProtectedModeExecutor
     public function enterVerifying(): void;
 
     /**
-     * Takes the browsers the window lets in - the operator's and every circle member's - into the
-     * verification window, once this node's roster is back.
+     * Takes the initiating browser and photographed circle into the verification window.
      *
      * The second half of {@see enterVerifying()}, reached out of
-     * {@see ProtectedModeSwitch::onRosterResumed()}: the tabs of those sessions leave the stub and
-     * their pages are answered again. Those pages are answered by the agents the lift brings back, which
-     * is why this half waits for the lift. The broadcast to everyone else does not wait: it needs no
-     * agent, and held back it would overtake frames sent after it. Nothing is carried between the
-     * two halves - the row is read again.
+     * {@see ProtectedModeSwitch::onRosterResumed()} on an ordinary freeze, or immediately after
+     * the direct entry's circle photograph: personal frames and page reassessment follow the
+     * window frame. The ordinary path waits for resumed agents; the direct path never stops them.
      */
     public function finishVerifying(): void;
 
@@ -123,11 +133,11 @@ interface ProtectedModeExecutor
     public function enterInactive(): void;
 
     /**
-     * Tells this node's connections that the mode has lifted, once its roster is back.
+     * Tells this node's connections that the mode has lifted.
      *
      * The second half of {@see enterInactive()}, reached out of
-     * {@see ProtectedModeSwitch::onRosterResumed()}. The frame means "reload", and a browser that
-     * reloads before the agents behind its page were asked for would be answered by nobody.
+     * {@see ProtectedModeSwitch::onRosterResumed()} for an ordinary freeze; a direct window calls
+     * it immediately, with no stopped roster. The frame means "reload".
      */
     public function finishLift(): void;
 

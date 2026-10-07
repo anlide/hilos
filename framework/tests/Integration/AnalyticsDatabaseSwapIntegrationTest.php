@@ -214,6 +214,23 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
     }
 
     /**
+     * @throws HilosException When the journal cannot be loaded or its rows read back
+     */
+    public function testDirectVerificationWindowKeepsTheCollectorWritingWithoutRestoreLoss(): void
+    {
+        $collector = new AnalyticsCollector();
+        $collector->openWorkerSession(self::WORKER_INDEX, false);
+        $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
+
+        $this->freeze(ProtectedModeRuntime::PHASE_VERIFYING, ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW);
+        $collector->logWorkerSystemSignal(self::SIGNAL_NAME, null);
+        $this->loadJournal($collector);
+
+        $this->assertCount(2, $this->rowsOf('SELECT `id` FROM `hilos_analytics_worker_system_signal`'));
+        $this->assertSame([], $this->rowsOf('SELECT `id` FROM `hilos_analytics_loss`'));
+    }
+
+    /**
      * @return array<string, array{string}> Every phase in which the freeze silences the collector
      */
     public static function silencingPhases(): array
@@ -285,17 +302,23 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
      * gate tests do: only the phase matters to the collector.
      *
      * @param string $phase Freeze phase to mount
+     * @param ?string $entryMode Entry variant, inferred for legacy rows when null
      */
-    private function freeze(string $phase): void
+    private function freeze(string $phase, ?string $entryMode = null): void
     {
-        Hilos::$rt = new AnalyticsDatabaseSwapTestRtContext();
-        Hilos::$rt->mountFeatureItem(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::fromRow([
+        $row = [
             ProtectedModeRuntime::phase => $phase,
             ProtectedModeRuntime::passHashes => [],
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
-        ]));
+        ];
+        if ($entryMode !== null) {
+            $row[ProtectedModeRuntime::entryMode] = $entryMode;
+        }
+
+        Hilos::$rt = new AnalyticsDatabaseSwapTestRtContext();
+        Hilos::$rt->mountFeatureItem(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::fromRow($row));
     }
 
     /**

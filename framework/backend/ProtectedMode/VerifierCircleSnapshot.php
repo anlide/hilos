@@ -13,14 +13,15 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 
 /**
- * The verifier circle as it was the moment a node froze (HIL-643).
+ * The verifier circle as it was when the initiator was told the mode was ready (HIL-643).
  *
- * Photographed by the worker that hosts the initiator of the freeze, on the ready relay and
+ * Photographed by the worker that hosts the initiator, on the ready relay and
  * before the initiator's own hook runs ({@see WorkerManager::handleProtectedModeReady()}), because
- * that is the first moment the answer is final for any freeze - the set of live connections has
+ * that is the first settled moment for an ordinary freeze - the set of live connections has
  * stopped growing - and, for a restore, the last one it exists at all: the circle table is about
  * to be overwritten by the archive's own. The hall ({@see SessionCarrier::capture()}) is
- * photographed later, by a restore's hook, and that is a pass of its own.
+ * photographed later, by a restore's hook, and that is a pass of its own. A direct window does not
+ * stop the roster; its photograph is a chosen moment on the same ready relay.
  *
  * Two numbers come out of it and both are needed, which is why this is an object rather than a
  * bare list. The hashes are what the verification window lets in; the count of named members is
@@ -31,7 +32,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 final readonly class VerifierCircleSnapshot
 {
     /**
-     * @param int $namedCount How many people the circle named at the freeze
+     * @param int $namedCount How many people the circle named at the photograph
      * @param list<string> $sessionTokenHashes Session token hashes of the named people who were online
      */
     public function __construct(
@@ -41,9 +42,9 @@ final readonly class VerifierCircleSnapshot
     }
 
     /**
-     * Photographs the circle against the hall, before the database is replaced.
+     * Photographs the circle against the hall at the initiator's ready relay.
      *
-     * Asked of every installation, backup or not: the circle belongs to the freeze, and every
+     * Asked of every installation, backup or not: the circle belongs to the mode, and every
      * installation that can freeze migrates its table (HIL-1118). A project with no
      * session-carrying connections yields an empty photograph for the reason
      * {@see SessionCarrier::capture()} does - there are no browsers to recognize.

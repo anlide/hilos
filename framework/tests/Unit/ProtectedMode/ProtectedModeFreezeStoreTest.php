@@ -99,6 +99,31 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame('node-a', $restored->initiatorNodeId);
         $this->assertSame(self::STARTED_AT, $restored->startedAt);
         $this->assertSame(self::STARTED_AT + 1, $restored->activatedAt);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $restored->entryMode);
+    }
+
+    public function testVersionOneFileWithoutEntryModeKeepsTheLegacyFreeze(): void
+    {
+        $row = $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
+        unset($row[StateProtectedModeRuntime::entryMode]);
+        new ProtectedModeFreezeStore()->save($row);
+
+        $this->assertSame(
+            StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            (new ProtectedModeFreezeStore())->load()?->entryMode,
+        );
+    }
+
+    public function testDirectWindowPersistsInTheVersionOneFile(): void
+    {
+        $executor = $this->executorOnAMountedNode();
+        $executor->enterVerificationWindow($this->freeze(), null);
+
+        $restored = (new ProtectedModeFreezeStore())->load();
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $restored?->phase);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $restored?->entryMode);
+        $this->assertNull($restored?->activatedAt);
+        $this->assertNotNull($restored?->progressAt);
     }
 
     public function testANodeThatWasNeverFrozenFindsNoFreeze(): void

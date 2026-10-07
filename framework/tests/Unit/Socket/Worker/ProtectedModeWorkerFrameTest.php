@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Socket\Worker;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -59,6 +60,18 @@ final class ProtectedModeWorkerFrameTest extends TestCase
         $restored = WorkerProtectedModeEnableDTO::fromArray($frame->toArray());
 
         $this->assertNull($restored->data->initiatorAgentIndex);
+    }
+
+    public function testDirectEntryStaysInsideTheExistingWorkerEnvelope(): void
+    {
+        $frame = new WorkerProtectedModeEnableDTO(new ProtectedModeEnableSignalData(
+            'maintenance', null, null, 'index', null, null,
+            ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ));
+
+        $restored = WorkerProtectedModeEnableDTO::fromArray($frame->toArray());
+        $this->assertSame(WorkerProtectedModeEnableDTO::MESSAGE_TYPE, $restored->getType());
+        $this->assertSame(ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $restored->data->entryMode);
     }
 
     public function testEnableFrameRejectsNonObjectPayload(): void

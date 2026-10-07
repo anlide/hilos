@@ -16,6 +16,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\ProtectedModeAgentFreezer;
 use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -69,6 +70,18 @@ final class ProtectedModeEntryGateTest extends TestCase
         $this->gate->requestEnter($this->enableData('restore'));
 
         $this->assertSame([], $this->switch->entered);
+    }
+
+    public function testDirectWindowSkipsRosterWaitButFollowsEarlierHeldEnable(): void
+    {
+        $this->freezer->stillStarting = ['chat'];
+        $this->gate->requestEnter($this->enableData('restore'));
+        $this->gate->requestEnter(new ProtectedModeEnableSignalData(
+            'maintenance', null, null, 'index', null, null,
+            ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ));
+
+        $this->assertSame(['restore', 'maintenance'], $this->switch->entered);
     }
 
     public function testTheHeldFreezeEntersTheTickTheRosterSettles(): void

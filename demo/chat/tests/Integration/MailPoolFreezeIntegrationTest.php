@@ -105,22 +105,55 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
         self::assertSame(2, $after->attempts);
     }
 
+    public function testDirectWindowStillStartsAndWritesADelivery(): void
+    {
+        $this->deleteRecipientRows();
+        $notificationId = $this->notificationsLibrary()->emit(new NotificationDraft(
+            userId: self::RECIPIENT_ID,
+            type: 'demo.chat.test',
+            title: 'Mail in a direct window',
+        ));
+        Hilos::$db->identities->createMagicLinkIdentity(self::RECIPIENT_ID, RandomHelper::hex(8) . '@example.test');
+        $this->deliveries()->createPending($notificationId, self::CHANNEL);
+
+        $transport = new HeldMailTransport();
+        $agent = new FreezeProbeMailAgent([$transport]);
+        $agent->onSignalAgent(
+            new AgentSignalData(new NotificationDeliverSignalData(notificationId: $notificationId, channel: self::CHANNEL, shardKey: 1)),
+            'src',
+            HilosSignalConstants::HILOS_MAIL_DELIVER,
+        );
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW);
+        $agent->onTick();
+
+        self::assertInstanceOf(EmailMessage::class, $transport->started);
+        self::assertFalse($transport->closed);
+        self::assertSame(1, $this->row($notificationId)->attempts);
+    }
+
     /**
      * Mounts this node's freeze row in the phase the case needs.
      *
      * Built through the deserialization path an inbound RT sync uses, as the pool's unit cases do.
      *
      * @param string $phase Freeze phase to mount
+     * @param ?string $entryMode Entry variant, inferred for legacy rows when null
      */
-    private function freeze(string $phase): void
+    private function freeze(string $phase, ?string $entryMode = null): void
     {
-        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
+        $row = [
             StateProtectedModeRuntime::phase => $phase,
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
-        ]));
+        ];
+        if ($entryMode !== null) {
+            $row[StateProtectedModeRuntime::entryMode] = $entryMode;
+        }
+
+        Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow($row));
     }
 
     /**

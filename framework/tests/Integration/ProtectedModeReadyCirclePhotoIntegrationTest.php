@@ -45,8 +45,8 @@ use RuntimeException;
  * The worker's read guard is on, and the reads are confirmed the way a master would confirm
  * them: the framework's process-wide list is declared and its answers marked ready, and no agent
  * declares anything. That is the refusal HIL-1096 found - the circle read in a worker its one
- * declaring agent did not share - and the case the guard does not confirm is the one that has to
- * be named as a refusal rather than read as an empty circle.
+ * declaring agent did not share. An unconfirmed read is logged as a refusal and still sends an
+ * empty photograph so a direct verification window can finish opening.
  */
 final class ProtectedModeReadyCirclePhotoIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -194,7 +194,7 @@ final class ProtectedModeReadyCirclePhotoIntegrationTest extends HilosSessionInt
      * @throws HilosException When a step against the database fails
      * @throws AgentCreationFailedException When the initiator cannot be hosted
      */
-    public function testACircleThatNamesNobodySendsNothingAndTheHookStillRuns(): void
+    public function testACircleThatNamesNobodySendsEmptyPhotoBeforeTheHookReply(): void
     {
         SourceInterestRegistry::markReady(SourceChange::KIND_DB, HilosDbContext::verifierCircle);
         $manager = new ReadyCirclePhotoTestManager();
@@ -202,7 +202,14 @@ final class ProtectedModeReadyCirclePhotoIntegrationTest extends HilosSessionInt
 
         $manager->handleDaemonMessage(new ProtectedModeReadyDTO($initiator->getId()));
 
-        $this->assertSame([SignalTypeConstants::COMMAND_REPLY], self::typesOf(self::drainQueuedSignals()));
+        $signals = self::drainQueuedSignals();
+        $this->assertSame(
+            [SignalTypeConstants::PROTECTED_MODE_CIRCLE, SignalTypeConstants::COMMAND_REPLY],
+            self::typesOf($signals),
+        );
+        $this->assertInstanceOf(ProtectedModeCircleSignalData::class, $signals[0]->data);
+        $this->assertSame(0, $signals[0]->data->namedCount);
+        $this->assertSame([], $signals[0]->data->sessionTokenHashes);
         $this->assertSame(1, $initiator->readyCalls);
     }
 
@@ -210,18 +217,24 @@ final class ProtectedModeReadyCirclePhotoIntegrationTest extends HilosSessionInt
      * @throws HilosException When a step against the database fails
      * @throws AgentCreationFailedException When the initiator cannot be hosted
      */
-    public function testACircleWhoseReadinessHasNotArrivedIsNamedAsARefusalAndStopsNothing(): void
+    public function testACircleWhoseReadinessHasNotArrivedLogsRefusalAndSendsEmptyPhoto(): void
     {
-        // Somebody is named and online, so a read that went through would have sent a frame. It
-        // does not go through - the circle is declared but not confirmed - and that is written as
-        // the refusal it is, not as a circle nobody filled; the freeze goes on regardless.
+        // Somebody is named and online, but the read is not confirmed. The log distinguishes
+        // this refusal from a genuinely empty circle; the empty frame completes a direct window.
         $this->seedMemberOnline();
         $manager = new ReadyCirclePhotoTestManager();
         $initiator = $manager->hostAgent(self::INITIATOR_INDEX);
 
         $manager->handleDaemonMessage(new ProtectedModeReadyDTO($initiator->getId()));
 
-        $this->assertSame([SignalTypeConstants::COMMAND_REPLY], self::typesOf(self::drainQueuedSignals()));
+        $signals = self::drainQueuedSignals();
+        $this->assertSame(
+            [SignalTypeConstants::PROTECTED_MODE_CIRCLE, SignalTypeConstants::COMMAND_REPLY],
+            self::typesOf($signals),
+        );
+        $this->assertInstanceOf(ProtectedModeCircleSignalData::class, $signals[0]->data);
+        $this->assertSame(0, $signals[0]->data->namedCount);
+        $this->assertSame([], $signals[0]->data->sessionTokenHashes);
         $this->assertSame(1, $initiator->readyCalls);
         $this->assertStringContainsString(
             'Protected mode cannot photograph the verifier circle here: ',
