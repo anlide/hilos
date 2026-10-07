@@ -47,6 +47,9 @@ enum HilosFeature: string
     /** Daemon section pages served by the node, collector and page agents. */
     case DAEMON = 'daemon';
 
+    /** Language, country and locale reference managed by one framework library. */
+    case I18N = 'i18n';
+
     /** Durable notifications: storage, per-user preferences and the notifications page. */
     case NOTIFICATIONS = 'notifications';
 

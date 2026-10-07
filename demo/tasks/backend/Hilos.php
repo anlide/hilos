@@ -65,6 +65,9 @@ use Demo\Tasks\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Tasks\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\Tasks\Pages\Hilos\PrivacyPage;
 use Demo\Tasks\Pages\Hilos\SettingsPage;
+use Demo\Tasks\Pages\Hilos\I18nPage;
+use Demo\Tasks\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Tasks\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Tasks\Pages\Hilos\TermsPage;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
@@ -108,6 +111,8 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Log\LogAggregatorAgent;
 use Hilos\Log\LogAggregatorAgentDaemon;
@@ -171,6 +176,7 @@ final class Hilos extends HilosFacade
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,
+        HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
         HilosFeature::LOGS,
         HilosFeature::DAEMON,
@@ -190,6 +196,9 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        I18nPage::PAGE => I18nPage::class,
+        LanguagesListPage::PAGE => LanguagesListPage::class,
+        CountriesListPage::PAGE => CountriesListPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         DaemonPage::PAGE => DaemonPage::class,
@@ -256,6 +265,11 @@ final class Hilos extends HilosFacade
         SettingsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        I18nLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => I18nLibraryAgent::class,
+            AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         UsersLibraryAgent::AGENT_TYPE => [

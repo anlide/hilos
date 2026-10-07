@@ -107,25 +107,8 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
 use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
-use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
-use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
-use Demo\Chat\Pages\Hilos\I18n\Details\GroupDetailPage;
-use Demo\Chat\Pages\Hilos\I18n\Details\LanguageDetailPage;
-use Demo\Chat\Pages\Hilos\I18n\Details\UiPageDetailPage;
-use Demo\Chat\Pages\Hilos\I18n\Lists\ActionsListPage;
 use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
-use Demo\Chat\Pages\Hilos\I18n\Lists\EmailsListPage;
-use Demo\Chat\Pages\Hilos\I18n\Lists\EntitiesListPage;
-use Demo\Chat\Pages\Hilos\I18n\Lists\GroupsListPage;
 use Demo\Chat\Pages\Hilos\I18n\Lists\LanguagesListPage;
-use Demo\Chat\Pages\Hilos\I18n\Lists\UiPagesListPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateActionErrorPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateEmailPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateEntityPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupItemPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPageItemPage;
-use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPagePage;
 use Demo\Chat\Pages\Hilos\I18nPage;
 use Demo\Chat\Pages\Hilos\LicensePage;
 use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
@@ -213,6 +196,8 @@ use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use Hilos\HilosException;
 use Hilos\Log\LogAggregatorAgent;
@@ -306,6 +291,7 @@ final class Hilos extends HilosFacade
 
     protected const array FEATURES = [
         HilosFeature::SETTINGS,
+        HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
         HilosFeature::BACKUP,
         HilosFeature::LOGS,
@@ -361,23 +347,6 @@ final class Hilos extends HilosFacade
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
-        EntitiesListPage::PAGE => EntitiesListPage::class,
-        UiPagesListPage::PAGE => UiPagesListPage::class,
-        GroupsListPage::PAGE => GroupsListPage::class,
-        ActionsListPage::PAGE => ActionsListPage::class,
-        EmailsListPage::PAGE => EmailsListPage::class,
-        LanguageDetailPage::PAGE => LanguageDetailPage::class,
-        CountryDetailPage::PAGE => CountryDetailPage::class,
-        UiPageDetailPage::PAGE => UiPageDetailPage::class,
-        GroupDetailPage::PAGE => GroupDetailPage::class,
-        ActionDetailPage::PAGE => ActionDetailPage::class,
-        TranslateEntityPage::PAGE => TranslateEntityPage::class,
-        TranslateUiPagePage::PAGE => TranslateUiPagePage::class,
-        TranslateUiPageItemPage::PAGE => TranslateUiPageItemPage::class,
-        TranslateGroupPage::PAGE => TranslateGroupPage::class,
-        TranslateGroupItemPage::PAGE => TranslateGroupItemPage::class,
-        TranslateActionErrorPage::PAGE => TranslateActionErrorPage::class,
-        TranslateEmailPage::PAGE => TranslateEmailPage::class,
         GuardianPage::PAGE => GuardianPage::class,
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -488,6 +457,11 @@ final class Hilos extends HilosFacade
         SettingsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        I18nLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => I18nLibraryAgent::class,
+            AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         LibraryAgent::AGENT_TYPE => [

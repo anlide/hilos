@@ -524,11 +524,12 @@ name and an indeterminate bar — and a run that outlives its estimate is told i
 
 ### i18n — the languages and countries section
 
-Configure-only: the framework owns the five reference tables, their library, the section's pages and browser tables (not in the code yet — HIL-1470).
-The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS` (not in the code yet — HIL-1470).
-It registers thin section pages and tables in the topology, migrates the five framework stubs and mounts the SDK views (not in the code yet — HIL-1470).
+Configure-only: the framework owns the five reference tables, their library and the section's pages. Browser tables follow in HIL-1474/1475.
+The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
+It registers three thin section pages in the server topology and migrates the five framework stubs (HIL-1470).
+The SDK pages are still unbuilt in Vue, React and Angular: their URLs answer `not_served`/404 before subscription and have no card links. HIL-112/1481 and HIL-1502/1503 build and open them with real content.
 It supplies the default-language env value (not in the code yet — HIL-1471).
-Startup refuses a partially activated feature (not in the code yet — HIL-1470).
+Startup refuses a missing page or agent; topology tests check the five migrations.
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
 
 ### daemon — the Daemon section

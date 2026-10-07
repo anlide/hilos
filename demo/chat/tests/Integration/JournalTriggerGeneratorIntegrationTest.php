@@ -46,9 +46,11 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
             $files = JournalTriggerGenerator::plan();
             $this->assertCount(12, $files);
             $this->assertSame([], JournalTriggerFiles::write($files));
-            foreach ($files as $file) {
-                $this->assertSame($file->content(), file_get_contents($projectPath . '/' . $file->name . '.sql'));
-                self::install($file);
+            $storedFiles = JournalTriggerFiles::readAll($files, Migration::getCurrentIndex());
+            foreach ($files as $index => $file) {
+                $this->assertSame($file->name, $storedFiles[$index]->name);
+                $this->assertSame($file->body, $storedFiles[$index]->body);
+                self::install($storedFiles[$index]);
             }
 
             Database::sqlRun('CREATE TABLE `' . self::FIXTURE_TABLE . '` ('

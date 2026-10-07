@@ -109,6 +109,11 @@ use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
+use Demo\Polls\Pages\Hilos\I18nPage;
+use Demo\Polls\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Polls\Pages\Hilos\I18n\Lists\CountriesListPage;
+use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -205,6 +210,32 @@ final class PollsTopologyRegistryTest extends TestCase
             $this->assertTrue(is_subclass_of($daemonClass, AbstractAgentDaemon::class));
             $this->assertSame($agentType, $workerClass::AGENT_TYPE);
         }
+    }
+
+    /** The three registered i18n shells route to one placed framework library. */
+    public function testI18nSectionUsesFrameworkLibrary(): void
+    {
+        $this->assertContains(HilosFeature::I18N, Hilos::features());
+        $this->assertSame([
+            I18nPage::PAGE,
+            LanguagesListPage::PAGE,
+            CountriesListPage::PAGE,
+        ], array_values(array_filter(
+            array_keys(Hilos::PAGES),
+            static fn (string $page): bool => str_starts_with($page, I18nPage::PAGE),
+        )));
+
+        foreach ([I18nPage::class, LanguagesListPage::class, CountriesListPage::class] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_I18N_LIBRARY];
+        $this->assertSame(I18nLibraryAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(I18nLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertTrue((new I18nLibraryAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void
@@ -363,6 +394,7 @@ final class PollsTopologyRegistryTest extends TestCase
         // until somebody submitted the form it belongs to.
         $this->assertSame([
             HilosFeature::SETTINGS,
+            HilosFeature::I18N,
             HilosFeature::HILOS_USERS,
             HilosFeature::LOGS,
             HilosFeature::DAEMON,

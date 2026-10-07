@@ -3,7 +3,10 @@ import { bootHilos } from '../../src/bootstrap/bootHilos.js'
 import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { type NavigationEnvironment } from '../../src/routing/HilosRouter.js'
-import { HilosPages } from '../../src/routing/hilosPages.js'
+import {
+  HILOS_ROUTE_DECLARATIONS,
+  HilosPages,
+} from '../../src/routing/hilosPages.js'
 import { hilosAccountStanding } from '../../src/session/accountStanding.js'
 import { hilosFrozenScreen } from '../../src/legal/legalReconsent.js'
 import { hilosImpersonation } from '../../src/session/impersonation.js'
@@ -133,6 +136,41 @@ describe('bootHilos', () => {
       )
       if (!projectView)
         expect(router.pageError.get()?.errorCode).toBe('not_served')
+    },
+  )
+
+  it.each(['vue', 'react', 'angular'] as const)(
+    'keeps i18n URLs closed before subscription in %s',
+    (viewLayer) => {
+      for (const page of [
+        HilosPages.I18N,
+        HilosPages.I18N_LANGUAGES,
+        HilosPages.I18N_COUNTRIES,
+      ]) {
+        const connection = fakeConnection()
+        const hilosConnection = connection as unknown as HilosConnection
+        const router = bootHilos({
+          viewLayer,
+          connection: hilosConnection,
+          actions: new ActionLifecycle(hilosConnection),
+          scopes: new ScopeManager(),
+          router: createAppPageRouter(
+            { main: { path: '/', admin: false } },
+            { fallback: 'main' },
+          ),
+          navigationEnvironment: fakeNavigation(
+            HILOS_ROUTE_DECLARATIONS[page].path,
+          ),
+        })
+
+        expect(router.currentRoute.get().page).toBe(page)
+        expect(router.pageError.get()?.errorCode).toBe('not_served')
+        expect(router.resolvePath(page)).toBeUndefined()
+        connection.emitProjectSignal('handshake_response', {
+          entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+        })
+        expect(connection.sent).toEqual([])
+      }
     },
   )
 

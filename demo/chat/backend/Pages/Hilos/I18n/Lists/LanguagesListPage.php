@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\I18n\Lists;
 
-use Demo\Chat\Constants\AgentType;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Pages\I18n\Lists\AbstractHilosI18nLanguagesListPage;
 
 /**
@@ -12,5 +12,5 @@ use Hilos\Pages\I18n\Lists\AbstractHilosI18nLanguagesListPage;
  */
 final class LanguagesListPage extends AbstractHilosI18nLanguagesListPage
 {
-    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_I18N_LIBRARY;
 }

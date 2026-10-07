@@ -45,6 +45,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
@@ -63,6 +64,11 @@ use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Demo\EcommerceShop\Pages\Hilos\I18nPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\CountriesListPage;
+use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -102,6 +108,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             BackupPage::PAGE => BackupPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
+            I18nPage::PAGE => I18nPage::class,
+            LanguagesListPage::PAGE => LanguagesListPage::class,
+            CountriesListPage::PAGE => CountriesListPage::class,
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
             AboutPage::PAGE => AboutPage::class,
@@ -154,6 +163,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_USERS_LIBRARY,
             AgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosAgentType::HILOS_I18N_LIBRARY,
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_AUTH_THROTTLE,
             HilosAgentType::HILOS_BACKUP,
@@ -170,6 +180,32 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_CLAIMER, HilosAgentType::HILOS_PROBE_BALLAST] as $agentType) {
             $this->assertSame(ClusterProbe::AGENTS[$agentType], Hilos::AGENTS[$agentType], "{$agentType} is listed as the framework wrote it");
         }
+    }
+
+    /** The three registered i18n shells route to one placed framework library. */
+    public function testI18nSectionUsesFrameworkLibrary(): void
+    {
+        $this->assertContains(HilosFeature::I18N, Hilos::features());
+        $this->assertSame([
+            I18nPage::PAGE,
+            LanguagesListPage::PAGE,
+            CountriesListPage::PAGE,
+        ], array_values(array_filter(
+            array_keys(Hilos::PAGES),
+            static fn (string $page): bool => str_starts_with($page, I18nPage::PAGE),
+        )));
+
+        foreach ([I18nPage::class, LanguagesListPage::class, CountriesListPage::class] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_I18N_LIBRARY];
+        $this->assertSame(I18nLibraryAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(I18nLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertTrue((new I18nLibraryAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void
@@ -333,6 +369,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::BACKUP,
             HilosFeature::SETTINGS,
+            HilosFeature::I18N,
             HilosFeature::HILOS_USERS,
             HilosFeature::NOTIFICATIONS,
         ], Hilos::features());

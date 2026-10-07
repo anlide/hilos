@@ -31,6 +31,9 @@ use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
+use Demo\EcommerceShop\Pages\Hilos\I18nPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
@@ -61,6 +64,8 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
@@ -114,6 +119,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
         HilosFeature::SETTINGS,
+        HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
         HilosFeature::NOTIFICATIONS,
     ];
@@ -129,6 +135,9 @@ final class Hilos extends HilosFacade
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
+        I18nPage::PAGE => I18nPage::class,
+        LanguagesListPage::PAGE => LanguagesListPage::class,
+        CountriesListPage::PAGE => CountriesListPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -173,6 +182,11 @@ final class Hilos extends HilosFacade
         SettingsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => SettingsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SettingsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        I18nLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => I18nLibraryAgent::class,
+            AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         MailDeliveryChannelAgent::AGENT_TYPE => [

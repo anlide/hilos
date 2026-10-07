@@ -27,8 +27,7 @@ agent, not a dictionary of values.
 ## Core Rule
 
 The reference belongs to the framework: one library owns the five `hilos_*`
-tables, and a project activates the section without supplying its contents
-(not in the code yet — HIL-1470).
+tables, and a project activates the section without supplying its contents.
 
 A language, country or locale is addressed by its code, which never changes.
 A switched-on row is frozen for everyone, both a person and the reflow. The
@@ -83,11 +82,9 @@ decides them (owner's decision, 2026-10-04).
 
 ## One Library Holds The Reference
 
-One entity library, the i18n library, holds all five tables
-(not in the code yet — HIL-1470).
-It also serves the section's pages (not in the code yet — HIL-1470).
-Like every library, it has `SCOPE = CLUSTER` and `PLACEMENT = POLICY`
-(not in the code yet — HIL-1470).
+One entity library, the i18n library, holds all five tables.
+It also serves the section's pages.
+Like every library, it has `SCOPE = CLUSTER` and `PLACEMENT = POLICY`.
 See [entity libraries](entity-libraries.md) and [truth sources](truth-source.md).
 
 This follows **one entity, one library**: the five tables are one entity for
@@ -101,7 +98,7 @@ The notifications library is the precedent:
 `AbstractNotificationsLibraryAgent::OWNS_DB` holds four tables.
 
 The i18n library holds the **whole claim** — create, update and delete, the
-default operation set (not in the code yet — HIL-1470).
+default operation set.
 Languages, countries and locales have no instance owner beside it: one
 surface writes them, the section, and the startup reflow is the library's own
 pass rather than a second writer. Their rows are few and cold. This is the
@@ -353,28 +350,32 @@ See the [page registry](../frontend/page-registry.md). The
 
 ## Switching The Section On
 
-i18n is a framework feature (not in the code yet — HIL-1470).
+i18n is a framework feature.
 The project:
 
-- lists it in `Hilos::FEATURES` (not in the code yet — HIL-1470);
-- registers the library's agent pair in `Hilos::AGENTS`
-  (not in the code yet — HIL-1470);
-- registers thin section pages and their tables in the topology
-  (not in the code yet — HIL-1470);
-- migrates the five framework stubs (not in the code yet — HIL-1470);
-- mounts the SDK views (not in the code yet — HIL-1470);
+- lists it in `Hilos::FEATURES`;
+- registers the library's agent pair in `Hilos::AGENTS`;
+- registers the three thin section pages in the server topology;
+- migrates the five framework stubs;
 - supplies the default-language env value (not in the code yet — HIL-1471).
 
-Startup refuses a partially activated feature (not in the code yet — HIL-1470).
+The six demos have the feature, agent, server pages and migrations (HIL-1470).
+The browser tables follow in HIL-1474/1475. The three SDK pages remain unbuilt
+in Vue, React and Angular until HIL-112/1481 and HIL-1502/1503 give them real
+content. A direct browser URL currently gets `not_served`/404 before a page
+subscription, and no card links to it.
+
+Startup refuses a missing page or agent; the topology tests check that the
+five migration files are present after registration.
 Follow [Feature Declaration](../app-topology.md) and the
 [activation recipe](admin-feature-scaffold.md).
 The six demos are `chat`, `tasks`, `polls`, `ecommerce-shop`,
-`binance-btc-tracker` and `online-testing` (not in the code yet — HIL-1470).
+`binance-btc-tracker` and `online-testing`.
 
-The section root shows only Languages and Countries. Translation subsections
-have no registered page: the existing rule hides their cards and answers 404
-for a page the project does not serve. Build no separate mechanism for that
-(owner's decision, 2026-10-04).
+Once built, the section root shows only Languages and Countries. Translation
+subsections have no registered server page: the existing rule hides their cards
+and answers 404 for a page the project does not serve. Build no separate
+mechanism for that (owner's decision, 2026-10-04).
 
 Edits reach every open tab through the ordinary
 [browser table source fan-out](browser-source-fanout.md)

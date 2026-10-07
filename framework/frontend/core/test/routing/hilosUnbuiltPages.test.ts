@@ -29,6 +29,15 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
+  it('keeps the i18n section and both lists unbuilt in every view layer', () => {
+    for (const layer of ['vue', 'react', 'angular'] as const) {
+      const unbuilt = hilosUnbuiltPages(layer)
+      expect(unbuilt.has(HilosPages.I18N)).toBe(true)
+      expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(true)
+      expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(true)
+    }
+  })
+
   it('removes project views only from this result and ignores unrelated keys', () => {
     expect(
       hilosUnbuiltPages('vue', [HilosPages.ROLES]).has(HilosPages.ROLES),

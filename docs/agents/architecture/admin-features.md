@@ -33,7 +33,7 @@ A spec section and any skill wrapper must keep this fork explicit.
 
 For features the framework owns end to end: `settings`, `hilos_users`, `backup`,
 and later `roles`.
-The languages and countries section is one more ([languages-and-countries.md](languages-and-countries.md)) (not in the code yet — HIL-1470).
+The languages and countries section is one more ([languages-and-countries.md](languages-and-countries.md)).
 The Daemon section is one more ([daemon-section.md](daemon-section.md)).
 The framework owns the browser table, the subscribe, and the
 actions. `backup` is the same mode with a wider engine — the framework also owns

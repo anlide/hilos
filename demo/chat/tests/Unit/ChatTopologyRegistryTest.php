@@ -261,6 +261,11 @@ use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
+use Demo\Chat\Pages\Hilos\I18nPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
+use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -448,13 +453,13 @@ final class ChatTopologyRegistryTest extends TestCase
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The five libraries, the backup agent, the delivery shards and the log aggregator: one
+        // The six libraries, the backup agent, the delivery shards and the log aggregator: one
         // instance cluster-wide (per shard index, for the shards), on the node policy picks. An
-        // entity library is placed rather than pinned by rule, and each of the five has a reason
+        // entity library is placed rather than pinned by rule, and each has a reason
         // of its own besides: minting an account is a claim one process holds wherever it sits,
         // every handshake touches sessions, every worker emits into notifications, every published
         // file is bound and swept by one owner, every admin screen writes settings through one
-        // hand, and the leader has enough to do. The uploads and images agents are placed the same
+        // hand, and the i18n reference has one writer. The uploads and images agents are placed the same
         // way, beside the files library they hand files to through the cluster's tmp, on whatever
         // node each lands. The backup agent owns a directory on one node's disk, so it has to stay
         // with it: following
@@ -471,6 +476,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_UPLOADS,
             HilosAgentType::HILOS_IMAGES,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            HilosAgentType::HILOS_I18N_LIBRARY,
             HilosAgentType::HILOS_BACKUP,
             AgentType::HILOS_MAIL,
             AgentType::HILOS_SMS,
@@ -490,6 +496,32 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(BotAgent::class, AgentRegistry::workerClass($botEntry));
         $this->assertSame(BotAgentDaemon::class, AgentRegistry::daemonClass($botEntry));
         $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::CHAT]));
+    }
+
+    /** The three registered i18n shells route to one placed framework library. */
+    public function testI18nSectionUsesFrameworkLibrary(): void
+    {
+        $this->assertContains(HilosFeature::I18N, Hilos::featuresOf(Hilos::class));
+        $this->assertSame([
+            I18nPage::PAGE,
+            LanguagesListPage::PAGE,
+            CountriesListPage::PAGE,
+        ], array_values(array_filter(
+            array_keys(Hilos::PAGES),
+            static fn (string $page): bool => str_starts_with($page, I18nPage::PAGE),
+        )));
+
+        foreach ([I18nPage::class, LanguagesListPage::class, CountriesListPage::class] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
+        }
+
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_I18N_LIBRARY];
+        $this->assertSame(I18nLibraryAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(I18nLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertTrue((new I18nLibraryAgentDaemon())->requiresMonopolisticProcess());
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void

@@ -12,6 +12,7 @@ use Hilos\Core\Feature\Definition\BackupFeature;
 use Hilos\Core\Feature\Definition\DaemonFeature;
 use Hilos\Core\Feature\Definition\FilesFeature;
 use Hilos\Core\Feature\Definition\HilosUsersFeature;
+use Hilos\Core\Feature\Definition\I18nFeature;
 use Hilos\Core\Feature\Definition\ImagesFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
@@ -96,6 +97,7 @@ class FeatureRegistry
             new BackupFeature(),
             new LogsFeature(),
             new DaemonFeature(),
+            new I18nFeature(),
             new NotificationsFeature(),
             new NotificationDeliveryFeature(),
             new AuthThrottleFeature(),
