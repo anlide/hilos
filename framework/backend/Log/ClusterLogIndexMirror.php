@@ -39,6 +39,9 @@ final class ClusterLogIndexMirror
      */
     private static ?ClusterLogIndex $index = null;
 
+    /** @var bool Whether a full snapshot has arrived since the picture was last forgotten */
+    private static bool $hasFullSnapshot = false;
+
     /** @var array<string, true> Accept keys of the connections watching any page of the section */
     private static array $viewers = [];
 
@@ -96,6 +99,7 @@ final class ClusterLogIndexMirror
     {
         if ($portion->snapshot) {
             self::$index = $portion->toIndex();
+            self::$hasFullSnapshot = true;
 
             return;
         }
@@ -124,6 +128,16 @@ final class ClusterLogIndexMirror
     }
 
     /**
+     * An early portion makes the picture known but cannot account for slots it never carried.
+     *
+     * @return bool Whether the mirror has received a full snapshot, including an empty one
+     */
+    public static function hasFullSnapshot(): bool
+    {
+        return self::$hasFullSnapshot;
+    }
+
+    /**
      * Forgets the picture, returning the mirror to the state it starts in.
      *
      * For the agent's stop and for tests, and for nothing else. A viewer leaving deliberately does
@@ -134,5 +148,6 @@ final class ClusterLogIndexMirror
     public static function forgetPicture(): void
     {
         self::$index = null;
+        self::$hasFullSnapshot = false;
     }
 }

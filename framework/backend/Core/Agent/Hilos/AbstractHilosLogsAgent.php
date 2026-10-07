@@ -79,8 +79,11 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      */
     private const float WATCH_KEEPALIVE_INTERVAL_SECONDS = 30.0;
 
+    /** @var float Seconds between claims while viewers still lack a first full snapshot */
+    private const float FIRST_PICTURE_RETRY_INTERVAL_SECONDS = 1.0;
+
     /**
-     * @var float Seconds viewers may wait for a first picture before the wait is written down
+     * @var float Seconds viewers may wait for a first full snapshot before the wait is written down
      *
      * Long enough that an aggregator merely being slow to answer is not reported as a fault, and
      * measured from the moment people started waiting rather than from the last claim: a section
@@ -95,10 +98,10 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     /** @var ?int Viewer count the aggregator was last told, null before anything was claimed */
     private ?int $lastReportedViewers = null;
 
-    /** @var ?float Wall clock at which people started waiting on a picture, null when nobody is */
-    private ?float $picturelessSince = null;
+    /** @var ?float Wall clock at which viewers started waiting for a full snapshot, null when nobody is */
+    private ?float $fullSnapshotWaitSince = null;
 
-    /** @var bool Whether the wait for a first picture has already been written down */
+    /** @var bool Whether the wait for a first full snapshot has already been written down */
     private bool $pictureComplained = false;
 
     /** @var array<string, true> Current viewers whose connection this worker's roster has carried */
@@ -208,12 +211,11 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     /**
      * Tells the aggregator how many people are watching, when there is a reason to say it.
      *
-     * Two of them, and the rule is {@see LogStoreAgent::pushIndexIfDue()}'s one level up. A count
-     * that CHANGED goes out at once, zero included and zero especially: a claim of zero is what
+     * A count that CHANGED goes out at once, zero included and zero especially: a claim of zero is what
      * cancels the subscription, and holding it back would let frames outlive the last viewer by a
-     * whole lease. A count that has not changed goes out once per keepalive, which is what renews
-     * the lease - unless it is zero, because there is then no subscription to renew and a claim
-     * every thirty seconds would be an idle cluster talking to itself.
+     * whole lease. Until the first full snapshot arrives, a positive count repeats every second;
+     * an early portion does not end that wait. After the full snapshot, an unchanged positive count
+     * goes out once per keepalive to renew the lease. Zero stays silent.
      *
      * The clock is a parameter rather than a reading, the way {@see LogStoreAgent::pushIndexIfDue()}
      * takes its own: the tick is only this method's throttle, and when a claim is due should not
@@ -235,7 +237,14 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
 
             return;
         }
-        if ($viewers === 0 || $now - $this->lastWatchAt < self::WATCH_KEEPALIVE_INTERVAL_SECONDS) {
+        if ($viewers === 0) {
+            return;
+        }
+
+        $interval = ClusterLogIndexMirror::hasFullSnapshot()
+            ? self::WATCH_KEEPALIVE_INTERVAL_SECONDS
+            : self::FIRST_PICTURE_RETRY_INTERVAL_SECONDS;
+        if ($now - $this->lastWatchAt < $interval) {
             return;
         }
 
@@ -257,11 +266,11 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     }
 
     /**
-     * Keeps the clock on a wait for a first picture, and writes that wait down once it is long.
+     * Keeps the clock on a wait for a first full snapshot, including when only a portion arrived.
      *
      * Once and not per tick: the aggregator being unplaced or moving is a state that lasts, and a
      * line a tick would bury the journal of the very node an administrator came to read. Both the
-     * clock and the flag are cleared as soon as a picture arrives or the last viewer leaves, so a
+     * clock and the flag are cleared as soon as a full snapshot arrives or the last viewer leaves, so a
      * later blackout is timed afresh and heard about again.
      *
      * @param int $viewers Viewers watching the section right now
@@ -269,21 +278,21 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      */
     private function noteThePictureWait(int $viewers, float $now): void
     {
-        if ($viewers === 0 || ClusterLogIndexMirror::known()) {
-            $this->picturelessSince = null;
+        if ($viewers === 0 || ClusterLogIndexMirror::hasFullSnapshot()) {
+            $this->fullSnapshotWaitSince = null;
             $this->pictureComplained = false;
 
             return;
         }
 
-        $this->picturelessSince ??= $now;
-        if ($this->pictureComplained || $now - $this->picturelessSince < self::PICTURE_WAIT_COMPLAINT_SECONDS) {
+        $this->fullSnapshotWaitSince ??= $now;
+        if ($this->pictureComplained || $now - $this->fullSnapshotWaitSince < self::PICTURE_WAIT_COMPLAINT_SECONDS) {
             return;
         }
 
         $this->pictureComplained = true;
         $this->logAgentWarning(
-            "Logs section: {$viewers} viewer(s) waiting, and the cluster log aggregator has sent no picture yet",
+            "Logs section: {$viewers} viewer(s) waiting, and the first full cluster log snapshot has not arrived yet",
         );
     }
 

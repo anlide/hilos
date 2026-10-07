@@ -69,6 +69,12 @@ const ARTIFACT_VALUE_SEPARATOR = '; ';
 /** Where a stand's daemon, workers and agents write, relative to the STAND's working directory. */
 const STAND_LOG_DIR = 'data/logs-test';
 
+/** The browser step whose evidence belongs to separate cluster nodes. */
+const CLUSTER_BROWSER_STEP = 'binance-btc-tracker-cluster-e2e';
+
+/** Node log trees, emptied at the start of each fresh cluster browser run. */
+const CLUSTER_LOG_DIR = 'data/logs-cluster';
+
 /**
  * The stand's own files worth keeping, by glob. The patterns overlap on purpose —
  * `worker-*.log` matches an error log too — because listing what a run happens to
@@ -297,7 +303,7 @@ function collectStepArtifacts(
     $status = runArtifactCommand('git-status', 'git status --short 2>&1', $root, ARTIFACT_COMMAND_TIMEOUT_SECONDS);
     $missing = [...$missing, ...$head['missing'], ...$status['missing']];
 
-    $missing = [...$missing, ...copyStandLogs($root, $stand, $path)];
+    $missing = [...$missing, ...copyStepLogs($root, $id, $stand, $path)];
     foreach (PLAYWRIGHT_OUTPUT_DIRS as $source => $target) {
         $missing = [...$missing, ...copyArtifactTree('playwright', $cwd . '/' . $source, $path . '/' . $target)];
     }
@@ -1182,6 +1188,34 @@ function runArtifactCommand(string $label, string $command, string $cwd, int $ti
 }
 
 /**
+ * Keep the cluster browser's node trees, including this run's rotations. Other steps
+ * keep their ordinary stand logs. A missing cluster root is evidence lost, not an
+ * invitation to substitute the same demo's unrelated single-node logs.
+ *
+ * @param string $root Repository root.
+ * @param string $id Step being collected.
+ * @param array{cwd: string}|null $stand Resolved stand, if any.
+ * @param string $path Step snapshot directory.
+ * @return array<int, string> Missing sources or failed copies.
+ */
+function copyStepLogs(string $root, string $id, ?array $stand, string $path): array
+{
+    if ($id !== CLUSTER_BROWSER_STEP) {
+        return copyStandLogs($root, $stand, $path);
+    }
+    if ($stand === null) {
+        return ['nodes: cluster stand is unknown'];
+    }
+
+    $source = $root . '/' . $stand['cwd'] . '/' . CLUSTER_LOG_DIR;
+    if (!is_dir($source)) {
+        return ['nodes: missing ' . $source];
+    }
+
+    return copyArtifactTree('nodes', $source, $path . '/nodes');
+}
+
+/**
  * Copy the stand's own logs, whatever this demo happened to write. A step with no
  * stand directory copies nothing and says nothing about it: having no daemon is not
  * a failure to collect one.
@@ -1237,6 +1271,9 @@ function copyArtifactTree(string $label, string $source, string $target): array
 {
     if (!is_dir($source)) {
         return [];
+    }
+    if (!is_readable($source)) {
+        return [$label . ': could not read ' . $source];
     }
     if (!makeArtifactDir($target)) {
         return [$label . ': could not create ' . $target];

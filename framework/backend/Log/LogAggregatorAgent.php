@@ -312,10 +312,9 @@ final class LogAggregatorAgent extends AbstractAgent
      * zero is a cancellation that takes effect at once rather than at the end of a lease - a
      * subscriber whose last viewer just closed the tab must stop costing frames immediately.
      *
-     * A claim that OPENS a subscription is answered on the spot with the whole picture, outside the
-     * window. The window exists to fold a burst of changes into one frame, and there is no burst
-     * here: making the first screen of a page wait half a second for something already in memory
-     * would be the window charging for work it did not do.
+     * Every positive claim is answered on the spot with the whole picture, outside the window.
+     * A registered watcher may have lost the previous answer, so renewing only its lease would
+     * leave that first picture missing forever. The window still folds ordinary node changes.
      *
      * @param string $sender Sender of the claim, named in full
      * @param int $viewers Viewers it claims, zero to cancel
@@ -336,16 +335,15 @@ final class LogAggregatorAgent extends AbstractAgent
         if (isset($this->watchers[$sender])) {
             $this->watchers[$sender][self::WATCH_VIEWERS] = $viewers;
             $this->watchers[$sender][self::WATCH_RENEWED_AT] = $now;
-
-            return;
+        } else {
+            $this->watchers[$sender] = [
+                self::WATCH_VIEWERS => $viewers,
+                self::WATCH_RENEWED_AT => $now,
+                self::WATCH_SENT_REVISION => 0,
+            ];
+            $this->logAgentInfo("Log aggregator: {$sender} started watching, {$viewers} viewer(s)");
         }
 
-        $this->watchers[$sender] = [
-            self::WATCH_VIEWERS => $viewers,
-            self::WATCH_RENEWED_AT => $now,
-            self::WATCH_SENT_REVISION => 0,
-        ];
-        $this->logAgentInfo("Log aggregator: {$sender} started watching, {$viewers} viewer(s)");
         $this->sendPortion($sender, $this->index->nodes(), true, $now);
     }
 

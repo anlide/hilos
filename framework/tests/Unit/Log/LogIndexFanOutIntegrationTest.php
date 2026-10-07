@@ -11,6 +11,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
+use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsIndexWatchSignalData;
 use Hilos\Log\LogAggregatorAgent;
@@ -19,6 +20,7 @@ use Hilos\Log\NodeLogIndex;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Tests\Integration\BackupRestoreProgressSessionDeliveryIntegrationTest;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -92,6 +94,172 @@ final class LogIndexFanOutIntegrationTest extends TestCase
     }
 
     /**
+     * Losing either half of the first exchange costs one second, then the ordinary lease resumes.
+     *
+     * @param bool $deliverClaim Whether to lose the answer rather than the initial claim
+     */
+    #[DataProvider('firstExchangeLosses')]
+    public function testTheFirstPictureRecoversAfterALostFrame(bool $deliverClaim): void
+    {
+        $aggregator = $this->startedAggregator();
+        $aggregator->applyNodeIndex($this->nodeIndex('node-1', 100));
+        $aggregator->applyNodeIndex($this->nodeIndex('node-2', 300));
+        $pages = new LogIndexFanOutProbeAgent();
+        ClusterLogIndexMirror::addViewer('ak-1');
+        $pages->tickAt($this->at(0.0));
+        if ($deliverClaim) {
+            $this->assertSame(1, $this->claimsTo($aggregator));
+        }
+        $this->assertSame(
+            [$deliverClaim ? HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION : HilosSignalConstants::LOGS_INDEX_WATCH],
+            $this->queuedFrames(),
+            'Discard the queued frame without delivering it',
+        );
+        $this->assertFalse(ClusterLogIndexMirror::known());
+
+        $pages->tickAt($this->at(0.99));
+        $this->assertSame([], $this->queuedFrames(), 'Retries are throttled');
+        $pages->tickAt($this->at(1.0));
+        $this->assertSame(1, $this->claimsTo($aggregator), 'A missing first picture is retried after one second');
+        $frames = $this->framesTo($pages);
+        $this->assertCount(1, $frames);
+        $this->assertTrue($frames[0]->snapshot, 'An already registered watcher also receives a full snapshot');
+        $this->assertSame(
+            ['node-1', 'node-2'],
+            array_map(static fn (ClusterLogNodeSlot $slot): ?string => $slot->nodeId, $frames[0]->nodes),
+        );
+        $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertSame([LogKeySummary::CLASS_AGENT => 400], ClusterLogIndexMirror::index()?->totals()->bytesByClass);
+
+        $pages->tickAt($this->at(2.0));
+        $pages->tickAt($this->at(30.99));
+        $this->assertSame([], $this->queuedFrames(), 'A known picture waits for the normal keepalive');
+        $pages->tickAt($this->at(31.0));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $frames = $this->framesTo($pages);
+        $this->assertCount(1, $frames);
+        $this->assertTrue($frames[0]->snapshot);
+        $this->assertCount(2, $frames[0]->nodes);
+    }
+
+    /** A changed-slot portion cannot end recovery of a lost full snapshot (HIL-1506). */
+    public function testAPortionBeforeTheRetryDoesNotHideALostFullSnapshot(): void
+    {
+        $aggregator = $this->startedAggregator();
+        $aggregator->applyNodeIndex($this->nodeIndex('node-1', 100));
+        $aggregator->applyNodeIndex($this->nodeIndex('node-2', 300));
+        $pages = new LogIndexFanOutProbeAgent();
+        ClusterLogIndexMirror::addViewer('ak-1');
+        $pages->tickAt($this->at(0.0));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame([HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION], $this->queuedFrames(), 'Lose the first snapshot');
+
+        $aggregator->applyNodeIndex($this->nodeIndex('node-1', 250));
+        $aggregator->fanOutIfDue($this->at(self::PAST_THE_WINDOW_SECONDS));
+        $frames = $this->framesTo($pages);
+        $this->assertCount(1, $frames);
+        $this->assertFalse($frames[0]->snapshot);
+        $this->assertCount(1, $frames[0]->nodes);
+        $this->assertTrue(ClusterLogIndexMirror::known(), 'The early portion remains available to readers');
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
+        $this->assertSame(1, ClusterLogIndexMirror::index()?->totals()->nodeCount);
+
+        $pages->tickAt($this->at(0.99));
+        $this->assertSame([], $this->queuedFrames(), 'The partial picture does not bypass the throttle');
+        $pages->tickAt($this->at(1.0));
+        $this->assertSame(1, $this->claimsTo($aggregator), 'The missing full snapshot is still retried after one second');
+        $frames = $this->framesTo($pages);
+        $this->assertCount(1, $frames);
+        $this->assertTrue($frames[0]->snapshot);
+        $this->assertSame(
+            ['node-1', 'node-2'],
+            array_map(static fn (ClusterLogNodeSlot $slot): string => $slot->nodeId, $frames[0]->nodes),
+        );
+        $this->assertSame(2, ClusterLogIndexMirror::index()?->totals()->nodeCount);
+        $this->assertSame([LogKeySummary::CLASS_AGENT => 550], ClusterLogIndexMirror::index()?->totals()->bytesByClass);
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
+
+        $pages->tickAt($this->at(2.0));
+        $pages->tickAt($this->at(30.99));
+        $this->assertSame([], $this->queuedFrames(), 'Only the full snapshot switches to the normal keepalive');
+        $pages->tickAt($this->at(31.0));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame(1, $this->portionsTo($pages));
+    }
+
+    /** @return iterable<string, array{bool}> Both places where the initial exchange can lose its frame */
+    public static function firstExchangeLosses(): iterable
+    {
+        yield 'claim lost before the aggregator' => [false];
+        yield 'snapshot lost before the mirror' => [true];
+    }
+
+    /**
+     * Changed counts bypass the retry throttle; zero cancels even before the first full snapshot.
+     *
+     * @param bool $partialPicture Whether a portion arrives after the lost snapshot
+     */
+    #[DataProvider('incompletePictures')]
+    public function testViewerChangesAndZeroDoNotWaitForTheFirstPictureRetry(bool $partialPicture): void
+    {
+        $aggregator = $this->startedAggregator();
+        $aggregator->applyNodeIndex($this->nodeIndex('node-1', 100));
+        $pages = new LogIndexFanOutProbeAgent();
+        ClusterLogIndexMirror::addViewer('ak-1');
+        $pages->tickAt($this->at(0.0));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame([HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION], $this->queuedFrames());
+
+        if ($partialPicture) {
+            $aggregator->applyNodeIndex($this->nodeIndex('node-1', 250));
+            $aggregator->fanOutIfDue($this->at(self::PAST_THE_WINDOW_SECONDS));
+            $this->assertSame(1, $this->portionsTo($pages));
+        }
+
+        ClusterLogIndexMirror::addViewer('ak-2');
+        $pages->tickAt($this->at(0.7));
+        $this->assertSame(1, $this->claimsTo($aggregator), 'A changed positive count is sent immediately');
+        $this->assertSame([HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION], $this->queuedFrames());
+        ClusterLogIndexMirror::removeViewer('ak-1');
+        ClusterLogIndexMirror::removeViewer('ak-2');
+        $pages->tickAt($this->at(0.8));
+        $this->assertSame(1, $this->claimsTo($aggregator), 'Zero is sent immediately too');
+        $this->assertSame($partialPicture, ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
+        $this->assertSame([], $this->queuedFrames(), 'Zero is not answered with a picture');
+
+        $pages->tickAt($this->at(1.8));
+        $pages->tickAt($this->at(31.0));
+        $aggregator->applyNodeIndex($this->nodeIndex('node-2', 300));
+        $aggregator->fanOutIfDue($this->at(31.0));
+        $this->assertSame([], $this->queuedFrames(), 'Neither retries nor portions outlive the last viewer');
+    }
+
+    /** @return iterable<string, array{bool}> Waiting without any frame or with only a partial picture */
+    public static function incompletePictures(): iterable
+    {
+        yield 'no picture' => [false];
+        yield 'partial picture' => [true];
+    }
+
+    /** An empty snapshot is still a known picture and does not keep the first-picture retry alive. */
+    public function testAnEmptyKnownPictureUsesTheOrdinaryKeepalive(): void
+    {
+        $aggregator = $this->subscribedAggregator($pages);
+        $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
+        $pages->tickAt($this->at(1.0));
+        $pages->tickAt($this->at(29.99));
+        $this->assertSame([], $this->queuedFrames());
+        $pages->tickAt($this->at(30.0));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $frames = $this->framesTo($pages);
+        $this->assertCount(1, $frames);
+        $this->assertTrue($frames[0]->snapshot);
+        $this->assertSame([], $frames[0]->nodes);
+    }
+
+    /**
      * The window's job, seen from the receiving end: two nodes reporting one after the other arrive
      * as one frame carrying both, not as two frames carrying one each.
      */
@@ -136,6 +304,7 @@ final class LogIndexFanOutIntegrationTest extends TestCase
 
         $pages->tickAt($this->at(self::PAST_THE_KEEPALIVE_SECONDS));
         $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame(1, $this->portionsTo($pages));
         $this->assertSame(['ak-1'], ClusterLogIndexMirror::viewerKeys());
 
         $pages->onSignalConnectionClose(new WebSocketCloseSignalDTO('ak-1'), 'websocket', 'connection_close');
@@ -219,6 +388,50 @@ final class LogIndexFanOutIntegrationTest extends TestCase
         $complaints = $this->complaintsOfTick($pages, $this->at(self::PAST_THE_KEEPALIVE_SECONDS));
 
         $this->assertSame(0, $complaints);
+    }
+
+    /** A partial picture neither hides a long full-snapshot wait nor restarts its clock. */
+    public function testAPartialPictureWaitIsReportedOnceAndEndsWithAFullSnapshot(): void
+    {
+        $aggregator = $this->startedAggregator();
+        $pages = new LogIndexFanOutProbeAgent();
+        ClusterLogIndexMirror::addViewer('ak-1');
+        $pages->tickAt($this->at(0.0));
+        $this->assertSame(1, $this->claimsTo($aggregator));
+        $this->assertSame([HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION], $this->queuedFrames());
+        $aggregator->applyNodeIndex($this->nodeIndex('node-1', 100));
+        $aggregator->fanOutIfDue($this->at(self::PAST_THE_WINDOW_SECONDS));
+        $this->assertSame(1, $this->portionsTo($pages));
+        $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
+
+        $this->assertSame(0, $this->complaintsOfTick($pages, $this->at(29.99)));
+        ob_start();
+        try {
+            $pages->tickAt($this->at(30.0));
+        } finally {
+            $written = (string)ob_get_clean();
+        }
+        $this->assertSame(1, substr_count($written, 'viewer(s) waiting'));
+        $this->assertStringContainsString('first full cluster log snapshot has not arrived yet', $written);
+        $this->assertSame(0, $this->complaintsOfTick($pages, $this->at(31.0)));
+        $this->assertSame(2, $this->claimsTo($aggregator));
+        $this->assertSame(2, $this->portionsTo($pages));
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
+        $this->assertSame(0, $this->complaintsOfTick($pages, $this->at(32.0)));
+
+        $pages->onStop();
+        $this->assertFalse(ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
+        $this->assertSame(0, $this->complaintsOfTick($pages, $this->at(33.0)));
+        $this->assertSame(1, $this->claimsTo($aggregator), 'Forgetting restores the one-second retry');
+        $this->assertSame([HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION], $this->queuedFrames());
+        $this->assertSame(1, $this->complaintsOfTick($pages, $this->at(63.0)), 'A new wait is reported afresh');
+        ClusterLogIndexMirror::removeViewer('ak-1');
+        $this->assertSame(0, $this->complaintsOfTick($pages, $this->at(64.0)));
+        ClusterLogIndexMirror::addViewer('ak-2');
+        $this->assertSame(0, $this->complaintsOfTick($pages, $this->at(65.0)));
+        $this->assertSame(1, $this->complaintsOfTick($pages, $this->at(95.0)), 'Zero also resets the wait warning');
     }
 
     /**

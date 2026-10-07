@@ -224,11 +224,8 @@ final class LogIndexFanOutTest extends TestCase
         $this->assertSame([], $this->queuedFrames());
     }
 
-    /**
-     * A renewal keeps the subscription alive without answering it again: a claim arriving every
-     * thirty seconds must not put a snapshot on the wire every thirty seconds.
-     */
-    public function testARenewedClaimIsNotAnsweredWithASecondSnapshot(): void
+    /** A renewal repeats the full picture even when the index has not changed since the first answer. */
+    public function testARenewedClaimIsAnsweredWithASecondSnapshot(): void
     {
         $agent = $this->startedAgent();
         $agent->applyNodeIndex($this->nodeIndex('node-1'));
@@ -237,6 +234,10 @@ final class LogIndexFanOutTest extends TestCase
 
         $this->watch($agent, 2);
 
+        $frame = $this->frame();
+        $this->assertTrue($frame->snapshot);
+        $this->assertSame(['node-1'], $this->nodeIds($frame));
+        $agent->fanOutIfDue($this->at(self::PAST_THE_WINDOW_SECONDS));
         $this->assertSame([], $this->queuedFrames());
     }
 

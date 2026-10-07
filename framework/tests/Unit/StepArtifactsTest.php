@@ -60,6 +60,89 @@ final class StepArtifactsTest extends TestCase
      */
     private const array STEPS_WITHOUT_A_STAND = ['framework-image'];
 
+    /** Only the working directory matters when collecting the cluster's files. */
+    private const array CLUSTER_STAND = ['cwd' => 'demo/binance-btc-tracker'];
+
+    /** Temporary repository and snapshot trees used by the file-copy cases. */
+    private ?string $fixtureRoot = null;
+
+    /** Removes the fixture even if a copy assertion fails. */
+    protected function tearDown(): void
+    {
+        if ($this->fixtureRoot !== null) {
+            $this->removeFixtureTree($this->fixtureRoot);
+        }
+
+        parent::tearDown();
+    }
+
+    /** Every node keeps its relative paths, including rotations from this fresh run. */
+    public function testClusterBrowserCopiesNodeTreesInsteadOfSingleNodeLogs(): void
+    {
+        $root = $this->fixtureDirectory();
+        $source = $root . '/demo/binance-btc-tracker/data/logs-cluster';
+        mkdir($source . '/m1/archive/batch', 0o755, true);
+        mkdir($source . '/s1/staging', 0o755, true);
+        mkdir($root . '/demo/binance-btc-tracker/data/logs-test', 0o755, true);
+        file_put_contents($source . '/m1/daemon.log', "master journal\n");
+        file_put_contents($source . '/m1/archive/batch/worker.log.gz', 'rotated journal');
+        file_put_contents($source . '/s1/agent-hilos_node_logs.log', "slave journal\n");
+        file_put_contents($source . '/s1/staging/worker.log', "staged journal\n");
+        file_put_contents($root . '/demo/binance-btc-tracker/data/logs-test/daemon.log', 'unrelated stand');
+
+        $missing = copyStepLogs($root, 'binance-btc-tracker-cluster-e2e', self::CLUSTER_STAND, $root . '/snapshot');
+
+        $this->assertSame([], $missing);
+        $this->assertSame("master journal\n", file_get_contents($root . '/snapshot/nodes/m1/daemon.log'));
+        $this->assertSame('rotated journal', file_get_contents($root . '/snapshot/nodes/m1/archive/batch/worker.log.gz'));
+        $this->assertSame("slave journal\n", file_get_contents($root . '/snapshot/nodes/s1/agent-hilos_node_logs.log'));
+        $this->assertSame("staged journal\n", file_get_contents($root . '/snapshot/nodes/s1/staging/worker.log'));
+        $this->assertDirectoryDoesNotExist($root . '/snapshot/stand');
+    }
+
+    /** A missing mandatory cluster root is recorded, even when the other stand has logs. */
+    public function testMissingClusterLogsAreReportedWithoutSubstitution(): void
+    {
+        $root = $this->fixtureDirectory();
+        mkdir($root . '/demo/binance-btc-tracker/data/logs-test', 0o755, true);
+        file_put_contents($root . '/demo/binance-btc-tracker/data/logs-test/daemon.log', 'unrelated stand');
+        $missing = copyStepLogs($root, 'binance-btc-tracker-cluster-e2e', self::CLUSTER_STAND, $root . '/snapshot');
+
+        $this->assertSame(['nodes: missing ' . $root . '/demo/binance-btc-tracker/data/logs-cluster'], $missing);
+        writeArtifactSnapshot($root . '/SNAPSHOT.txt', ['missing' => implode(ARTIFACT_VALUE_SEPARATOR, $missing)]);
+        $this->assertStringContainsString('missing: nodes: missing ', file_get_contents($root . '/SNAPSHOT.txt'));
+        $this->assertDirectoryDoesNotExist($root . '/snapshot/stand');
+    }
+
+    /** A dangling file cannot be read even as root; the other node's evidence survives. */
+    public function testUnreadableClusterFileIsReportedAndOtherFilesAreCopied(): void
+    {
+        $root = $this->fixtureDirectory();
+        $source = $root . '/demo/binance-btc-tracker/data/logs-cluster';
+        mkdir($source . '/m1', 0o755, true);
+        mkdir($source . '/s1', 0o755, true);
+        symlink($root . '/gone.log', $source . '/m1/daemon.log');
+        file_put_contents($source . '/s1/daemon.log', 'still readable');
+
+        $this->assertSame(
+            ['nodes: could not copy ' . $source . '/m1/daemon.log'],
+            copyStepLogs($root, 'binance-btc-tracker-cluster-e2e', self::CLUSTER_STAND, $root . '/snapshot'),
+        );
+        $this->assertSame('still readable', file_get_contents($root . '/snapshot/nodes/s1/daemon.log'));
+    }
+
+    /** Ordinary demo steps still collect their own stand's live logs. */
+    public function testSingleNodeStepKeepsItsOriginalLogSource(): void
+    {
+        $root = $this->fixtureDirectory();
+        mkdir($root . '/demo/chat/data/logs-test', 0o755, true);
+        file_put_contents($root . '/demo/chat/data/logs-test/daemon.log', 'single node');
+
+        $this->assertSame([], copyStepLogs($root, 'chat-e2e', self::DEMO_STAND, $root . '/snapshot'));
+        $this->assertSame('single node', file_get_contents($root . '/snapshot/stand/daemon.log'));
+        $this->assertDirectoryDoesNotExist($root . '/snapshot/nodes');
+    }
+
     /** A step without an override uses the stand's database; an override must stay shell quoted. */
     public function testDatabaseQuerySelectsTheStepDatabase(): void
     {
@@ -617,6 +700,31 @@ final class StepArtifactsTest extends TestCase
             'containers' => [],
             ...$collected,
         ];
+    }
+
+    /** @return string Isolated fixture root, remembered for teardown. */
+    private function fixtureDirectory(): string
+    {
+        $this->fixtureRoot = sys_get_temp_dir() . '/hilos-step-artifacts-' . uniqid('', true);
+        mkdir($this->fixtureRoot, 0o755, true);
+
+        return $this->fixtureRoot;
+    }
+
+    /** @param string $path Fixture directory to remove without following symlinks. */
+    private function removeFixtureTree(string $path): void
+    {
+        foreach (scandir($path) as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            if (is_dir($path . '/' . $entry) && !is_link($path . '/' . $entry)) {
+                $this->removeFixtureTree($path . '/' . $entry);
+            } else {
+                unlink($path . '/' . $entry);
+            }
+        }
+        rmdir($path);
     }
 
     /**

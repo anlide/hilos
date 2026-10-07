@@ -459,7 +459,14 @@ on a fresh stand; `-- --grep circle` points it. The scenario and browser steps
 share a group because both reset the same compose project (HIL-1232).
 Before the browser stand starts, its node log directories are emptied, including
 rotation archives, while tracked `.gitkeep` files stay. Save a failed run's logs
-before starting another. After node loss the wait checks only placements that
+before starting another. The step runner copies `data/logs-cluster/<node>/` to
+`artifacts/binance-btc-tracker-cluster-e2e/nodes/<node>/` at every verdict, before
+teardown. Live logs and this run's archive and staging trees keep their relative
+paths. A missing root or unreadable source is listed in `SNAPSHOT.txt` under
+`missing`, without changing the test verdict; `data/logs-test` is not a substitute
+for these node journals. A direct composer run has no step snapshot collector,
+so preserve its journals before starting the next fresh stand.
+After node loss the wait checks only placements that
 host an agent (`placing` or `started`); a refused record is no running work.
 
 The full run carries three fleets now instead of one. An e2e step may stand

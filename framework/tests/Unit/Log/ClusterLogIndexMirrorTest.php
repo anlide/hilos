@@ -43,6 +43,7 @@ final class ClusterLogIndexMirrorTest extends TestCase
     public function testAMirrorThatHasHeardNothingKnowsNothing(): void
     {
         $this->assertFalse(ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
         $this->assertNull(ClusterLogIndexMirror::index());
     }
 
@@ -55,6 +56,7 @@ final class ClusterLogIndexMirrorTest extends TestCase
         ClusterLogIndexMirror::applyPortion(ClusterLogIndexPortionSignalData::ofSlots([], true));
 
         $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
         $this->assertSame([], ClusterLogIndexMirror::index()?->nodes());
     }
 
@@ -64,6 +66,7 @@ final class ClusterLogIndexMirrorTest extends TestCase
 
         $index = ClusterLogIndexMirror::index();
         $this->assertNotNull($index);
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
         $this->assertSame(2, $index->totals()->nodeCount);
         $this->assertSame([LogKeySummary::CLASS_AGENT => 400], $index->totals()->bytesByClass);
     }
@@ -79,6 +82,7 @@ final class ClusterLogIndexMirrorTest extends TestCase
         ClusterLogIndexMirror::applyPortion($this->portion($this->slot('node-1', 250)));
 
         $index = ClusterLogIndexMirror::index();
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
         $this->assertSame(2, $index?->totals()->nodeCount);
         $this->assertSame([LogKeySummary::CLASS_AGENT => 550], $index?->totals()->bytesByClass);
     }
@@ -97,15 +101,14 @@ final class ClusterLogIndexMirrorTest extends TestCase
     }
 
     /**
-     * A portion arriving before any snapshot is filed rather than dropped: the aggregator only
-     * sends one to a subscriber it answered, so refusing it here would lose a frame over an order
-     * that cannot happen, and going without the picture until the next one would be worse.
+     * A portion arriving after a lost snapshot is filed, but cannot establish the full picture.
      */
     public function testAPortionArrivingFirstStartsThePicture(): void
     {
         ClusterLogIndexMirror::applyPortion($this->portion($this->slot('node-1', 100)));
 
         $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
         $this->assertSame(1, ClusterLogIndexMirror::index()?->totals()->nodeCount);
     }
 
@@ -147,6 +150,23 @@ final class ClusterLogIndexMirrorTest extends TestCase
 
         $this->assertSame(0, ClusterLogIndexMirror::viewerCount());
         $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertTrue(ClusterLogIndexMirror::hasFullSnapshot());
+        $this->assertSame(1, ClusterLogIndexMirror::index()?->totals()->nodeCount);
+    }
+
+    /** A new agent lifetime must recover its full picture even if a portion arrives first again. */
+    public function testForgettingThePictureAlsoForgetsItsFullSnapshot(): void
+    {
+        ClusterLogIndexMirror::applyPortion($this->snapshot($this->slot('node-1', 100)));
+        ClusterLogIndexMirror::forgetPicture();
+
+        $this->assertFalse(ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
+        $this->assertNull(ClusterLogIndexMirror::index());
+
+        ClusterLogIndexMirror::applyPortion($this->portion($this->slot('node-2', 300)));
+        $this->assertTrue(ClusterLogIndexMirror::known());
+        $this->assertFalse(ClusterLogIndexMirror::hasFullSnapshot());
         $this->assertSame(1, ClusterLogIndexMirror::index()?->totals()->nodeCount);
     }
 

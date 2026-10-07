@@ -17,8 +17,8 @@ use Hilos\Log\LogAggregatorAgent;
  * logs_cluster_index_portion signal (HIL-756).
  *
  * A portion of the cluster picture: whole node slots, never a line-level difference. Which slots
- * are in it is the aggregator's decision - everything on the first claim from a subscriber, and
- * afterwards only what changed since that subscriber was last written to - and {@see $snapshot}
+ * are in it is the aggregator's decision - everything on each positive claim from a subscriber,
+ * and between claims only what changed since that subscriber was last written to - and {@see $snapshot}
  * is how the receiver tells the two apart: a snapshot REPLACES the mirror, a portion is laid over
  * it slot by slot. Without that flag a picture could never lose a node, because a portion missing
  * a slot and a snapshot missing one look the same on the wire.

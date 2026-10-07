@@ -16,12 +16,7 @@ import {
 } from '../../helpers/logs.js'
 import { gotoPage, PAGE_READY } from '../../helpers/page.js'
 
-// Red twice in run 0807 (HIL-1218, one lane) and green on its second retry;
-// passed first time in 0806. On both red attempts the overview still said
-// "The cluster picture has not arrived yet" when the 5 s wait for
-// hilos-logs-node-m1 ran out. Parked by the owner on 04.10.2026 (HOTFIX)
-// without a diagnosis of why the picture came late.
-test.fixme('the logs overview names every member node', async ({ browser }) => {
+test('the logs overview names every member node', async ({ browser }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
     await grantAdminToSelf(page)
