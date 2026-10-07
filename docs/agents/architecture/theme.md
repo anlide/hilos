@@ -125,8 +125,8 @@ Every connected tab, a guest's too, receives both in the handshake and again as 
 frame right after a write that moved either. Follow the path of
 `hilos_auth_methods`: `SettingsLibraryAgent::settle()` compares the frame before
 and after a write and calls `sendToAllConnected()` when it changed
-([SettingsLibraryAgent.php](../../../framework/backend/Database/Settings/Library/SettingsLibraryAgent.php))
-(not in the code yet — HIL-1428). The browser remembers both settings for the
+([SettingsLibraryAgent.php](../../../framework/backend/Database/Settings/Library/SettingsLibraryAgent.php)).
+The browser remembers both settings for the
 head script (not in the code yet — HIL-1430).
 
 Switching off has three consequences everywhere at once:
@@ -156,10 +156,13 @@ the Appearance section and its values and refuses changes
 ## Contract Gate
 
 The catalog keys are `theme.switching_enabled` and `theme.default` (HIL-1426).
-The theme also touches a person's stored pick, the handshake field, two frames —
-settings to everyone and a person's pick to their sessions — and browser-value
-keys. Pass the contract gate in the leaf that lands each remaining surface.
-This specification leaves their names to those leaves: do not invent them here.
+The installation settings use `data.themeSettings` in the handshake and
+`hilos_theme_settings` as the live frame. Both carry the complete pair
+`{switchingEnabled: bool, defaultTheme: 'light'|'dark'|'system'}` (HIL-1428).
+The theme also touches a person's stored pick, its frame to their sessions,
+and browser-value keys. Pass the contract gate in the leaf that lands each
+remaining surface. This specification leaves their names to those leaves: do
+not invent them here.
 The leaf that lands a surface writes its names into this file in the same commit
 that clears its marker.
 

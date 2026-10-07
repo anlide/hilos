@@ -15,6 +15,7 @@ use Hilos\BaseDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 
@@ -129,6 +130,11 @@ use Hilos\Users\AccountStandingResolver;
  * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY}. Null means the stamp never ran; the
  * surface reads it as the defaults - act, rights not carried. The framework stamps it
  * ({@see withImpersonationPolicy()}) on every send path.
+ *
+ * `themeSettings` is the installation's switching flag and default theme (HIL-1428,
+ * {@see ThemeSettingsSignalData}). The framework stamps it on the anonymous and authenticated
+ * response alike; later changes reach every connection on
+ * {@see HilosSignalConstants::HILOS_THEME_SETTINGS}. Null means the stamp has not run.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -163,6 +169,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string accountStanding = 'accountStanding';
     public const string adminViewMode = 'adminViewMode';
     public const string impersonationPolicy = 'impersonationPolicy';
+    public const string themeSettings = 'themeSettings';
 
     /**
      * Creates handshake response signal data.
@@ -203,6 +210,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?bool $adminViewMode Whether this node is in the admin view mode, or null before the framework stamp
      * @param ?array{viewOnly: bool, carryAdmin: bool} $impersonationPolicy Impersonation policy of the installation,
      *     or null before the framework stamp
+     * @param ?array{switchingEnabled: bool, defaultTheme: string} $themeSettings Theme settings of the installation,
+     *     or null before the framework stamp
      * @param ?string $selfPhoto Variant URL of the person's published photo, or null for initials
      */
     public function __construct(
@@ -222,6 +231,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?array $accountStanding = null,
         public readonly ?bool $adminViewMode = null,
         public readonly ?array $impersonationPolicy = null,
+        public readonly ?array $themeSettings = null,
     ) {
     }
 
@@ -255,6 +265,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
         );
     }
 
@@ -288,6 +299,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
         );
     }
 
@@ -322,6 +334,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $accountStanding,
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
         );
     }
 
@@ -354,6 +367,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $this->accountStanding,
             adminViewMode: $adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
         );
     }
 
@@ -385,6 +399,34 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $impersonationPolicy,
+            themeSettings: $this->themeSettings,
+        );
+    }
+
+    /**
+     * @param array{switchingEnabled: bool, defaultTheme: string} $themeSettings Theme settings in force
+     * @return self The same response carrying the theme settings
+     */
+    public function withThemeSettings(array $themeSettings): self
+    {
+        return new self(
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $themeSettings,
         );
     }
 
@@ -432,6 +474,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $this->accountStanding,
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
         );
     }
 
@@ -470,6 +513,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::accountStanding => $this->accountStanding,
                 self::adminViewMode => $this->adminViewMode,
                 self::impersonationPolicy => $this->impersonationPolicy,
+                self::themeSettings => $this->themeSettings,
             ],
         ];
     }
@@ -515,6 +559,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         if ($impersonationPolicy !== null) {
             $impersonationPolicy = ImpersonationPolicySignalData::fromArray($impersonationPolicy)->toArray();
         }
+        $themeSettings = self::optionalArray($section, self::themeSettings);
+        if ($themeSettings !== null) {
+            $themeSettings = ThemeSettingsSignalData::fromArray($themeSettings)->toArray();
+        }
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -527,6 +575,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 accountStanding: $accountStanding,
                 adminViewMode: $adminViewMode,
                 impersonationPolicy: $impersonationPolicy,
+                themeSettings: $themeSettings,
             );
         }
 
@@ -547,6 +596,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             accountStanding: $accountStanding,
             adminViewMode: $adminViewMode,
             impersonationPolicy: $impersonationPolicy,
+            themeSettings: $themeSettings,
         );
     }
 

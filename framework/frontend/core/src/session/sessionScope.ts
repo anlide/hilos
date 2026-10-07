@@ -121,6 +121,9 @@ const ADMIN_VIEW_MODE_KEY = 'adminViewMode'
  */
 const IMPERSONATION_POLICY_KEY = 'impersonationPolicy'
 
+/** Plain session-scope key shared by theme settings from the handshake and live frame (HIL-1428). */
+const THEME_SETTINGS_KEY = 'themeSettings'
+
 /**
  * The settings library, and the OAuth provider page → every connection: the
  * installation's enabled sign-in methods with their readiness, and the passkey
@@ -198,6 +201,18 @@ export const impersonationPolicySchema = z.looseObject({
  * the administrator only looks, and whether they carry their own admin rights in.
  */
 export type ImpersonationPolicy = z.infer<typeof impersonationPolicySchema>
+
+/** The settings library → every connection when either theme setting changes (HIL-1428). */
+export const SIGNAL_THEME_SETTINGS = 'hilos_theme_settings'
+
+/** The complete theme-settings pair carried by both the frame and the handshake. */
+export const themeSettingsSchema = z.looseObject({
+  switchingEnabled: z.boolean(),
+  defaultTheme: z.enum(['light', 'dark', 'system']),
+})
+
+/** Theme settings as last received from the installation. */
+export type ThemeSettings = z.infer<typeof themeSettingsSchema>
 
 /** The complete delivery answer, in the same node the handshake carries. */
 export const codeDeliverySchema = z.looseObject({
@@ -448,6 +463,7 @@ export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_SECOND_FACTOR_POLICY]: secondFactorPolicySchema,
   [SIGNAL_CODE_DELIVERY]: codeDeliverySchema,
   [SIGNAL_IMPERSONATION_POLICY]: impersonationPolicySchema,
+  [SIGNAL_THEME_SETTINGS]: themeSettingsSchema,
 }
 
 /** Where the current user sits in the session scope, and which field names it. */
@@ -570,6 +586,11 @@ export function bindSessionScope(
       // The handshake and the live frame share one slot (HIL-1170).
       ingest(scopes.session, {
         data: { [IMPERSONATION_POLICY_KEY]: signal.data },
+      })
+    }
+    if (signal.type === SIGNAL_THEME_SETTINGS) {
+      ingest(scopes.session, {
+        data: { [THEME_SETTINGS_KEY]: signal.data },
       })
     }
   })
@@ -1074,6 +1095,28 @@ export function sessionImpersonationPolicy(
     return parsed.success
       ? { viewOnly: parsed.data.viewOnly, carryAdmin: parsed.data.carryAdmin }
       : { viewOnly: false, carryAdmin: false }
+  })
+}
+
+/**
+ * The installation's theme settings as the last handshake or live frame said them (HIL-1428).
+ *
+ * @param scopes The application's scope-partitioned stores.
+ */
+export function sessionThemeSettings(
+  scopes: ScopeManager,
+): ReadonlySignal<ThemeSettings> {
+  const slot = scopes.session.data.signal(THEME_SETTINGS_KEY)
+
+  return computedSignal(() => {
+    const parsed = themeSettingsSchema.safeParse(slot.get())
+
+    return parsed.success
+      ? {
+          switchingEnabled: parsed.data.switchingEnabled,
+          defaultTheme: parsed.data.defaultTheme,
+        }
+      : { switchingEnabled: true, defaultTheme: 'system' }
   })
 }
 

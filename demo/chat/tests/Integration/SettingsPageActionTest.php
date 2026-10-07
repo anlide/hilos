@@ -47,6 +47,7 @@ use Hilos\Tables\Settings\DTO\HilosSettingResetActionDTO;
 use Hilos\Tables\Settings\DTO\HilosSettingUpdateActionDTO;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\Theme\ThemeSettingsCatalog;
+use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -271,8 +272,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO($switchKey, false)));
+            $this->assertThemeFrame(false, ThemeSettingsCatalog::SYSTEM);
             $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO($defaultKey, ThemeSettingsCatalog::DARK)));
+            $this->assertThemeFrame(false, ThemeSettingsCatalog::DARK);
             $this->assertFalse(Hilos::$setting[$switchKey]->bool());
             $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[$defaultKey]->string());
             $this->assertSame('0', Hilos::$db->settings[$switchKey]?->value);
@@ -287,8 +290,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_UPDATE,
                 new HilosSettingUpdateActionDTO($switchKey, true)));
+            $this->assertThemeFrame(true, ThemeSettingsCatalog::DARK);
             $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_UPDATE,
                 new HilosSettingUpdateActionDTO($defaultKey, ThemeSettingsCatalog::LIGHT)));
+            $this->assertThemeFrame(true, ThemeSettingsCatalog::LIGHT);
             $this->assertTrue(Hilos::$setting[$switchKey]->bool());
             $this->assertSame(ThemeSettingsCatalog::LIGHT, Hilos::$setting[$defaultKey]->string());
             $this->assertSame('1', Hilos::$db->settings[$switchKey]?->value);
@@ -296,8 +301,10 @@ final class SettingsPageActionTest extends IntegrationTestCase
 
             $this->assertNull($this->submit('theme-switch-ak', HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO($switchKey)));
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS));
             $this->assertNull($this->submit('theme-default-ak', HilosSignalConstants::SETTING_RESET,
                 new HilosSettingResetActionDTO($defaultKey)));
+            $this->assertThemeFrame(true, ThemeSettingsCatalog::SYSTEM);
             $this->assertNull(Hilos::$db->settings[$switchKey]);
             $this->assertNull(Hilos::$db->settings[$defaultKey]);
             $this->assertTrue(Hilos::$setting[$switchKey]->bool());
@@ -307,6 +314,9 @@ final class SettingsPageActionTest extends IntegrationTestCase
                 $this->assertNull($row?->id);
                 $this->assertSame(HilosSettingTableRow::VALUE_SOURCE_DEFAULT, $row?->valueSource);
             }
+            $this->assertNull($this->submit('theme-repeat-ak', HilosSignalConstants::SETTING_ADD,
+                new HilosSettingAddActionDTO($defaultKey, ThemeSettingsCatalog::SYSTEM)));
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS));
         }, ThemeSettingsCatalog::KEYS);
     }
 
@@ -323,15 +333,18 @@ final class SettingsPageActionTest extends IntegrationTestCase
             ));
             $this->assertNull(Hilos::$db->settings[$key]);
             $this->assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[$key]->string());
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS));
 
             $this->assertNull($this->submit('theme-valid-ak', HilosSignalConstants::SETTING_ADD,
                 new HilosSettingAddActionDTO($key, ThemeSettingsCatalog::DARK)));
+            $this->assertThemeFrame(true, ThemeSettingsCatalog::DARK);
             $this->assertSame('Choose light, dark or system', $this->submit(
                 'theme-invalid-ak', HilosSignalConstants::SETTING_UPDATE,
                 new HilosSettingUpdateActionDTO($key, 'Dark'),
             ));
             $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$db->settings[$key]?->value);
             $this->assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[$key]->string());
+            $this->assertSame([], $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS));
         }, [$key]);
     }
 
@@ -754,6 +767,23 @@ final class SettingsPageActionTest extends IntegrationTestCase
         }
 
         return $frames;
+    }
+
+    /**
+     * @param bool $switchingEnabled Expected switch availability
+     * @param string $defaultTheme Expected installation default
+     */
+    private function assertThemeFrame(bool $switchingEnabled, string $defaultTheme): void
+    {
+        $frames = $this->framesNamed(HilosSignalConstants::HILOS_THEME_SETTINGS);
+        $this->assertCount(1, $frames);
+        $this->assertSame(SignalTypeConstants::WS_ALL_CONNECTED, $frames[0]->signalType->getType());
+        $this->assertInstanceOf(WebSocketSignalData::class, $frames[0]->data);
+        $this->assertInstanceOf(ThemeSettingsSignalData::class, $frames[0]->data->data);
+        $this->assertSame(
+            ['switchingEnabled' => $switchingEnabled, 'defaultTheme' => $defaultTheme],
+            $frames[0]->data->data->toArray(),
+        );
     }
 
     /**

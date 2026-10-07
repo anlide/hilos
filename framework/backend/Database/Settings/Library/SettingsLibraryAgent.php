@@ -36,6 +36,7 @@ use Hilos\Database\Settings\Preset\SettingPresetResolver;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Theme\DTO\ThemeSettingsSignalData;
 
 /**
  * SettingsLibraryAgent - the entity library of the settings collection (HIL-946).
@@ -74,7 +75,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * key and the request id, and the receipt of the ask stamps them on the write this library
  * performs ({@see HandoverAskInterface}) - nothing here calls for the stamp.
  *
- * BESIDES ITS ANSWERS IT SENDS four installation-wide frames. The sign-in method set
+ * BESIDES ITS ANSWERS IT SENDS five installation-wide frames. The sign-in method set
  * (HIL-427) is one. An
  * administrator narrows the methods through one setting, and every open sign-in surface has
  * to rebuild itself when that setting moves - whichever door moved it: the sign-in methods
@@ -86,7 +87,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * moved only the policy is sent the same way. A screen could not do it - the general table
  * knows nothing of sign-in - and a subscriber to the settings collection would fire once per
  * worker instead of once per write. The second-factor policy (HIL-494), code delivery
- * availability (HIL-1102) and the impersonation policy (HIL-1170) travel separately: they have
+ * availability (HIL-1102), the impersonation policy (HIL-1170) and theme settings
+ * (HIL-1428) travel separately: they have
  * readers independent of the method set. Each is compared around the same write, whichever door
  * requested it.
  *
@@ -153,6 +155,7 @@ final class SettingsLibraryAgent extends AbstractAgent
         $policyBefore = $this->secondFactorPolicy();
         $deliveryBefore = CodeDeliverySignalData::current();
         $impersonationBefore = $this->impersonationPolicy();
+        $themeBefore = $this->themeSettings();
 
         switch ($name) {
             case HilosSignalConstants::HILOS_SETTING_WRITE:
@@ -166,6 +169,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                     $policyBefore,
                     $deliveryBefore,
                     $impersonationBefore,
+                    $themeBefore,
                 );
 
                 return;
@@ -181,6 +185,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                     $policyBefore,
                     $deliveryBefore,
                     $impersonationBefore,
+                    $themeBefore,
                 );
 
                 return;
@@ -196,6 +201,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                     $policyBefore,
                     $deliveryBefore,
                     $impersonationBefore,
+                    $themeBefore,
                 );
 
                 return;
@@ -215,6 +221,7 @@ final class SettingsLibraryAgent extends AbstractAgent
                     $policyBefore,
                     $deliveryBefore,
                     $impersonationBefore,
+                    $themeBefore,
                 );
 
                 return;
@@ -355,12 +362,16 @@ final class SettingsLibraryAgent extends AbstractAgent
      * admin rights is told to every connection, so a tab open inside a takeover redraws its strip,
      * its switched-off buttons and its gear at once.
      *
+     * The theme settings (HIL-1428) travel as a complete pair after either value changes.
+     * An unreadable pair is logged and cannot be compared to a fabricated default.
+     *
      * @param HandoverAskInterface $ask The ask, carrying whom to answer and under which name
      * @param ?ActionRefusal $refusal Why the write was refused, or null when it went through
      * @param ?AuthMethodsSignalData $methodsBefore Method-set frame before the write, or null when unread
      * @param ?SecondFactorPolicy $policyBefore Second-factor settings before the write, or null when unread
      * @param CodeDeliverySignalData $deliveryBefore Delivery availability before the write
      * @param ?ImpersonationPolicySignalData $impersonationBefore Impersonation policy before the write, or null when unread
+     * @param ?ThemeSettingsSignalData $themeBefore Theme settings before the write, or null when unread
      * @throws InvalidArgumentException When the answer or an installation-wide frame cannot be named or queued
      */
     private function settle(
@@ -370,6 +381,7 @@ final class SettingsLibraryAgent extends AbstractAgent
         ?SecondFactorPolicy $policyBefore,
         CodeDeliverySignalData $deliveryBefore,
         ?ImpersonationPolicySignalData $impersonationBefore,
+        ?ThemeSettingsSignalData $themeBefore,
     ): void {
         if ($refusal !== null) {
             $this->answer($ask, $refusal);
@@ -401,6 +413,11 @@ final class SettingsLibraryAgent extends AbstractAgent
         $impersonationAfter = $impersonationBefore === null ? null : $this->impersonationPolicy();
         if ($impersonationAfter !== null && $impersonationAfter->toArray() !== $impersonationBefore->toArray()) {
             $this->sendToAllConnected(HilosSignalConstants::HILOS_IMPERSONATION_POLICY, $impersonationAfter);
+        }
+
+        $themeAfter = $themeBefore === null ? null : $this->themeSettings();
+        if ($themeAfter !== null && $themeAfter->toArray() !== $themeBefore->toArray()) {
+            $this->sendToAllConnected(HilosSignalConstants::HILOS_THEME_SETTINGS, $themeAfter);
         }
 
         if ($policyBefore !== null && $policyAfter !== null) {
@@ -468,6 +485,26 @@ final class SettingsLibraryAgent extends AbstractAgent
             return ImpersonationPolicySignalData::current();
         } catch (HilosException $e) {
             $this->logAgentError("Impersonation settings could not be read: {$e->getMessage()}");
+
+            return null;
+        }
+    }
+
+    /**
+     * @return ?ThemeSettingsSignalData Settings in force, or null when unread
+     */
+    private function themeSettings(): ?ThemeSettingsSignalData
+    {
+        if (Hilos::$setting === null) {
+            $this->logAgentError('Theme settings could not be read: settings accessor is unavailable');
+
+            return null;
+        }
+
+        try {
+            return ThemeSettingsSignalData::current();
+        } catch (HilosException $e) {
+            $this->logAgentError("Theme settings could not be read: {$e->getMessage()}");
 
             return null;
         }

@@ -121,6 +121,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'accountStanding' => null,
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
+                    'themeSettings' => null,
                 ],
             ],
             $data->toArray(),
@@ -176,6 +177,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'accountStanding' => null,
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
+                    'themeSettings' => null,
                 ],
             ],
             $data->toArray(),
@@ -226,6 +228,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'accountStanding' => null,
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
+                    'themeSettings' => null,
                 ],
             ],
             $data->toArray(),
@@ -267,6 +270,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'accountStanding' => null,
                 'adminViewMode' => null,
                 'impersonationPolicy' => null,
+                'themeSettings' => null,
             ],
             $data->toArray()['data'],
         );
@@ -339,6 +343,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'accountStanding' => null,
                 'adminViewMode' => null,
                 'impersonationPolicy' => null,
+                'themeSettings' => null,
             ],
             $data->toArray()['data'],
         );
@@ -625,6 +630,44 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertSame($policy, $anonymous->toArray()['data']['impersonationPolicy']);
         $this->assertSame($policy, HandshakeResponseSignalData::fromArray($anonymous->toArray())->impersonationPolicy);
         $this->assertSame($policy, HandshakeResponseSignalData::fromArray($signedIn->toArray())->impersonationPolicy);
+    }
+
+    public function testThemeSettingsTravelInGuestAndSignedInHandshakes(): void
+    {
+        $settings = ['switchingEnabled' => false, 'defaultTheme' => 'dark'];
+        $guest = new HandshakeResponseSignalData()->withThemeSettings($settings);
+        $signedIn = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria')->withThemeSettings($settings);
+
+        $this->assertSame($settings, $guest->toArray()['data']['themeSettings']);
+        $this->assertSame($settings, HandshakeResponseSignalData::fromArray($guest->toArray())->themeSettings);
+        $this->assertSame($settings, HandshakeResponseSignalData::fromArray($signedIn->toArray())->themeSettings);
+        $this->assertNull((new HandshakeResponseSignalData())->themeSettings);
+    }
+
+    public function testThemeSettingsSurviveEveryOtherStamp(): void
+    {
+        $settings = ['switchingEnabled' => false, 'defaultTheme' => 'light'];
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria')
+            ->withThemeSettings($settings)
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(null)
+            ->withAccountBlocked(null)
+            ->withAccountStanding(self::STANDING)
+            ->withAdminViewMode(true)
+            ->withImpersonationPolicy(['viewOnly' => false, 'carryAdmin' => true]);
+
+        $this->assertSame($settings, $data->themeSettings);
+        $this->assertSame($settings, HandshakeResponseSignalData::fromArray($data->toArray())->themeSettings);
+    }
+
+    public function testRoundtripRejectsAnIncompleteThemeSettingsNode(): void
+    {
+        $payload = new HandshakeResponseSignalData()->toArray();
+        $payload['data']['themeSettings'] = ['switchingEnabled' => true];
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     public function testTheImpersonationPolicySurvivesEveryOtherAxisOfTheStamp(): void

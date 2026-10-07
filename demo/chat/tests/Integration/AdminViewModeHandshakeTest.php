@@ -18,6 +18,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -71,6 +72,10 @@ final class AdminViewModeHandshakeTest extends IntegrationTestCase
         $this->assertNotNull($response, 'The tab is greeted');
         $this->assertNull($response->selfId);
         $this->assertTrue($response->adminViewMode);
+        $this->assertSame(
+            ['switchingEnabled' => true, 'defaultTheme' => ThemeSettingsCatalog::SYSTEM],
+            $response->themeSettings,
+        );
     }
 
     /**
@@ -114,6 +119,10 @@ final class AdminViewModeHandshakeTest extends IntegrationTestCase
         $this->assertSame($userId, $response->selfId);
         $this->assertTrue($response->selfAdmin);
         $this->assertTrue($response->adminViewMode);
+        $this->assertSame(
+            ['switchingEnabled' => true, 'defaultTheme' => ThemeSettingsCatalog::SYSTEM],
+            $response->themeSettings,
+        );
     }
 
     /**

@@ -83,6 +83,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -527,8 +528,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @param HandshakeResponseSignalData $identity Who the session is, as handshakeIdentity() builds it
      * @param SessionStateSignalData $state Session state frame the response answers
      * @throws InvalidArgumentException When the signal name is empty
-     * @throws DatabaseException When the sign-in method or impersonation setting cannot be read
-     * @throws SettingException When the sign-in method or impersonation setting's catalog entry or stored value is invalid
+     * @throws DatabaseException When a sign-in method, impersonation or theme setting cannot be read
+     * @throws SettingException When a sign-in method, impersonation or theme setting is invalid
      */
     public function sendHandshakeResponse(
         string $signalName,
@@ -551,7 +552,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
                 ->withAccountBlocked($state->accountBlocked)
                 ->withAccountStanding($state->accountStanding)
                 ->withAdminViewMode(Hilos::$rt?->hilosAdminViewModeRuntime?->enabled === true)
-                ->withImpersonationPolicy(ImpersonationPolicySignalData::current()->toArray()),
+                ->withImpersonationPolicy(ImpersonationPolicySignalData::current()->toArray())
+                ->withThemeSettings(ThemeSettingsSignalData::current()->toArray()),
         );
     }
 

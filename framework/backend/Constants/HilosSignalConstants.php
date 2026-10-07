@@ -1442,6 +1442,9 @@ final class HilosSignalConstants
      */
     public const string HILOS_IMPERSONATION_POLICY = 'hilos_impersonation_policy';
 
+    /** Server → client (all connected): the complete theme settings after a change (HIL-1428). */
+    public const string HILOS_THEME_SETTINGS = 'hilos_theme_settings';
+
     /**
      * Server → client (all connected): code delivery availability changed (HIL-1102).
      *

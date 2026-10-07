@@ -19,10 +19,12 @@ import {
   sessionAccountStanding,
   sessionSecondFactorPolicy,
   sessionImpersonationPolicy,
+  sessionThemeSettings,
   SESSION_ACK_REGISTERED,
   SIGNAL_AUTH_METHODS,
   SIGNAL_SECOND_FACTOR_POLICY,
   SIGNAL_IMPERSONATION_POLICY,
+  SIGNAL_THEME_SETTINGS,
   SIGNAL_CODE_DELIVERY,
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
@@ -1010,6 +1012,76 @@ describe('the impersonation policy (HIL-1170)', () => {
       data: { impersonationPolicy: { viewOnly: false, carryAdmin: true } },
     })
     expect(policy.get()).toStrictEqual({ viewOnly: false, carryAdmin: true })
+  })
+})
+
+describe('the theme settings (HIL-1428)', () => {
+  it('parses the whole pair and rejects missing or invalid values', () => {
+    const schema = SESSION_SIGNAL_SCHEMAS[SIGNAL_THEME_SETTINGS]
+    expect(SIGNAL_THEME_SETTINGS).toBe('hilos_theme_settings')
+    expect(
+      schema.safeParse({ switchingEnabled: false, defaultTheme: 'dark' })
+        .success,
+    ).toBe(true)
+    expect(schema.safeParse({ switchingEnabled: false }).success).toBe(false)
+    expect(
+      schema.safeParse({ switchingEnabled: 'false', defaultTheme: 'dark' })
+        .success,
+    ).toBe(false)
+    expect(
+      schema.safeParse({ switchingEnabled: true, defaultTheme: 'sepia' })
+        .success,
+    ).toBe(false)
+  })
+
+  it('takes the same slot from a guest handshake, live frame and reconnect', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const settings = sessionThemeSettings(scopes)
+
+    expect(settings.get()).toStrictEqual({
+      switchingEnabled: true,
+      defaultTheme: 'system',
+    })
+    connection.emitHandshakeResponse({
+      data: {
+        themeSettings: { switchingEnabled: false, defaultTheme: 'dark' },
+      },
+    })
+    expect(settings.get()).toStrictEqual({
+      switchingEnabled: false,
+      defaultTheme: 'dark',
+    })
+
+    connection.emit(SIGNAL_THEME_SETTINGS, {
+      switchingEnabled: true,
+      defaultTheme: 'light',
+    })
+    expect(settings.get()).toStrictEqual({
+      switchingEnabled: true,
+      defaultTheme: 'light',
+    })
+
+    connection.emitHandshakeResponse({
+      data: {
+        themeSettings: { switchingEnabled: false, defaultTheme: 'system' },
+      },
+    })
+    expect(settings.get()).toStrictEqual({
+      switchingEnabled: false,
+      defaultTheme: 'system',
+    })
+
+    connection.emitHandshakeResponse({
+      data: {
+        themeSettings: { switchingEnabled: true, defaultTheme: 'sepia' },
+      },
+    })
+    expect(settings.get()).toStrictEqual({
+      switchingEnabled: true,
+      defaultTheme: 'system',
+    })
   })
 })
 
