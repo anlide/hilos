@@ -13,6 +13,8 @@ use Hilos\Database\Object\Item\Language as ObjectLanguage;
 use Hilos\Database\View\Item\Language;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
+use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\Exception\DefaultLanguageProtectedException;
 
 /**
  * @extends DbActions<Language, ObjectLanguage>
@@ -59,10 +61,18 @@ class LanguageActions extends DbActions
         $this->object->sync();
     }
 
-    /** @throws HilosException When ownership or persistence refuses the write */
+    /**
+     * @throws DefaultLanguageProtectedException When this is the configured default language
+     * @throws HilosException When ownership or persistence refuses the write
+     */
     public function switchOff(): void
     {
         $this->ensureCanWrite();
+        if ($this->object->code === DefaultLanguage::code()) {
+            throw new DefaultLanguageProtectedException(
+                "Default language '{$this->object->code}' cannot be switched off",
+            );
+        }
         if (!$this->object->enabled) {
             return;
         }
@@ -73,11 +83,17 @@ class LanguageActions extends DbActions
     /**
      * @throws ItemNotFoundForDeleteException When the row has no persisted id
      * @throws ObjectCollectionNullException When the item is detached from its collection
+     * @throws DefaultLanguageProtectedException When this is the configured default language
      * @throws HilosException When ownership, the database or collection refuses removal
      */
     public function delete(): void
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
+        if ($this->object->code === DefaultLanguage::code()) {
+            throw new DefaultLanguageProtectedException(
+                "Default language '{$this->object->code}' cannot be deleted",
+            );
+        }
         if ($this->object->id === null) {
             throw new ItemNotFoundForDeleteException('Language not found for delete (id is null)');
         }

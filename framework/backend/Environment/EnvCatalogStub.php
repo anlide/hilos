@@ -233,6 +233,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             // command on a port that authenticates nobody. Refusing to start instead costs a
             // named variable in each deployment and says exactly what is missing.
             EnvConstants::APP_ENV->name => self::required(EnvCatalogConstants::TYPE_STRING),
+            EnvConstants::HILOS_DEFAULT_LANGUAGE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::HILOS_ADMIN_VIEW_MODE_ENABLED->name => self::entry(
                 EnvCatalogConstants::TYPE_BOOLEAN,
                 false,

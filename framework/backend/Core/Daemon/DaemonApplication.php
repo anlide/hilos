@@ -17,6 +17,7 @@ use Hilos\Database\Schema\MountedCollectionKeyGuard;
 use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
+use Hilos\I18n\DefaultLanguage;
 use Hilos\Log\LogRootOwnershipGuard;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\SessionStageStartupGuard;
@@ -84,6 +85,10 @@ final class DaemonApplication
             $missing = Hilos::$env->missingRequired();
             if ($missing !== []) {
                 throw MissingRequiredEnvironmentException::forNames($hilosClass, $missing);
+            }
+
+            if ($hilosClass::hasFeature(HilosFeature::I18N)) {
+                DefaultLanguage::definition();
             }
 
             // A refusal that the log directory belongs to another daemon cannot be written into

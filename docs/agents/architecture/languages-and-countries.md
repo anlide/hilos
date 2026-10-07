@@ -166,7 +166,8 @@ name is set once. There is also a narrow gap: a known row switched off, edited
 and left off will be refreshed by the next reflow. The edit modal says so in
 one line; no extra column protects that gap (owner's decision, 2026-09-12).
 
-- Switching off the default language is refused; switching off another
+- The language item action refuses switching off the default language.
+  The section's switch action follows in HIL-1486; switching off another
   language keeps its locales and names (not in the code yet — HIL-1486).
 - Switching on a language requires no completeness check, but warns when it
   has no countryless locale (not in the code yet — HIL-1487).
@@ -277,25 +278,31 @@ to HIL-1424.
 
 ## The Default Language
 
-An env value names the default language (not in the code yet — HIL-1471).
-It is neither a setting nor a column (owner's decision, 2026-09-11–12);
-HIL-1471 chooses the key's name.
+`HILOS_DEFAULT_LANGUAGE` names the default language by its exact lowercase
+built-in language code. It is neither a setting nor a column (owner's decision,
+2026-09-11–12). Every project with `HilosFeature::I18N` supplies it; projects
+without the feature need not set it. The daemon validates the code against the
+static catalog after reading required env values, before booting or opening
+servers. An empty or unknown code refuses startup with the key and original
+value in the error; the library also resolves it from env when starting.
 
-- On first startup, that language is created with catalog values and switched
-  on (not in the code yet — HIL-1471).
+- On first startup, the i18n library creates that language with catalog values
+  and switches it on. It does this in one transaction together with its
+  countryless locale, if the catalog defines one.
 - Nobody can switch it off or delete it, regardless of where the request
-  originates: the library refuses (not in the code yet — HIL-1471).
-- Being switched on, it is not refreshed by reflow; its own name is taken at
-  creation (not in the code yet — HIL-1471).
+  originates: the language item actions refuse both writes, even if the row
+  is already switched off.
+- Its own name and direction are taken from the catalog only at creation;
+  an existing row is switched on without replacing them. Reflow skips the
+  switched-on row (not in the code yet — HIL-1472).
 - An unknown code prevents the node from starting and names that code; an
-  own default language is not allowed, catching `ez` instead of `es`
-  (not in the code yet — HIL-1471).
+  own default language is not allowed, catching `ez` instead of `es`.
 - Changing env leaves the former default as an ordinary switched-on language,
   which can now be switched off; the new default is created and switched on
-  at startup (not in the code yet — HIL-1471).
+  at startup.
 - Its countryless locale is created with it at startup if the catalog has
-  one; otherwise the same warning applies as for any switched-on language
-  (not in the code yet — HIL-1471).
+  one. The ordinary warning when no countryless locale exists belongs to
+  HIL-1487 (not in the code yet — HIL-1487).
 - A cluster handshake refuses a node whose env names a different default
   language (not in the code yet — HIL-1505).
 
@@ -314,7 +321,8 @@ will give those refusals their user-facing text.
   (not in the code yet — HIL-1488).
 - Catalog country names in that language do not block deletion and go with
   it (not in the code yet — HIL-1488).
-- Deleting the default language is refused (not in the code yet — HIL-1488).
+- The language item action refuses deleting the default language. The
+  section's delete action and its other checks follow in HIL-1488.
 - Deleting a locale is refused while it is switched on or selected as any
   country's default locale (not in the code yet — HIL-1492).
 - Deleting a locale removes its seven formats; texts for that pair take the
@@ -357,7 +365,7 @@ The project:
 - registers the library's agent pair in `Hilos::AGENTS`;
 - registers the three thin section pages in the server topology;
 - migrates the five framework stubs;
-- supplies the default-language env value (not in the code yet — HIL-1471).
+- supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code;
 
 The six demos have the feature, agent, server pages and migrations (HIL-1470).
 The browser tables follow in HIL-1474/1475. The three SDK pages remain unbuilt

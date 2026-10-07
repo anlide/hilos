@@ -528,7 +528,7 @@ Configure-only: the framework owns the five reference tables, their library and 
 The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
 It registers three thin section pages in the server topology and migrates the five framework stubs (HIL-1470).
 The SDK pages are still unbuilt in Vue, React and Angular: their URLs answer `not_served`/404 before subscription and have no card links. HIL-112/1481 and HIL-1502/1503 build and open them with real content.
-It supplies the default-language env value (not in the code yet — HIL-1471).
+It supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code.
 Startup refuses a missing page or agent; topology tests check the five migrations.
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
 

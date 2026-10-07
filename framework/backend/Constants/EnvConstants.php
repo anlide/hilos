@@ -273,6 +273,9 @@ enum EnvConstants
      */
     case APP_ENV;
 
+    /** @var string Exact lowercase built-in language code for installations with i18n */
+    case HILOS_DEFAULT_LANGUAGE;
+
     /**
      * Whether a non-admin may open the admin section to look and change nothing (HIL-1249).
      *

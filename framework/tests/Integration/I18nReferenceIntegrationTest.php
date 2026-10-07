@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Backup\Anonymization\PiiRegistry;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
@@ -43,6 +44,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
     private const string OWNER_AGENT_ID = 'test-agent:i18n-library';
 
     private ?DbContext $previousDb = null;
+    private string|false $previousDefaultLanguage;
     private I18nChangeRecorder $changes;
 
     /**
@@ -52,6 +54,9 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->previousDefaultLanguage = getenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
+        // These cases exercise ordinary reference rows, not the configured default.
+        putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=es');
         self::runStubs(down: true);
         self::runStubs(down: false);
         Schema::reset();
@@ -82,6 +87,11 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$db = $this->previousDb;
         self::runStubs(down: true);
         Schema::reset();
+        if ($this->previousDefaultLanguage === false) {
+            putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
+        } else {
+            putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=' . $this->previousDefaultLanguage);
+        }
         parent::tearDown();
     }
 
