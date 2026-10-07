@@ -3,9 +3,9 @@
 // and what the retention rule recommends carrying off before the installation runs out
 // of room. A row is one batch ON ONE NODE — the same rotation moment on two machines is
 // two directories, carried off apart — so the node column, the node filter and the node
-// half of the search hint exist only where nodes have names. Search, the node filter
-// and the All / awaiting switch ride the open viewport filter map (server-side, no
-// local filtering); the switch shows the table's own filter and lives in the address
+// half of the search hint exist only where nodes have names. The shared bar draws
+// search, the node select and the awaiting toggle from the frame (server-side, no
+// local filtering); the toggle lives in the address
 // too (HIL-903), so the overview banner opens it on Awaiting and a reload keeps what
 // is on the screen; the window is re-served by the page whenever the cluster picture or
 // the rule moves. A recommended batch carries the first of this screen's two commands:
@@ -24,14 +24,10 @@ import {
   HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
-  HILOS_ROTATION_STATE_OPTIONS,
   HILOS_ROTATION_STATE_TAKEN,
   HilosPages,
-  ROTATION_BATCH_AT_FIELD,
-  ROTATION_BYTES_FIELD,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
-  ROTATION_NODE_FIELD,
   createHilosLogRotationsActions,
   createHilosLogRotationsHeader,
   createHilosLogRotationsTable,
@@ -46,13 +42,8 @@ import {
   rotationTakeoutNotice,
   rotationUndoNotice,
   rotationsEmptyState,
-  rotationsSearchPlaceholder,
 } from '@hilos/core'
-import type {
-  HilosLogRotationRow,
-  HilosLogRotationsContext,
-  HilosTableColumn,
-} from '@hilos/core'
+import type { HilosLogRotationRow, HilosLogRotationsContext } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -85,44 +76,6 @@ const RETENTION_CLASS: Record<string, string> = {
   [HILOS_ROTATION_STATE_CARRYING]: 'text-bg-info',
   [HILOS_ROTATION_STATE_DUE]: 'text-bg-warning',
   [HILOS_ROTATION_STATE_TAKEN]: 'text-bg-secondary',
-}
-
-/**
- * Declared as the loose HilosTableColumn rather than the row-typed form: the Files
- * column is four counts at once and belongs to no single field, so keying it to
- * one of them would name the column after a quarter of what it shows. The sortable
- * keys are the exported wire constants, which is where a typo would actually cost
- * something — they travel to the backend as the sort field.
- *
- * The node and weight columns drop out of the header below `lg`, where their
- * values move into the sub-line of the batch cell: a narrow screen gets a shorter
- * table rather than one that scrolls sideways.
- *
- * @param clustered Whether this installation names its nodes.
- */
-function rotationColumns(clustered: boolean): HilosTableColumn[] {
-  return [
-    { key: ROTATION_BATCH_AT_FIELD, label: 'Batch', sortable: true },
-    ...(clustered
-      ? [
-          {
-            key: ROTATION_NODE_FIELD,
-            label: 'Node',
-            sortable: true,
-            headerClass: 'd-none d-lg-table-cell',
-          },
-        ]
-      : []),
-    { key: 'files', label: 'Files' },
-    {
-      key: ROTATION_BYTES_FIELD,
-      label: 'Weight',
-      sortable: true,
-      headerClass: 'text-end d-none d-lg-table-cell',
-    },
-    { key: 'retention', label: 'Retention' },
-    { key: 'actions', label: '', headerClass: 'text-end' },
-  ]
 }
 
 /**
@@ -177,17 +130,22 @@ export function HilosLogsRotationsPage({
   // The navigator the switch reads its entry value from and writes its choice to;
   // mounted without one, the screen opens on All and leaves the address alone.
   const router = useContext(HilosRouterContext)
+  const headerHandle = useMemo(
+    () => createHilosLogRotationsHeader(context),
+    [context],
+  )
   const rotations = useMemo(
-    () => createHilosLogRotationsTable(context, router ?? undefined),
-    [context, router],
+    () =>
+      createHilosLogRotationsTable(
+        context,
+        headerHandle.header,
+        router ?? undefined,
+      ),
+    [context, headerHandle, router],
   )
   const rotationsTable = rotations.controller
   const rotationsActions = useMemo(
     () => createHilosLogRotationsActions(context),
-    [context],
-  )
-  const headerHandle = useMemo(
-    () => createHilosLogRotationsHeader(context),
     [context],
   )
   const header = useSignal(headerHandle.header)
@@ -207,37 +165,17 @@ export function HilosLogsRotationsPage({
   const rows = useSignal(rotationsTable.rows)
   const focusedRow = useSignal(rotationsTable.focusedRow)
   const search = useSignal(rotationsTable.search)
+  const filter = useSignal(rotationsTable.filter)
 
   // The node column and the node filter exist only where nodes have names: in a
   // single-node installation a column repeating one name and a filter offering one
   // option would both be furniture for a choice that does not exist.
   const clustered = hasRotationNodes(header)
-  const columns = rotationColumns(clustered)
-
-  // The search hint follows the same header, so the field never offers a dimension
-  // the list cannot match on.
-  const searchPlaceholder = rotationsSearchPlaceholder(header)
-
-  // Domain filters: the node and the state ride the open filter map so the backend
-  // narrows the window (no local filtering). Empty clears the filter. The state is
-  // read from the table itself rather than kept here, so the generic "Reset filters"
-  // moves the switch along with the rows.
-  const [nodeFilter, setNodeFilter] = useState('')
-  const stateFilter = useSignal(rotations.state)
-
-  function setNode(value: string): void {
-    setNodeFilter(value)
-    rotationsTable.setFilter(ROTATION_FILTER_NODE, value)
-  }
-
-  function setState(value: string): void {
-    rotationsTable.setFilter(ROTATION_FILTER_STATE, value)
-  }
 
   function clearFilters(): void {
     rotationsTable.setSearch('')
-    setNode('')
-    setState('')
+    rotationsTable.setFilter(ROTATION_FILTER_NODE, '')
+    rotationsTable.setFilter(ROTATION_FILTER_STATE, '')
   }
 
   // Which of the four empty states the screen is in — the discrimination is the
@@ -245,7 +183,7 @@ export function HilosLogsRotationsPage({
   const emptyState = rotationsEmptyState(
     header,
     rows.length,
-    search !== '' || nodeFilter !== '' || stateFilter !== '',
+    search !== '' || Object.keys(filter).length > 0,
   )
 
   // The takeout dialog: how to carry one batch off, and the button that records
@@ -378,80 +316,27 @@ export function HilosLogsRotationsPage({
         </HilosLink>
       </div>
 
-      <div className="d-flex flex-wrap align-items-end gap-2 mb-3">
-        {clustered ? (
-          <div>
-            <label className="form-label" htmlFor="hilos-rotation-node">
-              Node
-            </label>
-            <select
-              id="hilos-rotation-node"
-              className="form-select"
-              value={nodeFilter}
-              data-id="hilos-rotation-node"
-              onChange={(event) => setNode(event.target.value)}
-            >
-              <option value="">All nodes</option>
-              {(header?.nodes ?? []).map((node) => (
-                <option key={node} value={node}>
-                  {node}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        <div
-          className="btn-group btn-group-sm"
-          role="group"
-          aria-label="Retention state"
-        >
-          {HILOS_ROTATION_STATE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`btn btn-outline-secondary${stateFilter === option.value ? ' active' : ''}`}
-              aria-pressed={stateFilter === option.value}
-              data-id={`hilos-rotation-state-${option.value || 'all'}`}
-              onClick={() => setState(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <HilosViewportTable
-        label="Rotation batches"
         controller={rotationsTable}
-        columns={columns}
-        searchable
-        searchPlaceholder={searchPlaceholder}
-        row={(row: HilosLogRotationRow) => (
-          <>
-            <td>
+        cells={{
+          batchAt: (row: HilosLogRotationRow) => (
+            <>
               <div className="fw-semibold small">{batchTime(row)}</div>
               <code className="small text-body-secondary">{row.path}</code>
-              {/* The sub-line carries whatever the hidden columns were carrying, so a
-              narrow screen loses the layout and not the figures. It is there in a
-              single-node installation too, where only the weight was hidden. */}
-              <div className="small text-body-secondary d-lg-none">
-                {clustered ? `${row.node} · ` : null}
-                {formatRotationWeight(row)}
-              </div>
-            </td>
-            {clustered ? (
-              <td className="d-none d-lg-table-cell">{row.node}</td>
-            ) : null}
-            <td className="small">{formatRotationFileCounts(row)}</td>
-            <td className="text-end d-none d-lg-table-cell">
-              {formatRotationWeight(row)}
-            </td>
-            <td>
-              <span className={`badge ${retentionClass(row)}`}>
-                {formatRotationState(row)}
-              </span>
-            </td>
-            <td className="text-end text-nowrap">
+            </>
+          ),
+          node: (row: HilosLogRotationRow) => row.node,
+          daemonFileCount: (row: HilosLogRotationRow) => (
+            <span className="small">{formatRotationFileCounts(row)}</span>
+          ),
+          bytes: (row: HilosLogRotationRow) => formatRotationWeight(row),
+          retentionState: (row: HilosLogRotationRow) => (
+            <span className={`badge ${retentionClass(row)}`}>
+              {formatRotationState(row)}
+            </span>
+          ),
+          actions: (row: HilosLogRotationRow) => (
+            <>
               {offersTakeout(row) ? (
                 <button
                   type="button"
@@ -477,9 +362,9 @@ export function HilosLogsRotationsPage({
                   I did not carry this one off
                 </button>
               ) : null}
-            </td>
-          </>
-        )}
+            </>
+          ),
+        }}
         empty={
           emptyState === 'unknown' ? (
             <div data-id="hilos-rotation-empty-unknown">

@@ -3,12 +3,11 @@
 and what the retention rule recommends carrying off before the installation runs out
 of room. A row is one batch ON ONE NODE — the same rotation moment on two machines is
 two directories, carried off apart — so the node column, the node filter and the node
-half of the search hint exist only where nodes have names. Search, the node filter
-and the All / awaiting switch ride the open viewport filter map (server-side, no
-local filtering); the switch shows the table's own filter and lives in the address
-too (HIL-903), so the overview banner opens it on Awaiting and a reload keeps what
-is on the screen; the window is re-served by the page whenever the cluster picture or
-the rule moves. A recommended batch carries the first of this screen's two commands:
+half of the search hint exist only where nodes have names. The shared bar draws
+search, the node select and the awaiting toggle from the frame (server-side, no
+local filtering); the toggle lives in the address too (HIL-903), so the overview
+banner opens it on Awaiting and a reload keeps what is on the screen; the window is
+re-served by the page whenever the cluster picture or the rule moves. A recommended batch carries the first of this screen's two commands:
 a modal saying where the batch lies and how to copy it off, and a confirmation that
 it was (HIL-483) — the badge then repaints when the holding node's next index
 arrives, not when the ack does. A taken batch carries the other half of that
@@ -31,7 +30,6 @@ import {
   formatRotationWeight,
   hasRotationNodes,
   rotationsEmptyState,
-  rotationsSearchPlaceholder,
   rotationTakeoutAddress,
   rotationTakeoutCommand,
   rotationTakeoutNotice,
@@ -39,17 +37,12 @@ import {
   HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
-  HILOS_ROTATION_STATE_OPTIONS,
   HILOS_ROTATION_STATE_TAKEN,
   HilosPages,
-  ROTATION_BATCH_AT_FIELD,
-  ROTATION_BYTES_FIELD,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
-  ROTATION_NODE_FIELD,
   type HilosLogRotationRow,
   type HilosLogRotationsContext,
-  type HilosTableColumn,
 } from '@hilos/core'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
@@ -74,10 +67,14 @@ const props = defineProps<{
 // The navigator the switch reads its entry value from and writes its choice to;
 // mounted without one, the screen opens on All and leaves the address alone.
 const router = inject(hilosRouterKey, undefined)
-const rotations = createHilosLogRotationsTable(props.context, router)
+const headerHandle = createHilosLogRotationsHeader(props.context)
+const rotations = createHilosLogRotationsTable(
+  props.context,
+  headerHandle.header,
+  router,
+)
 const rotationsTable = rotations.controller
 const rotationsActions = createHilosLogRotationsActions(props.context)
-const headerHandle = createHilosLogRotationsHeader(props.context)
 const header = useSignal(headerHandle.header)
 
 // Bind the server-windowed table and start listening for the header on mount; the
@@ -94,69 +91,12 @@ onUnmounted(() => {
 const rows = useSignal(rotationsTable.rows)
 const focusedRow = useSignal(rotationsTable.focusedRow)
 const search = useSignal(rotationsTable.search)
+const filter = useSignal(rotationsTable.filter)
 
 // The node column and the node filter exist only where nodes have names: in a
 // single-node installation a column repeating one name and a filter offering one
 // option would both be furniture for a choice that does not exist.
 const clustered = computed(() => hasRotationNodes(header.value))
-
-// The search hint follows the same header, so the field never offers a dimension
-// the list cannot match on.
-const searchPlaceholder = computed(() =>
-  rotationsSearchPlaceholder(header.value),
-)
-
-// Declared as the loose HilosTableColumn rather than the row-typed form: the Files
-// column is four counts at once and belongs to no single field, so keying it to
-// one of them would name the column after a quarter of what it shows. The sortable
-// keys are the exported wire constants, which is where a typo would actually cost
-// something — they travel to the backend as the sort field.
-//
-// The node and weight columns drop out of the header below `lg`, where their
-// values move into the sub-line of the batch cell: a narrow screen gets a shorter
-// table rather than one that scrolls sideways.
-const columns = computed<HilosTableColumn[]>(() => [
-  { key: ROTATION_BATCH_AT_FIELD, label: 'Batch', sortable: true },
-  ...(clustered.value
-    ? [
-        {
-          key: ROTATION_NODE_FIELD,
-          label: 'Node',
-          sortable: true,
-          headerClass: 'd-none d-lg-table-cell',
-        },
-      ]
-    : []),
-  { key: 'files', label: 'Files' },
-  {
-    key: ROTATION_BYTES_FIELD,
-    label: 'Weight',
-    sortable: true,
-    headerClass: 'text-end d-none d-lg-table-cell',
-  },
-  { key: 'retention', label: 'Retention' },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-])
-
-// Domain filters: the node and the state ride the open filter map so the backend
-// narrows the window (no local filtering). Empty clears the filter. The state is
-// read from the table itself rather than kept here, so the generic "Reset filters"
-// moves the switch along with the rows.
-const nodeFilter = ref('')
-const stateFilter = useSignal(rotations.state)
-
-function setNode(value: string): void {
-  nodeFilter.value = value
-  rotationsTable.setFilter(ROTATION_FILTER_NODE, value)
-}
-
-function onNode(event: Event): void {
-  setNode((event.target as HTMLSelectElement).value)
-}
-
-function setState(value: string): void {
-  rotationsTable.setFilter(ROTATION_FILTER_STATE, value)
-}
 
 // Which of the four empty states the screen is in — the discrimination is the
 // headless's, because it is the same question in all three view frameworks.
@@ -164,7 +104,7 @@ const emptyState = computed(() =>
   rotationsEmptyState(
     header.value,
     rows.value.length,
-    search.value !== '' || nodeFilter.value !== '' || stateFilter.value !== '',
+    search.value !== '' || Object.keys(filter.value).length > 0,
   ),
 )
 
@@ -190,8 +130,8 @@ function retentionClass(row: HilosLogRotationRow): string {
 
 function clearFilters(): void {
   rotationsTable.setSearch('')
-  setNode('')
-  setState('')
+  rotationsTable.setFilter(ROTATION_FILTER_NODE, '')
+  rotationsTable.setFilter(ROTATION_FILTER_STATE, '')
 }
 
 // The takeout dialog: how to carry one batch off, and the button that records
@@ -368,96 +308,45 @@ const legendOpen = ref(false)
       </HilosLink>
     </div>
 
-    <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
-      <div v-if="clustered">
-        <label class="form-label" for="hilos-rotation-node">Node</label>
-        <select
-          id="hilos-rotation-node"
-          class="form-select"
-          :value="nodeFilter"
-          data-id="hilos-rotation-node"
-          @change="onNode"
-        >
-          <option value="">All nodes</option>
-          <option v-for="node in header?.nodes ?? []" :key="node" :value="node">
-            {{ node }}
-          </option>
-        </select>
-      </div>
-      <div
-        class="btn-group btn-group-sm"
-        role="group"
-        aria-label="Retention state"
-      >
+    <HilosViewportTable :controller="rotationsTable">
+      <template #cell-batchAt="{ row }">
+        <div class="fw-semibold small">{{ batchTime(row) }}</div>
+        <code class="small text-body-secondary">{{ row.path }}</code>
+      </template>
+      <template #cell-node="{ row }">{{ row.node }}</template>
+      <template #cell-daemonFileCount="{ row }">
+        <span class="small">{{ formatRotationFileCounts(row) }}</span>
+      </template>
+      <template #cell-bytes="{ row }">{{ formatRotationWeight(row) }}</template>
+      <template #cell-retentionState="{ row }">
+        <span class="badge" :class="retentionClass(row)">
+          {{ formatRotationState(row) }}
+        </span>
+      </template>
+      <template #cell-actions="{ row }">
         <button
-          v-for="option in HILOS_ROTATION_STATE_OPTIONS"
-          :key="option.value"
+          v-if="offersTakeout(row)"
           type="button"
-          class="btn btn-outline-secondary"
-          :class="{ active: stateFilter === option.value }"
-          :aria-pressed="stateFilter === option.value"
-          :data-id="`hilos-rotation-state-${option.value || 'all'}`"
-          @click="setState(option.value)"
+          class="btn btn-sm btn-warning"
+          data-id="hilos-rotation-takeout"
+          @click="openTakeout(row)"
         >
-          {{ option.label }}
+          How to carry it off
         </button>
-      </div>
-    </div>
-
-    <HilosViewportTable
-      label="Rotation batches"
-      :controller="rotationsTable"
-      :columns="columns"
-      searchable
-      :search-placeholder="searchPlaceholder"
-    >
-      <template #row="{ row }">
-        <td>
-          <div class="fw-semibold small">{{ batchTime(row) }}</div>
-          <code class="small text-body-secondary">{{ row.path }}</code>
-          <!-- The sub-line carries whatever the hidden columns were carrying, so a
-          narrow screen loses the layout and not the figures. It is there in a
-          single-node installation too, where only the weight was hidden. -->
-          <div class="small text-body-secondary d-lg-none">
-            <template v-if="clustered">{{ row.node }} · </template
-            >{{ formatRotationWeight(row) }}
-          </div>
-        </td>
-        <td v-if="clustered" class="d-none d-lg-table-cell">{{ row.node }}</td>
-        <td class="small">{{ formatRotationFileCounts(row) }}</td>
-        <td class="text-end d-none d-lg-table-cell">
-          {{ formatRotationWeight(row) }}
-        </td>
-        <td>
-          <span class="badge" :class="retentionClass(row)">
-            {{ formatRotationState(row) }}
-          </span>
-        </td>
-        <td class="text-end text-nowrap">
-          <button
-            v-if="offersTakeout(row)"
-            type="button"
-            class="btn btn-sm btn-warning"
-            data-id="hilos-rotation-takeout"
-            @click="openTakeout(row)"
-          >
-            How to carry it off
-          </button>
-          <!-- A link by sight and a button by nature, the way the legend trigger
-          below is: the design asks for a link because withdrawing is not the
-          action the row is there for, but this one opens a dialog and navigates
-          nowhere, so an <a href="#"> would answer a ctrl-click with a pointless
-          new tab and announce itself to a screen reader as a link. -->
-          <button
-            v-if="offersUndo(row)"
-            type="button"
-            class="btn btn-link btn-sm p-0 align-baseline"
-            data-id="hilos-rotation-undo"
-            @click="openUndo(row)"
-          >
-            I did not carry this one off
-          </button>
-        </td>
+        <!-- A link by sight and a button by nature, the way the legend trigger
+        below is: the design asks for a link because withdrawing is not the
+        action the row is there for, but this one opens a dialog and navigates
+        nowhere, so an <a href="#"> would answer a ctrl-click with a pointless
+        new tab and announce itself to a screen reader as a link. -->
+        <button
+          v-if="offersUndo(row)"
+          type="button"
+          class="btn btn-link btn-sm p-0 align-baseline"
+          data-id="hilos-rotation-undo"
+          @click="openUndo(row)"
+        >
+          I did not carry this one off
+        </button>
       </template>
 
       <template #empty>

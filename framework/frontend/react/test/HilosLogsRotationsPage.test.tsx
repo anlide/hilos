@@ -144,6 +144,12 @@ function makeConnection(): {
 
       return true
     },
+    sendTableRendered(): boolean {
+      return true
+    },
+    sendTableFacets(): boolean {
+      return true
+    },
   } as unknown as HilosConnection
 
   const pushWindow = (rows: Record<string, unknown>[]): void => {
@@ -158,6 +164,7 @@ function makeConnection(): {
               slots: { batch: slot },
             })),
             totalCount: rows.length,
+            limit: 25,
           },
         })
       }
@@ -355,10 +362,6 @@ function byId(container: HTMLElement, id: string): HTMLElement | null {
   return container.querySelector(`[data-id="${id}"]`)
 }
 
-function subLine(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('[data-id^="hilos-table-row-"] .d-lg-none')
-}
-
 /** Wait out the microtasks a settled action resolves through. */
 async function settled(): Promise<void> {
   await act(async () => {
@@ -431,10 +434,9 @@ describe('HilosLogsRotationsPage', () => {
       },
     )
 
-    // A search that matched nothing is the table's own state since HIL-808: the framework
-    // names the query and offers the reset, and the page's words stay for an empty archive.
-    expect(byId(container, 'hilos-table-no-matches')).not.toBeNull()
-    expect(byId(container, 'hilos-table-no-matches-reset')).not.toBeNull()
+    // This frame opts into the page's own no-match wording and reset control.
+    expect(byId(container, 'hilos-rotation-empty-nomatch')).not.toBeNull()
+    expect(byId(container, 'hilos-rotation-clear-filters')).not.toBeNull()
     expect(byId(container, 'hilos-rotation-empty-never')).toBeNull()
   })
 
@@ -444,7 +446,14 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header({ nodes: [] }))
 
-    expect(byId(container, 'hilos-rotation-node')).toBeNull()
+    expect(byId(container, 'hilos-table-title')?.textContent).toBe(
+      'Rotation batches',
+    )
+    expect(
+      (byId(container, 'hilos-table-search') as HTMLInputElement).placeholder,
+    ).toBe('Search by batch date…')
+    expect(byId(container, 'hilos-table-filter-node')).toBeNull()
+    expect(byId(container, 'hilos-table-filter-state')).not.toBeNull()
     expect(byId(container, 'hilos-table-sort-node')).toBeNull()
   })
 
@@ -454,9 +463,12 @@ describe('HilosLogsRotationsPage', () => {
 
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
 
-    const select = byId(container, 'hilos-rotation-node')
+    const select = byId(container, 'hilos-table-filter-node')
     expect(select).not.toBeNull()
     expect(select?.textContent).toContain('node-2')
+    expect(
+      (byId(container, 'hilos-table-search') as HTMLInputElement).placeholder,
+    ).toBe('Search by batch date or node…')
     expect(byId(container, 'hilos-table-sort-node')).not.toBeNull()
   })
 
@@ -484,20 +496,22 @@ describe('HilosLogsRotationsPage', () => {
   })
 
   /**
-   * Below `lg` the node and weight columns are hidden and their values move into a
-   * sub-line under the batch name. The single-node installation is the case that
-   * broke: only the weight is hidden there, and a sub-line that appeared for
-   * clusters alone left a narrow screen with no weight anywhere.
+   * The narrow card is the same row, so the weight is a field of it even when the
+   * installation names no node and the wide row has no node column.
    */
-  it('carries the hidden weight into the sub-line even with no node names', () => {
+  it('shows the weight in the wide row and in the card, with no node column', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
     pushHeader(header({ nodes: [] }))
     pushWindow([batch()])
 
-    expect(subLine(container)).not.toBeNull()
-    expect(subLine(container)?.textContent).toBe('1.5 GB')
+    const row = container.querySelector('[data-id^="hilos-table-row-"]')
+    const card = container.querySelector('[data-id^="hilos-table-card-"]')
+    expect(row?.textContent).toContain('1.5 GB')
+    expect(card?.textContent).toContain('1.5 GB')
+    expect(row?.querySelector('.d-lg-none')).toBeNull()
+    expect(byId(container, 'hilos-table-count')?.textContent).toContain('of 1')
   })
 
   /**
@@ -512,19 +526,29 @@ describe('HilosLogsRotationsPage', () => {
     pushWindow([batch()])
 
     expect(
-      container.querySelector('[data-id^="hilos-table-row-"] td.small')
-        ?.textContent,
-    ).toBe('3 / 12 / 8 / 2')
+      container.querySelector('[data-id^="hilos-table-row-"]')?.textContent,
+    ).toContain('3 / 12 / 8 / 2')
+    expect(
+      container.querySelector('[data-id^="hilos-table-card-"]')?.textContent,
+    ).toContain('3 / 12 / 8 / 2')
   })
 
-  it('carries the node into that sub-line as well where nodes have names', () => {
+  it('shows the node in the wide row and in the card where nodes have names', () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const container = mountPage(connection)
 
     pushHeader(header({ nodes: ['node-1'] }))
     pushWindow([batch({ node: 'node-1' })])
 
-    expect(subLine(container)?.textContent).toBe('node-1 · 1.5 GB')
+    expect(
+      container.querySelector('[data-id^="hilos-table-row-"]')?.textContent,
+    ).toContain('node-1')
+    expect(
+      container.querySelector('[data-id^="hilos-table-card-"]')?.textContent,
+    ).toContain('node-1')
+    expect(
+      container.querySelector('[data-id^="hilos-table-card-"]')?.textContent,
+    ).toContain('1.5 GB')
   })
 
   it('offers the takeout only on a batch the rule recommends carrying off', () => {
@@ -539,7 +563,14 @@ describe('HilosLogsRotationsPage', () => {
     ])
 
     expect(
-      container.querySelectorAll('[data-id="hilos-rotation-takeout"]'),
+      container.querySelectorAll(
+        '[data-id^="hilos-table-row-"] [data-id="hilos-rotation-takeout"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      container.querySelectorAll(
+        '[data-id^="hilos-table-card-"] [data-id="hilos-rotation-takeout"]',
+      ),
     ).toHaveLength(1)
   })
 
@@ -678,7 +709,14 @@ describe('HilosLogsRotationsPage', () => {
     ])
 
     expect(
-      container.querySelectorAll('[data-id="hilos-rotation-undo"]'),
+      container.querySelectorAll(
+        '[data-id^="hilos-table-row-"] [data-id="hilos-rotation-undo"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      container.querySelectorAll(
+        '[data-id^="hilos-table-card-"] [data-id="hilos-rotation-undo"]',
+      ),
     ).toHaveLength(1)
   })
 
@@ -788,8 +826,8 @@ describe('HilosLogsRotationsPage', () => {
     // The page's unfiltered window is not drawn; the table asks for the awaiting one.
     expect(container.textContent).not.toContain('archive/2027-01-15-08-00-00/')
     expect(
-      byId(container, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
-    ).toBe('true')
+      (byId(container, 'hilos-table-filter-state') as HTMLInputElement).checked,
+    ).toBe(true)
     expect(sent[0]?.filter).toEqual({ state: 'due' })
   })
 
@@ -803,13 +841,13 @@ describe('HilosLogsRotationsPage', () => {
     )
 
     act(() => {
-      fireEvent.click(byId(container, 'hilos-rotation-state-all') as Element)
+      fireEvent.click(byId(container, 'hilos-table-filter-state') as Element)
     })
 
     expect(rewrites).toEqual(['/hilos/logs/rotations'])
     expect(
-      byId(container, 'hilos-rotation-state-all')?.getAttribute('aria-pressed'),
-    ).toBe('true')
+      (byId(container, 'hilos-table-filter-state') as HTMLInputElement).checked,
+    ).toBe(false)
   })
 })
 
@@ -910,13 +948,11 @@ describe('HilosLogsRotationsPage in the admin view mode', () => {
 
     const dueSwitch = byId(
       container,
-      'hilos-rotation-state-due',
-    ) as HTMLButtonElement
+      'hilos-table-filter-state',
+    ) as HTMLInputElement
     expect(dueSwitch.disabled).toBe(false)
     fireEvent.click(dueSwitch)
-    expect(
-      byId(container, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
-    ).toBe('true')
+    expect(dueSwitch.checked).toBe(true)
 
     const legend = byId(container, 'hilos-rotation-legend') as HTMLButtonElement
     expect(legend.disabled).toBe(false)

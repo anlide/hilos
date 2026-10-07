@@ -52,6 +52,8 @@ import {
 } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
+import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import {
   formatLogRotationSchedule,
@@ -117,8 +119,8 @@ const ROTATION_PATH_FIELD = 'path'
 /** Row payload key of the archive directory as addressed on its own node. */
 const ROTATION_ABSOLUTE_PATH_FIELD = 'absolutePath'
 
-/** Row payload key of the daemon's own stream file count. */
-const ROTATION_DAEMON_FILE_COUNT_FIELD = 'daemonFileCount'
+/** Row payload key of the daemon's own stream file count (also the Files column key). */
+export const ROTATION_DAEMON_FILE_COUNT_FIELD = 'daemonFileCount'
 
 /** Row payload key of the agent file count. */
 const ROTATION_AGENT_FILE_COUNT_FIELD = 'agentFileCount'
@@ -133,8 +135,8 @@ const ROTATION_WORKER_MONOPOLISTIC_FILE_COUNT_FIELD =
 /** Row payload key of the batch weight (also the weight column key). */
 export const ROTATION_BYTES_FIELD = 'bytes'
 
-/** Row payload key of the retention verdict. */
-const ROTATION_RETENTION_STATE_FIELD = 'retentionState'
+/** Row payload key of the retention verdict (also the Retention column key). */
+export const ROTATION_RETENTION_STATE_FIELD = 'retentionState'
 
 /** Row payload key of the instant the batch's own node may first prune it. */
 const ROTATION_PRUNE_NOT_BEFORE_FIELD = 'pruneNotBefore'
@@ -384,16 +386,92 @@ export function logRotationsPath(state: string): string {
  * navigator there is neither a preset nor a rewrite.
  *
  * @param context The project context (connection and scope stores).
+ * @param header The page header handle's signal, created before this table.
  * @param address The navigator the state filter is read from and written to, or none.
  */
 export function createHilosLogRotationsTable(
   context: HilosLogRotationsContext,
+  header: ReadonlySignal<HilosLogRotationsHeader | null>,
   address?: HilosLogRotationsAddress,
 ): HilosLogRotationsTable {
   const entered =
     address === undefined
       ? ''
       : readLogRotationsAddress(address.currentRoute.get().params)
+  const frame: HilosTableFrame = {
+    title: 'Rotation batches',
+    search: { placeholder: () => rotationsSearchPlaceholder(header.get()) },
+    filters: () => [
+      ...(hasRotationNodes(header.get())
+        ? [
+            {
+              key: ROTATION_FILTER_NODE,
+              kind: 'select' as const,
+              label: 'Node',
+              anyLabel: 'All nodes',
+              options: () =>
+                header.get()?.nodes.map((node) => ({
+                  value: node,
+                  label: node,
+                })) ?? [],
+            },
+          ]
+        : []),
+      {
+        key: ROTATION_FILTER_STATE,
+        kind: 'toggle' as const,
+        label: 'Awaiting carry-off',
+        on: HILOS_ROTATION_STATE_DUE,
+      },
+    ],
+    columns: () => [
+      {
+        key: ROTATION_BATCH_AT_FIELD,
+        label: 'Batch',
+        sortable: true,
+        card: 'title' as const,
+        reads: [ROTATION_PATH_FIELD],
+      },
+      ...(hasRotationNodes(header.get())
+        ? [{ key: ROTATION_NODE_FIELD, label: 'Node', sortable: true }]
+        : []),
+      {
+        key: ROTATION_DAEMON_FILE_COUNT_FIELD,
+        label: 'Files',
+        reads: [
+          ROTATION_AGENT_FILE_COUNT_FIELD,
+          ROTATION_WORKER_FILE_COUNT_FIELD,
+          ROTATION_WORKER_MONOPOLISTIC_FILE_COUNT_FIELD,
+        ],
+      },
+      {
+        key: ROTATION_BYTES_FIELD,
+        label: 'Weight',
+        sortable: true,
+        headerClass: 'text-end',
+        cellClass: 'text-end',
+      },
+      {
+        key: ROTATION_RETENTION_STATE_FIELD,
+        label: 'Retention',
+        card: 'badge' as const,
+      },
+      {
+        key: HILOS_TABLE_ACTIONS_KEY,
+        label: '',
+        cellClass: 'text-end text-nowrap',
+        reads: [
+          ROTATION_BATCH_AT_FIELD,
+          ROTATION_NODE_FIELD,
+          ROTATION_PATH_FIELD,
+          ROTATION_ABSOLUTE_PATH_FIELD,
+          ROTATION_RETENTION_STATE_FIELD,
+          ROTATION_PRUNE_NOT_BEFORE_FIELD,
+        ],
+      },
+    ],
+    filteredEmpty: 'page',
+  }
   const controller = new TableViewportController<HilosLogRotationRow>({
     resolve: resolveHilosLogRotationRow,
     sendViewport: (descriptor) =>
@@ -408,8 +486,21 @@ export function createHilosLogRotationsTable(
         ROTATIONS_TABLE,
         rowKey,
       ),
+    sendRendered: (rendered) =>
+      context.connection.sendTableRendered(
+        HilosPages.LOGS_ROTATIONS,
+        ROTATIONS_TABLE,
+        rendered,
+      ),
+    sendFacets: (facets) =>
+      context.connection.sendTableFacets(
+        HilosPages.LOGS_ROTATIONS,
+        ROTATIONS_TABLE,
+        facets,
+      ),
     initialFilter:
       entered === '' ? undefined : { [ROTATION_FILTER_STATE]: entered },
+    frame,
   })
   const state = computedSignal(() => {
     const value = controller.filter.get()[ROTATION_FILTER_STATE]

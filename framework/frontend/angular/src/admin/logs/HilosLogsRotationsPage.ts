@@ -3,9 +3,9 @@
 // and what the retention rule recommends carrying off before the installation runs out
 // of room. A row is one batch ON ONE NODE — the same rotation moment on two machines is
 // two directories, carried off apart — so the node column, the node filter and the node
-// half of the search hint exist only where nodes have names. Search, the node filter
-// and the All / awaiting switch ride the open viewport filter map (server-side, no
-// local filtering); the switch shows the table's own filter and lives in the address
+// half of the search hint exist only where nodes have names. The shared bar draws
+// search, the node select and the awaiting toggle from the frame (server-side, no
+// local filtering); the toggle lives in the address
 // too (HIL-903), so the overview banner opens it on Awaiting and a reload keeps what
 // is on the screen; the window is re-served by the page whenever the cluster picture or
 // the rule moves. A recommended batch carries the first of this screen's two commands:
@@ -32,14 +32,10 @@ import {
   HILOS_PAGE_ROUTES,
   HILOS_ROTATION_STATE_CARRYING,
   HILOS_ROTATION_STATE_DUE,
-  HILOS_ROTATION_STATE_OPTIONS,
   HILOS_ROTATION_STATE_TAKEN,
   HilosPages,
-  ROTATION_BATCH_AT_FIELD,
-  ROTATION_BYTES_FIELD,
   ROTATION_FILTER_NODE,
   ROTATION_FILTER_STATE,
-  ROTATION_NODE_FIELD,
   createHilosLogRotationsActions,
   createHilosLogRotationsHeader,
   createHilosLogRotationsTable,
@@ -54,14 +50,12 @@ import {
   rotationTakeoutNotice,
   rotationUndoNotice,
   rotationsEmptyState,
-  rotationsSearchPlaceholder,
   subscribeSignal,
 } from '@hilos/core'
 import type {
   HilosLogRotationRow,
   HilosLogRotationsContext,
   HilosLogRotationsHeader,
-  HilosTableColumn,
 } from '@hilos/core'
 
 import { HilosActionError } from '../../HilosActionError.js'
@@ -71,6 +65,7 @@ import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
+import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
@@ -101,6 +96,7 @@ const RETENTION_CLASS: Record<string, string> = {
     HilosLink,
     HilosLongText,
     HilosModal,
+    HilosTableCell,
     HilosViewportTable,
     LoadingButton,
   ],
@@ -140,104 +136,49 @@ const RETENTION_CLASS: Record<string, string> = {
         </a>
       </div>
 
-      <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
-        @if (clustered()) {
-          <div>
-            <label class="form-label" for="hilos-rotation-node">Node</label>
-            <select
-              id="hilos-rotation-node"
-              class="form-select"
-              [value]="nodeFilter()"
-              data-id="hilos-rotation-node"
-              (change)="onNode($event)"
-            >
-              <option value="">All nodes</option>
-              @for (node of header()?.nodes ?? []; track node) {
-                <option [value]="node">{{ node }}</option>
-              }
-            </select>
-          </div>
-        }
-        <div
-          class="btn-group btn-group-sm"
-          role="group"
-          aria-label="Retention state"
-        >
-          @for (option of stateOptions; track option.value) {
+      <hilos-viewport-table [controller]="rotations().controller">
+        <ng-template hilosTableCell="batchAt" let-row>
+          <div class="fw-semibold small">{{ batchTime(row) }}</div>
+          <code class="small text-body-secondary">{{ row.path }}</code>
+        </ng-template>
+        <ng-template hilosTableCell="node" let-row>{{ row.node }}</ng-template>
+        <ng-template hilosTableCell="daemonFileCount" let-row>
+          <span class="small">{{ formatFileCounts(row) }}</span>
+        </ng-template>
+        <ng-template hilosTableCell="bytes" let-row>{{
+          formatWeight(row)
+        }}</ng-template>
+        <ng-template hilosTableCell="retentionState" let-row>
+          <span [class]="'badge ' + retentionClass(row)">
+            {{ formatState(row) }}
+          </span>
+        </ng-template>
+        <ng-template hilosTableCell="actions" let-row>
+          @if (offersTakeout(row)) {
             <button
               type="button"
-              class="btn btn-outline-secondary"
-              [class.active]="stateFilter() === option.value"
-              [attr.aria-pressed]="stateFilter() === option.value"
-              [attr.data-id]="'hilos-rotation-state-' + (option.value || 'all')"
-              (click)="setState(option.value)"
+              class="btn btn-sm btn-warning"
+              data-id="hilos-rotation-takeout"
+              (click)="openTakeout(row)"
             >
-              {{ option.label }}
+              How to carry it off
             </button>
           }
-        </div>
-      </div>
-
-      <hilos-viewport-table
-        label="Rotation batches"
-        [controller]="rotations().controller"
-        [columns]="columns()"
-        [searchable]="true"
-        [searchPlaceholder]="searchPlaceholder()"
-      >
-        <ng-template #row let-row>
-          <td>
-            <div class="fw-semibold small">{{ batchTime(row) }}</div>
-            <code class="small text-body-secondary">{{ row.path }}</code>
-            <!-- The sub-line carries whatever the hidden columns were carrying, so a
-            narrow screen loses the layout and not the figures. It is there in a
-            single-node installation too, where only the weight was hidden. -->
-            <div class="small text-body-secondary d-lg-none">
-              @if (clustered()) {
-                {{ row.node }} ·
-              }
-              {{ formatWeight(row) }}
-            </div>
-          </td>
-          @if (clustered()) {
-            <td class="d-none d-lg-table-cell">{{ row.node }}</td>
+          <!-- A link by sight and a button by nature, the way the legend trigger
+          below is: the design asks for a link because withdrawing is not the
+          action the row is there for, but this one opens a dialog and navigates
+          nowhere, so an <a href="#"> would answer a ctrl-click with a pointless
+          new tab and announce itself to a screen reader as a link. -->
+          @if (offersUndo(row)) {
+            <button
+              type="button"
+              class="btn btn-link btn-sm p-0 align-baseline"
+              data-id="hilos-rotation-undo"
+              (click)="openUndo(row)"
+            >
+              I did not carry this one off
+            </button>
           }
-          <td class="small">{{ formatFileCounts(row) }}</td>
-          <td class="text-end d-none d-lg-table-cell">
-            {{ formatWeight(row) }}
-          </td>
-          <td>
-            <span [class]="'badge ' + retentionClass(row)">
-              {{ formatState(row) }}
-            </span>
-          </td>
-          <td class="text-end text-nowrap">
-            @if (offersTakeout(row)) {
-              <button
-                type="button"
-                class="btn btn-sm btn-warning"
-                data-id="hilos-rotation-takeout"
-                (click)="openTakeout(row)"
-              >
-                How to carry it off
-              </button>
-            }
-            <!-- A link by sight and a button by nature, the way the legend trigger
-            below is: the design asks for a link because withdrawing is not the
-            action the row is there for, but this one opens a dialog and navigates
-            nowhere, so an <a href="#"> would answer a ctrl-click with a pointless
-            new tab and announce itself to a screen reader as a link. -->
-            @if (offersUndo(row)) {
-              <button
-                type="button"
-                class="btn btn-link btn-sm p-0 align-baseline"
-                data-id="hilos-rotation-undo"
-                (click)="openUndo(row)"
-              >
-                I did not carry this one off
-              </button>
-            }
-          </td>
         </ng-template>
 
         <ng-template #empty>
@@ -498,7 +439,6 @@ export class HilosLogsRotationsPage {
   readonly context = input.required<HilosLogRotationsContext>()
 
   protected readonly page = HilosPages.LOGS_ROTATIONS
-  protected readonly stateOptions = HILOS_ROTATION_STATE_OPTIONS
   protected readonly formatFileCounts = formatRotationFileCounts
   protected readonly formatRetention = formatRetentionRule
   protected readonly formatRule = formatRotationRule
@@ -514,14 +454,18 @@ export class HilosLogsRotationsPage {
   // mounted without one, the screen opens on All and leaves the address alone.
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
+  private readonly headerHandle = computed(() =>
+    createHilosLogRotationsHeader(this.context()),
+  )
   protected readonly rotations = computed(() =>
-    createHilosLogRotationsTable(this.context(), this.router ?? undefined),
+    createHilosLogRotationsTable(
+      this.context(),
+      this.headerHandle().header,
+      this.router ?? undefined,
+    ),
   )
   private readonly actions = computed(() =>
     createHilosLogRotationsActions(this.context()),
-  )
-  private readonly headerHandle = computed(() =>
-    createHilosLogRotationsHeader(this.context()),
   )
 
   // The header and the window state, mirrored from the (per-context) core signals
@@ -532,13 +476,7 @@ export class HilosLogsRotationsPage {
   )
   private readonly rowCount = signal(0)
   private readonly search = signal('')
-
-  // Domain filters: the node and the state ride the open filter map so the backend
-  // narrows the window (no local filtering). Empty clears the filter. The state is
-  // mirrored from the table itself rather than kept here, so the generic "Reset
-  // filters" moves the switch along with the rows.
-  protected readonly nodeFilter = signal('')
-  protected readonly stateFilter = signal('')
+  private readonly activeFilters = signal(0)
 
   // The takeout dialog: how to carry one batch off, and the button that records
   // that it was. Only a recommended batch offers it — a kept one is not being asked
@@ -572,53 +510,13 @@ export class HilosLogsRotationsPage {
   // option would both be furniture for a choice that does not exist.
   protected readonly clustered = computed(() => hasRotationNodes(this.header()))
 
-  // The search hint follows the same header, so the field never offers a dimension
-  // the list cannot match on.
-  protected readonly searchPlaceholder = computed(() =>
-    rotationsSearchPlaceholder(this.header()),
-  )
-
-  // Declared as the loose HilosTableColumn rather than the row-typed form: the Files
-  // column is four counts at once and belongs to no single field, so keying it to
-  // one of them would name the column after a quarter of what it shows. The sortable
-  // keys are the exported wire constants, which is where a typo would actually cost
-  // something — they travel to the backend as the sort field.
-  //
-  // The node and weight columns drop out of the header below `lg`, where their
-  // values move into the sub-line of the batch cell: a narrow screen gets a shorter
-  // table rather than one that scrolls sideways.
-  protected readonly columns = computed<HilosTableColumn[]>(() => [
-    { key: ROTATION_BATCH_AT_FIELD, label: 'Batch', sortable: true },
-    ...(this.clustered()
-      ? [
-          {
-            key: ROTATION_NODE_FIELD,
-            label: 'Node',
-            sortable: true,
-            headerClass: 'd-none d-lg-table-cell',
-          },
-        ]
-      : []),
-    { key: 'files', label: 'Files' },
-    {
-      key: ROTATION_BYTES_FIELD,
-      label: 'Weight',
-      sortable: true,
-      headerClass: 'text-end d-none d-lg-table-cell',
-    },
-    { key: 'retention', label: 'Retention' },
-    { key: 'actions', label: '', headerClass: 'text-end' },
-  ])
-
   // Which of the four empty states the screen is in — the discrimination is the
   // headless's, because it is the same question in all three view frameworks.
   protected readonly emptyState = computed(() =>
     rotationsEmptyState(
       this.header(),
       this.rowCount(),
-      this.search() !== '' ||
-        this.nodeFilter() !== '' ||
-        this.stateFilter() !== '',
+      this.search() !== '' || this.activeFilters() > 0,
     ),
   )
 
@@ -674,7 +572,9 @@ export class HilosLogsRotationsPage {
       this.focusedRow.set(rotations.controller.focusedRow.get())
       this.rowCount.set(rotations.controller.rows.get().length)
       this.search.set(rotations.controller.search.get())
-      this.stateFilter.set(rotations.state.get())
+      this.activeFilters.set(
+        Object.keys(rotations.controller.filter.get()).length,
+      )
       const unsubscribes = [
         subscribeSignal(headerHandle.header, (next) => {
           this.header.set(next)
@@ -688,8 +588,8 @@ export class HilosLogsRotationsPage {
         subscribeSignal(rotations.controller.search, (next) => {
           this.search.set(next)
         }),
-        subscribeSignal(rotations.state, (next) => {
-          this.stateFilter.set(next)
+        subscribeSignal(rotations.controller.filter, (next) => {
+          this.activeFilters.set(Object.keys(next).length)
         }),
       ]
       onCleanup(() => {
@@ -777,22 +677,10 @@ export class HilosLogsRotationsPage {
     }
   }
 
-  protected onNode(event: Event): void {
-    this.setNode((event.target as HTMLSelectElement).value)
-  }
-
-  protected setState(value: string): void {
-    this.rotations().controller.setFilter(ROTATION_FILTER_STATE, value)
-  }
-
   protected clearFilters(): void {
-    this.rotations().controller.setSearch('')
-    this.setNode('')
-    this.setState('')
-  }
-
-  private setNode(value: string): void {
-    this.nodeFilter.set(value)
-    this.rotations().controller.setFilter(ROTATION_FILTER_NODE, value)
+    const controller = this.rotations().controller
+    controller.setSearch('')
+    controller.setFilter(ROTATION_FILTER_NODE, '')
+    controller.setFilter(ROTATION_FILTER_STATE, '')
   }
 }

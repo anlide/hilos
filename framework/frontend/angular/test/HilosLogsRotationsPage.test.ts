@@ -160,6 +160,12 @@ function makeConnection(): {
 
       return true
     },
+    sendTableRendered(): boolean {
+      return true
+    },
+    sendTableFacets(): boolean {
+      return true
+    },
   } as unknown as HilosConnection
 
   return {
@@ -226,6 +232,7 @@ function makeConnection(): {
               slots: { batch: slot },
             })),
             totalCount: rows.length,
+            limit: 25,
           },
         })
       }
@@ -561,11 +568,48 @@ describe('HilosLogsRotationsPage', () => {
     pushWindow([batch()])
     fixture.detectChanges()
 
+    const root = fixture.nativeElement as HTMLElement
     expect(
-      (fixture.nativeElement as HTMLElement)
-        .querySelector('[data-id^="hilos-table-row-"] td.small')
-        ?.textContent?.trim(),
-    ).toBe('3 / 12 / 8 / 2')
+      root.querySelector('[data-id^="hilos-table-row-"]')?.textContent,
+    ).toContain('3 / 12 / 8 / 2')
+    expect(
+      root.querySelector('[data-id^="hilos-table-card-"]')?.textContent,
+    ).toContain('3 / 12 / 8 / 2')
+  })
+
+  it('shows the weight in the wide row and in the card, and the bar from the frame', () => {
+    const { connection, pushHeader, pushWindow } = makeConnection()
+    const fixture = mountPage(connection)
+
+    pushHeader(header({ nodes: [] }))
+    pushWindow([batch()])
+    fixture.detectChanges()
+
+    const root = fixture.nativeElement as HTMLElement
+    const row = root.querySelector('[data-id^="hilos-table-row-"]')
+    const card = root.querySelector('[data-id^="hilos-table-card-"]')
+    expect(byId(fixture, 'hilos-table-title')?.textContent?.trim()).toBe(
+      'Rotation batches',
+    )
+    expect(
+      (byId(fixture, 'hilos-table-search') as HTMLInputElement).placeholder,
+    ).toBe('Search by batch date…')
+    expect(byId(fixture, 'hilos-table-filter-node')).toBeNull()
+    expect(byId(fixture, 'hilos-table-filter-state')).not.toBeNull()
+    expect(row?.textContent).toContain('1.5 GB')
+    expect(card?.textContent).toContain('1.5 GB')
+    expect(row?.querySelector('.d-lg-none')).toBeNull()
+    expect(byId(fixture, 'hilos-table-count')?.textContent).toContain('of 1')
+
+    pushHeader(header({ nodes: ['node-1', 'node-2'] }))
+    fixture.detectChanges()
+
+    expect(byId(fixture, 'hilos-table-filter-node')?.textContent).toContain(
+      'node-2',
+    )
+    expect(
+      (byId(fixture, 'hilos-table-search') as HTMLInputElement).placeholder,
+    ).toBe('Search by batch date or node…')
   })
 
   it('offers the withdrawal only on a batch somebody said was carried off', () => {
@@ -580,7 +624,17 @@ describe('HilosLogsRotationsPage', () => {
     ])
     fixture.detectChanges()
 
-    expect(allById(fixture, 'hilos-rotation-undo')).toHaveLength(1)
+    const root = fixture.nativeElement as HTMLElement
+    expect(
+      root.querySelectorAll(
+        '[data-id^="hilos-table-row-"] [data-id="hilos-rotation-undo"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      root.querySelectorAll(
+        '[data-id^="hilos-table-card-"] [data-id="hilos-rotation-undo"]',
+      ),
+    ).toHaveLength(1)
   })
 
   /**
@@ -663,8 +717,8 @@ describe('HilosLogsRotationsPage', () => {
     // The page's unfiltered window is not drawn; the table asks for the awaiting one.
     expect(screenText(fixture)).not.toContain('archive/2027-01-15-08-00-00/')
     expect(
-      byId(fixture, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
-    ).toBe('true')
+      (byId(fixture, 'hilos-table-filter-state') as HTMLInputElement).checked,
+    ).toBe(true)
     expect(sent[0]?.filter).toEqual({ state: 'due' })
   })
 
@@ -677,12 +731,12 @@ describe('HilosLogsRotationsPage', () => {
       router({ state: 'due' }, rewrites),
     )
 
-    clickById(fixture, 'hilos-rotation-state-all')
+    clickById(fixture, 'hilos-table-filter-state')
 
     expect(rewrites).toEqual(['/hilos/logs/rotations'])
     expect(
-      byId(fixture, 'hilos-rotation-state-all')?.getAttribute('aria-pressed'),
-    ).toBe('true')
+      (byId(fixture, 'hilos-table-filter-state') as HTMLInputElement).checked,
+    ).toBe(false)
   })
 
   it('a viewer opens the takeout dialog and has nothing to confirm it with', async () => {
@@ -780,14 +834,12 @@ describe('HilosLogsRotationsPage', () => {
 
     const dueSwitch = byId(
       fixture,
-      'hilos-rotation-state-due',
-    ) as HTMLButtonElement | null
+      'hilos-table-filter-state',
+    ) as HTMLInputElement | null
     expect(dueSwitch?.disabled).toBe(false)
     dueSwitch?.click()
     fixture.detectChanges()
-    expect(
-      byId(fixture, 'hilos-rotation-state-due')?.getAttribute('aria-pressed'),
-    ).toBe('true')
+    expect(dueSwitch?.checked).toBe(true)
 
     const legend = byId(
       fixture,

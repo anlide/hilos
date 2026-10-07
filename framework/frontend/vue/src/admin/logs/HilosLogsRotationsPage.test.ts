@@ -145,6 +145,12 @@ function makeConnection(): {
 
       return true
     },
+    sendTableRendered(): boolean {
+      return true
+    },
+    sendTableFacets(): boolean {
+      return true
+    },
   } as unknown as HilosConnection
 
   const pushWindow = (rows: Record<string, unknown>[]): void => {
@@ -158,6 +164,7 @@ function makeConnection(): {
             slots: { batch: slot },
           })),
           totalCount: rows.length,
+          limit: 25,
         },
       })
     }
@@ -434,13 +441,12 @@ describe('HilosLogsRotationsPage', () => {
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('2019-01-01')
 
-    // A search that matched nothing is the table's own state since HIL-808: the framework
-    // names the query and offers the reset, and the page's words stay for an empty store.
-    expect(wrapper.find('[data-id="hilos-table-no-matches"]').exists()).toBe(
-      true,
-    )
+    // This frame opts into the page's own no-match wording and reset control.
     expect(
-      wrapper.find('[data-id="hilos-table-no-matches-reset"]').exists(),
+      wrapper.find('[data-id="hilos-rotation-empty-nomatch"]').exists(),
+    ).toBe(true)
+    expect(
+      wrapper.find('[data-id="hilos-rotation-clear-filters"]').exists(),
     ).toBe(true)
     expect(
       wrapper.find('[data-id="hilos-rotation-empty-never"]').exists(),
@@ -454,7 +460,18 @@ describe('HilosLogsRotationsPage', () => {
     pushHeader(header({ nodes: [] }))
     await nextTick()
 
-    expect(wrapper.find('[data-id="hilos-rotation-node"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-title"]').text()).toBe(
+      'Rotation batches',
+    )
+    expect(
+      wrapper.find('[data-id="hilos-table-search"]').attributes('placeholder'),
+    ).toBe('Search by batch date…')
+    expect(wrapper.find('[data-id="hilos-table-filter-node"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-filter-state"]').exists()).toBe(
+      true,
+    )
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
       false,
     )
@@ -467,9 +484,12 @@ describe('HilosLogsRotationsPage', () => {
     pushHeader(header({ nodes: ['node-1', 'node-2'] }))
     await nextTick()
 
-    const select = wrapper.find('[data-id="hilos-rotation-node"]')
+    const select = wrapper.find('[data-id="hilos-table-filter-node"]')
     expect(select.exists()).toBe(true)
     expect(select.text()).toContain('node-2')
+    expect(
+      wrapper.find('[data-id="hilos-table-search"]').attributes('placeholder'),
+    ).toBe('Search by batch date or node…')
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
       true,
     )
@@ -499,12 +519,10 @@ describe('HilosLogsRotationsPage', () => {
   })
 
   /**
-   * Below `lg` the node and weight columns are hidden and their values move into a
-   * sub-line under the batch name. The single-node installation is the case that
-   * broke: only the weight is hidden there, and a sub-line that appeared for
-   * clusters alone left a narrow screen with no weight anywhere.
+   * The narrow card is the same row, so the weight is a field of it even when the
+   * installation names no node and the wide row has no node column.
    */
-  it('carries the hidden weight into the sub-line even with no node names', async () => {
+  it('shows the weight in the wide row and in the card, with no node column', async () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
@@ -512,9 +530,14 @@ describe('HilosLogsRotationsPage', () => {
     pushWindow([batch()])
     await nextTick()
 
-    const subLine = wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none')
-    expect(subLine.exists()).toBe(true)
-    expect(subLine.text()).toBe('1.5 GB')
+    const row = wrapper.find('[data-id^="hilos-table-row-"]')
+    const card = wrapper.find('[data-id^="hilos-table-card-"]')
+    expect(row.text()).toContain('1.5 GB')
+    expect(card.text()).toContain('1.5 GB')
+    expect(row.find('.d-lg-none').exists()).toBe(false)
+    expect(wrapper.find('[data-id="hilos-table-count"]').text()).toContain(
+      'of 1',
+    )
   })
 
   /**
@@ -529,12 +552,15 @@ describe('HilosLogsRotationsPage', () => {
     pushWindow([batch()])
     await nextTick()
 
-    expect(wrapper.find('[data-id^="hilos-table-row-"] td.small').text()).toBe(
+    expect(wrapper.find('[data-id^="hilos-table-row-"]').text()).toContain(
+      '3 / 12 / 8 / 2',
+    )
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain(
       '3 / 12 / 8 / 2',
     )
   })
 
-  it('carries the node into that sub-line as well where nodes have names', async () => {
+  it('shows the node in the wide row and in the card where nodes have names', async () => {
     const { connection, pushHeader, pushWindow } = makeConnection()
     const wrapper = mountPage(connection)
 
@@ -542,9 +568,15 @@ describe('HilosLogsRotationsPage', () => {
     pushWindow([batch({ node: 'node-1' })])
     await nextTick()
 
-    expect(
-      wrapper.find('[data-id^="hilos-table-row-"] .d-lg-none').text(),
-    ).toBe('node-1 · 1.5 GB')
+    expect(wrapper.find('[data-id^="hilos-table-row-"]').text()).toContain(
+      'node-1',
+    )
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain(
+      'node-1',
+    )
+    expect(wrapper.find('[data-id^="hilos-table-card-"]').text()).toContain(
+      '1.5 GB',
+    )
   })
 
   it('offers the takeout only on a batch the rule recommends carrying off', async () => {
@@ -559,9 +591,16 @@ describe('HilosLogsRotationsPage', () => {
     ])
     await nextTick()
 
-    expect(wrapper.findAll('[data-id="hilos-rotation-takeout"]')).toHaveLength(
-      1,
-    )
+    expect(
+      wrapper.findAll(
+        '[data-id^="hilos-table-row-"] [data-id="hilos-rotation-takeout"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      wrapper.findAll(
+        '[data-id^="hilos-table-card-"] [data-id="hilos-rotation-takeout"]',
+      ),
+    ).toHaveLength(1)
   })
 
   /**
@@ -700,7 +739,16 @@ describe('HilosLogsRotationsPage', () => {
     ])
     await nextTick()
 
-    expect(wrapper.findAll('[data-id="hilos-rotation-undo"]')).toHaveLength(1)
+    expect(
+      wrapper.findAll(
+        '[data-id^="hilos-table-row-"] [data-id="hilos-rotation-undo"]',
+      ),
+    ).toHaveLength(1)
+    expect(
+      wrapper.findAll(
+        '[data-id^="hilos-table-card-"] [data-id="hilos-rotation-undo"]',
+      ),
+    ).toHaveLength(1)
   })
 
   /**
@@ -813,10 +861,11 @@ describe('HilosLogsRotationsPage', () => {
     // The page's unfiltered window is not drawn; the table asks for the awaiting one.
     expect(wrapper.text()).not.toContain('archive/2027-01-15-08-00-00/')
     expect(
-      wrapper
-        .find('[data-id="hilos-rotation-state-due"]')
-        .attributes('aria-pressed'),
-    ).toBe('true')
+      (
+        wrapper.find('[data-id="hilos-table-filter-state"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true)
     expect(sent[0]?.filter).toEqual({ state: 'due' })
   })
 
@@ -829,14 +878,15 @@ describe('HilosLogsRotationsPage', () => {
       router({ state: 'due' }, rewrites),
     )
 
-    await wrapper.find('[data-id="hilos-rotation-state-all"]').trigger('click')
+    await wrapper.find('[data-id="hilos-table-filter-state"]').setValue(false)
 
     expect(rewrites).toEqual(['/hilos/logs/rotations'])
     expect(
-      wrapper
-        .find('[data-id="hilos-rotation-state-all"]')
-        .attributes('aria-pressed'),
-    ).toBe('true')
+      (
+        wrapper.find('[data-id="hilos-table-filter-state"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(false)
   })
 
   it('a viewer opens the takeout dialog and has nothing to confirm it with', async () => {
@@ -928,13 +978,13 @@ describe('HilosLogsRotationsPage', () => {
     const { connection } = makeConnection()
     const wrapper = mountPage(connection)
 
-    const dueSwitch = wrapper.find<HTMLButtonElement>(
-      '[data-id="hilos-rotation-state-due"]',
+    const dueSwitch = wrapper.find<HTMLInputElement>(
+      '[data-id="hilos-table-filter-state"]',
     )
     expect(dueSwitch.element.disabled).toBe(false)
-    await dueSwitch.trigger('click')
+    await dueSwitch.setValue(true)
     await nextTick()
-    expect(dueSwitch.attributes('aria-pressed')).toBe('true')
+    expect(dueSwitch.element.checked).toBe(true)
 
     const legend = wrapper.find<HTMLButtonElement>(
       '[data-id="hilos-rotation-legend"]',

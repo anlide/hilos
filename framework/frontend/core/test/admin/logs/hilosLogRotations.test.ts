@@ -27,6 +27,13 @@ import {
   LOGS_TAKEOUT_CONFIRM_ACTION,
   LOGS_TAKEOUT_UNDO_ACTION,
   ROTATIONS_HEADER_SIGNAL,
+  ROTATION_BATCH_AT_FIELD,
+  ROTATION_BYTES_FIELD,
+  ROTATION_DAEMON_FILE_COUNT_FIELD,
+  ROTATION_FILTER_NODE,
+  ROTATION_FILTER_STATE,
+  ROTATION_NODE_FIELD,
+  ROTATION_RETENTION_STATE_FIELD,
   type HilosLogRotationRow,
   type HilosLogRotationsAddress,
   type HilosLogRotationsContext,
@@ -43,6 +50,7 @@ import { type ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
 
 function row(
   overrides: Partial<HilosLogRotationRow> = {},
@@ -523,10 +531,26 @@ describe('logRotationsPath', () => {
 })
 
 describe('createHilosLogRotationsTable and the address', () => {
+  /** One `table_rendered` the stub connection was asked to send. */
+  interface RenderedFrame {
+    page: string
+    tableKey: string
+    rendered: readonly string[]
+  }
+
+  /** One `table_facets` the stub connection was asked to send. */
+  interface FacetFrame {
+    page: string
+    tableKey: string
+    facets: Readonly<Record<string, readonly unknown[]>>
+  }
+
   /** A context whose connection records the descriptors and delivers nothing. */
   function stubContext(
     sent: TableViewportDescriptor[],
     focusFrames: Array<{ page: string; tableKey: string; rowKey: string }> = [],
+    renderedFrames: RenderedFrame[] = [],
+    facetFrames: FacetFrame[] = [],
   ): HilosLogRotationsContext {
     return {
       connection: {
@@ -552,9 +576,32 @@ describe('createHilosLogRotationsTable and the address', () => {
 
           return true
         },
+        sendTableRendered(
+          page: string,
+          tableKey: string,
+          rendered: readonly string[],
+        ): boolean {
+          renderedFrames.push({ page, tableKey, rendered })
+
+          return true
+        },
+        sendTableFacets(
+          page: string,
+          tableKey: string,
+          facets: Readonly<Record<string, readonly unknown[]>>,
+        ): boolean {
+          facetFrames.push({ page, tableKey, facets })
+
+          return true
+        },
       } as unknown as HilosConnection,
       scopes: { page: () => undefined } as unknown as ScopeManager,
     } as unknown as HilosLogRotationsContext
+  }
+
+  /** A header signal that has not arrived, which is how the screen opens. */
+  function quietHeader() {
+    return createSignal<HilosLogRotationsHeader | null>(null)
   }
 
   /** A navigator entered at `params`, recording the addresses it is rewritten to. */
@@ -605,6 +652,7 @@ describe('createHilosLogRotationsTable and the address', () => {
     const rewrites: string[] = []
     const table = createHilosLogRotationsTable(
       stubContext(sent),
+      quietHeader(),
       fakeAddress({ state: 'due' }, rewrites),
     )
     table.start()
@@ -623,6 +671,7 @@ describe('createHilosLogRotationsTable and the address', () => {
     const rewrites: string[] = []
     const table = createHilosLogRotationsTable(
       stubContext(sent),
+      quietHeader(),
       fakeAddress({ state: 'due' }, rewrites),
     )
     table.start()
@@ -647,6 +696,7 @@ describe('createHilosLogRotationsTable and the address', () => {
     const rewrites: string[] = []
     const table = createHilosLogRotationsTable(
       stubContext(sent),
+      quietHeader(),
       fakeAddress({ state: 'kept' }, rewrites),
     )
     table.start()
@@ -660,7 +710,7 @@ describe('createHilosLogRotationsTable and the address', () => {
 
   it('without a navigator has neither a preset nor a rewrite', () => {
     const sent: TableViewportDescriptor[] = []
-    const table = createHilosLogRotationsTable(stubContext(sent))
+    const table = createHilosLogRotationsTable(stubContext(sent), quietHeader())
     table.start()
 
     servePageWindow(table)
@@ -677,7 +727,10 @@ describe('createHilosLogRotationsTable and the address', () => {
       tableKey: string
       rowKey: string
     }> = []
-    const table = createHilosLogRotationsTable(stubContext([], focusFrames))
+    const table = createHilosLogRotationsTable(
+      stubContext([], focusFrames),
+      quietHeader(),
+    )
     table.start()
     servePageWindow(table)
 
@@ -699,6 +752,295 @@ describe('createHilosLogRotationsTable and the address', () => {
       },
     ])
     table.dispose()
+  })
+})
+
+describe('the rotation table frame', () => {
+  /** One `table_rendered` the stub connection was asked to send. */
+  interface RenderedFrame {
+    page: string
+    tableKey: string
+    rendered: readonly string[]
+  }
+
+  /** One `table_facets` the stub connection was asked to send. */
+  interface FacetFrame {
+    page: string
+    tableKey: string
+    facets: Readonly<Record<string, readonly unknown[]>>
+  }
+
+  /**
+   * The fields a single-node declaration draws. Node is among them because the
+   * actions cell reads it, even though the column itself is absent.
+   */
+  const singleNodeRendered = [
+    ROTATION_BATCH_AT_FIELD,
+    'path',
+    ROTATION_DAEMON_FILE_COUNT_FIELD,
+    'agentFileCount',
+    'workerFileCount',
+    'workerMonopolisticFileCount',
+    ROTATION_BYTES_FIELD,
+    ROTATION_RETENTION_STATE_FIELD,
+    ROTATION_NODE_FIELD,
+    'absolutePath',
+    'pruneNotBefore',
+  ]
+
+  /** The same fields once the Node column stands in the row, which only reorders them. */
+  const clusterRendered = [
+    ROTATION_BATCH_AT_FIELD,
+    'path',
+    ROTATION_NODE_FIELD,
+    ROTATION_DAEMON_FILE_COUNT_FIELD,
+    'agentFileCount',
+    'workerFileCount',
+    'workerMonopolisticFileCount',
+    ROTATION_BYTES_FIELD,
+    ROTATION_RETENTION_STATE_FIELD,
+    'absolutePath',
+    'pruneNotBefore',
+  ]
+
+  /** A context whose connection records viewport, rendered, and facet frames. */
+  function recordingContext(
+    sent: TableViewportDescriptor[],
+    renderedFrames: RenderedFrame[],
+    facetFrames: FacetFrame[],
+  ): HilosLogRotationsContext {
+    return {
+      connection: {
+        on: () => () => {},
+        registerTableWindow(): void {},
+        unregisterTableWindow(): void {},
+        tableWindowDescriptors: () => ({}),
+        sendTableViewport(
+          _page: string,
+          _tableKey: string,
+          descriptor: TableViewportDescriptor,
+        ): boolean {
+          sent.push(descriptor)
+
+          return true
+        },
+        sendTableRendered(
+          page: string,
+          tableKey: string,
+          rendered: readonly string[],
+        ): boolean {
+          renderedFrames.push({ page, tableKey, rendered })
+
+          return true
+        },
+        sendTableFacets(
+          page: string,
+          tableKey: string,
+          facets: Readonly<Record<string, readonly unknown[]>>,
+        ): boolean {
+          facetFrames.push({ page, tableKey, facets })
+
+          return true
+        },
+        sendTableRowFocus(): boolean {
+          return true
+        },
+      } as unknown as HilosConnection,
+      scopes: { page: () => undefined } as unknown as ScopeManager,
+    } as unknown as HilosLogRotationsContext
+  }
+
+  it('declares the title, the page empty state, and the single-node columns', () => {
+    const table = createHilosLogRotationsTable(
+      recordingContext([], [], []),
+      createSignal(header({ nodes: [] })),
+    )
+    const frame = table.controller.frame
+
+    expect(frame.declaration?.title).toBe('Rotation batches')
+    expect(frame.declaration?.filteredEmpty).toBe('page')
+    expect(frame.searchPlaceholder.get()).toBe('Search by batch date…')
+    expect(frame.columns.get().map((column) => column.key)).toEqual([
+      ROTATION_BATCH_AT_FIELD,
+      ROTATION_DAEMON_FILE_COUNT_FIELD,
+      ROTATION_BYTES_FIELD,
+      ROTATION_RETENTION_STATE_FIELD,
+      HILOS_TABLE_ACTIONS_KEY,
+    ])
+    expect(frame.columns.get()[0]?.card).toBe('title')
+    expect(
+      frame.columns
+        .get()
+        .find((column) => column.key === ROTATION_RETENTION_STATE_FIELD)?.card,
+    ).toBe('badge')
+
+    const filters = frame.filters.get()
+    expect(filters).toHaveLength(1)
+    expect(filters[0]?.filter).toEqual({
+      key: ROTATION_FILTER_STATE,
+      kind: 'toggle',
+      label: 'Awaiting carry-off',
+      on: HILOS_ROTATION_STATE_DUE,
+    })
+  })
+
+  it('turns the awaiting toggle off by deleting the state key', () => {
+    const sent: TableViewportDescriptor[] = []
+    const table = createHilosLogRotationsTable(
+      recordingContext(sent, [], []),
+      createSignal(header()),
+    )
+    table.start()
+    table.controller.setFilter(ROTATION_FILTER_STATE, HILOS_ROTATION_STATE_DUE)
+    table.controller.setFilter(ROTATION_FILTER_STATE, '')
+
+    expect(sent.at(-1)?.filter).toEqual({})
+    expect(table.state.get()).toBe('')
+  })
+
+  it('grows the node column, the node filter, and the search hint from a late header', () => {
+    const headerSignal = createSignal<HilosLogRotationsHeader | null>(null)
+    const table = createHilosLogRotationsTable(
+      recordingContext([], [], []),
+      headerSignal,
+    )
+
+    expect(table.controller.frame.searchPlaceholder.get()).toBe(
+      'Search by batch date…',
+    )
+    expect(
+      table.controller.frame.columns.get().map((column) => column.key),
+    ).not.toContain(ROTATION_NODE_FIELD)
+    expect(table.controller.frame.filters.get()).toHaveLength(1)
+
+    headerSignal.set(header({ nodes: ['node-1', 'node-2'] }))
+
+    expect(table.controller.frame.searchPlaceholder.get()).toBe(
+      'Search by batch date or node…',
+    )
+    expect(
+      table.controller.frame.columns.get().map((column) => column.key),
+    ).toEqual([
+      ROTATION_BATCH_AT_FIELD,
+      ROTATION_NODE_FIELD,
+      ROTATION_DAEMON_FILE_COUNT_FIELD,
+      ROTATION_BYTES_FIELD,
+      ROTATION_RETENTION_STATE_FIELD,
+      HILOS_TABLE_ACTIONS_KEY,
+    ])
+    const filters = table.controller.frame.filters.get()
+    expect(filters).toHaveLength(2)
+    const nodeFilter = filters[0]?.filter
+    expect(nodeFilter?.kind).toBe('select')
+    if (nodeFilter?.kind === 'select') {
+      expect(nodeFilter.key).toBe(ROTATION_FILTER_NODE)
+      expect(nodeFilter.anyLabel).toBe('All nodes')
+      expect(nodeFilter.options()).toEqual([
+        { value: 'node-1', label: 'node-1' },
+        { value: 'node-2', label: 'node-2' },
+      ])
+    }
+  })
+
+  it('drops a selected node that the picture no longer names', () => {
+    const sent: TableViewportDescriptor[] = []
+    const headerSignal = createSignal(header({ nodes: ['node-1', 'node-2'] }))
+    const table = createHilosLogRotationsTable(
+      recordingContext(sent, [], []),
+      headerSignal,
+    )
+    table.start()
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      [{ field: 'batchAt', direction: 'desc' }],
+      [],
+    )
+    table.controller.setFilter(ROTATION_FILTER_NODE, 'node-2')
+
+    headerSignal.set(header({ nodes: ['node-1'] }))
+
+    expect(table.controller.filter.get()[ROTATION_FILTER_NODE]).toBeUndefined()
+    expect(sent.at(-1)?.filter?.[ROTATION_FILTER_NODE]).toBeUndefined()
+  })
+
+  it('names the real row fields in the rendered list and never the old visual keys', () => {
+    const renderedFrames: RenderedFrame[] = []
+    const table = createHilosLogRotationsTable(
+      recordingContext([], renderedFrames, []),
+      createSignal(header({ nodes: [] })),
+    )
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      [{ field: 'batchAt', direction: 'desc' }],
+      [],
+    )
+
+    expect(renderedFrames).toHaveLength(1)
+    expect(renderedFrames[0]?.page).toBe(HilosPages.LOGS_ROTATIONS)
+    expect(renderedFrames[0]?.tableKey).toBe('hilosLogRotations')
+    expect(renderedFrames[0]?.rendered).toEqual(singleNodeRendered)
+    expect(renderedFrames[0]?.rendered).not.toContain('files')
+    expect(renderedFrames[0]?.rendered).not.toContain('retention')
+    expect(table.controller.descriptor()?.rendered).toEqual(singleNodeRendered)
+  })
+
+  it('declares node facet options once the first window lands, and keeps the same rendered fields when the column appears', () => {
+    const renderedFrames: RenderedFrame[] = []
+    const facetFrames: FacetFrame[] = []
+    const headerSignal = createSignal<HilosLogRotationsHeader | null>(null)
+    const table = createHilosLogRotationsTable(
+      recordingContext([], renderedFrames, facetFrames),
+      headerSignal,
+    )
+
+    expect(renderedFrames).toEqual([])
+    expect(facetFrames).toEqual([])
+
+    table.controller.ingestSubscriptionWindow(
+      [],
+      0,
+      true,
+      null,
+      null,
+      25,
+      [{ field: 'batchAt', direction: 'desc' }],
+      [],
+    )
+
+    expect(renderedFrames).toHaveLength(1)
+    expect(renderedFrames[0]?.rendered).toEqual(singleNodeRendered)
+    expect(facetFrames).toEqual([])
+
+    headerSignal.set(header({ nodes: ['node-1', 'node-2'] }))
+
+    expect(
+      table.controller.frame.columns.get().map((column) => column.key),
+    ).toContain(ROTATION_NODE_FIELD)
+    expect(new Set(table.controller.descriptor()?.rendered)).toEqual(
+      new Set(singleNodeRendered),
+    )
+    expect(facetFrames).toEqual([
+      {
+        page: HilosPages.LOGS_ROTATIONS,
+        tableKey: 'hilosLogRotations',
+        facets: { [ROTATION_FILTER_NODE]: ['node-1', 'node-2'] },
+      },
+    ])
+    // The column only reorders fields the actions cell already named, so a second
+    // rendered frame, if the order change sends one, still carries that same set.
+    for (const frame of renderedFrames) {
+      expect(new Set(frame.rendered)).toEqual(new Set(clusterRendered))
+    }
   })
 })
 

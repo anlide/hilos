@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
 
-import { setCustomSetting } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  setCustomSetting,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { gotoPage } from '../helpers/page.js'
 import { typeInto } from '../helpers/session.js'
@@ -64,6 +67,29 @@ test('renders every screen of the logs section over the live socket', async ({
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Rotations')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(page.getByTestId('hilos-rotation-settings')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-title')).toHaveText(
+    'Rotation batches',
+  )
+  await expect(page.getByTestId('hilos-table-search')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-filter-node')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  // A window with rows counts them. An archive nothing has rotated into yet
+  // says so in the page's empty state, drawn once in the table and once in the
+  // cards, and draws no "0 of 0". The copy on screen is the one that counts.
+  await expect(
+    shownByTestId(page, 'hilos-table-count').or(
+      shownByTestId(page, /^hilos-rotation-empty-/),
+    ),
+  ).toBeVisible()
+  const rotationToggle = page.getByTestId('hilos-table-filter-state')
+  await expect(rotationToggle).toBeVisible()
+  await rotationToggle.click()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
+  await expect(page.getByTestId('hilos-table-filter-reset')).toBeVisible()
+  await page.getByTestId('hilos-table-filter-reset').click()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+  await expect(page.getByTestId('hilos-table-filter-reset')).toHaveCount(0)
 
   // The viewer: the address is three slots, the stream is never guessed, and the
   // pane is there with the read controls around it.

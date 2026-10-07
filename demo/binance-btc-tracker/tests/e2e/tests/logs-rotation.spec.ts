@@ -3,6 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   clearCustomSetting,
   setCustomSetting,
+  shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { grantAdminToSelf } from '../helpers/adminGrant'
 import { gotoPage, PAGE_READY } from '../helpers/page'
@@ -147,7 +148,9 @@ async function resetSetting(tab: Page, key: string): Promise<void> {
  */
 async function rowKeys(page: Page): Promise<string[]> {
   return page
-    .locator(`[data-id^="${ROW_ID_PREFIX}"]`)
+    .locator(
+      `tbody [data-id^="${ROW_ID_PREFIX}"]:not([data-id^="${ROW_ID_PREFIX}detail-"])`,
+    )
     .evaluateAll(
       (rows, prefix) =>
         rows.map((row) =>
@@ -227,6 +230,13 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // afterwards has to arrive by push, on a page that did not navigate.
   await gotoPage(page, '/hilos/logs/rotations', PAGE_READY)
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-title')).toHaveText(
+    'Rotation batches',
+  )
+  await expect(page.getByTestId('hilos-table-search')).toBeVisible()
+  await expect(shownByTestId(page, 'hilos-table-filter-state')).toBeVisible()
+  await expect(page.getByTestId('hilos-table-filter-node')).toHaveCount(0)
+  await expect(page.getByTestId('hilos-table-cards')).toHaveCount(1)
 
   // The window, and not merely the table around it: the table element is in the
   // document from the first paint, and reading the rows before the server had
@@ -308,6 +318,10 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   await expect(rowA).toContainText('Awaiting carry-off', {
     timeout: WALK_WAIT_MS,
   })
+  // The footer counts a window that holds rows. The archive can be empty when
+  // the screen opens — the scenario has not rotated yet — and an empty window
+  // draws no "0 of 0".
+  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
 
   // The instruction: where the batch lies and what to type to copy it off. The
   // wording belongs to HIL-483, so what is asserted is that there is an address
@@ -370,7 +384,8 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   // The takeout modal stands open on batch B while another tab puts it back
   // under protection. The batch leaves the Awaiting window under the dialog;
   // its focused row still reaches the dialog and locks the stale confirmation.
-  await page.getByTestId('hilos-rotation-state-due').click()
+  await shownByTestId(page, 'hilos-table-filter-state').click()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
   await expect(rowB).toBeVisible()
   await rowB.getByTestId('hilos-rotation-takeout').click()
   const modal = page.getByTestId('modal')
@@ -393,7 +408,8 @@ test('rotates on the configured threshold, carries a batch off on the operator c
   await page.getByTestId('modal-close').click()
   await expect(modal).toHaveCount(0)
   await setSetting(tabB, RETENTION_KEEP_BATCHES, '0')
-  await page.getByTestId('hilos-rotation-state-all').click()
+  await shownByTestId(page, 'hilos-table-filter-state').click()
+  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
   await expect(rowB).toContainText('Awaiting carry-off', {
     timeout: WALK_WAIT_MS,
   })
