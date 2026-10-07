@@ -23,6 +23,7 @@ use Demo\Polls\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Polls\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Polls\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Polls\Agents\Hilos\UserAgent;
 use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Demo\Polls\Agents\OAuthAgent;
 use Demo\Polls\Agents\PollsAgent;
@@ -35,6 +36,7 @@ use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\PollsAgentDaemon;
@@ -88,6 +90,7 @@ use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\AuthCodeAgentDaemon;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -264,6 +267,13 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => I18nLibraryAgent::class,
             AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UserAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UserAgent::class,
+            AgentRegistryKey::DAEMON => UserAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,

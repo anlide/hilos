@@ -355,7 +355,7 @@ for the state at the start, beside its reads. The mechanism does not change with
 the width. Only a claim by named keys is never borrowed, because the rows it
 names are its own. The person's agent is such a holder: it claims its set without
 `Add`, beside the libraries that create the rows. See
-[instance-owners.md](instance-owners.md) (not in the code yet — HIL-630).
+[instance-owners.md](instance-owners.md) (built in HIL-630).
 
 **The runtime half is symmetric.** `OWNS_RT_SET` and
 `ownedRtSetKey(string $collection): string` are declared, asked and refused as

@@ -23,6 +23,7 @@ use Demo\Tasks\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Tasks\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Tasks\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Tasks\Agents\Hilos\UserAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Agents\TasksAgent;
@@ -36,6 +37,7 @@ use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
@@ -92,6 +94,7 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -271,6 +274,13 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => I18nLibraryAgent::class,
             AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UserAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UserAgent::class,
+            AgentRegistryKey::DAEMON => UserAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,

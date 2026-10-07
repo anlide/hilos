@@ -29,6 +29,7 @@ use Demo\Tasks\Agents\Hilos\DataExportAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Tasks\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Tasks\Agents\Hilos\UserAgent;
 use Demo\Tasks\Agents\Hilos\UsersLibraryAgent;
 use Demo\Tasks\Agents\OAuthAgent;
 use Demo\Tasks\Agents\TasksAgent;
@@ -37,6 +38,7 @@ use Demo\Tasks\Constants\PageConstants;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\OAuthAgentDaemon;
 use Demo\Tasks\Core\Agent\Daemon\TasksAgentDaemon;
@@ -199,6 +201,22 @@ final class TasksTopologyRegistryTest extends TestCase
         foreach (Hilos::PAGES as $page => $pageClass) {
             $this->assertSame($page, $pageClass::PAGE);
         }
+    }
+
+    /** The person agent is addressed by id and sleeps after the standard idle window. */
+    public function testPersonAgentHasTheIndexedPolicyRegistryEntry(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_USER];
+
+        $this->assertSame(UserAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(UserAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertSame(AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC, AgentRegistry::idleTimeout($entry));
+        $daemon = new UserAgentDaemon('42');
+        $this->assertSame('42', $daemon->getIndex());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
     }
 
     public function testAgentRegistryEntriesAreConcreteAndConsistent(): void

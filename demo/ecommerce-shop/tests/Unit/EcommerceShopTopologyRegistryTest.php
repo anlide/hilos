@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
@@ -16,6 +17,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
@@ -138,6 +140,22 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
+    /** The person agent is addressed by id and sleeps after the standard idle window. */
+    public function testPersonAgentHasTheIndexedPolicyRegistryEntry(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_USER];
+
+        $this->assertSame(UserAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(UserAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertSame(AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC, AgentRegistry::idleTimeout($entry));
+        $daemon = new UserAgentDaemon('42');
+        $this->assertSame('42', $daemon->getIndex());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
     public function testAgentRegistryEntriesAreConcreteAndConsistent(): void
     {
         foreach (Hilos::AGENTS as $agentType => $registryEntry) {
@@ -160,6 +178,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::HILOS_INDEX,
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosAgentType::HILOS_USER,
             HilosAgentType::HILOS_USERS_LIBRARY,
             AgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,

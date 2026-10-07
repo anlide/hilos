@@ -11,6 +11,7 @@ use Demo\OnlineTesting\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\OnlineTesting\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
+use Demo\OnlineTesting\Agents\Hilos\UserAgent;
 use Demo\OnlineTesting\Agents\Hilos\UsersLibraryAgent;
 use Demo\OnlineTesting\Constants\AgentType;
 use Demo\OnlineTesting\Constants\PageConstants;
@@ -20,6 +21,7 @@ use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\OnlineTesting\Database\OnlineTestingDbContext;
 use Demo\OnlineTesting\Database\Settings\OnlineTestingSettingsCatalog;
@@ -173,6 +175,22 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         }
     }
 
+    /** The person agent is addressed by id and sleeps after the standard idle window. */
+    public function testPersonAgentHasTheIndexedPolicyRegistryEntry(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_USER];
+
+        $this->assertSame(UserAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(UserAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertSame(AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC, AgentRegistry::idleTimeout($entry));
+        $daemon = new UserAgentDaemon('42');
+        $this->assertSame('42', $daemon->getIndex());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
     public function testAgentRegistryEntriesAreConcreteAndConsistent(): void
     {
         foreach (Hilos::AGENTS as $agentType => $registryEntry) {
@@ -200,6 +218,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             AgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_I18N_LIBRARY,
+            HilosAgentType::HILOS_USER,
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_LOG_STORE,

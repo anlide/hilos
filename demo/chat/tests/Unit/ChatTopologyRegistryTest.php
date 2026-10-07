@@ -41,6 +41,8 @@ use Hilos\DataExport\DataExportAgentDaemon;
 use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Closure;
 use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\Hilos\UserAgent;
+use Demo\Chat\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\CLI\ChatCliManager;
 use Demo\Chat\Constants\AgentType;
@@ -412,6 +414,22 @@ final class ChatTopologyRegistryTest extends TestCase
         }
     }
 
+    /** The person agent is addressed by id and sleeps after the standard idle window. */
+    public function testPersonAgentHasTheIndexedPolicyRegistryEntry(): void
+    {
+        $entry = Hilos::AGENTS[HilosAgentType::HILOS_USER];
+
+        $this->assertSame(UserAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(UserAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertSame(AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC, AgentRegistry::idleTimeout($entry));
+        $daemon = new UserAgentDaemon('42');
+        $this->assertSame('42', $daemon->getIndex());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
     public function testAgentRegistryKeysMatchAgentClassConstants(): void
     {
         foreach (Hilos::AGENTS as $agentType => $registryEntry) {
@@ -469,6 +487,7 @@ final class ChatTopologyRegistryTest extends TestCase
         // one loader of the journals does, wherever it stands.
         $this->assertSame([
             HilosAgentType::HILOS_DATA_EXPORT,
+            HilosAgentType::HILOS_USER,
             HilosAgentType::HILOS_USERS_LIBRARY,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,

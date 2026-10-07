@@ -11,6 +11,7 @@ use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\SessionsLibraryAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\UserAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\UsersLibraryAgent;
 use Demo\BinanceBtcTracker\Auth\BinanceBtcTrackerAuthMethodDirectory;
 use Demo\BinanceBtcTracker\Backup\BackupCatalog;
@@ -21,6 +22,7 @@ use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
@@ -70,6 +72,7 @@ use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -254,6 +257,13 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UserAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UserAgent::class,
+            AgentRegistryKey::DAEMON => UserAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,

@@ -29,6 +29,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Chat\Agents\Hilos\FilesLibraryAgent;
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
@@ -45,6 +46,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
@@ -162,6 +164,7 @@ use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -423,6 +426,13 @@ final class Hilos extends HilosFacade
         ChatAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => ChatAgent::class,
             AgentRegistryKey::DAEMON => ChatAgentDaemon::class,
+        ],
+        UserAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UserAgent::class,
+            AgentRegistryKey::DAEMON => UserAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,

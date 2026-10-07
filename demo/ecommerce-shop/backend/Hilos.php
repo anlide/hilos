@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
@@ -17,6 +18,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
@@ -49,6 +51,7 @@ use Hilos\Cluster\Probe\ClaimerProbeAgent;
 use Hilos\Cluster\Probe\ClusterProbe;
 use Hilos\Cluster\Probe\FleetProbeAgent;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -168,6 +171,13 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => SessionsLibraryAgent::class,
             AgentRegistryKey::DAEMON => SessionsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UserAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UserAgent::class,
+            AgentRegistryKey::DAEMON => UserAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
         ],
         UsersLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => UsersLibraryAgent::class,

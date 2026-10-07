@@ -16,8 +16,8 @@ is in [truth-source.md](truth-source.md).
 A top-level entity around which many interactions gather gets an agent per
 instance. That agent is the sole writer of ordinary content edits made by the
 person or an administrator: its own row and every row whose set tree ends at
-that instance. For a person, the figure is still to be built
-(not in the code yet — HIL-630). The edits move to it in the leaves named in
+that instance. For a person, the indexed agent, its row and set claims, and
+its idle lifetime are built (HIL-630). The edits move to it in the leaves named in
 [Where The Pieces Land](#where-the-pieces-land)
 (not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409, HIL-1410).
 
@@ -41,7 +41,7 @@ The current roots give these answers:
 
 | Root | Decision | Why |
 |---|---|---|
-| Person — `framework/backend/Database/Entity/Item/User.php` | Yes (not in the code yet — HIL-630) | The person's own and administrative edits converge on the same row and child sets. |
+| Person — `framework/backend/Database/Entity/Item/User.php` | Yes (agent figure built in HIL-630) | The person's own and administrative edits converge on the same row and child sets. |
 | File — `framework/backend/Database/Entity/Item/File.php` | No | The [files registry](files-registry.md) has one owner of the table. |
 | Chat bot — `demo/chat/backend/Database/Entity/Item/Bot.php` | No | One screen edits it through the library. `BotAgent` is indexed by bot but owns only its own RT status row (`BotAgent::OWNS_RT_ROWS`); it reads the bot's DB row. |
 | Chat room — `demo/chat/backend/Database/Entity/Item/Event.php` | Candidate, not decided | Apply the same test. There is no leaf assigning it an instance owner; `ChatAgent` holds the room tables whole today. |
@@ -95,8 +95,8 @@ it out as a future decision; it does not change the current Entity declaration.
 
 ## How It Is Declared
 
-The mechanisms below exist. Their application to the person's agent is still
-to be built (not in the code yet — HIL-630):
+The person's agent now declares the index, idle window, row claim and child-set
+claims (HIL-630). Production signals and pages addressed to it remain later work:
 
 - The agent index is the instance id. The first frame addressed to it raises
   it, and `AgentRegistryKey::IDLE_TIMEOUT` lets it stop when idle. Follow
@@ -115,15 +115,14 @@ to be built (not in the code yet — HIL-630):
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
-starting an agent (owner's decision, 2026-10-04). The person acquires that path
-with its figure and the content moves
-(not in the code yet — HIL-630, HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+starting an agent (owner's decision, 2026-10-04). The figure exists; the
+content write paths still move
+(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 
 ## Memory
 
 In phase 2 the person's agent does not keep its set in memory: it reads on
-demand. Establishing the writer comes first
-(not in the code yet — HIL-630).
+demand. Its row and set claims are built (HIL-630).
 
 The target is for the owner to hold the set in memory and serve as the reader's
 source of truth, with the profile served by its owner's agent. That memory and
@@ -167,7 +166,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
-  it (not in the code yet — HIL-630).
+  it (HIL-630).
 - **The owner writes every row in its set literally, including executor work.**
   Keep the executor's one writer. Routing each delivery-status change through
   the recipient's agent would raise it for every attempt; that shape was
@@ -184,7 +183,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 
 | Leaf | Piece |
 |---|---|
-| HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (not in the code yet — HIL-630). |
+| HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (built). |
 | HIL-1404 | Name, administrator flag and block edits (not in the code yet — HIL-1404). |
 | HIL-1405 | Sign-in methods and passkey credentials, including sign-in (not in the code yet — HIL-1405). |
 | HIL-1406 | Second factor, including a reset whose delay elapsed (not in the code yet — HIL-1406). |

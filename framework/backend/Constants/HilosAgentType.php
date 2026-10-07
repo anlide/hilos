@@ -67,6 +67,9 @@ final class HilosAgentType
     /** @var string Hilos users library agent (owner of the user set and of every sign-in command over it) */
     public const string HILOS_USERS_LIBRARY = 'hilos_users_library';
 
+    /** Agent for one person's row and child sets. */
+    public const string HILOS_USER = 'hilos_user';
+
     /** @var string Hilos sessions library agent (owner of the session set, its handshake and the sockets' identity) */
     public const string HILOS_SESSIONS_LIBRARY = 'hilos_sessions_library';
 

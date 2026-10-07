@@ -309,15 +309,15 @@ a library and lives as long as its worker does.
 
 ## Open Preconditions
 
-Both preconditions are figures rather than mechanisms, and neither is built by
-the leaf that wrote this page.
+Both preconditions are figures rather than mechanisms. The person's agent
+figure has landed; its write routes and the table agent remain open.
 
-1. **The instance owner does not exist yet.** A table over an instance subject
-   takes its rows from the [owner of that instance](instance-owners.md), and the
-   owner as a figure — the agent that writes every edit of one person's content — is
-   not built (not in the code yet — HIL-630). This page does not wait for it:
-   it writes the approach. The first leaf of the epic that takes a table over
-   an instance subject stands behind HIL-630; a table over a set subject does
+1. **The instance owner's write routes are not built yet.** A table over an instance
+   subject takes its rows from the [owner of that instance](instance-owners.md).
+   The person's agent figure exists (HIL-630); ordinary edits reach it only after
+   HIL-1404 through HIL-1409. This page does not wait for those routes: it writes
+   the approach. The first leaf of the epic that takes a table over an instance
+   subject stands behind HIL-630; a table over a set subject does
    not, because the users library is in the code
    (`framework/backend/Auth/Library/AbstractUsersLibraryAgent.php`).
 2. **The table agent does not exist yet either.** Today the reader of every
