@@ -28,7 +28,7 @@ rule.
 | `WIRE-KEY-CASE` | A field key that crosses PHP → wire → TS is spelled camelCase. Two halves under one id: PHP judges a constant named in camelCase, TypeScript a constant named `<NAME>_FIELD` and the entries of an `as const` `*RowKey` map. A value that is a reference to another constant is judged where the key is spelled out. | [cross-layer-field-names.md](cross-layer-field-names.md) |
 | `LINE-LENGTH` | A PHP line is wider than 150 characters. Width is counted in characters and not in bytes, so a multi-byte dash costs one column. A line inside a heredoc or nowdoc body is not checked: a break there would land in the string itself. | [line-length.md](line-length.md) |
 | `MEMBER-INDENT` | A member of a class, interface, trait, enum, or anonymous class body — visibility, abstract, final, static, readonly, var, function, const, enum case, trait use, attribute, docblock — is indented by exactly four spaces relative to the line that opened the body; a tab is a violation. | [code-style.md](../../code-style.md) |
-| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; an index on such a receiver counts as the call it is, reaching one of the four `ArrayAccess` methods; a magic property's class may be named by a constant on its receiver or by a class-level `@property-read` or `@property` tag, the record on the class itself outranking the one it inherits; a private helper is walked through rather than trusted. | [phpdoc.md](phpdoc.md) |
+| `THROWS-PROPAGATION` | An exception a callee documents is named by the caller's own `@throws` too, unless an enclosing `catch` swallows it; and an implementation does not document an exception the declaration it overrides is silent about. A `throw new X` is judged as its own callee. Only calls whose target is known without inferring a type; an index on such a receiver counts as the call it is, reaching one of the four `ArrayAccess` methods; a magic property's class may be named by a constant on its receiver or by a class-level `@property-read` or `@property` tag, the record on the class itself outranking the one it inherits; a static tag only narrows a real static declaration; a private helper is walked through rather than trusted. Production backend and script roots are judged, including `demo/*/backend`; suite roots stay outside the cross-file index. | [phpdoc.md](phpdoc.md) |
 | `THROWS-ORPHAN` | A method does not document an exception its body cannot throw: every `@throws` tag is related, through the exception hierarchy in either direction, to something the body lets out — a callee's contract, a `throw new`, a private helper walked through. The claim is made only where the body was read whole, so the rule is silent on four grounds, and the row names them because a green run is otherwise read as coverage: a call that did not resolve, which includes every entry the index sees and cannot follow — a function, a closure, a call on what an expression returned, a callee, member or class held in a variable, a `throw` of anything but `new` — as well as a magic step whose class declares no `__get()`, and an undeclared static step; a body with no call, `new` or `throw`, which is an extension point; a tag the inherited contract declares; a tag that covers the tag of an override. A magic reader's `@throws`, inherited or declared locally, joins the reachable exceptions before the enclosing `catch` is subtracted, including through a private helper. A tag covered by a wide `__get()` contract counts as alive — `HilosException` can back any tag in its hierarchy — without asking callers to propagate that contract. A constructor and a private method get the first two grounds only: nothing inherits a constructor's contract, and nothing overrides a private method. A trait method is judged in each class using it and reported where its tag is written; a trait no class uses is not recognized as one and is judged on its own body. Every production root. | [phpdoc.md](phpdoc.md) |
 | `PAGE-REACH` | Every concrete page says whether the browser navigates to it, and a page that says it does not may not lean on `READS_DB` or `READS_RT`. The answer is the `REACH` constant, resolved up the parent chain, so a base answers for its whole branch. Four findings: a page for which nothing resolves, an `ACTION_HOST` whose `READS_DB` resolves to a non-empty list — that list is taken up on a page subscription only, so those reads belong in `DbContext::processWideReadCollections()` — an `ACTION_HOST` whose `READS_RT` resolves to a non-empty list, which is taken up on the same subscription that never comes and has nowhere else to go, since the frozen-replica mark it exists for has no screen to mark — and one of the two common roots carrying anything but `UNDECLARED`, which would declare the whole repository at once. Abstract classes are never required to answer. No baseline and no in-comment marker: the two roots are a line in the rule, with their reason. Every production root. | [subscriptions.md](../signals/subscriptions.md) |
 | `E2E-BOX-MEASURE` | A demo spec takes geometry bookmarks from the shared toolbox. Every direct `boundingBox()` or `getBoundingClientRect()` call in `demo/*/tests/e2e` is reported, helpers included, once per call in source order. TypeScript only; there are no allowed files. Names in strings, comments or member reads are not calls. Three boundaries remain: indexed or aliased method calls are not read; scroll measurements and document height are outside the box rule; `framework/frontend/e2e` is outside the scan because it owns the measurements. | [testing-strategy.md](../frontend/testing-strategy.md) |
@@ -202,21 +202,16 @@ has no type to look one up on.
 
 Five things are outside it on purpose:
 
-1. **A member reached through `__get`.** `Hilos::$db->users` names no declared
-   property: the step travels through `__get` and a `@property-read` bridge, and
-   no text resolves what the result is. A class-level tag is such a text on the
-   class the step is read on and on its ancestors, never on a subclass, and it
-   names an instance property. `Hilos::$db` is a declared static property of the
-   base type `DbContext` — the `@property-read ChatDbContext $db` a project facade
-   writes for its IDE is not read for a static step — while the collection tags
-   stand on the project's own context. This
-   is the uncomfortable one — `DbContext::__get` is exactly what throws
-   `CollectionNotFoundException`, so the most interesting path is the one behind
-   the magic — but nothing checks those paths today, so the rule does not make
-   the coverage worse; it moves the question out of the dark. What the magic no
-   longer hides is the index itself:
-   `Hilos::$env[KEY]` and `Hilos::$setting[KEY]` stand on a static property whose
-   type is declared, so they resolve like any other receiver.
+1. **An unnamed magic member.** A chain through `__get()` stops when neither a
+   class-level `@property-read`/`@property` tag nor a constant on the receiver
+   names the member's type. A tag on the concrete project facade can narrow its
+   inherited real static property, such as `Hilos::$db`, and the project's DB
+   context tag can then name a collection such as `bots`. Both steps resolve, so
+   explicit calls on that collection are judged. A tag alone cannot create a
+   static property: `Hilos::$missing` remains outside the rule without a real
+   declaration in the class, a trait or an ancestor. The property read itself
+   does not ask its caller to propagate `__get()` exceptions; only explicit
+   methods and array access beyond it are judged.
 2. **Vendor and built-in classes.** They are not indexed, so a call into one
    requires nothing. The roots of the PHP exception hierarchy are written into
    the rule as a table instead, which is what lets `@throws Throwable` cover a
@@ -266,17 +261,11 @@ calls through all of them and its own count could only be read once their
 contracts were declared. Every one of them is paid, and none owns a baseline
 record.
 
-What the demos owe is what the last phase turned up, and it is frozen rather than
-paid: 62 lines in 27 files — 54 in 23 for `demo/chat`, 4 in 2 each for
-`demo/polls` and `demo/tasks`. Freezing
-is what stops the debt growing, since a new unpropagated `@throws` fails the
-guard on the spot, and the records name HIL-449 as the leaf that pays it. What
-is left is the demos' own form, a call inside the showcase that does not
-propagate. The other half of the frozen debt was the
-implementation-widens-a-declaration form, owed by the framework's own silent
-declarations rather than by the demos, and it went out at once when those
-declarations were widened rather than file by file. `scripts/` came under the
-rule owing nothing at all.
+The remaining demo backend debt is paid: the THROWS-PROPAGATION baseline now has
+zero records. The rule judges `demo/*/backend` alongside framework backend and
+scripts, including project facade tags on real static properties. Demo suite
+roots remain outside this cross-file index; their separate coverage is not a
+claim made by a green run here.
 
 The two markdown rules are narrower than their document as well, and each in a
 way worth knowing before you argue with a hit.

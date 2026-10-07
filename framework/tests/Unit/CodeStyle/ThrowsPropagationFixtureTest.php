@@ -92,8 +92,14 @@ final class ThrowsPropagationFixtureTest extends TestCase
                 'THROWS-PROPAGATION ThrowsTree/Support/DocInherited.php:15 — DocInherited::readsTheInheritedTag() '
                     . 'does not propagate OtherException documented on Registry::name() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
-                'THROWS-PROPAGATION ThrowsTree/Support/DocNarrowed.php:19 — DocNarrowed::readsTheNarrowedTag() '
+                'THROWS-PROPAGATION ThrowsTree/Support/DocNarrowed.php:21 — '
+                    . 'DocNarrowed::readsTheNarrowedStaticType() does not propagate NarrowException documented on '
+                    . 'NarrowRegistry::name() (see docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Support/DocNarrowed.php:37 — DocNarrowed::readsTheNarrowedTag() '
                     . 'does not propagate NarrowException documented on NarrowRegistry::name() (see '
+                    . 'docs/agents/code-style/phpdoc.md)',
+                'THROWS-PROPAGATION ThrowsTree/Support/DocTyped.php:25 — DocTyped::readsTheBaseStaticType() '
+                    . 'does not propagate OtherException documented on Registry::name() (see '
                     . 'docs/agents/code-style/phpdoc.md)',
                 'THROWS-PROPAGATION ThrowsTree/Support/Hooked.php:43 — Hooked::readsPastAnAttributeArray() does '
                     . 'not propagate OtherException documented on Registry::name() (see '

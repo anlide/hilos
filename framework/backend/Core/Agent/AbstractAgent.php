@@ -58,6 +58,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use LogicException as NativeLogicException;
 use Random\RandomException;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
@@ -1109,6 +1110,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Child classes can override this method.
      *
      * @throws HilosException Whatever the concrete agent's start raises
+     * @throws NativeLogicException When an agent factory rejects an unsupported guardian id
      */
     public function onStart(): void
     {
@@ -1121,6 +1123,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Child classes can override this method.
      *
      * @throws HilosException Whatever the concrete agent's tick raises
+     * @throws NativeLogicException When a project item factory rejects a returned row
      */
     public function onTick(): void
     {
@@ -1134,6 +1137,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      * @throws HilosException Whatever the concrete agent's stop raises
      * @throws InvalidArgumentException Whatever the concrete agent's stop raises from SPL
+     * @throws NativeLogicException When concrete agent cleanup rejects its item type
      */
     abstract public function onStop(): void;
 
@@ -1597,6 +1601,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * @throws AgentUnknownSignalException When the handler is reached by a signal it does not know
      * @throws HilosException Whatever the concrete agent's agent-signal handler raises
      * @throws InvalidArgumentException When the handler cannot name the signal it answers with
+     * @throws NativeLogicException When a project runtime item factory rejects a state row
      * @throws RandomException When a concrete agent's handler cannot draw from the CSPRNG
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void

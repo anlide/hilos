@@ -13,6 +13,7 @@ use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper around bot agent lifecycle statuses.
@@ -44,6 +45,7 @@ final class BotAgentStatuses extends RtCollection
     /**
      * @param mixed $offset Bot id
      * @return ?BotAgentStatus Item or null
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?BotAgentStatus
     {
@@ -66,8 +68,11 @@ final class BotAgentStatuses extends RtCollection
     }
 
     /**
+     * @param string $name Property name to read
+     * @return BotAgentStatusesActions Bot status actions
      * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
      * @throws RtCollectionActionsClassException When actions class is missing or invalid
+     * @throws HilosException When the framework operation fails
      */
     public function __get(string $name): BotAgentStatusesActions
     {

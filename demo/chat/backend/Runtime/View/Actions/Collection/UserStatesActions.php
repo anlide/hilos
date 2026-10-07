@@ -15,6 +15,9 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /**
  * Write API for per-user chat runtime state.
@@ -37,6 +40,9 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws LogicException When the item factory returns the wrong state type
+     * @throws RtActionsItemClassException When the runtime item class is unavailable
      */
     public function ensure(int $userId): ViewChatUserState
     {
@@ -55,6 +61,12 @@ final class UserStatesActions extends RtActions
 
     /**
      * Narrows parent return type to this collection's RtItem.
+     *
+     * @param RtState $state State to wrap in a chat user item
+     * @return ViewChatUserState Read wrapper around that state
+     * @throws LogicException When an internal invariant is violated
+     * @throws RtActionsCallbackNotSetException When the runtime item factory callback is unavailable
+     * @throws RtActionsItemClassException When the runtime item class is unavailable
      */
     protected function createRtItemFromState(RtState $state): ViewChatUserState
     {
@@ -73,6 +85,7 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When an argument is invalid
      */
     public function clear(): void
     {

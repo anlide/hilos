@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\LLM\Routing;
 
+use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\LLM\Exception\LLMConfigurationException;
+
 /**
  * Post-resolution override seam for LLM profiles.
  *
@@ -19,6 +23,9 @@ interface LlmProfileOverrideSource
      *
      * @param LlmProfile $profile Profile resolved from the env-backed catalog
      * @return LlmProfile Effective profile (unchanged when there is no override)
+     * @throws EnvException When a required environment value is unavailable
+     * @throws LLMConfigurationException When provider configuration is incomplete
+     * @throws SettingException When a setting cannot be read
      */
     public function override(LlmProfile $profile): LlmProfile;
 }

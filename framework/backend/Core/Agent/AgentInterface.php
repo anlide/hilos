@@ -19,6 +19,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use LogicException as NativeLogicException;
 
 /**
  * AgentInterface - Interface for agents running in worker processes.
@@ -56,6 +57,7 @@ interface AgentInterface
      * Performs agent's work on each tick. Called approximately every 100ms.
      *
      * @throws HilosException Whatever the concrete agent's tick raises
+     * @throws NativeLogicException When a project item factory rejects a returned row
      */
     public function onTick(): void;
 
@@ -76,6 +78,7 @@ interface AgentInterface
      * Called once when agent is created and started.
      *
      * @throws HilosException Whatever the concrete agent's start raises
+     * @throws NativeLogicException When a concrete agent rejects an unsupported guardian id
      */
     public function onStart(): void;
 
@@ -86,6 +89,7 @@ interface AgentInterface
      *
      * @throws HilosException Whatever the concrete agent's stop raises
      * @throws InvalidArgumentException Whatever the concrete agent's stop raises from SPL
+     * @throws NativeLogicException When concrete agent cleanup rejects its item type
      */
     public function onStop(): void;
 

@@ -40,6 +40,7 @@ final class Connections extends HilosSessionConnections
      *
      * @param mixed $offset Accept key
      * @return Connection Connection runtime state
+     * @throws OutOfBoundsException When the requested state row is absent
      */
     public function offsetGet(mixed $offset): Connection
     {

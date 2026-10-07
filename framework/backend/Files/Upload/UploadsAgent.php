@@ -50,6 +50,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Item\HilosUpload;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use LogicException as NativeLogicException;
 
 /**
  * The one writer of the uploads: accepts declarations, receives signed chunks, checks, cleans up
@@ -165,6 +166,7 @@ final class UploadsAgent extends AbstractAgent
      *
      * @throws FeatureNotDeclaredException When a target adds a check needing a feature the project did not declare
      * @throws HilosException Whatever wiping the collection and its files raises
+     * @throws NativeLogicException When the runtime item factory rejects an upload
      */
     public function onStart(): void
     {
@@ -314,6 +316,7 @@ final class UploadsAgent extends AbstractAgent
      *
      * @throws HilosException Whatever wiping the collection and its files raises
      * @throws InvalidArgumentException When the state frame cannot be named
+     * @throws NativeLogicException When the runtime item factory rejects an upload
      */
     public function onStop(): void
     {

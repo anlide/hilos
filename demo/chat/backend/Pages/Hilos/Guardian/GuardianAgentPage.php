@@ -20,9 +20,11 @@ use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Pages\AbstractHilosGuardianAgentPage;
 use Hilos\Runtime\Exception\RtBaseException;
 use Throwable;
+use LogicException;
 
 /**
  * GuardianAgentPage - Guardian AI agent page implementation for demo.
@@ -57,7 +59,9 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws RtBaseException When a run the agent failed cannot be recorded as FAILED in runtime state
+     * @throws SourceChangeSubscriberException When a status subscriber fails
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
+     * @throws LogicException When an internal invariant is violated
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {

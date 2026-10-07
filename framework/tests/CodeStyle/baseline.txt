@@ -2,28 +2,3 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the framework unit run.
-THROWS-PROPAGATION demo/chat/backend/AI/Agent/ChatAiAgentFactory.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Agents/BotAgent.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Agents/Hilos/DemoHilosGuardianAgent.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/ChatWebSocketServer.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/ChatWorkerServer.php 3 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Core/Socket/Server/FrontendHtmlServer.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Database/View/Collection/Bots.php 3 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Database/View/Item/Event.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Environment/ChatLlmProfileOverrideSource.php 6 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Fs/ChatFsContext.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/BotAgentStatuses.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/Connections.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/GuardianAgentStatuses.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/State/Collection/UserStates.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/BotAgentStatusesActions.php 4 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/GuardianAgentStatusesActions.php 3 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Actions/Collection/UserStatesActions.php 5 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/BotAgentStatuses.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/Connections.php 1 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/GuardianAgentStatuses.php 2 # HIL-449
-THROWS-PROPAGATION demo/chat/backend/Runtime/View/Collection/UserStates.php 5 # HIL-449
-THROWS-PROPAGATION demo/polls/backend/Runtime/State/Collection/Connections.php 2 # HIL-449
-THROWS-PROPAGATION demo/polls/backend/Runtime/View/Collection/Connections.php 2 # HIL-449
-THROWS-PROPAGATION demo/tasks/backend/Runtime/State/Collection/Connections.php 2 # HIL-449
-THROWS-PROPAGATION demo/tasks/backend/Runtime/View/Collection/Connections.php 2 # HIL-449

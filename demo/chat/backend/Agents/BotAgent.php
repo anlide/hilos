@@ -36,6 +36,10 @@ use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Exception\LLMException;
 use Hilos\Utils\Helpers\RandomHelper;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Database\Settings\Exception\SettingException;
+use LogicException;
 
 /**
  * Per-bot agent that schedules async LLM reactions and publishes generated messages through ChatAgent.
@@ -91,6 +95,8 @@ final class BotAgent extends AbstractLlmChatAgent
      * @throws AgentIndexRequiredException When agentIndex is empty
      * @throws InvalidAgentIndexException When agentIndex is not a positive integer
      * @throws LLMConfigurationException When the chat.bot profile cannot be resolved
+     * @throws EnvException When a required environment value is unavailable
+     * @throws SettingException When a setting cannot be read
      */
     public function __construct(string $agentIndex)
     {
@@ -130,6 +136,7 @@ final class BotAgent extends AbstractLlmChatAgent
      * Marks this bot online and schedules an initial reaction fallback.
      *
      * @throws HilosException On bot lookup failure
+     * @throws LogicException When an internal invariant is violated
      */
     public function onStart(): void
     {
@@ -141,6 +148,7 @@ final class BotAgent extends AbstractLlmChatAgent
      * Marks this bot offline.
      *
      * @throws HilosException When runtime status cleanup fails
+     * @throws LogicException When an internal invariant is violated
      */
     public function onStop(): void
     {
@@ -255,6 +263,7 @@ final class BotAgent extends AbstractLlmChatAgent
      * Publishes a generated bot message to ChatAgent.
      *
      * @param string $text Generated message text
+     * @throws InvalidArgumentException When an argument is invalid
      */
     protected function handleResult(string $text): void
     {

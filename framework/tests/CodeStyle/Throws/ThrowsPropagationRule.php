@@ -48,7 +48,8 @@ final class ThrowsPropagationRule implements CrossFileRule
         . ' variable with a declared type, an index on any of those, which stands for the ArrayAccess method behind'
         . ' the brackets, a magic property whose class the class it is read on names in a constant, and one whose'
         . ' type that class writes down in a class-level @property-read or @property tag, the nearest such record'
-        . ' winning. A member reached through __get() and named nowhere, and a vendor class, are outside it by'
+        . ' winning. A static tag narrows a real static property in the hierarchy but cannot create one. A member'
+        . ' reached through __get() and named nowhere, and a vendor class, are outside it by'
         . ' declaration, not for want of debt:';
 
     private const string DOC = 'docs/agents/code-style/phpdoc.md';

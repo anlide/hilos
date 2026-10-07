@@ -9,9 +9,9 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
+use Hilos\HilosException;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Logger;
-use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -48,7 +48,7 @@ final class ChatWorkerServer extends WorkerServer
      * Every start is contained on its own (HIL-999): one bot or shard without a free worker
      * costs that agent, not the bots and shards behind it in the loops.
      *
-     * @throws InvalidArgumentException When the initial-agents signal cannot be named
+     * @throws HilosException When the initial-agents signal or project singleton startup fails
      */
     public function onBecameSingletonHost(): void
     {

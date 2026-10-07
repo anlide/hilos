@@ -11,6 +11,8 @@ use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\HilosSessionConnections;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Connections - read-only wrapper around the connections runtime state.
@@ -39,6 +41,7 @@ final class Connections extends HilosSessionConnections
     /**
      * @param mixed $offset Accept key (string)
      * @return ?Connection Connection or null if not found
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?Connection
     {
@@ -67,6 +70,7 @@ final class Connections extends HilosSessionConnections
      * @return ConnectionsActions Actions for write operations
      * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
      * @throws RtCollectionActionsClassException When the actions class is missing or invalid
+     * @throws HilosException When the framework operation fails
      */
     public function __get(string $name): ConnectionsActions
     {

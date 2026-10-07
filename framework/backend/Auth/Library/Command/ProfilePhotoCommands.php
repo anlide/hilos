@@ -25,6 +25,7 @@ use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\ProfilePhotoRefusal;
 use Hilos\Users\UserNotificationType;
 use Hilos\Utils\Logger;
+use LogicException as NativeLogicException;
 
 /** Sets, checks, publishes and removes a person's profile photo. */
 final class ProfilePhotoCommands extends AbstractLibraryCommands
@@ -47,6 +48,7 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
      * @param string $clientUploadId Completed upload id
      * @throws ValidationException When photos are off, a check is pending or the upload is not ready
      * @throws HilosException When runtime state or signal delivery fails
+     * @throws NativeLogicException When the runtime item factory rejects a photo check
      */
     public function set(string $acceptKey, string $clientUploadId): void
     {

@@ -16,6 +16,7 @@ use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\HilosConnections;
 use Hilos\Runtime\View\Item\HilosConnection;
+use LogicException;
 
 /**
  * Write API for the connections runtime collection — the presence stage (HIL-509).
@@ -45,6 +46,7 @@ abstract class HilosConnectionsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws LogicException When the runtime item factory rejects a connection
      */
     public function register(string $acceptKey, ?int $userId): HilosConnection
     {
@@ -112,6 +114,7 @@ abstract class HilosConnectionsActions extends RtActions
      *
      * @throws RtActionsCallbackNotSetException When the runtime item factory callback is not configured
      * @throws RtActionsItemClassException When the item factory returns a non-connection item
+     * @throws LogicException When an internal invariant is violated
      */
     protected function createRtItemFromState(RtState $state): HilosConnection
     {

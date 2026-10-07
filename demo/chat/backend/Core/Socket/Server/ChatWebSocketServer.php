@@ -7,6 +7,7 @@ namespace Demo\Chat\Core\Socket\Server;
 use Demo\Chat\Core\Socket\Client\ChatWebSocketClient;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\Server\WebSocketServer;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * ChatWebSocketServer - WebSocket server for chat demo.
@@ -23,6 +24,7 @@ final class ChatWebSocketServer extends WebSocketServer
      *
      * @param resource $socket Client socket
      * @return ChatWebSocketClient Client instance
+     * @throws EnvException When a required environment value is unavailable
      */
     protected function onCreateClient($socket): ChatWebSocketClient
     {

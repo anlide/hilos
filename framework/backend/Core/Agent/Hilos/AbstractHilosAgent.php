@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Hilos;
 
+use Hilos\HilosException;
 use Hilos\Core\Agent\AbstractAgent;
 
 /**
@@ -16,6 +17,8 @@ abstract class AbstractHilosAgent extends AbstractAgent
 {
     /**
      * Hook called when agent is stopping.
+     *
+     * @throws HilosException When concrete agent cleanup fails
      */
     public function onStop(): void
     {

@@ -130,6 +130,7 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 
 /**
@@ -421,6 +422,7 @@ abstract class BrowserContext
      * @throws DatabaseException When reading a joined database source fails
      * @throws LogicException When a database collection is not configured with its class constants
      * @throws CollectionNotManualException When the collection built for a join refuses its own items
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function buildSubscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): PagePayload
     {
@@ -2239,6 +2241,7 @@ abstract class BrowserContext
      * @param array<string, mixed> $sources Source fragments already built for the row
      * @return mixed Computed browser field value, or null when the field is unknown
      * @throws PageInternalErrorException When a computed field cannot be resolved
+     * @throws RtActionsStateCollectionNullException When a project's runtime field source is unavailable
      */
     protected function computeBrowserField(
         string $browserKey,

@@ -26,6 +26,7 @@ use Demo\Chat\AI\Agent\SeoWebIntegrity\ChatSeoTechnicalAiAgent;
 use Hilos\AI\Agent\AiAgentFactory;
 use Hilos\AI\Agent\AiAgentInterface;
 use Hilos\AI\Agent\GuardianAiAgentId;
+use LogicException;
 
 /**
  * ChatAiAgentFactory - Factory for chat project AI agents.
@@ -34,6 +35,10 @@ final class ChatAiAgentFactory extends AiAgentFactory
 {
     /**
      * Create one AI agent for the chat project.
+     *
+     * @param GuardianAiAgentId $agentId Guardian agent identifier
+     * @return AiAgentInterface Framework or chat guardian agent
+     * @throws LogicException When an internal invariant is violated
      */
     public static function create(GuardianAiAgentId $agentId): AiAgentInterface
     {

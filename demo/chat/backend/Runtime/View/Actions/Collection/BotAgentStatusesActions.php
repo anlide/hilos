@@ -17,6 +17,8 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use LogicException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /**
  * Write API for bot agent lifecycle statuses.
@@ -36,6 +38,8 @@ final class BotAgentStatusesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws LogicException When the item factory returns the wrong status type
      */
     public function ensure(int $botId): ViewBotAgentStatus
     {
@@ -64,6 +68,8 @@ final class BotAgentStatusesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws LogicException When the item factory returns the wrong status type
      */
     public function create(int $botId, string $status): ViewBotAgentStatus
     {
@@ -80,6 +86,7 @@ final class BotAgentStatusesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When an argument is invalid
      */
     public function clear(): void
     {
@@ -93,6 +100,7 @@ final class BotAgentStatusesActions extends RtActions
      * @return ViewBotAgentStatus Read wrapper around the state
      * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     protected function createRtItemFromState(RtState $state): ViewBotAgentStatus
     {

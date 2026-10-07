@@ -19,6 +19,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use LogicException as NativeLogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
@@ -350,6 +351,7 @@ final class ChatAgent extends AbstractAgent
      * @throws InvalidArgumentException When a signal of the session-state answer cannot be named
      * @throws HilosException On bot message publish failure, or on database or runtime failure
      * @throws LogicException On payload type mismatch, or if event id is null after sync
+     * @throws NativeLogicException When the runtime item factory rejects a state row
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {

@@ -34,6 +34,7 @@ final class GuardianAgentStatuses extends RtStates
      *
      * @param mixed $offset Guardian agent id
      * @return GuardianAgentStatus Guardian status
+     * @throws OutOfBoundsException When the requested state row is absent
      */
     public function offsetGet(mixed $offset): GuardianAgentStatus
     {

@@ -11,7 +11,16 @@ use Hilos\AI\Agent\AiAgentInterface;
 use Hilos\AI\Agent\GuardianAiAgentId;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Agent\Hilos\GuardianRunStatus;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\HilosException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use LogicException;
 
 /**
  * Chat demo guardian agent that wires project AI agents into the Hilos guardian page.
@@ -36,6 +45,14 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 
     /**
      * Instantiates chat project guardian AI agents and initializes runtime run statuses.
+     *
+     * @throws LogicException When an internal invariant is violated
+     * @throws RtActionsCallbackNotSetException When the runtime item factory callback is unavailable
+     * @throws RtActionsCollectionNameNullException When the runtime collection has no name
+     * @throws RtActionsItemClassException When the runtime item class is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot write the runtime collection
+     * @throws SourceChangeSubscriberException When a source subscriber fails
      */
     public function onStart(): void
     {
@@ -45,6 +62,9 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 
     /**
      * Finalizes pending guardian runs and ticks each instantiated AI agent once.
+     *
+     * @throws HilosException When a guardian run status cannot be mirrored
+     * @throws LogicException When a runtime item factory rejects a status row
      */
     public function onTick(): void
     {
@@ -57,6 +77,12 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 
     /**
      * Releases AI agent instances and clears guardian run state.
+     *
+     * @throws RtActionsCallbackNotSetException When the runtime item factory callback is unavailable
+     * @throws RtActionsCollectionNameNullException When the runtime collection has no name
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot write the runtime collection
+     * @throws InvalidArgumentException When a runtime collection argument is invalid
      */
     public function onStop(): void
     {
@@ -70,6 +96,13 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
      *
      * @param string $agentId Guardian agent identifier
      * @param GuardianRunStatus $status Run status
+     * @throws RtActionsCallbackNotSetException When the runtime item factory callback is unavailable
+     * @throws RtActionsCollectionNameNullException When the runtime collection has no name
+     * @throws RtActionsItemClassException When the runtime item class is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot write the runtime collection
+     * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws LogicException When an internal invariant is violated
      */
     protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
     {

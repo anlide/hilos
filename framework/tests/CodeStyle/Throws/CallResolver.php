@@ -240,7 +240,8 @@ final readonly class CallResolver
     /**
      * Asks each class of the chain its real declaration first and its class-level tag
      * second, and only then climbs to the traits and the parent, so the record on the
-     * class itself outranks the one it inherits.
+     * class itself outranks the one it inherits. A static tag can narrow a real
+     * declaration in this hierarchy, but cannot create a static property by itself.
      *
      * A tag is taken only when the index holds the class it names. `DbCollection`
      * writes `@property-read TObjectCollection $objectCollection`, a generic placeholder
@@ -255,6 +256,10 @@ final readonly class CallResolver
      */
     private function lookupProperty(string $class, string $step, array $visited): ?string
     {
+        if (str_starts_with($step, CallSite::STATIC_STEP_PREFIX) && !$this->declaresProperty($class, $step, [])) {
+            return null;
+        }
+
         $key = strtolower($class);
         if (in_array($key, $visited, true)) {
             return null;
@@ -267,7 +272,10 @@ final readonly class CallResolver
         if (isset($record->propertyTypes[$step])) {
             return $record->propertyTypes[$step];
         }
-        $tagged = $record->docPropertyTypes[$step] ?? null;
+        $tagStep = str_starts_with($step, CallSite::STATIC_STEP_PREFIX)
+            ? substr($step, strlen(CallSite::STATIC_STEP_PREFIX))
+            : $step;
+        $tagged = $record->docPropertyTypes[$tagStep] ?? null;
         if ($tagged !== null && $this->index->find($this->elementType($tagged)) !== null) {
             return $tagged;
         }

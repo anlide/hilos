@@ -16,6 +16,7 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnection;
 use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Runtime\View\Item\HilosConnection;
+use LogicException;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
 
 /**
@@ -53,6 +54,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws LogicException When the runtime item factory rejects a session connection
      */
     public function register(
         string $acceptKey,

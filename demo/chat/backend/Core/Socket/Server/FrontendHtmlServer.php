@@ -8,6 +8,7 @@ use Demo\Chat\Core\Frontend\HtmlCache;
 use Demo\Chat\Core\Frontend\HtmlResolver;
 use Demo\Chat\Core\Socket\Client\FrontendHtmlClient;
 use Hilos\Socket\Server\AbstractServer;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * FrontendHtmlServer - HTTP server for prerendered frontend HTML.
@@ -41,6 +42,7 @@ final class FrontendHtmlServer extends AbstractServer
      *
      * @param resource $socket Client socket
      * @return FrontendHtmlClient Client instance
+     * @throws EnvException When a required environment value is unavailable
      */
     protected function onCreateClient($socket): FrontendHtmlClient
     {

@@ -32,6 +32,8 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 
 /**
  * Table definition for bot administration rows and actions.
@@ -102,6 +104,9 @@ final class BotsTable extends TableDefinition implements ViewportTable
      *
      * @param SourceChange $change Bot source change to project into the bots table
      * @return ?TableRowMutationDTO Bot row mutation, or null when the change does not affect this table
+     * @throws DatabaseException When database access fails
+     * @throws InvalidArgumentException When an argument is invalid
+     * @throws LogicException When an internal invariant is violated
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -236,6 +241,8 @@ final class BotsTable extends TableDefinition implements ViewportTable
      * @throws DatabaseException When bot query execution fails
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws InvalidArgumentException When an argument is invalid
+     * @throws LogicException When an internal invariant is violated
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

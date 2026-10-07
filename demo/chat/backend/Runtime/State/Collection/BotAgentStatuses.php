@@ -34,6 +34,7 @@ final class BotAgentStatuses extends RtStates
      *
      * @param mixed $offset Bot id
      * @return BotAgentStatus Bot lifecycle status
+     * @throws OutOfBoundsException When the requested state row is absent
      */
     public function offsetGet(mixed $offset): BotAgentStatus
     {

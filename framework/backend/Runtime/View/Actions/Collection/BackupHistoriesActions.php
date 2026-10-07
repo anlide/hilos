@@ -16,6 +16,7 @@ use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupHistory as ViewBackupHistory;
+use LogicException;
 
 /**
  * Write API for the stored-backup index.
@@ -61,6 +62,7 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     public function syncToScan(array $metadatas, ?string $nodeId): int
     {
@@ -136,6 +138,7 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtItemParentCollectionNullException When the row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     public function forget(string $id): bool
     {

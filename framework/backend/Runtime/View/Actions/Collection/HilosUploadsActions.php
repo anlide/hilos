@@ -19,6 +19,7 @@ use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Actions\Item\HilosUploadActions;
 use Hilos\Runtime\View\Collection\HilosUploads;
 use Hilos\Runtime\View\Item\HilosUpload;
+use LogicException;
 
 /**
  * Write API for the uploads, as a set (HIL-135).
@@ -51,6 +52,7 @@ final class HilosUploadsActions extends RtActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws RtActionsCallbackNotSetException When the collection's item factory is not configured
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     public function open(
         string $acceptKey,
@@ -97,6 +99,7 @@ final class HilosUploadsActions extends RtActions
      * @throws RtItemParentCollectionNullException When an item is not attached to the collection
      * @throws DirectoryNotFoundException When the tmp directory is not configured
      * @throws FileDeleteException When a temporary file exists but cannot be deleted
+     * @throws LogicException When an internal invariant is violated
      */
     public function clearAllWithFiles(): array
     {

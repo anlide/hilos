@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Hilos\Constants\EnvConstants;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\LLM\Exception\LLMConfigurationException;
 use Hilos\LLM\Routing\LlmProfile;
@@ -28,6 +29,13 @@ use Hilos\LLM\Routing\LlmProvider;
  */
 final class ChatLlmProfileOverrideSource implements LlmProfileOverrideSource
 {
+    /**
+     * @param LlmProfile $profile Env-resolved profile to override
+     * @return LlmProfile Effective profile with chat settings applied
+     * @throws EnvException When a required environment fallback is unavailable
+     * @throws LLMConfigurationException When provider configuration is incomplete
+     * @throws SettingException When a profile setting cannot be read
+     */
     public function override(LlmProfile $profile): LlmProfile
     {
         return match ($profile->key) {
@@ -60,6 +68,7 @@ final class ChatLlmProfileOverrideSource implements LlmProfileOverrideSource
      * @return LlmProfile Effective profile with settings applied
      * @throws EnvException When an env variable the fallbacks name is missing from the catalog or of the wrong type
      * @throws LLMConfigurationException When the setting selects external without an API key
+     * @throws SettingException When a profile setting cannot be read
      */
     private function fromSettings(
         LlmProfile $profile,

@@ -14,6 +14,9 @@ use Hilos\Database\Exception\View\Collection\PropertyNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 
 /**
  * Bots - Db collection of Bot items.
@@ -58,6 +61,9 @@ final class Bots extends DbCollection
      * @throws DatabaseException If a filtered bot has no associated database object id
      * @throws CollectionNotManualException If filtered collection cannot accept an item
      * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString
+     * @throws HilosException When the framework operation fails
+     * @throws InvalidArgumentException When an argument is invalid
+     * @throws LogicException When an internal invariant is violated
      */
     public function __get(string $name): BotsActions|ObjectBots|self
     {

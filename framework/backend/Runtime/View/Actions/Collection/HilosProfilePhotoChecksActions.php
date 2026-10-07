@@ -15,6 +15,7 @@ use Hilos\Runtime\State\Item\HilosProfilePhotoCheck as StateHilosProfilePhotoChe
 use Hilos\Runtime\View\Collection\HilosProfilePhotoChecks;
 use Hilos\Runtime\View\Item\HilosProfilePhotoCheck;
 use Hilos\Utils\Helpers\TimeHelper;
+use LogicException;
 
 /**
  * @extends RtActions<HilosProfilePhotoCheck, HilosProfilePhotoChecks, StateHilosProfilePhotoChecks>
@@ -35,6 +36,7 @@ final class HilosProfilePhotoChecksActions extends RtActions
      * @throws SourceChangeSubscriberException Whatever a subscriber raises
      * @throws RtActionsCallbackNotSetException When the item factory is unavailable
      * @throws RtActionsItemClassException When the item factory returns an invalid class
+     * @throws LogicException When an internal invariant is violated
      */
     public function open(string $acceptKey, int $userId, string $clientUploadId): HilosProfilePhotoCheck
     {

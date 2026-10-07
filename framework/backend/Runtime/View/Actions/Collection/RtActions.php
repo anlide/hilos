@@ -24,6 +24,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
+use LogicException;
 
 /**
  * RtActions - create, bulk, and collection-wide write operations for runtime collections.
@@ -101,6 +102,7 @@ abstract class RtActions
      * @return T Concrete RtItem for this collection, bound by subclass `@extends`
      * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When a project item factory rejects its returned item
      */
     protected function createRtItemFromState(RtState $state): RtItem
     {

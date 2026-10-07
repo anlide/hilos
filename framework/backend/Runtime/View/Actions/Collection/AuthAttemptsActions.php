@@ -18,6 +18,7 @@ use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Actions\Item\AuthAttemptActions;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Item\AuthAttempt as ViewAuthAttempt;
+use LogicException;
 
 /**
  * Write API for the throttle window counters as a whole (HIL-420).
@@ -77,6 +78,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtItemParentCollectionNullException When a retired row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     public function sweep(float $now, float $windowSeconds, float $cooldownSeconds): int
     {
@@ -110,6 +112,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtItemParentCollectionNullException When a dropped row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     public function forgetSession(string $identity): int
     {
@@ -142,6 +145,7 @@ final class AuthAttemptsActions extends RtActions
      * @throws RtItemParentCollectionNullException When a dropped row is not attached to the collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws LogicException When an internal invariant is violated
      */
     public function clear(): int
     {

@@ -19,6 +19,7 @@ use Hilos\Legal\Export\LegalAcceptancesExports;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use LogicException;
 
 /**
  * Serves the five legal pages and holds their acceptance histograms in its own process.
@@ -59,6 +60,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
      * Reconciles the exports with their directory before the first order is served.
      *
      * @throws HilosException When the export directory, an order or a state frame cannot be read or written
+     * @throws LogicException When an internal invariant is violated
      */
     public function onStart(): void
     {
@@ -70,6 +72,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
      * Refreshes subscribed windows after acceptance changes or a new server date, then advances the exports.
      *
      * @throws HilosException When the parent tick, histogram read, window delivery or export queue fails
+     * @throws LogicException When a project runtime item factory rejects a row
      */
     public function onTick(): void
     {
@@ -132,7 +135,11 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
         LegalAdminAudience::removeSubscriber($data->acceptKey);
     }
 
-    /** Discards histograms, subscriptions and the export in progress before another instance uses this worker. */
+    /**
+     * Discards histograms, subscriptions and the export before another instance uses this worker.
+     *
+     * @throws HilosException When parent cleanup fails
+     */
     public function onStop(): void
     {
         parent::onStop();

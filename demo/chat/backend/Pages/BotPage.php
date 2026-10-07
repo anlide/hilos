@@ -27,6 +27,9 @@ use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Database\DatabaseException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 
 /**
  * BotPage - Bot page handler.
@@ -99,6 +102,9 @@ final class BotPage extends AbstractPage
      * @throws MissingPageRouteParamException When `id` is absent
      * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
      * @throws PageInternalErrorException When the guarded bot row is absent all the same
+     * @throws DatabaseException When database access fails
+     * @throws InvalidArgumentException When an argument is invalid
+     * @throws LogicException When an internal invariant is violated
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {

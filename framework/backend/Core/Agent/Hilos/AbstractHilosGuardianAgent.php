@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
+use LogicException;
 
 /**
  * AbstractHilosGuardianAgent - Abstract agent for Hilos guardian page (project validation robots).
@@ -55,6 +57,8 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
      *
      * @param string $agentId Guardian agent identifier
      * @return GuardianRunStatus Updated run status
+     * @throws HilosException When the framework operation fails
+     * @throws LogicException When a project runtime item factory rejects a status row
      */
     public function startGuardianRun(string $agentId): GuardianRunStatus
     {
@@ -82,6 +86,8 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
      *
      * @param string $agentId Guardian agent identifier
      * @return GuardianRunStatus Updated run status
+     * @throws HilosException When the framework operation fails
+     * @throws LogicException When a project runtime item factory rejects a status row
      */
     public function stopGuardianRun(string $agentId): GuardianRunStatus
     {
@@ -110,6 +116,9 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
 
     /**
      * Finalize runs whose completion deadlines have expired.
+     *
+     * @throws HilosException When the framework operation fails
+     * @throws LogicException When a project runtime item factory rejects a status row
      */
     protected function processPendingGuardianRuns(): void
     {
@@ -152,6 +161,8 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
      *
      * @param string $agentId Guardian agent identifier
      * @param GuardianRunStatus $status Run status
+     * @throws HilosException When a project status mirror cannot be updated
+     * @throws LogicException When a project runtime item factory rejects a status row
      */
     protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
     {

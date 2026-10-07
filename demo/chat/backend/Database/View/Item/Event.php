@@ -17,6 +17,7 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\HilosException;
 
 /**
  * Event - Db item with high-level abstraction and lazy loading.
@@ -48,6 +49,7 @@ final class Event extends DbItem
      * @throws ObjectGetIdStringNotImplementedException If an attachment or journal row id is not available
      * @throws LogicException When the rename journal's class constants are not configured
      * @throws InvalidArgumentException When the rename journal cannot be searched by event
+     * @throws HilosException When the framework operation fails
      */
     public function __get(string $name): mixed
     {

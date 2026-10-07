@@ -25,6 +25,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -97,6 +98,7 @@ final class ModeratorAgent extends AbstractAgent
      *
      * @throws LLMConfigurationException When a moderation profile cannot be resolved
      * @throws EnvException When a profile's environment value is missing or invalid
+     * @throws SettingException When a moderation profile setting cannot be read
      */
     public function __construct()
     {

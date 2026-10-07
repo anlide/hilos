@@ -6,6 +6,7 @@ namespace Demo\Chat\Fs;
 
 use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Hilos;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsDirectory;
@@ -39,6 +40,11 @@ final class ChatFsContext extends FsContext
         return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . Hilos::DATA_DIR . DIRECTORY_SEPARATOR . self::STORAGE_DIR;
     }
 
+    /**
+     * Registers the chat filesystem directories from project and environment paths.
+     *
+     * @throws EnvException When the published-files directory setting cannot be read
+     */
     public function configure(): void
     {
         $base = self::defaultBaseDir();

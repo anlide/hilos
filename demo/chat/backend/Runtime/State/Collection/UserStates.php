@@ -34,6 +34,7 @@ final class UserStates extends RtStates
      *
      * @param mixed $offset User id
      * @return ChatUserState User runtime state
+     * @throws OutOfBoundsException When the requested state row is absent
      */
     public function offsetGet(mixed $offset): ChatUserState
     {

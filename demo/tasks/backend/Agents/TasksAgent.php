@@ -20,6 +20,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use LogicException as NativeLogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
@@ -252,6 +253,7 @@ final class TasksAgent extends AbstractAgent
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws InvalidArgumentException When a signal of the answer cannot be named
      * @throws LogicException On payload type mismatch
+     * @throws NativeLogicException When the runtime item factory rejects a connection
      * @throws HilosException On database or runtime failure
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void

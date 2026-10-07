@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Fs\Context;
 
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
@@ -88,6 +89,8 @@ abstract class FsContext
     /**
      * Register named directories and configure tmp path.
      * Called automatically by {@see Hilos::init()}.
+     *
+     * @throws EnvException When a project directory setting cannot be read
      */
     abstract public function configure(): void;
 

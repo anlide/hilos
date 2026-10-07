@@ -13,6 +13,7 @@ use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\HilosException;
 
 /**
  * Read-only wrapper around guardian agent status runtime rows.
@@ -44,6 +45,7 @@ final class GuardianAgentStatuses extends RtCollection
     /**
      * @param mixed $offset Guardian agent id
      * @return ?GuardianAgentStatus Item or null
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?GuardianAgentStatus
     {
@@ -66,8 +68,11 @@ final class GuardianAgentStatuses extends RtCollection
     }
 
     /**
+     * @param string $name Property name to read
+     * @return GuardianAgentStatusesActions Guardian status actions
      * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
      * @throws RtCollectionActionsClassException When actions class is missing or invalid
+     * @throws HilosException When the framework operation fails
      */
     public function __get(string $name): GuardianAgentStatusesActions
     {

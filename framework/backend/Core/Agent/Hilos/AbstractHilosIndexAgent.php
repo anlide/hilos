@@ -14,6 +14,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use LogicException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AccountStandingAudience;
@@ -103,6 +104,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * the standing of the people they show (HIL-945).
      *
      * @throws HilosException Whatever the concrete agent's tick raises
+     * @throws LogicException When a project runtime item factory rejects a row
      */
     public function onTick(): void
     {
@@ -127,7 +129,11 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         AccountStandingAudience::removeSubscriber($data->acceptKey);
     }
 
-    /** Forgets the people surfaces before another instance uses this worker. */
+    /**
+     * Forgets the people surfaces before another instance uses this worker.
+     *
+     * @throws HilosException When parent cleanup fails
+     */
     public function onStop(): void
     {
         parent::onStop();

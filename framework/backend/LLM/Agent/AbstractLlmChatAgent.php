@@ -7,6 +7,7 @@ namespace Hilos\LLM\Agent;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -40,6 +41,7 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
      *                                   carries no API key
      * @throws EnvException When an env variable the profile names is missing, outside the
      *                      catalog, or of the wrong type
+     * @throws SettingException When a profile override cannot read its setting
      */
     public function __construct()
     {
@@ -97,6 +99,7 @@ abstract class AbstractLlmChatAgent extends AbstractAgent
      * @throws LogicException When the current client still owns a request or result
      * @throws LLMConfigurationException When the profile or client configuration is invalid
      * @throws EnvException When an env variable the profile names is missing or invalid
+     * @throws SettingException When a profile override cannot read its setting
      */
     protected function refreshChatClientForNextRequest(): void
     {
