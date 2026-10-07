@@ -83,8 +83,9 @@ every process, including master ── Hilos::$ac ──► AnalyticsJournalOutb
   before any later file of that node. Quiet nodes cost no polling frames. The
   writer carries counts of omitted long lines across the portions of one file.
 
-Turning it on is `HilosFeature::ANALYTICS`: it requires both agents, the framework
-starts the collector in every process of the project, `Hilos::initAnalytics()`
+Turning it on is `HilosFeature::ANALYTICS`: it requires the section reader agent,
+its base page, the node journal agent and the cluster writer. The framework starts
+the collector in every process of the project, `Hilos::initAnalytics()`
 refuses a project without the feature, and the start refuses the feature without
 an `analytics_journal` directory ([filesystem.md](filesystem.md)) or the
 `AnalyticsSettingsCatalog` fragment in its settings catalog. The current Privacy
@@ -92,8 +93,8 @@ revision must declare a deviation from `standard.deletion` before the collector
 starts ([legal-documents.md](legal-documents.md)); the project states what it
 collects, how long it keeps it, and what remains after account deletion.
 
-The admin analytics section comes with this same case, with no case of its own
-(not in the code yet — HIL-1415); see [The Admin Section](#the-admin-section).
+The admin analytics section comes with this same case, with no case of its own;
+see [The Admin Section](#the-admin-section). Its visible overview is HIL-1418.
 All six demos with accounts — chat, binance-btc-tracker, ecommerce-shop, tasks,
 online-testing and polls — declare it (not in the code yet — HIL-1416); today
 only chat does. The owner, 04.10.2026: «Аналитику включить во всех 6 demo» — "Turn
@@ -186,7 +187,7 @@ records name — the worker first, then the agents — so a batch lost on the wa
 loses only its own events, and no later event of the same agent is orphaned. A
 session just opened is described in the next batch even if nothing happens in it.
 
-**The journal does not write about itself.** The sessions of the two analytics
+**The journal does not write about itself.** The sessions of the journal and writer
 agents and the signals delivered to them are not recorded: every batch would
 otherwise produce a record of itself.
 
@@ -200,7 +201,9 @@ then the commit. An older standalone ready file may still have `node: ''` in its
 header; the loader reads it without rewriting it and also checks an old empty-ID
 receipt before loading it again. A file
 already marked is only confirmed again: a lost confirmation or a writer that moved
-writes nothing twice. All SQL lives in `AnalyticsStore`.
+writes nothing twice. Journal loading and writing SQL lives in `AnalyticsStore`;
+section SELECTs live in `AnalyticsSectionReader`, and personal-export reads in
+`AnalyticsPersonExportReader`.
 
 - A session description is an upsert on its key — a repeat costs nothing; a stop
   stamps `stopped_ts` once.
@@ -369,10 +372,11 @@ session is lost — one line per stop of a node, by consequence.
 Analytics is a framework admin section ([admin-features.md](admin-features.md)).
 Its existing page key is `hilos_analytics`, its route is `/hilos/analytics`, and
 it inherits `PageAccessLevel::ADMIN` from `AbstractHilosPage`. The framework's
-`AbstractHilosAnalyticsAgent` serves it; today that class and chat's subclass
-are empty stubs. The section has no feature case of its own: a project declaring
-`HilosFeature::ANALYTICS` gets the section, and a project without it sees no
-section card (not in the code yet — HIL-1415).
+`AbstractHilosAnalyticsAgent` serves it and exposes `AnalyticsSectionReader` to
+its pages; chat's subclass only binds that base. The section has no feature case
+of its own. `HilosFeature::ANALYTICS` requires the section agent and page, and
+activation refuses either artifact without the feature. The dashboard's served
+page list controls card availability; the visible overview card is HIL-1418.
 
 - The overview is empty apart from one line explaining that a person's actions
   open from their admin page, with a link to the users list
@@ -392,12 +396,16 @@ HIL-1402.
 
 ### The reader and the facts it reads
 
-The section's agent reads the analytics tables
-(not in the code yet — HIL-1415). It reads raw SQL: no Entity maps these tables.
-Keep that SQL in the analytics data layer, `framework/backend/Core/Analytics/`;
-the section's table calls that layer. Do not put SQL in a page or table, as with
-any database access ([../orm/db-collection.md](../orm/db-collection.md)). The
-master and the collector never read the analytics tables.
+`AnalyticsSectionReader` provides bounded, typed reads of the analytics tables
+through raw SQL: no Entity maps these tables. It returns a nullable session
+summary by numeric id, an action window in `(created_ts, id)` order, and a
+last-signed-in account's session window in `(last_seen_ts, id)` reverse order.
+Each window is capped at 50 rows; counts for session summaries cover only
+connections already attached to the selected sessions. The pages and tables
+that consume these results follow in HIL-1417/1419/1420. Keep SQL in the
+analytics data layer, `framework/backend/Core/Analytics/`, never in a page or
+table ([../orm/db-collection.md](../orm/db-collection.md)). The master and the
+collector never read the analytics tables.
 
 | Fact | Source |
 |---|---|
@@ -418,9 +426,10 @@ attributes each authenticated event to its actor for the personal export; the
 screen does not read it yet. A full visit model remains a Phase-2 question
 (HIL-1402). A session in which nobody signed in names nobody.
 
-The screen identifies an erased account as a deleted user by its number, never
-by its name (not in the code yet — HIL-1415). Account erasure leaves the numeric
-id, analytic events and addresses; the project's Privacy revision states this.
+The reader checks `hilos_user` afresh and returns `Deleted user #<id>` when the
+account row is gone, never a remembered name. The page presentation follows in
+HIL-1419/1420. Account erasure leaves the numeric id, analytic events and
+addresses; the project's Privacy revision states this.
 
 ### What the screen never shows
 

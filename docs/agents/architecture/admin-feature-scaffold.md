@@ -1,7 +1,7 @@
 # Architecture: Admin Feature Scaffold
 
 Read this before generating the activation of a framework-owned admin feature —
-settings, hilos-users, and future ones like roles — in a project. This is a
+settings, hilos-users, Analytics and future ones like roles — in a project. This is a
 generation recipe for an AI agent: given a framework admin feature, produce the
 project-side code that activates it. The normative boundary and the two modes
 live in [admin-features.md](admin-features.md); this file is the per-feature
@@ -539,6 +539,31 @@ The project lists the feature in `Hilos::FEATURES` and registers the three agent
 It registers the section's eight thin pages; six node child addresses require a node ID, while the root and Env mismatch do not.
 Startup refuses a partially activated feature.
 For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
+
+### analytics — the Analytics section
+
+Declare `HilosFeature::ANALYTICS` in `FEATURES` and migrate the current
+`create_hilos_analytics.sql` stub with its down file. Fold
+`AnalyticsSettingsCatalog` into the project settings catalog, register
+`FsContext::ANALYTICS_JOURNAL` as a `DirectoryScope::NODE` directory, and publish
+a current Privacy revision declaring the `standard.deletion` exception for
+numbered analytics left after account erasure. The startup checks the catalog,
+directory and Privacy declaration; migration coverage belongs to the project's
+topology test.
+
+Register three agent pairs in `AGENTS`: one thin subclass of
+`AbstractHilosAnalyticsAgent` with a monopolistic daemon (one cluster reader on
+the default leader placement), `AnalyticsJournalAgent` / its daemon with
+`AgentScope::NODE`, and `AnalyticsWriterAgent` / its daemon with
+`AgentPlacement::POLICY`. The framework feature requires all three pairs. Add
+a thin page subclass of `AbstractHilosAnalyticsPage` with
+`SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_ANALYTICS` to `PAGES`; startup
+requires it and refuses that page or the reader agent without the feature.
+
+The backend reader supplies typed, bounded SQL results. Browser tables and SDK
+views are separate leaves (HIL-1417…1421); do not fabricate their binding while
+activating this backend section. For its data and privacy boundaries, read
+[analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
 ### a future framework feature (roles, …)
 

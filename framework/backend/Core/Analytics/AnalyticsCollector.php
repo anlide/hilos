@@ -25,7 +25,7 @@ use Hilos\Utils\Logger;
  *
  * A worker session and an agent session are named by a key the process draws in memory
  * (`RandomHelper::hex()`, the tolerant axis: the key only has to not collide, nobody guesses it),
- * and the writer gives the row its number. The sessions of the two analytics agents and the
+ * and the writer gives the row its number. The sessions of the journal and writer agents and the
  * signals delivered to them are not recorded: the journal does not write about itself.
  *
  * The collector lives in every process and is in no agent roster, so the protected-mode freeze
@@ -45,7 +45,7 @@ final class AnalyticsCollector
     /** @var int Random bytes of a session key; its hex is twice as long */
     private const int SESSION_KEY_BYTES = 16;
 
-    /** @var list<string> Agents the journal does not record: its own two */
+    /** @var list<string> Journal and writer agents, which the journal does not record */
     private const array UNRECORDED_AGENT_TYPES = [
         HilosAgentType::HILOS_ANALYTICS_JOURNAL,
         HilosAgentType::HILOS_ANALYTICS_WRITER,
@@ -350,7 +350,7 @@ final class AnalyticsCollector
     /**
      * Opens an agent session under the worker session, under a fresh key, and describes it to the next batch.
      *
-     * Nothing for an agent with no worker session under it, and nothing for the two analytics agents.
+     * Nothing for an agent with no worker session under it, or for the journal and writer agents.
      *
      * @param string $agentType Agent type identifier; empty is ignored
      * @param ?string $agentIndex Agent instance index, or null for a singleton agent

@@ -1,6 +1,6 @@
 ---
 name: hilos-admin-scaffold
-description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, the maintenance section, the languages and countries section (i18n), the Daemon section, or a future one like roles — in a Hilos project. Use when wiring settings, hilos-users, backup, the maintenance section, the languages and countries section (i18n), or the Daemon section into a project, generating the project-side binding a framework admin feature requires (catalog, presence source, table subclass, thin page, SDK view mount; for backup, the backup catalog, env values, agent/CLI registration, and RT-index binding), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
+description: Generate the activation of a framework-owned admin feature — settings, hilos-users, backup, the maintenance section, the languages and countries section (i18n), the Daemon section, Analytics, or a future one like roles — in a Hilos project. Use when wiring one of these sections into a project, generating the project-side binding it requires (catalog, presence source, table subclass, thin page, agent pair, or SDK view mount), or stepping through the per-feature activation order. This covers framework-owned features only; a project's own divergent admin table is Mode-2 authoring — use $hilos-admin-features for that.
 ---
 
 # Hilos Admin Scaffold
@@ -25,6 +25,7 @@ the recipe before generating code.
   `docs/agents/architecture/setting-presets.md`
 - What the languages and countries section (i18n) is — the five tables, the one library, the default language from env — and what a project supplies to switch it on: `docs/agents/architecture/languages-and-countries.md`
 - What the Daemon section is — the node agent, the collector, the page agent, the master's frame — and what a project supplies to switch it on: `docs/agents/architecture/daemon-section.md`
+- What the Analytics section reads, its three required agent pairs and its Privacy boundary: `docs/agents/architecture/analytics.md` and the Analytics recipe in `docs/agents/architecture/admin-feature-scaffold.md`
 - Browser table / source fan-out mechanics:
   `docs/agents/architecture/browser-source-fanout.md`
 - Topology registration (PAGES / TABLES / PAGE_TABLES): `docs/agents/app-topology.md`
@@ -42,7 +43,9 @@ the recipe before generating code.
    backup's to activate — it belongs to the freeze, and the recipe says where it
    comes from), or a framework section with no feature switch (the maintenance
    section — activation is registering its thin page and the verifier circle
-   table in the topology and mounting its SDK view, with no line in `FEATURES`).
+   table in the topology and mounting its SDK view, with no line in `FEATURES`),
+   or Analytics (the feature, journal directory, catalog, three agent pairs and
+   thin backend page). Its browser tables and SDK views arrive on separate leaves.
    Read the base class; generate what it leaves abstract.
 2. Generate against the framework base classes and their extension points, never
    by copying another project. The engine — table merge, page subscribe, action

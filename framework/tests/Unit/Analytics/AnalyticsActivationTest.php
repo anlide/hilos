@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Analytics;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\Hilos\AbstractHilosAnalyticsAgent;
+use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsSectionReader;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Core\Feature\Definition\AnalyticsFeature;
 use Hilos\Core\Feature\Exception\IncompleteFeatureActivationException;
 use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\HilosFeature;
-use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
-use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
@@ -21,11 +23,12 @@ use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSignificance;
 use Hilos\Legal\StandardSetCatalog;
+use Hilos\Pages\AbstractHilosAnalyticsPage;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Turning analytics on (HIL-1154): the feature owes both journal agents, the start refuses it without
- * a journal directory, and the journal directory is the node's.
+ * Turning analytics on: the feature owes the section and both journal agents,
+ * and the start refuses missing journal storage or privacy declaration.
  */
 final class AnalyticsActivationTest extends TestCase
 {
@@ -37,16 +40,43 @@ final class AnalyticsActivationTest extends TestCase
         parent::tearDown();
     }
 
-    public function testTheFeatureRequiresTheJournalAgentAndTheWriter(): void
+    public function testTheFeatureRequiresTheSectionAndTheJournal(): void
     {
         $requirements = (new AnalyticsFeature())->requirements();
 
         self::assertSame(
-            [HilosAgentType::HILOS_ANALYTICS_JOURNAL, HilosAgentType::HILOS_ANALYTICS_WRITER],
+            [HilosAgentType::HILOS_ANALYTICS, HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosAgentType::HILOS_ANALYTICS_WRITER],
             $requirements->requiredAgents,
         );
+        self::assertSame([AbstractHilosAnalyticsPage::class], $requirements->requiredPages);
         self::assertSame(HilosFeature::ANALYTICS, (new AnalyticsFeature())->feature());
         self::assertSame([AnalyticsSettingsCatalog::class], $requirements->requiredCatalogFragments);
+    }
+
+    /** @throws IncompleteFeatureActivationException When the fixture has neither section artifact */
+    public function testDeclaredAnalyticsWithoutItsSectionIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('agent ' . HilosAgentType::HILOS_ANALYTICS . ' is not registered in AGENTS');
+        AnalyticsActivationHilos::validateFeatureActivation();
+    }
+
+    /** @throws IncompleteFeatureActivationException When an undeclared section page is registered */
+    public function testSectionPageWithoutTheFeatureIsRefused(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('PAGES registers ' . AnalyticsActivationPage::class
+            . ' but HilosFeature::ANALYTICS is not declared in FEATURES');
+        AnalyticsActivationPageOnlyHilos::validateFeatureActivation();
+    }
+
+    public function testSectionAgentProvidesTheTypedReader(): void
+    {
+        $agent = new class extends AbstractHilosAnalyticsAgent {
+        };
+
+        self::assertInstanceOf(AnalyticsSectionReader::class, $agent->sectionReader());
     }
 
     public function testTheRegistryKnowsTheFeature(): void
@@ -172,6 +202,18 @@ abstract class AnalyticsActivationHilos extends Hilos
     {
         static::refuseAnalyticsWithoutPrivacyDeclaration();
     }
+}
+
+/** Minimal section page registered in the wrong feature state. */
+final class AnalyticsActivationPage extends AbstractHilosAnalyticsPage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_ANALYTICS;
+}
+
+/** Analytics page without the feature declaration. */
+abstract class AnalyticsActivationPageOnlyHilos extends Hilos
+{
+    public const array PAGES = [AnalyticsActivationPage::PAGE => AnalyticsActivationPage::class];
 }
 
 /** A Privacy catalog with an old declaration and a current revision that omits it. */

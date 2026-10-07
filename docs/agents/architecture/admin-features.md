@@ -68,8 +68,9 @@ It is also where an admin closes the system to visitors by hand
 
 A framework section may also come with a feature case that is not its own. The
 analytics section has no separate case: `HilosFeature::ANALYTICS` enables both
-collection and the section — a project that collects gets it, one that does not
-has no section (not in the code yet — HIL-1415). For what it reads and shows,
+collection and the section. Activation requires its agent and base page and
+refuses them without the feature. The visible overview card follows in HIL-1418.
+For what the backend reads and the later pages show,
 see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
 The project must NOT copy the table query, the catalog-merge, the value-source

@@ -9,15 +9,16 @@ use Hilos\Database\DatabaseException;
 use Hilos\Utils\Logger;
 
 /**
- * The one home of the analytics SQL: every statement that reads or writes an analytics table.
+ * The home of journal load and write SQL for the analytics tables.
  *
  * This subsystem deliberately bypasses the Hilos ORM and issues raw `Database::sql()`
  * statements. It is high-frequency telemetry whose shape the row-oriented ORM does not serve
  * well: dictionary tables deduplicated by SHA-1 hash via `INSERT IGNORE`, and fact rows
  * accumulated in memory then written in multi-row inserts.
  *
- * One cluster writer loads each node's journal files through it
- * ({@see AnalyticsJournalLoader}). The store itself never decides
+ * The admin section's bounded SELECTs live in {@see AnalyticsSectionReader}; personal
+ * export reads live in {@see AnalyticsPersonExportReader}. One cluster writer loads each
+ * node's journal files through this store ({@see AnalyticsJournalLoader}). The store never decides
  * a moment: every method takes the time of the event as a parameter, because a journal record
  * is loaded long after it happened and its row must carry the moment at the source.
  *

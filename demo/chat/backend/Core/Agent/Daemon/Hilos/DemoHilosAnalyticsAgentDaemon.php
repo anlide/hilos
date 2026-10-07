@@ -17,7 +17,7 @@ final class DemoHilosAnalyticsAgentDaemon extends AbstractAgentDaemon
     /**
      * Hilos analytics agent requires monopolistic worker.
      *
-     * @return bool True because analytics reads shared collector state
+     * @return bool True because section SQL reads run in a dedicated worker
      */
     public function requiresMonopolisticProcess(): bool
     {

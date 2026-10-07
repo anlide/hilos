@@ -11,12 +11,12 @@ use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Fs\Context\FsContext;
+use Hilos\Pages\AbstractHilosAnalyticsPage;
 
 /**
- * Analytics through node journals (HIL-1154): the collector in every process, the journal agent of
- * each node and the cluster writer.
+ * Analytics through node journals (HIL-1154) and the cluster's admin reader.
  *
- * The three parts come together or not at all. A collector without the journal agent hands its
+ * These parts come together or not at all. A collector without the journal agent hands its
  * batches to nobody; a journal without the writer fills the disk and never reaches a table. The
  * framework starts the collector itself in every process of a project that declares the feature
  * ({@see AnalyticsCollector}), and the start refuses the project that registers no
@@ -34,12 +34,14 @@ final class AnalyticsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements Both journal agents and the ceiling setting fragment
+     * @return FeatureRequirements The section page and reader, both journal agents, and the settings fragment
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
+            requiredPages: [AbstractHilosAnalyticsPage::class],
             requiredAgents: [
+                HilosAgentType::HILOS_ANALYTICS,
                 HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosAgentType::HILOS_ANALYTICS_WRITER,
             ],
