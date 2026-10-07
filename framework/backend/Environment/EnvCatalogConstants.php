@@ -13,6 +13,9 @@ final class EnvCatalogConstants
     public const string CATALOG_ENTRY_DEFAULT_VALUE = 'default_value';
     public const string CATALOG_ENTRY_EMPTY_IS_MISSING = 'empty_is_missing';
     public const string CATALOG_ENTRY_THROW_IF_MISSING = 'throw_if_missing';
+    public const string CATALOG_ENTRY_SENSITIVE = 'sensitive';
+    public const string CATALOG_ENTRY_PER_NODE = 'per_node';
+    public const string CATALOG_ENTRY_ADMIN_VIEW_VISIBLE = 'admin_view_visible';
 
     public const string TYPE_STRING = 'string';
     public const string TYPE_INTEGER = 'integer';

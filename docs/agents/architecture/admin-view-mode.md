@@ -374,7 +374,12 @@ nobody is asked*).
   `AnonymizationStrategy::MASK` for restore anonymization. At startup an open
   key is refused if any default-reference ancestor is closed, even when its
   current value has an override. OAuth providers follow their entity verdict
-  rather than the settings catalog (HIL-1255). A log line shows its time, level and node, and
+  rather than the settings catalog (HIL-1255). An environment value is closed to
+  a viewer unless its own catalog entry explicitly says `admin_view_visible =>
+  true`; a `sensitive` entry can never be opened. No current environment key is
+  open to viewers. Keys, types, sources, requiredness and the set/unset fact can
+  remain visible; enforcing value hiding on the wire belongs to HIL-1378.
+  A log line shows its time, level and node, and
   its text is hidden; there is no marking at write time. The logs page asks
   whether its connection is a viewer on each read or follow, forwards `hideText`
   to the file owner and removes a viewer's substring filter before forwarding:

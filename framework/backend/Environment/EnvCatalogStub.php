@@ -25,24 +25,24 @@ final class EnvCatalogStub implements CatalogProviderInterface
     public static function getCatalog(): array
     {
         return [
-            EnvConstants::HILOS_DAEMON_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING),
-            EnvConstants::HTTP_STATUS_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING),
+            EnvConstants::HILOS_DAEMON_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
+            EnvConstants::HTTP_STATUS_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::HTTP_STATUS_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
             EnvConstants::HTTP_STATUS_KEEP_ALIVE->name => self::entry(
                 EnvCatalogConstants::TYPE_BOOLEAN,
                 true,
                 emptyIsMissing: true,
             ),
-            EnvConstants::WORKER_COMM_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING),
+            EnvConstants::WORKER_COMM_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::WORKER_COMM_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
-            EnvConstants::COMMAND_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '127.0.0.1', emptyIsMissing: true),
+            EnvConstants::COMMAND_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '127.0.0.1', emptyIsMissing: true, perNode: true),
             EnvConstants::COMMAND_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8094, emptyIsMissing: true),
             EnvConstants::DB_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::HOST, emptyIsMissing: true),
             EnvConstants::DB_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, DatabaseConnectionDefaults::PORT, emptyIsMissing: true),
             EnvConstants::DB_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_db', emptyIsMissing: true),
             EnvConstants::DB_USER->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_user', emptyIsMissing: true),
-            EnvConstants::DB_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD),
-            EnvConstants::DB_ROOT_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::DB_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD, sensitive: true),
+            EnvConstants::DB_ROOT_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::DB_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::USER, emptyIsMissing: true),
             EnvConstants::DB_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::DB_SECONDARY_HOST->name => self::entry(
@@ -55,7 +55,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 DatabaseConnectionDefaults::USER,
                 emptyIsMissing: true,
             ),
-            EnvConstants::DB_SECONDARY_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, DatabaseConnectionDefaults::PASSWORD),
+            EnvConstants::DB_SECONDARY_PASSWORD->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                DatabaseConnectionDefaults::PASSWORD,
+                sensitive: true,
+            ),
             EnvConstants::DB_SECONDARY_DATABASE->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'hilos_secondary'),
             EnvConstants::HILOS_DB_REHYDRATE_TIMEOUT->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
@@ -83,8 +87,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 DatabaseConnectionDefaults::PORT,
                 emptyIsMissing: true,
             ),
-            EnvConstants::DAEMON_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
-            EnvConstants::DAEMON_ERROR_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING),
+            EnvConstants::DAEMON_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
+            EnvConstants::DAEMON_ERROR_LOG_FILE->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::DOCKER_NETWORK_SUBNET->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 '10.190.0.0/16',
@@ -94,10 +98,11 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 EnvCatalogConstants::TYPE_STRING,
                 '10.190.0.10',
                 emptyIsMissing: true,
+                perNode: true,
             ),
             EnvConstants::DOCKER->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::TERM->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::WEBSOCKET_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING),
+            EnvConstants::WEBSOCKET_HOST->name => self::required(EnvCatalogConstants::TYPE_STRING, perNode: true),
             EnvConstants::WEBSOCKET_PORT->name => self::required(EnvCatalogConstants::TYPE_INTEGER),
             EnvConstants::SOCKET_READ_BUFFER_SIZE->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
@@ -141,7 +146,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 LLMConstants::DEFAULT_EXTERNAL_URL,
                 emptyIsMissing: true,
             ),
-            EnvConstants::LLM_EXTERNAL_API_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::LLM_EXTERNAL_API_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::LLM_EXTERNAL_CHAT_MODEL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL,
@@ -222,6 +227,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 EnvCatalogConstants::TYPE_STRING,
                 '0.0.0.0',
                 emptyIsMissing: true,
+                perNode: true,
             ),
             EnvConstants::FRONTEND_HTML_PORT->name => self::entry(
                 EnvCatalogConstants::TYPE_INTEGER,
@@ -291,18 +297,18 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::BACKUP_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
             EnvConstants::BACKUP_RESTORE_TIMEOUT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),
             EnvConstants::BACKUP_SHIP_TARGET->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::BACKUP_SHIP_SSH_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::BACKUP_SHIP_SSH_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::BACKUP_SHIP_SSH_KNOWN_HOSTS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_SHIP_ENCRYPT_RECIPIENTS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::BACKUP_SHIP_TIMEOUT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3600, emptyIsMissing: true),
             EnvConstants::CLUSTER_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, false, emptyIsMissing: true),
-            EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::CLUSTER_NODE_ROLE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::CLUSTER_NODE_CAPABILITIES->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::CLUSTER_PEER_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '0.0.0.0', emptyIsMissing: true),
+            EnvConstants::CLUSTER_NODE_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
+            EnvConstants::CLUSTER_NODE_ROLE->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
+            EnvConstants::CLUSTER_NODE_CAPABILITIES->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
+            EnvConstants::CLUSTER_PEER_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, '0.0.0.0', emptyIsMissing: true, perNode: true),
             EnvConstants::CLUSTER_PEER_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8095, emptyIsMissing: true),
             EnvConstants::CLUSTER_SEEDS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::CLUSTER_PEER_ADVERTISE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::CLUSTER_PEER_ADVERTISE->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
             EnvConstants::CLUSTER_MASTER_SET->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::CLUSTER_ELECTION_TIMEOUT_MIN_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1500, emptyIsMissing: true),
             EnvConstants::CLUSTER_ELECTION_TIMEOUT_MAX_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 3000, emptyIsMissing: true),
@@ -312,7 +318,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::CLUSTER_LINK_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 5000, emptyIsMissing: true),
             EnvConstants::CLUSTER_FAILOVER_GRACE_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 8000, emptyIsMissing: true),
             EnvConstants::CLUSTER_PLACEMENT_ACK_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 16000, emptyIsMissing: true),
-            EnvConstants::CLUSTER_TLS_CERT_FILE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::CLUSTER_TLS_CERT_FILE->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
             EnvConstants::CLUSTER_TLS_CA_FILE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::HILOS_WEBAUTHN_RP_ID->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'localhost', emptyIsMissing: true),
             EnvConstants::HILOS_WEBAUTHN_RP_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'Hilos', emptyIsMissing: true),
@@ -320,7 +326,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::HILOS_WEBAUTHN_CHALLENGE_TTL_SEC->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 300, emptyIsMissing: true),
             EnvConstants::HILOS_WEBAUTHN_USER_VERIFICATION->name => self::entry(EnvCatalogConstants::TYPE_STRING, 'preferred', emptyIsMissing: true),
             EnvConstants::HILOS_WEBAUTHN_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 60000, emptyIsMissing: true),
-            EnvConstants::HILOS_WEBAUTHN_CHALLENGE_SECRET->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::HILOS_WEBAUTHN_CHALLENGE_SECRET->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::MAIL_TRANSPORT->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::MAIL_SMTP_HOST->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::MAIL_SMTP_PORT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 587, emptyIsMissing: true),
@@ -330,7 +336,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 emptyIsMissing: true,
             ),
             EnvConstants::MAIL_SMTP_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::MAIL_SMTP_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::MAIL_SMTP_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::MAIL_FROM_ADDRESS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::MAIL_FROM_NAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::MAIL_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10000, emptyIsMissing: true),
@@ -349,7 +355,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 emptyIsMissing: true,
             ),
             EnvConstants::WATCHDOG_ALERT_SMTP_USERNAME->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::WATCHDOG_ALERT_SMTP_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::WATCHDOG_ALERT_SMTP_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::WATCHDOG_ALERT_FROM_ADDRESS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::WATCHDOG_ALERT_TO_ADDRESS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::WATCHDOG_ALERT_TIMEOUT_MS->name => self::entry(
@@ -357,7 +363,7 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 5000,
                 emptyIsMissing: true,
             ),
-            EnvConstants::TELEGRAM_GATEWAY_TOKEN->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::TELEGRAM_GATEWAY_TOKEN->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::TELEGRAM_GATEWAY_ENDPOINT_URL->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,
                 'https://gatewayapi.telegram.org',
@@ -373,12 +379,12 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::SMS_PROVIDER->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_ENDPOINT_URL->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::SMS_FROM->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::SMS_API_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::SMS_API_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::SMS_API_KEY->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
+            EnvConstants::SMS_API_PASSWORD->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::SMS_TIMEOUT_MS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10000, emptyIsMissing: true),
             EnvConstants::SMS_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::VAPID_PUBLIC->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
-            EnvConstants::VAPID_PRIVATE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            EnvConstants::VAPID_PRIVATE->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', sensitive: true),
             EnvConstants::VAPID_SUBJECT->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             EnvConstants::PUSH_WORKER_COUNT->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 1, emptyIsMissing: true),
             EnvConstants::LOG_ROTATION_MAX_AGE_SECONDS->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 0, emptyIsMissing: true),
@@ -421,30 +427,54 @@ final class EnvCatalogStub implements CatalogProviderInterface
 
     /**
      * @param string $type Catalog value type
+     * @param bool $perNode Whether this key is expected to differ between nodes
      * @return array<string, mixed> Required catalog entry
      */
-    private static function required(string $type): array
+    private static function required(string $type, bool $perNode = false): array
     {
-        return [
+        $entry = [
             EnvCatalogConstants::CATALOG_ENTRY_TYPE => $type,
             EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => true,
             EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => true,
         ];
+
+        if ($perNode) {
+            $entry[EnvCatalogConstants::CATALOG_ENTRY_PER_NODE] = true;
+        }
+
+        return $entry;
     }
 
     /**
      * @param string $type Catalog value type
      * @param mixed $default Default value
      * @param bool $emptyIsMissing Whether empty values fall back to defaults
+     * @param bool $sensitive Whether the value must remain on this node
+     * @param bool $perNode Whether this key is expected to differ between nodes
      * @return array<string, mixed> Catalog entry
      */
-    private static function entry(string $type, mixed $default, bool $emptyIsMissing = false): array
+    private static function entry(
+        string $type,
+        mixed $default,
+        bool $emptyIsMissing = false,
+        bool $sensitive = false,
+        bool $perNode = false,
+    ): array
     {
-        return [
+        $entry = [
             EnvCatalogConstants::CATALOG_ENTRY_TYPE => $type,
             EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
             EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
             EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,
         ];
+
+        if ($sensitive) {
+            $entry[EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE] = true;
+        }
+        if ($perNode) {
+            $entry[EnvCatalogConstants::CATALOG_ENTRY_PER_NODE] = true;
+        }
+
+        return $entry;
     }
 }

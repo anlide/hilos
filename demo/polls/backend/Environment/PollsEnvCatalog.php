@@ -35,11 +35,12 @@ final class PollsEnvCatalog implements CatalogProviderInterface
             PollsEnvConstants::OAUTH_STATE_SECRET => self::stringEntry(
                 'dev-oauth-state-secret-change-me',
                 emptyIsMissing: true,
+                sensitive: true,
             ),
             PollsEnvConstants::OAUTH_GITHUB_CLIENT_ID => self::stringEntry(''),
-            PollsEnvConstants::OAUTH_GITHUB_CLIENT_SECRET => self::stringEntry(''),
+            PollsEnvConstants::OAUTH_GITHUB_CLIENT_SECRET => self::stringEntry('', sensitive: true),
             PollsEnvConstants::OAUTH_GOOGLE_CLIENT_ID => self::stringEntry(''),
-            PollsEnvConstants::OAUTH_GOOGLE_CLIENT_SECRET => self::stringEntry(''),
+            PollsEnvConstants::OAUTH_GOOGLE_CLIENT_SECRET => self::stringEntry('', sensitive: true),
             PollsEnvConstants::OAUTH_REDIRECT_URI => self::stringEntry(
                 '/auth/callback',
                 emptyIsMissing: true,
@@ -50,15 +51,22 @@ final class PollsEnvCatalog implements CatalogProviderInterface
     /**
      * @param string $default Default value
      * @param bool $emptyIsMissing Whether empty values fall back to defaults
+     * @param bool $sensitive Whether the value must remain on this node
      * @return array<string, mixed> Catalog entry for a string-typed variable
      */
-    private static function stringEntry(string $default, bool $emptyIsMissing = false): array
+    private static function stringEntry(string $default, bool $emptyIsMissing = false, bool $sensitive = false): array
     {
-        return [
+        $entry = [
             EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_STRING,
             EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
             EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
             EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,
         ];
+
+        if ($sensitive) {
+            $entry[EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE] = true;
+        }
+
+        return $entry;
     }
 }

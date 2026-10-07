@@ -334,6 +334,74 @@ final class EnvAccessorTest extends TestCase
         $this->assertSame([], $env->missingRequired());
     }
 
+    public function testMetadataReadersReturnDeclarationsAndCloseUnknownKeys(): void
+    {
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'fallback') + [
+                EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE => true,
+                EnvCatalogConstants::CATALOG_ENTRY_PER_NODE => true,
+            ],
+            self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, 7) + [
+                EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ],
+        ]);
+
+        $this->assertTrue($env->sensitiveFor(self::STRING_KEY));
+        $this->assertTrue($env->perNodeFor(self::STRING_KEY));
+        $this->assertFalse($env->visibleInAdminViewMode(self::STRING_KEY));
+        $this->assertFalse($env->sensitiveFor(self::INTEGER_KEY));
+        $this->assertFalse($env->perNodeFor(self::INTEGER_KEY));
+        $this->assertTrue($env->visibleInAdminViewMode(self::INTEGER_KEY));
+        $this->assertTrue($env->sensitiveFor('UNKNOWN_KEY'));
+        $this->assertFalse($env->perNodeFor('UNKNOWN_KEY'));
+        $this->assertFalse($env->visibleInAdminViewMode('UNKNOWN_KEY'));
+    }
+
+    public function testMetadataReadDoesNotResolveAnEnvironmentValue(): void
+    {
+        putenv(self::INTEGER_KEY . '=not-an-integer');
+        $env = $this->env([
+            self::INTEGER_KEY => $this->required(EnvCatalogConstants::TYPE_INTEGER) + [
+                EnvCatalogConstants::CATALOG_ENTRY_PER_NODE => true,
+            ],
+        ]);
+
+        $this->assertTrue($env->perNodeFor(self::INTEGER_KEY));
+        $this->assertFalse($env->visibleInAdminViewMode(self::INTEGER_KEY));
+    }
+
+    public function testWholeCatalogIsValidatedBeforeAnyMetadataIsReturned(): void
+    {
+        $base = $this->entry(EnvCatalogConstants::TYPE_STRING, 'value');
+        $invalid = [
+            [$base + ['unexpected_field' => true], 'unexpected_field'],
+            [array_replace($base, [EnvCatalogConstants::CATALOG_ENTRY_TYPE => 'unknown']), 'type'],
+            [array_replace($base, [EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => 'yes']), 'empty_is_missing'],
+            [array_replace($base, [EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => 1]), 'throw_if_missing'],
+            [$base + [EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE => 'yes'], 'sensitive'],
+            [$base + [EnvCatalogConstants::CATALOG_ENTRY_PER_NODE => 1], 'per_node'],
+            [$base + [EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => null], 'admin_view_visible'],
+            [$base + [
+                EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE => true,
+                EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+            ], 'admin_view_visible'],
+        ];
+
+        foreach ($invalid as [$entry, $field]) {
+            $env = $this->env([
+                self::STRING_KEY => $base,
+                self::INTEGER_KEY => $entry,
+            ]);
+            try {
+                $env->sensitiveFor(self::STRING_KEY);
+                $this->fail("Catalog field '{$field}' was accepted");
+            } catch (EnvInvalidValueException $exception) {
+                $this->assertStringContainsString(self::INTEGER_KEY, $exception->getMessage());
+                $this->assertStringContainsString($field, $exception->getMessage());
+            }
+        }
+    }
+
     /**
      * Writes env files into a throwaway directory removed by {@see tearDown()}.
      *

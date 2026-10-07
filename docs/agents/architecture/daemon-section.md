@@ -131,8 +131,8 @@ the picture carries no cluster concepts (not in the code yet — HIL-1374).
 A sensitive value never leaves the node's processes: neither for the collector,
 the page, the browser, a log line nor CLI output. Only “set · N chars” or
 “not set” may leave (not in the code yet — HIL-1378).
-The environment catalog declares `sensitive`; do not guess it from the key's name
-(not in the code yet — HIL-1377). An orphan `.env` key that looks like a secret
+The environment catalog declares `sensitive`; do not guess it from the key's name.
+An orphan `.env` key that looks like a secret
 does not expose its value either (not in the code yet — HIL-1378).
 
 Only the node's own agent serves that node's environment values, on request,
@@ -142,8 +142,9 @@ Its Owner*. The collector's picture contains no values
 (not in the code yet — HIL-1378). For a silent node the page says “node silent”
 and supplies no values (not in the code yet — HIL-1378).
 
-For an admin view-mode viewer, hide every value the environment catalog has not
-explicitly opened, as for settings (not in the code yet — HIL-1377).
+The environment catalog opens a value to an admin view-mode viewer only with
+`admin_view_visible => true`; no current key is open, and `sensitive` forbids
+opening one. Hide every other value, as for settings.
 The node owner enforces that decision: the page forwards “hide”, the owner sends
 a hidden mark, and the hidden value never crosses the network
 (not in the code yet — HIL-1378). Use the `hideText` precedent in

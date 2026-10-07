@@ -66,10 +66,50 @@ class EnvAccessor implements ArrayAccess
      * whose defaults come from env pays that price per entry, per build.
      *
      * @return array<string, array<string, mixed>> Catalog keyed by env variable name
+     * @throws EnvInvalidValueException When any catalog declaration is invalid
      */
     protected function getCatalog(): array
     {
-        return $this->catalogCache ??= $this->catalogClass::getCatalog();
+        if ($this->catalogCache === null) {
+            $catalog = $this->catalogClass::getCatalog();
+            foreach ($catalog as $key => $entry) {
+                if (!is_array($entry)) {
+                    throw new EnvInvalidValueException("Environment variable '{$key}' catalog entry is invalid");
+                }
+                foreach (array_keys($entry) as $field) {
+                    if (!in_array($field, [
+                        EnvCatalogConstants::CATALOG_ENTRY_TYPE,
+                        EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE,
+                        EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING,
+                        EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING,
+                        EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE,
+                        EnvCatalogConstants::CATALOG_ENTRY_PER_NODE,
+                        EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE,
+                    ], true)) {
+                        throw new EnvInvalidValueException("Environment variable '{$key}' catalog field '{$field}' is unknown");
+                    }
+                }
+                $this->entryType($key, $entry);
+                foreach ([
+                    EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING,
+                    EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING,
+                    EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE,
+                    EnvCatalogConstants::CATALOG_ENTRY_PER_NODE,
+                    EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE,
+                ] as $field) {
+                    $this->entryBool($key, $entry, $field, false);
+                }
+                if (($entry[EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE] ?? false)
+                    && ($entry[EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] ?? false)) {
+                    throw new EnvInvalidValueException(
+                        "Environment variable '{$key}' catalog fields 'sensitive' and 'admin_view_visible' conflict",
+                    );
+                }
+            }
+            $this->catalogCache = $catalog;
+        }
+
+        return $this->catalogCache;
     }
 
     /**
@@ -242,6 +282,55 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * Returns whether an env value must remain on its node. Unknown keys are closed.
+     *
+     * @param EnvConstants|string $name Environment variable name
+     * @return bool Whether the value is sensitive
+     * @throws EnvInvalidValueException When catalog metadata is invalid
+     * @throws EnvKeyInvalidException When the key is invalid
+     */
+    public function sensitiveFor(EnvConstants|string $name): bool
+    {
+        $key = $this->keyName($name);
+        $catalog = $this->getCatalog();
+
+        return !isset($catalog[$key])
+            || ($catalog[$key][EnvCatalogConstants::CATALOG_ENTRY_SENSITIVE] ?? false);
+    }
+
+    /**
+     * Returns whether a key is expected to differ between nodes.
+     *
+     * @param EnvConstants|string $name Environment variable name
+     * @return bool Whether the key belongs to the node
+     * @throws EnvInvalidValueException When catalog metadata is invalid
+     * @throws EnvKeyInvalidException When the key is invalid
+     */
+    public function perNodeFor(EnvConstants|string $name): bool
+    {
+        $key = $this->keyName($name);
+        $catalog = $this->getCatalog();
+
+        return $catalog[$key][EnvCatalogConstants::CATALOG_ENTRY_PER_NODE] ?? false;
+    }
+
+    /**
+     * Returns whether an admin view-mode viewer may see an env value.
+     *
+     * @param EnvConstants|string $name Environment variable name
+     * @return bool Whether the value is visible to a viewer
+     * @throws EnvInvalidValueException When catalog metadata is invalid
+     * @throws EnvKeyInvalidException When the key is invalid
+     */
+    public function visibleInAdminViewMode(EnvConstants|string $name): bool
+    {
+        $key = $this->keyName($name);
+        $catalog = $this->getCatalog();
+
+        return $catalog[$key][EnvCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE] ?? false;
+    }
+
+    /**
      * Names every required catalog key that has no value, in catalog order.
      *
      * Asks {@see effectiveValueFor()} the same question a runtime read asks, key by key, so
@@ -410,7 +499,7 @@ class EnvAccessor implements ArrayAccess
             EnvCatalogConstants::TYPE_FLOAT,
             EnvCatalogConstants::TYPE_BOOLEAN,
         ], true)) {
-            throw new EnvInvalidValueException("Environment variable '{$key}' catalog type is invalid");
+            throw new EnvInvalidValueException("Environment variable '{$key}' catalog field 'type' is invalid");
         }
 
         return $type;
