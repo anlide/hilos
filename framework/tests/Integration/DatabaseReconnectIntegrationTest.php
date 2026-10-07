@@ -76,6 +76,32 @@ final class DatabaseReconnectIntegrationTest extends FrameworkIntegrationTestCas
     }
 
     /**
+     * The first statement replayed on a replacement primary link sees its active receipt.
+     * The next operation starts without that number, including after another reconnect.
+     *
+     * @throws DatabaseException When a query or reconnect fails
+     * @throws EnvException When DB env variables are missing
+     */
+    public function testReconnectedPrimaryRestoresAndClearsReceipt(): void
+    {
+        Database::setJournalReceiptId(737);
+        try {
+            $this->killConnection($this->currentConnectionId());
+            Database::sql('SELECT @hilos_receipt AS receipt');
+            $this->assertSame(737, (int) Database::field('receipt'));
+        } finally {
+            Database::setJournalReceiptId(null);
+        }
+
+        Database::sql('SELECT @hilos_receipt AS receipt');
+        $this->assertNull(Database::field('receipt'));
+
+        $this->killConnection($this->currentConnectionId());
+        Database::sql('SELECT @hilos_receipt AS receipt');
+        $this->assertNull(Database::field('receipt'));
+    }
+
+    /**
      * @throws DatabaseException When the connection or query fails
      * @throws EnvException When DB env variables are unavailable
      */

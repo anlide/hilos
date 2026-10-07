@@ -31,7 +31,7 @@ The Entity declares which tables are journaled; nobody switches them on or off.
 The screens only show what is declared (not in the code yet — HIL-1461).
 
 For attribution a journal row carries only the receipt number; the receipt says
-who acted, on whose behalf and through what (not in the code yet — HIL-1449).
+who acted, on whose behalf and through what.
 
 The journal lives in its own database on the same server.
 
@@ -99,8 +99,8 @@ server.
 ## The Receipt
 
 One action has one receipt: who is at the keyboard, on whose behalf, the session,
-the channel, the action, the agent, the source and the time
-(not in the code yet — HIL-1449).
+the channel, the action, the agent, the source and the time. The application
+inserts it on the primary SQL connection before the handler or migration file.
 
 Under impersonation the administrator is at the keyboard and the session's
 person is the one on whose behalf the action runs. That is already the session's
@@ -109,8 +109,8 @@ answer: `Session::userAtKeyboard()` in
 
 | Channel value | Who | Agent | Source | Implementation |
 |---|---|---|---|---|
-| `web` | The person; both people under impersonation | The page's agent | The session | (not in the code yet — HIL-1449) |
-| `migration` | Empty | None — the migration runner | The migration file | (not in the code yet — HIL-1449) |
+| `web` | The person; both people under impersonation | The page's agent | The session | `PageSignalRouter` around the accepted synchronous handler |
+| `migration` | Empty | None — the migration runner | The migration file | `Migration` around one SQL file |
 | `agent` | Empty, shown as “System” | That agent | The agent itself | (not in the code yet — HIL-1450) |
 | `cli` | Empty | The executing agent | The command, without the values it was given | (not in the code yet — HIL-1455) |
 | `cron` | Empty | The job's agent | The job and its time | (not in the code yet — HIL-1456) |
@@ -120,10 +120,9 @@ The CLI command channel has no person by design; see
 [Who may call a command — nobody is asked](command-server.md#who-may-call-a-command--nobody-is-asked).
 
 The action is the name the server knows — `bot.update`, `settings.set` — not the
-button's label (not in the code yet — HIL-1449).
+button's label.
 
-Set `@hilos_receipt` before the write and clear it afterward
-(not in the code yet — HIL-1449):
+Set `@hilos_receipt` before the write and clear it afterward:
 
 ```sql
 SET @hilos_receipt = <number>;
@@ -133,12 +132,24 @@ SET @hilos_receipt = NULL;
 
 A worker shares its connection among agents and reconnects silently. Leaving a
 receipt number on it would attribute the next write to the wrong person. An
-empty variable means an empty receipt number in the journal
-(not in the code yet — HIL-1449).
+empty variable means an empty receipt number in the journal. `Database::connect()`
+also installs the active number on a replacement primary link before a replayed
+statement; it never sets it on the journal connection. A failed clear closes
+the primary link, so the next handler cannot inherit its value.
 
-A receipt under which nothing journaled was written does not remain
-(not in the code yet — HIL-1449). HIL-1449 decides whether the application or
-the first trigger writes the receipt and how an empty one is avoided.
+A receipt under which nothing journaled was written is deleted after the scope,
+including a no-op or a handler error. Cleanup checks for journal rows by receipt
+id and is safe to repeat. A process that dies before cleanup can leave an empty
+row; the feed must require a journal row (HIL-1457). Physical orphan cleanup must
+wait for the handover lifetime in HIL-1454, so a recipient agent can still write.
+
+A web scope starts after the action guards and ends before the success or deferred
+ack. It stores the acting administrator and impersonated person separately, and
+stores only the session number as source. A migration scope covers one up, down
+or retry SQL file. Files before the receipt table exists run without one. A file
+that creates or drops that table also runs without one, including a retry of its
+partially applied creation: it cannot create a receipt in a table it is building
+or removing. The migration's failed marker stays outside the scope.
 
 A page action whose write is handed to another agent keeps one receipt with the
 person and the writing agent, including when the recipient is on another node:
@@ -233,8 +244,6 @@ how many instances of the agent run, belong to HIL-1452.
 - `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`;
 - its temporary compatibility verdicts in
   `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php` until HIL-1451;
-- the `SET @hilos_user_id` TODO in
-  `framework/backend/Core/Page/AbstractHilosPage.php`;
 - the TODOs in `framework/backend/Pages/ChangeLog/`:
   `AbstractHilosChangeLogDashboardPage.php`, `AbstractHilosChangeLogTablesPage.php`
   and `AbstractHilosChangeLogTablePage.php`.
@@ -242,7 +251,7 @@ how many instances of the agent run, belong to HIL-1452.
 That shape describes a person number on every row, retention cleanup,
 `track_values`, foreign keys, and an administrator's dry run. It is superseded,
 not a worked example to copy. The framework stub now holds the six-table form;
-HIL-1449 replaces the receipt TODO, and HIL-1452 the page placeholders.
+the receipt scope replaces the old page TODO; HIL-1452 owns the page placeholders.
 
 ## Triggers Are Files
 
@@ -321,7 +330,7 @@ that table **before** the DDL, while its old triggers still work. Do not write
 that table again in the migration batch before final trigger installation. The
 new files target the completed schema. A DML statement that reaches a broken old
 trigger fails the migration and startup normally; do not disable the journal to
-let it through. Migration receipt attribution belongs to HIL-1449.
+let it through. A migration with journaled DML carries a receipt naming that file.
 
 Custom project triggers, their header declaration and their five safeguards
 belong to phase 2, HIL-1413.
@@ -369,10 +378,9 @@ A receipt created through any node is read identically through any other
 ## Anti-Patterns
 
 - `SET @hilos_user_id` before a write and a person number on every journal row
-  copy the April shape; use the receipt instead
-  (not in the code yet — HIL-1449).
+  copy the April shape; use the receipt instead.
 - Leaving a number in `@hilos_receipt` after a write gives a later write the wrong
-  attribution; clear it after the write (not in the code yet — HIL-1449).
+  attribution; clear it after the write.
 - A foreign key from the journal onto a data row endangers the history; keep a
   soft reference.
 - Putting the journal in the main database loses its separate storage boundary;

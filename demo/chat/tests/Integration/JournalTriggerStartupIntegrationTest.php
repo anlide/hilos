@@ -36,7 +36,7 @@ final class JournalTriggerStartupIntegrationTest extends IntegrationTestCase
 
     private const array JOURNAL_CLEANUP_ORDER = [
         'hilos_change_log_value', 'hilos_change_log_change', 'hilos_change_log',
-        'hilos_change_log_field', 'hilos_change_log_table',
+        'hilos_change_log_receipt', 'hilos_change_log_field', 'hilos_change_log_table',
     ];
 
     private string $path;

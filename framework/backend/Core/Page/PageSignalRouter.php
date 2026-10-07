@@ -72,6 +72,8 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -1109,12 +1111,24 @@ class PageSignalRouter
         $this->assertActionAuthorized($host, $action, $acceptKey);
         $this->assertTakeover($host, $action, $acceptKey);
         $this->recordPersonEvent($acceptKey, AnalyticsPersonEvent::ACTION, action: $action, clientIp: $clientIp);
+        $administratorId = Takeover::administratorBehind($acceptKey);
+        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        $receipt = JournalReceiptData::web(
+            $administratorId ?? Hilos::$browser?->resolveActionUserId($acceptKey),
+            $administratorId === null ? null : $connection?->userId,
+            $connection?->sessionId,
+            $action,
+            ExecutionContext::currentAgentId(),
+        );
         $host->beginActionDispatch($requestId);
         try {
-            $reply = ExecutionContext::withOrigin(
-                $acceptKey,
-                $requestId,
-                fn (): ?ActionReplyDTO => $host->runAction($acceptKey, $action, $dto),
+            $reply = JournalReceiptScope::run(
+                $receipt,
+                fn (): ?ActionReplyDTO => ExecutionContext::withOrigin(
+                    $acceptKey,
+                    $requestId,
+                    fn (): ?ActionReplyDTO => $host->runAction($acceptKey, $action, $dto),
+                ),
             );
             if ($host->actionReplyDeferred()) {
                 // The handler passed the request id to whoever finishes this action, and

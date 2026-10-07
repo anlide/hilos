@@ -70,6 +70,9 @@ class Database
     /** @var array<int, true> Connection indices explicitly closed by a caller */
     private static array $closedByHand = [];
 
+    /** Receipt installed on the primary link and on any replacement for it. */
+    private static ?int $journalReceiptId = null;
+
     /**
      * @param ?int $index Connection index (defaults to current)
      * @return ?mysqli_result Cached mysqli result or null
@@ -288,6 +291,17 @@ class Database
                     MysqlExceptionMapper::connectionException($errno, $error);
                 }
 
+                if ($index === DatabaseConnectionDefaults::PRIMARY_INDEX) {
+                    try {
+                        mysqli_query($mysqli, self::journalReceiptSql(self::$journalReceiptId));
+                    } catch (mysqli_sql_exception $e) {
+                        $errno = $e->getCode();
+                        $error = $e->getMessage();
+                        mysqli_close($mysqli);
+                        MysqlExceptionMapper::connectionException($errno, $error);
+                    }
+                }
+
                 self::$connections[$index] = $mysqli;
                 unset(self::$closedByHand[$index]);
                 return; // Success
@@ -429,6 +443,44 @@ class Database
     {
         $index = $index ?? self::$currentIndex;
         return isset(self::$connections[$index]) && self::$connections[$index] !== null;
+    }
+
+    /**
+     * Sets attribution on an existing primary link; reconnects read the active scope themselves.
+     * A failed SET discards the link so another operation cannot inherit its old value.
+     *
+     * @param ?int $id Active receipt, or null to clear it
+     * @throws DatabaseConnectionException When the primary link disappears before assignment
+     * @throws DatabaseRuntimeException When MySQL refuses the assignment
+     */
+    public static function setJournalReceiptId(?int $id): void
+    {
+        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        self::$journalReceiptId = $id;
+        if (!self::isConnected($index)) {
+            return;
+        }
+
+        $sql = self::journalReceiptSql($id);
+        try {
+            $mysqli = self::getConnection($index);
+            while (mysqli_next_result($mysqli)) {
+                mysqli_store_result($mysqli);
+            }
+            mysqli_query($mysqli, $sql);
+        } catch (mysqli_sql_exception $e) {
+            self::dropLink($index);
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), $sql);
+        }
+    }
+
+    /**
+     * @param ?int $id Active receipt
+     * @return string Assignment using only an integer or NULL
+     */
+    private static function journalReceiptSql(?int $id): string
+    {
+        return 'SET @hilos_receipt = ' . ($id === null ? 'NULL' : (string) $id);
     }
 
     /**

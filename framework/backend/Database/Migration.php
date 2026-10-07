@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Database;
 
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\AdminViewMode\AdminViewModeLatchTable;
 use Hilos\AdminViewMode\AdminViewModeStartup;
 use Hilos\Database\Exception\MigrationMarkedFailedException;
@@ -466,7 +468,7 @@ class Migration
 
         try {
             // Execute migration
-            self::runSqlWithDelimiter($content);
+            self::runFileWithReceipt('up', $index, $upFile, $content);
 
             // Mark as successful
             Database::sqlRun('UPDATE `migration` SET `failed` = 0 WHERE `index` = ?', [intval($index)]);
@@ -506,7 +508,7 @@ class Migration
 
         try {
             // Execute rollback
-            self::runSqlWithDelimiter($content);
+            self::runFileWithReceipt('down', $index, $downFile, $content);
 
             // Remove migration record
             Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [intval($index)]);
@@ -519,6 +521,42 @@ class Migration
             }
             throw $newException;
         }
+    }
+
+    /**
+     * Runs one SQL file under a receipt after the journal schema exists. A file that creates
+     * or removes the receipt table forms the boundary of that schema and cannot receive one.
+     *
+     * @param string $direction Migration direction
+     * @param int $index Migration number
+     * @param string $file SQL file path
+     * @param string $content SQL file contents
+     * @throws DatabaseException When the table probe or migration SQL fails
+     */
+    private static function runFileWithReceipt(string $direction, int $index, string $file, string $content): void
+    {
+        if (
+            Database::getCurrentIndex() !== DatabaseConnectionDefaults::PRIMARY_INDEX
+            || !in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)
+            || preg_match('/^\s*(?:CREATE|DROP)\s+TABLE\b[^;]*`hilos_change_log_receipt`/im', $content) === 1
+        ) {
+            self::runSqlWithDelimiter($content);
+            return;
+        }
+
+        Database::sql(
+            'SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1',
+            [ChangeLogDatabase::configuredName(), 'hilos_change_log_receipt'],
+        );
+        if (Database::row() === null) {
+            self::runSqlWithDelimiter($content);
+            return;
+        }
+
+        JournalReceiptScope::run(
+            JournalReceiptData::migration($direction, $index, $file),
+            static fn (): mixed => self::runSqlWithDelimiter($content),
+        );
     }
 
     /**
