@@ -36,8 +36,7 @@ For the declarations and valid combinations, read
 Keep what a node's processes produce in the producing process's memory and hand
 it on as a whole frame. The master hands its frame to its node agent
 (not in the code yet — HIL-1372). The node agent hands its picture to the collector,
-and the collector hands whole node slots to the page agent
-(not in the code yet — HIL-1371).
+and the collector hands whole node slots to the page agent.
 
 None of these pictures belongs in RT: it would duplicate an owner and replicate
 a derived view. This is the rule in [logs.md](logs.md), *Rules This Feature Proved,
@@ -110,21 +109,18 @@ each frame (not in the code yet — HIL-1372), following the third rule in
 
 Use the whole-copy chain in [logs.md](logs.md), *The Circulation*:
 
-- The node agent sends its whole picture on its own tick, unasked
-  (not in the code yet — HIL-1371).
+- The node agent sends its whole picture on its own tick, unasked.
 - The collector is one cluster instance, placed by `POLICY`, not monopolistic.
   It holds one slot per node and replaces that slot with the whole incoming
-  frame (not in the code yet — HIL-1371).
+  frame.
 - At delivery time the collector reads membership from `HilosClusterNode`.
   It does not infer membership from silence; a node the register no longer sees
-  keeps its last slot marked “silent” (not in the code yet — HIL-1371).
+  keeps its last slot marked “silent”.
 - The page agent declares interest with a lease, receives a snapshot followed
-  by changed whole slots, and holds the mirror in worker memory
-  (not in the code yet — HIL-1371).
+  by changed whole slots, and holds the mirror in worker memory.
 - “No picture yet”, “empty” and “node silent” are three distinct states. None
-  is folded into zero (not in the code yet — HIL-1371).
-- While nobody watches the section, no frames travel above the node
-  (not in the code yet — HIL-1371).
+  is folded into zero.
+- While nobody watches the section, no frames travel above the node.
 
 Keep the collector and page agent separate: the source of the cluster picture
 and the surface that shows it are different owners. On a standalone installation

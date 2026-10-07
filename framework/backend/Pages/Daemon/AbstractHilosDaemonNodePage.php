@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Daemon;
 
-use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageRouteParams;
@@ -14,7 +13,7 @@ use Hilos\Pages\Daemon\DTO\HilosDaemonNodeSubscribeParams;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /** Shared admission of a Daemon page addressed to one known node. */
-abstract class AbstractHilosDaemonNodePage extends AbstractHilosPage
+abstract class AbstractHilosDaemonNodePage extends AbstractHilosDaemonSectionPage
 {
     /** @var list<string> Runtime roster read when a node child page is subscribed to */
     public const array READS_RT = [HilosClusterNode::RT_COLLECTION];

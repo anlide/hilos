@@ -224,6 +224,9 @@ use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\Image\DTO\ImageRenderedSignalData;
 use Hilos\Files\HilosFiles;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
+use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
+use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
 use Hilos\Log\DTO\LogsFollowStopSignalData;
@@ -798,6 +801,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
+            HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
             HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => HilosAgentType::HILOS_LEGAL,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
@@ -822,6 +826,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
+            HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => HilosAgentType::HILOS_DAEMON_COLLECTOR,
+            HilosSignalConstants::DAEMON_PICTURE_WATCH => HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
@@ -986,6 +992,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
+            HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => DaemonClusterPicturePortionSignalData::class,
             HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
@@ -1010,6 +1017,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => AnalyticsJournalLoadedSignalData::class,
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
             HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
+            HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => DaemonNodePictureSignalData::class,
+            HilosSignalConstants::DAEMON_PICTURE_WATCH => DaemonPictureWatchSignalData::class,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => AnalyticsJournalPortionSignalData::class,
             HilosSignalConstants::ANALYTICS_JOURNAL_READY => AnalyticsJournalReadySignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,

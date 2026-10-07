@@ -7,7 +7,6 @@ namespace Hilos\Pages\Daemon;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
@@ -16,7 +15,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 
 /** Cluster environment comparison page; its content belongs to a later leaf. */
-abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosPage
+abstract class AbstractHilosDaemonEnvMismatchPage extends AbstractHilosDaemonSectionPage
 {
     public const string PAGE = HilosPageConstants::HILOS_DAEMON_ENV_MISMATCH;
 

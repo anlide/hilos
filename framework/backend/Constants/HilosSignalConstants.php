@@ -2252,6 +2252,15 @@ final class HilosSignalConstants
      */
     public const string LOGS_CLUSTER_INDEX_PORTION = 'logs_cluster_index_portion';
 
+    /** Whole Daemon picture from one node to the cluster collector (HIL-1371). */
+    public const string DAEMON_NODE_PICTURE_REPORT = 'daemon_node_picture_report';
+
+    /** Viewer count and lease renewal from the Daemon page agent to its collector (HIL-1371). */
+    public const string DAEMON_PICTURE_WATCH = 'daemon_picture_watch';
+
+    /** Full snapshot or changed whole node views from the collector to the page agent (HIL-1371). */
+    public const string DAEMON_CLUSTER_PICTURE_PORTION = 'daemon_cluster_picture_portion';
+
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';
