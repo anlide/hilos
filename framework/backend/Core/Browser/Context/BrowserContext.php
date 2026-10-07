@@ -98,6 +98,7 @@ use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\DbCollection;
@@ -2302,6 +2303,14 @@ abstract class BrowserContext
                 return $photo === null ? null : HilosFiles::downloadPath($photo->fileId, ProfilePhotoUploadTarget::VARIANT);
             } catch (HilosException $exception) {
                 throw new PageInternalErrorException('Profile photo address could not be resolved', $exception);
+            }
+        }
+
+        if ($browserKey === LanguageCardBrowserData::DATA && $field === LanguageCardBrowserData::FIELD_SUMMARY) {
+            try {
+                return Hilos::$db->languages->cardSummary((int)$rowKey)->toArray();
+            } catch (HilosException $exception) {
+                throw new PageInternalErrorException('Language card summary could not be resolved', $exception);
             }
         }
 
@@ -6529,7 +6538,7 @@ abstract class BrowserContext
                         ? []
                         : array_values(array_filter(
                             $rows[array_key_first($rows)][BrowserPageSignalData::sources] ?? [],
-                            'is_array',
+                            static fn(mixed $fragment): bool => is_array($fragment) && !array_is_list($fragment),
                         ));
                     $data[$browserKey] = $fragments === [] ? [] : array_merge(...$fragments);
 

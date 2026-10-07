@@ -130,12 +130,14 @@ function fakePages() {
 }
 
 describe('unbuilt pages', () => {
-  it('refuses five i18n detail addresses before a subscription in every SDK', () => {
+  it('serves the cold Vue language card by direct URL while parents and other details stay closed', () => {
     const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,
     })
     for (const layer of ['vue', 'react', 'angular'] as const) {
       for (const [page, path, params] of [
+        [HilosPages.I18N, '/hilos/i18n', {}],
+        [HilosPages.I18N_LANGUAGES, '/hilos/i18n/languages', {}],
         [
           HilosPages.I18N_LANGUAGE,
           '/hilos/i18n/languages/en',
@@ -178,9 +180,15 @@ describe('unbuilt pages', () => {
           params,
           admin: true,
         })
-        expect(refused).toEqual([page])
-        expect(calls).toEqual([])
-        expect(navigator.resolvePath(page, params)).toBeUndefined()
+        if (layer === 'vue' && page === HilosPages.I18N_LANGUAGE) {
+          expect(refused).toEqual([])
+          expect(calls).toEqual([{ page, params }])
+          expect(navigator.resolvePath(page, params)).toBe(path)
+        } else {
+          expect(refused).toEqual([page])
+          expect(calls).toEqual([])
+          expect(navigator.resolvePath(page, params)).toBeUndefined()
+        }
         navigator.stop()
       }
     }

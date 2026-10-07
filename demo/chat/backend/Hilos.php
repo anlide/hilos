@@ -204,6 +204,7 @@ use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Hilos as HilosFacade;
@@ -685,6 +686,7 @@ final class Hilos extends HilosFacade
         SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
         BotStatusBrowserData::DATA => BotStatusBrowserData::class,
         UserPresenceBrowserData::DATA => UserPresenceBrowserData::class,
+        LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -767,6 +769,9 @@ final class Hilos extends HilosFacade
                     BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
                 ],
             ],
+        ],
+        LanguageDetailPage::PAGE => [
+            LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING,
         ],
     ];
 

@@ -116,6 +116,12 @@ The SDK **primitives** are the exception: the reusable toolkit (`LoadingButton`,
 views) *is* built in all three view layers at full parity, because a React or
 Angular adopter needs the real component, not a stub. The bound demo is minimal;
 the primitive it binds is complete.
+HIL-1478 temporarily builds one Vue SDK page chunk, the language main card,
+before its React and Angular pages (HIL-1502/1503). `SHELL-PARITY` excludes only
+the `data-id` sites in `HilosI18nLanguageHeader.vue` and
+`HilosI18nLanguagePage.vue`, and that page's root export. Other Vue pages and
+all SDK primitives still require counterparts; remove the exception when those
+pages land.
 Two thin extra consumers *prove* the core is agnostic; a Vue-only codebase cannot
 (one consumer hides leaked assumptions). These demos are the simplest of the
 project's planned demos, so they double as real demos and as portability proofs.

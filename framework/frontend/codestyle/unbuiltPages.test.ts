@@ -10,7 +10,7 @@ const FIXTURES = join(
   'fixtures/unbuiltPages',
 )
 
-it('accepts bare sections with built children, missing views and layer-specific entries', () => {
+it('accepts the staged Vue language card while other layered entries stay honest', () => {
   expect(checkTree(join(FIXTURES, 'honest'))).toEqual([])
 })
 

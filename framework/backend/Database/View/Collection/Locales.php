@@ -23,6 +23,16 @@ class Locales extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectLocales::class;
 
     /**
+     * @param int $languageId Language primary id
+     * @return int Number of its locales, regardless of enabled state
+     * @throws DatabaseException When the query fails
+     */
+    public function countForLanguage(int $languageId): int
+    {
+        return $this->objectCollection->countForLanguage($languageId);
+    }
+
+    /**
      * @param mixed $offset Locale code or primary id
      * @return bool Whether the locale exists
      * @throws DatabaseException When the lookup fails

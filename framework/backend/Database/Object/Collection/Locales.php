@@ -25,6 +25,16 @@ class Locales extends Objects
     public const string COLLECTION_KEY = HilosDbContext::locales;
 
     /**
+     * @param int $languageId Language primary id
+     * @return int Number of its locales, regardless of enabled state
+     * @throws DatabaseException When the query fails
+     */
+    public function countForLanguage(int $languageId): int
+    {
+        return static::entityClass()::count([EntityLocale::language_id => $languageId]);
+    }
+
+    /**
      * @param string $code Locale code
      * @return ?ObjectLocale Locale or null
      * @throws DatabaseException When the query fails

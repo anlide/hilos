@@ -48,6 +48,14 @@ const SKIPPED_DIRECTORIES = [
 /** Broken checker fixtures are judged only by their own focused tests. */
 const EXCLUDED_PATHS = ['framework/frontend/codestyle/fixtures']
 
+// HIL-1478 page chunks have no React/Angular page peers until HIL-1502/1503.
+// Keep SDK primitives and every other Vue page site under SHELL-PARITY.
+const STAGED_VUE_PAGE_SITES = new Set([
+  'framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguageHeader.vue',
+  'framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguagePage.vue',
+])
+const STAGED_VUE_PAGE_EXPORT = 'HilosI18nLanguagePage'
+
 /** Every spelling in which the three view layers author or pass a data-id. */
 const DATA_ID_ATTRIBUTE =
   /(^|\s)(data-id|dataId|:data-id|v-bind:data-id|\[attr\.data-id\]|\[dataId\])\s*=\s*/g
@@ -174,6 +182,7 @@ function findings(inventory: Map<Shell, ShellInventory>): Finding[] {
   const found: Finding[] = []
 
   for (const site of reference.surfaces) {
+    if (STAGED_VUE_PAGE_SITES.has(site.path)) continue
     const missing = missingShells(site.name, surfaceNames)
     if (missing.length > 0) {
       found.push({
@@ -185,6 +194,11 @@ function findings(inventory: Map<Shell, ShellInventory>): Finding[] {
   }
 
   for (const site of reference.exports) {
+    if (
+      site.path === `${shellRoot('vue')}/index.ts` &&
+      site.name === STAGED_VUE_PAGE_EXPORT
+    )
+      continue
     const missing = missingShells(site.name, exportNames)
     if (missing.length > 0) {
       found.push({

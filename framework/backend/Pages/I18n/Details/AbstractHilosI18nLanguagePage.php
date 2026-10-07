@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\PageReach;
+use Hilos\Database\Context\HilosDbContext;
 
 /**
  * AbstractHilosI18nLanguagePage - Abstract base for Hilos i18n language page.
@@ -19,6 +20,14 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
     public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGE;
 
     public const PageReach REACH = PageReach::ROUTE;
+
+    /** @var list<string> Sources of the main language card */
+    public const array READS_DB = [
+        ...parent::READS_DB,
+        HilosDbContext::locales,
+        HilosDbContext::languageNames,
+        HilosDbContext::countryNames,
+    ];
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_I18N_LANGUAGE,

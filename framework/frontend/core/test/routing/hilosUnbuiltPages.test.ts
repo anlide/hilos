@@ -29,14 +29,13 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('keeps the i18n section, lists, and five detail pages unbuilt in every view layer', () => {
+  it('opens only the Vue language main card while sibling i18n pages remain unbuilt', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const unbuilt = hilosUnbuiltPages(layer)
       for (const page of [
         HilosPages.I18N,
         HilosPages.I18N_LANGUAGES,
         HilosPages.I18N_COUNTRIES,
-        HilosPages.I18N_LANGUAGE,
         HilosPages.I18N_LANGUAGE_NAMES,
         HilosPages.I18N_LANGUAGE_LOCALES,
         HilosPages.I18N_COUNTRY,
@@ -44,6 +43,7 @@ describe('hilosUnbuiltPages', () => {
       ]) {
         expect(unbuilt.has(page)).toBe(true)
       }
+      expect(unbuilt.has(HilosPages.I18N_LANGUAGE)).toBe(layer !== 'vue')
     }
   })
 

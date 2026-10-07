@@ -33,7 +33,6 @@ import HilosI18nUiPagesPage from './i18n/lists/HilosI18nUiPagesPage.vue'
 import HilosI18nGroupsPage from './i18n/lists/HilosI18nGroupsPage.vue'
 import HilosI18nActionsPage from './i18n/lists/HilosI18nActionsPage.vue'
 import HilosI18nEmailsPage from './i18n/lists/HilosI18nEmailsPage.vue'
-import HilosI18nLanguagePage from './i18n/details/HilosI18nLanguagePage.vue'
 import HilosI18nCountryPage from './i18n/details/HilosI18nCountryPage.vue'
 import HilosI18nUiPagePage from './i18n/details/HilosI18nUiPagePage.vue'
 import HilosI18nGroupPage from './i18n/details/HilosI18nGroupPage.vue'
@@ -88,7 +87,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.I18N_GROUPS]: HilosI18nGroupsPage,
     [HilosPages.I18N_ACTIONS]: HilosI18nActionsPage,
     [HilosPages.I18N_EMAILS]: HilosI18nEmailsPage,
-    [HilosPages.I18N_LANGUAGE]: HilosI18nLanguagePage,
     [HilosPages.I18N_COUNTRY]: HilosI18nCountryPage,
     [HilosPages.I18N_UI_PAGE]: HilosI18nUiPagePage,
     [HilosPages.I18N_GROUP]: HilosI18nGroupPage,

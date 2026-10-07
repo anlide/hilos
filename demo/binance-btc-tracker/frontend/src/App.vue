@@ -38,6 +38,7 @@ import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
+import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
 import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
 import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
@@ -66,6 +67,7 @@ const pages: Record<string, Component> = {
   [HilosPages.SETTINGS]: HilosSettings,
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
+  [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
   [HilosPages.LOGS]: HilosLogsOverview,
   [HilosPages.LOGS_KEYS]: HilosLogsKeys,
   [HilosPages.LOGS_WORKERS]: HilosLogsWorkers,

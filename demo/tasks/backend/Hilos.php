@@ -119,6 +119,7 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Hilos as HilosFacade;
@@ -435,6 +436,10 @@ final class Hilos extends HilosFacade
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
     ];
 
+    public const array BROWSER_DATA = [
+        LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
+    ];
+
     public const array BROWSER_TABLES = [
         HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class,
     ];
@@ -442,6 +447,12 @@ final class Hilos extends HilosFacade
     public const array PAGE_LISTS = [
         ProfilePage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+    ];
+
+    public const array PAGE_DATA = [
+        LanguageDetailPage::PAGE => [
+            LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING,
         ],
     ];
 

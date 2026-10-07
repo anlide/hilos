@@ -13,5 +13,8 @@ class HilosPageCatalog
         HilosPageConstants::HILOS_STUB => [
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_EMPTY,
         ],
+        HilosPageConstants::HILOS_I18N_LANGUAGE => [
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_I18N_LANGUAGES,
+        ],
     ];
 }

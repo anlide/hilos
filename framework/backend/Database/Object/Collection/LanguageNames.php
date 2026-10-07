@@ -25,6 +25,34 @@ class LanguageNames extends Objects
     public const string COLLECTION_KEY = HilosDbContext::languageNames;
 
     /**
+     * @param int $languageId Named language primary id
+     * @return int Number of nonempty base names in other languages
+     * @throws DatabaseException When the query fails
+     */
+    public function countBaseNamesForLanguage(int $languageId): int
+    {
+        return static::entityClass()::count(
+            '`' . EntityLanguageName::language_id . '` = ? AND `' . EntityLanguageName::in_language_id . '` <> ?'
+                . ' AND `' . EntityLanguageName::locale_id . '` IS NULL AND `' . EntityLanguageName::name . '` <> ?',
+            [$languageId, $languageId, ''],
+        );
+    }
+
+    /**
+     * @param int $languageId Language primary id
+     * @return bool Whether a locked name names it or is written in it
+     * @throws DatabaseException When the query fails
+     */
+    public function hasManualNameForLanguage(int $languageId): bool
+    {
+        return static::entityClass()::count(
+            '(`' . EntityLanguageName::language_id . '` = ? OR `' . EntityLanguageName::in_language_id . '` = ?)'
+                . ' AND `' . EntityLanguageName::locked . '` = ?',
+            [$languageId, $languageId, true],
+        ) > 0;
+    }
+
+    /**
      * @param int $languageId Named language id
      * @param int $inLanguageId Writing language id
      * @return ?ObjectLanguageName Base row, or null

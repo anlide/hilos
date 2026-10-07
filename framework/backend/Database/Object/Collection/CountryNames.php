@@ -25,6 +25,19 @@ class CountryNames extends Objects
     public const string COLLECTION_KEY = HilosDbContext::countryNames;
 
     /**
+     * @param int $languageId Writing language primary id
+     * @return bool Whether a locked country name is written in it
+     * @throws DatabaseException When the query fails
+     */
+    public function hasLockedNameInLanguage(int $languageId): bool
+    {
+        return static::entityClass()::count([
+            EntityCountryName::language_id => $languageId,
+            EntityCountryName::locked => true,
+        ]) > 0;
+    }
+
+    /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
      * @return ?ObjectCountryName Base row, or null

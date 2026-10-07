@@ -11,4 +11,6 @@ class HilosPageConstants
     public const string HILOS_EMPTY = 'hilos_empty';
     public const string HILOS_LAYERED = 'hilos_layered';
     public const string HILOS_PUBLIC = 'hilos_public';
+    public const string HILOS_I18N_LANGUAGES = 'hilos_i18n_languages';
+    public const string HILOS_I18N_LANGUAGE = 'hilos_i18n_language';
 }

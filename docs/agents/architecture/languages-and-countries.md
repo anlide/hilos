@@ -340,7 +340,10 @@ by someone or referenced by a translation string belong to HIL-1424.
 A language or country is addressed by code, not row number. A code never
 changes; a row number can change on a reload of the data, and a URL can be
 sent by mail. Code addresses and the three new names/locales page keys are registered
-together (HIL-1473). The browser views remain unbuilt until their own leaves.
+together (HIL-1473). The Vue main language card is built (HIL-1478) and opens
+by direct URL with one subscribed `languageCard` snapshot and live updates.
+The Vue section root, language list, names and locales pages remain unbuilt;
+React and Angular detail views remain unbuilt until their own leaves.
 
 | Page key | Route |
 |---|---|
@@ -368,10 +371,12 @@ The project:
 - supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code;
 
 The six demos have the feature, agent, server pages and migrations (HIL-1470).
-The browser tables follow in HIL-1474/1475. The three SDK pages remain unbuilt
-in Vue, React and Angular until HIL-112/1481 and HIL-1502/1503 give them real
-content. A direct browser URL currently gets `not_served`/404 before a page
-subscription, and no card links to it.
+The browser tables follow in HIL-1474/1475. Vue serves the main language card
+at `/hilos/i18n/languages/{languageCode}` (HIL-1478); its parent root/list and
+its names/locales tabs still return `not_served`/404. The card shows the code,
+native name, direction, enabled state, locale/name counts, and read-only delete
+verdict. Its future action controls belong to HIL-1485/1486/1487/1488.
+React and Angular stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the
 five migration files are present after registration.

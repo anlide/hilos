@@ -24,6 +24,16 @@ class CountryNames extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectCountryNames::class;
 
     /**
+     * @param int $languageId Writing language primary id
+     * @return bool Whether a locked country name is written in it
+     * @throws DatabaseException When the query fails
+     */
+    public function hasLockedNameInLanguage(int $languageId): bool
+    {
+        return $this->objectCollection->hasLockedNameInLanguage($languageId);
+    }
+
+    /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
      * @return ?CountryName Base row, or null

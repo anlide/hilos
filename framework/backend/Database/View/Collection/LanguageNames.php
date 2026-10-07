@@ -24,6 +24,26 @@ class LanguageNames extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectLanguageNames::class;
 
     /**
+     * @param int $languageId Named language primary id
+     * @return int Number of nonempty base names in other languages
+     * @throws DatabaseException When the query fails
+     */
+    public function countBaseNamesForLanguage(int $languageId): int
+    {
+        return $this->objectCollection->countBaseNamesForLanguage($languageId);
+    }
+
+    /**
+     * @param int $languageId Language primary id
+     * @return bool Whether a locked name names it or is written in it
+     * @throws DatabaseException When the query fails
+     */
+    public function hasManualNameForLanguage(int $languageId): bool
+    {
+        return $this->objectCollection->hasManualNameForLanguage($languageId);
+    }
+
+    /**
      * @param int $languageId Named language id
      * @param int $inLanguageId Writing language id
      * @return ?LanguageName Base row, or null

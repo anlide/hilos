@@ -17,6 +17,12 @@ const KEYS_PATH = 'framework/frontend/core/src/routing/hilosPages.ts'
 const REGISTRY_PATH = 'framework/frontend/core/src/routing/hilosUnbuiltPages.ts'
 const CATALOG_PATH = 'framework/backend/Database/Pages/HilosPageCatalog.php'
 const CONSTANTS_PATH = 'framework/backend/Constants/HilosPageConstants.php'
+// HIL-1478 opens the Vue main card by direct URL before HIL-1474 builds its list.
+// HIL-1474 removes this staged-child exception when it opens that parent.
+const STAGED_VUE_CHILD = {
+  parent: 'hilos_i18n_languages',
+  child: 'hilos_i18n_language',
+} as const
 type Layer = (typeof LAYERS)[number]
 
 interface Site {
@@ -97,7 +103,14 @@ export function checkTree(root: string): string[] {
       }
       if (entry) {
         for (const child of descendants) {
-          if (!unbuilt.has(child)) {
+          if (
+            !unbuilt.has(child) &&
+            !(
+              layer === 'vue' &&
+              page.key === STAGED_VUE_CHILD.parent &&
+              child === STAGED_VUE_CHILD.child
+            )
+          ) {
             found.push({
               ...entry,
               message: `'${page.key}' hides '${child}' in ${layer}; strike ${layer} from the section or list the unbuilt child in HILOS_UNBUILT_PAGES`,

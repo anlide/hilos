@@ -199,6 +199,12 @@ each file renders the page-agnostic shell, and the navigator is read only by
 and strike that layer from `HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain); a consumer overriding an unbuilt key names it and its section in `bootHilos` `projectViews`.
 An unbuilt page is listed for each layer that has not built it: the router draws 404 `not_served` without subscribing, and dashboard/child cards omit it.
 A section stays in the registry while none of its pages is built in that layer; checked automatically by `UNBUILT-PAGE` against the views and the PHP catalog tree.
+HIL-1478 is a narrow staged exception: Vue serves the main `hilos_i18n_language`
+card by direct URL while its `hilos_i18n_languages` parent list remains unbuilt.
+The parent still returns `not_served`; React and Angular keep both pages unbuilt.
+`UNBUILT-PAGE` permits only this parent/child/layer pair. HIL-1474 removes the
+exception when it builds the Vue list; no other built child may hide under an
+unbuilt parent.
 
 ## Type placement: domain vs page-local
 

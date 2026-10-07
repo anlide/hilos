@@ -10,6 +10,9 @@ use Hilos\Database\Actions\Collection\LanguagesActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Languages as ObjectLanguages;
 use Hilos\Database\View\Item\Language;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\I18n\DTO\LanguageCardSummary;
 
 /**
  * Languages support code strings and primary-id integers as offsets.
@@ -21,6 +24,20 @@ class Languages extends DbCollection
 {
     public const string DB_ITEM_CLASS = Language::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectLanguages::class;
+
+    /**
+     * @param int $languageId Language primary id
+     * @return LanguageCardSummary Current read-only card facts
+     * @throws DatabaseException When a language or dependent row query fails
+     * @throws InvalidArgumentException When the language no longer exists
+     * @throws LogicException When collection classes are not configured
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
+     */
+    public function cardSummary(int $languageId): LanguageCardSummary
+    {
+        return $this->objectCollection->cardSummary($languageId);
+    }
 
     /**
      * @param mixed $offset Language code or primary id
