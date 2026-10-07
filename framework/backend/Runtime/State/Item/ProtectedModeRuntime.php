@@ -52,6 +52,9 @@ final class ProtectedModeRuntime extends RtState
     /** Entry straight into the verification window without stopping agents. */
     public const string ENTRY_MODE_VERIFICATION_WINDOW = 'verification_window';
 
+    /** Operation value for a directly entered manual maintenance window. */
+    public const string OPERATION_MANUAL_MAINTENANCE = 'manual_maintenance';
+
     public const string phase = 'phase';
     public const string entryMode = 'entryMode';
     public const string operation = 'operation';

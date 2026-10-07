@@ -191,6 +191,24 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
+        if (
+            $data->command === CliCommands::PROTECTED_MODE_TEST_PASS
+            && $freeze->operation === StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE
+        ) {
+            $this->refuseProtectedModeOperator($data->correlationId, 'the test pass cannot drive manual maintenance');
+
+            return;
+        }
+
+        if (
+            $data->command === CliCommands::PROTECTED_MODE_TEST_CLOSE
+            && $freeze->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+        ) {
+            $this->refuseProtectedModeOperator($data->correlationId, 'a direct verification window cannot be refrozen');
+
+            return;
+        }
+
         if ($data->command === CliCommands::PROTECTED_MODE_OPEN) {
             $this->openProtectedModeForOperator($data);
 
@@ -335,7 +353,7 @@ trait ProtectedModeOperatorTrait
     private function mintProtectedModePass(CommandRequestDTO $data): void
     {
         try {
-            $pass = RandomHelper::secureHex(self::PROTECTED_MODE_PASS_BYTES);
+            $pass = $this->createProtectedModePass();
         } catch (RandomException $e) {
             $this->refuseProtectedModeOperator(
                 $data->correlationId,
@@ -346,7 +364,7 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
-        $passHash = hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass);
+        $passHash = $this->hashProtectedModePass($pass);
 
         $this->armProtectedModeOperator($data->correlationId, '');
         $this->protectedModeOperatorPassHash = $passHash;
@@ -358,6 +376,26 @@ trait ProtectedModeOperatorTrait
             $this->clearProtectedModeOperator();
             $this->refuseProtectedModeOperator($data->correlationId, 'pass request failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Draws a pass from the same secure source for every protected-mode caller.
+     *
+     * @return string Clear pass held only until its hash appears on the runtime row
+     * @throws RandomException When the secure source refuses entropy
+     */
+    protected function createProtectedModePass(): string
+    {
+        return RandomHelper::secureHex(self::PROTECTED_MODE_PASS_BYTES);
+    }
+
+    /**
+     * @param string $pass Clear pass to hash before sending it to the daemon
+     * @return string Hash stored on the protected-mode runtime row
+     */
+    protected function hashProtectedModePass(string $pass): string
+    {
+        return hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $pass);
     }
 
     /**

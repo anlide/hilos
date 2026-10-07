@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Hilos;
 
+use Closure;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
@@ -18,9 +20,14 @@ use LogicException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AccountStandingAudience;
+use Hilos\ProtectedMode\ManualMaintenanceOutcome;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Random\RandomException;
+use Throwable;
 
 /**
  * AbstractHilosIndexAgent - Abstract agent for Hilos dashboard, settings, i18n, and non-logs admin pages.
@@ -36,7 +43,10 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 {
     use ProtectedModeOperatorTrait;
-    use ProtectedModeTestDriverTrait;
+    use ProtectedModeTestDriverTrait {
+        onProtectedModeReady as private onProtectedModeTestReady;
+        onProtectedModeRefused as private onProtectedModeTestRefused;
+    }
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
 
@@ -99,6 +109,129 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         CliCommands::PROTECTED_MODE_TEST_CLOSE,
     ];
 
+    private const string MANUAL_ENABLE = 'enable';
+    private const string MANUAL_DISABLE = 'disable';
+    private const string MANUAL_PASS = 'pass';
+
+    /** @var ?Closure(ManualMaintenanceOutcome):void Reply held until the requested state is observed */
+    private ?Closure $manualMaintenanceReply = null;
+
+    /** @var ?string One of the manual action constants while a reply is pending */
+    private ?string $manualMaintenanceAction = null;
+
+    /** @var float Time at which the pending manual request was queued */
+    private float $manualMaintenanceSince = 0.0;
+
+    /** @var string Hash whose arrival confirms a pending pass */
+    private string $manualMaintenancePassHash = '';
+
+    /** @var ?string Clear pass held only while its hash is pending */
+    private ?string $manualMaintenancePass = null;
+
+    /**
+     * Starts a direct verification window for manual maintenance.
+     *
+     * A browser caller supplies its accept key and session hash. A CLI caller supplies
+     * the empty accept key and null session hash, naming no initiating browser.
+     *
+     * @param string $acceptKey Browser connection's accept key, or empty for CLI
+     * @param ?string $sessionHash Browser session token hash, or null for CLI
+     * @param Closure(ManualMaintenanceOutcome):void $reply One result after confirmation or refusal
+     */
+    protected function enableManualMaintenance(string $acceptKey, ?string $sessionHash, Closure $reply): void
+    {
+        if ($this->protectedModeRequestInFlight()) {
+            $reply(ManualMaintenanceOutcome::refused('another protected-mode request is still in flight'));
+
+            return;
+        }
+
+        if (($acceptKey === '') !== ($sessionHash === null) || $sessionHash === '') {
+            $reply(ManualMaintenanceOutcome::refused('a browser entry needs both its accept key and session hash'));
+
+            return;
+        }
+
+        $freeze = $this->manualMaintenanceRow();
+        if ($freeze === null) {
+            $reply(ManualMaintenanceOutcome::refused('protected mode is not mounted on this node'));
+
+            return;
+        }
+
+        if ($freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $reason = $freeze->operation === StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE
+                ? 'manual maintenance is already active'
+                : "protected mode is already active for '{$freeze->operation}'";
+            $reply(ManualMaintenanceOutcome::refused($reason));
+
+            return;
+        }
+
+        $this->armManualMaintenance(self::MANUAL_ENABLE, $reply);
+
+        try {
+            $this->requestProtectedModeEnable(
+                StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+                $acceptKey,
+                $sessionHash,
+                StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+            );
+        } catch (Throwable $e) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::refused('enable request failed: ' . $e->getMessage()));
+        }
+    }
+
+    /**
+     * Opens a manual maintenance window to all visitors after its runtime row becomes inactive.
+     *
+     * @param Closure(ManualMaintenanceOutcome):void $reply One result after confirmation or refusal
+     */
+    protected function disableManualMaintenance(Closure $reply): void
+    {
+        if (!$this->admitManualMaintenanceRequest($reply)) {
+            return;
+        }
+
+        $this->armManualMaintenance(self::MANUAL_DISABLE, $reply);
+
+        try {
+            $this->requestProtectedModeDisable();
+        } catch (Throwable $e) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::refused('disable request failed: ' . $e->getMessage()));
+        }
+    }
+
+    /**
+     * Mints one manual maintenance pass; the clear value leaves only after its hash lands.
+     *
+     * @param Closure(ManualMaintenanceOutcome):void $reply One result after confirmation or refusal
+     */
+    protected function mintManualMaintenancePass(Closure $reply): void
+    {
+        if (!$this->admitManualMaintenanceRequest($reply)) {
+            return;
+        }
+
+        try {
+            $pass = $this->createProtectedModePass();
+        } catch (RandomException $e) {
+            $reply(ManualMaintenanceOutcome::refused('the secure random source refused: ' . $e->getMessage()));
+
+            return;
+        }
+
+        $this->armManualMaintenance(self::MANUAL_PASS, $reply);
+        $this->manualMaintenancePass = $pass;
+        $this->manualMaintenancePassHash = $this->hashProtectedModePass($pass);
+
+        try {
+            $this->requestProtectedModePass($this->manualMaintenancePassHash);
+        } catch (Throwable $e) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::refused('pass request failed: ' . $e->getMessage()));
+        }
+    }
+
     /**
      * Finishes any protected-mode drive in flight, and keeps the open people surfaces in step with
      * the standing of the people they show (HIL-945).
@@ -112,7 +245,38 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
         $this->tickProtectedModeTestDriver();
         $this->tickProtectedModeOperator();
+        $this->tickManualMaintenance();
         AccountStandingAudience::onAgentTick($this);
+    }
+
+    /**
+     * Routes the ready relay to the one pending enable request.
+     */
+    public function onProtectedModeReady(): void
+    {
+        if ($this->manualMaintenanceAction === self::MANUAL_ENABLE) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::succeeded(StateProtectedModeRuntime::PHASE_VERIFYING));
+
+            return;
+        }
+
+        $this->onProtectedModeTestReady();
+    }
+
+    /**
+     * Routes a core refusal to the one pending enable request.
+     *
+     * @param string $reason Reason from the protected-mode daemon
+     */
+    public function onProtectedModeRefused(string $reason): void
+    {
+        if ($this->manualMaintenanceAction === self::MANUAL_ENABLE) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::refused($reason));
+
+            return;
+        }
+
+        $this->onProtectedModeTestRefused($reason);
     }
 
     /**
@@ -136,6 +300,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      */
     public function onStop(): void
     {
+        $this->clearManualMaintenance();
         parent::onStop();
         AccountStandingAudience::reset();
     }
@@ -153,6 +318,18 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if (
+            ($this->isProtectedModeTestCommand($data->command) || $this->isProtectedModeOperatorCommand($data->command))
+            && $this->protectedModeRequestInFlight()
+        ) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                'another protected-mode request is still in flight',
+            ));
+
+            return;
+        }
+
         if ($this->isProtectedModeTestCommand($data->command)) {
             $this->handleProtectedModeTestCommand($data);
 
@@ -175,5 +352,150 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Admits a manual disable or pass only for this index agent's direct window.
+     *
+     * @param Closure(ManualMaintenanceOutcome):void $reply Refusal receiver
+     * @return bool Whether the request may be sent to the protected-mode core
+     */
+    private function admitManualMaintenanceRequest(Closure $reply): bool
+    {
+        if ($this->protectedModeRequestInFlight()) {
+            $reply(ManualMaintenanceOutcome::refused('another protected-mode request is still in flight'));
+
+            return false;
+        }
+
+        $freeze = $this->manualMaintenanceRow();
+        if ($freeze === null) {
+            $reply(ManualMaintenanceOutcome::refused('protected mode is not mounted on this node'));
+
+            return false;
+        }
+
+        if ($freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING) {
+            $reply(ManualMaintenanceOutcome::refused("the mode is '{$freeze->phase}', not verifying"));
+
+            return false;
+        }
+
+        if (
+            $freeze->operation !== StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE
+            || $freeze->entryMode !== StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW
+        ) {
+            $reply(ManualMaintenanceOutcome::refused('the current window is not manual maintenance'));
+
+            return false;
+        }
+
+        $index = $this->getIndex();
+        if (
+            $freeze->initiatorAgentType !== $this->getType()
+            || $freeze->initiatorAgentIndex !== ($index === null ? null : (int)$index)
+        ) {
+            $reply(ManualMaintenanceOutcome::refused('manual maintenance was initiated by another agent'));
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return bool Whether any protected-mode path on this agent has an unresolved request
+     */
+    private function protectedModeRequestInFlight(): bool
+    {
+        return $this->manualMaintenanceReply !== null
+            || $this->protectedModeTestCorrelationId !== null
+            || $this->protectedModeOperatorCorrelationId !== null;
+    }
+
+    /**
+     * @param string $action Manual request kind
+     * @param Closure(ManualMaintenanceOutcome):void $reply Result receiver
+     */
+    private function armManualMaintenance(string $action, Closure $reply): void
+    {
+        $this->manualMaintenanceReply = $reply;
+        $this->manualMaintenanceAction = $action;
+        $this->manualMaintenanceSince = microtime(true);
+    }
+
+    /**
+     * Completes a pending manual request after dropping its callback and clear pass.
+     *
+     * @param ManualMaintenanceOutcome $outcome Result delivered exactly once
+     */
+    private function finishManualMaintenance(ManualMaintenanceOutcome $outcome): void
+    {
+        $reply = $this->manualMaintenanceReply;
+        $this->clearManualMaintenance();
+        $reply?->__invoke($outcome);
+    }
+
+    /**
+     * Clears the request and its only in-process clear pass copy.
+     */
+    private function clearManualMaintenance(): void
+    {
+        $this->manualMaintenanceReply = null;
+        $this->manualMaintenanceAction = null;
+        $this->manualMaintenanceSince = 0.0;
+        $this->manualMaintenancePassHash = '';
+        $this->manualMaintenancePass = null;
+    }
+
+    /**
+     * Watches only the local runtime row and the clock while a manual request is pending.
+     */
+    private function tickManualMaintenance(): void
+    {
+        if ($this->manualMaintenanceReply === null) {
+            return;
+        }
+
+        $freeze = $this->manualMaintenanceRow();
+        $phase = $freeze?->phase;
+
+        if (
+            $this->manualMaintenanceAction === self::MANUAL_DISABLE
+            && $freeze !== null
+            && $phase === StateProtectedModeRuntime::PHASE_INACTIVE
+        ) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::succeeded($phase));
+
+            return;
+        }
+
+        if (
+            $this->manualMaintenanceAction === self::MANUAL_PASS
+            && $freeze !== null
+            && in_array($this->manualMaintenancePassHash, $freeze->passHashes, true)
+        ) {
+            $this->finishManualMaintenance(ManualMaintenanceOutcome::succeeded($phase, $this->manualMaintenancePass));
+
+            return;
+        }
+
+        if ((microtime(true) - $this->manualMaintenanceSince) < CommandChannelWindows::AGENT_WAIT_SECONDS) {
+            return;
+        }
+
+        $waited = CommandChannelWindows::AGENT_WAIT_SECONDS;
+        $reason = $this->manualMaintenanceAction === self::MANUAL_PASS
+            ? "protected mode did not record the pass within {$waited}s; if it lands late, close and reopen the window to void it"
+            : "protected mode did not complete {$this->manualMaintenanceAction} within {$waited}s";
+        $this->finishManualMaintenance(ManualMaintenanceOutcome::unconfirmed($reason, $phase));
+    }
+
+    /**
+     * @return ?ProtectedModeRuntime This worker's protected-mode row, or null when unmounted
+     */
+    private function manualMaintenanceRow(): ?ProtectedModeRuntime
+    {
+        return Hilos::$rt?->hilosProtectedModeRuntime;
     }
 }

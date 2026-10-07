@@ -243,6 +243,12 @@ trait ProtectedModeTestDriverTrait
             return;
         }
 
+        if ($operation === StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE) {
+            $this->refuseProtectedModeTest($data->correlationId, 'manual maintenance cannot be entered as a test freeze');
+
+            return;
+        }
+
         $acceptKey = $data->payload[CommandConstants::FIELD_ACCEPT_KEY] ?? null;
         $sessionToken = $data->payload[ProtectedModeCommandConstants::FIELD_SESSION_TOKEN] ?? null;
 
@@ -330,6 +336,12 @@ trait ProtectedModeTestDriverTrait
     private function openProtectedModeForTest(CommandRequestDTO $data, ProtectedModeRuntime $freeze): void
     {
         if (!$this->mayDriveProtectedModeTest($data, $freeze)) {
+            return;
+        }
+
+        if ($freeze->operation === StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE) {
+            $this->refuseProtectedModeTest($data->correlationId, 'the test open cannot drive manual maintenance');
+
             return;
         }
 

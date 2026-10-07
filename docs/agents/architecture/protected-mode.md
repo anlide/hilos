@@ -18,7 +18,7 @@ The mode is unconditional and its only entry is an agent. Do not add a switch �
 not a `HilosFeature` case, not an env variable, not a facade or static method,
 not a second entry "for tests".
 
-An administrator closes visitors out from Maintenance (not in the code yet — HIL-1362) or the CLI (not in the code yet — HIL-1357); both trigger the index agent, which asks through this same entry (not in the code yet — HIL-1356).
+An administrator closes visitors out from Maintenance (not in the code yet — HIL-1362) or the CLI (not in the code yet — HIL-1357); both trigger the index agent, which asks through this same entry.
 There is no second entry: the core authorizes the recorded agent by type and index; the agent authorizes the person.
 
 ## Unconditional, With One Physical Boundary
@@ -828,11 +828,30 @@ The owner's rule is "the door is closed, the house keeps working": a direct
 window cannot become a full freeze through repeat enable or refreeze.
 
 The index agent owns entry, disable of its manual window and code minting, with
-stated refusals (not in the code yet — HIL-1356); its test open already requires
+stated refusals; its test open already requires
 one instance per cluster. Its third CLI family has those three commands, with
 names distinct from backup's `protected-mode:*` and the test-only `test:*`, since
 a command routes to one agent type (not in the code yet — HIL-1357). Enable prints
 no code; a lost reply is checked through `protected-mode:inspect` (not in the code yet — HIL-1357).
+
+The index agent accepts manual entry only from `inactive` and asks for
+`manual_maintenance` with `entryMode='verification_window'`. A browser request
+carries both its accept key and session hash; a CLI request carries an empty key
+and no session hash. Disable and mint require this exact verifying window and
+the index agent's recorded type and index. One request may await confirmation at
+a time across manual, test, and operator paths: the ready/refused relay carries
+no request id. Enable answers on ready, disable on `inactive`, and mint only when
+its hash appears on the row. An expired wait is *unconfirmed*, since a late
+signal may still change the row; a late mint can leave a hash whose clear pass
+has been discarded, so close and reopen the window to void it.
+
+The test family cannot drive a manual window. `test:protected-mode:enter` refuses
+the reserved `manual_maintenance` operation even from `inactive`, so it cannot
+create a full freeze under that name. `test:protected-mode:open` and
+`test:protected-mode:pass` refuse a manual window, and
+`test:protected-mode:close` refuses any direct verification window before the
+core would drop its refreeze request. Ordinary test freezes and restore's
+operator commands retain their own paths.
 
 Visitors get the stub; inside are the initiating browser (when one exists),
 the circle photographed at closing, and code holders. The master waits for the
@@ -879,15 +898,14 @@ the Maintenance section in words, with no disable button; projects may replace i
 
 Restore under the manual window is refused as a foreign freeze; disable manual
 maintenance first, accepting the visitor gap before restore freezes the node
-(owner decision, 2026-10-04); manual entry under another freeze is refused too
-(not in the code yet — HIL-1356).
+(owner decision, 2026-10-04); manual entry under another freeze is refused too.
 
 Maintenance shows open / manually closed (since when, button or CLI, not who) /
 operation running, the last without manual controls (not in the code yet — HIL-1361).
 Its controls enable (not in the code yet — HIL-1362), disable (not in the code yet — HIL-1363)
 and mint a code (not in the code yet — HIL-1364); each is disabled for a view-mode viewer.
 There is no extra project wiring: the index agent already serves this page and
-owns manual entry (not in the code yet — HIL-1356).
+owns manual entry.
 In a cluster all masters close; disable and code minting work from any node
 (not in the code yet — HIL-1367).
 
