@@ -242,6 +242,107 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
         $this->assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, $outcomes[1]->phase);
     }
 
+    public function testCommandChannelDispatchesEnablePassAndDisableWithSingleOkReplies(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent = new ManualMaintenanceTestAgent();
+
+        $agent->onSignalCommand(new CommandRequestDTO('corr-enable', CliCommands::MAINTENANCE_ENABLE, []), '', '');
+        $enable = $this->nextSignal(SignalTypeConstants::PROTECTED_MODE_ENABLE);
+        $this->assertInstanceOf(ProtectedModeEnableSignalData::class, $enable);
+
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent->onTick();
+        $agent->onProtectedModeReady();
+        $reply = $this->nextSignal(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertSame(CommandConstants::STATUS_OK, $reply->status);
+        $this->assertSame('corr-enable', $reply->correlationId);
+        $this->assertSame(['phase' => StateProtectedModeRuntime::PHASE_VERIFYING], $reply->payload);
+
+        $agent->onSignalCommand(new CommandRequestDTO('corr-pass', CliCommands::MAINTENANCE_PASS, []), '', '');
+        $passRequest = $this->nextSignal(SignalTypeConstants::PROTECTED_MODE_PASS);
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $passRequest);
+
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING, passHashes: [$passRequest->passHash]);
+        $agent->onTick();
+        $passReply = $this->nextSignal(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $passReply);
+        $this->assertSame(CommandConstants::STATUS_OK, $passReply->status);
+        $this->assertSame('corr-pass', $passReply->correlationId);
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $passReply->payload['phase']);
+        $this->assertIsString($passReply->payload['pass']);
+        $this->assertSame(
+            hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, (string)$passReply->payload['pass']),
+            $passRequest->passHash,
+        );
+
+        $agent->onSignalCommand(new CommandRequestDTO('corr-disable', CliCommands::MAINTENANCE_DISABLE, []), '', '');
+        $disable = $this->nextSignal(SignalTypeConstants::PROTECTED_MODE_DISABLE);
+        $this->assertNotNull($disable);
+
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent->onTick();
+        $disableReply = $this->nextSignal(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $disableReply);
+        $this->assertSame(CommandConstants::STATUS_OK, $disableReply->status);
+        $this->assertSame('corr-disable', $disableReply->correlationId);
+        $this->assertSame(['phase' => StateProtectedModeRuntime::PHASE_INACTIVE], $disableReply->payload);
+    }
+
+    public function testCommandChannelPreflightRefusalRepliesWithError(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent = new ManualMaintenanceTestAgent();
+
+        $agent->onSignalCommand(new CommandRequestDTO('corr-err', CliCommands::MAINTENANCE_ENABLE, []), '', '');
+        $reply = $this->nextSignal(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertSame(CommandConstants::STATUS_ERROR, $reply->status);
+        $this->assertSame('corr-err', $reply->correlationId);
+        $this->assertStringContainsString(
+            'manual maintenance is already active',
+            (string)$reply->payload[CommandConstants::FIELD_MESSAGE],
+        );
+    }
+
+    public function testCommandChannelTimeoutRepliesWithErrorCarryingPhase(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent = new ManualMaintenanceTestAgent();
+
+        $agent->onSignalCommand(new CommandRequestDTO('corr-timeout', CliCommands::MAINTENANCE_ENABLE, []), '', '');
+        $this->assertNotNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_ENABLE));
+
+        $agent->ageManualWait();
+        $agent->onTick();
+        $reply = $this->nextSignal(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+        $this->assertSame(CommandConstants::STATUS_ERROR, $reply->status);
+        $this->assertSame('corr-timeout', $reply->correlationId);
+        $this->assertStringContainsString('(phase: inactive)', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+    }
+
+    public function testCommandChannelManualCommandWhileTestOrOperatorWaitInFlightRepliesStillInFlight(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent = new ManualMaintenanceTestAgent();
+
+        $agent->onSignalCommand(new CommandRequestDTO('test-busy', CliCommands::PROTECTED_MODE_TEST_ENTER, [
+            'operation' => 'restore',
+        ]), '', '');
+        $this->assertNotNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_ENABLE));
+
+        foreach ([CliCommands::MAINTENANCE_ENABLE, CliCommands::MAINTENANCE_DISABLE, CliCommands::MAINTENANCE_PASS] as $command) {
+            $agent->onSignalCommand(new CommandRequestDTO('busy-' . $command, $command, []), '', '');
+            $reply = $this->nextSignal(SignalTypeConstants::COMMAND_REPLY);
+            $this->assertInstanceOf(CommandReplyDTO::class, $reply);
+            $this->assertSame(CommandConstants::STATUS_ERROR, $reply->status);
+            $this->assertSame('busy-' . $command, $reply->correlationId);
+            $this->assertStringContainsString('still in flight', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+        }
+    }
+
     public function testAnExistingTestOrOperatorWaitRefusesAManualRequest(): void
     {
         $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);

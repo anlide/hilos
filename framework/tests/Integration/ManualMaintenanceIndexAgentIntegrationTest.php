@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Closure;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
@@ -24,6 +25,8 @@ use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -146,6 +149,60 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
         $this->assertSame(ManualMaintenanceOutcome::REFUSED, $outcomes[1]->status);
         $this->assertStringContainsString('already active', (string)$outcomes[1]->reason);
         $this->assertNull($this->nextRequest(SignalTypeConstants::PROTECTED_MODE_ENABLE));
+    }
+
+    public function testCommandChannelExecutesLiveSingleServerCycle(): void
+    {
+        $this->agent->onSignalCommand(new CommandRequestDTO('cli-enable', CliCommands::MAINTENANCE_ENABLE, []), '', '');
+        $enable = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_ENABLE);
+        $this->assertInstanceOf(ProtectedModeEnableSignalData::class, $enable);
+        $this->mode->requestEnable($enable);
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertSame(ProtectedModeRuntime::PHASE_VERIFYING, $row?->phase);
+        $this->assertSame(ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE, $row?->operation);
+        $this->assertSame('', $row?->initiatorAcceptKey);
+        $this->assertNull($row?->initiatorSessionTokenHash);
+
+        $reply1 = $this->nextRequest(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply1);
+        $this->assertTrue($reply1->isOk());
+        $this->assertSame('cli-enable', $reply1->correlationId);
+        $this->assertSame(['phase' => 'verifying'], $reply1->payload);
+
+        $this->agent->onSignalCommand(new CommandRequestDTO('cli-pass', CliCommands::MAINTENANCE_PASS, []), '', '');
+        $pass = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_PASS);
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $pass);
+        $this->mode->requestPass($pass);
+        $this->agent->onTick();
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertContains($pass->passHash, $row?->passHashes);
+
+        $reply2 = $this->nextRequest(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply2);
+        $this->assertTrue($reply2->isOk());
+        $this->assertSame('cli-pass', $reply2->correlationId);
+        $this->assertSame('verifying', $reply2->payload['phase']);
+        $this->assertSame(
+            $pass->passHash,
+            hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, (string)$reply2->payload['pass']),
+        );
+
+        $this->agent->onSignalCommand(new CommandRequestDTO('cli-disable', CliCommands::MAINTENANCE_DISABLE, []), '', '');
+        $disable = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_DISABLE);
+        $this->assertInstanceOf(ProtectedModeDisableSignalData::class, $disable);
+        $this->mode->requestDisable($disable);
+        $this->agent->onTick();
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, $row?->phase);
+
+        $reply3 = $this->nextRequest(SignalTypeConstants::COMMAND_REPLY);
+        $this->assertInstanceOf(CommandReplyDTO::class, $reply3);
+        $this->assertTrue($reply3->isOk());
+        $this->assertSame('cli-disable', $reply3->correlationId);
+        $this->assertSame(['phase' => 'inactive'], $reply3->payload);
     }
 
     /**

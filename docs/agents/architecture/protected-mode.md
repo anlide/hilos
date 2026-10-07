@@ -18,7 +18,7 @@ The mode is unconditional and its only entry is an agent. Do not add a switch �
 not a `HilosFeature` case, not an env variable, not a facade or static method,
 not a second entry "for tests".
 
-An administrator closes visitors out from Maintenance (not in the code yet — HIL-1362) or the CLI (not in the code yet — HIL-1357); both trigger the index agent, which asks through this same entry.
+An administrator closes visitors out from Maintenance (not in the code yet — HIL-1362) or the CLI (`maintenance:enable`); both trigger the index agent, which asks through this same entry.
 There is no second entry: the core authorizes the recorded agent by type and index; the agent authorizes the person.
 
 ## Unconditional, With One Physical Boundary
@@ -66,8 +66,8 @@ lift; an old version-one state file without it means `freeze` while occupied.
 A CLI command never enters the mode itself. It sends its request down the
 command channel to the agent that owns the operation — `backup:restore-request`
 reaching `BackupAgent` is the worked example — and that agent asks for the
-freeze; a manual-maintenance command reaching the index agent is another
-(not in the code yet — HIL-1357). `ProtectedModeSwitch` is out of reach from a CLI process anyway — not
+freeze; a manual-maintenance command (`maintenance:enable`) reaching the index agent is another.
+`ProtectedModeSwitch` is out of reach from a CLI process anyway — not
 because `Hilos::$cluster` is missing (`Hilos::initEnv()` builds it everywhere)
 but because nothing registers a switch into it outside the daemon, so
 `ClusterContext::protectedMode()` is null there. No extra guard is written for
@@ -183,8 +183,8 @@ driver's carrier — and a freeze may only be driven by the agent the row names.
 shared name would hand one initiator's freeze to the other, and the identity
 check would then refuse it. Hence the two ladders, same shape, different owners.
 
-A third command family serves manual maintenance in production on the index agent: enable, disable and mint a code, with distinct names for the same one-command-owner reason (not in the code yet — HIL-1357).
-A project with backup carries both production families; see *Manual Maintenance* (not in the code yet — HIL-1357).
+A third command family serves manual maintenance in production on the index agent: `maintenance:enable`, `maintenance:disable` and `maintenance:pass`, with distinct names for the same one-command-owner reason.
+A project with backup carries both production families; see *Manual Maintenance*.
 
 The mint and the close each answer to **two** names — `protected-mode:pass` and
 `test:protected-mode:pass`, `protected-mode:close` and `test:protected-mode:close`
@@ -829,10 +829,10 @@ window cannot become a full freeze through repeat enable or refreeze.
 
 The index agent owns entry, disable of its manual window and code minting, with
 stated refusals; its test open already requires
-one instance per cluster. Its third CLI family has those three commands, with
+one instance per cluster. Its third CLI family has those three commands (`maintenance:enable`, `maintenance:disable`, `maintenance:pass`), with
 names distinct from backup's `protected-mode:*` and the test-only `test:*`, since
-a command routes to one agent type (not in the code yet — HIL-1357). Enable prints
-no code; a lost reply is checked through `protected-mode:inspect` (not in the code yet — HIL-1357).
+a command routes to one agent type. Enable prints
+no code; a lost reply is checked through `protected-mode:inspect`.
 
 The index agent accepts manual entry only from `inactive` and asks for
 `manual_maintenance` with `entryMode='verification_window'`. A browser request
@@ -870,10 +870,10 @@ There is no stopped roster to resume and no lifted-roster hook to wait for.
 Any admitted admin may open the system from Maintenance: the page and agent check
 admin rights and that the window is manual (not in the code yet — HIL-1363).
 The core still checks the disabling agent's type and index. The CLI may also
-disable (not in the code yet — HIL-1357); the exit is the same `inactive` and reload
+disable through `maintenance:disable`; the exit is the same `inactive` and reload
 for everyone. Restore's window still opens from Backups only for its initiating browser.
 Minting in Maintenance is only for this window and shows the code once (not in the code yet — HIL-1364), and
-the CLI mints too, only in the manual window (not in the code yet — HIL-1357).
+the CLI mints too via `maintenance:pass`, only in the manual window.
 The code uses secure randomness; only its hash stands on the row, its clear value in the reply.
 
 The watchdog exempts the manual operation on the row from `SILENT`: no work owes
@@ -884,7 +884,7 @@ On restart, phase, operation and initiator agent identity survive; codes, admitt
 sessions and the circle are cleared by the ordinary restart rule. Manual maintenance
 also clears the initiating browser's hash, returning an empty window, by operation,
 not phase; restore keeps its hash (not in the code yet — HIL-1359). Agents start in `verifying`.
-Enter with a new CLI code or disable from the CLI (not in the code yet — HIL-1357).
+Enter with a new CLI code (`maintenance:pass`) or disable from the CLI (`maintenance:disable`).
 A settings-catalog key saying "restart under manual maintenance is normal" defaults
 to on: log only; off gives `RESTORED_FROM_DISK` mail and reminders as for restore,
 and projects without settings use the default (not in the code yet — HIL-1359).

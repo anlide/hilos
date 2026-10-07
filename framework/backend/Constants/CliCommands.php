@@ -357,6 +357,25 @@ final class CliCommands
     public const string PROTECTED_MODE_CLOSE = 'protected-mode:close';
 
     /**
+     * Close the system to visitors with the manual maintenance screen (operator).
+     *
+     * Not test-only: the three commands below are how an operator closes and opens the system
+     * by hand from a terminal, and they run on production. Answered by the index agent, which is
+     * the initiator of the manual maintenance window. Their names are distinct from
+     * protected-mode:* (restore/BackupAgent) and test:protected-mode:* because every command is
+     * routed to a single agent type.
+     *
+     * @var string Command: Close the system to visitors with the manual maintenance screen
+     */
+    public const string MAINTENANCE_ENABLE = 'maintenance:enable';
+
+    /** @var string Command: Open the system again from the manual maintenance window */
+    public const string MAINTENANCE_DISABLE = 'maintenance:disable';
+
+    /** @var string Command: Mint one pass into the manual maintenance window and print it */
+    public const string MAINTENANCE_PASS = 'maintenance:pass';
+
+    /**
      * Grant a user the admin flag that opens the Hilos admin pages (operator).
      *
      * Not test-only: an installation with no admin has no way into `/hilos/*` at all

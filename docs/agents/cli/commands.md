@@ -87,6 +87,18 @@ switched off, and for a blocked person, a frozen person or another administrator
 switch is off, in the card's words on the error reply. It asks no step-up — the card's
 `impersonate` operation is the browser's alone.
 
+## Protected mode commands
+
+| Command | Driver | What it does |
+|---|---|---|
+| `protected-mode:inspect` | daemon | reads current freeze state, phase, operation, and active passes |
+| `protected-mode:pass` | daemon | mints an operator pass during verification window of restore |
+| `protected-mode:open` | daemon | operator window entry |
+| `protected-mode:close` | daemon | operator window exit |
+| `maintenance:enable` | daemon | index agent manual maintenance entry into verification window |
+| `maintenance:disable` | daemon | index agent manual maintenance exit to inactive |
+| `maintenance:pass` | daemon | index agent manual maintenance pass minting |
+
 ## Test-only commands
 
 Some operations are irreversible (deleting an orphan settings row) or time-delayed
@@ -193,7 +205,8 @@ memory and writes its own node's refusal row — HIL-1131), `test:admin-view-mod
 master answers it out of memory and writes its own node's admin view mode row —
 HIL-1249; refused on a node of a cluster — HIL-1274), `protected-mode:inspect` (reads
 in-memory state and has to answer on a frozen node, which is exactly where a connect would
-hang), the protected-mode drive family `test:protected-mode:enter` / `:leave` / `:open` /
+hang), the manual maintenance family `maintenance:enable` / `:disable` / `:pass` (the index
+agent answers them and drives the freeze, so the CLI process writes nothing), the protected-mode drive family `test:protected-mode:enter` / `:leave` / `:open` /
 `:pass` / `:close` (the drive commands write nothing from this process, and the rows the mint
 and the close move are the agent's)
 and the account and session family `admin:grant` / `:revoke` / `:create`,

@@ -602,6 +602,17 @@ final class TopologyValidatorTest extends TestCase
         TopologyProtectedModeNodeInitiatorHilos::validateTopology();
     }
 
+    public function testMaintenanceDisableOwnerCannotHaveNodeScope(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'AGENTS[maintenance_disable_agent] owns ' . CliCommands::MAINTENANCE_DISABLE
+            . ', so it initiates protected mode, and cannot set scope ' . AgentScope::NODE->name,
+        );
+
+        TopologyMaintenanceDisableNodeInitiatorHilos::validateTopology();
+    }
+
     public function testProtectedModeTestOpenOwnerCannotBeIndexed(): void
     {
         $this->expectException(InvalidTopologyException::class);
@@ -2239,6 +2250,18 @@ final class TopologyProtectedModeTestOpenAgentDaemon extends TopologyTestAgentDa
     public const string AGENT_TYPE = TopologyProtectedModeTestOpenAgent::AGENT_TYPE;
 }
 
+final class TopologyMaintenanceDisableAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'maintenance_disable_agent';
+
+    public const array AGENT_COMMANDS = [CliCommands::MAINTENANCE_DISABLE];
+}
+
+final class TopologyMaintenanceDisableAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = TopologyMaintenanceDisableAgent::AGENT_TYPE;
+}
+
 abstract class TopologyProtectedModeInitiatorHilos extends HilosFacade
 {
     /**
@@ -2280,6 +2303,17 @@ final class TopologyProtectedModeClusterInitiatorHilos extends TopologyProtected
         TopologyProtectedModeOpenAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => TopologyProtectedModeOpenAgent::class,
             AgentRegistryKey::DAEMON => TopologyProtectedModeOpenAgentDaemon::class,
+        ],
+    ];
+}
+
+final class TopologyMaintenanceDisableNodeInitiatorHilos extends TopologyProtectedModeInitiatorHilos
+{
+    public const array AGENTS = [
+        TopologyMaintenanceDisableAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyMaintenanceDisableAgent::class,
+            AgentRegistryKey::DAEMON => TopologyMaintenanceDisableAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
         ],
     ];
 }

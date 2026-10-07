@@ -2945,10 +2945,10 @@ final class TopologyValidator
     }
 
     /**
-     * Refuses a replicated or indexed owner of a protected-mode open command.
+     * Refuses a replicated or indexed owner of a command that opens the system.
      *
-     * The open command answers only to the initiator identity recorded on the freeze row.
-     * A command has one owning agent type, so the owner of either open command is the initiator.
+     * An open or disable command answers only to the initiator identity recorded on the freeze row.
+     * A command has one owning agent type, so the owner of any command opening the system is the initiator.
      * Its type and index must name one instance cluster-wide, even in a single-node installation.
      *
      * @param array $agents Agent registry
@@ -2957,7 +2957,7 @@ final class TopologyValidator
      */
     private function validateProtectedModeInitiators(array $agents, array $commandAgentRoutes, array &$errors): void
     {
-        foreach ([CliCommands::PROTECTED_MODE_OPEN, CliCommands::PROTECTED_MODE_TEST_OPEN] as $command) {
+        foreach ([CliCommands::PROTECTED_MODE_OPEN, CliCommands::PROTECTED_MODE_TEST_OPEN, CliCommands::MAINTENANCE_DISABLE] as $command) {
             $agentType = $commandAgentRoutes[$command] ?? null;
             if ($agentType === null) {
                 continue;

@@ -68,6 +68,9 @@ use Hilos\Core\CLI\Commands\SettingOverrideTestDeleteCommand;
 use Hilos\Core\CLI\Commands\OrphanTestCreateCommand;
 use Hilos\Core\CLI\Commands\OrphanTestDeleteCommand;
 use Hilos\Core\CLI\Commands\SeedApplyCommand;
+use Hilos\Core\CLI\Commands\MaintenanceDisableCommand;
+use Hilos\Core\CLI\Commands\MaintenanceEnableCommand;
+use Hilos\Core\CLI\Commands\MaintenancePassCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\PingCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeCloseCommand;
@@ -218,6 +221,9 @@ class CliManager
         $this->commands[CliCommands::PROTECTED_MODE_PASS] = new ProtectedModePassCommand();
         $this->commands[CliCommands::PROTECTED_MODE_OPEN] = new ProtectedModeOpenCommand();
         $this->commands[CliCommands::PROTECTED_MODE_CLOSE] = new ProtectedModeCloseCommand();
+        $this->commands[CliCommands::MAINTENANCE_ENABLE] = new MaintenanceEnableCommand();
+        $this->commands[CliCommands::MAINTENANCE_DISABLE] = new MaintenanceDisableCommand();
+        $this->commands[CliCommands::MAINTENANCE_PASS] = new MaintenancePassCommand();
         $this->commands[CliCommands::LLM_PING] = new LlmPingCommand();
 
         $this->registerProjectCommands();

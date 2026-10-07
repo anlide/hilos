@@ -21,6 +21,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
+use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -99,6 +100,9 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * The admin grant pair is NOT here any more (HIL-729): what it writes ends in a person's
      * open tabs being told, and only the sessions library knows which sockets those are, so
      * {@see AbstractSessionsLibraryAgent} answers it now.
+     *
+     * The production manual maintenance family (HIL-1357: enable, disable, pass) lives here
+     * because the initiator of the manual maintenance window is this agent (HIL-1356).
      */
     public const array AGENT_COMMANDS = [
         CliCommands::COMMAND_TEST_ECHO,
@@ -107,6 +111,9 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         CliCommands::PROTECTED_MODE_TEST_OPEN,
         CliCommands::PROTECTED_MODE_TEST_PASS,
         CliCommands::PROTECTED_MODE_TEST_CLOSE,
+        CliCommands::MAINTENANCE_ENABLE,
+        CliCommands::MAINTENANCE_DISABLE,
+        CliCommands::MAINTENANCE_PASS,
     ];
 
     private const string MANUAL_ENABLE = 'enable';
@@ -342,6 +349,24 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
             return;
         }
 
+        if ($data->command === CliCommands::MAINTENANCE_ENABLE) {
+            $this->enableManualMaintenance('', null, $this->manualMaintenanceCommandReplyCallback($data->correlationId));
+
+            return;
+        }
+
+        if ($data->command === CliCommands::MAINTENANCE_DISABLE) {
+            $this->disableManualMaintenance($this->manualMaintenanceCommandReplyCallback($data->correlationId));
+
+            return;
+        }
+
+        if ($data->command === CliCommands::MAINTENANCE_PASS) {
+            $this->mintManualMaintenancePass($this->manualMaintenanceCommandReplyCallback($data->correlationId));
+
+            return;
+        }
+
         // The echo has no handler of its own on purpose: what it proves is that a request reached
         // an agent and a reply came back, so anything between the two would be the probe testing
         // itself instead of the channel.
@@ -352,6 +377,36 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Translates a manual maintenance outcome into a single command reply.
+     *
+     * @param string $correlationId Command correlation identifier
+     * @return Closure(ManualMaintenanceOutcome):void Callback translating the manual maintenance outcome
+     */
+    private function manualMaintenanceCommandReplyCallback(string $correlationId): Closure
+    {
+        return function (ManualMaintenanceOutcome $outcome) use ($correlationId): void {
+            if ($outcome->status === ManualMaintenanceOutcome::SUCCEEDED) {
+                $payload = [
+                    ProtectedModeCommandConstants::FIELD_PHASE => (string)$outcome->phase,
+                ];
+                if ($outcome->pass !== null) {
+                    $payload[ProtectedModeCommandConstants::FIELD_PASS] = $outcome->pass;
+                }
+                $this->replyToCommand(CommandReplyDTO::ok($correlationId, $payload));
+
+                return;
+            }
+
+            $reason = (string)$outcome->reason;
+            if ($outcome->status === ManualMaintenanceOutcome::UNCONFIRMED && $outcome->phase !== null) {
+                $reason .= " (phase: {$outcome->phase})";
+            }
+
+            $this->replyToCommand(CommandReplyDTO::error($correlationId, $reason));
+        };
     }
 
     /**
