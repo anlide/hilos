@@ -407,7 +407,7 @@ makes no blocking call.
 | `INITIATOR_LOST` | the initiator agent stopped; sticky, because the agent-start gate lets its type start again and a fresh instance would read as alive |
 | `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick — under manual maintenance only when the settings key calls for it; by default, a log line (not in the code yet — HIL-1359) |
 | `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`; the alert names the nodes that never confirmed |
-| `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` — except in a manual-maintenance window, where no operation is behind the door to mark progress (not in the code yet — HIL-1358) |
+| `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` — except in a manual-maintenance window (operation `manual_maintenance` entered as `verification_window`), where no operation is behind the door to mark progress |
 
 **The progress mark is written by the operation, not by the framework.** What
 proves life is that the *work* moved, not that a process is up: a restore spawns
@@ -876,8 +876,9 @@ Minting in Maintenance is only for this window and shows the code once (not in t
 the CLI mints too via `maintenance:pass`, only in the manual window.
 The code uses secure randomness; only its hash stands on the row, its clear value in the reply.
 
-The watchdog exempts the manual operation on the row from `SILENT`: no work owes
-progress behind that door (not in the code yet — HIL-1358). This is an operation
+The watchdog exempts the manual window on the row (operation `manual_maintenance`
+with `entryMode` `verification_window`; a full freeze carrying that name is still
+judged) from `SILENT`: no work owes progress behind that door. This is an operation
 exception, not phase branching; other verdicts stand, and the watchdog never lifts.
 
 On restart, phase, operation and initiator agent identity survive; codes, admitted

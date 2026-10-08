@@ -58,7 +58,8 @@ enum ProtectedModeStuckVerdict: string
      * question: an operation that is still running says so ({@see ProtectedModeRuntime::$progressAt}),
      * so its length stops being a parameter. An initiator that never marks progress raises a false
      * alarm on an honest long run - the accepted direction of the error, because the alarm is a
-     * message and a missed hang would never surface at all.
+     * message and a missed hang would never surface at all. Not raised for a manual maintenance
+     * window: nothing behind its door owes progress.
      */
     case SILENT = 'silent';
 }

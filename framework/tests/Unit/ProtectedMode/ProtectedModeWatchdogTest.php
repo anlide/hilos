@@ -33,6 +33,8 @@ use PHPUnit\Framework\TestCase;
  * The clock is passed to every tick, so the thresholds are exercised without waiting them out, and
  * the row is mounted directly from a row array rather than driven through the executor: a freeze
  * that began an hour ago is the ordinary subject here, and the actions stamp only the present.
+ * A manual maintenance verification window is exempt from silence reports, while the other verdicts
+ * and non-manual windows still apply.
  */
 final class ProtectedModeWatchdogTest extends TestCase
 {
@@ -371,6 +373,77 @@ final class ProtectedModeWatchdogTest extends TestCase
         $this->assertSame('', $this->written());
     }
 
+    public function testAManualMaintenanceWindowIsExemptFromSilenceAlerts(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            activatedAt: self::STARTED_AT,
+            progressAt: null,
+            operation: StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+        $watchdog = new ProtectedModeWatchdog();
+
+        $watchdog->tick(self::STARTED_AT);
+        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
+        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1 + self::ALERT_INTERVAL);
+
+        $this->assertSame('', $this->written());
+        $this->assertSame([], $mailer->sent);
+    }
+
+    public function testARestoreVerificationWindowPastThresholdIsReportedAsSilent(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            activatedAt: self::STARTED_AT,
+            progressAt: null,
+            operation: self::OPERATION,
+            entryMode: StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+        );
+        $watchdog = new ProtectedModeWatchdog();
+
+        $watchdog->tick(self::STARTED_AT);
+        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
+
+        $this->assertVerdict(ProtectedModeStuckVerdict::SILENT);
+    }
+
+    public function testAManualMaintenanceWindowStillReportsALostInitiator(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            activatedAt: self::STARTED_AT,
+            progressAt: null,
+            operation: StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+        $watchdog = new ProtectedModeWatchdog();
+
+        $watchdog->onAgentStopped(self::INITIATOR_ID);
+        $watchdog->tick(self::STARTED_AT + 1);
+
+        $this->assertVerdict(ProtectedModeStuckVerdict::INITIATOR_LOST);
+    }
+
+    public function testAFullFreezeUnderManualMaintenanceNameStillJudgesSilence(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            activatedAt: self::STARTED_AT,
+            progressAt: null,
+            operation: StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            entryMode: StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+        );
+        $watchdog = new ProtectedModeWatchdog();
+
+        $watchdog->tick(self::STARTED_AT);
+        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + 1);
+
+        $this->assertVerdict(ProtectedModeStuckVerdict::SILENT);
+    }
+
     /**
      * Points the mail facade at a recorder and configures who the alert goes to.
      *
@@ -394,17 +467,22 @@ final class ProtectedModeWatchdogTest extends TestCase
      * @param ?int $activatedAt Epoch seconds the freeze settled, or null while it is still activating
      * @param ?int $progressAt Epoch seconds of the last progress mark, or null when none was left
      * @param int $startedAt Epoch seconds the freeze began
+     * @param string $operation Operation the freeze protects
+     * @param string $entryMode Entry mode the freeze arrived through
      */
     private function freeze(
         string $phase,
         ?int $activatedAt,
         ?int $progressAt = null,
         int $startedAt = self::STARTED_AT,
+        string $operation = self::OPERATION,
+        string $entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
     ): void {
         Hilos::$rt = new WatchdogTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => $phase,
-            StateProtectedModeRuntime::operation => self::OPERATION,
+            StateProtectedModeRuntime::entryMode => $entryMode,
+            StateProtectedModeRuntime::operation => $operation,
             StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
             StateProtectedModeRuntime::initiatorAgentIndex => self::INITIATOR_INDEX,
             StateProtectedModeRuntime::initiatorNodeId => 'node-a',

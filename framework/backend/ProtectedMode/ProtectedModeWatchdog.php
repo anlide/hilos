@@ -8,6 +8,7 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -29,7 +30,8 @@ use Throwable;
  * removed on purpose. Not even the safe-looking case is excepted: a leader stuck in activating
  * never handed out ready and destroyed nothing, and it is still only reported. One rule, no
  * phase-by-phase branching, because the person reading the alert at 3am has to be able to predict
- * what the system did without it.
+ * what the system did without it. The only exception from SILENT stands on what kind of window is
+ * on the row (manual maintenance), rather than on a phase, and lifts nothing.
  *
  * **It runs on the master, and there is no choice about that.** During a freeze every agent but
  * the initiator is stopped, so a watchdog agent would either be stopped along with them or be the
@@ -246,7 +248,9 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
      * Decides whether the freeze on the row is stuck, and on what grounds.
      *
      * The four cases in their evaluation order, first match winning: certainty before inference,
-     * so the operator is told the strongest thing that can be said about this freeze.
+     * so the operator is told the strongest thing that can be said about this freeze. A manual
+     * maintenance window is exempt from the last case because nothing behind its door owes
+     * progress; the other three cases still apply to it.
      *
      * @param ProtectedModeRuntime $view Freeze row this node carries
      * @param int $now Epoch seconds to judge against
@@ -266,11 +270,30 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
         ) {
             return ProtectedModeStuckVerdict::QUIESCE_OVERDUE;
         }
-        if ($now - $this->lastSignOfLife($view) > $this->silenceTimeoutSeconds()) {
+        if (!self::isManualMaintenanceWindow($view) && $now - $this->lastSignOfLife($view) > $this->silenceTimeoutSeconds()) {
             return ProtectedModeStuckVerdict::SILENT;
         }
 
         return null;
+    }
+
+    /**
+     * Decides whether the freeze row represents a manual maintenance verification window.
+     *
+     * Checked by operation and entry mode together rather than by operation name alone: core
+     * accepts operation 'manual_maintenance' in a full freeze from a project agent
+     * ({@see AbstractAgent::requestProtectedModeEnable()}), and only the test driver trait
+     * reserves it ({@see ProtectedModeTestDriverTrait}); checking both keeps an unreserved full
+     * freeze from escaping silence detection. Not phase-by-phase branching: phase is not
+     * inspected here.
+     *
+     * @param ProtectedModeRuntime $view Freeze row this node carries
+     * @return bool True when the row represents a manual maintenance verification window
+     */
+    private static function isManualMaintenanceWindow(ProtectedModeRuntime $view): bool
+    {
+        return $view->operation === StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE
+            && $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
     }
 
     /**
