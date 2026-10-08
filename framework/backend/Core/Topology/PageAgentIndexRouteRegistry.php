@@ -69,7 +69,7 @@ final class PageAgentIndexRouteRegistry
             $param = null;
         }
 
-        if ($source === PageAgentIndexSource::PARAM && $param === null) {
+        if (in_array($source, [PageAgentIndexSource::PARAM, PageAgentIndexSource::NODE_PARAM], true) && $param === null) {
             return null;
         }
 

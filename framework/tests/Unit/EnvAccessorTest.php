@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
+use Hilos\Environment\EnvSource;
+use Hilos\Environment\EnvResolution;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Environment\Exception\EnvMutationNotSupportedException;
 use Hilos\Environment\Exception\EnvNotInCatalogException;
@@ -74,6 +77,79 @@ final class EnvAccessorTest extends TestCase
         ]);
 
         $this->assertSame('fallback', $env[self::STRING_KEY]->string());
+        $this->assertSame(EnvSource::CATALOG_DEFAULT, $env->resolutionFor(self::STRING_KEY)->source);
+    }
+
+    public function testResolutionNamesProcessFileExampleDefaultAndMissing(): void
+    {
+        putenv(self::FLOAT_KEY . '=from-process');
+        $root = $this->envRootWith([
+            '.env' => self::STRING_KEY . '=from-file',
+            '.env.example' => self::INTEGER_KEY . '=from-example',
+        ]);
+        $env = $this->env([
+            self::FLOAT_KEY => $this->entry(EnvCatalogConstants::TYPE_FLOAT, 1.5),
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'default'),
+            self::INTEGER_KEY => $this->entry(EnvCatalogConstants::TYPE_INTEGER, 2),
+            self::BOOLEAN_KEY => $this->entry(EnvCatalogConstants::TYPE_BOOLEAN, true),
+            self::REQUIRED_KEY => $this->required(EnvCatalogConstants::TYPE_STRING),
+        ]);
+        $env->init($root);
+
+        $this->assertSame(EnvSource::PROCESS, $env->resolutionFor(self::FLOAT_KEY)->source);
+        $this->assertSame(EnvSource::ENV_FILE, $env->resolutionFor(self::STRING_KEY)->source);
+        $this->assertSame(EnvSource::EXAMPLE, $env->resolutionFor(self::INTEGER_KEY)->source);
+        $this->assertSame(EnvSource::CATALOG_DEFAULT, $env->resolutionFor(self::BOOLEAN_KEY)->source);
+        $this->assertSame(EnvSource::MISSING, $env->resolutionFor(self::REQUIRED_KEY)->source);
+        $this->assertNull($env->resolutionFor(self::REQUIRED_KEY)->value);
+        $this->assertSame(array_keys(EnvAccessorTestCatalog::$catalog), $env->catalogKeys());
+        $this->assertTrue($env->requiredFor(self::REQUIRED_KEY));
+        $this->assertFalse($env->declaredByFramework(self::REQUIRED_KEY));
+        $this->assertTrue((new EnvAccessor())->declaredByFramework(EnvConstants::DB_HOST));
+    }
+
+    public function testFreshDiskReadNeverMutatesTheProcessCache(): void
+    {
+        $root = $this->envRootWith([
+            '.env' => self::STRING_KEY . '=first',
+            '.env.example' => self::STRING_KEY . '=example',
+        ]);
+        $env = $this->env([
+            self::STRING_KEY => $this->entry(EnvCatalogConstants::TYPE_STRING, 'default'),
+        ]);
+        $env->init($root);
+        $this->assertSame([$root], $env->watchedFileDirectories());
+
+        file_put_contents($root . '/.env', self::STRING_KEY . "=second\n");
+        $files = $env->readFilesFromDisk();
+        $this->assertSame('first', $env->resolutionFor(self::STRING_KEY)->value);
+        $this->assertSame('second', $env->resolutionOnDisk(self::STRING_KEY, $files)->value);
+
+        unlink($root . '/.env');
+        $files = $env->readFilesFromDisk();
+        $this->assertSame(EnvSource::EXAMPLE, $env->resolutionOnDisk(self::STRING_KEY, $files)->source);
+        $this->assertSame('first', $env->resolutionFor(self::STRING_KEY)->value);
+    }
+
+    public function testInvalidCatalogDefaultCannotBeReportedAsAPresentValue(): void
+    {
+        foreach ([null, []] as $default) {
+            $env = $this->env([
+                self::STRING_KEY => [
+                    EnvCatalogConstants::CATALOG_ENTRY_TYPE => EnvCatalogConstants::TYPE_STRING,
+                    EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
+                ],
+            ]);
+            try {
+                $env->resolutionFor(self::STRING_KEY);
+                $this->fail('A null or nonscalar default was reported as a value');
+            } catch (EnvInvalidValueException $e) {
+                $this->assertStringContainsString(self::STRING_KEY, $e->getMessage());
+            }
+        }
+
+        $this->expectException(EnvInvalidValueException::class);
+        new EnvResolution(EnvSource::MISSING, 'present');
     }
 
     public function testEmptyCanBeARealValue(): void

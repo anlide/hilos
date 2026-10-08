@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\NodeRole;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -18,6 +21,7 @@ use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\PageSubscription;
@@ -26,6 +30,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -50,10 +55,27 @@ final class SignalRouterPerInstancePageRoutingTest extends TestCase
     private const string ALICE = 'per-instance-alice';
     private const string BOB = 'per-instance-bob';
 
+    private ?EnvAccessor $previousEnv = null;
+
+    private ?ClusterContext $previousCluster = null;
+
+    protected function setUp(): void
+    {
+        $this->previousEnv = HilosFacade::$env;
+        $this->previousCluster = HilosFacade::$cluster;
+        parent::setUp();
+    }
+
     protected function tearDown(): void
     {
         HilosFacade::$sr = null;
         HilosFacade::$browser = null;
+        HilosFacade::$env = $this->previousEnv;
+        HilosFacade::$cluster = $this->previousCluster;
+        putenv('CLUSTER_ENABLED');
+        putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_ROLE');
+        putenv('CLUSTER_PEER_ADVERTISE');
 
         parent::tearDown();
     }
@@ -72,6 +94,65 @@ final class SignalRouterPerInstancePageRoutingTest extends TestCase
             [new AgentDestination(PerInstanceChatPage::SUBSCRIPTION_AGENT_TYPE, '43')],
             HilosFacade::$sr->getDestinations($this->viewport(self::BOB, PerInstanceChatPage::PAGE)),
         );
+    }
+
+    public function testNodeParamAddressesTheNamedReplicaAndFallsBackForUnknownNodes(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-A');
+        putenv('CLUSTER_NODE_ROLE=' . NodeRole::Master->value);
+        putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
+        HilosFacade::$env = new EnvAccessor();
+        HilosFacade::$cluster = new ClusterContext();
+        HilosFacade::$cluster->registry()->recordPeer(NodeIdentity::of('node-B', NodeRole::Master, []), microtime(true));
+
+        $manager = $this->manager();
+        $manager->subscribe(self::ALICE, PerInstanceNodePage::PAGE, ['nodeId' => 'node-B']);
+        $this->assertSame('node-B', HilosFacade::$sr->pageSubscription(self::ALICE)->agentNode);
+        $this->assertEquals(
+            [new RemoteAgentDestination('node-B', PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE)],
+            HilosFacade::$sr->getDestinations($this->viewport(self::ALICE, PerInstanceNodePage::PAGE)),
+        );
+        $this->assertEquals(
+            [new RemoteAgentDestination('node-B', PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE)],
+            HilosFacade::$sr->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+                new SignalName(PerInstanceNodePage::PAGE),
+                new WebSocketPageUnsubscribeSignalDTO(self::ALICE),
+            )),
+        );
+        $this->assertEquals(
+            [new RemoteAgentDestination('node-B', PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE)],
+            HilosFacade::$sr->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::ACTION),
+                new SignalName(PerInstanceNodePage::NODE_ACTION),
+                new WebSocketActionSignalDTO(self::ALICE, PerInstanceNodePage::NODE_ACTION),
+            )),
+        );
+
+        $manager->subscribe(self::BOB, PerInstanceNodePage::PAGE, ['nodeId' => 'unknown']);
+        $this->assertNull(HilosFacade::$sr->pageSubscription(self::BOB)->agentNode);
+        $this->assertEquals(
+            [new AgentDestination(PerInstanceFallbackAgent::AGENT_TYPE)],
+            HilosFacade::$sr->getDestinations($this->viewport(self::BOB, PerInstanceNodePage::PAGE)),
+        );
+    }
+
+    public function testNodeParamUsesLocalReplicaOnStandaloneNode(): void
+    {
+        HilosFacade::$env = new EnvAccessor();
+        HilosFacade::$cluster = new ClusterContext();
+        $manager = $this->manager();
+        $manager->subscribe(self::ALICE, PerInstanceNodePage::PAGE, ['nodeId' => 'standalone']);
+
+        $this->assertEquals(
+            [new AgentDestination(PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE)],
+            HilosFacade::$sr->getDestinations($this->viewport(self::ALICE, PerInstanceNodePage::PAGE)),
+        );
+        $manager->subscribe(self::BOB, PerInstanceNodePage::PAGE, ['nodeId' => 'another']);
+        $this->assertSame(PerInstanceFallbackAgent::AGENT_TYPE, HilosFacade::$sr->pageSubscription(self::BOB)->agentType);
     }
 
     public function testSubscribeItselfIsAlreadyAddressedToTheInstance(): void
@@ -342,6 +423,23 @@ final class PerInstancePlainPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = 'per_instance_plain_agent';
 }
 
+final class PerInstanceNodePage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_node';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'per_instance_node_agent';
+
+    public const string NODE_ACTION = 'per_instance_node_action';
+
+    public const array ACTIONS = [self::NODE_ACTION => PerInstanceActionPayloadDTO::class];
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::NODE_PARAM,
+        PageAgentIndexKey::PARAM => 'nodeId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => PerInstanceFallbackAgent::AGENT_TYPE,
+    ];
+}
+
 final class PerInstanceLifecyclePage extends AbstractPage
 {
     public const string PAGE = 'per_instance_lifecycle';
@@ -416,6 +514,7 @@ final class PerInstanceTestHilos extends HilosFacade
         PerInstanceChatPage::PAGE => PerInstanceChatPage::class,
         PerInstanceProfilePage::PAGE => PerInstanceProfilePage::class,
         PerInstancePlainPage::PAGE => PerInstancePlainPage::class,
+        PerInstanceNodePage::PAGE => PerInstanceNodePage::class,
         PerInstanceLifecyclePage::PAGE => PerInstanceLifecyclePage::class,
     ];
 

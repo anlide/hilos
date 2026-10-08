@@ -209,9 +209,9 @@ to this node's own, an empty id, and an absent field all stay the
 consulted for a named node — it is the one case where the sender knows the
 answer and the lookup does not.
 
-Off a cluster nothing changes: the single node publishes itself under an EMPTY
-id (`hilosClusterNodes`), so a reader written against that collection needs no
-standalone branch. This is where the key parts ways with `INDEX_FIELD`, which
+Off a cluster the single node publishes itself under the `standalone` id
+(`HilosClusterNode::STANDALONE_NODE_ID`). This is where the key parts ways with
+`INDEX_FIELD`, which
 logs and drops the signal on an empty value: an absent index is a sender that
 forgot, an absent node id is a sender that means "here".
 
@@ -240,15 +240,25 @@ final class ChatRoomPage extends AbstractPage
 }
 ```
 
-Two sources, because an instance is named in exactly two ways. `PARAM` — the address of
+For an indexed agent, `PARAM` — the address of
 the page names it, and the index travels as a subscription param. `SESSION_USER` — the
 page is "mine", and the instance is the person behind the connection, whom the master
 reads through the same identity seam the access guards are judged with
 (`BrowserContext::connectionIdentity()`). It reads one row of one connection and never
 the database.
 
-**The address is resolved ONCE, on `page_subscribe`, and remembered on the subscription
-record.** Everything that follows — `page_update_subscription`, `table_viewport`,
+`NODE_PARAM` names a node instead of an indexed instance. The page's
+`SUBSCRIPTION_AGENT_TYPE` must be a `NODE`-scoped agent, with a registered
+non-`NODE` fallback. The master reads the parameter from the subscription and
+uses its in-memory membership registry: its own id addresses its local replica;
+an online peer id addresses that peer's replica directly, bypassing placement;
+an absent, unknown or offline id goes to the fallback agent. Off-cluster only
+the standalone node id names a replica. The node id is stored beside the agent
+type on the subscription record and every later frame follows that address.
+
+**The address is resolved on `page_subscribe` and remembered on the subscription
+record.** Node-addressed pages are re-resolved when membership changes.
+Everything that follows — `page_update_subscription`, `table_viewport`,
 `action`, `page_unsubscribe` — is addressed off that record. This is not an optimization:
 an unsubscribe carries nothing but the accept key, so a per-signal recomputation would
 have nothing to recompute from, and a recomputation mid-subscription would hand a live
@@ -284,11 +294,18 @@ Consequences worth knowing before declaring one:
 - **Waiting for an identity.** A `SESSION_USER` page whose connection identity has not
   crossed the RT sync yet is held for up to 500ms and then routed on what is known. Only
   such a page ever waits; every other subscription is routed the moment it arrives.
+- **Node membership.** A node-addressed page is re-resolved when its named node
+  joins or leaves. The old agent is unsubscribed, the new address is bound, and
+  the new agent receives a fresh copy of the subscribe. The browser's table
+  windows and facets are not reset; the new worker answers the page whole.
 
-`TopologyValidator` refuses a declaration that cannot work: a `PARAM` source without a
-param, a missing or unregistered `FALLBACK_AGENT_TYPE`, and a `SESSION_USER` source on a
+`TopologyValidator` refuses a declaration that cannot work: a `PARAM` or
+`NODE_PARAM` source without a param, a missing or unregistered
+`FALLBACK_AGENT_TYPE`, and a `SESSION_USER` source on a
 `PageAccessLevel::PUBLIC` page — a guest handed to the fallback agent would be served the
 "my" page for real.
+For `NODE_PARAM`, it also requires a registered `NODE`-scoped owner and a
+registered fallback with a different scope.
 
 Groups (`GROUPS`) stay on the agent type: there is no per-instance group surface yet.
 

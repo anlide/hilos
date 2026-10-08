@@ -15,6 +15,7 @@ final class NodeDaemonPicture
      * @param int $sampledAt Measurement time
      * @param ?DaemonProcessRoster $processes Master's last roster, if received
      * @param ?DaemonCronPicture $cron Cron section, if the master has reported its rules
+     * @param ?NodeEnvironmentSummary $environment Environment counts, null before the first read
      */
     public function __construct(
         public readonly string $nodeId,
@@ -22,6 +23,7 @@ final class NodeDaemonPicture
         public readonly int $sampledAt,
         public readonly ?DaemonProcessRoster $processes = null,
         public readonly ?DaemonCronPicture $cron = null,
+        public readonly ?NodeEnvironmentSummary $environment = null,
     ) {
     }
 
@@ -31,7 +33,7 @@ final class NodeDaemonPicture
      */
     public function sampledAt(int $sampledAt): self
     {
-        return new self($this->nodeId, $this->role, $sampledAt, $this->processes, $this->cron);
+        return new self($this->nodeId, $this->role, $sampledAt, $this->processes, $this->cron, $this->environment);
     }
 
     /**
@@ -43,7 +45,8 @@ final class NodeDaemonPicture
         return $this->nodeId === $other->nodeId
             && $this->role === $other->role
             && $this->processes == $other->processes
-            && $this->cron == $other->cron;
+            && $this->cron == $other->cron
+            && $this->environment == $other->environment;
     }
 
     /**
@@ -52,7 +55,7 @@ final class NodeDaemonPicture
      */
     public function withProcesses(?DaemonProcessRoster $processes): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $processes, $this->cron);
+        return new self($this->nodeId, $this->role, $this->sampledAt, $processes, $this->cron, $this->environment);
     }
 
     /**
@@ -61,6 +64,15 @@ final class NodeDaemonPicture
      */
     public function withCron(?DaemonCronPicture $cron): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $cron);
+        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $cron, $this->environment);
+    }
+
+    /**
+     * @param ?NodeEnvironmentSummary $environment New environment counts
+     * @return self Picture preserving every other section
+     */
+    public function withEnvironment(?NodeEnvironmentSummary $environment): self
+    {
+        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $environment);
     }
 }

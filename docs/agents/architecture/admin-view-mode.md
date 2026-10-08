@@ -378,7 +378,7 @@ nobody is asked*).
   a viewer unless its own catalog entry explicitly says `admin_view_visible =>
   true`; a `sensitive` entry can never be opened. No current environment key is
   open to viewers. Keys, types, sources, requiredness and the set/unset fact can
-  remain visible; enforcing value hiding on the wire belongs to HIL-1378.
+  remain visible; the node agent hides closed values on the wire and omits their drift.
   A log line shows its time, level and node, and
   its text is hidden; there is no marking at write time. The logs page asks
   whether its connection is a viewer on each read or follow, forwards `hideText`

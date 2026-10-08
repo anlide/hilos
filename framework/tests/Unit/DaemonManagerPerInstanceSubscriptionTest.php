@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\AgentSignalMesh;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\ClusterNode;
+use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\NodeRole;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\AgentDeliveryOutcome;
+use Hilos\Core\Router\Destination\AgentAddressedDestination;
+use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -17,6 +25,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Hilos;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -41,10 +50,27 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
 {
     private const string ACCEPT_KEY = 'per-instance-master-ak';
 
+    private ?EnvAccessor $previousEnv = null;
+
+    private ?ClusterContext $previousCluster = null;
+
+    protected function setUp(): void
+    {
+        $this->previousEnv = Hilos::$env;
+        $this->previousCluster = Hilos::$cluster;
+        parent::setUp();
+    }
+
     protected function tearDown(): void
     {
         Hilos::$sr = null;
         Hilos::$browser = null;
+        Hilos::$env = $this->previousEnv;
+        Hilos::$cluster = $this->previousCluster;
+        putenv('CLUSTER_ENABLED');
+        putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_ROLE');
+        putenv('CLUSTER_PEER_ADVERTISE');
 
         parent::tearDown();
     }
@@ -223,6 +249,55 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         $this->assertSame('42', $subscription->params['chatId']);
         $this->assertSame('42', $subscription->agentIndex);
         $this->assertSame([], $manager->deliveries());
+    }
+
+    public function testANodeChangeInsideAnUpdateIsRefused(): void
+    {
+        $this->enableCluster();
+        $manager = $this->manager();
+        $this->queueSubscribe(PerInstanceNodePage::PAGE, ['nodeId' => 'node-A']);
+        $manager->drainQueue();
+        $manager->forgetDeliveries();
+
+        $this->queue(
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION,
+            PerInstanceNodePage::PAGE,
+            new WebSocketPageUpdateSubscriptionSignalDTO(
+                self::ACCEPT_KEY, PerInstanceNodePage::PAGE, ['nodeId' => 'node-B'],
+            ),
+        );
+        $manager->drainQueue();
+
+        $this->assertSame('node-A', Hilos::$sr->pageSubscription(self::ACCEPT_KEY)->params['nodeId']);
+        $this->assertSame([], $manager->deliveries());
+    }
+
+    public function testNodeLeavingAndRejoiningRebindsThePageAndSendsFreshSubscribes(): void
+    {
+        $this->enableCluster();
+        $peer = NodeIdentity::of('node-B', NodeRole::Master, []);
+        Hilos::$cluster->registry()->recordPeer($peer, microtime(true));
+        $manager = $this->manager();
+        $this->queueSubscribe(PerInstanceNodePage::PAGE, ['nodeId' => 'node-B']);
+        $manager->drainQueue();
+        $this->assertSame('node-B', Hilos::$sr->pageSubscription(self::ACCEPT_KEY)->agentNode);
+        $manager->forgetDeliveries();
+
+        Hilos::$cluster->registry()->markOffline('node-B', microtime(true));
+        $manager->onNodeLeft(ClusterNode::fromIdentity($peer, false, microtime(true)));
+        $this->assertSame(PerInstanceFallbackAgent::AGENT_TYPE, Hilos::$sr->pageSubscription(self::ACCEPT_KEY)->agentType);
+        $this->assertContains(
+            SignalTypeConstants::PAGE_SUBSCRIBE . '@' . PerInstanceFallbackAgent::AGENT_TYPE,
+            $manager->deliveries(),
+        );
+
+        Hilos::$cluster->registry()->recordPeer($peer, microtime(true));
+        $manager->onNodeJoined(ClusterNode::fromIdentity($peer, true, microtime(true)));
+        $this->assertSame('node-B', Hilos::$sr->pageSubscription(self::ACCEPT_KEY)->agentNode);
+        $this->assertContains(
+            SignalTypeConstants::PAGE_SUBSCRIBE . '@node-B/' . PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE,
+            $manager->addressed(),
+        );
     }
 
     /**
@@ -446,6 +521,16 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         return $manager;
     }
 
+    private function enableCluster(): void
+    {
+        putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=node-A');
+        putenv('CLUSTER_NODE_ROLE=' . NodeRole::Master->value);
+        putenv('CLUSTER_PEER_ADVERTISE=10.0.0.1:7000');
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = new ClusterContext();
+    }
+
     /**
      * @param string $page Page being subscribed to
      * @param array<string, string> $params Subscription params
@@ -484,6 +569,9 @@ final class PerInstanceMasterTestManager extends DaemonManager
     /** The stand-in worker server the drain finds and delivers through */
     private PerInstanceMasterTestWorkerServer $workerServer;
 
+    /** @var list<string> Agent addresses the master attempted to deliver to */
+    private array $addressed = [];
+
     public function __construct()
     {
         parent::__construct();
@@ -514,6 +602,27 @@ final class PerInstanceMasterTestManager extends DaemonManager
     public function forgetDeliveries(): void
     {
         $this->workerServer->deliveries = [];
+    }
+
+    /** @return list<string> Delivery attempts including remote addresses */
+    public function addressed(): array
+    {
+        return $this->addressed;
+    }
+
+    protected function deliverToAgentDestination(
+        WorkerServer $workerServer,
+        ?AgentSignalMesh $mesh,
+        AgentAddressedDestination $destination,
+        SignalDTO $signal,
+    ): AgentDeliveryOutcome {
+        $address = $signal->signalType->getType() . '@';
+        if ($destination instanceof RemoteAgentDestination) {
+            $address .= $destination->nodeId . '/';
+        }
+        $this->addressed[] = $address . $destination->agentType;
+
+        return parent::deliverToAgentDestination($workerServer, $mesh, $destination, $signal);
     }
 
     protected function createSignalRouter(): SignalRouter

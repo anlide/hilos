@@ -25,6 +25,7 @@ use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\DaemonSection\NodeEnvironmentSummary;
 use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
 use PHPUnit\Framework\TestCase;
@@ -82,6 +83,30 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         self::assertSame(['n1'], array_map(static fn ($node): string => $node->nodeId, $portion->nodes));
         self::assertSame(NodeRole::Slave, ClusterDaemonPictureMirror::picture()?->node('n1')?->slot?->picture->role);
         self::assertCount(2, ClusterDaemonPictureMirror::picture()?->nodes());
+    }
+
+    public function testEnvironmentCountsCrossCollectorAndMirrorWithoutValues(): void
+    {
+        $collector = $this->collector();
+        $summary = new NodeEnvironmentSummary(7, 1, 2, 3, 4);
+        $wire = new DaemonNodePictureSignalData(new NodeDaemonPicture('n1', NodeRole::Master, 10, environment: $summary));
+        $collector->onSignalAgent(
+            new AgentSignalData(data: DaemonNodePictureSignalData::fromArray($wire->toArray())),
+            'agent/hilos_daemon_node',
+            HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT,
+        );
+        $pages = new DaemonPictureFanOutProbeAgent();
+        ClusterDaemonPictureMirror::addViewer('ak');
+        $pages->tickAt($this->at(0.0));
+        $this->carryClaim($collector);
+        $portion = $this->carryPortion($pages);
+
+        $this->assertEquals($summary, $portion->nodes[0]->slot?->picture->environment);
+        $this->assertEquals($summary, ClusterDaemonPictureMirror::picture()?->node('n1')?->slot?->picture->environment);
+        $this->assertSame(
+            ['catalogKeys', 'missingRequired', 'fromExample', 'drifted', 'orphans'],
+            array_keys($wire->toArray()[DaemonNodePictureSignalData::environment]),
+        );
     }
 
     public function testAFirstClaimOrSnapshotLossKeepsTheOneSecondRetry(): void

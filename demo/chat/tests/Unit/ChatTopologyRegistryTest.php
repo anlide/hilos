@@ -308,12 +308,13 @@ final class ChatTopologyRegistryTest extends TestCase
             DaemonCronPage::class,
             DaemonWebsocketsPage::class,
             DaemonHttpServerPage::class,
-            DaemonEnvPage::class,
             DaemonEnvMismatchPage::class,
         ] as $page) {
             self::assertSame($page, Hilos::PAGES[$page::PAGE]);
             self::assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        self::assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
+        self::assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 
         $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
         self::assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));
@@ -431,13 +432,14 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
-    /**
-     * No chat page is served by the agent of one entity instance yet: this leaf gave the
-     * mechanism, and which pages move onto it belongs to the epic (HIL-627).
-     */
-    public function testNoPageIsServedByTheAgentOfOneInstance(): void
+    /** The Daemon environment page names the node whose replica serves it. */
+    public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
-        $this->assertSame([], Hilos::getPageAgentIndexRoutes());
+        $routes = Hilos::getPageAgentIndexRoutes();
+        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
+        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
+        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
     }
 
     public function testComputedGroupRoutesCoverEveryRegisteredGroup(): void

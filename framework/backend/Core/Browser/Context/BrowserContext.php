@@ -1761,6 +1761,23 @@ abstract class BrowserContext
     }
 
     /**
+     * Re-sends the whole page one agent owns after its node-local source changes.
+     * A contained failure is logged; the private delivery path already tells the
+     * subscriber and records the failure for recovery.
+     *
+     * @param string $page Page to answer again
+     * @param string $acceptKey Subscriber connection
+     */
+    public function resendPageWhole(string $page, string $acceptKey): void
+    {
+        foreach ($this->resendWholePage($page, $acceptKey) as $contained) {
+            Logger::error(
+                "Browser could not re-send page {$page} to {$acceptKey}: {$contained->failure->getMessage()}",
+            );
+        }
+    }
+
+    /**
      * Serves a whole page to a connection whose last word about it was that it had failed.
      *
      * A delta would land on nothing. Told its page failed, the client wipes the page scope and

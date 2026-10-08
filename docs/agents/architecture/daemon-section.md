@@ -40,8 +40,9 @@ and the collector hands whole node slots to the page agent.
 
 None of these pictures belongs in RT: it would duplicate an owner and replicate
 a derived view. This is the rule in [logs.md](logs.md), *Rules This Feature Proved,
-Wider Than Logs*. The one direct read the page asks of a node is an environment
-value that only that node can supply (not in the code yet — HIL-1378).
+Wider Than Logs*. The environment page of a node is served by that node's own
+agent through [node-addressed page subscriptions](../signals/routing.md); the
+collector receives counts, never values.
 The master says what it already knows; it does not search for data for the section.
 
 ## What The Node's Processes Know
@@ -63,7 +64,7 @@ An unfinished delivery names the leaf that will add it.
 | Node sessions and connections | [LiveConnectionRoster](../../../framework/backend/Core/Daemon/LiveConnectionRoster.php) | Connection picture (not in the code yet — HIL-1374) |
 
 The master does not read the on-disk `.env` for the section. The node agent reads
-the environment and that file itself (not in the code yet — HIL-1378).
+the environment and that file itself.
 A worker may read the file; the master loop may not.
 
 ## The Master Frame
@@ -161,25 +162,24 @@ the picture carries no cluster concepts (not in the code yet — HIL-1374).
 
 A sensitive value never leaves the node's processes: neither for the collector,
 the page, the browser, a log line nor CLI output. Only “set · N chars” or
-“not set” may leave (not in the code yet — HIL-1378).
+“not set” may leave.
 The environment catalog declares `sensitive`; do not guess it from the key's name.
-An orphan `.env` key that looks like a secret
-does not expose its value either (not in the code yet — HIL-1378).
+No orphan `.env` key exposes its value: nothing declares that it may be shown.
 
-Only the node's own agent serves that node's environment values, on request,
-straight to the asking socket (not in the code yet — HIL-1378).
-This is the path in [logs.md](logs.md), *Reading And Following One File Through
-Its Owner*. The collector's picture contains no values
-(not in the code yet — HIL-1378). For a silent node the page says “node silent”
-and supplies no values (not in the code yet — HIL-1378).
+The environment page of node X is served by node X's agent. It answers the
+subscription with one whole `page_response`, directly to the asking socket.
+The collector's picture contains counts only. For a silent node the section
+agent answers “node silent” with no values. A directory watch and periodic
+rescan make the node agent re-answer open environment pages after `.env` or
+`.env.example` changes.
 
 The environment catalog opens a value to an admin view-mode viewer only with
 `admin_view_visible => true`; no current key is open, and `sensitive` forbids
 opening one. Hide every other value, as for settings.
-The node owner enforces that decision: the page forwards “hide”, the owner sends
-a hidden mark, and the hidden value never crosses the network
-(not in the code yet — HIL-1378). Use the `hideText` precedent in
-[logs.md](logs.md) and the rule in [admin-view-mode.md](admin-view-mode.md).
+The node agent asks the view-mode verdict when it answers. It sends a hidden
+mark for a closed key's set value and omits that key's drift entirely; an orphan
+is hidden for a viewer and length-only for an administrator. See
+[admin-view-mode.md](admin-view-mode.md).
 
 A fingerprint — type, source and value hash — travels only from node to collector
 (not in the code yet — HIL-1379). The screen receives a label salted for the
@@ -278,7 +278,10 @@ The project declares the feature in `Hilos::FEATURES`.
 Startup requires the section's pages and its three agents, refusing a partial activation.
 The section is enabled in the demos that already enable `LOGS`: chat, tasks,
 polls, binance-btc-tracker and online-testing.
-The page agent serves the section, replacing the index agent in chat.
+The page agent serves the section, replacing the index agent in chat. The
+environment child page is the exception: its thin project subclass inherits
+the framework's node-addressed `SUBSCRIPTION_AGENT_TYPE` and declares none of
+its own.
 The six node child addresses carry a required node ID, including on standalone
 installations; Env mismatch is a cluster-wide address without one.
 

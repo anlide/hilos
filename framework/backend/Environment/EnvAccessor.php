@@ -33,6 +33,9 @@ class EnvAccessor implements ArrayAccess
     /** @var ?array<string, array<string, mixed>> Catalog as the provider named it, resolved once per accessor */
     private ?array $catalogCache = null;
 
+    /** @var ?array<string, true> Framework catalog keys, built once when provenance is first asked */
+    private ?array $frameworkCatalogKeys = null;
+
     /** @var ?array<string, string> Loaded .env file cache */
     private ?array $envCache = null;
 
@@ -282,6 +285,92 @@ class EnvAccessor implements ArrayAccess
     }
 
     /**
+     * @return list<string> Declared environment keys in catalog order
+     * @throws EnvInvalidValueException When catalog metadata is invalid
+     */
+    public function catalogKeys(): array
+    {
+        return array_keys($this->getCatalog());
+    }
+
+    /**
+     * @param EnvConstants|string $name Environment key
+     * @return bool Whether the key must have a value
+     * @throws EnvException When the key or its catalog metadata is invalid
+     */
+    public function requiredFor(EnvConstants|string $name): bool
+    {
+        $key = $this->keyName($name);
+
+        return $this->entryBool($key, $this->entryFor($key), EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING, false);
+    }
+
+    /**
+     * @param EnvConstants|string $name Environment key
+     * @return bool Whether the framework's own catalog declares it
+     * @throws EnvException When the key is not declared by this accessor or is invalid
+     */
+    public function declaredByFramework(EnvConstants|string $name): bool
+    {
+        $key = $this->keyName($name);
+        $this->entryFor($key);
+
+        $this->frameworkCatalogKeys ??= array_fill_keys(array_keys(EnvCatalogStub::getCatalog()), true);
+
+        return isset($this->frameworkCatalogKeys[$key]);
+    }
+
+    /**
+     * @return list<string> Distinct existing directories holding the active dotenv files
+     */
+    public function watchedFileDirectories(): array
+    {
+        $directories = [];
+        foreach ([$this->envPath, $this->examplePath] as $path) {
+            if ($path !== null && file_exists($path)) {
+                $directory = dirname($path);
+                if (!in_array($directory, $directories, true)) {
+                    $directories[] = $directory;
+                }
+            }
+        }
+
+        return $directories;
+    }
+
+    /**
+     * @param EnvConstants|string $name Environment key
+     * @return EnvResolution Source and value held by this process
+     * @throws EnvException When the key or catalog metadata is invalid
+     */
+    public function resolutionFor(EnvConstants|string $name): EnvResolution
+    {
+        return $this->resolve($this->keyName($name), $this->envCache ?? [], $this->exampleCache);
+    }
+
+    /**
+     * @return EnvFiles Fresh dotenv entries without changing either process cache
+     */
+    public function readFilesFromDisk(): EnvFiles
+    {
+        return new EnvFiles(
+            $this->envPath !== null && file_exists($this->envPath) ? $this->parseEnvFile($this->envPath) : [],
+            $this->examplePath !== null && file_exists($this->examplePath) ? $this->parseEnvFile($this->examplePath) : [],
+        );
+    }
+
+    /**
+     * @param EnvConstants|string $name Environment key
+     * @param EnvFiles $files Fresh files to use beneath the process environment
+     * @return EnvResolution Source and value a restart with these files would choose
+     * @throws EnvException When the key or catalog metadata is invalid
+     */
+    public function resolutionOnDisk(EnvConstants|string $name, EnvFiles $files): EnvResolution
+    {
+        return $this->resolve($this->keyName($name), $files->env, $files->example);
+    }
+
+    /**
      * Returns whether an env value must remain on its node. Unknown keys are closed.
      *
      * @param EnvConstants|string $name Environment variable name
@@ -374,26 +463,68 @@ class EnvAccessor implements ArrayAccess
      */
     public function effectiveValueFor(string $key): mixed
     {
-        $entry = $this->entryFor($key);
-        // The type is not compared here — that half belongs to the reader — but an entry that
-        // declares an invalid one is still refused, exactly as it was while this body compared.
-        $this->entryType($key, $entry);
-
-        $value = $this->rawValue($key);
-        if ($value !== null && $this->entryBool($key, $entry, EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING, false)) {
-            $value = trim($value) === '' ? null : $value;
+        $resolution = $this->resolve($key, $this->envCache ?? [], $this->exampleCache);
+        if ($resolution->source !== EnvSource::MISSING) {
+            return $resolution->value;
         }
-        if ($value !== null) {
-            return $value;
-        }
-        if (array_key_exists(EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE, $entry)) {
-            return $entry[EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE];
-        }
-        if ($this->entryBool($key, $entry, EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING, false)) {
+        if ($this->entryBool($key, $this->entryFor($key), EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING, false)) {
             throw new MissingEnvironmentVariableException($key);
         }
 
         return '';
+    }
+
+    /**
+     * Resolves one key by the same ladder for process caches and fresh files. An
+     * empty answer marked missing falls through to the catalog default, not to
+     * the next file, matching the existing effective-value contract.
+     *
+     * @param string $key Catalog key
+     * @param array<string, string> $envMap Active dotenv values
+     * @param ?array<string, string> $exampleMap Example values, null to load the process cache lazily
+     * @return EnvResolution Chosen source and value
+     * @throws EnvInvalidValueException When catalog metadata is invalid
+     * @throws EnvNotInCatalogException When the key is not declared
+     */
+    private function resolve(string $key, array $envMap, ?array $exampleMap): EnvResolution
+    {
+        $entry = $this->entryFor($key);
+        $this->entryType($key, $entry);
+
+        $value = getenv($key);
+        if ($value !== false) {
+            $source = EnvSource::PROCESS;
+        } elseif (array_key_exists($key, $envMap)) {
+            $value = $envMap[$key];
+            $source = EnvSource::ENV_FILE;
+        } else {
+            if ($exampleMap === null) {
+                $this->exampleCache = $this->examplePath !== null && file_exists($this->examplePath)
+                    ? $this->parseEnvFile($this->examplePath)
+                    : [];
+                $exampleMap = $this->exampleCache;
+            }
+            $value = $exampleMap[$key] ?? null;
+            $source = EnvSource::EXAMPLE;
+        }
+
+        if ($value !== null && $this->entryBool($key, $entry, EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING, false)
+            && trim($value) === '') {
+            $value = null;
+        }
+        if ($value !== null) {
+            return new EnvResolution($source, $value);
+        }
+        if (array_key_exists(EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE, $entry)) {
+            $default = $entry[EnvCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE];
+            if (!is_scalar($default)) {
+                throw new EnvInvalidValueException("Environment variable '{$key}' catalog default must be scalar");
+            }
+
+            return new EnvResolution(EnvSource::CATALOG_DEFAULT, $default);
+        }
+
+        return new EnvResolution(EnvSource::MISSING, null);
     }
 
     /**
@@ -428,45 +559,6 @@ class EnvAccessor implements ArrayAccess
         }
 
         return $env;
-    }
-
-    /**
-     * Answers with the first source that names the key: process environment → env file
-     * → .env.example → null, leaving the catalog default to the caller.
-     *
-     * An empty string from the process environment is an answer, not silence; whether it
-     * counts as missing is decided by the catalog's emptyIsMissing flag.
-     *
-     * @param string $key Environment variable name
-     * @return ?string Raw value from the process environment, .env, or .env.example
-     */
-    private function rawValue(string $key): ?string
-    {
-        $value = getenv($key);
-        if ($value !== false) {
-            return $value;
-        }
-
-        if ($this->envCache !== null && array_key_exists($key, $this->envCache)) {
-            return $this->envCache[$key];
-        }
-
-        return $this->exampleValue($key);
-    }
-
-    /**
-     * @param string $key Environment variable name
-     * @return ?string Raw value from .env.example, or null when absent
-     */
-    private function exampleValue(string $key): ?string
-    {
-        if ($this->exampleCache === null) {
-            $this->exampleCache = $this->examplePath !== null && file_exists($this->examplePath)
-                ? $this->parseEnvFile($this->examplePath)
-                : [];
-        }
-
-        return $this->exampleCache[$key] ?? null;
     }
 
     /**

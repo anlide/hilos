@@ -23,12 +23,14 @@ final class PageSubscription
      * @param array<string, mixed> $params Route params from the subscribe signal
      * @param ?string $agentType Agent type serving this subscription; null until the master binds one
      * @param ?string $agentIndex Instance index of the serving agent, null when it is served unindexed
+     * @param ?string $agentNode Node hosting the serving replica, or null for placement routing
      */
     public function __construct(
         public readonly string $page,
         public readonly array $params = [],
         public readonly ?string $agentType = null,
         public readonly ?string $agentIndex = null,
+        public readonly ?string $agentNode = null,
     ) {
     }
 
@@ -49,6 +51,7 @@ final class PageSubscription
             array_merge($this->params, $params),
             $this->agentType,
             $this->agentIndex,
+            $this->agentNode,
         );
     }
 
@@ -57,11 +60,12 @@ final class PageSubscription
      *
      * @param string $agentType Agent type serving this subscription
      * @param ?string $agentIndex Instance index, or null to serve the subscription unindexed
+     * @param ?string $agentNode Node hosting a node-scoped replica
      * @return self Subscription carrying the address
      */
-    public function withPageAgent(string $agentType, ?string $agentIndex): self
+    public function withPageAgent(string $agentType, ?string $agentIndex, ?string $agentNode = null): self
     {
-        return new self($this->page, $this->params, $agentType, $agentIndex);
+        return new self($this->page, $this->params, $agentType, $agentIndex, $agentNode);
     }
 
     /**

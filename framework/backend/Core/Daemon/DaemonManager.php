@@ -5770,6 +5770,7 @@ abstract class DaemonManager extends BaseManager implements
                         $page,
                         $address->agentType,
                         $address->agentIndex,
+                        $address->agentNode,
                     );
                 }
                 Hilos::$ac?->openPageSession($signal->data->acceptKey, $page, $signal->data->params);
@@ -5802,6 +5803,7 @@ abstract class DaemonManager extends BaseManager implements
                         $reassessedPage,
                         $reassessedAddress->agentType,
                         $reassessedAddress->agentIndex,
+                        $reassessedAddress->agentNode,
                     );
                 }
                 break;
@@ -5897,6 +5899,7 @@ abstract class DaemonManager extends BaseManager implements
 
         $value = match ($route->source) {
             PageAgentIndexSource::PARAM => $route->param === null ? null : ($params[$route->param] ?? null),
+            PageAgentIndexSource::NODE_PARAM => $route->param === null ? null : ($params[$route->param] ?? null),
             PageAgentIndexSource::SESSION_USER => $this->sessionUserIndexValue($acceptKey),
         };
 
@@ -5905,6 +5908,21 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $agentIndex = self::pageAgentIndexValue($value);
+
+        if ($route->source === PageAgentIndexSource::NODE_PARAM) {
+            if ($agentIndex === null) {
+                return PageAgentAddress::to($route->fallbackAgentType, null);
+            }
+
+            $cluster = Hilos::$cluster;
+            $localNodeId = $cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+            if ($agentIndex === $localNodeId
+                || ($cluster?->isEnabled() === true && $cluster->registry()->isOnline($agentIndex))) {
+                return PageAgentAddress::toNode($this->pageAgentTypeFor($page, $route->fallbackAgentType), $agentIndex);
+            }
+
+            return PageAgentAddress::to($route->fallbackAgentType, null);
+        }
 
         return $agentIndex === null
             ? PageAgentAddress::to($route->fallbackAgentType, null)
@@ -6027,12 +6045,11 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $nextAgent = $address !== null
-            ? new AgentDestination($address->agentType, $address->agentIndex)
+            ? Hilos::$sr->pageServingAgent(new PageSubscription(
+                $page, [], $address->agentType, $address->agentIndex, $address->agentNode,
+            ))
             : Hilos::$sr->pageServingAgent(new PageSubscription($page));
-        if ($nextAgent !== null
-            && $previousAgent->agentType === $nextAgent->agentType
-            && $previousAgent->agentIndex === $nextAgent->agentIndex
-        ) {
+        if ($nextAgent !== null && self::samePageAgent($previousAgent, $nextAgent)) {
             return;
         }
 
@@ -6052,6 +6069,19 @@ abstract class DaemonManager extends BaseManager implements
                 new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey),
             ),
         );
+    }
+
+    /**
+     * @param AgentAddressedDestination $left First agent address
+     * @param AgentAddressedDestination $right Second agent address
+     * @return bool Whether both addresses name the same replica or placed instance
+     */
+    private static function samePageAgent(AgentAddressedDestination $left, AgentAddressedDestination $right): bool
+    {
+        return $left->agentType === $right->agentType
+            && $left->agentIndex === $right->agentIndex
+            && ($left instanceof RemoteAgentDestination ? $left->nodeId : null)
+                === ($right instanceof RemoteAgentDestination ? $right->nodeId : null);
     }
 
     /**
@@ -6081,7 +6111,8 @@ abstract class DaemonManager extends BaseManager implements
 
         $page = $data->page ?? $signal->signalName->getName();
         $route = Hilos::$sr->pageAgentIndexRoute($page);
-        if ($route === null || $route->source !== PageAgentIndexSource::PARAM || $route->param === null) {
+        if ($route === null || !in_array($route->source, [PageAgentIndexSource::PARAM, PageAgentIndexSource::NODE_PARAM], true)
+            || $route->param === null) {
             return false;
         }
 
@@ -6162,9 +6193,10 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         foreach ($agentsDelivered as $delivered) {
-            if ($delivered->agentType === $servingAgent->agentType
-                && $delivered->agentIndex === $servingAgent->agentIndex
-            ) {
+            if ($subscription->agentNode === null
+                ? ($delivered->agentType === $servingAgent->agentType
+                    && $delivered->agentIndex === $servingAgent->agentIndex)
+                : self::samePageAgent($delivered, $servingAgent)) {
                 return;
             }
         }
@@ -7080,6 +7112,11 @@ abstract class DaemonManager extends BaseManager implements
     public function onNodeJoined(ClusterNode $node): void
     {
         Hilos::$cluster?->placement()?->noteNodeOnline($node->nodeId, microtime(true));
+        try {
+            $this->rerouteNodeAddressedPages($node->nodeId);
+        } catch (EnvException | InvalidArgumentException $e) {
+            Logger::error("Could not reroute pages for joined node {$node->nodeId}: {$e->getMessage()}");
+        }
         // Last, so the roster workers read is published after this node has decided what the join
         // means and not between the decision and its execution (HIL-337).
         $this->publishClusterNodes();
@@ -7115,9 +7152,73 @@ abstract class DaemonManager extends BaseManager implements
         // report still in flight can no longer undo this: the membership check at the top of
         // applyRemoteRtClaims() drops whatever that node says from here on (HIL-913).
         $this->rtClaimRegistry->forget($node->nodeId);
+        try {
+            $this->rerouteNodeAddressedPages($node->nodeId);
+        } catch (EnvException | InvalidArgumentException $e) {
+            Logger::error("Could not reroute pages for departed node {$node->nodeId}: {$e->getMessage()}");
+        }
         // Last, for the reason given in {@see onNodeJoined()}. The departed node keeps its row and
         // turns offline in it; the registry does not forget it either (HIL-337).
         $this->publishClusterNodes();
+    }
+
+    /**
+     * Rebinds open pages naming a node whose membership changed and gives their new
+     * owner the original subscribe frame. The browser's table windows stay intact.
+     *
+     * @param string $nodeId Node whose membership changed
+     */
+    private function rerouteNodeAddressedPages(string $nodeId): void
+    {
+        $router = Hilos::$sr;
+        if ($router === null) {
+            return;
+        }
+
+        foreach (array_keys($router->getPageSubscriptions()) as $acceptKey) {
+            $subscription = $router->pageSubscription($acceptKey);
+            if ($subscription === null) {
+                continue;
+            }
+
+            $page = $subscription->page;
+            $route = $router->pageAgentIndexRoute($page);
+            if ($route?->source !== PageAgentIndexSource::NODE_PARAM || $route->param === null) {
+                continue;
+            }
+
+            if (self::pageAgentIndexValue($subscription->params[$route->param] ?? null) !== $nodeId) {
+                continue;
+            }
+
+            $address = $this->settledPageAgentAddress($page, $acceptKey, $subscription->params);
+            $previous = $router->pageServingAgent($subscription);
+            $next = $address === null ? null : $router->pageServingAgent(new PageSubscription(
+                $page, [], $address->agentType, $address->agentIndex, $address->agentNode,
+            ));
+            if ($address === null || $next === null || ($previous !== null && self::samePageAgent($previous, $next))) {
+                continue;
+            }
+
+            $this->unsubscribeReplacedPageAgent($acceptKey, $page, $address);
+            $router->bindPageAgent($acceptKey, $page, $address->agentType, $address->agentIndex, $address->agentNode);
+            $workerServer = $this->findWorkerServer();
+            if ($workerServer === null) {
+                continue;
+            }
+
+            $this->deliverToAgentDestination(
+                $workerServer,
+                $this->findPeerServer(),
+                $router->placeAgentDestination($next),
+                new SignalDTO(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                    new SignalName($page),
+                    new WebSocketPageSubscribeSignalDTO($acceptKey, $page, $subscription->params),
+                ),
+            );
+        }
     }
 
     /**

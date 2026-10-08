@@ -43,6 +43,16 @@ final class PageAgentIndexRouteRegistryTest extends TestCase
         $this->assertSame('index_route_agent', $route->fallbackAgentType);
     }
 
+    public function testNodeParamSourceCarriesItsNodeIdParam(): void
+    {
+        $routes = PageAgentIndexRouteRegistry::routes([
+            IndexRouteNodePage::PAGE => IndexRouteNodePage::class,
+        ]);
+
+        $this->assertSame(PageAgentIndexSource::NODE_PARAM, $routes[IndexRouteNodePage::PAGE]->source);
+        $this->assertSame('nodeId', $routes[IndexRouteNodePage::PAGE]->param);
+    }
+
     public function testPageDeclaringNothingIsAbsentFromTheRegistry(): void
     {
         $this->assertSame([], PageAgentIndexRouteRegistry::routes([
@@ -116,6 +126,19 @@ final class IndexRouteSessionUserPage extends AbstractPage
 
     public const array SUBSCRIPTION_AGENT_INDEX = [
         PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'index_route_agent',
+    ];
+}
+
+final class IndexRouteNodePage extends AbstractPage
+{
+    public const string PAGE = 'index_route_node_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'index_route_node_agent';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::NODE_PARAM,
+        PageAgentIndexKey::PARAM => 'nodeId',
         PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'index_route_agent',
     ];
 }

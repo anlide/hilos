@@ -11,6 +11,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRulePicture;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\DaemonSection\NodeEnvironmentSummary;
 
 /** Complete node picture sent from the node agent to the collector. */
 final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInterface
@@ -20,6 +21,12 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
     public const string sampledAt = 'sampledAt';
     public const string processes = 'processes';
     public const string cron = 'cron';
+    public const string environment = 'environment';
+    public const string catalogKeys = 'catalogKeys';
+    public const string missingRequired = 'missingRequired';
+    public const string fromExample = 'fromExample';
+    public const string drifted = 'drifted';
+    public const string orphans = 'orphans';
     public const string idleReason = 'idleReason';
     public const string rules = 'rules';
     public const string agentId = 'agentId';
@@ -43,6 +50,13 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
                 ? null
                 : DaemonMasterProcessRosterSignalData::rosterToArray($this->picture->processes),
             self::cron => $this->picture->cron === null ? null : self::cronToArray($this->picture->cron),
+            self::environment => $this->picture->environment === null ? null : [
+                self::catalogKeys => $this->picture->environment->catalogKeys,
+                self::missingRequired => $this->picture->environment->missingRequired,
+                self::fromExample => $this->picture->environment->fromExample,
+                self::drifted => $this->picture->environment->drifted,
+                self::orphans => $this->picture->environment->orphans,
+            ],
         ];
     }
 
@@ -61,6 +75,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
 
         $processes = self::requireNullableArray($data, self::processes);
         $cron = self::requireNullableArray($data, self::cron);
+        $environment = self::requireNullableArray($data, self::environment);
 
         return new static(new NodeDaemonPicture(
             $nodeId,
@@ -68,7 +83,30 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
             self::requireInt($data, self::sampledAt),
             $processes === null ? null : DaemonMasterProcessRosterSignalData::rosterFromArray($processes),
             $cron === null ? null : self::cronFromArray($cron),
+            $environment === null ? null : new NodeEnvironmentSummary(
+                self::nonNegativeInt($environment, self::catalogKeys),
+                self::nonNegativeInt($environment, self::missingRequired),
+                self::nonNegativeInt($environment, self::fromExample),
+                self::nonNegativeInt($environment, self::drifted),
+                self::nonNegativeInt($environment, self::orphans),
+            ),
         ));
+    }
+
+    /**
+     * @param array<string, mixed> $data Environment summary
+     * @param string $key Counter key
+     * @return int Nonnegative count
+     * @throws InvalidFormatException When the counter is absent, mistyped, or negative
+     */
+    private static function nonNegativeInt(array $data, string $key): int
+    {
+        $value = self::requireInt($data, $key);
+        if ($value < 0) {
+            throw new InvalidFormatException("Daemon environment count {$key} cannot be negative");
+        }
+
+        return $value;
     }
 
     /**

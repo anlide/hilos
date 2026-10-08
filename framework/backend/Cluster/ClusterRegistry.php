@@ -147,6 +147,15 @@ final class ClusterRegistry
     }
 
     /**
+     * @param string $nodeId Node to inspect
+     * @return bool Whether this master currently considers the node online
+     */
+    public function isOnline(string $nodeId): bool
+    {
+        return $this->nodes[$nodeId]->online ?? false;
+    }
+
+    /**
      * @return int Monotonic membership change counter
      */
     public function version(): int

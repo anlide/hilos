@@ -124,7 +124,7 @@ final class SubscriptionRegistry
      * @param string $agentType Agent type serving the subscription
      * @param ?string $agentIndex Instance index, or null to serve the subscription unindexed
      */
-    public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex): void
+    public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex, ?string $agentNode = null): void
     {
         if (!isset($this->pages[$acceptKey])) {
             return;
@@ -135,7 +135,7 @@ final class SubscriptionRegistry
             return;
         }
 
-        $this->pages[$acceptKey] = $subscription->withPageAgent($agentType, $agentIndex);
+        $this->pages[$acceptKey] = $subscription->withPageAgent($agentType, $agentIndex, $agentNode);
     }
 
     /**

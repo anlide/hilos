@@ -19,17 +19,19 @@ use Hilos\Core\Browser\Context\ConnectionIdentity;
 final readonly class PageAgentAddress
 {
     /**
-     * Private so that no caller can build the fourth, meaningless state - a pending address
-     * that also names an agent. The two factories below are the whole vocabulary.
+     * Private so that no caller can build a meaningless state - a pending address
+     * that also names an agent. The factories below are the whole vocabulary.
      *
      * @param bool $pending Whether the address cannot be resolved until the connection's identity arrives
      * @param string $agentType Agent type serving the subscription; empty while pending
      * @param ?string $agentIndex Instance index, or null when the subscription is served unindexed
+     * @param ?string $agentNode Node hosting a node-scoped replica, or null for placement routing
      */
     private function __construct(
         public bool $pending,
         public string $agentType,
         public ?string $agentIndex,
+        public ?string $agentNode,
     ) {
     }
 
@@ -40,7 +42,7 @@ final readonly class PageAgentAddress
      */
     public static function pending(): self
     {
-        return new self(true, '', null);
+        return new self(true, '', null, null);
     }
 
     /**
@@ -52,6 +54,16 @@ final readonly class PageAgentAddress
      */
     public static function to(string $agentType, ?string $agentIndex): self
     {
-        return new self(false, $agentType, $agentIndex);
+        return new self(false, $agentType, $agentIndex, null);
+    }
+
+    /**
+     * @param string $agentType Node-scoped agent type
+     * @param string $nodeId Node hosting its replica
+     * @return self Settled node address
+     */
+    public static function toNode(string $agentType, string $nodeId): self
+    {
+        return new self(false, $agentType, null, $nodeId);
     }
 }

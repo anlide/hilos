@@ -43,6 +43,7 @@ use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
@@ -779,9 +780,9 @@ class SignalRouter
      * @param string $agentType Agent type serving the subscription
      * @param ?string $agentIndex Instance index, or null to serve the subscription unindexed
      */
-    public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex): void
+    public function bindPageAgent(string $acceptKey, string $page, string $agentType, ?string $agentIndex, ?string $agentNode = null): void
     {
-        $this->subscriptions->bindPageAgent($acceptKey, $page, $agentType, $agentIndex);
+        $this->subscriptions->bindPageAgent($acceptKey, $page, $agentType, $agentIndex, $agentNode);
     }
 
     /**
@@ -1087,12 +1088,15 @@ class SignalRouter
      * a cluster the lookup does not exist and the destination is returned as it came, so a
      * single node behaves exactly as it did.
      *
-     * @param AgentDestination $destination Agent to locate
+     * @param AgentAddressedDestination $destination Agent to locate; a named node is already placed
      * @return AgentAddressedDestination Destination reaching that agent where it actually runs
      * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
      */
-    public function placeAgentDestination(AgentDestination $destination): AgentAddressedDestination
+    public function placeAgentDestination(AgentAddressedDestination $destination): AgentAddressedDestination
     {
+        if (!$destination instanceof AgentDestination) {
+            return $destination;
+        }
         // The post-pass rewrites in place, so a list of one comes back as a list of one, and
         // every rewrite it can make to an agent destination is itself an addressed agent - as is
         // the untouched input when there is no cluster. Nothing here narrows that back down: the
@@ -1293,6 +1297,8 @@ class SignalRouter
             $keyParts = match (true) {
                 $destination instanceof AgentDestination =>
                     [AgentDestination::class, $destination->agentType, $destination->agentIndex],
+                $destination instanceof RemoteAgentDestination =>
+                    [RemoteAgentDestination::class, $destination->nodeId, $destination->agentType, $destination->agentIndex],
                 $destination instanceof WebSocketDestination =>
                     [WebSocketDestination::class, $destination->acceptKey],
                 $destination instanceof AllClientsDestination =>
@@ -1526,9 +1532,9 @@ class SignalRouter
      *
      * @param SignalDTO $signal Signal being routed
      * @param string $page Page the signal names
-     * @return ?AgentDestination Bound destination, or null when the page is not per-instance
+     * @return ?AgentAddressedDestination Bound destination, or null when the page is not per-instance
      */
-    private function boundPageAgentDestination(SignalDTO $signal, string $page): ?AgentDestination
+    private function boundPageAgentDestination(SignalDTO $signal, string $page): ?AgentAddressedDestination
     {
         if ($this->pageAgentIndexRoute($page) === null) {
             return null;
@@ -1549,7 +1555,7 @@ class SignalRouter
             return null;
         }
 
-        return new AgentDestination($subscription->agentType, $subscription->agentIndex);
+        return $this->pageServingAgent($subscription);
     }
 
     /**
@@ -1583,11 +1589,14 @@ class SignalRouter
      * the page's agent type including the project fallback; an unbound per-instance page has no owner.
      *
      * @param PageSubscription $subscription Page record whose serving agent is needed
-     * @return ?AgentDestination Serving agent, or null when the record has no addressee
+     * @return ?AgentAddressedDestination Serving agent, or null when the record has no addressee
      */
-    public function pageServingAgent(PageSubscription $subscription): ?AgentDestination
+    public function pageServingAgent(PageSubscription $subscription): ?AgentAddressedDestination
     {
         if ($subscription->agentType !== null) {
+            if ($subscription->agentNode !== null && !$this->isLocalNode($subscription->agentNode)) {
+                return new RemoteAgentDestination($subscription->agentNode, $subscription->agentType, $subscription->agentIndex);
+            }
             return new AgentDestination($subscription->agentType, $subscription->agentIndex);
         }
 
@@ -1938,7 +1947,7 @@ class SignalRouter
     {
         $cluster = Hilos::$cluster;
 
-        return $cluster !== null && $cluster->localNodeId() === $nodeId;
+        return ($cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID) === $nodeId;
     }
 
     /**

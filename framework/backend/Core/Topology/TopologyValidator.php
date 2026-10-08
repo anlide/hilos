@@ -2093,8 +2093,9 @@ final class TopologyValidator
             }
 
             $param = $declaration[PageAgentIndexKey::PARAM] ?? null;
-            if ($source === PageAgentIndexSource::PARAM && (!is_string($param) || $param === '')) {
-                $errors[] = "{$path} with source " . PageAgentIndexSource::PARAM->value . " must declare a non-empty '"
+            if (in_array($source, [PageAgentIndexSource::PARAM, PageAgentIndexSource::NODE_PARAM], true)
+                && (!is_string($param) || $param === '')) {
+                $errors[] = "{$path} with source " . $source->value . " must declare a non-empty '"
                     . PageAgentIndexKey::PARAM . "'";
             }
 
@@ -2103,6 +2104,18 @@ final class TopologyValidator
                 $errors[] = "{$path} must declare a non-empty '" . PageAgentIndexKey::FALLBACK_AGENT_TYPE . "'";
             } elseif (!array_key_exists($fallbackAgentType, $agents)) {
                 $errors[] = "{$path} names fallback agent type {$fallbackAgentType}, which is missing from AGENTS";
+            }
+
+            if ($source === PageAgentIndexSource::NODE_PARAM) {
+                $agentType = $pageClass::SUBSCRIPTION_AGENT_TYPE;
+                if (!is_string($agentType) || !isset($agents[$agentType])
+                    || AgentRegistry::scope($agents[$agentType]) !== AgentScope::NODE) {
+                    $errors[] = "{$path} with source node_param requires a registered NODE-scoped SUBSCRIPTION_AGENT_TYPE";
+                }
+                if (is_string($fallbackAgentType) && isset($agents[$fallbackAgentType])
+                    && AgentRegistry::scope($agents[$fallbackAgentType]) === AgentScope::NODE) {
+                    $errors[] = "{$path} with source node_param requires a non-NODE fallback agent";
+                }
             }
 
             // A public per-instance "my" page would hand a guest to the fallback agent, which

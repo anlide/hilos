@@ -528,6 +528,28 @@ final class TopologyValidatorTest extends TestCase
         TopologyPerInstanceMissingParamHilos::validateTopology();
     }
 
+    public function testNodeParamRouteRequiresNodeScopedOwnerAndClusterFallback(): void
+    {
+        TopologyNodeAddressedPageHilos::validateTopology();
+        $this->assertSame(
+            PageAgentIndexSource::NODE_PARAM,
+            TopologyNodeAddressedPageHilos::getPageAgentIndexRoutes()[TopologyNodeAddressedPage::PAGE]->source,
+        );
+
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyNodeAddressedWrongOwnerHilos::validateTopology(),
+            ['requires a registered NODE-scoped SUBSCRIPTION_AGENT_TYPE'],
+        );
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyNodeAddressedWrongFallbackHilos::validateTopology(),
+            ['requires a non-NODE fallback agent'],
+        );
+        $this->assertTopologyErrors(
+            static fn(): mixed => TopologyNodeAddressedMissingParamHilos::validateTopology(),
+            ['must declare a non-empty'],
+        );
+    }
+
     public function testPerInstanceFallbackAgentTypeMissingFromAgentsFails(): void
     {
         $this->expectException(InvalidTopologyException::class);
@@ -4753,6 +4775,94 @@ final class TopologyPerInstancePage extends AbstractPage
         PageAgentIndexKey::PARAM => 'entityId',
         PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
     ];
+}
+
+final class TopologyPageNodeAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'topology_page_node_agent';
+}
+
+final class TopologyPageNodeAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = TopologyPageNodeAgent::AGENT_TYPE;
+}
+
+class TopologyNodeAddressedPage extends AbstractPage
+{
+    public const string PAGE = 'topology_node_addressed_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyPageNodeAgent::AGENT_TYPE;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::NODE_PARAM,
+        PageAgentIndexKey::PARAM => 'nodeId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
+    ];
+}
+
+final class TopologyNodeAddressedWrongOwnerPage extends TopologyNodeAddressedPage
+{
+    public const string PAGE = 'topology_node_addressed_wrong_owner_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyValidAgent::AGENT_TYPE;
+}
+
+final class TopologyNodeAddressedWrongFallbackPage extends TopologyNodeAddressedPage
+{
+    public const string PAGE = 'topology_node_addressed_wrong_fallback_page';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::NODE_PARAM,
+        PageAgentIndexKey::PARAM => 'nodeId',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyPageNodeAgent::AGENT_TYPE,
+    ];
+}
+
+final class TopologyNodeAddressedMissingParamPage extends TopologyNodeAddressedPage
+{
+    public const string PAGE = 'topology_node_addressed_missing_param_page';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::NODE_PARAM,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
+    ];
+}
+
+class TopologyNodeAddressedPageHilos extends HilosFacade
+{
+    public const array PAGES = [TopologyNodeAddressedPage::PAGE => TopologyNodeAddressedPage::class];
+
+    public const array AGENTS = [
+        TopologyPageNodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPageNodeAgent::class,
+            AgentRegistryKey::DAEMON => TopologyPageNodeAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
+    ];
+
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyNodeAddressedWrongOwnerHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [TopologyNodeAddressedWrongOwnerPage::PAGE => TopologyNodeAddressedWrongOwnerPage::class];
+}
+
+final class TopologyNodeAddressedWrongFallbackHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [TopologyNodeAddressedWrongFallbackPage::PAGE => TopologyNodeAddressedWrongFallbackPage::class];
+}
+
+final class TopologyNodeAddressedMissingParamHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [TopologyNodeAddressedMissingParamPage::PAGE => TopologyNodeAddressedMissingParamPage::class];
 }
 
 final class TopologyPerInstanceMissingParamPage extends AbstractPage

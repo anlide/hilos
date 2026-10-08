@@ -537,6 +537,7 @@ For the section's rules and activation details, read [languages-and-countries.md
 Configure-only: the framework owns the node agent, the collector, the abstract page agent and the section's pages.
 The project lists the feature in `Hilos::FEATURES` and registers the three agents in `Hilos::AGENTS`, the page agent as an empty subclass.
 It registers the section's eight thin pages; six node child addresses require a node ID, while the root and Env mismatch do not.
+The environment child page inherits its node-agent subscription route from the framework; its project subclass declares no page-agent owner.
 Startup refuses a partially activated feature.
 For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
 

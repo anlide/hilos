@@ -16,6 +16,7 @@ use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\DaemonSection\NodeEnvironmentSummary;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRulePicture;
@@ -144,6 +145,37 @@ final class DaemonNodePictureTest extends TestCase
         unset($incomplete[DaemonNodePictureSignalData::cron]);
         $this->expectException(InvalidFormatException::class);
         DaemonNodePictureSignalData::fromArray($incomplete);
+    }
+
+    public function testEnvironmentSummaryIsRequiredOnWireAndPreservedByOtherPictureUpdates(): void
+    {
+        $summary = new NodeEnvironmentSummary(8, 1, 2, 3, 4);
+        $picture = new NodeDaemonPicture('n1', NodeRole::Master, 12, environment: $summary);
+        $wire = new DaemonNodePictureSignalData($picture);
+        $this->assertSame([
+            DaemonNodePictureSignalData::catalogKeys => 8,
+            DaemonNodePictureSignalData::missingRequired => 1,
+            DaemonNodePictureSignalData::fromExample => 2,
+            DaemonNodePictureSignalData::drifted => 3,
+            DaemonNodePictureSignalData::orphans => 4,
+        ], $wire->toArray()[DaemonNodePictureSignalData::environment]);
+        $this->assertEquals($summary, DaemonNodePictureSignalData::fromArray($wire->toArray())->picture->environment);
+        $this->assertEquals($summary, $picture->withProcesses(new DaemonProcessRoster([], null, 0))->environment);
+        $this->assertEquals($summary, $picture->withCron(null)->environment);
+        $this->assertEquals($summary, $picture->sampledAt(13)->environment);
+        $this->assertFalse($picture->sameContent($picture->withEnvironment(null)));
+
+        $incomplete = $wire->toArray();
+        unset($incomplete[DaemonNodePictureSignalData::environment]);
+        try {
+            DaemonNodePictureSignalData::fromArray($incomplete);
+            $this->fail('Missing environment summary was accepted');
+        } catch (InvalidFormatException) {
+        }
+        $negative = $wire->toArray();
+        $negative[DaemonNodePictureSignalData::environment][DaemonNodePictureSignalData::drifted] = -1;
+        $this->expectException(InvalidFormatException::class);
+        DaemonNodePictureSignalData::fromArray($negative);
     }
 
     public function testCronWireRejectsMissingNullableRowTime(): void

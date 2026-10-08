@@ -174,10 +174,14 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
-    /** No page is served by the agent of one entity instance. */
-    public function testNoPageIsServedByTheAgentOfOneInstance(): void
+    /** The Daemon environment page names the node whose replica serves it. */
+    public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
     {
-        $this->assertSame([], Hilos::getPageAgentIndexRoutes());
+        $routes = Hilos::getPageAgentIndexRoutes();
+        $this->assertSame([DaemonEnvPage::PAGE], array_keys($routes));
+        $this->assertSame('node_param', $routes[DaemonEnvPage::PAGE]->source->value);
+        $this->assertSame('nodeId', $routes[DaemonEnvPage::PAGE]->param);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[DaemonEnvPage::PAGE]->fallbackAgentType);
     }
 
     public function testPageRegistryKeysMatchPageClassConstants(): void
@@ -642,12 +646,13 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonCronPage::class,
             DaemonWebsocketsPage::class,
             DaemonHttpServerPage::class,
-            DaemonEnvPage::class,
             DaemonEnvMismatchPage::class,
         ] as $page) {
             $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
             $this->assertSame(AgentType::HILOS_DAEMON, Hilos::getPageRoutes()[$page::PAGE]);
         }
+        $this->assertSame(DaemonEnvPage::class, Hilos::PAGES[DaemonEnvPage::PAGE]);
+        $this->assertSame(HilosAgentType::HILOS_DAEMON_NODE, Hilos::getPageRoutes()[DaemonEnvPage::PAGE]);
 
         $pageAgent = Hilos::AGENTS[AgentType::HILOS_DAEMON];
         $this->assertSame(DemoHilosDaemonAgent::class, AgentRegistry::workerClass($pageAgent));

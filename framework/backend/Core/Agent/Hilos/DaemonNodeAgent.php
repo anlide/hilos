@@ -6,8 +6,11 @@ namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Agent\DirectoryWatchTrait;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -24,6 +27,10 @@ use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\DaemonSection\NodeEnvironmentReader;
+use Hilos\DaemonSection\NodeEnvironmentReading;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -31,6 +38,8 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
 /** Per-node owner of the Daemon picture, reporting it whole and without an acknowledgement. */
 final class DaemonNodeAgent extends AbstractHilosAgent
 {
+    use DirectoryWatchTrait;
+
     public const string AGENT_TYPE = HilosAgentType::HILOS_DAEMON_NODE;
 
     public const array AGENT_SIGNALS = [
@@ -46,6 +55,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
     private bool $dirty = false;
     private float $lastReportAt = 0.0;
     private ?DaemonMasterCronSignalData $masterCron = null;
+    private ?NodeEnvironmentReading $environment = null;
 
     /** @var array<string, list<DaemonCronRuleReport>> Cron rows reported by started agents */
     private array $agentCron = [];
@@ -62,7 +72,18 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         $nodeId = $cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
         $role = $cluster?->isEnabled() === true ? $cluster->identity()->role : NodeRole::Master;
         $this->picture = new NodeDaemonPicture($nodeId, $role, time());
+        $env = Hilos::$env;
+        if ($env !== null) {
+            $this->watchDirectories($env->watchedFileDirectories());
+            $this->refreshEnvironment($env, true);
+        }
         $this->report(microtime(true));
+    }
+
+    /** @return ?NodeEnvironmentReading Last node-local reading, null before the first read */
+    public function environmentReading(): ?NodeEnvironmentReading
+    {
+        return $this->environment;
     }
 
     /**
@@ -165,9 +186,13 @@ final class DaemonNodeAgent extends AbstractHilosAgent
     /**
      * @throws InvalidArgumentException When the report cannot be routed
      * @throws InvalidFormatException When a cron section cannot be rebuilt
+     * @throws EnvException When the node environment cannot be read
      */
     public function onTick(): void
     {
+        if ($this->directoryRescanDue() && Hilos::$env !== null) {
+            $this->refreshEnvironment(Hilos::$env, false);
+        }
         $now = time();
         foreach ($this->picture->cron?->rules ?? [] as $rule) {
             if ($rule->nextRunAt !== null && $rule->nextRunAt <= $now) {
@@ -176,6 +201,48 @@ final class DaemonNodeAgent extends AbstractHilosAgent
             }
         }
         $this->reportIfDue(microtime(true));
+    }
+
+    /** Releases the node's directory watch when its agent stops. */
+    public function onStop(): void
+    {
+        $this->closeDirectoryWatch();
+    }
+
+    /**
+     * Reads process and disk state under the watch, then re-answers open pages
+     * only when their content changed. Reconciliation is the final operation.
+     *
+     * @param EnvAccessor $env The process's environment accessor
+     * @param bool $initial Whether this is the first read after taking the watch
+     * @throws EnvException When the catalog cannot be read
+     * @throws InvalidArgumentException When the updated picture names another node
+     */
+    private function refreshEnvironment(EnvAccessor $env, bool $initial): void
+    {
+        if (!$initial) {
+            $this->discardDirectoryChanges();
+        }
+
+        $reading = NodeEnvironmentReader::read($env, $this->picture->nodeId, time());
+        $previous = $this->environment;
+        if ($previous === null || !$previous->sameContent($reading)) {
+            $this->environment = $reading;
+            $this->updatePicture($this->picture->withEnvironment($reading->summary()));
+            if (!$initial) {
+                $this->logAgentInfo('Node environment changed; re-answering environment pages');
+                foreach (Hilos::$sr?->getAcceptKeysForPage(
+                    HilosPageConstants::HILOS_DAEMON_ENV,
+                    HilosPageRouteParams::HILOS_DAEMON_NODE_ID,
+                    $this->picture->nodeId,
+                ) ?? [] as $acceptKey) {
+                    if (Hilos::$rt?->connectionsSource()?->get($acceptKey) !== null) {
+                        Hilos::$browser?->resendPageWhole(HilosPageConstants::HILOS_DAEMON_ENV, $acceptKey);
+                    }
+                }
+            }
+        }
+        $this->watchDirectories($env->watchedFileDirectories());
     }
 
     /**
