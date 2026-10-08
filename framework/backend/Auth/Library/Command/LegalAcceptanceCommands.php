@@ -77,19 +77,29 @@ final class LegalAcceptanceCommands extends AbstractLibraryCommands
     }
 
     /**
-     * What the "the terms have changed" screen shows the person on this connection (HIL-500).
+     * What the "the terms have changed" screen shows the person on this connection (HIL-500, HIL-1331).
+     *
+     * Resolves the refusal setting, the waiting documents, and the person's confirmed address for the
+     * "Who is signed in" plaque. Under impersonation the address is null: an administrator cannot accept
+     * on the person's behalf and the address is not needed by nor exposed to the administrator.
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @return LegalReconsentReplyDTO The refusal setting and every document waiting for the person's decision
+     * @return LegalReconsentReplyDTO The refusal setting, waiting documents, and confirmed address
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws SettingException When the refusal setting is invalid
-     * @throws HilosException When the session lookup, the setting or the acceptance records cannot be read
+     * @throws HilosException When the session lookup, the setting, the acceptance records or the identity cannot be read
      */
     public function reconsent(string $acceptKey): LegalReconsentReplyDTO
     {
+        $acting = $this->actingUser($acceptKey);
+        $identifier = StepUpGate::isImpersonated($acting->sessionToken)
+            ? null
+            : Hilos::$db->identities->findConfirmedAddressByUser($acting->userId);
+
         return new LegalReconsentReplyDTO(
             LegalSettings::refusal(),
-            LegalReconsentProjector::documents($this->actingUser($acceptKey)->userId, LegalStandingResolver::today()),
+            LegalReconsentProjector::documents($acting->userId, LegalStandingResolver::today()),
+            $identifier,
         );
     }
 

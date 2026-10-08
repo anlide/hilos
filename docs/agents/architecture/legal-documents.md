@@ -199,13 +199,18 @@ nowhere, and silence is never acceptance. The freeze screen offers Accept only,
 with the exits as actions: the data copy, "Keep my account" while a deletion is
 scheduled, and sign-out. Under a takeover the window and the icon are absent,
 the freeze screen stands without Accept and "Keep my account", and says that
-only the person can accept.
+only the person can accept. A plaque above the header names the signed-in
+person — name from the session immediately, below it the confirmed address
+from the content reply (so while content is loading or failed, only the name
+shows), and "Not you? Sign out". Under a takeover the plaque shows only the
+name without "Not you?", and the server provides no address. The address
+resolution follows the same rule as the "Access closed" card.
 
 **The three actions** — all users-library `AGENT_ACTIONS`:
 
 | Action | Payload → reply | Reach |
 |---|---|---|
-| `hilos_legal_reconsent` | `{}` → `{refusal, documents: [{document, standing, deadline, held, current, changes, clauses}]}` — every document in its window or lapsed, in declaration order | signed in (`AUTH_ACTIONS`), open while frozen (`FROZEN_EXIT_ACTIONS`) |
+| `hilos_legal_reconsent` | `{}` → `{refusal, documents: [{document, standing, deadline, held, current, changes, clauses}], identifier}` — every document in its window or lapsed, in declaration order; identifier is the account's confirmed address (email, else phone) or null, null under impersonation | signed in (`AUTH_ACTIONS`), open while frozen (`FROZEN_EXIT_ACTIONS`) |
 | `hilos_legal_accept` | `{acceptedRevisions: {document: revisionId}}` → tracked reply without a body | signed in, open while frozen |
 | `hilos_legal_reconsent_preview` | `{document}` → `{document, standing, deadline, held, current, changes, clauses}` | public, like the consent read |
 

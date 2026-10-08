@@ -134,6 +134,9 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
     await expect(window.getByTestId('legal-reconsent-person')).toContainText(
       person.name,
     )
+    await expect(window.getByTestId('legal-reconsent-address')).toHaveText(
+      person.email,
+    )
 
     // Later closes it and records nothing: the icon stays.
     await clickSubmit(window.getByTestId('legal-reconsent-later'))

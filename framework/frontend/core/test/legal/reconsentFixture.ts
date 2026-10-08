@@ -13,12 +13,15 @@ export const RECONSENT_NOW = Date.UTC(2026, 10, 1)
  * 10 November) and a privacy policy past its deadline.
  *
  * @param refusal What a refusal after the deadline does.
+ * @param identifier The person's confirmed address, or null when absent.
  */
 export function reconsentContent(
   refusal: 'freeze' | 'remind' = 'freeze',
+  identifier: string | null = 'maria@example.com',
 ): HilosLegalReconsentContent {
   return {
     refusal,
+    identifier,
     documents: [
       {
         document: 'terms',

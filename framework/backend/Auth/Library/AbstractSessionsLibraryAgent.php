@@ -1443,8 +1443,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         return [
-            HandshakeResponseSignalData::identifier => Hilos::$db->identities->findVerifiedEmailByUser($blockedUserId)
-                ?? Hilos::$db->identities->findVerifiedSmsByUser($blockedUserId),
+            HandshakeResponseSignalData::identifier => Hilos::$db->identities->findConfirmedAddressByUser($blockedUserId),
             DataExportStateSignalData::dataExport => DataExportStateProjector::nodeFor(Hilos::$db->dataExports->ofUser($blockedUserId)),
         ];
     }

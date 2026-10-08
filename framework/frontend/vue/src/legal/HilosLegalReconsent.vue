@@ -19,6 +19,7 @@ it and emits what was pressed. Bootstrap classes only (styling-rules.md). -->
 import { computed, useId } from 'vue'
 import {
   describeHilosLegalReconsentAccepted,
+  describeHilosLegalReconsentAddress,
   describeHilosLegalReconsentChange,
   describeHilosLegalReconsentPlate,
   describeHilosLegalReconsentRefusal,
@@ -131,6 +132,9 @@ const acceptDisabled = computed(
     props.loading ||
     props.busy,
 )
+const address = computed(() =>
+  describeHilosLegalReconsentAddress(props.content),
+)
 
 function onSignOut(): void {
   if (signOutBusy.value) return
@@ -154,7 +158,16 @@ function onKeepAccount(): void {
       data-id="legal-reconsent-person"
     >
       <i class="bi bi-person-circle text-body-secondary" aria-hidden="true" />
-      <span class="fw-semibold text-break">{{ person.name }}</span>
+      <div class="lh-sm text-break">
+        <div class="fw-semibold">{{ person.name }}</div>
+        <div
+          v-if="address !== null"
+          class="text-body-secondary small"
+          data-id="legal-reconsent-address"
+        >
+          {{ address }}
+        </div>
+      </div>
       <LoadingButton
         v-if="!person.impersonated"
         class="btn-link btn-sm p-0 ms-auto"

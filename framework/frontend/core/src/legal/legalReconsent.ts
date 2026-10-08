@@ -79,10 +79,14 @@ export const legalReconsentDocumentSchema = z.looseObject({
   clauses: z.array(legalClauseSchema),
 })
 
-/** The screen's content: the refusal setting and every document waiting for a decision. */
+/**
+ * The screen's content: the refusal setting, every document waiting for a
+ * decision, and the account's confirmed address for the person plaque.
+ */
 export const legalReconsentContentSchema = z.looseObject({
   refusal: z.enum(['freeze', 'remind']),
   documents: z.array(legalReconsentDocumentSchema),
+  identifier: z.string().nullable(),
 })
 
 /**
@@ -380,6 +384,26 @@ export function describeHilosLegalReconsentRefusal(
         '{date}',
         formatHilosLegalDate(nearest),
       )
+}
+
+/**
+ * The account's confirmed address for the person plaque over the re-consent
+ * window or the frozen screen.
+ *
+ * The address arrives with the screen's content: while the content is being read
+ * or when reading failed, it is null and the plaque draws only the person's name.
+ * Under impersonation the server sends null so the administrator never sees the
+ * account's address, and an administrator's preview carries no person at all.
+ *
+ * @param content The loaded content, preview, or null while loading.
+ */
+export function describeHilosLegalReconsentAddress(
+  content: HilosLegalReconsentContent | HilosLegalReconsentPreview | null,
+): string | null {
+  if (content === null || isHilosLegalReconsentPreview(content)) {
+    return null
+  }
+  return content.identifier
 }
 
 /**

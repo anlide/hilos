@@ -276,4 +276,72 @@ describe('the "the terms have changed" screen (HIL-500)', () => {
     expect(view.find('[data-id="legal-reconsent-accept"]').exists()).toBe(false)
     view.unmount()
   })
+
+  it('draws the confirmed address under the name when present and omits it otherwise', () => {
+    const withAddress = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'window',
+        content: reconsentContent('freeze', 'bob@example.com'),
+        view: { kind: 'changes' },
+        person: PERSON,
+      },
+    })
+    expect(withAddress.get('[data-id="legal-reconsent-address"]').text()).toBe(
+      'bob@example.com',
+    )
+    withAddress.unmount()
+
+    const loading = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'window',
+        content: null,
+        loading: true,
+        view: { kind: 'changes' },
+        person: PERSON,
+      },
+    })
+    expect(loading.find('[data-id="legal-reconsent-address"]').exists()).toBe(
+      false,
+    )
+    loading.unmount()
+
+    const noAddress = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'window',
+        content: reconsentContent('freeze', null),
+        view: { kind: 'changes' },
+        person: PERSON,
+      },
+    })
+    expect(noAddress.find('[data-id="legal-reconsent-address"]').exists()).toBe(
+      false,
+    )
+    noAddress.unmount()
+
+    const impersonated = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'frozen',
+        content: reconsentContent('freeze', null),
+        view: { kind: 'changes' },
+        person: { name: 'Bob', impersonated: true },
+      },
+    })
+    expect(
+      impersonated.find('[data-id="legal-reconsent-address"]').exists(),
+    ).toBe(false)
+    impersonated.unmount()
+
+    const preview = mount(HilosLegalReconsent, {
+      props: {
+        variant: 'preview',
+        content: reconsentPreview('window'),
+        view: { kind: 'changes' },
+        person: null,
+      },
+    })
+    expect(preview.find('[data-id="legal-reconsent-person"]').exists()).toBe(
+      false,
+    )
+    preview.unmount()
+  })
 })

@@ -199,4 +199,52 @@ describe('React "the terms have changed" screen (HIL-500)', () => {
     expect(one('legal-reconsent-preview-first')).not.toBeNull()
     expect(one('legal-reconsent-accept')).toBeNull()
   })
+
+  it('draws the confirmed address under the name when present and omits it otherwise', () => {
+    const withAddress = draw({
+      variant: 'window',
+      content: reconsentContent('freeze', 'bob@example.com'),
+      view: { kind: 'changes' },
+      person: PERSON,
+    })
+    expect(withAddress.one('legal-reconsent-address')?.textContent).toBe(
+      'bob@example.com',
+    )
+    cleanup()
+
+    const loading = draw({
+      variant: 'window',
+      content: null,
+      loading: true,
+      view: { kind: 'changes' },
+      person: PERSON,
+    })
+    expect(loading.one('legal-reconsent-address')).toBeNull()
+    cleanup()
+
+    const noAddress = draw({
+      variant: 'window',
+      content: reconsentContent('freeze', null),
+      view: { kind: 'changes' },
+      person: PERSON,
+    })
+    expect(noAddress.one('legal-reconsent-address')).toBeNull()
+    cleanup()
+
+    const impersonated = draw({
+      variant: 'frozen',
+      content: reconsentContent('freeze', null),
+      view: { kind: 'changes' },
+      person: { name: 'Bob', impersonated: true },
+    })
+    expect(impersonated.one('legal-reconsent-address')).toBeNull()
+    cleanup()
+
+    const preview = draw({
+      variant: 'preview',
+      content: reconsentPreview('window'),
+      view: { kind: 'changes' },
+    })
+    expect(preview.one('legal-reconsent-person')).toBeNull()
+  })
 })

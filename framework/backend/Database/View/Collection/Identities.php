@@ -121,6 +121,23 @@ class Identities extends DbCollection
     }
 
     /**
+     * Resolves the primary confirmed address of an account: email, otherwise phone, otherwise null (HIL-1331).
+     *
+     * Delegates to {@see ObjectIdentities::findConfirmedAddressByUser()}, unifying the account address
+     * rule across the blocked notice card (HIL-289) and the "Who is signed in" plaque on the re-consent
+     * and frozen screens (HIL-1331).
+     *
+     * @param int $userId Owning user id
+     * @return ?string Confirmed email, otherwise confirmed E.164 phone number, or null when neither exists
+     * @throws DatabaseException On database error while resolving the identity
+     * @throws InvalidArgumentException When the entity query is given an invalid order direction
+     */
+    public function findConfirmedAddressByUser(int $userId): ?string
+    {
+        return $this->objectCollection->findConfirmedAddressByUser($userId);
+    }
+
+    /**
      * Lists all identities owned by a user.
      *
      * @param int $userId Owning user id

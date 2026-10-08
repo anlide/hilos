@@ -208,4 +208,52 @@ describe('Angular "the terms have changed" screen (HIL-500)', () => {
     expect(one('legal-reconsent-preview-first')).not.toBeNull()
     expect(one('legal-reconsent-accept')).toBeNull()
   })
+
+  it('draws the confirmed address under the name when present and omits it otherwise', async () => {
+    const withAddress = await draw({
+      variant: 'window',
+      content: reconsentContent('freeze', 'bob@example.com'),
+      view: { kind: 'changes' },
+      person: PERSON,
+    })
+    expect(
+      withAddress.one('legal-reconsent-address')?.textContent?.trim(),
+    ).toBe('bob@example.com')
+    TestBed.resetTestingModule()
+
+    const loading = await draw({
+      variant: 'window',
+      content: null,
+      loading: true,
+      view: { kind: 'changes' },
+      person: PERSON,
+    })
+    expect(loading.one('legal-reconsent-address')).toBeNull()
+    TestBed.resetTestingModule()
+
+    const noAddress = await draw({
+      variant: 'window',
+      content: reconsentContent('freeze', null),
+      view: { kind: 'changes' },
+      person: PERSON,
+    })
+    expect(noAddress.one('legal-reconsent-address')).toBeNull()
+    TestBed.resetTestingModule()
+
+    const impersonated = await draw({
+      variant: 'frozen',
+      content: reconsentContent('freeze', null),
+      view: { kind: 'changes' },
+      person: { name: 'Bob', impersonated: true },
+    })
+    expect(impersonated.one('legal-reconsent-address')).toBeNull()
+    TestBed.resetTestingModule()
+
+    const preview = await draw({
+      variant: 'preview',
+      content: reconsentPreview('window'),
+      view: { kind: 'changes' },
+    })
+    expect(preview.one('legal-reconsent-person')).toBeNull()
+  })
 })

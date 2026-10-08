@@ -17,6 +17,7 @@
 import { useId } from 'react'
 import {
   describeHilosLegalReconsentAccepted,
+  describeHilosLegalReconsentAddress,
   describeHilosLegalReconsentChange,
   describeHilosLegalReconsentPlate,
   describeHilosLegalReconsentRefusal,
@@ -123,6 +124,7 @@ export function HilosLegalReconsent({
     if (keepAction.busy) return
     void keepAction.run(keepMyAccount())
   }
+  const address = describeHilosLegalReconsentAddress(content)
 
   return (
     <section
@@ -139,7 +141,17 @@ export function HilosLegalReconsent({
             className="bi bi-person-circle text-body-secondary"
             aria-hidden="true"
           />
-          <span className="fw-semibold text-break">{person.name}</span>
+          <div className="lh-sm text-break">
+            <div className="fw-semibold">{person.name}</div>
+            {address !== null && (
+              <div
+                className="text-body-secondary small"
+                data-id="legal-reconsent-address"
+              >
+                {address}
+              </div>
+            )}
+          </div>
           {!person.impersonated && (
             <LoadingButton
               className="btn-link btn-sm p-0 ms-auto"

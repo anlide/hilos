@@ -23,6 +23,7 @@ import {
 } from '@angular/core'
 import {
   describeHilosLegalReconsentAccepted,
+  describeHilosLegalReconsentAddress,
   describeHilosLegalReconsentChange,
   describeHilosLegalReconsentPlate,
   describeHilosLegalReconsentRefusal,
@@ -75,7 +76,17 @@ let nextHeadingId = 0
             class="bi bi-person-circle text-body-secondary"
             aria-hidden="true"
           ></i>
-          <span class="fw-semibold text-break">{{ who.name }}</span>
+          <div class="lh-sm text-break">
+            <div class="fw-semibold">{{ who.name }}</div>
+            @if (address(); as addr) {
+              <div
+                class="text-body-secondary small"
+                data-id="legal-reconsent-address"
+              >
+                {{ addr }}
+              </div>
+            }
+          </div>
           @if (!who.impersonated) {
             <button
               hilosLoadingButton
@@ -453,6 +464,9 @@ export class HilosLegalReconsent {
       this.sections().length === 0 ||
       this.loading() ||
       this.busy(),
+  )
+  protected readonly address = computed(() =>
+    describeHilosLegalReconsentAddress(this.content()),
   )
 
   /** Sign out through the tracked driver; a second press while busy is dropped. */

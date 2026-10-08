@@ -94,6 +94,68 @@ final class LegalReconsentIntegrationTest extends ProfileIntegrationTestCase
         );
         self::assertSame([], $reply->documents[0]['changes']);
         self::assertNotSame([], $reply->documents[0]['clauses']);
+        self::assertArrayHasKey('identifier', $reply->toArray());
+    }
+
+    public function testTheScreenNamesAConfirmedEmail(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'terms-1');
+        Database::sqlRun(
+            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'password', ?, 1)",
+            [self::USER_ID, 'confirmed@example.test'],
+        );
+
+        $reply = $this->library->onAgentAction(self::ACCEPT_KEY, HilosSignalConstants::HILOS_LEGAL_RECONSENT, new LegalReconsentActionDTO());
+
+        self::assertInstanceOf(LegalReconsentReplyDTO::class, $reply);
+        self::assertSame('confirmed@example.test', $reply->identifier);
+    }
+
+    public function testAnUnconfirmedEmailDefersToAConfirmedPhoneNumber(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'terms-1');
+        Database::sqlRun(
+            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'password', ?, 0)",
+            [self::USER_ID, 'unconfirmed@example.test'],
+        );
+        Database::sqlRun(
+            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'sms', ?, 1)",
+            [self::USER_ID, '+12025550199'],
+        );
+
+        $reply = $this->library->onAgentAction(self::ACCEPT_KEY, HilosSignalConstants::HILOS_LEGAL_RECONSENT, new LegalReconsentActionDTO());
+
+        self::assertInstanceOf(LegalReconsentReplyDTO::class, $reply);
+        self::assertSame('+12025550199', $reply->identifier);
+    }
+
+    public function testAPersonWithoutConfirmedAddressesHasNullIdentifier(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'terms-1');
+
+        $reply = $this->library->onAgentAction(self::ACCEPT_KEY, HilosSignalConstants::HILOS_LEGAL_RECONSENT, new LegalReconsentActionDTO());
+
+        self::assertInstanceOf(LegalReconsentReplyDTO::class, $reply);
+        self::assertNull($reply->identifier);
+    }
+
+    public function testAnImpersonatedSessionHidesTheAddressWhileStillReturningDocuments(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'terms-1');
+        Database::sqlRun(
+            "INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `verified`) VALUES (?, 'password', ?, 1)",
+            [self::USER_ID, 'person@example.test'],
+        );
+        Database::sqlRun(
+            'UPDATE `hilos_session` SET `impersonator_user_id` = ? WHERE `token` = ?',
+            [self::OTHER_USER_ID, self::SESSION_TOKEN],
+        );
+
+        $reply = $this->library->onAgentAction(self::ACCEPT_KEY, HilosSignalConstants::HILOS_LEGAL_RECONSENT, new LegalReconsentActionDTO());
+
+        self::assertInstanceOf(LegalReconsentReplyDTO::class, $reply);
+        self::assertNull($reply->identifier);
+        self::assertNotSame([], $reply->documents);
     }
 
     public function testNothingIsShownForACoveredDocumentOrOneNeverAccepted(): void

@@ -9,6 +9,7 @@ import {
   createHilosLegalReconsentPreview,
   createHilosLegalReconsentStore,
   describeHilosLegalReconsentAccepted,
+  describeHilosLegalReconsentAddress,
   describeHilosLegalReconsentChange,
   describeHilosLegalReconsentPlate,
   describeHilosLegalReconsentRefusal,
@@ -102,12 +103,19 @@ function handshake(
   }
 }
 
-/** The content reply of a person holding the first terms. */
+/**
+ * The content reply of a person holding the first terms.
+ *
+ * @param refusal What a refusal after the deadline does.
+ * @param identifier The person's confirmed address, or null when absent.
+ */
 function content(
   refusal: 'freeze' | 'remind' = 'freeze',
+  identifier: string | null = 'maria@example.com',
 ): HilosLegalReconsentContent {
   return {
     refusal,
+    identifier,
     documents: [
       {
         document: 'terms',
@@ -322,6 +330,15 @@ describe('the header reminder (HIL-500)', () => {
 describe('the screen content (HIL-500)', () => {
   it('reads both reply shapes and refuses a standing it does not know', () => {
     expect(legalReconsentContentSchema.safeParse(content()).success).toBe(true)
+    const withoutIdentifier: Record<string, unknown> = { ...content() }
+    delete withoutIdentifier.identifier
+    expect(
+      legalReconsentContentSchema.safeParse(withoutIdentifier).success,
+    ).toBe(false)
+    expect(
+      legalReconsentContentSchema.safeParse({ ...content(), identifier: null })
+        .success,
+    ).toBe(true)
     expect(
       legalReconsentContentSchema.safeParse({
         ...content(),
@@ -341,6 +358,26 @@ describe('the screen content (HIL-500)', () => {
     expect(
       hilosLegalReconsentSections(legalReconsentPreviewSchema.parse(preview)),
     ).toHaveLength(1)
+  })
+
+  it('describes the person address when present or resolves to null', () => {
+    expect(describeHilosLegalReconsentAddress(content())).toBe(
+      'maria@example.com',
+    )
+    expect(describeHilosLegalReconsentAddress(null)).toBeNull()
+    const preview = {
+      document: 'privacy' as const,
+      standing: null,
+      deadline: null,
+      held: null,
+      current: first,
+      changes: [],
+      clauses: [clause],
+    }
+    expect(describeHilosLegalReconsentAddress(preview)).toBeNull()
+    expect(
+      describeHilosLegalReconsentAddress(content('freeze', null)),
+    ).toBeNull()
   })
 
   it('describes the plates of the window, the freeze and the preview', () => {
