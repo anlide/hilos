@@ -199,6 +199,76 @@ async function bulkBarWasDrawn(page: Page): Promise<boolean> {
   )
 }
 
+/** The page-state transitions recorded since the watcher was armed. */
+const PAGE_LIFE_STATES = '__hilosE2ePageStates'
+
+/** The original table node, retained even if the page unmounts it. */
+const PAGE_LIFE_NODE = '__hilosE2ePageNode'
+
+/**
+ * Remember the page's table and every subsequent change of its outlet state.
+ *
+ * @param page The ready backup page to observe before starting the run.
+ */
+async function watchPageLife(page: Page): Promise<void> {
+  await expect(page.getByTestId('hilos-page-state')).toHaveAttribute(
+    'data-state',
+    PAGE_READY,
+  )
+  await page.evaluate(
+    ({ nodeMark, statesMark }) => {
+      const node = document.querySelector('[data-id="hilos-viewport-table"]')
+      const marker = document.querySelector('[data-id="hilos-page-state"]')
+      if (node === null || marker === null) {
+        throw new Error('The backup page must be mounted before watching it')
+      }
+      const record = window as unknown as Record<string, unknown>
+      const states: string[] = []
+      record[nodeMark] = node
+      record[statesMark] = states
+      new MutationObserver((records) => {
+        records.forEach((mutation, index) => {
+          // The next old value preserves an intermediate state even when several
+          // transitions arrive in the same observer callback.
+          states.push(
+            records[index + 1]?.oldValue ??
+              (mutation.target as Element).getAttribute('data-state') ??
+              '',
+          )
+        })
+      }).observe(marker, {
+        attributes: true,
+        attributeFilter: ['data-state'],
+        attributeOldValue: true,
+      })
+    },
+    { nodeMark: PAGE_LIFE_NODE, statesMark: PAGE_LIFE_STATES },
+  )
+}
+
+/**
+ * Read the original node's lifetime and the transitions since it was marked.
+ *
+ * @param page The page on which the watcher was armed.
+ * @returns Whether the original node is still connected, and its state journal.
+ */
+async function pageLifeRecord(
+  page: Page,
+): Promise<{ connected: boolean; states: string[] }> {
+  return page.evaluate(
+    ({ nodeMark, statesMark }) => {
+      const record = window as unknown as Record<string, unknown>
+
+      return {
+        connected:
+          (record[nodeMark] as Element | undefined)?.isConnected ?? false,
+        states: (record[statesMark] as string[] | undefined) ?? [],
+      }
+    },
+    { nodeMark: PAGE_LIFE_NODE, statesMark: PAGE_LIFE_STATES },
+  )
+}
+
 // HIL-441 acceptance (carried over from HIL-428): the backup page is part of the
 // framework admin surface, closed by default. A guest never sees the page or its
 // action controls — the 401 mounts the in-place sign-in surface instead, so the
@@ -234,11 +304,19 @@ test('refuses the backup page to a signed-in non-admin', async ({ page }) => {
 
 test('shuts the open backup page the moment the admin flag is revoked', async ({
   page,
+  browser,
 }) => {
   // HIL-621 acceptance. Everything above this test asks the question at
   // subscribe time; this one asks it of a page that is ALREADY open. The verdict
   // used to be reached once and then only re-checked as a gate on delivery, so a
   // revoke left the archive list readable until the person reloaded.
+  // Revocation requires another administrator, even when this test runs alone.
+  const otherAdmin = await browser.newContext()
+  try {
+    await grantAdminToSelf(await otherAdmin.newPage())
+  } finally {
+    await otherAdmin.close()
+  }
   const userId = await grantAdminToSelf(page)
   await gotoPage(page, '/hilos/backup')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
@@ -263,6 +341,7 @@ test('shuts the open backup page the moment the admin flag is revoked', async ({
 
 test('opens the refused backup page the moment admin is granted', async ({
   page,
+  browser,
 }) => {
   // HIL-644 acceptance, and the case the revoke above cannot make: the gaining
   // half only ever arrives from the server, so nothing the client draws by itself
@@ -272,6 +351,13 @@ test('opens the refused backup page the moment admin is granted', async ({
   // HIL-621's sweep miss this page and leave a spinner where the honest 403 used
   // to be. The visitor is made an admin and revoked first, so the refused page is
   // a person's who holds an account: the grant is the same re-decision either way.
+  // This test prepares its own second administrator before revoking the first.
+  const otherAdmin = await browser.newContext()
+  try {
+    await grantAdminToSelf(await otherAdmin.newPage())
+  } finally {
+    await otherAdmin.close()
+  }
   const userId = await grantAdminToSelf(page)
   await setAdmin(userId, false)
   await gotoPage(page, '/hilos/backup', PAGE_REFUSED)
@@ -575,84 +661,49 @@ test('agrees between two tabs about the card a finished backup raised', async ({
   ).toHaveCount(0, { timeout: 20_000 })
 })
 
-// HIL-803 acceptance. A created row that belongs ABOVE a window is neither shown
-// nor swallowed: the window is told, and the strip is what tells the reader. This
-// is the only table of the demo whose newest row is its first one, so it is the
-// only place a foreign create falls above a window at all — everywhere else it
-// lands at the tail and simply arrives.
-//
-// HIL-820 12.09.2026: disabled — the strip never rises, because the create that
-// used to land above tab B's window was the synthetic in-progress row this leaf
-// dropped, and this table has no other source of one. Not this leaf's test: the
-// case came with HIL-803 and the mechanism it proves with HIL-794. Parking attempt
-// 1, and it is the owner's call rather than a bounce count's. Waiting for the run's
-// own archive instead does not work — the page remounts milliseconds after the run
-// ends and wipes the announcement with it (P-310), which is why the proof has to
-// move rather than wait. TODO: rebuild it on a table whose foreign create lands
-// above a window without that remount — see
-// hilos-ops/proposals/P-316-announce-strip-lost-its-e2e.md, option 2, an R2-5 leaf
-// beside the P-310 investigation.
-test.fixme('raises the strip in another tab for a backup that lands above its window', async ({
+// HIL-1320: a backup in another tab must leave this page's component alive.
+// A ready-looking replacement would lose selection and drafts just as surely as
+// an error page, so record the node's lifetime and every outlet-state transition.
+test('keeps the page of another tab standing through a backup that ends', async ({
   context,
 }) => {
-  // Two real dumps, one to stand on and one to be announced, do not fit the default
-  // budget — this is the same three-fold headroom the log specs take.
+  // Two real schema-only dumps need the same headroom as the bulk-backup tests.
   test.slow()
 
   const tabA = await context.newPage()
   await openBackups(tabA)
 
-  // A window with no rows has no boundary to judge an arriving row against, and the
-  // server appends into such a window instead of announcing to it
-  // (BrowserContext::viewportPlacement). So the strip needs a table that is not
-  // empty: this first backup is the floor tab B will be standing on. The stand
-  // usually carries archives from the tests above as well, and how many it holds is
-  // not this test's business — nothing below counts rows in absolute numbers.
+  // A nonempty window makes the next archive land above B's window rather than
+  // append into an empty table (BrowserContext::viewportPlacement).
   const floorKey = await createBackup(tabA)
+  const floorId = floorKey.replace('hilos-table-row-', '')
 
   const tabB = await context.newPage()
-  await gotoPage(tabB, '/hilos/backup')
+  await gotoPage(tabB, '/hilos/backup', PAGE_READY)
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-  await expect(tabB.getByTestId('hilos-viewport-table')).toBeVisible()
-  const rowsInB = tabB.locator('[data-id^="hilos-table-row-"]')
-  await expect(tabB.locator(`[data-id="${floorKey}"]`)).toBeVisible()
-  const topOfB = await rowsInB.first().getAttribute('data-id')
+  await expect(tabB.getByTestId(floorKey)).toBeVisible()
+  await watchPageLife(tabB)
 
-  // The second backup is started from the other tab, and everything below happens
-  // WHILE IT RUNS: a run puts its own row at the top of this table the moment it
-  // starts, and that row is the create tab B cannot show. Waiting for the run to end
-  // instead would prove nothing about the strip — the page re-subscribes when a run
-  // ends, and a window arriving is exactly what clears an announcement (P-310).
   await tabA.bringToFront()
   await askCreate(tabA)
   await expect(tabA.getByTestId('hilos-toast-error')).toHaveCount(0)
-
-  // Tab B has been told and shown nothing: the strip stands and the top of its window
-  // is the row it was already standing on. The number on the strip is not asserted —
-  // the count of announced rows outlives the rows themselves today (P-309), and a spec
-  // about the strip is not where that number should be pinned.
-  const strip = tabB.getByTestId('hilos-table-announce')
-  await expect(strip).toBeVisible()
-  await expect(strip).toContainText(/new rows?/)
-  await expect(strip).not.toContainText('above')
-  await expect(rowsInB.first()).toHaveAttribute('data-id', topOfB ?? '')
-
-  // Show is the only road in, and it asks for the window again: what the server
-  // answers is the whole truth, so the top of the window is the new row and the strip
-  // has nothing left to say.
-  await tabB.bringToFront()
-  await dismissToasts(tabB)
-  await tabB.getByTestId('hilos-table-announce-show').click()
-  await expect(rowsInB.first()).not.toHaveAttribute('data-id', topOfB ?? '')
-  await expect(strip).toHaveCount(0)
-
-  // Let the run finish before cleaning up after it: an archive can only be deleted
-  // once it is one. Both this test made go, so the suite stays idempotent on a shared
-  // storage directory.
-  await tabA.bringToFront()
+  // First establish that the new archive exists. Otherwise B's restore button
+  // could still be enabled because the start of the run has not reached it yet.
   await expect(
     tabA.getByTestId('hilos-toasts').getByText('is ready.'),
   ).toBeVisible({ timeout: 60_000 })
+
+  // B's own last frame is the runtime being cleared: the floor offers restore
+  // again. The progress strip can disappear earlier, behind an announcement.
+  await expect(
+    shownByTestId(tabB, `hilos-backup-restore-${floorId}`),
+  ).toBeEnabled({ timeout: 60_000 })
+  await expect(
+    tabB.getByTestId(`hilos-backup-blocked-why-${floorId}`),
+  ).toHaveCount(0)
+
+  expect(await pageLifeRecord(tabB)).toEqual({ connected: true, states: [] })
+
   await deleteBackup(tabA, await newestArchiveKey(tabA))
   await deleteBackup(tabA, floorKey)
 })
