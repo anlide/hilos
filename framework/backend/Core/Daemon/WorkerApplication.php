@@ -9,6 +9,9 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Bootstrap\EntrypointPrelude;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Daemon\Exception\InvalidWorkerIdException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\ChangeLog\JournalTriggerFiles;
+use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\Utils\Helpers\ArgumentHelper;
@@ -49,6 +52,9 @@ final class WorkerApplication
 
         try {
             EntrypointPrelude::run($hilosClass, $projectRoot, $persistenceInit);
+            if (in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true)) {
+                JournalTriggerFiles::setPath($projectRoot . '/backend/Database/Migration/Triggers');
+            }
             // Every process of a project with analytics collects, the master included until HIL-1156;
             // the framework starts the collector so the project's bootstrap has nothing to forget.
             if ($hilosClass::hasFeature(HilosFeature::ANALYTICS)) {

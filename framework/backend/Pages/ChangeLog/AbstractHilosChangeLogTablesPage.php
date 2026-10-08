@@ -11,12 +11,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageReach;
 
 /**
- * AbstractHilosChangeLogTablesPage - Abstract base for Hilos change log tracked tables list.
- *
- * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage).
- *
- * TODO: [change-log] Detect schema drift: compare trigger definition (tracked columns) against current config
- *       and flag triggers as outdated when column count or names mismatch.
+ * Change Log tracked-tables page served by the hilos_change_log agent.
+ * Its page response is supplied by HIL-1461; the single-table response follows in HIL-1462.
  */
 abstract class AbstractHilosChangeLogTablesPage extends AbstractHilosPage
 {

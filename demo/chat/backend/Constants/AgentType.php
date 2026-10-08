@@ -44,6 +44,9 @@ final class AgentType
     /** @var string Hilos analytics agent type */
     public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;
 
+    /** Change Log section agent type. */
+    public const string HILOS_CHANGE_LOG = HilosAgentType::HILOS_CHANGE_LOG;
+
     /** @var string Hilos logs overview agent type */
     public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
 

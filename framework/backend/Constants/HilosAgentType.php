@@ -22,6 +22,9 @@ final class HilosAgentType
     /** @var string Hilos analytics agent (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';
 
+    /** Change Log section agent: the only reader of the journal for the section. */
+    public const string HILOS_CHANGE_LOG = 'hilos_change_log';
+
     /** Legal section agent: serves its five pages and holds their tallies. */
     public const string HILOS_LEGAL = 'hilos_legal';
 

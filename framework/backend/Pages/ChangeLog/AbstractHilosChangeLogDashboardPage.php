@@ -11,18 +11,8 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageReach;
 
 /**
- * AbstractHilosChangeLogDashboardPage - Abstract base for Hilos change log dashboard.
- *
- * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage).
- *
- * TODO: [change-log] Provide a reusable component/API to display change history for a specific record+field
- *       inline in entity edit forms (not a dedicated Hilos viewer page).
- *
- * TODO: [change-log] Implement retention cleanup mechanism. Retention must be explicitly configured:
- *       forever | 100 days | 1 year | 10 years. Add a cron job or daemon task to purge expired entries.
- *
- * TODO: [change-log] Implement dry-run sync: generate SQL for triggers that would be created/dropped/recreated,
- *       display to admin for review before executing.
+ * Change Log section dashboard served by the hilos_change_log agent.
+ * Its page response is supplied by HIL-1459; this base declares the route and browser subscription.
  */
 abstract class AbstractHilosChangeLogDashboardPage extends AbstractHilosPage
 {

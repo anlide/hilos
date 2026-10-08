@@ -84,13 +84,14 @@ HIL-1453. The column mode for a custom trigger belongs to phase 2, HIL-1413.
 - Values follow the real column type in the live database — the ORM does not
   know lengths: numbers, short strings and dates fit in the journal row; long
   text and JSON go into a neighboring journal table.
-- A bridge insert or delete records that a link was added or removed.
-  The link appears in the history of both ends
-  (not in the code yet — HIL-1452).
+- A bridge insert or delete is a create or delete in the bridge table's own
+  history. Showing the link in the history of both ends begins with the first
+  journaled bridge table (not in the code yet — HIL-1453).
 - A write without a receipt is allowed and produces a journal row with a NULL
-  receipt number. The feed shows
+  receipt number. The section reader returns one feed row per changed record
+  and includes it in the table history. The feed screen calls it
   “Unknown — a change made past the application”
-  (not in the code yet — HIL-1452).
+  (not in the code yet — HIL-1457).
 
 The journal row commits and rolls back with the write it describes: a trigger
 runs inside its statement's transaction, and both databases are on the same
@@ -159,8 +160,9 @@ the journal database is shared and the number means the same thing there
 An agent that writes later on its own, on a timer, uses its own receipt with the
 `agent` channel (not in the code yet — HIL-1454).
 
-When a person has been erased, the soft reference keeps their number and the
-screen shows “deleted user #N”, as analytics does
+When a person has been erased, the soft reference keeps their number. The
+section reader returns the current name when the row still exists and
+`Deleted user #N` when it does not. The screen presents that label
 (not in the code yet — HIL-1460).
 
 ## Where The Journal Lives
@@ -235,23 +237,38 @@ migration level for the derived journal connection as well: asking the migrator
 for a level on connection 1 would create its framework tables there. HIL-1451
 owns the restore policy for the pair; a dump alone does not settle it.
 
-Only triggers write journal rows; the section reads them through its own agent
-(not in the code yet — HIL-1452). Whether that reader uses Entities or SQL, and
-how many instances of the agent run, belong to HIL-1452.
+Only triggers write journal rows. The `hilos_change_log` agent reads them for
+the section through `ChangeLogSectionReader`. It is one cluster agent in a
+monopolistic worker, and the reader uses raw SQL: Entity models only the primary
+database, while the journal lives in a separate one.
 
 **The April placeholder is not the model.** Its remaining traces are:
 
 - `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`;
 - its temporary compatibility verdicts in
-  `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php` until HIL-1451;
-- the TODOs in `framework/backend/Pages/ChangeLog/`:
-  `AbstractHilosChangeLogDashboardPage.php`, `AbstractHilosChangeLogTablesPage.php`
-  and `AbstractHilosChangeLogTablePage.php`.
+  `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php` until HIL-1451.
 
 That shape describes a person number on every row, retention cleanup,
 `track_values`, foreign keys, and an administrator's dry run. It is superseded,
 not a worked example to copy. The framework stub now holds the six-table form;
-the receipt scope replaces the old page TODO; HIL-1452 owns the page placeholders.
+the receipt scope replaces the old attribution shape.
+
+## Reading The Journal
+
+Read the journal for admin screens only through the cluster's
+`ChangeLogSectionReader`. It runs SQL on the primary connection with qualified
+journal table names and restores the caller's active connection afterward.
+The reader returns typed values, not browser frames. Its feed is nonempty
+receipts plus one row for each journal entry without a receipt; table history
+includes both. Windows use a complete time-and-row anchor and carry at most 50
+rows. Counts stop at the table count ceiling plus one, so a caller can show a
+bounded count without scanning an unbounded result into memory.
+
+The reader fetches current person names for the selected window and keeps the
+number with each label. It exposes live table names and column policies without
+exposing journal dictionary row numbers. A service trigger's valid-from
+migration comes from the header of its project SQL file, never from the SQL
+body sent to a browser.
 
 ## Triggers Are Files
 
@@ -393,7 +410,9 @@ A receipt created through any node is read identically through any other
   only a personal change's fact and nothing of a secret.
 - Giving an administrator a “journal this table” switch moves the declaration
   out of its owner; put it on the Entity.
-- Using the April stub or TODOs as a worked example revives a rejected design;
+- Querying the journal directly from a page, table, or agent duplicates the
+  reader and its bounds; use `ChangeLogSectionReader`.
+- Using the April stub as a worked example revives a rejected design;
   follow this page instead.
 - Naming here what a leaf introduces — Entity constants, journal tables and
   columns, the agent or the command — preempts its interview. This page states

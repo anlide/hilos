@@ -23,6 +23,7 @@ use Demo\Chat\Agents\ChatContextAnalyzerAgent;
 use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
@@ -40,6 +41,7 @@ use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
@@ -518,6 +520,10 @@ final class Hilos extends HilosFacade
         DemoHilosAnalyticsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        DemoHilosChangeLogAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
         ],
         DemoHilosLogsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,

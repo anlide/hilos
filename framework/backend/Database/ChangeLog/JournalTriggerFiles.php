@@ -54,6 +54,34 @@ final class JournalTriggerFiles
     }
 
     /**
+     * Reads the migration number printed by one already validated service trigger file.
+     *
+     * @param string $triggerName Service trigger name without the .sql suffix
+     * @return int Migration that first supplied this body
+     * @throws DatabaseException When the file is missing, unreadable, or has an invalid header
+     */
+    public static function validFrom(string $triggerName): int
+    {
+        $name = $triggerName . self::FILE_SUFFIX;
+        if (preg_match('/\Ahilos_cl_[A-Za-z_][A-Za-z0-9_]*_after_(insert|update|delete)\.sql\z/D', $name) !== 1) {
+            throw new DatabaseException("Invalid journal trigger filename {$name}");
+        }
+        try {
+            $content = FsPath::read(self::path() . '/' . $name);
+        } catch (FsException $e) {
+            throw new DatabaseException("Journal trigger {$name}: " . $e->getMessage(), previous: $e);
+        }
+        if (preg_match('/\A-- valid from migration #(0|[1-9][0-9]*)\n(.*)\n\z/sD', $content, $matches) !== 1) {
+            throw new DatabaseException("Journal trigger {$name}: invalid migration header or file format");
+        }
+        $validFrom = filter_var($matches[1], FILTER_VALIDATE_INT);
+        if ($validFrom === false) {
+            throw new DatabaseException("Journal trigger {$name}: invalid migration number {$matches[1]}");
+        }
+        return $validFrom;
+    }
+
+    /**
      * Reads and validates the entire directory against the generator before any SQL is applied.
      * The migration header may be older than the current plan when the body is unchanged.
      *

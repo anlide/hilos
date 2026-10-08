@@ -12,5 +12,5 @@ use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
  */
 final class ChangeLogDashboardPage extends AbstractHilosChangeLogDashboardPage
 {
-    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_CHANGE_LOG;
 }
