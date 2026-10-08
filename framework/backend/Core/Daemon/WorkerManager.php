@@ -12,6 +12,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentIdleTracker;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -3203,6 +3204,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
             Database::handlerStart();
             try {
                 $agent->onTick();
+                if ($agent instanceof AbstractAgent) {
+                    $agent->reportCronRulesIfDue(microtime(true));
+                }
                 $this->releaseDeferredWork($agentId);
 
                 // Check if agent requested stop

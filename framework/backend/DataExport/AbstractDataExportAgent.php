@@ -134,6 +134,12 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         $this->buildNext();
     }
 
+    /** @return list<CronRule> Current personal-copy expiration schedule */
+    protected function cronRules(): array
+    {
+        return $this->expireRule === null ? [] : [$this->expireRule];
+    }
+
     /**
      * @param string $acceptKey Browser ordering the copy
      * @param string $action Declared action name

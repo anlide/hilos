@@ -2276,6 +2276,12 @@ final class HilosSignalConstants
     /** Whole live process roster from a master to its own Daemon node agent (HIL-1372). */
     public const string DAEMON_MASTER_PROCESS_ROSTER = 'daemon_master_process_roster';
 
+    /** Whole cron rule set from a master to its own Daemon node agent (HIL-1375). */
+    public const string DAEMON_MASTER_CRON = 'daemon_master_cron';
+
+    /** Whole cron rule set from an agent to its node's Daemon agent (HIL-1375). */
+    public const string DAEMON_AGENT_CRON = 'daemon_agent_cron';
+
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';

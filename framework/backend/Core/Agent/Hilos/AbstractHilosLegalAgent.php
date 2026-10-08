@@ -9,6 +9,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
@@ -79,6 +80,12 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
         parent::onTick();
         LegalAdminAudience::onAgentTick($this);
         LegalAcceptancesExports::onTick($this);
+    }
+
+    /** @return list<CronRule> Current legal export expiration schedule */
+    protected function cronRules(): array
+    {
+        return LegalAcceptancesExports::cronRules();
     }
 
     /**

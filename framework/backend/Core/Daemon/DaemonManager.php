@@ -124,6 +124,9 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateRound;
+use Hilos\DaemonSection\DaemonCronPicture;
+use Hilos\DaemonSection\DaemonCronRuleReport;
+use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
@@ -330,6 +333,8 @@ abstract class DaemonManager extends BaseManager implements
     private const float PROCESS_ROSTER_REANNOUNCE_SECONDS = 60.0;
     private const int PROCESS_ROSTER_ROWS_PER_PASS = 100;
 
+    private const float CRON_FRAME_REANNOUNCE_SECONDS = 60.0;
+
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
@@ -494,7 +499,13 @@ abstract class DaemonManager extends BaseManager implements
     private float $processRosterLastSentAt = 0.0;
     private float $processRosterRetryAt = 0.0;
     private ?string $processRosterBuildProblem = null;
-    private ?string $processRosterDeliveryProblem = null;
+    /** @var array<string, string> Last refusal by master frame signal */
+    private array $masterFrameDeliveryProblems = [];
+
+    private bool $cronFrameDirty = true;
+    private bool $cronFrameForce = false;
+    private float $cronFrameLastSentAt = 0.0;
+    private ?bool $cronFrameWasLeader = null;
 
     /**
      * Initializes daemon manager.
@@ -901,6 +912,7 @@ abstract class DaemonManager extends BaseManager implements
             // One bounded step of the process frame, only while its source changed or the
             // minute-long whole-frame repair is due. The fast path reads four scalars.
             $this->tickProcessRoster($loopStartTime);
+            $this->tickCronFrame($loopStartTime);
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
@@ -1108,6 +1120,62 @@ abstract class DaemonManager extends BaseManager implements
             $this->processRosterBuilding = false;
             $this->processRosterForce = false;
             $this->processRosterRetryAt = $now + self::PROCESS_ROSTER_REANNOUNCE_SECONDS;
+        }
+    }
+
+    /**
+     * Reports this master's small, whole cron rule set to its node agent.
+     *
+     * @param float $now Start time of this main-loop pass
+     */
+    private function tickCronFrame(float $now): void
+    {
+        if ($this->shouldExit) {
+            return;
+        }
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze !== null && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->cronFrameForce = true;
+            return;
+        }
+        if (!$this->agentManagerDaemon->isAgentStarted(HilosAgentType::HILOS_DAEMON_NODE)) {
+            return;
+        }
+
+        $leader = $this->amLeader();
+        if (!$this->cronFrameForce && !$this->cronFrameDirty && $leader === $this->cronFrameWasLeader &&
+            $now - $this->cronFrameLastSentAt < self::CRON_FRAME_REANNOUNCE_SECONDS) {
+            return;
+        }
+
+        try {
+            $rules = $this->cronRules;
+            ksort($rules, SORT_STRING);
+            $rows = [];
+            foreach ($rules as $rule) {
+                $rows[] = new DaemonCronRuleReport($rule->name, $rule->expression, $rule->lastFiredAt);
+            }
+            $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+            $this->sendToAgent(
+                HilosAgentType::HILOS_DAEMON_NODE,
+                null,
+                HilosSignalConstants::DAEMON_MASTER_CRON,
+                new DaemonMasterCronSignalData($nodeId, $leader ? null : DaemonCronPicture::IDLE_NOT_LEADER, $rows),
+            );
+            $this->cronFrameLastSentAt = $now;
+            $this->cronFrameWasLeader = $leader;
+            $this->cronFrameDirty = false;
+            $this->cronFrameForce = false;
+        } catch (Throwable $failure) {
+            $this->reportMasterSignalDropped(
+                HilosSignalConstants::DAEMON_MASTER_CRON,
+                'agent ' . HilosAgentType::HILOS_DAEMON_NODE,
+                get_class($failure) . ': ' . $failure->getMessage(),
+            );
+            $this->cronFrameLastSentAt = $now;
+            $this->cronFrameWasLeader = $leader;
+            $this->cronFrameDirty = false;
+            $this->cronFrameForce = false;
         }
     }
 
@@ -1426,6 +1494,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
             $this->processRosterForce = true;
+            $this->cronFrameForce = true;
         }
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
@@ -1805,8 +1874,11 @@ abstract class DaemonManager extends BaseManager implements
                     break;
                 case AgentDeliveryOutcome::Held:
                 case AgentDeliveryOutcome::Delivered:
-                    if ($signalName === HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER) {
-                        $this->processRosterDeliveryProblem = null;
+                    if (in_array($signalName, [
+                        HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
+                        HilosSignalConstants::DAEMON_MASTER_CRON,
+                    ], true)) {
+                        unset($this->masterFrameDeliveryProblems[$signalName]);
                     }
                     break;
             }
@@ -5229,11 +5301,14 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function reportMasterSignalDropped(string $signalName, string $addressee, string $reason): void
     {
-        if ($signalName === HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER) {
-            if ($reason === $this->processRosterDeliveryProblem) {
+        if (in_array($signalName, [
+            HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
+            HilosSignalConstants::DAEMON_MASTER_CRON,
+        ], true)) {
+            if ($reason === ($this->masterFrameDeliveryProblems[$signalName] ?? null)) {
                 return;
             }
-            $this->processRosterDeliveryProblem = $reason;
+            $this->masterFrameDeliveryProblems[$signalName] = $reason;
         }
         $line = "Master signal '{$signalName}' to {$addressee} dropped: {$reason}";
 
@@ -7204,6 +7279,7 @@ abstract class DaemonManager extends BaseManager implements
     protected function addCronRule(string $name, string $expression): void
     {
         $this->cronRules[$name] = new CronRule($name, $expression);
+        $this->cronFrameDirty = true;
     }
 
     /**
@@ -7220,6 +7296,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $this->cronRules[$name]->expression = $expression;
+        $this->cronFrameDirty = true;
         return true;
     }
 
@@ -7236,6 +7313,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         unset($this->cronRules[$name]);
+        $this->cronFrameDirty = true;
         return true;
     }
 
@@ -7656,6 +7734,7 @@ abstract class DaemonManager extends BaseManager implements
         foreach ($this->cronRules as $rule) {
             if ($rule->shouldRun()) {
                 $this->onCron($rule);
+                $this->cronFrameDirty = true;
             }
         }
     }

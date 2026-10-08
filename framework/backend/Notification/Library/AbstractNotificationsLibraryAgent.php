@@ -278,6 +278,12 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
         }
     }
 
+    /** @return list<CronRule> Current delivery-log pruning schedule */
+    protected function cronRules(): array
+    {
+        return $this->deliveryLogPruneRule === null ? [] : [$this->deliveryLogPruneRule];
+    }
+
     /**
      * The library holds nothing across a stop: its state is the four collections above, which
      * outlive the process that owns them, and the ids of the applied handed-over batches, which die

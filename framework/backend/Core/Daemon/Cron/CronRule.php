@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Cron;
 
+use DateTimeZone;
+
 /**
  * Represents a single cron rule with cron expression.
  *
@@ -18,6 +20,15 @@ class CronRule
 
     /** Seconds per minute, used to derive minute-level run timestamps. */
     private const int SECONDS_PER_MINUTE = 60;
+
+    /** Window around the search start for a possible repeated local hour. */
+    private const int SECONDS_PER_DAY = 86400;
+
+    /** Long enough to include a leap day on every weekday. */
+    private const int NEXT_RUN_HORIZON_YEARS = 28;
+
+    /** Use noon to determine a calendar day without crossing a midnight clock change. */
+    private const int MIDDAY_HOUR = 12;
 
     /** Field separator inside a cron expression. */
     private const string FIELD_SEPARATOR = ' ';
@@ -54,6 +65,9 @@ class CronRule
 
     /** @var float Last execution timestamp */
     public float $lastRun;
+
+    /** Unix time of the last matching run, distinct from the seeded minute in $lastRun. */
+    public ?int $lastFiredAt = null;
 
     /**
      * Creates cron rule with name and expression.
@@ -100,6 +114,134 @@ class CronRule
     }
 
     /**
+     * Find the first matching local minute strictly after the given instant.
+     * The day of month and weekday must both match, as in shouldRun().
+     *
+     * @param string $expression Cron expression to search
+     * @param int $after Unix time before the next run
+     * @return int|null Start of the matching minute, or null when none exists within 28 years
+     */
+    public static function nextRunAfter(string $expression, int $after): ?int
+    {
+        if (!self::isValidExpression($expression)) {
+            return null;
+        }
+
+        [$minuteExpr, $hourExpr, $dayExpr, $monthExpr, $weekdayExpr] = self::parseExpression($expression);
+        $start = getdate($after);
+        $lastYear = $start['year'] + self::NEXT_RUN_HORIZON_YEARS;
+        $deadline = mktime(
+            $start['hours'],
+            $start['minutes'],
+            $start['seconds'],
+            $start['mon'],
+            $start['mday'],
+            $lastYear,
+        );
+        $foldsByDay = [];
+        $transitions = (new DateTimeZone(date_default_timezone_get()))->getTransitions(
+            $after - self::SECONDS_PER_DAY,
+            $deadline,
+        );
+        if ($transitions !== false) {
+            $previousOffset = $transitions[0]['offset'];
+            foreach (array_slice($transitions, 1) as $transition) {
+                $foldSeconds = $previousOffset - $transition['offset'];
+                $previousOffset = $transition['offset'];
+                if ($foldSeconds <= 0) {
+                    continue;
+                }
+
+                $fold = [$transition['ts'], $foldSeconds];
+                $foldsByDay[date('Ymd', $transition['ts'] - 1)][] = $fold;
+                $foldsByDay[date('Ymd', $transition['ts'])][] = $fold;
+            }
+        }
+
+        for ($year = $start['year']; $year <= $lastYear; $year++) {
+            for ($month = self::MONTH_MIN; $month <= self::MONTH_MAX; $month++) {
+                if ($year === $start['year'] && $month < $start['mon']) {
+                    continue;
+                }
+                if (!self::matchesPart($monthExpr, $month, self::MONTH_MIN, self::MONTH_MAX)) {
+                    continue;
+                }
+
+                $daysInMonth = (int)date('t', mktime(self::MIDDAY_HOUR, 0, 0, $month, 1, $year));
+                for ($day = self::DAY_MIN; $day <= $daysInMonth; $day++) {
+                    if ($year === $start['year'] && $month === $start['mon'] && $day < $start['mday']) {
+                        continue;
+                    }
+                    if (!self::matchesPart($dayExpr, $day, self::DAY_MIN, self::DAY_MAX)) {
+                        continue;
+                    }
+
+                    $weekday = (int)date('w', mktime(self::MIDDAY_HOUR, 0, 0, $month, $day, $year));
+                    if (!self::matchesPart($weekdayExpr, $weekday, self::WEEKDAY_MIN, self::WEEKDAY_MAX)) {
+                        continue;
+                    }
+
+                    $earliest = null;
+                    $folds = $foldsByDay[sprintf('%04d%02d%02d', $year, $month, $day)] ?? [];
+                    for ($hour = self::HOUR_MIN; $hour <= self::HOUR_MAX; $hour++) {
+                        if (!self::matchesPart($hourExpr, $hour, self::HOUR_MIN, self::HOUR_MAX)) {
+                            continue;
+                        }
+
+                        for ($minute = self::MINUTE_MIN; $minute <= self::MINUTE_MAX; $minute++) {
+                            if (!self::matchesPart($minuteExpr, $minute, self::MINUTE_MIN, self::MINUTE_MAX)) {
+                                continue;
+                            }
+
+                            $candidates = [mktime($hour, $minute, 0, $month, $day, $year)];
+                            foreach ($folds as [$transitionAt, $foldSeconds]) {
+                                if ($candidates[0] >= $transitionAt - $foldSeconds && $candidates[0] < $transitionAt) {
+                                    $candidates[] = $candidates[0] + $foldSeconds;
+                                } elseif ($candidates[0] >= $transitionAt && $candidates[0] < $transitionAt + $foldSeconds) {
+                                    $candidates[] = $candidates[0] - $foldSeconds;
+                                }
+                            }
+
+                            foreach ($candidates as $candidate) {
+                                if ($candidate <= $after || $candidate > $deadline) {
+                                    continue;
+                                }
+
+                                $local = getdate($candidate);
+                                if ($local['hours'] !== $hour || $local['minutes'] !== $minute ||
+                                    $local['mday'] !== $day || $local['mon'] !== $month) {
+                                    continue;
+                                }
+
+                                if (self::matchesTime(
+                                    $minuteExpr,
+                                    $hourExpr,
+                                    $dayExpr,
+                                    $monthExpr,
+                                    $weekdayExpr,
+                                    $local['minutes'],
+                                    $local['hours'],
+                                    $local['mday'],
+                                    $local['mon'],
+                                    $local['wday'],
+                                ) && ($earliest === null || $candidate < $earliest)) {
+                                    $earliest = $candidate;
+                                }
+                            }
+                        }
+                    }
+
+                    if ($earliest !== null) {
+                        return $earliest;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Check if cron job should run now.
      *
      * Checks if current time matches cron expression.
@@ -133,7 +275,7 @@ class CronRule
             return false;
         }
 
-        $matches = $this->matchesTime(
+        $matches = self::matchesTime(
             $parts[0], // minute
             $parts[1], // hour
             $parts[2], // day
@@ -148,6 +290,7 @@ class CronRule
 
         if ($matches) {
             $this->lastRun = $currentMinuteTimestamp;
+            $this->lastFiredAt = (int)$currentTime;
             return true;
         }
 
@@ -250,7 +393,7 @@ class CronRule
      * @param int $max Maximum value for this field
      * @return bool True if matches
      */
-    private function matchesPart(string $part, int $value, int $min, int $max): bool
+    private static function matchesPart(string $part, int $value, int $min, int $max): bool
     {
         // Validate value is within field bounds first (early return)
         if ($value < $min || $value > $max) {
@@ -394,7 +537,7 @@ class CronRule
      * @param int $currentWeekday Current weekday
      * @return bool True if all parts match
      */
-    private function matchesTime(
+    private static function matchesTime(
         string $minuteExpr,
         string $hourExpr,
         string $dayExpr,
@@ -406,10 +549,10 @@ class CronRule
         int $currentMonth,
         int $currentWeekday,
     ): bool {
-        return $this->matchesPart($minuteExpr, $currentMinute, self::MINUTE_MIN, self::MINUTE_MAX)
-            && $this->matchesPart($hourExpr, $currentHour, self::HOUR_MIN, self::HOUR_MAX)
-            && $this->matchesPart($dayExpr, $currentDay, self::DAY_MIN, self::DAY_MAX)
-            && $this->matchesPart($monthExpr, $currentMonth, self::MONTH_MIN, self::MONTH_MAX)
-            && $this->matchesPart($weekdayExpr, $currentWeekday, self::WEEKDAY_MIN, self::WEEKDAY_MAX);
+        return self::matchesPart($minuteExpr, $currentMinute, self::MINUTE_MIN, self::MINUTE_MAX)
+            && self::matchesPart($hourExpr, $currentHour, self::HOUR_MIN, self::HOUR_MAX)
+            && self::matchesPart($dayExpr, $currentDay, self::DAY_MIN, self::DAY_MAX)
+            && self::matchesPart($monthExpr, $currentMonth, self::MONTH_MIN, self::MONTH_MAX)
+            && self::matchesPart($weekdayExpr, $currentWeekday, self::WEEKDAY_MIN, self::WEEKDAY_MAX);
     }
 }

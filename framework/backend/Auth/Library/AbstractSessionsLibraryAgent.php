@@ -870,6 +870,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->sweepAccessLog();
     }
 
+    /** @return list<CronRule> Current session and account maintenance schedules */
+    protected function cronRules(): array
+    {
+        return array_values(array_filter([
+            $this->pendingRegistrationSweepRule,
+            $this->reservationSweepRule,
+            $this->sessionSweepRule,
+            $this->accountDeletionSweepRule,
+            $this->accessLogSweepRule,
+        ]));
+    }
+
     /**
      * Arms the schedule of the abandoned-registration sweep (HIL-612).
      *

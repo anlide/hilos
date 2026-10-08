@@ -376,6 +376,12 @@ final class LogStoreAgent extends AbstractAgent
         $this->pushIndexIfDue($now);
     }
 
+    /** @return list<CronRule> Current log rotation schedule, if configured */
+    protected function cronRules(): array
+    {
+        return $this->cronRule === null ? [] : [$this->cronRule];
+    }
+
     /**
      * Runs the live or the full walk when its interval has come round, and neither otherwise.
      *

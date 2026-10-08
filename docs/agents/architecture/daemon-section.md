@@ -44,18 +44,19 @@ Wider Than Logs*. The one direct read the page asks of a node is an environment
 value that only that node can supply (not in the code yet — HIL-1378).
 The master says what it already knows; it does not search for data for the section.
 
-## What Only The Master Knows
+## What The Node's Processes Know
 
-The last column names the delivery in the master frame; an unfinished delivery
-names the leaf that will add it.
+The last column names how a fact enters the node picture. Most facts are
+master-owned; agent schedules come directly from the agents that run them.
+An unfinished delivery names the leaf that will add it.
 
-| Fact | Where it lives today | Delivery in the master frame |
+| Fact | Where it lives today | Delivery to the node agent |
 |---|---|---|
 | Workers | `WorkerServer::$workers` in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | Sorted live worker roster with nullable PID and RSS |
 | Agent instances and their workers | [AgentManagerDaemon](../../../framework/backend/Core/Agent/Daemon/AgentManagerDaemon.php) | Started agents joined to live workers, with declared scope and placement |
 | Placement and “unplaced” | [PlacementRegistry](../../../framework/backend/Cluster/Placement/PlacementRegistry.php), held by the leader | Sorted `runsNowhere()` ids in the leader's frame; null on other nodes |
 | Worker crashes in the last 24 hours | In-memory loss and replacement tracker in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | `workerRestarts24h` counts successful replacements after unexpected loss, not a daemon or agent restart |
-| Cron rules and last run | [CronRule](../../../framework/backend/Core/Daemon/Cron/CronRule.php) and its `lastRun`; only the leader executes cron | Cron picture (not in the code yet — HIL-1375) |
+| Cron rules and last firing | [CronRule](../../../framework/backend/Core/Daemon/Cron/CronRule.php) and its `lastFiredAt`: daemon rules belong to the master and run only on the leader; agent schedules belong to the agents and run wherever those agents live | Master cron part on change and once a minute; agent schedules from the agents themselves |
 | HTTP server, including agent addresses | One [HttpServer](../../../framework/backend/Socket/Server/HttpServer.php) per daemon; no request counters there yet | HTTP counters (not in the code yet — HIL-1376) |
 | Process measurements | [DaemonStatusSource](../../../framework/backend/Core/Daemon/DaemonStatusSource.php), implemented by `DaemonManager::daemonStatusSnapshot()` | Process samples (not in the code yet — HIL-1373) |
 | Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | Cluster state (not in the code yet — HIL-1374) |
@@ -90,7 +91,10 @@ The roster parts that grow with the number of agent instances — workers,
 instances and placement — leave on change and once a minute to repair a lost
 frame; they are never packed on every measurement interval. They are built in
 bounded passes, and a changed source revision discards the unfinished build.
-Cron rules join later with HIL-1375 (not in the code yet). There may be thousands of instances; apply
+The small set of daemon cron rules leaves as a whole part on change and once a
+minute to repair a lost frame. Agent schedules leave from their own workers,
+not through the master. There may be thousands of agent instances; do not pack
+their schedules on the master loop. Apply
 [../antipatterns/heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md),
 *Work proportional to something that grows*.
 
@@ -105,6 +109,32 @@ The precedent is the collector in the master in [analytics.md](analytics.md),
 *The Freeze*. Report a delivery refusal once when the outcome changes, not on
 each frame, following the third rule in
 [logs.md](logs.md), *Rules This Feature Proved, Wider Than Logs*.
+
+## The Schedule
+
+Two producers fill one cron section of the node picture. The master sends its
+whole set of daemon rules to its own node agent on change and once a minute.
+Each agent holding its own `CronRule` reports its current set after its tick,
+on change and once a minute while non-empty. A project without the Daemon
+feature sends no such agent reports. An empty report withdraws a former set.
+
+The node agent combines these reports into flat rows: `agentId` is null for a
+daemon rule and names its agent otherwise. Each row carries the rule's name,
+expression, last actual firing (`lastRunAt`), and the next matching local minute
+as Unix seconds (`nextRunAt`). The node agent computes that next minute with
+`CronRule::nextRunAfter()`, using the same field rules as the runner: the day of
+month and weekday must both match. Null means no match in the bounded search or
+an invalid expression. Daemon rules have no next run on a node that is not the
+leader; `idleReason: not_leader` says why. Agent rules continue to have next
+runs on that node.
+
+Until the master's cron part arrives, the `cron` section is null rather than
+an empty rule list. Rows are sorted with daemon rules first, then by agent id
+and rule name. A new process roster removes rows of agents no longer on this
+node. The node agent does not expire a report by elapsed time: after its own
+restart, agent rows return on the agents' next changed or minute repair report,
+which can take up to a minute. The master forces its part as soon as the node
+agent starts.
 
 ## The Circulation
 

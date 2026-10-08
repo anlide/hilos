@@ -233,6 +233,8 @@ use Hilos\Files\Image\DTO\ImageRenderedSignalData;
 use Hilos\Files\HilosFiles;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
+use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
@@ -897,6 +899,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => HilosAgentType::HILOS_DAEMON_NODE,
+            HilosSignalConstants::DAEMON_MASTER_CRON => HilosAgentType::HILOS_DAEMON_NODE,
+            HilosSignalConstants::DAEMON_AGENT_CRON => HilosAgentType::HILOS_DAEMON_NODE,
             HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosSignalConstants::DAEMON_PICTURE_WATCH => HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
@@ -1092,6 +1096,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_NODE_INDEX_REPORT => NodeLogIndexSignalData::class,
             HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => DaemonMasterProcessRosterSignalData::class,
+            HilosSignalConstants::DAEMON_MASTER_CRON => DaemonMasterCronSignalData::class,
+            HilosSignalConstants::DAEMON_AGENT_CRON => DaemonAgentCronSignalData::class,
             HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => DaemonNodePictureSignalData::class,
             HilosSignalConstants::DAEMON_PICTURE_WATCH => DaemonPictureWatchSignalData::class,
             HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => AnalyticsJournalPortionSignalData::class,

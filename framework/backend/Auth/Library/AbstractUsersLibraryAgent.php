@@ -663,6 +663,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         }
     }
 
+    /** @return list<CronRule> Current verification and second-factor sweep schedules */
+    protected function cronRules(): array
+    {
+        return array_values(array_filter([$this->secondFactorResetSweepRule, $this->verificationSweepRule]));
+    }
+
     /**
      * Sweeps one batch on schedule, then drains a full batch on subsequent ticks.
      * A changed schedule takes effect at the next minute without restarting the library.

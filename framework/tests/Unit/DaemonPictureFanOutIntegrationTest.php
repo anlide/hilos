@@ -16,10 +16,12 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonAgentPicture;
+use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
@@ -156,6 +158,14 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
             SignalSource::DAEMON,
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
         );
+        $cron = new DaemonMasterCronSignalData('standalone', null, [
+            new DaemonCronRuleReport('daily', '0 3 * * *', 123),
+        ]);
+        $node->onSignalAgent(
+            new AgentSignalData(data: DaemonMasterCronSignalData::fromArray($cron->toArray())),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_CRON,
+        );
         $node->reportIfDue($this->at(6.0));
         $reports = $this->drain();
         self::assertCount(1, $reports);
@@ -177,6 +187,10 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         $mirrorRoster = ClusterDaemonPictureMirror::picture()?->node('standalone')?->slot?->picture->processes;
         self::assertEquals($roster, $mirrorRoster);
         self::assertSame(1, $mirrorRoster?->workerRestarts24h);
+        self::assertSame(
+            'daily',
+            ClusterDaemonPictureMirror::picture()?->node('standalone')?->slot?->picture->cron?->rules[0]->name,
+        );
     }
 
     private function collector(): DaemonCollectorAgent

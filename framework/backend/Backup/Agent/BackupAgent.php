@@ -609,6 +609,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         $this->deferredQueueHandover?->tick(microtime(true));
     }
 
+    /** @return list<CronRule> Current agent-mechanism backup schedules */
+    protected function cronRules(): array
+    {
+        return array_map(static fn (BackupCronJob $job): CronRule => $job->rule, $this->agentSchedule);
+    }
+
     /**
      * Kills any in-flight child and clears the runtime flag on shutdown.
      *

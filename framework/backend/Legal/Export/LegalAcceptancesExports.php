@@ -127,6 +127,12 @@ final class LegalAcceptancesExports
         self::buildPart($agent);
     }
 
+    /** @return list<CronRule> Current export expiration schedule */
+    public static function cronRules(): array
+    {
+        return self::$expireRule === null ? [] : [self::$expireRule];
+    }
+
     /**
      * Places an administrator's order for the records the table shows under the given filters and search.
      *

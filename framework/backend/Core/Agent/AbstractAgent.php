@@ -11,6 +11,7 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
@@ -18,7 +19,9 @@ use Hilos\Core\Action\ActionReply;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
@@ -55,6 +58,8 @@ use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\DataExport\DataExportGroup;
+use Hilos\DaemonSection\DaemonCronRuleReport;
+use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
@@ -271,6 +276,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      */
     public const array THROTTLED_ACTIONS = [];
 
+    private const float CRON_REPORT_REANNOUNCE_SECONDS = 60.0;
+
     /** @var ?string Agent index for multi-instance agents (null for singletons) */
     protected ?string $agentIndex = null;
 
@@ -283,6 +290,11 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Lazily, because the node takes the agent itself and subclasses own their constructors.
      */
     private ?ActionReply $actionReply = null;
+
+    /** @var ?list<DaemonCronRuleReport> Last non-empty cron report, or null before/after withdrawal */
+    private ?array $reportedCronRows = null;
+
+    private float $cronReportedAt = 0.0;
 
     /**
      * @return string Agent type from AGENT_TYPE constant
@@ -1149,6 +1161,52 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function onTick(): void
     {
         // Default: do nothing
+    }
+
+    /**
+     * Reports a changed schedule after this agent's tick, with a whole-frame minute repair.
+     * An empty set withdraws a previously reported schedule once, then stays silent.
+     *
+     * @internal Called by WorkerManager after onTick(), never by application code.
+     * @param float $now Wall clock of the completed tick
+     * @throws InvalidArgumentException When the report cannot be routed
+     * @throws InvalidFormatException When two current rules have the same name
+     */
+    final public function reportCronRulesIfDue(float $now): void
+    {
+        $rows = [];
+        foreach ($this->cronRules() as $rule) {
+            $rows[] = new DaemonCronRuleReport($rule->name, $rule->expression, $rule->lastFiredAt);
+        }
+        if ($rows === [] && $this->reportedCronRows === null) {
+            return;
+        }
+        if (!Hilos::hasFeature(HilosFeature::DAEMON)) {
+            return;
+        }
+
+        usort(
+            $rows,
+            static fn (DaemonCronRuleReport $left, DaemonCronRuleReport $right): int => strcmp($left->name, $right->name),
+        );
+        if ($rows != $this->reportedCronRows ||
+            ($rows !== [] && $now - $this->cronReportedAt >= self::CRON_REPORT_REANNOUNCE_SECONDS)) {
+            $this->sendToAgent(HilosSignalConstants::DAEMON_AGENT_CRON, new DaemonAgentCronSignalData($this->getId(), $rows));
+            $this->reportedCronRows = $rows === [] ? null : $rows;
+            $this->cronReportedAt = $now;
+        }
+    }
+
+    /**
+     * An agent checking its own CronRule in onTick() returns every rule it currently holds here.
+     * A rule left out still runs, but cannot enter the node's Daemon picture. Rebuild or null the
+     * property as usual; this hook reads the current set instead of manually registering changes.
+     *
+     * @return list<CronRule> Currently active rules
+     */
+    protected function cronRules(): array
+    {
+        return [];
     }
 
     /**

@@ -59,3 +59,13 @@ public function onTick(): void {
 **Option 3: Chunked processing** — process one item per tick, keep a queue.
 
 **Option 4: Cron** — schedule infrequent heavy work via daemon cron, send signal to agent.
+
+## A Schedule The Agent Keeps Itself
+
+An agent that checks its own `CronRule` in `onTick()` returns every rule it
+currently holds from `cronRules()`. The framework checks that set after each
+tick and reports changes to the node's Daemon picture. A rule left out still
+runs, but is absent from the picture. Do not register or forget rules by hand:
+rebuild or null the property as before, and let `cronRules()` read the current
+set. See
+[The Schedule](../architecture/daemon-section.md#the-schedule).

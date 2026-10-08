@@ -168,6 +168,12 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         $this->sweepUnboundFiles();
     }
 
+    /** @return list<CronRule> Current unbound-file sweep schedule */
+    protected function cronRules(): array
+    {
+        return $this->filesSweepRule === null ? [] : [$this->filesSweepRule];
+    }
+
     /**
      * The library holds nothing across a stop: its state is the registry table, which outlives
      * the process that owns it.
