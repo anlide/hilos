@@ -30,6 +30,7 @@ use Hilos\Database\View\Collection\Identities as DbCollectionIdentities;
 use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
 use Hilos\Database\View\Collection\LanguageNames as DbCollectionLanguageNames;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
+use Hilos\Database\View\Collection\I18nReflows as DbCollectionI18nReflows;
 use Hilos\Database\View\Collection\NotificationDeliveries as DbCollectionNotificationDeliveries;
 use Hilos\Database\View\Collection\NotificationPreferences as DbCollectionNotificationPreferences;
 use Hilos\Database\View\Collection\Notifications as DbCollectionNotifications;
@@ -65,6 +66,7 @@ use Hilos\Database\Actions\Collection\FileVariantsActions;
 use Hilos\Database\Actions\Collection\LanguagesActions;
 use Hilos\Database\Actions\Collection\LanguageNamesActions;
 use Hilos\Database\Actions\Collection\LocalesActions;
+use Hilos\Database\Actions\Collection\I18nReflowsActions;
 use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
 use Hilos\Database\Actions\Collection\NotificationsActions;
 use Hilos\Database\Actions\Collection\OAuthProvidersActions;
@@ -85,6 +87,7 @@ use Hilos\Database\Actions\Collection\VerifierCircleMembersActions;
 use Hilos\Database\Actions\Item\AccountDeletionActions;
 use Hilos\Database\Actions\Item\CountryActions;
 use Hilos\Database\Actions\Item\CountryNameActions;
+use Hilos\Database\Actions\Item\I18nReflowActions;
 use Hilos\Database\Actions\Item\DataExportActions;
 use Hilos\Database\Actions\Item\LegalAcceptanceExportActions;
 use Hilos\Database\Actions\Item\FileActions;
@@ -152,6 +155,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionCountries $countries
  * @property-read DbCollectionCountryNames $countryNames
  * @property-read DbCollectionLocales $locales
+ * @property-read DbCollectionI18nReflows $i18nReflows Fingerprint of the catalog last taken into the reference tables
  */
 abstract class HilosDbContext extends DbContext
 {
@@ -224,6 +228,8 @@ abstract class HilosDbContext extends DbContext
     public const string countryName = 'countryName';
     public const string locales = 'locales';
     public const string locale = 'locale';
+    public const string i18nReflows = 'i18nReflows';
+    public const string i18nReflow = 'i18nReflow';
 
     /**
      * The layer names a refusal of a framework extension calls the three declared classes by;
@@ -289,8 +295,9 @@ abstract class HilosDbContext extends DbContext
      * The files registry (HIL-336) loads by row id and by the files library's bounded batch of
      * unbound rows, never as a full set, so it stays inert for projects that do not activate the
      * hilos_file table. Its image copies load by original file and stay inert without their table too (HIL-141).
-     * Languages, countries and locales load whole on first read. Mounting their collections
-     * does not read their tables, so a project without those tables stays inert until asked.
+     * Languages, countries and locales load whole on first read, and so does the one-row record
+     * of the catalog reflow (HIL-1472). Mounting their collections does not read their tables,
+     * so a project without those tables stays inert until asked.
      *
      * People load by key when a session, page or library asks for a person. A question about
      * everyone uses DbCollectionUsers::listAll(); mounting users stays inert where nobody signs in.
@@ -508,6 +515,13 @@ abstract class HilosDbContext extends DbContext
             DbCollectionLocales::class,
             LocalesActions::class,
             LocaleActions::class,
+        );
+        $this->mountFramework(
+            self::i18nReflows,
+            Objects::LAZY_STRATEGY_NONE,
+            DbCollectionI18nReflows::class,
+            I18nReflowsActions::class,
+            I18nReflowActions::class,
         );
         $this->mountFramework(
             self::users,

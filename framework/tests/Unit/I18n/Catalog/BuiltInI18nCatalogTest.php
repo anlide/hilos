@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\I18n\Catalog;
 
+use Hilos\Database\Entity\Item\CountryName;
+use Hilos\Database\Entity\Item\Locale;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Catalog\CountryDefinition;
 use Hilos\I18n\Catalog\CountryNameDefinition;
 use Hilos\I18n\Catalog\DefaultLocaleDefinition;
 use Hilos\I18n\Catalog\LanguageDefinition;
 use Hilos\I18n\Catalog\LocaleDefinition;
+use Hilos\I18n\MeasurementSystem;
 use PHPUnit\Framework\TestCase;
 
 /** Pins the content and typed read boundary of the framework's built-in catalog. */
@@ -133,6 +136,46 @@ final class BuiltInI18nCatalogTest extends TestCase
         foreach ($names as $name) {
             self::assertInstanceOf(CountryNameDefinition::class, $name);
             self::assertSame($name->name, BuiltInI18nCatalog::countryName($name->countryCode, $name->languageCode));
+        }
+    }
+
+    /**
+     * The reflow writes catalog values through the same doors a person does, and a value the
+     * door refuses would roll the whole reflow back on every start (HIL-1472). The limits are
+     * the doors' own: CountryActions::update(), LanguageActions::update(), LocaleActions::update()
+     * and CountryNameActions::refreshFromCatalog().
+     */
+    public function testEveryValueTheReflowWritesPassesItsWriteDoor(): void
+    {
+        foreach (BuiltInI18nCatalog::countries() as $country) {
+            self::assertNotSame('', trim($country->currencySymbol), $country->code);
+            self::assertLessThanOrEqual(8, mb_strlen($country->currencySymbol), $country->code);
+            self::assertSame(1, preg_match('/^[A-Z]{3}$/', $country->currencyCode), $country->code);
+        }
+        foreach (BuiltInI18nCatalog::languages() as $language) {
+            self::assertNotSame('', trim($language->nativeName), $language->code);
+            self::assertLessThanOrEqual(64, mb_strlen($language->nativeName), $language->code);
+        }
+        foreach (BuiltInI18nCatalog::locales() as $locale) {
+            foreach ([
+                [$locale->dateFormat, Locale::DATE_FORMAT_MAX_CHARS],
+                [$locale->timeFormat, Locale::TIME_FORMAT_MAX_CHARS],
+                [$locale->numberFormat, Locale::NUMBER_FORMAT_MAX_CHARS],
+                [$locale->phoneFormat, Locale::PHONE_FORMAT_MAX_CHARS],
+                [$locale->addressFormat, Locale::ADDRESS_FORMAT_MAX_CHARS],
+                [$locale->collation, Locale::COLLATION_MAX_CHARS],
+            ] as [$format, $maxChars]) {
+                self::assertNotSame('', trim($format), $locale->code);
+                self::assertLessThanOrEqual($maxChars, mb_strlen($format), $locale->code);
+            }
+            self::assertNotNull(MeasurementSystem::tryFrom($locale->measurementSystem), $locale->code);
+        }
+        foreach (BuiltInI18nCatalog::countryNames() as $name) {
+            self::assertLessThanOrEqual(
+                CountryName::NAME_MAX_CHARS,
+                mb_strlen($name->name),
+                $name->countryCode . '/' . $name->languageCode,
+            );
         }
     }
 }

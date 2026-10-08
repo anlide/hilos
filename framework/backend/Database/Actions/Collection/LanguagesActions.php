@@ -9,6 +9,7 @@ use Hilos\Database\Object\Collection\Languages as ObjectLanguages;
 use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
 use Hilos\Database\View\Item\Language;
 use Hilos\HilosException;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 
 /**
  * @extends DbActions<Language, ObjectLanguages>
@@ -46,5 +47,29 @@ class LanguagesActions extends DbActions
         $this->addObjectToCollection($language);
 
         return $this->createDbItemFromObject($language);
+    }
+
+    /**
+     * Refreshes the switched-off built-in languages from the catalog: the native name and the
+     * writing direction. A missing language is not created - a person adds a language - and a
+     * switched-on one is left as it is (HIL-1472).
+     *
+     * The walk is over the catalog, so a language the catalog does not know is never reached. A
+     * value already equal to the catalog's is not written. Opens no transaction: the reflow
+     * calls it inside its own.
+     *
+     * @throws ValidationException When a catalog value does not fit the write door
+     * @throws HilosException When ownership or persistence refuses a write
+     */
+    public function refreshFromCatalog(): void
+    {
+        foreach (BuiltInI18nCatalog::languages() as $definition) {
+            $language = $this->collection[$definition->code];
+            if ($language === null || $language->enabled
+                || ($language->nativeName === $definition->nativeName && $language->rtl === $definition->rtl)) {
+                continue;
+            }
+            $language->actions->update($definition->nativeName, $definition->rtl);
+        }
     }
 }

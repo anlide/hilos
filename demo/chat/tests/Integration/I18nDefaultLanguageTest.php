@@ -107,6 +107,13 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
         self::assertTrue(Hilos::$db->languages['en']?->enabled);
         self::assertTrue(Hilos::$db->languages['ru']?->enabled);
         $this->underAgent($this->agent, static function (): void {
+            // The start took the catalog's country names in; the language goes without them (HIL-1488 deletes them along).
+            $englishId = Hilos::$db->languages['en']->id;
+            foreach (iterator_to_array(Hilos::$db->countryNames) as $name) {
+                if ($name->languageId === $englishId) {
+                    $name->actions->delete();
+                }
+            }
             Hilos::$db->languages['en']->actions->switchOff();
             Hilos::$db->locales['en']->actions->switchOff();
             Hilos::$db->locales['en']->actions->delete();
@@ -171,14 +178,24 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
         OwnershipDeclaration::claimAll($this->agent);
     }
 
+    /** A start takes the whole catalog in, so its countries, names and record go before the languages. */
     private function clearFixtures(): void
     {
+        Database::sqlRun('DELETE FROM hilos_country_name');
         Database::sqlRun("DELETE FROM hilos_locale WHERE code IN ('en', 'ru')");
+        Database::sqlRun('DELETE FROM hilos_country');
+        Database::sqlRun('DELETE FROM hilos_i18n_reflow');
         Database::sqlRun("DELETE FROM hilos_language WHERE code IN ('en', 'ru')");
-        Hilos::$db->locales->getObjectCollection()?->reHydrate();
-        Hilos::$db->locales->clearCache();
-        Hilos::$db->languages->getObjectCollection()?->reHydrate();
-        Hilos::$db->languages->clearCache();
+        foreach ([
+            Hilos::$db->countryNames,
+            Hilos::$db->locales,
+            Hilos::$db->countries,
+            Hilos::$db->i18nReflows,
+            Hilos::$db->languages,
+        ] as $collection) {
+            $collection->getObjectCollection()?->reHydrate();
+            $collection->clearCache();
+        }
     }
 
     private function rowCount(string $table, string $code): int

@@ -13,6 +13,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Country;
 use Hilos\Database\Entity\Item\CountryName;
+use Hilos\Database\Entity\Item\I18nReflow;
 use Hilos\Database\Entity\Item\Language;
 use Hilos\Database\Entity\Item\LanguageName;
 use Hilos\Database\Entity\Item\Locale;
@@ -27,7 +28,7 @@ use PHPUnit\Framework\TestCase;
 /** Pins the framework i18n feature definition and its activation refusals. */
 final class I18nFeatureActivationTest extends TestCase
 {
-    public function testDefinitionRequiresThreePagesOneAgentAndFiveTables(): void
+    public function testDefinitionRequiresThreePagesOneAgentAndSixTables(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::I18N);
         $requirements = $definition->requirements();
@@ -45,6 +46,7 @@ final class I18nFeatureActivationTest extends TestCase
             Locale::_table,
             LanguageName::_table,
             CountryName::_table,
+            I18nReflow::_table,
         ], $requirements->requiredDbTables);
         self::assertSame([], $requirements->requiredTables);
         self::assertSame([], $requirements->requiredPageTables);

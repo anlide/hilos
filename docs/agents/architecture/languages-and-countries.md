@@ -18,7 +18,7 @@ the same commit, under [A Rule Written Ahead Of Its Code](../rule-authoring.md).
 - **An own row** — its code is absent from the built-in catalog.
 - **Switched on / switched off** — the row's `enabled` value.
 - **A locked name** — a name protected from reflow by `locked`.
-- **The i18n library** — the agent holding all five tables.
+- **The i18n library** — the agent holding all five tables and the reflow record.
 
 The epic calls these the language and country libraries; in Hilos terms they
 are one reference held by one library. [Library](entity-libraries.md) names an
@@ -82,7 +82,8 @@ decides them (owner's decision, 2026-10-04).
 
 ## One Library Holds The Reference
 
-One entity library, the i18n library, holds all five tables.
+One entity library, the i18n library, holds all five tables, and with them the
+one-row record of the last reflow, `hilos_i18n_reflow`.
 It also serves the section's pages.
 Like every library, it has `SCOPE = CLUSTER` and `PLACEMENT = POLICY`.
 See [entity libraries](entity-libraries.md) and [truth sources](truth-source.md).
@@ -120,7 +121,8 @@ construction.
 - Adding a known language prefills `native_name` and `rtl` from the catalog;
   the person may edit them before adding it (not in the code yet — HIL-1484).
 - Adding it also brings the catalog's base country names in that language,
-  unlocked (not in the code yet — HIL-1484).
+  unlocked, through `CountryNamesActions::takeAllFromCatalog()` — the piece the
+  default language created at startup already uses (not in the code yet — HIL-1484).
 - An unknown language code is allowed after confirmation that its own name
   and direction will not be refreshed, no country names will arrive for it,
   and framework updates will add nothing for it; the confirmation catches a
@@ -159,7 +161,8 @@ always remains available.
   (not in the code yet — HIL-1496).
 - The same server refusal and disabled form apply to a switched-on locale
   (not in the code yet — HIL-1491).
-- The reflow skips a switched-on row (not in the code yet — HIL-1472).
+- The reflow skips a switched-on row: it checks the switch before it calls the
+  item action, so the refusal never rolls a reflow back.
 
 The accepted price: the default language can never be switched off, so its own
 name is set once. There is also a narrow gap: a known row switched off, edited
@@ -194,7 +197,7 @@ state, while the reflow supplies 2,550 country names.
   “pin” button (not in the code yet — HIL-1489).
 - Editing a country name sets its lock automatically, with no “pin” button
   (not in the code yet — HIL-1500).
-- The reflow writes only unlocked names (not in the code yet — HIL-1472).
+- The reflow writes only unlocked names.
 
 An empty string saved by a person is their value and is locked too. To give
 a name back to the catalog, delete it:
@@ -204,7 +207,9 @@ a name back to the catalog, delete it:
 - Deleting a base country name carries away its locale overrides
   (not in the code yet — HIL-1501).
 - A base name of a known country in a known language immediately returns
-  from the catalog as an unlocked row (not in the code yet — HIL-1501).
+  from the catalog as an unlocked row, through
+  `CountryNamesActions::takeFromCatalog()` — the reflow's own piece for one name
+  (not in the code yet — HIL-1501).
 - A country name for an own country or in an own language disappears entirely
   (not in the code yet — HIL-1501).
 - A deleted language name does not return: the catalog has no language names
@@ -249,28 +254,48 @@ consumer checks that the suggested locale row exists before offering it.
 ## The Reflow
 
 At startup the library compares the catalog fingerprint with the one recorded
-in the database: a match causes no writes; a mismatch runs the reflow and
-records the new fingerprint (not in the code yet — HIL-1472).
-HIL-1472 chooses where that fingerprint is stored.
+in the database: a match causes no writes at all, the record included; a
+mismatch runs the reflow and records the new fingerprint.
+
+The recorded fingerprint is the one row of `hilos_i18n_reflow` (`id` always 1,
+held there by a `CHECK`), written by `I18nReflowsActions::record()` as the last
+step of the reflow, inside its transaction. It lives in the database because a
+restore rewrites the database and not a file: a restored archive with an older
+catalog must be reflowed on the next start, and a file would also differ between
+the nodes of a cluster. It is not a row of `hilos_setting` either: the settings
+library holds that table whole, and a key its catalog does not know is shown as
+an orphan with a delete button, which would quietly trigger a reflow. The
+comparison is equality, not "newer": a fresh installation, a new framework, an
+older one rolled back to and a restored archive all reflow the same way.
 
 There is no timer: the catalog changes with the framework version, so the
 trigger is the version. There must be no window in which an edit silently
 disappears “sometime in the next day.” The reflow:
 
-- creates missing known countries, switched off
-  (not in the code yet — HIL-1472);
+- creates missing known countries, switched off, with no default locale;
 - writes catalog base country names for each language already created, only
-  into unlocked rows (not in the code yet — HIL-1472);
+  into unlocked rows;
 - refreshes switched-off known rows: a language's `native_name` and `rtl`, a
-  country's currency, a locale's formats (not in the code yet — HIL-1472);
-- leaves switched-on rows, locked names and own rows untouched
-  (not in the code yet — HIL-1472);
+  country's currency, a locale's formats — a country keeps its default locale;
+- leaves switched-on rows, locked names, locale overrides and own rows
+  untouched;
 - creates neither languages nor locales: a person adds those, with catalog
-  values prefilled (not in the code yet — HIL-1472).
+  values prefilled.
 
 The last rule is the owner's decision of 2026-10-04; hleb's reflow created
 everything. A fresh installation opens with 51 switched-off countries and
-their names in the default language (not in the code yet — HIL-1472).
+their names in the default language.
+
+The reflow is one transaction, in the order countries, languages, locales,
+names, record. A value already equal to the catalog's is not written. Any
+failure rolls the whole reflow back together with the record: the start hook
+fails loudly, the library serves the section on the data it had, and the next
+start runs the reflow again. The default language is provisioned before it, in
+a transaction of its own, so a failed reflow does not take that back. A default
+language created on this start gets the catalog's country names in it inside
+that first transaction — on a fresh installation there are no countries yet and
+the reflow brings both, while after an env change to a new language its 51 names
+arrive at once.
 The reflow runs once regardless of how many nodes start
 (not in the code yet — HIL-1505).
 Reflow as an Operations action, with history and a manual trigger, belongs
@@ -294,7 +319,7 @@ value in the error; the library also resolves it from env when starting.
   is already switched off.
 - Its own name and direction are taken from the catalog only at creation;
   an existing row is switched on without replacing them. Reflow skips the
-  switched-on row (not in the code yet — HIL-1472).
+  switched-on row.
 - An unknown code prevents the node from starting and names that code; an
   own default language is not allowed, catching `ez` instead of `es`.
 - Changing env leaves the former default as an ordinary switched-on language,
@@ -367,7 +392,7 @@ The project:
 - lists it in `Hilos::FEATURES`;
 - registers the library's agent pair in `Hilos::AGENTS`;
 - registers the three thin section pages in the server topology;
-- migrates the five framework stubs;
+- migrates the six framework stubs: the five reference tables and `hilos_i18n_reflow`;
 - supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code;
 
 The six demos have the feature, agent, server pages and migrations (HIL-1470).
@@ -379,7 +404,7 @@ verdict. Its future action controls belong to HIL-1485/1486/1487/1488.
 React and Angular stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the
-five migration files are present after registration.
+six migration files are present after registration.
 Follow [Feature Declaration](../app-topology.md) and the
 [activation recipe](admin-feature-scaffold.md).
 The six demos are `chat`, `tasks`, `polls`, `ecommerce-shop`,

@@ -14,6 +14,7 @@ use Hilos\Database\View\Item\Locale;
 use Hilos\Database\View\Item\CountryName;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 
 /**
  * @extends DbActions<CountryName, ObjectCountryNames>
@@ -47,6 +48,58 @@ class CountryNamesActions extends DbActions
     public function createCatalogBase(Country $country, Language $language, string $name): CountryName
     {
         return $this->createName($country, $language, null, $name, false);
+    }
+
+    /**
+     * Takes one base name in from the catalog: creates it unlocked when missing, refreshes it
+     * when it is unlocked and its text differs, and leaves a locked one as it is (HIL-1472).
+     *
+     * A country or a language the catalog does not know has no catalog name, and nothing is
+     * written. Locale overrides are never touched. Opens no transaction: the reflow, the default
+     * language provision and the section's own doors call it inside theirs.
+     *
+     * @param Country $country Named country
+     * @param Language $language Writing language
+     * @throws ValidationException When references or the catalog name are invalid
+     * @throws HilosException When ownership or persistence refuses the write
+     */
+    public function takeFromCatalog(Country $country, Language $language): void
+    {
+        $name = BuiltInI18nCatalog::countryName($country->code, $language->code);
+        if ($name === null) {
+            return;
+        }
+        $countryId = $country->id;
+        $languageId = $language->id;
+        if ($countryId === null || $languageId === null) {
+            throw new ValidationException('Name references must exist');
+        }
+        $base = $this->collection->findBase($countryId, $languageId);
+        if ($base === null) {
+            $this->createCatalogBase($country, $language, $name);
+            return;
+        }
+        if ($base->name !== $name) {
+            $base->actions->refreshFromCatalog($name);
+        }
+    }
+
+    /**
+     * Takes in the catalog's base names of every built-in country stored here, written in one
+     * language: takeFromCatalog() for each. A language the catalog does not know gets no row.
+     *
+     * @param Language $language Writing language
+     * @throws ValidationException When references or a catalog name are invalid
+     * @throws HilosException When ownership or persistence refuses a write
+     */
+    public function takeAllFromCatalog(Language $language): void
+    {
+        foreach (BuiltInI18nCatalog::countries() as $definition) {
+            $country = Hilos::$db->countries[$definition->code];
+            if ($country !== null) {
+                $this->takeFromCatalog($country, $language);
+            }
+        }
     }
 
     /**

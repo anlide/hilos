@@ -12,6 +12,8 @@ use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\Locale;
 use Hilos\HilosException;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\Catalog\LocaleDefinition;
 use Hilos\I18n\MeasurementSystem;
 
 /**
@@ -74,5 +76,51 @@ class LocalesActions extends DbActions
         $this->addObjectToCollection($locale);
 
         return $this->createDbItemFromObject($locale);
+    }
+
+    /**
+     * Refreshes the switched-off built-in locales from the catalog: all seven formats, written
+     * together when any of them differs. A missing locale is not created - a person adds a
+     * locale - and a switched-on one is left as it is (HIL-1472).
+     *
+     * The walk is over the catalog by locale code, so a locale the catalog does not know is
+     * never reached. Opens no transaction: the reflow calls it inside its own.
+     *
+     * @throws ValidationException When a catalog value does not fit the write door
+     * @throws HilosException When ownership or persistence refuses a write
+     */
+    public function refreshFromCatalog(): void
+    {
+        foreach (BuiltInI18nCatalog::locales() as $definition) {
+            $locale = $this->collection[$definition->code];
+            if ($locale === null || $locale->enabled || self::matchesCatalog($locale, $definition)) {
+                continue;
+            }
+            $locale->actions->update(
+                $definition->dateFormat,
+                $definition->timeFormat,
+                $definition->numberFormat,
+                $definition->phoneFormat,
+                $definition->addressFormat,
+                MeasurementSystem::from($definition->measurementSystem),
+                $definition->collation,
+            );
+        }
+    }
+
+    /**
+     * @param Locale $locale Stored locale
+     * @param LocaleDefinition $definition Its catalog entry
+     * @return bool Whether all seven formats already equal the catalog's
+     */
+    private static function matchesCatalog(Locale $locale, LocaleDefinition $definition): bool
+    {
+        return $locale->dateFormat === $definition->dateFormat
+            && $locale->timeFormat === $definition->timeFormat
+            && $locale->numberFormat === $definition->numberFormat
+            && $locale->phoneFormat === $definition->phoneFormat
+            && $locale->addressFormat === $definition->addressFormat
+            && $locale->measurementSystem->value === $definition->measurementSystem
+            && $locale->collation === $definition->collation;
     }
 }

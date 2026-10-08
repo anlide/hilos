@@ -9,6 +9,7 @@ use Hilos\Database\Object\Collection\Countries as ObjectCountries;
 use Hilos\Database\View\Collection\Countries as DbCollectionCountries;
 use Hilos\Database\View\Item\Country;
 use Hilos\HilosException;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 
 /**
  * @extends DbActions<Country, ObjectCountries>
@@ -50,5 +51,34 @@ class CountriesActions extends DbActions
         $this->addObjectToCollection($country);
 
         return $this->createDbItemFromObject($country);
+    }
+
+    /**
+     * Takes the built-in countries in: a missing one is created switched off with no default
+     * locale, a switched-off one gets the catalog's currency back with its default locale kept,
+     * and a switched-on one is left as it is (HIL-1472).
+     *
+     * The walk is over the catalog, so a country the catalog does not know is never reached. A
+     * value already equal to the catalog's is not written. Opens no transaction: the reflow
+     * calls it inside its own.
+     *
+     * @throws ValidationException When a catalog value does not fit the write door
+     * @throws HilosException When ownership, the database or collection refuses a write
+     */
+    public function takeFromCatalog(): void
+    {
+        foreach (BuiltInI18nCatalog::countries() as $definition) {
+            $country = $this->collection[$definition->code];
+            if ($country === null) {
+                $this->create($definition->code, $definition->currencySymbol, $definition->currencyCode);
+                continue;
+            }
+            if ($country->enabled
+                || ($country->currencySymbol === $definition->currencySymbol
+                    && $country->currencyCode === $definition->currencyCode)) {
+                continue;
+            }
+            $country->actions->update($definition->currencySymbol, $definition->currencyCode, $country->defaultLocaleId);
+        }
     }
 }
