@@ -103,6 +103,7 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
@@ -586,6 +587,11 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(HilosLogKeysTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogKeys]);
         $this->assertSame(HilosLogRotationsTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogRotations]);
         $this->assertSame(HilosLogWorkersTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogWorkers]);
+        $this->assertSame(HilosDaemonCronTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonCron]);
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosDaemonCron => []],
+            Hilos::PAGE_TABLES[DaemonCronPage::PAGE],
+        );
     }
 
     public function testNotificationsAndDeliveryAreActivated(): void

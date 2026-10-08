@@ -26,6 +26,7 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use PHPUnit\Framework\TestCase;
 
 /** Pins the real Daemon feature definition and its startup refusal contract. */
@@ -51,6 +52,10 @@ final class DaemonFeatureActivationTest extends TestCase
             HilosAgentType::HILOS_DAEMON_NODE,
             HilosAgentType::HILOS_DAEMON_COLLECTOR,
         ], $definition->requirements()->requiredAgents);
+        self::assertSame([HilosDaemonCronTable::class], $definition->requirements()->requiredTables);
+        self::assertSame([
+            AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
+        ], $definition->requirements()->requiredPageTables);
         self::assertSame([], $definition->requirements()->requires);
     }
 
@@ -68,6 +73,24 @@ final class DaemonFeatureActivationTest extends TestCase
             . AbstractHilosDaemonWebsocketsPage::class);
 
         DaemonFeatureMissingPageHilos::validateFeatureActivation();
+    }
+
+    public function testMissingCronTableRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::DAEMON is declared but no table in TABLES extends '
+            . HilosDaemonCronTable::class);
+
+        DaemonFeatureMissingCronTableHilos::validateFeatureActivation();
+    }
+
+    public function testMissingCronPageBindingRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::DAEMON is declared but PAGE_TABLES binds no page extending '
+            . AbstractHilosDaemonCronPage::class . ' to ' . HilosDaemonCronTable::class);
+
+        DaemonFeatureMissingCronBindingHilos::validateFeatureActivation();
     }
 
     public function testMissingNewEnvironmentPageRefusesStartup(): void
@@ -136,6 +159,14 @@ class DaemonFeatureCompleteHilos extends HilosFacade
             AgentRegistryKey::WORKER => DaemonCollectorAgent::class,
             AgentRegistryKey::DAEMON => DaemonCollectorAgentDaemon::class,
         ],
+    ];
+
+    public const array TABLES = [
+        HilosDaemonCronTable::TABLE => HilosDaemonCronTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        DaemonFeatureCronPage::PAGE => [HilosDaemonCronTable::TABLE => []],
     ];
 
     /** @return HilosDbContext Unused database context required by the facade contract */
@@ -211,6 +242,16 @@ final class DaemonFeatureMissingPageHilos extends DaemonFeatureCompleteHilos
         DaemonFeatureEnvPage::PAGE => DaemonFeatureEnvPage::class,
         DaemonFeatureEnvMismatchPage::PAGE => DaemonFeatureEnvMismatchPage::class,
     ];
+}
+
+final class DaemonFeatureMissingCronTableHilos extends DaemonFeatureCompleteHilos
+{
+    public const array TABLES = [];
+}
+
+final class DaemonFeatureMissingCronBindingHilos extends DaemonFeatureCompleteHilos
+{
+    public const array PAGE_TABLES = [];
 }
 
 final class DaemonFeatureMissingEnvPageHilos extends DaemonFeatureCompleteHilos

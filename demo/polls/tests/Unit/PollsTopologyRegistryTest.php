@@ -97,6 +97,7 @@ use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -587,6 +588,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
             PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+            PollsTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
             PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -613,6 +615,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 LogsKeysPage::PAGE,
                 LogsRotationsPage::PAGE,
                 LogsWorkersPage::PAGE,
+                DaemonCronPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
@@ -772,6 +775,10 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             [PollsTableContext::hilosLogWorkers => []],
             Hilos::PAGE_TABLES[LogsWorkersPage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosDaemonCron => []],
+            Hilos::PAGE_TABLES[DaemonCronPage::PAGE],
         );
 
         // The logging modes screen writes framework keys, and a key the project catalog does

@@ -16,6 +16,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -38,6 +39,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
+ * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosSettingsTable $settings
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
@@ -60,6 +62,7 @@ final class TasksTableContext extends TableContext
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
+    public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;

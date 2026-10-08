@@ -87,6 +87,7 @@ use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -569,6 +570,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
             OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+            OnlineTestingTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         ], Hilos::TABLES);
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
@@ -580,6 +582,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             LogsKeysPage::PAGE,
             LogsRotationsPage::PAGE,
             LogsWorkersPage::PAGE,
+            DaemonCronPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
         ], array_keys(Hilos::PAGE_TABLES));
@@ -692,6 +695,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([OnlineTestingTableContext::hilosLogKeys => []], Hilos::PAGE_TABLES[LogsKeysPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosLogRotations => []], Hilos::PAGE_TABLES[LogsRotationsPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosLogWorkers => []], Hilos::PAGE_TABLES[LogsWorkersPage::PAGE]);
+        $this->assertSame([OnlineTestingTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
     }
 
     public function testNotificationCenterIsActivatedWithoutDelivery(): void

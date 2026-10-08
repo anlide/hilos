@@ -133,6 +133,7 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -405,6 +406,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosLogKeys => HilosLogKeysTable::class,
         PollsTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        PollsTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -458,6 +460,9 @@ final class Hilos extends HilosFacade
         ],
         LogsWorkersPage::PAGE => [
             PollsTableContext::hilosLogWorkers => [],
+        ],
+        DaemonCronPage::PAGE => [
+            PollsTableContext::hilosDaemonCron => [],
         ],
         SecurityOAuthPage::PAGE => [
             PollsTableContext::hilosSecurityOauthRedirect => [],

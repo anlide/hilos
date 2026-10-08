@@ -16,8 +16,9 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 
-/** The Daemon section's eight pages and three agents form one independent feature. */
+/** The Daemon section's eight pages, three agents and cron table form one feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -45,6 +46,8 @@ final class DaemonFeature extends FeatureDefinition
                 HilosAgentType::HILOS_DAEMON_NODE,
                 HilosAgentType::HILOS_DAEMON_COLLECTOR,
             ],
+            requiredTables: [HilosDaemonCronTable::class],
+            requiredPageTables: [AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class],
         );
     }
 }

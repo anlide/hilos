@@ -13,6 +13,9 @@ use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
+use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
 /** Project-bound page agent holding the worker-local Daemon mirror and its interest lease. */
@@ -46,6 +49,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
     public function onStop(): void
     {
         ClusterDaemonPictureMirror::forgetPicture();
+        AbstractHilosDaemonCronPage::onPictureForgotten();
         $this->rosteredViewers = [];
     }
 
@@ -54,6 +58,9 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
      * @param string $sender Full sender address, unused
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the signal is not this agent's
+     * @throws InvalidArgumentException When a table-window signal cannot be named
+     * @throws TableRowKeyMissingException When a windowed cron row has no key
+     * @throws HilosException When a cron picture or its window cannot be served
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -61,6 +68,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
             case HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION:
                 if ($data->data instanceof DaemonClusterPicturePortionSignalData) {
                     ClusterDaemonPictureMirror::applyPortion($data->data);
+                    AbstractHilosDaemonCronPage::onPictureChanged();
                 }
 
                 return;

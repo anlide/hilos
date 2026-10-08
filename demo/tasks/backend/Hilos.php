@@ -138,6 +138,7 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -418,6 +419,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosLogKeys => HilosLogKeysTable::class,
         TasksTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        TasksTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -474,6 +476,9 @@ final class Hilos extends HilosFacade
         ],
         LogsWorkersPage::PAGE => [
             TasksTableContext::hilosLogWorkers => [],
+        ],
+        DaemonCronPage::PAGE => [
+            TasksTableContext::hilosDaemonCron => [],
         ],
         SecurityOAuthPage::PAGE => [
             TasksTableContext::hilosSecurityOauthRedirect => [],

@@ -103,6 +103,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -330,6 +331,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosLogKeys => HilosLogKeysTable::class,
         OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
         OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
+        OnlineTestingTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -361,6 +363,9 @@ final class Hilos extends HilosFacade
         ],
         LogsWorkersPage::PAGE => [
             OnlineTestingTableContext::hilosLogWorkers => [],
+        ],
+        DaemonCronPage::PAGE => [
+            OnlineTestingTableContext::hilosDaemonCron => [],
         ],
         UsersPage::PAGE => [
             OnlineTestingTableContext::hilosUsers => [],

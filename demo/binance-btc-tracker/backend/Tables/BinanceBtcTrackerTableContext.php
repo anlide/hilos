@@ -14,6 +14,7 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
+use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -39,6 +40,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
+ * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosCommunicationsChannelsTable $hilosCommunicationsChannels
  * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
@@ -53,6 +55,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
+    public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosCommunicationsChannels = HilosCommunicationsChannelsTable::TABLE;
     public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
