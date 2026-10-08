@@ -7,6 +7,8 @@ namespace Demo\OnlineTesting\Tables;
 use Demo\OnlineTesting\Hilos;
 use Demo\OnlineTesting\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -24,6 +26,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
+ * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
+ * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  */
 final class OnlineTestingTableContext extends TableContext
 {
@@ -34,6 +38,8 @@ final class OnlineTestingTableContext extends TableContext
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
+    public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
+    public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
 
     /**
      * Registers table definitions from the project topology registry.

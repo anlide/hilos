@@ -69,6 +69,7 @@ use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Definition\WindowScopedViewportTable;
 use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -2145,6 +2146,9 @@ abstract class BrowserContext
      * this build reaches without a throw is caught up instead of marked: the rows under the marks
      * are the frozen ones, and the whole window replaces them ({@see self::catchUpFrozenViewport()}).
      *
+     * A {@see WindowScopedViewportTable} may rebuild several rows of this window from one address;
+     * each row the window holds is told its own list.
+     *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
      * @param SourceChange $address Address of the runtime row whose freshness moved
@@ -2161,15 +2165,16 @@ abstract class BrowserContext
         string $page,
         string $browserKey,
     ): void {
+        $staleRows = [];
         try {
-            $mutation = $table->buildMutationForSourceEvent($address);
-            $owesCatchUp = $mutation !== null && Hilos::$sr?->isTableViewportFrozen($acceptKey, $browserKey) === true;
+            $mutations = $this->viewportMutations($table, $viewport, $address);
+            $owesCatchUp = $mutations !== [] && Hilos::$sr?->isTableViewportFrozen($acceptKey, $browserKey) === true;
             if (!$owesCatchUp) {
-                if ($mutation?->row === null || !$viewport->hasRow((string) $mutation->rowKey)) {
-                    return;
+                foreach ($mutations as $mutation) {
+                    if ($mutation->row !== null && $viewport->hasRow((string) $mutation->rowKey)) {
+                        $staleRows[] = [$mutation->rowKey, $this->staleSourcesOfRow($table->browserRow($mutation->row))];
+                    }
                 }
-
-                $staleSources = $this->staleSourcesOfRow($table->browserRow($mutation->row));
             }
         } catch (Throwable $e) {
             Logger::error(
@@ -2189,11 +2194,13 @@ abstract class BrowserContext
             return;
         }
 
-        $this->queueAddressedTableSignal(
-            SignalTypeConstants::TABLE_VIEWPORT_DELTA,
-            TableViewportDeltaDTO::rowStale($page, $browserKey, $mutation->rowKey, $staleSources),
-            $acceptKey,
-        );
+        foreach ($staleRows as [$rowKey, $staleSources]) {
+            $this->queueAddressedTableSignal(
+                SignalTypeConstants::TABLE_VIEWPORT_DELTA,
+                TableViewportDeltaDTO::rowStale($page, $browserKey, $rowKey, $staleSources),
+                $acceptKey,
+            );
+        }
     }
 
     /**
@@ -3363,6 +3370,10 @@ abstract class BrowserContext
      * the proof its road is back, and it brings the whole window instead
      * ({@see self::catchUpFrozenViewport()}).
      *
+     * A {@see WindowScopedViewportTable} builds the change for this window alone and may answer with
+     * several mutations. Each of them takes the road above in turn ({@see self::emitViewportMutation()});
+     * the freeze, the catch-up and the facet mark belong to the window and happen once.
+     *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
      * @param SourceChange $change Grouped DB/RT source change
@@ -3381,7 +3392,7 @@ abstract class BrowserContext
         string $browserKey,
     ): void {
         try {
-            $mutation = $table->buildMutationForSourceEvent($change);
+            $mutations = $this->viewportMutations($table, $viewport, $change);
         } catch (Throwable $e) {
             // This window freezes on its old rows while every neighboring window stays live,
             // and the connection is told so rather than left with rows that look live. Without
@@ -3399,7 +3410,7 @@ abstract class BrowserContext
             return;
         }
 
-        if ($mutation === null) {
+        if ($mutations === []) {
             return;
         }
 
@@ -3415,6 +3426,64 @@ abstract class BrowserContext
             $this->facetRecounts[$acceptKey][$browserKey] = $page;
         }
 
+        foreach ($mutations as $mutation) {
+            $this->emitViewportMutation($table, $viewport, $change, $mutation, $acceptKey, $page, $browserKey);
+        }
+    }
+
+    /**
+     * Builds the row mutations one source change makes in one connection's window.
+     *
+     * An ordinary viewport table builds one mutation per change and knows nothing of the window,
+     * so its answer is that mutation or nothing. A {@see WindowScopedViewportTable} draws its rows
+     * from the subject the window is opened on, and is asked about this window by the query the
+     * window was served by — the one place the subject lives.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window
+     * @param SourceChange $change Grouped DB/RT source change
+     * @return list<TableRowMutationDTO> Row mutations for this window, empty when the table is unaffected
+     * @throws Throwable Whatever the concrete table's row build raises
+     */
+    private function viewportMutations(ViewportTable $table, TableViewportSubscription $viewport, SourceChange $change): array
+    {
+        if ($table instanceof WindowScopedViewportTable) {
+            return $table->buildMutationsForWindow($change, $this->viewportQuery($viewport));
+        }
+
+        $mutation = $table->buildMutationForSourceEvent($change);
+
+        return $mutation === null ? [] : [$mutation];
+    }
+
+    /**
+     * Carries one row mutation of a source change to one connection's window.
+     *
+     * The body of {@see self::emitViewportDelta()} for a single mutation: the author's own create,
+     * the arrival of a row the window does not hold, the count, the announcement, the delta and the
+     * dialog that follows a focused row. A change that makes several mutations in one window — a
+     * {@see WindowScopedViewportTable} can — runs each through here in turn, so every row of it
+     * travels exactly the road a single-row change takes.
+     *
+     * @param ViewportTable $table Viewport table the window is on
+     * @param TableViewportSubscription $viewport Connection's window; its delivered rows and total are updated in place
+     * @param SourceChange $change Grouped DB/RT source change the mutation was built for
+     * @param TableRowMutationDTO $mutation Row mutation the table built for the change
+     * @param string $acceptKey Target accept key
+     * @param string $page Subscribed page key
+     * @param string $browserKey Browser table key
+     * @throws TableRowKeyMissingException When a mutated row is a placeholder and carries no key
+     * @throws InvalidArgumentException When a table signal cannot be named
+     */
+    private function emitViewportMutation(
+        ViewportTable $table,
+        TableViewportSubscription $viewport,
+        SourceChange $change,
+        TableRowMutationDTO $mutation,
+        string $acceptKey,
+        string $page,
+        string $browserKey,
+    ): void {
         $own = $change->origin !== null && $change->origin === $acceptKey;
         $rowKey = (string) $mutation->rowKey;
         $focused = Hilos::$sr->getTableFocus($acceptKey, $browserKey) === $rowKey;

@@ -22,6 +22,7 @@ function makeRow(
     highlighted: false,
     selected: false,
     expanded: false,
+    expandable: !placeholder,
     staleSources,
   }
 }

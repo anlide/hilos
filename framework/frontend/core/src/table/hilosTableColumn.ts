@@ -81,6 +81,14 @@ export interface HilosTableColumn {
    */
   detail?: boolean
   /**
+   * Whether this column's field takes the whole width of the panel rather than its
+   * share of the grid — for a field that is a list of its own, such as the locale
+   * corrections of a name. Read only together with {@link detail}; absent means the
+   * field shares the row with the others. In the card on a narrow screen the field
+   * puts its label above its value instead of beside it.
+   */
+  detailWide?: boolean
+  /**
    * The fields of the row this column's cell reads beyond its own key, named as the
    * row carries them on the wire — the field inside a row slot, not the view-model
    * field the page resolves it into. A cell that opens a dialog reading the row

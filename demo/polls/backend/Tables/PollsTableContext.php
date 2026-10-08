@@ -13,6 +13,8 @@ use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Demo\Polls\Hilos;
 use Demo\Polls\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -53,6 +55,8 @@ use Hilos\Tables\Security\HilosSecurityImpersonationTable;
  * @property-read HilosLegalSettingsTable $hilosLegalSettings
  * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  * @property-read HilosSecurityImpersonationTable $hilosSecurityImpersonation
+ * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
+ * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  */
 final class PollsTableContext extends TableContext
 {
@@ -75,6 +79,8 @@ final class PollsTableContext extends TableContext
     public const string hilosLegalSettings = HilosLegalSettingsTable::TABLE;
     public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
     public const string hilosSecurityImpersonation = HilosSecurityImpersonationTable::TABLE;
+    public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
+    public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
 
     /**
      * Registers polls table definitions from the project topology registry.

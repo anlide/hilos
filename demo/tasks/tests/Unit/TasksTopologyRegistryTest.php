@@ -12,6 +12,8 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -623,6 +625,8 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
             TasksTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
             TasksTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
+            TasksTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
+            TasksTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -652,6 +656,8 @@ final class TasksTopologyRegistryTest extends TestCase
                 LegalSettingsPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
+                LanguageNamesPage::PAGE,
+                CountryNamesPage::PAGE,
             ],
             array_keys(Hilos::PAGE_TABLES),
         );

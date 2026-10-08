@@ -85,6 +85,8 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -581,6 +583,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             OnlineTestingTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
+            OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
+            OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ], Hilos::TABLES);
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
@@ -595,6 +599,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonCronPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
+            LanguageNamesPage::PAGE,
+            CountryNamesPage::PAGE,
         ], array_keys(Hilos::PAGE_TABLES));
         $this->assertSame([OnlineTestingTableContext::settings => []], Hilos::PAGE_TABLES[SettingsPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosUsers => []], Hilos::PAGE_TABLES[UsersPage::PAGE]);

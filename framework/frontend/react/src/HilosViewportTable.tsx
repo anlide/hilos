@@ -482,7 +482,7 @@ export function HilosViewportTable<R>({
             {/* The control comes after everything that merely STATES something
                 about the record, exactly as it does at the end of a row: it is the
                 one thing in the head the reader acts on. */}
-            {detailFields.length > 0
+            {detailFields.length > 0 && view.expandable
               ? expandControl(
                   view,
                   cardDetailId(rowKey),
@@ -522,12 +522,18 @@ export function HilosViewportTable<R>({
             data-id={`hilos-table-row-detail-${rowKey}`}
           >
             <dl className="row mb-0 small g-0">
+              {/* A wide field puts its label above its value: the value is a
+                  list of its own and needs the card's whole width. */}
               {detailFields.map((field) => (
                 <Fragment key={field.key}>
-                  <dt className="col-5 fw-normal text-body-secondary">
+                  <dt
+                    className={`${field.detailWide === true ? 'col-12' : 'col-5'} fw-normal text-body-secondary`}
+                  >
                     {field.label}
                   </dt>
-                  <dd className="col-7 mb-0 text-break">
+                  <dd
+                    className={`${field.detailWide === true ? 'col-12' : 'col-7'} mb-0 text-break`}
+                  >
                     {detailValue(field, record, rowKey)}
                   </dd>
                 </Fragment>
@@ -929,7 +935,7 @@ export function HilosViewportTable<R>({
                           {/* The control comes last and stands at the very edge:
                             the badge STATES something about the row, while this
                             one is the only thing in the cell the reader acts on. */}
-                          {detailFields.length > 0
+                          {detailFields.length > 0 && view.expandable
                             ? expandControl(
                                 view,
                                 detailId(view.rowKey),
@@ -987,8 +993,19 @@ export function HilosViewportTable<R>({
                       >
                         <td colSpan={bodyColspan} className="pt-0">
                           <dl className="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                            {/* A wide field takes the whole row of the grid on
+                              every screen: col-md-12 is declared after
+                              row-cols-md-3 and wins over it, so no style of our
+                              own is needed. */}
                             {detailFields.map((field) => (
-                              <div key={field.key} className="col">
+                              <div
+                                key={field.key}
+                                className={
+                                  field.detailWide === true
+                                    ? 'col col-md-12'
+                                    : 'col'
+                                }
+                              >
                                 <dt className="text-body-secondary fw-normal">
                                   {field.label}
                                 </dt>

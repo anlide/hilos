@@ -2377,3 +2377,101 @@ describe('HilosViewportTable drawing the states of the body', () => {
     ).toBe('No rows match “night”')
   })
 })
+
+describe('HilosViewportTable rows with nothing to expand and wide fields', () => {
+  // A names table in miniature: Bob has no corrections, so his row has nothing to open,
+  // and the corrections are a list that takes the panel's whole width.
+  const WIDE_COLUMNS: HilosTableColumn[] = [
+    { key: 'name', label: 'Name' },
+    { key: 'lastError', label: 'Error', detail: true },
+    {
+      key: 'corrections',
+      label: 'Locale corrections',
+      detail: true,
+      detailWide: true,
+    },
+  ]
+
+  function mountWide() {
+    const controller = new TableViewportController<unknown>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => {},
+      frame: { title: 'Names', columns: WIDE_COLUMNS },
+      expandable: (row) => (row as Row).name !== 'Bob',
+    })
+    controller.ingestWindow(
+      [
+        { rowKey: 'a', slots: { name: 'Alice' } },
+        { rowKey: 'b', slots: { name: 'Bob' } },
+      ],
+      2,
+      true,
+      null,
+      null,
+      10,
+    )
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller, columns: WIDE_COLUMNS },
+      slots: {
+        'cell-name': (props: { row: unknown }) =>
+          h('span', { class: 'named' }, (props.row as Row).name),
+      },
+    })
+
+    return { controller, wrapper }
+  }
+
+  it('draws no control, in the row or in the card, on a row with nothing to open', () => {
+    const { wrapper } = mountWide()
+
+    expect(wrapper.findAll('[data-id="hilos-table-expand-a"]')).toHaveLength(2)
+    expect(wrapper.find('[data-id="hilos-table-expand-b"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('gives a wide field the whole width of the panel and of the card', async () => {
+    const { wrapper } = mountWide()
+
+    await wrapper.find('tr [data-id="hilos-table-expand-a"]').trigger('click')
+
+    const fields = wrapper.findAll(
+      'tr[data-id="hilos-table-row-detail-a"] dl > div',
+    )
+    expect(fields).toHaveLength(2)
+    expect(fields[0]?.classes()).not.toContain('col-md-12')
+    expect(fields[1]?.classes()).toContain('col-md-12')
+
+    const card = wrapper.find(
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"]',
+    )
+    const labels = card.findAll('dt')
+    expect(labels[0]?.classes()).toContain('col-5')
+    expect(labels[1]?.classes()).toContain('col-12')
+    expect(card.findAll('dd')[1]?.classes()).toContain('col-12')
+  })
+
+  it('closes the panel of a row that lost what it had to show', async () => {
+    const { controller, wrapper } = mountWide()
+    controller.expandRow('a', true)
+    await wrapper.vm.$nextTick()
+
+    expect(
+      wrapper.find('tr[data-id="hilos-table-row-detail-a"]').exists(),
+    ).toBe(true)
+
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Bob' } },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-id="hilos-table-row-detail-a"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-expand-a"]').exists()).toBe(
+      false,
+    )
+  })
+})

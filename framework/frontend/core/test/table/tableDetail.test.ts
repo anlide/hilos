@@ -230,3 +230,87 @@ describe('TableViewportController expansion', () => {
     expect(expandedKeys()).toEqual(['b'])
   })
 })
+
+describe('TableViewportController expandable rows', () => {
+  /** A row carrying how many corrections it has to show in its panel. */
+  function counted(rowKey: string, corrections: number): TableRow {
+    return { rowKey, slots: { names: { corrections } } }
+  }
+
+  function makeExpandable() {
+    const controller = new TableViewportController<TableRow>({
+      resolve: (shown) => shown,
+      sendViewport: () => {},
+      expandable: (shown) => {
+        const slot = shown.slots['names'] as { corrections: number }
+
+        return slot.corrections > 0
+      },
+    })
+    const open = (rows: readonly TableRow[]): void =>
+      controller.ingestWindow(rows, rows.length, true, null, null, 10)
+    const shown = (rowKey: string) =>
+      controller.rows.get().find((view) => view.rowKey === rowKey)
+
+    return { controller, open, shown }
+  }
+
+  it('says which rows have a panel to open, and every live row has one without the option', () => {
+    const { open, shown } = makeExpandable()
+    open([counted('a', 2), counted('b', 0)])
+
+    expect(shown('a')?.expandable).toBe(true)
+    expect(shown('b')?.expandable).toBe(false)
+
+    const { controller, open: openPlain } = makeController()
+    openPlain(['a'])
+
+    expect(controller.rows.get()[0]?.expandable).toBe(true)
+  })
+
+  it('refuses to open a row the table says has nothing to open', () => {
+    const { controller, open, shown } = makeExpandable()
+    open([counted('a', 2), counted('b', 0)])
+
+    controller.expandRow('b', true)
+
+    expect(shown('b')?.expanded).toBe(false)
+  })
+
+  it('closes an open row that lost what it had to show, and keeps it closed when that returns', () => {
+    const { controller, open, shown } = makeExpandable()
+    open([counted('a', 2)])
+    controller.expandRow('a', true)
+
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: counted('a', 0),
+    })
+
+    expect(shown('a')?.expanded).toBe(false)
+    expect(shown('a')?.expandable).toBe(false)
+
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: counted('a', 1),
+    })
+
+    expect(shown('a')?.expandable).toBe(true)
+    expect(shown('a')?.expanded).toBe(false)
+  })
+
+  it('closes a row a refreshed window brought back with nothing to show', () => {
+    const { controller, open, shown } = makeExpandable()
+    open([counted('a', 2), counted('b', 1)])
+    controller.expandRow('a', true)
+    controller.expandRow('b', true)
+
+    open([counted('a', 0), counted('b', 1)])
+    open([counted('a', 3), counted('b', 1)])
+
+    expect(shown('a')?.expanded).toBe(false)
+    expect(shown('b')?.expanded).toBe(true)
+  })
+})

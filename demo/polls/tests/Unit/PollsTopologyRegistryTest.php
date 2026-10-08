@@ -12,6 +12,8 @@ use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -608,6 +610,8 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
             PollsTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
             PollsTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
+            PollsTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
+            PollsTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -636,6 +640,8 @@ final class PollsTopologyRegistryTest extends TestCase
                 LegalSettingsPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
+                LanguageNamesPage::PAGE,
+                CountryNamesPage::PAGE,
             ],
             array_keys(Hilos::PAGE_TABLES),
         );

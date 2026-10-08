@@ -80,6 +80,8 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -284,6 +286,8 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         EcommerceShopTableContext::settings => HilosSettingsTable::class,
         EcommerceShopTableContext::hilosUsers => HilosUsersTable::class,
+        EcommerceShopTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
+        EcommerceShopTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -319,6 +323,12 @@ final class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+        ],
+        LanguageNamesPage::PAGE => [
+            EcommerceShopTableContext::hilosI18nLanguageNames => [],
+        ],
+        CountryNamesPage::PAGE => [
+            EcommerceShopTableContext::hilosI18nCountryNames => [],
         ],
     ];
 

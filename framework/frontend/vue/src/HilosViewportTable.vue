@@ -743,7 +743,7 @@ function onSelectPage(event: Event): void {
                 edge: the snowflake and the badge STATE something about the row,
                 while this one is the only thing in the cell the reader acts on. -->
                 <button
-                  v-if="detailFields.length > 0"
+                  v-if="detailFields.length > 0 && view.expandable"
                   type="button"
                   class="btn btn-sm btn-outline-secondary ms-1"
                   :data-id="`hilos-table-expand-${view.rowKey}`"
@@ -839,10 +839,13 @@ function onSelectPage(event: Event): void {
             >
               <td :colspan="bodyColspan" class="pt-0">
                 <dl class="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                  <!-- A wide field takes the whole row of the grid on every
+                  screen: col-md-12 is declared after row-cols-md-3 and wins
+                  over it, so no style of our own is needed. -->
                   <div
                     v-for="field in detailFields"
                     :key="field.key"
-                    class="col"
+                    :class="['col', { 'col-md-12': field.detailWide === true }]"
                   >
                     <dt class="text-body-secondary fw-normal">
                       {{ field.label }}
@@ -986,7 +989,7 @@ function onSelectPage(event: Event): void {
                 something about the record, exactly as it does at the end of a
                 row: it is the one thing in the head the reader acts on. -->
                 <button
-                  v-if="detailFields.length > 0"
+                  v-if="detailFields.length > 0 && view.expandable"
                   type="button"
                   class="btn btn-sm btn-outline-secondary"
                   :data-id="`hilos-table-expand-${view.rowKey}`"
@@ -1050,10 +1053,22 @@ function onSelectPage(event: Event): void {
             >
               <dl class="row mb-0 small g-0">
                 <template v-for="field in detailFields" :key="field.key">
-                  <dt class="col-5 fw-normal text-body-secondary">
+                  <!-- A wide field puts its label above its value: the value
+                  is a list of its own and needs the card's whole width. -->
+                  <dt
+                    :class="[
+                      field.detailWide === true ? 'col-12' : 'col-5',
+                      'fw-normal text-body-secondary',
+                    ]"
+                  >
                     {{ field.label }}
                   </dt>
-                  <dd class="col-7 mb-0 text-break">
+                  <dd
+                    :class="[
+                      field.detailWide === true ? 'col-12' : 'col-7',
+                      'mb-0 text-break',
+                    ]"
+                  >
                     <!-- A field the page declared but drew nothing into shows
                     the dash its cells show, rather than an empty line that
                     would read as "there is no value". -->

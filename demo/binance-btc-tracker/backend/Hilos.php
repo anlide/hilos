@@ -117,6 +117,8 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -398,6 +400,8 @@ final class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
         BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         BinanceBtcTrackerTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
+        BinanceBtcTrackerTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
+        BinanceBtcTrackerTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -457,6 +461,12 @@ final class Hilos extends HilosFacade
         ],
         CommunicationsDeliveriesPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosNotificationDeliveries => [],
+        ],
+        LanguageNamesPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosI18nLanguageNames => [],
+        ],
+        CountryNamesPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosI18nCountryNames => [],
         ],
     ];
 

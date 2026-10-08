@@ -151,6 +151,26 @@ keeps its verdict even where the check did not run. The row is hidden for a
 viewer once it is whole, after the VIA joins have read the real values
 ([admin-view-mode.md](admin-view-mode.md), *Personal Fields On The Wire*).
 
+A table with a window builds one mutation per source change and knows nothing
+of the window it lands in (`ViewportTable::buildMutationForSourceEvent()`): a
+row of the users table is the same row in every tab. A table whose rows depend
+on the subject its window is opened on — the names of one language, carried in
+the window's filter, where the row of German reads differently in the window of
+English and in the window of French — implements
+`WindowScopedViewportTable` instead (HIL-1477). Its
+`buildMutationsForWindow(SourceChange, TableQueryDTO)` is asked once per open
+window, with the query that window was served by, and answers with a list: one
+change may reach several rows of one window, as a country renamed in the
+default language relabels every language with a locale of that country. Every
+mutation of the list takes the road a single one takes — arrival, count,
+announcement, delta, a followed dialog — so the marks of the live table
+(updated in place, will move, will leave, arriving) survive; the freeze, the
+catch-up and the facet mark stay once per window. That is the difference from
+sending the window again, which the live table would show as a reload. Reach
+for it only when the row truly depends on the window: a table whose rows are
+the same for every reader stays on the single-row build, and its
+`buildMutationForSourceEvent()` on a window-scoped table stays `null`.
+
 The separate `table_mutation` transport remains server-authoritative immediate
 table state. Use it for table-store mutations, not for new page-shaped browser
 payloads.

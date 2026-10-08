@@ -12,6 +12,8 @@ use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -685,6 +687,8 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosLegalAcceptances => HilosLegalAcceptancesTable::class,
         ChatTableContext::hilosLegalSettings => HilosLegalSettingsTable::class,
         ChatTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
+        ChatTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
+        ChatTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -890,6 +894,12 @@ final class Hilos extends HilosFacade
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
             HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
             ChatTableContext::hilosMergeCandidates => [],
+        ],
+        LanguageNamesPage::PAGE => [
+            ChatTableContext::hilosI18nLanguageNames => [],
+        ],
+        CountryNamesPage::PAGE => [
+            ChatTableContext::hilosI18nCountryNames => [],
         ],
     ];
 

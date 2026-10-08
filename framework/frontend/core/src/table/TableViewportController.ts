@@ -294,6 +294,13 @@ export interface TableViewportRow<R> {
    */
   readonly expanded: boolean
   /**
+   * True when this row has a panel to open — the views draw the control only on such
+   * a row. A placeholder never has one, and neither does a row the table's
+   * {@link TableViewportControllerOptions.expandable} refused; with no such option every
+   * live row has one, as it always did.
+   */
+  readonly expandable: boolean
+  /**
    * The row slots whose values stopped being kept up to date, empty when the row is
    * current. Always a list rather than an optional field: the views read it on every
    * row they draw, and an optional one would make each of them write `?? []` of its
@@ -405,6 +412,22 @@ export interface TableViewportControllerOptions<R> {
    * track entity updates reactively (the window rows already hold `EntityRef`s).
    */
   resolve: (row: TableRow) => R
+  /**
+   * Whether one resolved row has anything to open in its panel of details. Absent
+   * means every live row has — the panel is the same declared fields for each.
+   *
+   * A table says no for a row whose panel would be empty — a name with no locale
+   * corrections. Such a row gets no control, refuses to open, and a row that STOPS
+   * being expandable while open closes and forgets it was open: when it becomes
+   * expandable again it does not open by itself, because nobody opened THIS state of it.
+   *
+   * Declared as a method rather than a function-typed field on purpose: the options
+   * are held by the controller, and a field taking `R` would make a controller of one
+   * row type unusable where a `TableViewportController<unknown>` is asked for.
+   *
+   * @param row The resolved row.
+   */
+  expandable?(row: R): boolean
   /**
    * Send the current viewport descriptor to the backend — typically
    * `HilosConnection.sendTableViewport` bound to this table's page and key. The
@@ -888,10 +911,12 @@ export class TableViewportController<R> implements TableWindowSink {
         const pending = placeholder
           ? null
           : (pendingKinds.get(raw.rowKey) ?? null)
+        const row = placeholder ? null : options.resolve(raw)
+        const expandable = row !== null && (options.expandable?.(row) ?? true)
 
         return {
           rowKey: raw.rowKey,
-          row: placeholder ? null : options.resolve(raw),
+          row,
           placeholder,
           pending,
           removal:
@@ -902,7 +927,8 @@ export class TableViewportController<R> implements TableWindowSink {
           highlighted: !placeholder && highlighted.has(raw.rowKey),
           selected:
             !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
-          expanded: !placeholder && expandedKeys.has(raw.rowKey),
+          expanded: expandable && expandedKeys.has(raw.rowKey),
+          expandable,
           staleSources: placeholder
             ? NO_STALE_SOURCES
             : (raw.staleSources ?? NO_STALE_SOURCES),
@@ -1043,6 +1069,36 @@ export class TableViewportController<R> implements TableWindowSink {
         if (this.loadedSignal.get()) {
           sendFacets(declared)
         }
+      })
+    }
+    if (options.expandable !== undefined) {
+      // A row that lost what made it expandable closes for good: its key leaves the open
+      // set the moment the window or the delta that took it away lands. Read off the
+      // resolved rows rather than kept beside them, because only the resolved row can be
+      // asked — and a key merely hidden would spring open again by itself the day the row
+      // has something to show once more.
+      const lostExpansion = computedSignal(() => {
+        const expandedKeys = this.expandedKeysSignal.get()
+
+        return this.rows
+          .get()
+          .filter(
+            (view) =>
+              view.row !== null &&
+              !view.expandable &&
+              expandedKeys.has(view.rowKey),
+          )
+          .map((view) => view.rowKey)
+      })
+      subscribeSignal(lostExpansion, (lost) => {
+        if (lost.length === 0) {
+          return
+        }
+        const keys = new Set(this.expandedKeysSignal.get())
+        for (const rowKey of lost) {
+          keys.delete(rowKey)
+        }
+        this.expandedKeysSignal.set(keys)
       })
     }
     let previousColumns = columns.get()
@@ -2573,13 +2629,21 @@ export class TableViewportController<R> implements TableWindowSink {
    * placeholder is the trace of a row that left, and there are no values under it to
    * unfold. Unlike a mark it is guarded by nothing else: which fields a panel holds
    * follows from the declared columns, which live in the view, and a table that
-   * declared none simply never draws a control to press.
+   * declared none simply never draws a control to press. Opening is refused, too, for
+   * a row the table's {@link TableViewportControllerOptions.expandable} says has
+   * nothing to open; closing never is.
    *
    * @param rowKey The row the control belongs to.
    * @param expanded Whether the panel is now open.
    */
   expandRow(rowKey: string, expanded: boolean): void {
-    if (!this.isLiveRow(rowKey)) {
+    if (
+      !this.isLiveRow(rowKey) ||
+      (expanded &&
+        !this.rows
+          .get()
+          .some((view) => view.rowKey === rowKey && view.expandable))
+    ) {
       return
     }
     const keys = new Set(this.expandedKeysSignal.get())

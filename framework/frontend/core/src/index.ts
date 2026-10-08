@@ -45,6 +45,24 @@ export {
   type HilosI18nLanguageContext,
 } from './admin/i18n/hilosI18nLanguage.js'
 export {
+  HILOS_I18N_COUNTRY_NAMES,
+  HILOS_I18N_COUNTRY_NAMES_FILTER,
+  HILOS_I18N_COUNTRY_NAMES_TABLE,
+  HILOS_I18N_LANGUAGE_NAMES,
+  HILOS_I18N_LANGUAGE_NAMES_FILTER,
+  HILOS_I18N_LANGUAGE_NAMES_TABLE,
+  HILOS_I18N_NAMES_COLUMNS,
+  HilosI18nNameCorrectionKey,
+  HilosI18nNameRowKey,
+  createHilosI18nNamesTable,
+  hilosI18nNameRowExpandable,
+  resolveHilosI18nNameRow,
+  type HilosI18nNameCorrection,
+  type HilosI18nNameRow,
+  type HilosI18nNamesTable,
+  type HilosI18nNamesTarget,
+} from './admin/i18n/hilosI18nNames.js'
+export {
   COUNTRY_CARD_DATA,
   countryCardSchema,
   createHilosI18nCountryCard,

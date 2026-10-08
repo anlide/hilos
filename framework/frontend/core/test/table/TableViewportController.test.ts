@@ -801,6 +801,7 @@ describe('TableViewportController', () => {
         highlighted: false,
         selected: false,
         expanded: false,
+        expandable: true,
         staleSources: [],
       },
     ])
@@ -1164,6 +1165,7 @@ describe('TableViewportController', () => {
       highlighted: false,
       selected: false,
       expanded: false,
+      expandable: false,
       staleSources: [],
     })
     expect(rows[1]?.placeholder).toBe(false)
@@ -1752,6 +1754,7 @@ describe('TableViewportController', () => {
       highlighted: false,
       selected: false,
       expanded: false,
+      expandable: false,
       staleSources: [],
     })
   })

@@ -471,6 +471,29 @@ panel is for — and neither does a pending change, which is about the place of 
 row and not about what the reader opened. An APPLIED removal does close it: what
 is left in that slot is a placeholder.
 
+**A row with nothing to open gets no control** (HIL-1477). By default every live
+row has a panel — the same declared fields for each. A table whose panel would be
+empty on some rows says which ones have something, with the controller option
+`expandable: (row) => boolean` over the resolved row; each displayed row carries
+the answer as `expandable`, and the three views draw the control only where it is
+true, in the row and in the card alike. `expandRow()` refuses to open such a row.
+A row that STOPS being expandable while open — a live update took its last
+correction away — closes, and its key leaves the open set at once: when the row
+has something to show again it gets its control back but does not open by itself,
+because nobody opened that state of it. The predicate lives in the controller and
+not in the frame, because the frame knows no row type; the names tables of the
+i18n section use it so that a language without a base name or without a locale
+of a country shows no chevron.
+
+**A field can take the whole width of the panel.** `detailWide: true` beside
+`detail: true` on the column puts the field on a row of the panel's grid of its
+own, on every screen — for a value that is a list of its own, such as the locale
+corrections of a name — instead of its third of the row. In the card on a narrow
+screen it puts its label above its value rather than beside it. The views do it
+with Bootstrap classes alone (`col-md-12` is declared after `row-cols-md-3` and
+wins over it); without `detail` the flag is not read, and a table declaring
+neither flag nor predicate is drawn exactly as before. No `data-id` is new.
+
 ## Custom filters and search-as-filter
 
 - **Project filters are extensible.** The framework does not know in advance what

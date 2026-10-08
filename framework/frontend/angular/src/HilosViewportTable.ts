@@ -445,7 +445,7 @@ export interface BulkUntouchedContext {
                       <!-- The control comes last and stands at the very edge: the
                     badge STATES something about the row, while this one is the
                     only thing in the cell the reader acts on. -->
-                      @if (detailFields().length > 0) {
+                      @if (detailFields().length > 0 && view.expandable) {
                         <button
                           type="button"
                           class="btn btn-sm btn-outline-secondary ms-1"
@@ -535,8 +535,14 @@ export interface BulkUntouchedContext {
                   >
                     <td [attr.colspan]="bodyColspan()" class="pt-0">
                       <dl class="row row-cols-1 row-cols-md-3 g-2 mb-0 small">
+                        <!-- A wide field takes the whole row of the grid on
+                        every screen: col-md-12 is declared after row-cols-md-3
+                        and wins over it, so no style of our own is needed. -->
                         @for (field of detailFields(); track field.key) {
-                          <div class="col">
+                          <div
+                            class="col"
+                            [class.col-md-12]="field.detailWide === true"
+                          >
                             <dt class="text-body-secondary fw-normal">
                               {{ field.label }}
                             </dt>
@@ -704,7 +710,7 @@ export interface BulkUntouchedContext {
                           STATES something about the record, exactly as it does at
                           the end of a row: it is the one thing in the head the
                           reader acts on. -->
-                          @if (detailFields().length > 0) {
+                          @if (detailFields().length > 0 && view.expandable) {
                             <button
                               type="button"
                               class="btn btn-sm btn-outline-secondary"
@@ -784,11 +790,22 @@ export interface BulkUntouchedContext {
                           "
                         >
                           <dl class="row mb-0 small g-0">
+                            <!-- A wide field puts its label above its value:
+                            the value is a list of its own and needs the card's
+                            whole width. -->
                             @for (field of detailFields(); track field.key) {
-                              <dt class="col-5 fw-normal text-body-secondary">
+                              <dt
+                                class="fw-normal text-body-secondary"
+                                [class.col-12]="field.detailWide === true"
+                                [class.col-5]="field.detailWide !== true"
+                              >
                                 {{ field.label }}
                               </dt>
-                              <dd class="col-7 mb-0 text-break">
+                              <dd
+                                class="mb-0 text-break"
+                                [class.col-12]="field.detailWide === true"
+                                [class.col-7]="field.detailWide !== true"
+                              >
                                 <!-- A field the page declared but drew nothing
                                 into shows the dash its cells show, rather than an
                                 empty line that would read as "there is no

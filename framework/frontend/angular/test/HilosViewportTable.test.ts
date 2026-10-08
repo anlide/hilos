@@ -2486,3 +2486,102 @@ describe('HilosViewportTable drawing the states of the body', () => {
     ).toBe('No rows match “night”')
   })
 })
+
+describe('HilosViewportTable rows with nothing to expand and wide fields', () => {
+  // A names table in miniature: Bob has no corrections, so his row has nothing to open,
+  // and the corrections are a list that takes the panel's whole width.
+  const WIDE_FRAME: HilosTableFrame = {
+    title: 'Names',
+    columns: [
+      { key: 'name', label: 'Name' },
+      { key: 'kind', label: 'Kind' },
+      { key: 'lastError', label: 'Error', detail: true },
+      {
+        key: 'corrections',
+        label: 'Locale corrections',
+        detail: true,
+        detailWide: true,
+      },
+      { key: 'actions', label: '' },
+    ],
+  }
+
+  function mountWide(): {
+    controller: TableViewportController<Row>
+    fixture: ComponentFixture<DetailCardsHost>
+  } {
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+      frame: WIDE_FRAME,
+      expandable: (row) => row.name !== 'Bob',
+    })
+    ingestTwo(controller)
+    const fixture = TestBed.createComponent(DetailCardsHost)
+    fixture.componentInstance.controller = controller
+    fixture.detectChanges()
+
+    return { controller, fixture }
+  }
+
+  function all(
+    fixture: ComponentFixture<unknown>,
+    selector: string,
+  ): HTMLElement[] {
+    return [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
+        selector,
+      ),
+    ]
+  }
+
+  it('draws no control, in the row or in the card, on a row with nothing to open', () => {
+    const { fixture } = mountWide()
+
+    expect(all(fixture, '[data-id="hilos-table-expand-a"]')).toHaveLength(2)
+    expect(query(fixture, '[data-id="hilos-table-expand-b"]')).toBeNull()
+  })
+
+  it('gives a wide field the whole width of the panel and of the card', () => {
+    const { fixture } = mountWide()
+
+    press(fixture, 'tr [data-id="hilos-table-expand-a"]')
+
+    const fields = all(
+      fixture,
+      'tr[data-id="hilos-table-row-detail-a"] dl > div',
+    )
+    expect(fields).toHaveLength(2)
+    expect(fields[0]?.classList.contains('col-md-12')).toBe(false)
+    expect(fields[1]?.classList.contains('col-md-12')).toBe(true)
+
+    const card =
+      '[data-id="hilos-table-card-a"] [data-id="hilos-table-row-detail-a"]'
+    const labels = all(fixture, `${card} dt`)
+    expect(labels[0]?.classList.contains('col-5')).toBe(true)
+    expect(labels[1]?.classList.contains('col-12')).toBe(true)
+    expect(all(fixture, `${card} dd`)[1]?.classList.contains('col-12')).toBe(
+      true,
+    )
+  })
+
+  it('closes the panel of a row that lost what it had to show', () => {
+    const { controller, fixture } = mountWide()
+    controller.expandRow('a', true)
+    fixture.detectChanges()
+
+    expect(
+      query(fixture, 'tr[data-id="hilos-table-row-detail-a"]'),
+    ).not.toBeNull()
+
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Bob' } },
+    })
+    fixture.detectChanges()
+
+    expect(query(fixture, '[data-id="hilos-table-row-detail-a"]')).toBeNull()
+    expect(query(fixture, '[data-id="hilos-table-expand-a"]')).toBeNull()
+  })
+})

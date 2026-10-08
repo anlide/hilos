@@ -14,6 +14,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -66,6 +68,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosAppearanceSettingsTable $hilosAppearanceSettings
  * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  * @property-read HilosSecurityImpersonationTable $hilosSecurityImpersonation
+ * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
+ * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  */
 final class ChatTableContext extends TableContext
 {
@@ -95,6 +99,8 @@ final class ChatTableContext extends TableContext
     public const string hilosLegalSettings = HilosLegalSettingsTable::TABLE;
     public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
     public const string hilosSecurityImpersonation = HilosSecurityImpersonationTable::TABLE;
+    public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
+    public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.
