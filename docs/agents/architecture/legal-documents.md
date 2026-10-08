@@ -464,7 +464,9 @@ agent action, so a viewer of the admin view mode is refused by the mode itself
 active administrator, not inside a takeover, with a live confirmation of the
 operation ([step-up.md](step-up.md)). An administrator has one export: a new
 order replaces a ready or failed one together with its file; an order while
-one is preparing answers silently.
+one is preparing answers silently. A window standing on the confirmation step
+closes without ordering once another tab of the same browser confirms the
+operation, or Send again finds it confirmed: that tab orders (HIL-1330).
 
 **The build.** `LegalAcceptancesExports` keeps the queue in
 `hilos_legal_acceptance_export` (one row per administrator, `_pii` PURGE) and

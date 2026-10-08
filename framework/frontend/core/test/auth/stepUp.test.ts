@@ -4,13 +4,72 @@ import {
   createHilosStepUpStep,
   type HilosStepUpActions,
 } from '../../src/auth/stepUp.js'
+import {
+  bindStepUpConfirmed,
+  SIGNAL_STEP_UP_CONFIRMED,
+  stepUpConfirmedSchema,
+} from '../../src/auth/stepUpConfirmed.js'
 import { ActionError } from '../../src/connection/actionLifecycle.js'
+import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 
 function handle(reply: unknown = {}): ReturnType<HilosStepUpActions['start']> {
   return { done: Promise.resolve({ reply }) } as ReturnType<
     HilosStepUpActions['start']
   >
 }
+
+/** A request whose answer the case gives when it chooses to. */
+function pending(): {
+  handle: ReturnType<HilosStepUpActions['start']>
+  answer: (reply: unknown) => void
+} {
+  let answer: (reply: unknown) => void = () => undefined
+  const done = new Promise<{ reply: unknown }>((resolve) => {
+    answer = (reply) => resolve({ reply })
+  })
+
+  return {
+    handle: { done } as ReturnType<HilosStepUpActions['start']>,
+    answer: (reply) => answer(reply),
+  }
+}
+
+/** Bind the session's confirmation frame to a fake connection and return what tells one. */
+function confirmedElsewhere(): (operations: string[]) => void {
+  const listeners: ((signal: { type: string; data: unknown }) => void)[] = []
+  const connection = {
+    on: (_event: string, listener: (signal: never) => void) => {
+      listeners.push(
+        listener as (signal: { type: string; data: unknown }) => void,
+      )
+
+      return () => undefined
+    },
+  } as unknown as HilosConnection
+  bindStepUpConfirmed(connection)
+
+  return (operations) => {
+    for (const listener of listeners) {
+      listener({
+        type: SIGNAL_STEP_UP_CONFIRMED,
+        data: stepUpConfirmedSchema.parse({ operations }),
+      })
+    }
+  }
+}
+
+const ASK_PASSWORD = {
+  required: true,
+  purpose: 'change your email',
+  method: 'password',
+} as const
+
+const ASK_CODE = {
+  required: true,
+  purpose: 'change your email',
+  method: 'email_code',
+  destination: 'person@example.test',
+} as const
 
 describe('createHilosStepUpStep', () => {
   it('restarts a code send without leaving the step and passes an already confirmed operation', async () => {
@@ -228,5 +287,142 @@ describe('createHilosStepUpStep', () => {
     expect(await step.confirm()).toBe(false)
     expect(confirm).not.toHaveBeenCalled()
     expect(step.refusal.get()).toBe('The device key was not confirmed')
+  })
+})
+
+describe('a confirmation step passed in another tab of the session', () => {
+  it('passes the step asking for that operation, once', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const step = createHilosStepUpStep(
+      { start: () => handle(ASK_PASSWORD), confirm: () => handle() },
+      passed,
+    )
+    expect(await step.open('change_email')).toBe('ask')
+    step.password.set('typed')
+
+    tell(['change_email', 'export_data'])
+    tell(['change_email'])
+
+    expect(passed).toHaveBeenCalledOnce()
+    // Silently: what the person typed is left alone.
+    expect(step.password.get()).toBe('typed')
+  })
+
+  it('leaves a step asking for another operation alone', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const step = createHilosStepUpStep(
+      { start: () => handle(ASK_PASSWORD), confirm: () => handle() },
+      passed,
+    )
+    await step.open('delete_account')
+
+    tell(['change_email'])
+
+    expect(passed).not.toHaveBeenCalled()
+  })
+
+  it('does not pass on what was told before the step asked', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const opening = pending()
+    const step = createHilosStepUpStep(
+      { start: () => opening.handle, confirm: () => handle() },
+      passed,
+    )
+
+    tell(['change_email'])
+    const outcome = step.open('change_email')
+    // The opening is in flight: its answer decides, and a frame held from
+    // before is no word on now.
+    tell(['change_email'])
+    opening.answer(ASK_PASSWORD)
+
+    expect(await outcome).toBe('ask')
+    expect(passed).not.toHaveBeenCalled()
+  })
+
+  it('lets the answer of its own Send again decide while it is in flight', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const repeat = pending()
+    const start = vi
+      .fn()
+      .mockReturnValueOnce(handle(ASK_CODE))
+      .mockReturnValueOnce(repeat.handle)
+    const step = createHilosStepUpStep(
+      { start, confirm: () => handle() },
+      passed,
+    )
+    await step.open('change_email')
+
+    const again = step.sendAgain()
+    tell(['change_email'])
+    repeat.answer({ required: false, purpose: 'change your email' })
+    await again
+
+    // Passed once, by the answer, and not a second time by the frame.
+    expect(passed).toHaveBeenCalledOnce()
+    tell(['change_email'])
+    expect(passed).toHaveBeenCalledOnce()
+  })
+
+  it('lets the answer of its own Confirm decide, and stops listening once it passed', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const confirming = pending()
+    const step = createHilosStepUpStep(
+      {
+        start: () => handle(ASK_PASSWORD),
+        confirm: () =>
+          confirming.handle as unknown as ReturnType<
+            HilosStepUpActions['confirm']
+          >,
+      },
+      passed,
+    )
+    await step.open('change_email')
+    step.password.set('secret')
+
+    const confirmed = step.confirm()
+    tell(['change_email'])
+    confirming.answer({})
+
+    expect(await confirmed).toBe(true)
+    tell(['change_email'])
+    expect(passed).not.toHaveBeenCalled()
+  })
+
+  it('stops listening for the earlier operation once opened again', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const step = createHilosStepUpStep(
+      { start: () => handle(ASK_PASSWORD), confirm: () => handle() },
+      passed,
+    )
+    await step.open('change_email')
+    await step.open('delete_account')
+
+    tell(['change_email'])
+    expect(passed).not.toHaveBeenCalled()
+
+    tell(['delete_account'])
+    expect(passed).toHaveBeenCalledOnce()
+  })
+
+  it('passes again on the same list once the step asks again', async () => {
+    const tell = confirmedElsewhere()
+    const passed = vi.fn()
+    const step = createHilosStepUpStep(
+      { start: () => handle(ASK_PASSWORD), confirm: () => handle() },
+      passed,
+    )
+    await step.open('change_email')
+    tell(['change_email'])
+    await step.open('change_email')
+    tell(['change_email'])
+
+    expect(passed).toHaveBeenCalledTimes(2)
   })
 })

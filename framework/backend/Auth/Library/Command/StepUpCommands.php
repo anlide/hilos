@@ -8,19 +8,18 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
+use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\StepUp\StepUpGate;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\Verification\VerificationService;
-use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
-use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Random\RandomException;
 
 /**
@@ -108,13 +107,17 @@ final class StepUpCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Verifies the selected proof and opens one operation in this browser for the TTL.
+     * Verifies the selected proof and opens one operation in this browser for the TTL, and tells every
+     * tab of the browser (HIL-1330).
+     *
+     * An operation this browser has already confirmed returns at once and tells nobody: the tabs
+     * heard of it when it was written, and a tab that connected since was told on its handshake.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpConfirmActionDTO $dto Protected operation and proof returned by its opening
      * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
      * @throws ValidationException When the operation, method, or proof is no longer valid
-     * @throws HilosException When account proofs, verification, WebAuthn, env, or confirmation storage fails
+     * @throws HilosException When account proofs, verification, WebAuthn, env, or confirmation storage fails, or the frame cannot be queued
      */
     public function confirm(string $acceptKey, StepUpConfirmActionDTO $dto): void
     {
@@ -171,13 +174,7 @@ final class StepUpCommands extends AbstractLibraryCommands
                 throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
-        Hilos::$db->stepUps->actions->deleteExpiredForUser($acting->userId);
-        Hilos::$db->stepUps->actions->confirm(
-            ProtectedModeRuntime::hashSessionToken($acting->sessionToken),
-            $acting->userId,
-            $dto->operation,
-            date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int()),
-        );
+        StepUpConfirmations::record($this->library, $acting->sessionToken, $acting->userId, $dto->operation);
     }
 
     /**

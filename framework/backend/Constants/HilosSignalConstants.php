@@ -45,6 +45,8 @@ use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionToastsSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmedSignalData;
+use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\Verification\DTO\CodeDeliverySignalData;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\DTO\BackupReopenSignalData;
@@ -1523,6 +1525,22 @@ final class HilosSignalConstants
      * the frame that carries the shortened list. Carried by {@see ProfileFlowCancelActionDTO}.
      */
     public const string HILOS_PROFILE_FLOW_CANCEL = 'hilos_profile_flow_cancel';
+
+    /**
+     * Whoever recorded an identity confirmation → every tab of one browser session: these are the
+     * operations the session has a live confirmation of now (HIL-1330).
+     *
+     * Sent by the writer of the confirmation, right after the row is written, to every tab of the
+     * session ({@see StepUpConfirmations::record()}), so a tab standing on the confirmation step of
+     * one of these operations passes it without a press; and by the sessions library on a
+     * handshake, to the one tab that connected, so a tab that was away when the confirmation
+     * landed passes it too. It carries the LIST {operations: [...]} rather than the operation just
+     * confirmed: the handshake has no single operation to name, and a reconnect and a write are
+     * then one sentence. An empty list is never sent - the browser keeps no list as state and
+     * reacts only to a frame arriving, so there is nothing for an empty one to take away, and an
+     * expiry is not announced at all. Carried by {@see StepUpConfirmedSignalData}.
+     */
+    public const string HILOS_STEP_UP_CONFIRMED = 'hilos_step_up_confirmed';
 
     // ── Hilos uploads: one connection ⇄ the uploads agent (HIL-135) ──────────
     /**

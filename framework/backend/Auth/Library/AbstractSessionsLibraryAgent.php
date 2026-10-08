@@ -10,6 +10,7 @@ use Hilos\DataExport\DataExportStateProjector;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
+use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\AccessLog\AccessLogEvent;
 use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
@@ -1260,6 +1261,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * legitimate reader of it and starts its own countdown from the full time - it has only
      * now come into view.
      *
+     * Beside it, in a project with a sign-in surface, ride the send line, the profile windows and
+     * the operations the session has a live identity confirmation of - the last to this tab alone
+     * and only when there are any ({@see self::publishStepUpConfirmations()}, HIL-1330).
+     *
      * If expiry, block or a dead cookie moves the session onto a new token (HIL-1126),
      * this same handshake frame carries the ticket and the browser reconnects on its new cookie.
      *
@@ -1315,6 +1320,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($this->hasSignInSurface()) {
             $this->publishCodeSendProgress($sessionTokenHash);
             $this->publishProfileFlows($sessionTokenHash);
+            $this->publishStepUpConfirmations($data->acceptKey, $session, $sessionTokenHash);
         }
     }
 
@@ -4398,6 +4404,36 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Tells the one tab that connected which operations its session has a live identity
+     * confirmation of, when it has any (HIL-1330).
+     *
+     * Only this tab: the others heard of every confirmation the moment it was written
+     * ({@see StepUpConfirmations::record()}), and this one may have been away then - a background
+     * tab of a phone - and still be standing on the step. Never the empty frame: the browser keeps
+     * no list to take anything away from, so an empty one would say nothing. A session with nobody
+     * in it - neither a signed-in person nor a blocked one on the card - is not asked at all.
+     *
+     * @param string $acceptKey Connection that has just connected
+     * @param Session $session Session the connection presented
+     * @param string $sessionTokenHash Hash of that session's cookie token
+     * @throws DatabaseException When the confirmations cannot be read
+     * @throws InvalidArgumentException When the query is invalid, or the frame cannot be named or queued
+     */
+    private function publishStepUpConfirmations(string $acceptKey, Session $session, string $sessionTokenHash): void
+    {
+        if ($session->userId === null && $session->blockedUserId === null) {
+            return;
+        }
+
+        $frame = StepUpConfirmations::frameFor($sessionTokenHash);
+        if ($frame->operations === []) {
+            return;
+        }
+
+        $this->sendToUser(HilosSignalConstants::HILOS_STEP_UP_CONFIRMED, $acceptKey, $frame);
+    }
+
+    /**
      * Takes every profile flow of a session away because the session has changed person, and
      * says so (HIL-1182).
      *
@@ -6375,6 +6411,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The throttle is not told ({@see ThrottleGate::reportAuthenticated()} is reached only by the
      * sign-in itself): the password was right, and the session did not come up either.
      *
+     * A fresh proof by the very method the data copy would ask for counts as its confirmation, and
+     * is recorded and told to every tab of the browser through the one door every confirmation takes
+     * ({@see StepUpConfirmations::record()}, HIL-1330).
+     *
      * @param Session $session Session the proof arrived on
      * @param int $userId Person the proof resolved to
      * @param ?string $initiatorAcceptKey Connection whose submit is answered, or null when nobody is waiting on one
@@ -6382,8 +6422,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $action Action name the answer is for, or null
      * @param ?string $provenBy Fresh sign-in proof eligible to credit export confirmation
      * @return bool True when the sign-in was refused, false when the account is not blocked
-     * @throws HilosException When the flag, the session or the identities cannot be read or written
-     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws HilosException When the flag, the session, the identities or the confirmation cannot be read or written
+     * @throws InvalidArgumentException When a state frame or the confirmation frame cannot be named
      */
     private function refuseBlockedSignIn(
         Session $session,
@@ -6403,13 +6443,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($provenBy !== null && StepUpSettings::isEnabled(StepUpOperationKey::EXPORT_DATA)
             && (new StepUpMethodResolver())->resolve($userId)?->method === $provenBy
         ) {
-            Hilos::$db->stepUps->actions->deleteExpiredForUser($userId);
-            Hilos::$db->stepUps->actions->confirm(
-                StateProtectedModeRuntime::hashSessionToken($session->token),
-                $userId,
-                StepUpOperationKey::EXPORT_DATA,
-                date('Y-m-d H:i:s', time() + Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int()),
-            );
+            StepUpConfirmations::record($this, $session->token, $userId, StepUpOperationKey::EXPORT_DATA);
         }
         if ($session->pendingSecondFactorUserId !== null) {
             $session->actions->releasePendingSecondFactor();

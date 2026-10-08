@@ -12,7 +12,12 @@ import {
   LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
   type HilosLegalAcceptancesExportNode,
 } from '../../../src/admin/legal/hilosLegalAcceptancesExport.js'
+import {
+  bindStepUpConfirmed,
+  SIGNAL_STEP_UP_CONFIRMED,
+} from '../../../src/auth/stepUpConfirmed.js'
 import { ActionError } from '../../../src/connection/actionLifecycle.js'
+import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { formatBytes } from '../../../src/format/bytes.js'
 import { type HilosLegalContext } from '../../../src/legal/legalAgreements.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
@@ -107,17 +112,28 @@ function world(
     search: createSignal('anna'),
   }
 
+  bindStepUpConfirmed(context.connection as unknown as HilosConnection)
+
   return {
     page,
     context,
     table,
     sent,
+    answers,
     names: () => sent.map((entry) => entry.name),
     emit(legalAcceptancesExport: unknown) {
       for (const listener of listeners)
         listener({
           type: LEGAL_ACCEPTANCES_EXPORT_SIGNAL,
           data: { legalAcceptancesExport },
+        } as unknown as ProjectSignal)
+    },
+    /** Another tab of the session confirmed these operations (HIL-1330). */
+    confirmedElsewhere(operations: string[]) {
+      for (const listener of listeners)
+        listener({
+          type: SIGNAL_STEP_UP_CONFIRMED,
+          data: { operations },
         } as unknown as ProjectSignal)
     },
   }
@@ -307,6 +323,43 @@ describe('createHilosLegalAcceptancesExport', () => {
     await exporter.export()
     await exporter.confirm()
     expect(w.names()).toEqual(['hilos_step_up_start'])
+    exporter.dispose()
+  })
+
+  it('closes the window without ordering when another tab of the session confirms the export', async () => {
+    const w = world('ask')
+    const exporter = createHilosLegalAcceptancesExport(w.context, w.table)
+    exporter.start()
+    await exporter.export()
+
+    w.confirmedElsewhere(['export_legal_acceptances'])
+
+    // The tab that confirmed orders the export; this window just goes away.
+    expect(exporter.open.get()).toBe(false)
+    expect(w.names()).toEqual(['hilos_step_up_start'])
+    exporter.dispose()
+  })
+
+  it('closes the window without ordering when Send again finds the export already confirmed', async () => {
+    const w = world('ask')
+    w.answers.hilos_step_up_start = {
+      required: true,
+      purpose: 'export acceptance records',
+      method: 'email_code',
+      destination: 'admin@example.test',
+    }
+    const exporter = createHilosLegalAcceptancesExport(w.context, w.table)
+    exporter.start()
+    await exporter.export()
+    w.answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'export acceptance records',
+    }
+
+    await exporter.stepUp.sendAgain()
+
+    expect(exporter.open.get()).toBe(false)
+    expect(w.names()).toEqual(['hilos_step_up_start', 'hilos_step_up_start'])
     exporter.dispose()
   })
 

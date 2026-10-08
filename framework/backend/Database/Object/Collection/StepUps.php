@@ -83,6 +83,30 @@ class StepUps extends Objects
     }
 
     /**
+     * Keys of the operations one browser has a live confirmation of, whoever gave it (HIL-1330).
+     *
+     * Read for the frame that tells the tabs of a session what is confirmed now, so only the keys
+     * are taken: no row is hydrated into the collection, because nothing here writes one.
+     *
+     * @param string $tokenHash Hash of the browser session token
+     * @return list<string> Operation keys without repeats, in ascending order
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function liveOperations(string $tokenHash): array
+    {
+        $where = '`' . EntityStepUp::session_token_hash . '` = ? AND `' . EntityStepUp::confirmed_until . '` > ?';
+        $operations = [];
+        foreach (static::entityClass()::get($where, [$tokenHash, TimeHelper::getSqlDateTime()]) as $entity) {
+            $operations[] = $entity->operation;
+        }
+        $operations = array_values(array_unique($operations));
+        sort($operations, SORT_STRING);
+
+        return $operations;
+    }
+
+    /**
      * Deletes a person's expired confirmations.
      *
      * @param int $userId Person whose expired confirmations are removed

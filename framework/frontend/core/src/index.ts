@@ -23,6 +23,13 @@ export {
   type HilosStepUpStep,
 } from './auth/stepUp.js'
 export {
+  SIGNAL_STEP_UP_CONFIRMED,
+  stepUpConfirmedSchema,
+  bindStepUpConfirmed,
+  hilosStepUpConfirmed,
+  type HilosStepUpConfirmed,
+} from './auth/stepUpConfirmed.js'
+export {
   createSignal,
   computedSignal,
   subscribeSignal,

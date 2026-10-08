@@ -14,6 +14,7 @@ use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmedSignalData;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
@@ -31,6 +32,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
@@ -603,6 +605,87 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * A recorded confirmation is told to every tab of the browser, and to no other browser (HIL-1330).
+     *
+     * @throws HilosException When the command fails
+     */
+    public function testAConfirmationIsToldToEveryTabOfTheBrowser(): void
+    {
+        $this->addPassword();
+
+        $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
+
+        $frames = $this->confirmedFrames();
+        self::assertCount(1, $frames);
+        self::assertSame(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN), $frames[0]->targetSessionTokenHash);
+        self::assertNull($frames[0]->targetAcceptKey);
+        self::assertInstanceOf(StepUpConfirmedSignalData::class, $frames[0]->data);
+        self::assertSame([self::OPERATION], $frames[0]->data->operations);
+    }
+
+    /**
+     * The frame carries every live confirmation of the browser, not only the one just recorded (HIL-1330).
+     *
+     * @throws HilosException When a command fails
+     */
+    public function testTheFrameCarriesEveryLiveOperationOfTheBrowserInAscendingOrder(): void
+    {
+        $this->addPassword();
+        $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
+        $this->confirmedFrames();
+
+        $this->confirm(StepUpOperationKey::DELETE_ACCOUNT, StepUpMethod::PASSWORD, password: self::PASSWORD);
+
+        $frames = $this->confirmedFrames();
+        self::assertCount(1, $frames);
+        self::assertInstanceOf(StepUpConfirmedSignalData::class, $frames[0]->data);
+        self::assertSame([StepUpOperationKey::DELETE_ACCOUNT, self::OPERATION], $frames[0]->data->operations);
+    }
+
+    /**
+     * An expired row of the same browser and a live row of another browser stay out of the frame (HIL-1330).
+     *
+     * The expired row is the administrator's, so the person's own sweep before the write leaves it in place
+     * and only the reading of the frame can keep it out.
+     *
+     * @throws HilosException When the seed or the command fails
+     */
+    public function testTheFrameLeavesOutExpiredRowsAndOtherBrowsers(): void
+    {
+        $this->addPassword();
+        $this->seedConfirmation(self::SESSION_TOKEN, self::ADMINISTRATOR_ID, StepUpOperationKey::EXPORT_DATA, '2020-01-01 00:00:00');
+        $this->seedConfirmation(
+            self::OTHER_SESSION_TOKEN,
+            self::USER_ID,
+            StepUpOperationKey::DELETE_ACCOUNT,
+            date('Y-m-d H:i:s', time() + self::TTL_SECONDS),
+        );
+
+        $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
+
+        $frames = $this->confirmedFrames();
+        self::assertCount(1, $frames);
+        self::assertInstanceOf(StepUpConfirmedSignalData::class, $frames[0]->data);
+        self::assertSame([self::OPERATION], $frames[0]->data->operations);
+    }
+
+    /**
+     * Confirming an operation the browser has already confirmed writes nothing and tells nobody (HIL-1330).
+     *
+     * @throws HilosException When a command fails
+     */
+    public function testConfirmingAnOperationAlreadyConfirmedTellsNobody(): void
+    {
+        $this->addPassword();
+        $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
+        $this->confirmedFrames();
+
+        $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
+
+        self::assertSame([], $this->confirmedFrames());
+    }
+
+    /**
      * Puts the acting session inside a takeover by the administrator.
      *
      * @throws DatabaseException When the session update fails
@@ -662,6 +745,42 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
             new StepUpConfirmActionDTO($operation, $method, $code, $backupCode, $password, null),
         );
+    }
+
+    /**
+     * Writes one confirmation row straight into the table, past every command.
+     *
+     * @param string $sessionToken Browser the row belongs to
+     * @param int $userId Person the row is recorded on
+     * @param string $operation Operation key
+     * @param string $until Moment the row expires (SQL datetime)
+     * @throws DatabaseException When the insert fails
+     */
+    private function seedConfirmation(string $sessionToken, int $userId, string $operation, string $until): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_step_up` (`session_token_hash`, `user_id`, `operation`, `confirmed_until`) '
+            . 'VALUES (?, ?, ?, ?)',
+            [ProtectedModeRuntime::hashSessionToken($sessionToken), $userId, $operation, $until],
+        );
+    }
+
+    /**
+     * @return list<WebSocketSignalData> Every confirmation frame queued since the last call, in order
+     */
+    private function confirmedFrames(): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if (
+                $signal->signalName->getName() === HilosSignalConstants::HILOS_STEP_UP_CONFIRMED
+                && $signal->data instanceof WebSocketSignalData
+            ) {
+                $frames[] = $signal->data;
+            }
+        }
+
+        return $frames;
     }
 
     /**

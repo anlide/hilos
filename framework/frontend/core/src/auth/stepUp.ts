@@ -14,10 +14,13 @@ import {
 } from '../connection/actionLifecycle.js'
 import { toLocal } from '../session/serverClock.js'
 import { getPasskey, type PasskeyRequestOptions } from './passkey.js'
+import { hilosStepUpConfirmed } from './stepUpConfirmed.js'
 import {
   computedSignal,
   createSignal,
+  subscribeSignal,
   type ReadonlySignal,
+  type Unsubscribe,
   type WritableSignal,
 } from '../state/signal.js'
 
@@ -130,6 +133,25 @@ function actionMessage(error: unknown): string {
   return error instanceof ActionError ? error.message : 'The action failed.'
 }
 
+/**
+ * Create the "Confirm it's you" step a window stands on before its protected
+ * operation.
+ *
+ * The step passes in three ways: its own Confirm succeeds; Send again finds the
+ * operation already confirmed; or another tab of the same browser session
+ * confirms it while this step is asking (HIL-1330). The last two go through
+ * `onPassed`, and the third one silently — the step clears none of its fields.
+ * It listens for the session's confirmation frame only while it asks: from an
+ * opening answered "required" until it passes, or until the next open. While
+ * the step's own request is in flight — the opening, Send again, Confirm — a
+ * frame is ignored and the request's answer decides.
+ *
+ * @param actions The step-up actions of the application's connection.
+ * @param onPassed The window's continuation when the operation turns out
+ *   confirmed without its own Confirm — by Send again finding it confirmed, or
+ *   by another tab of the session confirming it. A window that has closed
+ *   meanwhile must make it a no-op.
+ */
 export function createHilosStepUpStep(
   actions: HilosStepUpActions,
   onPassed?: () => void | Promise<void>,
@@ -156,6 +178,27 @@ export function createHilosStepUpStep(
   // Bumped by every open: a repeated send whose answer comes back after the
   // step was opened again for another operation must not write over it.
   let round = 0
+  // The session's confirmation frame, heard only while the step asks. A frame
+  // already held when listening starts is not one: it may have expired since.
+  let listening: Unsubscribe | null = null
+  const stopListening = (): void => {
+    listening?.()
+    listening = null
+  }
+  const listen = (): void => {
+    stopListening()
+    listening = subscribeSignal(hilosStepUpConfirmed, (frame) => {
+      if (
+        frame === null ||
+        busy.get() ||
+        operation === null ||
+        !frame.operations.includes(operation)
+      )
+        return
+      stopListening()
+      void onPassed?.()
+    })
+  }
 
   return {
     opening,
@@ -167,6 +210,7 @@ export function createHilosStepUpStep(
     sendProgress,
     resendAt,
     async open(nextOperation) {
+      stopListening()
       round += 1
       operation = nextOperation
       code.set('')
@@ -184,6 +228,7 @@ export function createHilosStepUpStep(
         opening.set(next)
         if (next.send !== undefined)
           replyResendAt.set(toLocal(next.send.resendAt))
+        if (next.required) listen()
 
         return next.required ? 'ask' : 'skip'
       } catch (error) {
@@ -223,7 +268,9 @@ export function createHilosStepUpStep(
       } finally {
         if (round === started) busy.set(false)
       }
-      if (passed) await onPassed?.()
+      if (!passed) return
+      stopListening()
+      await onPassed?.()
     },
     async confirm() {
       const current = opening.get()
@@ -271,6 +318,7 @@ export function createHilosStepUpStep(
           password: password.get(),
           passkey,
         }).done
+        stopListening()
 
         return true
       } catch (error) {

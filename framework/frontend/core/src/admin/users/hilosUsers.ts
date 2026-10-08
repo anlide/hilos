@@ -1912,7 +1912,8 @@ function cardOperation(window: HilosUserCardWindow): string | undefined {
  * their unconfirmed address.
  *
  * @param context The project context whose action lifecycle carries the step.
- * @param onPassed Continuation when a repeat finds the operation already confirmed.
+ * @param onPassed Continuation when a repeat finds the operation already
+ *   confirmed, or another tab of the session confirms it (HIL-1330).
  */
 export function createHilosUserCardStepUp(
   context: HilosUsersContext,

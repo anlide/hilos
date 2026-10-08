@@ -329,12 +329,12 @@ export function createHilosLegalAcceptancesExport(
   table: HilosLegalAcceptancesExportSource,
 ): HilosLegalAcceptancesExport {
   const store = createHilosLegalAcceptancesExportStore(context)
+  // Passing the step without this window's own Confirm means another tab of
+  // the session confirmed it, and that tab orders the export: this window
+  // closes and orders nothing (HIL-1330).
   const stepUp = createHilosStepUpStep(
     createHilosStepUpActions(context.actions),
-    async () => {
-      const payload = filters
-      if (open.get() && payload !== null) await order(round, payload)
-    },
+    () => close(),
   )
   const open = createSignal(false)
   const busy = createSignal(false)

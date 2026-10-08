@@ -4,6 +4,10 @@ import {
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
+import {
+  bindStepUpConfirmed,
+  SIGNAL_STEP_UP_CONFIRMED,
+} from '../../src/auth/stepUpConfirmed.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { createSignal } from '../../src/state/signal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
@@ -44,6 +48,7 @@ function world(answers: Record<string, unknown> = {}) {
   const store = createHilosDataExportStore(connection, initial)
   store.start()
   const flow = createHilosDataExportFlow(actions, store)
+  const offConfirmed = bindStepUpConfirmed(connection)
   return {
     initial,
     store,
@@ -56,7 +61,16 @@ function world(answers: Record<string, unknown> = {}) {
           data: { dataExport },
         } as unknown as ProjectSignal)
     },
+    /** Another tab of the session confirmed these operations (HIL-1330). */
+    confirmedElsewhere(operations: string[]) {
+      for (const listener of listeners)
+        listener({
+          type: SIGNAL_STEP_UP_CONFIRMED,
+          data: { operations },
+        } as unknown as ProjectSignal)
+    },
     dispose() {
+      offConfirmed()
       flow.dispose()
       store.dispose()
     },
@@ -167,6 +181,47 @@ describe('data export', () => {
     expect(w.flow.open.get()).toBe(false)
     await w.flow.prepare()
     expect(w.sent).toEqual(['hilos_step_up_start'])
+    w.dispose()
+  })
+  it('closes without ordering when another tab of the session confirms the export', async () => {
+    const w = world({
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'export your data',
+        method: 'password',
+      },
+    })
+    await w.flow.prepare()
+    w.flow.stepUp.password.set('half typed')
+
+    w.confirmedElsewhere(['export_data'])
+
+    // The tab that confirmed orders the copy; this window just goes away.
+    expect(w.flow.open.get()).toBe(false)
+    expect(w.flow.stepUp.password.get()).toBe('')
+    expect(w.sent).toEqual(['hilos_step_up_start'])
+    w.dispose()
+  })
+  it('closes without ordering when Send again finds the export already confirmed', async () => {
+    const answers: Record<string, unknown> = {
+      hilos_step_up_start: {
+        required: true,
+        purpose: 'export your data',
+        method: 'email_code',
+        destination: 'person@example.test',
+      },
+    }
+    const w = world(answers)
+    await w.flow.prepare()
+    answers.hilos_step_up_start = {
+      required: false,
+      purpose: 'export your data',
+    }
+
+    await w.flow.stepUp.sendAgain()
+
+    expect(w.flow.open.get()).toBe(false)
+    expect(w.sent).toEqual(['hilos_step_up_start', 'hilos_step_up_start'])
     w.dispose()
   })
   it('does not order if its surface closes while the opening is in flight', async () => {

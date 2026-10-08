@@ -77,6 +77,26 @@ browser and another operation remain closed. A new sign-in rotates the session
 token and therefore leaves earlier confirmations unreachable without a special
 logout cleanup path.
 
+The other tabs do not wait to be touched to learn of it (HIL-1330). Whoever
+writes the row tells every tab of the session at once, on
+`hilos_step_up_confirmed`: the list of operation keys the session has a live
+confirmation of now, without repeats and in ascending order. A tab that
+connects later - a background tab of a phone that was away when the row landed
+- is told the same list by the sessions library on its handshake, and only that
+tab. An empty list is never sent: the browser keeps no list as state and reads
+the frame only as it arrives, so an expiry is not announced at all - the gate
+still checks the row on every protected action. A step asking for one of the
+listed operations passes by itself, through the window's own continuation; while
+the step's own request is in flight, its answer decides instead.
+
+There is one place a confirmation is written and told,
+`StepUpConfirmations::record()`, and two writers reach it: the ordinary Confirm
+(`StepUpCommands::confirm()`, users library) and a refused sign-in of a blocked
+person that counts towards the data copy (sessions library). The frame leaves
+from the writer, not from the session's holder, so it moves with the write when
+the write moves (HIL-1407). Confirming an operation already confirmed writes
+nothing and tells nobody.
+
 Device trust belongs to the sign-in question and is deliberately not read here.
 
 ## Under a takeover
@@ -147,8 +167,20 @@ returns `expiresAt: null` (HIL-1186). The email/password window still stands on
 the code step locally and offers Send again once `resendAt` passes, but no
 session flow row is invented for a code that is not live. Another tab reaches
 that step only after a real send writes the row. Reopening an identity-confirmation
-step uses the same send outcome; if another tab has already confirmed the
-operation, the window continues through its existing post-confirmation path.
+step uses the same send outcome.
+
+A window standing on the identity-confirmation step does not wait for a press
+when another tab of the session confirms the same operation (HIL-1330): the
+`hilos_step_up_confirmed` frame moves it on through the continuation it handed
+the step (`createHilosStepUpStep(actions, onPassed)`), silently and once. The
+step listens only while it asks - from an opening answered "required" until its
+own Confirm succeeds, the frame or Send again passes it, or the next opening -
+and ignores a frame while its own request is in flight. Send again answered
+"already confirmed" stays, and is now only the cover for the moment the frame
+is still on its way. A profile or account-card window shows its form or next
+step, as after its own Confirm; the two export windows - the data copy and the
+acceptance export - close and order nothing, because the tab that confirmed
+orders it.
 
 ## Adding a way in
 

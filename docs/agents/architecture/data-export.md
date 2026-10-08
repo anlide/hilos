@@ -30,7 +30,12 @@ A refused sign-in credits this operation only if `provenBy` matches the method
 `StepUpMethodResolver` would ask for now. A password cannot stand for a
 connected second factor, and provider login credits nothing. A card raised by
 losing the session has no fresh sign-in to credit and asks for confirmation
-normally.
+normally. The credit is written through `StepUpConfirmations::record()`, the
+one door every confirmation takes, so every tab of the browser is told of it on
+`hilos_step_up_confirmed` like any other confirmation (HIL-1330). A copy window
+standing on its confirmation step closes on that frame and orders nothing - the
+tab that confirmed is the one ordering - and so it does when Send again finds
+the operation already confirmed.
 
 `hilos_data_export_order` resolves the person from the connection/session and
 rechecks step-up. A blocked-card order also checks that the account remains

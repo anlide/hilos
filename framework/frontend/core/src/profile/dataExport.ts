@@ -180,11 +180,11 @@ export function createHilosDataExportFlow(
   actions: ActionLifecycle,
   store: HilosDataExportStore,
 ): HilosDataExportFlow {
-  const stepUp = createHilosStepUpStep(
-    createHilosStepUpActions(actions),
-    async () => {
-      if (open.get()) await order(round)
-    },
+  // Passing the step without this window's own Confirm means another tab of
+  // the session confirmed it, and that tab orders the copy: this window closes
+  // and orders nothing (HIL-1330).
+  const stepUp = createHilosStepUpStep(createHilosStepUpActions(actions), () =>
+    close(),
   )
   const open = createSignal(false)
   const busy = createSignal(false)

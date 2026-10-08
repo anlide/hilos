@@ -31,4 +31,17 @@ class StepUps extends DbCollection
     {
         return $this->objectCollection->isConfirmed($tokenHash, $userId, $operation);
     }
+
+    /**
+     * Keys of the operations one browser has a live confirmation of, whoever gave it (HIL-1330).
+     *
+     * @param string $tokenHash Hash of the browser session token
+     * @return list<string> Operation keys without repeats, in ascending order
+     * @throws DatabaseException When the lookup fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function liveOperations(string $tokenHash): array
+    {
+        return $this->objectCollection->liveOperations($tokenHash);
+    }
 }
