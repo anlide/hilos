@@ -1,9 +1,10 @@
 """
 control.py - the host-side controller of a cluster stand (HIL-185), for any stand the harness
-reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus the five fault
+reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus the six fault
 switches the scenarios need - `docker kill -9` (node-down / failover), `docker network
 disconnect` (partition / split-brain), a SIGKILL of the daemon or one worker inside a live
-container (crash recovery / partial failure), and a blackhole route between an island of nodes
+container (crash recovery / partial failure), a SIGSTOP of one worker (a hung orphan, scenario 9),
+and a blackhole route between an island of nodes
 and the rest of the stand (a partition that keeps the island linked within itself, scenario 36,
 HIL-1287) - and one lever on the stand's database, `db-sql`
 (a node reading another database marker, HIL-1206; each member of a clustered database asked,
@@ -532,6 +533,42 @@ posix_kill($pid, SIGKILL);
 echo $pid, PHP_EOL;
 '''
 
+# A stopped process neither leaves on its own nor obeys SIGTERM (the signal stays
+# pending) and keeps the daemon's inherited listening sockets — the hung orphan
+# OrphanReaper exists for (scenario 9, HIL-1310). The first worker met is taken:
+# worker indexes start at 1 and shift after a respawn, and the scenario does not
+# name one.
+FREEZE_WORKER_PHP = r'''
+$self = getmypid();
+$pid = null;
+foreach (glob("/proc/[0-9]*/cmdline") ?: [] as $file) {
+    $candidate = (int)basename(dirname($file));
+    if ($candidate === $self) {
+        continue;
+    }
+    $cmdline = file_get_contents($file);
+    if ($cmdline === false) {
+        continue;
+    }
+    $arguments = explode("\0", $cmdline);
+    $isWorker = false;
+    foreach ($arguments as $argument) {
+        $isWorker = $isWorker || str_ends_with($argument, "Bootstrap/worker.php");
+    }
+    if (!$isWorker) {
+        continue;
+    }
+    $pid = $candidate;
+    break;
+}
+if ($pid === null) {
+    fwrite(STDERR, "no worker found" . PHP_EOL);
+    exit(1);
+}
+posix_kill($pid, SIGSTOP);
+echo $pid, PHP_EOL;
+'''
+
 
 def crash_daemon(stand, node_id):
     node = stand.member(node_id)
@@ -552,6 +589,15 @@ def kill_worker(stand, node_id, index=None):
         return outcome._replace(out="", err=outcome.err + f"cluster: no worker #{index} inside {node.container}\n")
     return Outcome(0, f"cluster: SIGKILLed worker #{index} pid {outcome.out.strip()} inside {node.container}\n",
                    outcome.err)
+
+
+def freeze_worker(stand, node_id):
+    node = stand.member(node_id)
+    outcome = _run(["docker", "exec", node.container,
+                    "php", "-d", "display_errors=stderr", "-r", FREEZE_WORKER_PHP])
+    if outcome.code != 0:
+        return outcome._replace(out="", err=outcome.err + f"cluster: no worker to freeze inside {node.container}\n")
+    return Outcome(0, f"cluster: SIGSTOPped worker pid {outcome.out.strip()} inside {node.container}\n", outcome.err)
 
 
 def partition(stand, node_id):
@@ -795,6 +841,7 @@ NODE_COMMANDS = {
     "recreate": recreate,
     "crash-daemon": crash_daemon,
     "kill-worker": kill_worker,
+    "freeze-worker": freeze_worker,
     "container-id": container_id,
     "container-log": container_log,
     "partition": partition,

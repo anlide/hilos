@@ -165,7 +165,7 @@ down when they start.
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
-9 daemon-crash self-heal (parked as flaky), 12 rt replication, 14 rt claim refused,
+9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused,
 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
 19 worker death on a live node and 31 replica keeps up with the primary
 (`docs/agents/testing.md`, "The cluster stands —
@@ -182,7 +182,7 @@ Playwright stand and in production the rows are carried and nothing is run.
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`,
-`kill-worker`, `recreate`, `inspect` and the rest — are called on the module
+`kill-worker`, `freeze-worker`, `recreate`, `inspect` and the rest — are called on the module
 directly, from `demo/ecommerce-shop`:
 
 ```bash

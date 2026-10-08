@@ -25,6 +25,7 @@ directory; a demo calls this from its composer scripts)
   recreate <node>      replace a node with a pristine container
   crash-daemon <node>  SIGKILL the daemon inside a live node container
   kill-worker <node> <i>  SIGKILL worker #i inside a live node container, its daemon kept
+  freeze-worker <node>  SIGSTOP one worker inside a live node container (a hung orphan, scenario 9)
   container-id <node>  print a node's docker container id
   container-log <node> print a node's container log so far (docker logs, no follow)
   partition <node>     disconnect a node from the cluster network
@@ -70,7 +71,8 @@ REFUSED = 2
 
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
-            "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
+            "kill", "start", "recreate", "crash-daemon", "kill-worker", "freeze-worker",
+            "container-id", "container-log",
             "partition", "heal", "cut", "mend", "logs",
             "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",
             "db-proxy", "scenarios", "e2e")

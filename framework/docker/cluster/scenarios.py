@@ -4,8 +4,9 @@ every cluster stand.
 
 It assumes the stand is already up (cluster.py raises it fresh before the matrix) and drives
 it: for each scenario it perturbs the cluster through the controller (control.py: docker kill
--9 for node-down, docker network disconnect for partition, and a SIGKILL of the daemon or one
-worker inside a live container), polls each node's `test:cluster:inspect` reply until the
+-9 for node-down, docker network disconnect for partition, a SIGKILL of the daemon or one
+worker inside a live container, and a SIGSTOP of one worker), polls each node's
+`test:cluster:inspect` reply until the
 topology converges (bounded by a hard cap), and asserts the expected invariants against the
 machine-readable reply. Destructive scenarios restore the cluster and re-converge before the
 next.
@@ -42,8 +43,9 @@ Covers the full spike-HIL-176 matrix:
   8 split-brain prevention     the majority keeps one leader; the minority steps down
 
 Plus scenarios beyond that matrix:
-  9 daemon-crash self-heal     a node whose daemon is SIGKILLed rebinds and rejoins
-                               inside the same container (HIL-450)
+  9 daemon-crash self-heal     a node whose daemon is SIGKILLed with one worker frozen: the sweep
+                               kills the frozen one, and the node rebinds and rejoins inside the
+                               same container (HIL-450, HIL-1310)
  10 cross-node browser         a browser attached to one node is answered from another (HIL-668)
  11 cross-node db fact         a row written on one node is read back on another (HIL-670,
                                HIL-712)
@@ -274,7 +276,8 @@ ELECTION_TIMEOUT = 30.0 * TIMEOUT_SCALE
 QUORUM_TIMEOUT = 30.0 * TIMEOUT_SCALE
 # Recovering from a daemon crash is deliberately slower than any of the above: the
 # watchdog rate-limits an error restart to DAEMON_MIN_RESTART_INTERVAL (20s), and only
-# then does the new daemon sweep the orphans, bind, and gossip its way back in.
+# then does the new daemon sweep the orphans — waiting out a hung orphan's 5 s grace
+# before the bind — and gossip its way back in.
 CRASH_RECOVERY_TIMEOUT = 90.0 * TIMEOUT_SCALE
 DB_MEMBER_DEATH_TIMEOUT = 60.0 * TIMEOUT_SCALE
 DB_MEMBER_RETURN_TIMEOUT = 120.0 * TIMEOUT_SCALE
@@ -997,22 +1000,30 @@ def scenario_8_split_brain():
 
 
 def scenario_9_daemon_crash_selfheal():
-    """A daemon killed inside a live container must come back on its own (HIL-450).
+    """A crashed daemon's workers leave on their own, except the one that cannot.
 
-    This is the crash the harness used to paper over with `--force-recreate`: the
-    daemon dies, its workers survive as orphans on the watchdog and keep holding its
-    listening sockets, and without a sweep every restart fails to bind forever. The
-    container is deliberately NOT replaced, so the only way back is the watchdog
-    reaping its own children before the next daemon start.
+    The workers of a crashed daemon leave by themselves (HIL-520), and the one that
+    cannot — a worker frozen with SIGSTOP before the crash, holding the daemon's
+    listening sockets — is finished off by the watchdog's sweep before the next
+    start (HIL-450): the sweep finds exactly that one live child, it ignores
+    SIGTERM, it is SIGKILLed, and the node comes back in the same container.
+    Without the sweep every restart fails to bind forever, and this scenario is
+    what goes red.
     """
     victim = SLAVES[0]
     wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the crash")
     before = container_id(victim)
     assert before, f"could not read the container id of {victim}"
 
+    frozen = ctl_out("freeze-worker", victim)
+    assert "SIGSTOPped" in frozen, \
+        f"could not freeze a worker inside {victim}: {frozen or '(no output)'}"
+    pid = int(re.search(r"pid (\d+)", frozen).group(1))
+    print(f"    {frozen.removeprefix('cluster: ')}")
+
     killed = ctl_out("crash-daemon", victim)
     assert "SIGKILLed" in killed, f"could not kill the daemon inside {victim}: {killed or '(no output)'}"
-    print(f"    {killed.removeprefix('cluster: ')}; its workers stay behind holding the ports")
+    print(f"    {killed.removeprefix('cluster: ')}; the other workers leave, the frozen one stays")
 
     survivors = [n for n in ALL_NODES if n != victim]
     try:
@@ -1024,6 +1035,7 @@ def scenario_9_daemon_crash_selfheal():
         assert after == before, \
             f"{victim} came back as a NEW container ({after[:12]} != {before[:12]}); " \
             "it was recreated instead of self-healing"
+        sweep_finished_off(victim, pid)
 
         # Back in the roster is not the same as fit for work: leave the recovered node
         # as the only capable target and require the whole fleet to land on it.
@@ -1036,14 +1048,48 @@ def scenario_9_daemon_crash_selfheal():
                        nodes=[n for n in ALL_NODES if n != other])
         finally:
             ctl("start", other)
-        return (f"{victim} self-healed in the same container ({before[:12]}) "
-                f"and then took all {WORKER_FLEET_SIZE} workers")
+        return (f"{victim} self-healed in the same container ({before[:12]}): "
+                f"the sweep found 1 orphan and killed frozen worker pid {pid} "
+                f"after it ignored SIGTERM, and then took all {WORKER_FLEET_SIZE} workers")
     finally:
         # Recreate rather than start: a node that did NOT self-heal is still running, so
         # `start` would be a no-op on it and every later attempt would inherit the wedge.
         # Replacing the container is the only way back, and after a pass it is a cheap reset.
         ctl("recreate", victim)
         wait_converge(ALL_NODES)
+
+
+def sweep_finished_off(node, pid):
+    """The scan nearest the frozen pid, not the last scan in the log.
+
+    A start that lost the bind race to the dying worker is followed by a second
+    start whose scan says found 0. The proof is the scan that named this pid:
+    found exactly one orphan, then that pid terminated, then killed after it
+    ignored SIGTERM.
+    """
+    lines = container_log(node).splitlines()
+    quoted = "\n".join(line for line in lines if "OrphanReaper:" in line)
+    terminating = f"OrphanReaper: terminating orphan pid={pid} cmd="
+    killing = f"OrphanReaper: orphan pid={pid} ignored SIGTERM, killing it"
+
+    def miss(reason):
+        raise AssertionError(f"{node}: {reason}\n{quoted}")
+
+    term_at = next((index for index, line in enumerate(lines) if terminating in line), None)
+    if term_at is None:
+        miss(f"no line terminating frozen worker pid {pid}")
+    kill_at = next((index for index, line in enumerate(lines)
+                    if index > term_at and killing in line), None)
+    if kill_at is None:
+        miss(f"frozen worker pid {pid} was not killed after ignoring SIGTERM")
+    scan_at = None
+    for index in range(term_at):
+        if "OrphanReaper: orphan scan complete, found " in lines[index]:
+            scan_at = index
+    if scan_at is None:
+        miss(f"no orphan scan before terminating frozen worker pid {pid}")
+    if "found 1 orphan(s)" not in lines[scan_at]:
+        miss(f"the scan nearest pid {pid} did not find exactly 1 orphan: {lines[scan_at]}")
 
 
 def scenario_10_cross_node_browser():
@@ -3582,19 +3628,15 @@ FLAKY_SKIP = {
     # rows.
     "16 recreated node leaves no phantom fleet":
         "P-441/2: a recreated node keeps a copy of the fleet rows it no longer reads",
-    # The two below were parked on the owner's word on 2026-10-04, ahead of the HIL-1186 and
-    # HIL-1232 full runs: timing flakes foreign to both, each red in full runs and green on the
-    # rerun of the same sha. Each is paid off by finding the cause, its line removed, and
-    # `-- <number>` green on the stand it failed on.
+    # The one below was parked on the owner's word on 2026-10-04, ahead of the HIL-1186 and
+    # HIL-1232 full runs: a timing flake foreign to both, red in full runs and green on the
+    # rerun of the same sha. It is paid off by finding the cause, its line removed, and
+    # `-- 8` green on the stand it failed on.
     #
     # 8, on the cluster stand: red eleven times (0418 to 0567; last 2026-09-26), every time timed
     # out at 180s waiting for the majority {m1,m2} to keep one leader while m3 steps down.
     "8 split-brain prevention":
         "flake: the majority keeps no single leader within 180s (red 11x, last 2026-09-26)",
-    # 9, on the cluster stand: red once (0350, 2026-09-17), timed out at 120s waiting for s1 to
-    # be seen offline after its daemon died.
-    "9 daemon-crash self-heal":
-        "flake: s1 not seen offline within 120s after its daemon died (red 1x, 2026-09-17)",
 }
 
 

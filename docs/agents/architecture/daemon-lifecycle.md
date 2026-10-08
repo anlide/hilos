@@ -228,9 +228,12 @@ Glance, Not The Record"; read it before adding a line to `docker logs` or taking
 
 The cluster harness guards this end to end: `cluster start <node>` reuses the
 existing container instead of recreating it, and scenario 9 of the shared
-harness, run on the ecommerce-shop stand, SIGKILLs the daemon inside a live
-container and requires the node to rebind, rejoin the roster, and accept
-placements again — with the same container id.
+harness, run on the ecommerce-shop stand, freezes one worker of the node with
+SIGSTOP before it SIGKILLs the daemon, and requires the sweep's log to name
+exactly that one orphan as found, terminated and killed after ignoring
+SIGTERM — then the node rebinds, rejoins and accepts placements in the same
+container. Without the frozen worker the workers leave by themselves and the
+sweep would not be exercised at all.
 
 ## WebSocket readiness gate
 
