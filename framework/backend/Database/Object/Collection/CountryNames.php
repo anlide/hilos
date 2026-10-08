@@ -38,6 +38,16 @@ class CountryNames extends Objects
     }
 
     /**
+     * @param int $countryId Named country primary id
+     * @return bool Whether any name row, base or override, even empty, names it
+     * @throws DatabaseException When the query fails
+     */
+    public function hasForCountry(int $countryId): bool
+    {
+        return static::entityClass()::count([EntityCountryName::country_id => $countryId]) > 0;
+    }
+
+    /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
      * @return ?ObjectCountryName Base row, or null

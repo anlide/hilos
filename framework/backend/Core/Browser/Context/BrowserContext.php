@@ -98,6 +98,7 @@ use Hilos\Database\Exception\PropertyNotAccessibleException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Settings\Exception\SettingException;
@@ -2349,6 +2350,14 @@ abstract class BrowserContext
                 return Hilos::$db->languages->cardSummary((int)$rowKey)->toArray();
             } catch (HilosException $exception) {
                 throw new PageInternalErrorException('Language card summary could not be resolved', $exception);
+            }
+        }
+
+        if ($browserKey === CountryCardBrowserData::DATA && $field === CountryCardBrowserData::FIELD_SUMMARY) {
+            try {
+                return Hilos::$db->countries->cardSummary((int)$rowKey)->toArray();
+            } catch (HilosException $exception) {
+                throw new PageInternalErrorException('Country card summary could not be resolved', $exception);
             }
         }
 

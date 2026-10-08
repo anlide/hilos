@@ -366,9 +366,11 @@ A language or country is addressed by code, not row number. A code never
 changes; a row number can change on a reload of the data, and a URL can be
 sent by mail. Code addresses and the three new names/locales page keys are registered
 together (HIL-1473). The Vue main language card is built (HIL-1478) and opens
-by direct URL with one subscribed `languageCard` snapshot and live updates.
-The Vue section root, language list, names and locales pages remain unbuilt;
-React and Angular detail views remain unbuilt until their own leaves.
+by direct URL with one subscribed `languageCard` snapshot and live updates; the
+Vue main country card is built the same way with `countryCard` (HIL-1482).
+The Vue section root, language and country lists, names and locales pages
+remain unbuilt; React and Angular detail views remain unbuilt until their own
+leaves.
 
 | Page key | Route |
 |---|---|
@@ -401,6 +403,12 @@ at `/hilos/i18n/languages/{languageCode}` (HIL-1478); its parent root/list and
 its names/locales tabs still return `not_served`/404. The card shows the code,
 native name, direction, enabled state, locale/name counts, and read-only delete
 verdict. Its future action controls belong to HIL-1485/1486/1487/1488.
+Vue serves the main country card at `/hilos/i18n/countries/{countryCode}`
+(HIL-1482); the country list and its names tab still return `not_served`/404.
+The card shows the name, code, currency, default locale, enabled state and
+read-only delete verdict: a known country never, else locales, else any name
+row, block deletion. Its future action controls belong to
+HIL-1496/1497/1498/1499.
 React and Angular stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the
@@ -422,7 +430,8 @@ The other section tables follow in HIL-1475, HIL-1476 and HIL-1477.
 The columns are nonpersonal, so [admin view mode](admin-view-mode.md) shows
 the whole section without allowing the viewer to change anything.
 The country list uses names in the default language and falls back to the
-code when no name exists (not in the code yet — HIL-1475).
+code when no name exists (not in the code yet — HIL-1475). The header of the
+country card follows the same rule (HIL-1482).
 Names in the reader's language belong to HIL-1424.
 
 ## What This Page Does Not Decide

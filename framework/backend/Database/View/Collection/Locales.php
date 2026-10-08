@@ -33,6 +33,16 @@ class Locales extends DbCollection
     }
 
     /**
+     * @param int $countryId Country primary id
+     * @return bool Whether any locale refers to it, regardless of enabled state
+     * @throws DatabaseException When the query fails
+     */
+    public function hasForCountry(int $countryId): bool
+    {
+        return $this->objectCollection->hasForCountry($countryId);
+    }
+
+    /**
      * @param mixed $offset Locale code or primary id
      * @return bool Whether the locale exists
      * @throws DatabaseException When the lookup fails

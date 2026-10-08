@@ -208,6 +208,7 @@ use Hilos\Files\Image\ImageVariant;
 use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
@@ -701,6 +702,7 @@ final class Hilos extends HilosFacade
         UserPresenceBrowserData::DATA => UserPresenceBrowserData::class,
         UserMergeBrowserData::DATA => UserMergeBrowserData::class,
         LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
+        CountryCardBrowserData::DATA => CountryCardBrowserData::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -791,6 +793,9 @@ final class Hilos extends HilosFacade
         ],
         LanguageDetailPage::PAGE => [
             LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING,
+        ],
+        CountryDetailPage::PAGE => [
+            CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING,
         ],
     ];
 

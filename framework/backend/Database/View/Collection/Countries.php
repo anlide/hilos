@@ -10,6 +10,9 @@ use Hilos\Database\Actions\Collection\CountriesActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Countries as ObjectCountries;
 use Hilos\Database\View\Item\Country;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\I18n\DTO\CountryCardSummary;
 
 /**
  * Countries support code strings and primary-id integers as offsets.
@@ -21,6 +24,20 @@ class Countries extends DbCollection
 {
     public const string DB_ITEM_CLASS = Country::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectCountries::class;
+
+    /**
+     * @param int $countryId Country primary id
+     * @return CountryCardSummary Current read-only card facts
+     * @throws DatabaseException When a country or dependent row query fails
+     * @throws InvalidArgumentException When the country no longer exists
+     * @throws LogicException When collection classes are not configured
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
+     */
+    public function cardSummary(int $countryId): CountryCardSummary
+    {
+        return $this->objectCollection->cardSummary($countryId);
+    }
 
     /**
      * @param mixed $offset Country code or primary id

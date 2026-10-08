@@ -16,4 +16,10 @@ export const STAGED_CHILDREN: readonly StagedChild[] = [
     child: 'hilos_i18n_language',
     leaf: 'HIL-1478',
   },
+  {
+    layer: 'vue',
+    parent: 'hilos_i18n_countries',
+    child: 'hilos_i18n_country',
+    leaf: 'HIL-1482',
+  },
 ]

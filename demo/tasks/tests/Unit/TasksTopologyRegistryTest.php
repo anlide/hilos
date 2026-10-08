@@ -125,6 +125,7 @@ use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Tasks\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
@@ -276,6 +277,11 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
             Hilos::PAGE_DATA[LanguageDetailPage::PAGE],
+        );
+        $this->assertSame(CountryCardBrowserData::class, Hilos::BROWSER_DATA[CountryCardBrowserData::DATA]);
+        $this->assertSame(
+            [CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING],
+            Hilos::PAGE_DATA[CountryDetailPage::PAGE],
         );
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_I18N_LIBRARY];
