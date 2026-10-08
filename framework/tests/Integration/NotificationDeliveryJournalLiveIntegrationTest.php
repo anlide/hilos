@@ -6,6 +6,8 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\TableAnchorDirection;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -147,21 +149,195 @@ final class NotificationDeliveryJournalLiveIntegrationTest extends FrameworkInte
         $this->assertLessThan(0, $place);
     }
 
+    public function testExactWindowPlacesUseTheJoinedFilteredSet(): void
+    {
+        $older = $this->insertDelivery(self::EARLIER);
+        $first = $this->insertDelivery(self::LATER);
+        $second = $this->insertDelivery(self::LATER);
+        $this->insertDelivery(self::LATER, 'sms');
+        $newest = $this->insertDelivery(self::LATER);
+        $table = new HilosNotificationDeliveriesTable();
+        $query = new TableQueryDTO(
+            sort: $table->defaultSort(),
+            limit: 2,
+            filter: [HilosNotificationDeliveriesTable::FILTER_CHANNEL => 'email'],
+        );
+
+        $firstWindow = $table->getPage($query);
+        $this->assertSame(4, $firstWindow->totalCount);
+        $this->assertTrue($firstWindow->totalExact);
+        $this->assertSame(0, $firstWindow->rowsBefore);
+        $this->assertSame([$newest, $second], $this->rowKeys($firstWindow->rows));
+
+        $numbered = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            filter: $query->filter,
+            pageIndex: 1,
+        ));
+        $this->assertSame(2, $numbered->rowsBefore);
+        $this->assertSame([$first, $older], $this->rowKeys($numbered->rows));
+
+        $this->assertNotNull($firstWindow->lastAnchor);
+        $after = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $firstWindow->lastAnchor,
+        ));
+        $this->assertSame(2, $after->rowsBefore);
+        $this->assertSame([$first, $older], $this->rowKeys($after->rows));
+
+        $this->assertNotNull($after->firstAnchor);
+        $before = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $after->firstAnchor,
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+        $this->assertSame(0, $before->rowsBefore);
+        $this->assertSame([$newest, $second], $this->rowKeys($before->rows));
+
+        $this->assertNotNull($after->lastAnchor);
+        $pastEnd = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $after->lastAnchor,
+        ));
+        $this->assertSame([], $pastEnd->rows);
+        $this->assertSame(4, $pastEnd->rowsBefore);
+
+        $this->assertNotNull($firstWindow->firstAnchor);
+        $pastStart = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            filter: $query->filter,
+            anchor: $firstWindow->firstAnchor,
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+        $this->assertSame([], $pastStart->rows);
+        $this->assertSame(0, $pastStart->rowsBefore);
+
+        $all = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            filter: $query->filter,
+        ));
+        $this->assertSame(0, $all->rowsBefore);
+        $this->assertSame([$newest, $second, $first, $older], $this->rowKeys($all->rows));
+    }
+
+    public function testCountCeilingKeepsAdjacentAnchorWindowsDistinct(): void
+    {
+        $this->insertDeliveries(TableConstants::COUNT_CEILING, self::LATER);
+        $table = new HilosNotificationDeliveriesTable();
+        $query = new TableQueryDTO(sort: $table->defaultSort(), limit: $table->windowSize());
+
+        $atCeiling = $table->getPage($query);
+        $this->assertSame(TableConstants::COUNT_CEILING, $atCeiling->totalCount);
+        $this->assertTrue($atCeiling->totalExact);
+        $this->assertSame(0, $atCeiling->rowsBefore);
+
+        $lastPageIndex = intdiv(TableConstants::COUNT_CEILING, $query->limit) - 1;
+        $lastPage = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            pageIndex: $lastPageIndex,
+        ));
+        $this->assertSame(TableConstants::COUNT_CEILING - $query->limit, $lastPage->rowsBefore);
+
+        $pastPage = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            pageIndex: $lastPageIndex + 1,
+        ));
+        $this->assertSame([], $pastPage->rows);
+        $this->assertSame(TableConstants::COUNT_CEILING, $pastPage->rowsBefore);
+
+        $cappedAsk = new TableQueryDTO(sort: $query->sort);
+        $cappedFirst = $table->getPage($cappedAsk);
+        $this->assertNotNull($cappedFirst->lastAnchor);
+        $cappedSecond = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            anchor: $cappedFirst->lastAnchor,
+        ));
+        $this->assertSame($cappedFirst->limit, $cappedSecond->rowsBefore);
+        $this->assertSame([], array_intersect($this->rowKeys($cappedFirst->rows), $this->rowKeys($cappedSecond->rows)));
+
+        $this->insertDelivery(self::LATER);
+        $first = $table->getPage($query);
+        $this->assertSame(TableConstants::COUNT_CEILING, $first->totalCount);
+        $this->assertFalse($first->totalExact);
+        $this->assertNull($first->rowsBefore);
+        $this->assertNotNull($first->lastAnchor);
+
+        $second = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            anchor: $first->lastAnchor,
+        ));
+        $this->assertNull($second->rowsBefore);
+        $this->assertCount($query->limit, $second->rows);
+        $this->assertSame([], array_intersect($this->rowKeys($first->rows), $this->rowKeys($second->rows)));
+
+        $this->assertNotNull($second->firstAnchor);
+        $back = $table->getPage(new TableQueryDTO(
+            sort: $query->sort,
+            limit: $query->limit,
+            anchor: $second->firstAnchor,
+            anchorDirection: TableAnchorDirection::Before,
+        ));
+        $this->assertSame($this->rowKeys($first->rows), $this->rowKeys($back->rows));
+    }
+
     /**
      * Writes one pending email delivery of the seeded notification.
      *
      * @param string $createdAt Moment the delivery was made
+     * @param string $channel Delivery channel
      * @return int Id of the new delivery
      * @throws DatabaseException When the row cannot be written
      */
-    private function insertDelivery(string $createdAt): int
+    private function insertDelivery(string $createdAt, string $channel = 'email'): int
     {
         Database::sql(
             'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`) VALUES (?, ?, ?, ?)',
-            [$this->notificationId, 'email', 'pending', $createdAt],
+            [$this->notificationId, $channel, 'pending', $createdAt],
         );
 
         return (int) Database::sql('SELECT MAX(`id`) AS id FROM `hilos_notification_delivery`')->firstRow()['id'];
+    }
+
+    /**
+     * Writes several deliveries in one SQL statement to test the count ceiling.
+     *
+     * @param int $count Deliveries to write
+     * @param string $createdAt Moment every delivery was made
+     * @throws DatabaseException When the rows cannot be written
+     */
+    private function insertDeliveries(int $count, string $createdAt): void
+    {
+        $values = implode(', ', array_fill(0, $count, '(?, ?, ?, ?)'));
+        $params = [];
+        for ($index = 0; $index < $count; $index++) {
+            array_push($params, $this->notificationId, 'email', 'pending', $createdAt);
+        }
+        Database::sql(
+            'INSERT INTO `hilos_notification_delivery` (`notification_id`, `channel`, `status`, `created_at`) VALUES ' . $values,
+            $params,
+        );
+    }
+
+    /**
+     * Reads the delivery ids of a window in order.
+     *
+     * @param list<HilosNotificationDeliveryTableRow> $rows Journal rows
+     * @return list<int> Delivery ids
+     */
+    private function rowKeys(array $rows): array
+    {
+        return array_map(static fn(HilosNotificationDeliveryTableRow $row): int => (int) $row->rowKey, $rows);
     }
 
     /**

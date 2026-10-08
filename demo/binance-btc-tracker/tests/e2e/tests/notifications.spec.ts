@@ -410,11 +410,7 @@ test("an operator reaches a channel's delivery journal by clicks alone", async (
 // notifications with email delivery rows for seed-002 (501 = TableConstants::COUNT_CEILING + 1),
 // crossing the count ceiling where the total stops being exact. When the count is
 // inexact, the pager draws no page numbers and walks page-by-page via Next and Previous.
-// FIXME(P-386): red on every run since 23.09.2026 and green before it (run 0454): after
-// Next the count reads "26 – 50 of 500+" while the rows stay those of the first window.
-// Parked by the owner until R2-6 without a diagnosis — see
-// hilos-ops/proposals/P-386-deliveries-next-label-rows-stale.md.
-test.fixme('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
+test('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
   page,
 }) => {
   await grantAdminToSelf(page)
@@ -433,6 +429,7 @@ test.fixme('paginates the delivery journal across windows when the count exceeds
   const pageOneKeys = await tableRowKeys(page)
 
   await next.click()
+  await expect.poll(() => tableRowKeys(page)).not.toEqual(pageOneKeys)
   await expect(count).toHaveText('26 – 50 of 500+')
   await expect(prev).toBeEnabled()
   await expect(pageNumbers).toHaveCount(0)
@@ -443,6 +440,52 @@ test.fixme('paginates the delivery journal across windows when the count exceeds
   }
 
   await prev.click()
+  await expect.poll(() => tableRowKeys(page)).toEqual(pageOneKeys)
   await expect(count).toHaveText('1 – 25 of 500+')
   await expect(prev).toBeDisabled()
+})
+
+test('keeps an exact delivery window in place until Show after a live arrival above it', async ({
+  page,
+}) => {
+  // Twenty-seven command emits took 6.8s on an idle stand; slow delivery queues can exceed the base cap.
+  test.slow()
+
+  const { userId } = await signInAddressableAdmin(page)
+  await gotoPage(page, '/hilos/communications')
+  await enableEmailChannel(page)
+
+  const searchTerm = `window_delivery_${userId}`
+  for (let index = 0; index < 26; index += 1) {
+    const emitted = await emitNotification(userId, {
+      type: 'e2e_delivery_window',
+      title: `${searchTerm} ${index}`,
+    })
+    expect(emitted.queuedChannels).toContain('email')
+  }
+
+  await gotoPage(page, '/hilos/communications/email/deliveries')
+  await typeInto(page.getByTestId('hilos-table-search'), searchTerm)
+  const count = page.getByTestId('hilos-table-count')
+  const next = page.getByTestId('hilos-table-next')
+  await expect(count).toHaveText('1 – 25 of 26')
+  await next.click()
+  await expect(count).toHaveText('26 – 26 of 26')
+  const standingKeys = await tableRowKeys(page)
+  expect(standingKeys).toHaveLength(1)
+  await expect(next).toBeDisabled()
+
+  const newest = await emitNotification(userId, {
+    type: 'e2e_delivery_window',
+    title: `${searchTerm} newest`,
+  })
+  expect(newest.queuedChannels).toContain('email')
+  await expect(count).toHaveText('26 – 26 of 27')
+  await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
+  await expect(next).toBeDisabled()
+
+  await page.getByTestId('hilos-table-announce-show').click()
+  await expect(count).toHaveText('27 – 27 of 27')
+  await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
+  await expect(next).toBeDisabled()
 })

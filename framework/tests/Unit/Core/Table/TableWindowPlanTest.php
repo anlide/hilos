@@ -148,6 +148,47 @@ final class TableWindowPlanTest extends TestCase
         $this->assertSame(400 * self::PAGE_SIZE - 1, $plan->offset);
     }
 
+    public function testKnownRowsBeforeAnswersAddressesWithoutCountingRows(): void
+    {
+        $first = new TableAnchorDTO(['id' => 60]);
+        $anchor = new TableAnchorDTO(['id' => 40]);
+
+        $this->assertSame(0, TableWindowPlan::knownRowsBefore(new TableQueryDTO(), $first, 100));
+        $this->assertSame(40, TableWindowPlan::knownRowsBefore($this->pageQuery(2), $first, 100));
+        $this->assertSame(0, TableWindowPlan::knownRowsBefore($this->pageQuery(-1), null, 100));
+        $this->assertSame(0, TableWindowPlan::knownRowsBefore(new TableQueryDTO(limit: 20), $first, 100));
+        $this->assertSame(0, TableWindowPlan::knownRowsBefore(new TableQueryDTO(limit: 20), null, 100));
+        $this->assertSame(
+            100,
+            TableWindowPlan::knownRowsBefore(new TableQueryDTO(limit: 20, anchor: $anchor), null, 100),
+        );
+        $this->assertSame(
+            0,
+            TableWindowPlan::knownRowsBefore(
+                new TableQueryDTO(limit: 20, anchor: $anchor, anchorDirection: TableAnchorDirection::Before),
+                null,
+                100,
+            ),
+        );
+    }
+
+    public function testAnAnchoredWindowWithRowsNeedsItsSourceToCountBeforeIt(): void
+    {
+        $first = new TableAnchorDTO(['id' => 60]);
+        $anchor = new TableAnchorDTO(['id' => 40]);
+
+        $this->assertNull(TableWindowPlan::knownRowsBefore(
+            new TableQueryDTO(limit: 20, anchor: $anchor),
+            $first,
+            100,
+        ));
+        $this->assertNull(TableWindowPlan::knownRowsBefore(
+            new TableQueryDTO(limit: 20, anchor: $anchor, anchorDirection: TableAnchorDirection::Before),
+            $first,
+            100,
+        ));
+    }
+
     public function testCuttingAPageInTheSetsOwnOrderTakesItsFrameFromBothEnds(): void
     {
         $plan = $this->plannedPage(2, 5);

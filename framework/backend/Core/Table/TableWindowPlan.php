@@ -121,6 +121,35 @@ final readonly class TableWindowPlan
     }
 
     /**
+     * Answers the place of a window when its address alone makes that place known.
+     *
+     * A window from an anchor with rows needs its first row counted against the same filtered
+     * set. Null leaves that count to the row source; the other addresses need no SQL.
+     *
+     * @param TableQueryDTO $query Window query with the limit actually served by its row source
+     * @param ?TableAnchorDTO $firstAnchor Place of the first row, or null for an empty window
+     * @param int $totalCount Exact size of the filtered set
+     * @return ?int Rows before the window, or null when the row source must count them
+     */
+    public static function knownRowsBefore(TableQueryDTO $query, ?TableAnchorDTO $firstAnchor, int $totalCount): ?int
+    {
+        if ($query->limit === TableConstants::NO_LIMIT) {
+            return 0;
+        }
+        if ($query->pageIndex !== null) {
+            return max(0, $query->pageIndex) * $query->limit;
+        }
+        if ($query->anchor === null && $query->anchorDirection === TableAnchorDirection::After) {
+            return 0;
+        }
+        if ($firstAnchor === null) {
+            return $query->anchorDirection === TableAnchorDirection::Before ? 0 : $totalCount;
+        }
+
+        return null;
+    }
+
+    /**
      * Cuts what the query returned into the window and the places framing it.
      *
      * The frame rows are taken off before anything is built from the rows, so the window, its

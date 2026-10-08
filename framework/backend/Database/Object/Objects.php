@@ -695,15 +695,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     /**
      * Counts the rows of the set standing before a window, which is where that window sits in it.
      *
-     * Four of the five windows answer without a query. A window holding the whole set has nothing
-     * before it. A numbered page starts where the pages before it end, whether or not it turned
-     * out to hold rows. The first window of the set starts at nothing — and that is read off the
-     * ADDRESS rather than off the rows, so a first window that came back empty because somebody
-     * deleted its rows still sits at the start rather than behind the whole set. An empty window
-     * addressed by an anchor sits where that anchor pointed — past the end of the set going
-     * forward, at the start of it going back — because there is no first row to count up to. Only
-     * a window taken from an anchor is counted for, and that is the cost the owner accepted for
-     * Show and for paging.
+     * Addresses with a known place are answered by {@see TableWindowPlan::knownRowsBefore()}.
+     * Only a nonempty window taken from an anchor needs this collection's SQL count.
      *
      * The count runs to {@see TableConstants::COUNT_CEILING} like the count of the set does, and
      * the caller asks only under an exact total, so the ceiling is never what comes back: a window
@@ -726,17 +719,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         string $filters,
         array $filtersParam,
     ): int {
-        if ($query->limit === TableConstants::NO_LIMIT) {
-            return 0;
-        }
-        if ($query->pageIndex !== null) {
-            return max(0, $query->pageIndex) * $query->limit;
-        }
-        if ($query->anchor === null && $query->anchorDirection === TableAnchorDirection::After) {
-            return 0;
-        }
-        if ($firstAnchor === null) {
-            return $query->anchorDirection === TableAnchorDirection::Before ? 0 : $totalCount;
+        $known = TableWindowPlan::knownRowsBefore($query, $firstAnchor, $totalCount);
+        if ($known !== null) {
+            return $known;
         }
 
         $objectClass = static::OBJECT_CLASS;

@@ -26,10 +26,12 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableWindowPlan;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Filter\KeysetAnchorFilter;
 use Hilos\Database\Entity\Item\Notification as EntityNotification;
 use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDelivery;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
@@ -473,12 +475,21 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
         $totalCount = $counted->count;
         $totalExact = $counted->exact;
 
+        $servedQuery = $query->withLimit($limit);
         $orderColumns = $this->orderColumns($query);
-        $plan = TableWindowPlan::forQuery($query->withLimit($limit), $orderColumns, $totalCount, $totalExact);
+        $plan = TableWindowPlan::forQuery($servedQuery, $orderColumns, $totalCount, $totalExact);
         if ($plan === null) {
-            return new TableSnapshotDTO(rows: [], totalCount: $totalCount, totalExact: $totalExact, limit: $limit);
+            return new TableSnapshotDTO(
+                rows: [],
+                totalCount: $totalCount,
+                totalExact: $totalExact,
+                limit: $limit,
+                rowsBefore: $totalExact ? TableWindowPlan::knownRowsBefore($servedQuery, null, $totalCount) : null,
+            );
         }
 
+        $setWhere = $where;
+        $setParams = $params;
         $anchorColumns = array_keys($orderColumns);
         $keyset = $plan->keyset;
         if ($keyset !== null) {
@@ -498,14 +509,27 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
             static fn(array $row): TableAnchorDTO => TableAnchorDTO::fromRow($row, $anchorColumns),
         );
         $rows = array_values($rows);
+        $firstAnchor = $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns);
+        $rowsBefore = null;
+        if ($totalExact) {
+            $rowsBefore = TableWindowPlan::knownRowsBefore($servedQuery, $firstAnchor, $totalCount);
+            if ($rowsBefore === null) {
+                $before = new KeysetAnchorFilter($orderColumns, $firstAnchor, TableAnchorDirection::Before);
+                $condition = $before->toSql(self::DELIVERY_TABLE, self::DELIVERY_ALIAS);
+                $beforeWhere = $setWhere === '' ? " WHERE {$condition}" : "{$setWhere} AND {$condition}";
+                $beforeParams = array_merge($setParams, $before->getParams());
+                $rowsBefore = TableFacetTally::cappedSqlCount(self::JOIN, $beforeWhere, $beforeParams)->count;
+            }
+        }
 
         return new TableSnapshotDTO(
             rows: array_map(fn(array $row): HilosNotificationDeliveryTableRow => $this->rowFromSql($row), $rows),
             totalCount: $totalCount,
             totalExact: $totalExact,
             limit: $limit,
-            firstAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[0], $anchorColumns),
+            firstAnchor: $firstAnchor,
             lastAnchor: $rows === [] ? null : TableAnchorDTO::fromRow($rows[count($rows) - 1], $anchorColumns),
+            rowsBefore: $rowsBefore,
             frame: $frame,
         );
     }
