@@ -116,16 +116,18 @@ The SDK **primitives** are the exception: the reusable toolkit (`LoadingButton`,
 views) *is* built in all three view layers at full parity, because a React or
 Angular adopter needs the real component, not a stub. The bound demo is minimal;
 the primitive it binds is complete.
-HIL-1478 temporarily builds one Vue SDK page chunk, the language main card,
-before its React and Angular pages (HIL-1502/1503). `SHELL-PARITY` excludes only
-the `data-id` sites in `HilosI18nLanguageHeader.vue` and
-`HilosI18nLanguagePage.vue`, and that page's root export. Other Vue pages and
-all SDK primitives still require counterparts; remove the exception when those
-pages land.
-HIL-1435 likewise builds Vue Appearance before React/Angular (HIL-1440/1441).
-P-511 temporarily excludes only the `data-id` sites in
-`HilosAppearancePage.vue` and that page's root export; remove this exception
-when both view layers land.
+An SDK page may land in Vue before React and Angular, and `SHELL-PARITY` learns
+it from `HILOS_UNBUILT_PAGES` instead of from an exception of its own. A page's
+files are its Vue view — the file that binds its key to `HilosAdminPage`, or its
+entry in `hilosAdminViews.ts` — and every file under `vue/src/admin/` that the
+view reaches by relative import without leaving `admin/`, together with a root
+`index.ts` export resolving to one of them. Such a file needs no counterpart in
+a layer where every page reaching it is still listed unbuilt; as soon as one of
+them is built there, it is compared there. Everything outside `vue/src/admin/`
+is an SDK primitive and is always compared — a primitive lives there even while
+only staged pages use it. The port that builds the page strikes its layer from
+the registry, which `UNBUILT-PAGE` demands, and that is what turns the page's
+parity on.
 Two thin extra consumers *prove* the core is agnostic; a Vue-only codebase cannot
 (one consumer hides leaked assumptions). These demos are the simplest of the
 project's planned demos, so they double as real demos and as portability proofs.

@@ -1,6 +1,6 @@
 export { SharedComponent } from './SharedComponent.js'
 export { VueOnlyComponent } from './VueOnlyComponent.js'
-export { HilosI18nLanguagePage } from './HilosI18nLanguagePage.js'
+export { default as HilosI18nLanguagePage } from './admin/i18n/details/HilosI18nLanguagePage.vue'
 export { OtherPage } from './OtherPage.js'
 export { lowerCaseKey } from './lowerCaseKey.js'
 // export { CommentedComponent } from './CommentedComponent.js'

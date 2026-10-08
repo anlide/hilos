@@ -10,10 +10,30 @@
 // templateUrl is not followed either: the tree carries no external Angular
 // template today, and following one would make the reader a second traversal
 // rather than the single walk this rule promises.
+//
+// A page's own files are not compared in a layer where HILOS_UNBUILT_PAGES lists
+// every page whose Vue view reaches them: the view that binds a page key, read
+// the way UNBUILT-PAGE reads it, and every file under vue/src/admin/ it reaches
+// by relative import without leaving admin/, together with a root index.ts
+// export resolving to one of them. A dynamic import() is not followed, so the
+// file it loads stays compared; an SDK file placed under vue/src/admin/ is
+// judged as a page file. Everything outside admin/ is always compared.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 
 import ts from 'typescript'
+
+import {
+  KEYS_PATH,
+  REGISTRY_PATH,
+  filesUnder as adminFilesUnder,
+  readEntries,
+  readPages,
+  readViews,
+  source as declarations,
+  type Entry,
+  type View,
+} from './adminPages.js'
 
 /** Rule id, listed once in automated-checks.md. */
 export const SHELL_PARITY_RULE_ID = 'SHELL-PARITY'
@@ -48,18 +68,11 @@ const SKIPPED_DIRECTORIES = [
 /** Broken checker fixtures are judged only by their own focused tests. */
 const EXCLUDED_PATHS = ['framework/frontend/codestyle/fixtures']
 
-// These staged Vue pages have no React/Angular peers until their named leaves land:
-// language card HIL-1502/1503, Appearance HIL-1440/1441 (P-511).
-// Keep SDK primitives and every other Vue page site under SHELL-PARITY.
-const STAGED_VUE_PAGE_SITES = new Set([
-  'framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguageHeader.vue',
-  'framework/frontend/vue/src/admin/i18n/details/HilosI18nLanguagePage.vue',
-  'framework/frontend/vue/src/admin/appearance/HilosAppearancePage.vue',
-])
-const STAGED_VUE_PAGE_EXPORTS = new Set([
-  'HilosI18nLanguagePage',
-  'HilosAppearancePage',
-])
+/** The directory whose files belong to the pages whose Vue views reach them. */
+const ADMIN_ROOT = `${shellRoot(REFERENCE_SHELL)}/admin`
+
+/** The script blocks of a Vue single-file component, whose imports are read. */
+const SFC_SCRIPT = /<script\b[^>]*>([\s\S]*?)<\/script>/g
 
 /** Every spelling in which the three view layers author or pass a data-id. */
 const DATA_ID_ATTRIBUTE =
@@ -68,9 +81,9 @@ const DATA_ID_ATTRIBUTE =
 /** Spellings whose quoted value is the handle itself rather than an expression. */
 const LITERAL_SPELLINGS = ['data-id', 'dataId']
 
-/** A public re-export block in a package's root index. */
+/** A public re-export block in a package's root index, with its module. */
 const EXPORT_BLOCK =
-  /\bexport\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"][^'"]+['"]/g
+  /\bexport\s+(type\s+)?\{([\s\S]*?)\}\s+from\s+['"]([^'"]+)['"]/g
 
 /** A component name, as distinct from a hook, key, or other adapter idiom. */
 const COMPONENT_NAME = /^[A-Z][A-Za-z0-9]*$/
@@ -93,6 +106,8 @@ interface ExportSite {
   name: string
   path: string
   line: number
+  /** The file its module resolves to; null unless the module is relative. */
+  source: string | null
 }
 
 /** Everything collected for one shell during its one directory traversal. */
@@ -115,6 +130,9 @@ interface AttributeValue {
   end: number
 }
 
+/** The layers a page file needs no counterpart in, by path from the tree root. */
+type Exemptions = Map<string, Set<string>>
+
 /**
  * Reports every Vue SDK surface or component export missing from React or
  * Angular, using paths relative to the handed tree.
@@ -129,7 +147,11 @@ export function checkTree(root: string): string[] {
     inventory.set(shell, readShell(root, shell))
   }
 
-  return findings(inventory)
+  const pages = readPages(declarations(root, KEYS_PATH))
+  const entries = readEntries(declarations(root, REGISTRY_PATH), pages)
+  const views = readViews(root, REFERENCE_SHELL, pages)
+
+  return findings(inventory, pageFileExemptions(root, views, entries))
     .sort(compareFindings)
     .map(
       (finding) =>
@@ -163,10 +185,10 @@ function readShell(root: string, shell: Shell): ShellInventory {
   }
 
   for (const path of filesUnder(directory, root)) {
-    const source = readFileSync(join(root, path), 'utf8')
-    inventory.surfaces.push(...surfaceSites(path, source))
+    const text = readFileSync(join(root, path), 'utf8')
+    inventory.surfaces.push(...surfaceSites(path, text))
     if (path === `${relativeRoot}/index.ts`) {
-      inventory.exports.push(...exportSites(path, source))
+      inventory.exports.push(...exportSites(path, text))
     }
   }
 
@@ -175,9 +197,13 @@ function readShell(root: string, shell: Shell): ShellInventory {
 
 /**
  * @param inventory Surfaces and exports of all three view layers
+ * @param exemptions Layers each page file needs no counterpart in
  * @returns Every mismatch carried by the Vue reference layer
  */
-function findings(inventory: Map<Shell, ShellInventory>): Finding[] {
+function findings(
+  inventory: Map<Shell, ShellInventory>,
+  exemptions: Exemptions,
+): Finding[] {
   const reference = inventory.get(REFERENCE_SHELL) ?? {
     surfaces: [],
     exports: [],
@@ -187,8 +213,10 @@ function findings(inventory: Map<Shell, ShellInventory>): Finding[] {
   const found: Finding[] = []
 
   for (const site of reference.surfaces) {
-    if (STAGED_VUE_PAGE_SITES.has(site.path)) continue
-    const missing = missingShells(site.name, surfaceNames)
+    const exempt = exemptions.get(site.path)
+    const missing = missingShells(site.name, surfaceNames).filter(
+      (shell) => !exempt?.has(shell),
+    )
     if (missing.length > 0) {
       found.push({
         path: site.path,
@@ -199,12 +227,11 @@ function findings(inventory: Map<Shell, ShellInventory>): Finding[] {
   }
 
   for (const site of reference.exports) {
-    if (
-      site.path === `${shellRoot('vue')}/index.ts` &&
-      STAGED_VUE_PAGE_EXPORTS.has(site.name)
+    const exempt =
+      site.source === null ? undefined : exemptions.get(site.source)
+    const missing = missingShells(site.name, exportNames).filter(
+      (shell) => !exempt?.has(shell),
     )
-      continue
-    const missing = missingShells(site.name, exportNames)
     if (missing.length > 0) {
       found.push({
         path: site.path,
@@ -215,6 +242,118 @@ function findings(inventory: Map<Shell, ShellInventory>): Finding[] {
   }
 
   return found
+}
+
+/**
+ * @param root Absolute root containing the Vue package and the core routing files
+ * @param views The Vue view binding each page key
+ * @param entries The unbuilt-page registry entries
+ * @returns Layers each file under the Vue admin directory needs no counterpart in
+ */
+function pageFileExemptions(
+  root: string,
+  views: Map<string, View>,
+  entries: Entry[],
+): Exemptions {
+  const files = new Set(
+    adminFilesUnder(join(root, ADMIN_ROOT)).map((absolute) =>
+      relative(root, absolute).split(sep).join('/'),
+    ),
+  )
+  const edges = new Map<string, string[]>()
+  for (const path of files) {
+    edges.set(
+      path,
+      importedAdminFiles(path, readFileSync(join(root, path), 'utf8'), files),
+    )
+  }
+
+  const owners = new Map<string, Set<string>>()
+  for (const [key, view] of views) {
+    const reached = new Set<string>()
+    const queue = [view.path]
+    for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+      if (!files.has(path) || reached.has(path)) continue
+      reached.add(path)
+      queue.push(...(edges.get(path) ?? []))
+    }
+    for (const path of reached) {
+      owners.set(path, new Set([...(owners.get(path) ?? []), key]))
+    }
+  }
+
+  const layersOf = new Map(entries.map((entry) => [entry.key, entry.layers]))
+  const exemptions: Exemptions = new Map()
+  for (const [path, keys] of owners) {
+    let layers: Set<string> | null = null
+    for (const key of keys) {
+      const listed = layersOf.get(key) ?? []
+      layers = new Set(
+        listed.filter((layer) => layers === null || layers.has(layer)),
+      )
+    }
+    exemptions.set(path, layers ?? new Set())
+  }
+
+  return exemptions
+}
+
+/**
+ * @param path Path of a file under the Vue admin directory, from the tree root
+ * @param text Its source text
+ * @param files Every file under the Vue admin directory, from the tree root
+ * @returns Files it reaches by relative import or re-export inside admin/
+ */
+function importedAdminFiles(
+  path: string,
+  text: string,
+  files: Set<string>,
+): string[] {
+  const scripts = path.endsWith('.vue')
+    ? [...text.matchAll(SFC_SCRIPT)].map((block) => block[1])
+    : [text]
+  const targets: string[] = []
+
+  for (const script of scripts) {
+    const file = ts.createSourceFile(
+      path.endsWith('.vue') ? `${path}.ts` : path,
+      script,
+      ts.ScriptTarget.Latest,
+      true,
+    )
+    for (const statement of file.statements) {
+      const specifier =
+        (ts.isImportDeclaration(statement) ||
+          ts.isExportDeclaration(statement)) &&
+        statement.moduleSpecifier &&
+        ts.isStringLiteral(statement.moduleSpecifier)
+          ? statement.moduleSpecifier.text
+          : null
+      if (specifier === null) continue
+      const target = resolvedModule(path, specifier)
+      if (target !== null && files.has(target)) {
+        targets.push(target)
+      }
+    }
+  }
+
+  return targets
+}
+
+/**
+ * @param path Path of the importing file, from the tree root
+ * @param specifier The module specifier as written
+ * @returns The file it resolves to, from the tree root; null unless relative
+ */
+function resolvedModule(path: string, specifier: string): string | null {
+  if (!specifier.startsWith('.')) {
+    return null
+  }
+
+  return join(dirname(path), specifier)
+    .split(sep)
+    .join('/')
+    .replace(/\.js$/, '.ts')
 }
 
 /**
@@ -334,6 +473,7 @@ function exportSites(relativePath: string, source: string): ExportSite[] {
     if (block[1] === undefined) {
       const contents = block[2]
       const contentsStart = block.index + block[0].indexOf(contents)
+      const resolved = resolvedModule(relativePath, block[3])
       for (const entry of commaSeparated(contents)) {
         const name = exportedName(entry.text)
         if (name !== null && COMPONENT_NAME.test(name)) {
@@ -342,6 +482,7 @@ function exportSites(relativePath: string, source: string): ExportSite[] {
             name,
             path: relativePath,
             line: lineAt(starts, contentsStart + entry.start + nameOffset),
+            source: resolved,
           })
         }
       }

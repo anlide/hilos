@@ -199,12 +199,18 @@ each file renders the page-agnostic shell, and the navigator is read only by
 and strike that layer from `HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain); a consumer overriding an unbuilt key names it and its section in `bootHilos` `projectViews`.
 An unbuilt page is listed for each layer that has not built it: the router draws 404 `not_served` without subscribing, and dashboard/child cards omit it.
 A section stays in the registry while none of its pages is built in that layer; checked automatically by `UNBUILT-PAGE` against the views and the PHP catalog tree.
-HIL-1478 is a narrow staged exception: Vue serves the main `hilos_i18n_language`
-card by direct URL while its `hilos_i18n_languages` parent list remains unbuilt.
-The parent still returns `not_served`; React and Angular keep both pages unbuilt.
-`UNBUILT-PAGE` permits only this parent/child/layer pair. HIL-1474 removes the
-exception when it builds the Vue list; no other built child may hide under an
-unbuilt parent.
+A child page may be built in a layer before its parent only when the parent is a
+page with content of its own — a list or a table that its mockup draws — and
+never when the parent is a navigation section: a section opens with its first
+built child. The child is then served by direct URL while the parent still
+answers `not_served`. The leaf whose plan builds that child adds one row to
+`STAGED_CHILDREN` in `framework/frontend/codestyle/stagedChildren.ts` — layer,
+parent key, child key and its own `HIL-<n>` — in the same change and without
+another interview: the plan that staged the two pages already decided it, and
+the row only records the decision. A row expires by itself: once the parent is
+built in that layer, or the child is listed unbuilt again, `UNBUILT-PAGE`
+reports the row as spent, and the change that spent it removes it. No other
+built child may hide under an unbuilt parent.
 
 ## Type placement: domain vs page-local
 

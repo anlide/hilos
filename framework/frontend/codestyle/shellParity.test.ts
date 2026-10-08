@@ -31,6 +31,7 @@ function reportFixture(name: string): string[] {
 
 it('reports exactly the surfaces and exports the drifted tree seeds', () => {
   expect(reportFixture('drifted')).toEqual([
+    `SHELL-PARITY framework/frontend/vue/src/HilosRootPrimitive.vue:2 — the surface 'root-primitive' has no counterpart in react, angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:2 — the surface 'vue-only' has no counterpart in react, angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:3 — the surface 'strict-parity' has no counterpart in angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:5 — the surface 'vue-dynamic-*' has no counterpart in react, angular ${DOC}`,
@@ -41,6 +42,9 @@ it('reports exactly the surfaces and exports the drifted tree seeds', () => {
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:10 — the surface 'repeated' has no counterpart in react, angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:11 — the surface 'repeated' has no counterpart in react, angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/Widget.vue:13 — the surface 'react-prop-only' has no counterpart in angular ${DOC}`,
+    `SHELL-PARITY framework/frontend/vue/src/admin/late/HilosLatePage.vue:9 — the surface 'late-page-only' has no counterpart in react ${DOC}`,
+    `SHELL-PARITY framework/frontend/vue/src/admin/orphan/HilosOrphanDetail.vue:2 — the surface 'orphan-detail' has no counterpart in react, angular ${DOC}`,
+    `SHELL-PARITY framework/frontend/vue/src/admin/shared/HilosSharedDetail.vue:2 — the surface 'shared-detail' has no counterpart in react ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/index.ts:2 — the component 'VueOnlyComponent' is exported by vue and not by angular ${DOC}`,
     `SHELL-PARITY framework/frontend/vue/src/index.ts:4 — the component 'OtherPage' is exported by vue and not by react, angular ${DOC}`,
   ])
