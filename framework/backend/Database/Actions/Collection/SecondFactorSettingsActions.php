@@ -19,8 +19,9 @@ use Hilos\Database\View\Item\SecondFactorSetting;
 /**
  * SecondFactorSettingsActions - write operations for the SecondFactorSettings collection (HIL-494).
  *
- * One write, an upsert: a person's row is created on the first choice they make, so the
- * write is a collection one even when the row turns out to exist.
+ * The writes are collection ones even when the row turns out to exist: a person's row is
+ * created on the first choice they make, or on their first wrong app code (HIL-1285), and the
+ * lock that code count puts and lifts lives on the same row.
  *
  * @extends DbActions<SecondFactorSetting, ObjectSecondFactorSettings>
  * @property-read DbCollectionSecondFactorSettings $collection
@@ -48,6 +49,73 @@ class SecondFactorSettingsActions extends DbActions
         $this->ensureCanCreateInSet((string)$userId);
 
         $this->objectCollection->setResetWait($userId, $days, $pendingDays, $pendingFrom);
+    }
+
+    /**
+     * Counts one wrong app code against a person and answers the count of the window (HIL-1285).
+     *
+     * @param int $userId Person
+     * @param int $windowSeconds Length of the window the misses are counted in
+     * @return int Wrong app codes in the window after this one
+     * @throws CreateNotAllowedException When the truth source rejects the insert
+     * @throws WriteNotAllowedException When the truth source rejects the update
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException When the lookup, the insert, the update or the read-back fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
+     */
+    public function countAppCodeMiss(int $userId, int $windowSeconds): int
+    {
+        $this->ensureCanCreateInSet((string)$userId);
+
+        return $this->objectCollection->countAppCodeMiss($userId, $windowSeconds);
+    }
+
+    /**
+     * Locks a person's app codes until a moment, if their window still holds the ceiling (HIL-1285).
+     *
+     * Of two misses that both reached the ceiling exactly one puts the lock; the other is
+     * answered false and sends no notice of its own.
+     *
+     * @param int $userId Person
+     * @param int $atMisses Ceiling the window has to hold for the lock to be put
+     * @param int $step Step of the lock on the ladder
+     * @param string $until End of the lock (SQL datetime)
+     * @return bool True when this call put the lock, false when another miss put it already or the person has no row
+     * @throws WriteNotAllowedException When the truth source rejects the update
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException When the lookup, the update, the row count or the re-announcement fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
+     */
+    public function lockAppCodes(int $userId, int $atMisses, int $step, string $until): bool
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
+
+        return $this->objectCollection->lockAppCodes($userId, $atMisses, $step, $until);
+    }
+
+    /**
+     * Lifts a person's app-code lock with its step, the miss count and its window (HIL-1285).
+     *
+     * @param int $userId Person
+     * @return ?string End of the lifted lock (SQL datetime) when it was still in force, or null when none was
+     * @throws WriteNotAllowedException When the truth source rejects the update
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
+     * @throws LogicException When the object collection entity class is not configured
+     * @throws DatabaseException When the lookup or the write fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
+     */
+    public function unlockAppCodes(int $userId): ?string
+    {
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
+
+        return $this->objectCollection->unlockAppCodes($userId);
     }
 
     /**

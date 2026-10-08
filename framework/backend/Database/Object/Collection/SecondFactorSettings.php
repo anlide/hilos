@@ -20,10 +20,13 @@ use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * SecondFactorSettings object collection - each person's own removal wait (HIL-494).
+ * SecondFactorSettings object collection - each person's own removal wait (HIL-494) and the
+ * count of their wrong app codes with the lock it puts (HIL-1285).
  *
- * Keyed by the person, so a person's row is read by key. {@see setResetWait()} is the one
- * write: it upserts the row with the wait in force and the shorter wait parked, if any.
+ * Keyed by the person, so a person's row is read by key. {@see setResetWait()} upserts the row
+ * with the wait in force and the shorter wait parked, if any; {@see countAppCodeMiss()} upserts
+ * it to count a wrong app code; {@see lockAppCodes()} and {@see unlockAppCodes()} put and lift
+ * the lock on a row that stands.
  *
  * @extends Objects<ObjectSecondFactorSetting>
  * @method ObjectSecondFactorSetting|null current()
@@ -89,6 +92,99 @@ class SecondFactorSettings extends Objects
         if ($isNew) {
             $this[$userId] = $setting;
         }
+    }
+
+    /**
+     * Counts one wrong app code against a person and answers the count of the window (HIL-1285).
+     *
+     * A person who never chose a wait has no row yet; the miss creates it the way the first
+     * choice does. The count itself is one statement on the row ({@see ObjectSecondFactorSetting::countAppCodeMiss()}):
+     * a window begun `$windowSeconds` or more ago is over, and this miss opens a new one.
+     *
+     * @param int $userId Person
+     * @param int $windowSeconds Length of the window the misses are counted in
+     * @return int Wrong app codes in the window after this one
+     * @throws DatabaseException When the lookup, the insert, the update or the read-back fails
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
+     * @throws LogicException When the collection class constants are not configured
+     */
+    public function countAppCodeMiss(int $userId, int $windowSeconds): int
+    {
+        $setting = $this->offsetGet($userId);
+        if ($setting === null) {
+            $setting = static::OBJECT_CLASS::create();
+            $setting->userId = $userId;
+            $setting->updatedAt = TimeHelper::getSqlDateTime();
+            $setting->sync();
+            $this[$userId] = $setting;
+        }
+
+        $now = time();
+
+        return $setting->countAppCodeMiss(date('Y-m-d H:i:s', $now - $windowSeconds), date('Y-m-d H:i:s', $now));
+    }
+
+    /**
+     * Locks a person's app codes until a moment, if their window still holds the ceiling (HIL-1285).
+     *
+     * @param int $userId Person
+     * @param int $atMisses Ceiling the window has to hold for the lock to be put
+     * @param int $step Step of the lock on the ladder
+     * @param string $until End of the lock (SQL datetime)
+     * @return bool True when this call put the lock, false when another miss put it already or the person has no row
+     * @throws DatabaseException When the lookup, the update, the row count or the re-announcement fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
+     * @throws LogicException When the collection class constants are not configured
+     */
+    public function lockAppCodes(int $userId, int $atMisses, int $step, string $until): bool
+    {
+        $setting = $this->offsetGet($userId);
+        if ($setting === null) {
+            return false;
+        }
+
+        return $setting->lockAppCodes($atMisses, $step, $until, TimeHelper::getSqlDateTime());
+    }
+
+    /**
+     * Lifts a person's app-code lock: the lock, its step, the miss count and its window all go (HIL-1285).
+     *
+     * A person with no row has nothing to lift and nothing is written.
+     *
+     * @param int $userId Person
+     * @return ?string End of the lifted lock (SQL datetime) when it was still in force, or null when none was
+     * @throws DatabaseException When the lookup or the write fails
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If the row has no primary key
+     * @throws LogicException When the collection class constants are not configured
+     */
+    public function unlockAppCodes(int $userId): ?string
+    {
+        $setting = $this->offsetGet($userId);
+        if ($setting === null) {
+            return null;
+        }
+
+        $until = $setting->appCodeLockedUntil;
+        $setting->appCodeMisses = 0;
+        $setting->appCodeMissesFrom = null;
+        $setting->appCodeLockStep = 0;
+        $setting->appCodeLockedUntil = null;
+        $setting->updatedAt = TimeHelper::getSqlDateTime();
+        $setting->sync();
+
+        return $until !== null && strtotime($until) > time() ? $until : null;
     }
 
     /**

@@ -917,6 +917,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::LEGAL_TEST_HOLD => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::VERIFICATION_TEST_SWEEP => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::VERIFICATION_TEST_END_PAUSE => HilosAgentType::HILOS_USERS_LIBRARY,
+            CliCommands::SECOND_FACTOR_UNLOCK => HilosAgentType::HILOS_USERS_LIBRARY,
             CliCommands::ADMIN_CREATE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::ADMIN_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::ADMIN_REVOKE => HilosAgentType::HILOS_SESSIONS_LIBRARY,

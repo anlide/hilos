@@ -15,7 +15,11 @@ use Hilos\Database\PhpType;
  * within the administrator's bounds. NULL `reset_wait_days` is the administrator's
  * default. A shorter wait is parked in `pending_reset_wait_days` until
  * `pending_reset_wait_from`, the moment the wait in force when it was asked for runs out.
- * Keyed by the person.
+ *
+ * The same row counts the person's wrong authenticator-app codes (HIL-1285):
+ * `app_code_misses` in the window `app_code_misses_from` opened, and the lock the ceiling
+ * put on app codes - its step on the ladder and `app_code_locked_until`, kept after it
+ * runs out so the next lock knows whether the ladder starts again. Keyed by the person.
  *
  * @method static EntitySecondFactorSettings get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySecondFactorSettings getAll()
@@ -26,6 +30,10 @@ class SecondFactorSetting extends Entity
     public const string reset_wait_days = 'reset_wait_days';
     public const string pending_reset_wait_days = 'pending_reset_wait_days';
     public const string pending_reset_wait_from = 'pending_reset_wait_from';
+    public const string app_code_misses = 'app_code_misses';
+    public const string app_code_misses_from = 'app_code_misses_from';
+    public const string app_code_lock_step = 'app_code_lock_step';
+    public const string app_code_locked_until = 'app_code_locked_until';
     public const string updated_at = 'updated_at';
 
     public const string _table = 'hilos_second_factor_setting';
@@ -35,6 +43,10 @@ class SecondFactorSetting extends Entity
         self::reset_wait_days,
         self::pending_reset_wait_days,
         self::pending_reset_wait_from,
+        self::app_code_misses,
+        self::app_code_misses_from,
+        self::app_code_lock_step,
+        self::app_code_locked_until,
         self::updated_at,
     ];
 
@@ -43,6 +55,10 @@ class SecondFactorSetting extends Entity
         self::reset_wait_days => PhpType::INTEGER->value,
         self::pending_reset_wait_days => PhpType::INTEGER->value,
         self::pending_reset_wait_from => PhpType::DATETIME->value,
+        self::app_code_misses => PhpType::INTEGER->value,
+        self::app_code_misses_from => PhpType::DATETIME->value,
+        self::app_code_lock_step => PhpType::INTEGER->value,
+        self::app_code_locked_until => PhpType::DATETIME->value,
         self::updated_at => PhpType::DATETIME->value,
     ];
 
@@ -55,7 +71,8 @@ class SecondFactorSetting extends Entity
     public const string _setVia = self::user_id;
     public const bool _setRoot = false;
 
-    // A number of days and when it takes over: how long a person's removal waits says
+    // A number of days and when it takes over, a count of wrong codes and how long they
+    // lock the app: how long a person's removal waits and how often a code was missed say
     // nothing about who they are.
     public const array _pii = [];
 
@@ -64,6 +81,10 @@ class SecondFactorSetting extends Entity
         self::reset_wait_days,
         self::pending_reset_wait_days,
         self::pending_reset_wait_from,
+        self::app_code_misses,
+        self::app_code_misses_from,
+        self::app_code_lock_step,
+        self::app_code_locked_until,
         self::updated_at,
     ];
 
@@ -71,5 +92,9 @@ class SecondFactorSetting extends Entity
     public ?int $reset_wait_days = null;
     public ?int $pending_reset_wait_days = null;
     public ?string $pending_reset_wait_from = null;
+    public int $app_code_misses = 0;
+    public ?string $app_code_misses_from = null;
+    public int $app_code_lock_step = 0;
+    public ?string $app_code_locked_until = null;
     public string $updated_at;
 }

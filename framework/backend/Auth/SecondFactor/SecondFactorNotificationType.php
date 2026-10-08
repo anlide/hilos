@@ -7,12 +7,14 @@ namespace Hilos\Auth\SecondFactor;
 use Hilos\Notification\NotificationTypeRegistry;
 
 /**
- * SecondFactorNotificationType - the machine types a delayed removal of a second factor is announced under (HIL-494).
+ * SecondFactorNotificationType - the machine types a delayed removal of a second factor is announced under (HIL-494),
+ * and the lock wrong app codes put on it (HIL-1285).
  *
  * Declared by the framework because the code that emits them is the framework's: the users
- * library opens and cancels a removal, and its sweep reminds and carries it out. All four are
- * registered as mandatory in {@see NotificationTypeRegistry}: whoever took over an account
- * would switch the person's notifications off first, and the announcement is the defence.
+ * library opens and cancels a removal, its sweep reminds and carries it out, and it locks the
+ * app codes when they are missed too often. All five are registered as mandatory in
+ * {@see NotificationTypeRegistry}: whoever took over an account would switch the person's
+ * notifications off first, and the announcement is the defence.
  */
 final class SecondFactorNotificationType
 {
@@ -27,4 +29,7 @@ final class SecondFactorNotificationType
 
     /** A removal was carried out: the account has no second factor any more. */
     public const string RESET_COMPLETED = 'second_factor.reset_completed';
+
+    /** Too many wrong app codes: app codes are not accepted for a while; backup codes still are. */
+    public const string APP_CODES_LOCKED = 'second_factor.app_codes_locked';
 }

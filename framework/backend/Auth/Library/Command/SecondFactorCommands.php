@@ -23,6 +23,8 @@ use Hilos\Auth\SecondFactor\DTO\SecondFactorProfileReplyDTO;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\OtpAuthUri;
+use Hilos\Auth\SecondFactor\SecondFactorLockNotifier;
+use Hilos\Auth\SecondFactor\SecondFactorLockPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
@@ -65,6 +67,13 @@ use Random\RandomException;
  * but the first enrolment, the wait and the removal starts with a code, because a stolen live
  * session must not strip or copy the factor. After every write the person's section is fanned
  * to their group, whichever tab or browser made it.
+ *
+ * Every app code but the first one of a new app is held to one ceiling per person (HIL-1285),
+ * wherever it is typed - the sign-in step, the profile, the confirmation of an operation:
+ * wrong ones are counted on the person's row, and too many in a day lock app codes for a
+ * step of a ladder, refused before they are checked. Backup codes stay outside the lock and
+ * the count - they cannot be guessed, and they are the person's own way out of a lock a
+ * guesser put. The operator lifts a lock by command ({@see unlockAppCodes()}).
  */
 final class SecondFactorCommands extends AbstractLibraryCommands
 {
@@ -80,13 +89,16 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * A code from any confirmed authenticator of the person passes, once: the step it matched
      * is taken by a conditional write, so the same code does not pass twice. A backup code is
      * burned the same way. A right code also ends a removal of the factor that stands - whoever
-     * shows the factor has not lost it. A wrong code is counted on the session by the holder.
+     * shows the factor has not lost it. A wrong code is counted on the session by the holder,
+     * and a wrong app code against the person's ceiling as well. An app code under the lock is
+     * refused unchecked and counted nowhere: the wait goes on, and a backup code or a removal
+     * asked from this step still gets the person through.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ConfirmSecondFactorActionDTO $dto Code, its kind, and whether to trust the browser
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When no wait stands on the code step, or the code matches nothing
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws ValidationException When no wait stands on the code step, the code matches nothing, or app codes are locked
+     * @throws HilosException When a lookup, a write, the lock notice or a frame fails
      */
     public function confirm(string $acceptKey, ConfirmSecondFactorActionDTO $dto): void
     {
@@ -96,11 +108,17 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return;
         }
 
-        $proven = $dto->backupCode
-            ? $this->spendBackupCode($userId, $dto->code)
-            : $this->acceptAppCode(Hilos::$db->secondFactors->confirmedOf($userId), $dto->code);
+        if ($dto->backupCode) {
+            $proven = $this->spendBackupCode($userId, $dto->code);
+        } else {
+            $this->assertAppCodesOpen($userId);
+            $proven = $this->acceptAppCode(Hilos::$db->secondFactors->confirmedOf($userId), $dto->code);
+        }
         if (!$proven) {
             $this->library->announceSecondFactorMissed($acting);
+            if (!$dto->backupCode) {
+                $this->countAppCodeMiss($userId);
+            }
 
             throw new ValidationException(SecondFactorMessages::INVALID_CODE);
         }
@@ -663,20 +681,97 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     /**
      * Refuses a profile or operation action whose second-factor code proves nothing.
      *
+     * The door of every profile action with a code and of the confirmation of an operation, so
+     * the ceiling on app codes reaches them all here: an app code under the lock is refused
+     * unchecked, and a wrong one is counted against the person.
+     *
      * @param int $userId Person
      * @param string $code Code as typed
      * @param bool $backupCode Whether it is a backup code
-     * @throws ValidationException When the code matches nothing
-     * @throws HilosException When a lookup or the write fails
+     * @throws ValidationException When the code matches nothing, or app codes are locked
+     * @throws HilosException When a lookup, the write or the lock notice fails
      */
     public function assertProof(int $userId, string $code, bool $backupCode): void
     {
-        $proven = $backupCode
-            ? $this->spendBackupCode($userId, $code)
-            : $this->acceptAppCode(Hilos::$db->secondFactors->confirmedOf($userId), $code);
-        if (!$proven) {
+        if ($backupCode) {
+            if (!$this->spendBackupCode($userId, $code)) {
+                throw new ValidationException(SecondFactorMessages::INVALID_CODE);
+            }
+
+            return;
+        }
+
+        $this->assertAppCodesOpen($userId);
+        if (!$this->acceptAppCode(Hilos::$db->secondFactors->confirmedOf($userId), $code)) {
+            $this->countAppCodeMiss($userId);
+
             throw new ValidationException(SecondFactorMessages::INVALID_CODE);
         }
+    }
+
+    /**
+     * Lifts a person's app-code lock with its step, the miss count and its window (HIL-1285).
+     *
+     * The operator's way out for a person a guesser locked out; the person is not notified.
+     *
+     * @param int $userId Person
+     * @return ?string End of the lifted lock (SQL datetime) when it was still in force, or null when none was
+     * @throws HilosException When the lookup or the write fails
+     */
+    public function unlockAppCodes(int $userId): ?string
+    {
+        return Hilos::$db->secondFactorSettings->actions->unlockAppCodes($userId);
+    }
+
+    /**
+     * Refuses an app code while the person's app codes are locked, naming the time left.
+     *
+     * The refusal comes before the code is checked, so a right code is refused as a wrong one
+     * is and the lock tells a guesser nothing; it is not counted either.
+     *
+     * @param int $userId Person
+     * @throws ValidationException When app codes are locked
+     * @throws HilosException When the lookup or the env read fails
+     */
+    private function assertAppCodesOpen(int $userId): void
+    {
+        $until = Hilos::$db->secondFactorSettings[$userId]?->appCodeLockedUntil;
+        $left = $until === null ? 0 : (int)strtotime($until) - time();
+        if ($left > 0) {
+            throw new ValidationException(sprintf(SecondFactorMessages::APP_CODES_LOCKED, SecondFactorLockPolicy::fromEnv()->waitText($left)));
+        }
+    }
+
+    /**
+     * Counts a wrong app code against the person, locking app codes when it reaches the ceiling.
+     *
+     * Below the ceiling it only counts, and the caller refuses the code as wrong. At the ceiling
+     * the lock takes the next step of the ladder, the count starts again, and the person is
+     * told - by the miss that put the lock: of two that reached the ceiling at once only one
+     * does. Either of them is refused with the lock, which stands by then.
+     *
+     * @param int $userId Person
+     * @throws ValidationException When this miss reached the ceiling and app codes are locked
+     * @throws HilosException When a lookup, a write, the env read or the notice fails
+     */
+    private function countAppCodeMiss(int $userId): void
+    {
+        $policy = SecondFactorLockPolicy::fromEnv();
+        $misses = Hilos::$db->secondFactorSettings->actions->countAppCodeMiss($userId, $policy->windowSeconds());
+        if ($misses < $policy->misses()) {
+            return;
+        }
+
+        $now = time();
+        $setting = Hilos::$db->secondFactorSettings[$userId];
+        $lastUntil = $setting?->appCodeLockedUntil;
+        $step = $policy->nextStep((int)$setting?->appCodeLockStep, $lastUntil === null ? null : (int)strtotime($lastUntil), $now);
+        $untilSec = $now + $policy->lockSecondsFor($step);
+        if (Hilos::$db->secondFactorSettings->actions->lockAppCodes($userId, $policy->misses(), $step, date('Y-m-d H:i:s', $untilSec))) {
+            SecondFactorLockNotifier::locked($userId, $misses, $untilSec);
+        }
+
+        throw new ValidationException(sprintf(SecondFactorMessages::APP_CODES_LOCKED, $policy->waitText($untilSec - $now)));
     }
 
     /**

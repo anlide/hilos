@@ -123,6 +123,7 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\SecondFactor\SecondFactorResetSweeper;
+use Hilos\Auth\SecondFactor\SecondFactorUnlockCommandConstants;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
@@ -397,7 +398,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The second factor adds the doors that guess a secret (HIL-494): a code on the way in, the
      * first code of an enrolment, the token of a cancel link, and the five profile submits that
      * start with a code. Its other submits spend nothing and only move the caller's own wait or
-     * the caller's own choice.
+     * the caller's own choice - all but one: a removal asked from the code step guesses nothing
+     * but announces itself on every channel the owner has (HIL-1285, P-400), so whoever knows
+     * the password could flood them, and it passes the throttle too. The same request from the
+     * profile stays out: it needs a live signed-in session.
      *
      * Operation step-up adds its confirm submit: it guesses a password, authenticator,
      * delivered code, or device-key assertion, so it passes the same throttle before work.
@@ -441,6 +445,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR,
         HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM,
         HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE,
@@ -518,15 +523,19 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     ];
 
     /**
-     * The test-only commands answered by the users library.
+     * The commands answered by the users library.
      *
-     * The test: prefix enforces the production ban via NonProductionGate. Routed here because
-     * this library owns both acceptance records and verification rows ({@see self::OWNS_DB}).
+     * Three are test-only: the test: prefix enforces the production ban via NonProductionGate.
+     * Routed here because this library owns both acceptance records and verification rows
+     * ({@see self::OWNS_DB}). The operator's {@see CliCommands::SECOND_FACTOR_UNLOCK} runs on
+     * production (HIL-1285): it is answered here because this library checks the codes and
+     * writes the row their misses and lock are kept on.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::LEGAL_TEST_HOLD,
         CliCommands::VERIFICATION_TEST_SWEEP,
         CliCommands::VERIFICATION_TEST_END_PAUSE,
+        CliCommands::SECOND_FACTOR_UNLOCK,
     ];
 
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
@@ -840,6 +849,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             return;
         }
 
+        if ($data->command === CliCommands::SECOND_FACTOR_UNLOCK) {
+            $this->handleSecondFactorUnlockCommand($data);
+
+            return;
+        }
+
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
     }
 
@@ -881,6 +896,54 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             LegalHoldCommandConstants::FIELD_STANDING => $standing->standing->value,
             LegalHoldCommandConstants::FIELD_DEADLINE => $standing->deadline,
             LegalHoldCommandConstants::FIELD_FROZEN => $frozen,
+        ]));
+    }
+
+    /**
+     * Runs {@see CliCommands::SECOND_FACTOR_UNLOCK} and answers the parked socket exactly once (HIL-1285).
+     *
+     * Lifts the person's app-code lock with its step, the miss count and its window, and says
+     * whether a lock was in force and until when. A person who does not exist is refused by
+     * name; one without a lock is not an error - the count is cleared all the same.
+     *
+     * @param CommandRequestDTO $data Command request carrying the person id
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function handleSecondFactorUnlockCommand(CommandRequestDTO $data): void
+    {
+        $rawUserId = $data->payload[SecondFactorUnlockCommandConstants::FIELD_USER_ID] ?? null;
+        $userId = is_int($rawUserId) || (is_string($rawUserId) && ctype_digit($rawUserId)) ? (int)$rawUserId : null;
+        if ($userId === null || $userId <= 0) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Second-factor unlock requires a positive user id'));
+
+            return;
+        }
+
+        try {
+            $known = Hilos::$db->users[$userId] !== null;
+            $lockedUntil = $known ? $this->secondFactorCommands()->unlockAppCodes($userId) : null;
+        } catch (WiringRefusal $refusal) {
+            // Named apart, though answered the same way: the operator's terminal is parked on
+            // the one reply, and a missing read of the people is a wiring fault, not their absence.
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Cannot read the people here: ' . $refusal->getMessage()));
+
+            return;
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+
+            return;
+        }
+
+        if (!$known) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "No user #{$userId}"));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            SecondFactorUnlockCommandConstants::FIELD_USER_ID => $userId,
+            SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => $lockedUntil !== null,
+            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => $lockedUntil,
         ]));
     }
 

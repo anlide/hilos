@@ -382,6 +382,21 @@ enum EnvConstants
      */
     case HILOS_SECOND_FACTOR_CANCEL_URL;
 
+    /**
+     * Wrong authenticator-app codes a person may enter within a day before app codes are
+     * locked (HIL-1285). Default 10. Counted per person wherever the code is entered - the
+     * sign-in step, the profile and the confirmation of an operation; backup codes are not
+     * counted and stay open while the lock holds. The day itself is not configurable.
+     */
+    case HILOS_SECOND_FACTOR_LOCK_MISSES;
+
+    /**
+     * Lock durations in seconds, comma-separated, one per step of the ladder (HIL-1285).
+     * Default `900,3600,21600,86400`. A lock within a day of the end of the previous one
+     * takes the next step; the last step repeats. A day without a lock starts the ladder again.
+     */
+    case HILOS_SECOND_FACTOR_LOCK_STEPS;
+
     // ── Auth throttle (anti-abuse on expensive auth actions) ─────────────────
 
     /**

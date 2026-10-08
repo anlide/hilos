@@ -43,6 +43,8 @@ abstract class NotificationTypeRegistry
      *
      * The four announcements of a delayed second-factor removal (HIL-494) are mandatory for the
      * reason the removal is delayed at all: whoever took the account over would mute them first.
+     * So is the lock wrong app codes put on the second factor (HIL-1285): the person learns of
+     * the guessing whatever channels the guesser, who knows the password, has switched off.
      *
      * @return array<string, NotificationTypeDescriptor> Type descriptors keyed by type
      */
@@ -55,6 +57,7 @@ abstract class NotificationTypeRegistry
             SecondFactorNotificationType::RESET_REMINDER => new NotificationTypeDescriptor(mandatory: true),
             SecondFactorNotificationType::RESET_CANCELED => new NotificationTypeDescriptor(mandatory: true),
             SecondFactorNotificationType::RESET_COMPLETED => new NotificationTypeDescriptor(mandatory: true),
+            SecondFactorNotificationType::APP_CODES_LOCKED => new NotificationTypeDescriptor(mandatory: true),
         ];
     }
 

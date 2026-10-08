@@ -10,6 +10,13 @@
 -- moment the wait in force when it was asked for would have run out - otherwise whoever
 -- grabbed a live session would shorten the wait to a day and ask for the removal.
 --
+-- Wrong authenticator-app codes are counted on the same row (HIL-1285), wherever
+-- the code is entered: `app_code_misses` in a window of one day that the first
+-- miss opens at `app_code_misses_from`. The ceiling locks app codes until
+-- `app_code_locked_until`; `app_code_lock_step` is the step of that lock on the
+-- ladder. An expired lock keeps its end, so the next lock knows whether a day has
+-- passed since it and the ladder starts again.
+--
 -- Keyed by the person: there is one choice per account.
 
 CREATE TABLE `hilos_second_factor_setting` (
@@ -17,6 +24,10 @@ CREATE TABLE `hilos_second_factor_setting` (
     `reset_wait_days` SMALLINT UNSIGNED DEFAULT NULL,
     `pending_reset_wait_days` SMALLINT UNSIGNED DEFAULT NULL,
     `pending_reset_wait_from` TIMESTAMP NULL DEFAULT NULL,
+    `app_code_misses` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    `app_code_misses_from` TIMESTAMP NULL DEFAULT NULL,
+    `app_code_lock_step` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `app_code_locked_until` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`user_id`),
     CONSTRAINT `fk_second_factor_setting_user` FOREIGN KEY (`user_id`) REFERENCES `hilos_user` (`id`) ON DELETE RESTRICT

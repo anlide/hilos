@@ -286,6 +286,12 @@ final class EnvCatalogStub implements CatalogProviderInterface
                 'http://localhost:5173/auth/second-factor/cancel',
                 emptyIsMissing: true,
             ),
+            EnvConstants::HILOS_SECOND_FACTOR_LOCK_MISSES->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10, emptyIsMissing: true),
+            EnvConstants::HILOS_SECOND_FACTOR_LOCK_STEPS->name => self::entry(
+                EnvCatalogConstants::TYPE_STRING,
+                '900,3600,21600,86400',
+                emptyIsMissing: true,
+            ),
             EnvConstants::HILOS_AUTH_THROTTLE_ENABLED->name => self::entry(EnvCatalogConstants::TYPE_BOOLEAN, true, emptyIsMissing: true),
             EnvConstants::HILOS_AUTH_THROTTLE_WINDOW->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 60, emptyIsMissing: true),
             EnvConstants::HILOS_AUTH_THROTTLE_MAX_SESSION->name => self::entry(EnvCatalogConstants::TYPE_INTEGER, 10, emptyIsMissing: true),

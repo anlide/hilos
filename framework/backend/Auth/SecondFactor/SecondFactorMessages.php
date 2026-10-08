@@ -37,6 +37,12 @@ final class SecondFactorMessages
     /** A removal asked for by a person who has no second factor to remove. */
     public const string FACTOR_OFF = 'Two-step verification is off';
 
+    /**
+     * App codes refused under the lock wrong ones put (HIL-1285); the time left follows. Said
+     * the same whether the code typed was right or wrong, so the lock tells a guesser nothing.
+     */
+    public const string APP_CODES_LOCKED = 'Too many wrong codes. Use a backup code, or try the app again in %s';
+
     /** A removal wait outside the administrator's bounds; the bounds follow. */
     public const string WAIT_OUT_OF_BOUNDS = 'Choose a wait from %d to %d days';
 

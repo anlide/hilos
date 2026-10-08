@@ -437,4 +437,15 @@ final class CliCommands
      * @var string Command: Merge one account into another
      */
     public const string ACCOUNT_MERGE = 'account:merge';
+
+    /**
+     * Lift a person's second-factor app-code lock, with its step and the miss count (operator, HIL-1285).
+     *
+     * Not test-only: a guesser who knows the password can lock the owner's app codes, and this
+     * is the operator's way to let the owner back in. Routed to the users library, which checks
+     * the codes and writes the person's row they are counted on.
+     *
+     * @var string Command: Lift a person's second-factor app-code lock
+     */
+    public const string SECOND_FACTOR_UNLOCK = 'second-factor:unlock';
 }

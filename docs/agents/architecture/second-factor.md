@@ -2,7 +2,7 @@
 
 Read this before changing anything about two-step verification (HIL-494): the
 gate a proven sign-in passes, the wait it is held in, the trust a browser earns,
-the backup codes, and the delayed removal. The code lives in
+the backup codes, the delayed removal, and the ceiling on wrong app codes. The code lives in
 `framework/backend/Auth/SecondFactor/`, the sign-in half in the two libraries
 (`AbstractSessionsLibraryAgent`, `AbstractUsersLibraryAgent` with
 `Command/SecondFactorCommands.php`), and the browser half in
@@ -42,7 +42,7 @@ has a submit of its own in flight.
 | `hilos_second_factor` | users library | apps: base32 secret, last accepted step, confirmed or not |
 | `hilos_second_factor_backup_code` | users library | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | users library | removals: when asked, when due, the cancel token, last notice |
-| `hilos_second_factor_setting` | session holder; users library has Add/Update | the person's removal wait and a shorter one not yet in force |
+| `hilos_second_factor_setting` | session holder; users library has Add/Update | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end — written by the users library |
 | `hilos_second_factor_trust` | session holder | a browser (session row) trusted for a person until a moment |
 
 Every race is judged by the database: a code step is taken with
@@ -129,6 +129,53 @@ link as the first notice (`HILOS_SECOND_FACTOR_CANCEL_URL`, route
 `/auth/second-factor/cancel`). Every notice is a mandatory notification type on
 every channel, and the link cancels the removal without signing in. Any accepted
 code cancels a standing removal too — whoever shows the factor has not lost it.
+
+## The app-code ceiling
+
+Wrong app codes are counted per person, on their row of
+`hilos_second_factor_setting`, wherever the code is typed (HIL-1285): the code
+step of a sign-in, showing and renewing the backup codes, disconnecting an app,
+proving a connected app before adding another, and confirming an operation by
+the second factor. All of them pass `SecondFactorCommands`, in the users
+library — `confirm()` for the sign-in, `assertProof()` for the rest — so one
+library on the cluster writes the count. The first code of a new app is not
+counted: its secret was just shown to the person.
+
+- **The window and the ceiling.** The first miss opens a window of a day; a miss
+  after it opens a new one. `HILOS_SECOND_FACTOR_LOCK_MISSES` misses in a window
+  (default 10) lock app codes.
+- **The ladder.** `HILOS_SECOND_FACTOR_LOCK_STEPS` holds the lock durations in
+  seconds (default `900,3600,21600,86400`); the last step repeats. A lock put
+  within a day of the end of the previous one takes the next step, otherwise the
+  first. The window and that day are constants of `SecondFactorLockPolicy`, not
+  environment values: a shorter one would hand a patient guesser its attempts
+  back, as the throttle's day of forgiveness would ([auth-throttle.md](auth-throttle.md)).
+- **The lock.** An app code under the lock is refused before it is checked —
+  a right one too — with `Too many wrong codes. Use a backup code, or try the app
+  again in <time left>`, and counted nowhere. Backup codes are outside the lock
+  and the count: they cannot be guessed, and they are the owner's way out of a
+  lock a guesser put.
+- **The sign-in wait keeps its own count.** A wrong code on the code step is
+  counted both on the session (five end the wait) and on the person. A refusal
+  by the lock is neither, so the wait goes on: a backup code or a removal asked
+  from the step still gets the person through. A new sign-in with the password
+  starts the wait's count again, not the person's, and does not lift the lock.
+- **Races.** The count is one statement on the row; the lock is a conditional
+  write `WHERE app_code_misses >= ?` that empties the window, so of two misses
+  reaching the ceiling at once one locks and one notice goes out.
+- **The notice.** Every lock is the mandatory notification
+  `second_factor.app_codes_locked` on every channel of the person: how many
+  codes, until when, that backup codes work, and to change the password and
+  end the other sessions if it was not them. The session is not signed out.
+- **The way out.** `second-factor:unlock <userId>` — the operator's command,
+  answered by the users library — clears the lock, its step, the count and its
+  window, and says whether a lock was in force and until when. The person is not
+  notified ([../cli/commands.md](../cli/commands.md)).
+- **Merge and erasure.** A merged account keeps the survivor's own lock; the
+  folded account's row goes as before. Erasure deletes the row.
+
+A removal asked from the code step sends notices to every channel of the owner,
+so it passes the auth throttle; the same request from the profile does not.
 
 ## Policy
 

@@ -82,6 +82,7 @@ use Hilos\Core\CLI\Commands\ProtectedModeTestEnterCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestLeaveCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestOpenCommand;
 use Hilos\Core\CLI\Commands\ProtectedModeTestPassCommand;
+use Hilos\Core\CLI\Commands\SecondFactorUnlockCommand;
 use Hilos\Core\CLI\Commands\SessionTestExpireCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Core\CLI\Commands\TableTestLagCommand;
@@ -197,6 +198,7 @@ class CliManager
         $this->commands[CliCommands::IMPERSONATE_START] = new ImpersonateStartCommand();
         $this->commands[CliCommands::IMPERSONATE_STOP] = new ImpersonateStopCommand();
         $this->commands[CliCommands::ACCOUNT_MERGE] = new AccountMergeCommand();
+        $this->commands[CliCommands::SECOND_FACTOR_UNLOCK] = new SecondFactorUnlockCommand();
         $this->commands[CliCommands::ACCOUNT_TEST_FORCE_PURGE] = new AccountTestForcePurgeCommand();
         $this->commands[CliCommands::LEGAL_TEST_HOLD] = new LegalTestHoldCommand();
         $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();

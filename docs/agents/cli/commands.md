@@ -50,14 +50,16 @@ reason in its `execution()` declaration. See
 ## Account and session commands
 
 Every one of them is `daemon`: the CLI sends a request and prints the reply, because what
-they change lives where the accounts and the sessions do. All six are the framework's since
+they change lives where the accounts and the sessions do. The first six are the framework's since
 HIL-729, and all six are answered by the sessions library in every project, because each of
 them ends in a session being told who it is now — the merge by consequence, since a folded-away
 account's open tabs have to be signed out before the merge is true. Whether the takeover is
 allowed is the framework's own judgement over the people table and the impersonation settings
 (HIL-1197, HIL-1170); what a project is asked is the merge's seam — whether these two accounts
 may be merged at all plus what this project keeps for a person. A project that wires no merge
-refuses it rather than falling silent.
+refuses it rather than falling silent. The seventh, `second-factor:unlock` (HIL-1285), is answered
+by the users library instead: it checks the second-factor codes and keeps their miss count and
+lock on the person's row ([../architecture/second-factor.md](../architecture/second-factor.md)).
 
 | Command | Site | Description |
 |---|---|---|
@@ -67,6 +69,7 @@ refuses it rather than falling silent.
 | `impersonate:start <sessionToken> <userId>` | `daemon` | Make an admin session act as another user |
 | `impersonate:stop <sessionToken>` | `daemon` | Return an impersonating session to the administrator behind it |
 | `account:merge <survivorId> <loserId> [--password=…]` | `daemon` | Fold one populated account into another |
+| `second-factor:unlock <userId>` | `daemon` | Lift a person's second-factor app-code lock |
 
 `account:merge` reports what moved as a map rather than a count: the framework moves the
 sign-in identities itself and asks the project to move the rows only it knows about, so the

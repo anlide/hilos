@@ -281,7 +281,7 @@ here by HIL-660. It has three parts and all three are binding.
 
 ## What Else Limits Abuse
 
-Three neighbours limit abuse without belonging to this layer. Their mechanics are
+Four neighbours limit abuse without belonging to this layer. Their mechanics are
 theirs to document; these are signposts only.
 
 - **Attempt ceiling on one-time codes** — a wrong code that reaches the ceiling voids
@@ -295,6 +295,11 @@ theirs to document; these are signposts only.
   identifier for the session that started it, several browsers may prove one
   address, and the first to save a password wins it
   (`Hilos\Auth\Registration\RegistrationReservationService`).
+- **One ceiling on wrong app codes per person** — wherever a second-factor app code
+  is typed, wrong ones are counted on the person's row, and too many in a day lock
+  app codes on a ladder a new sign-in does not reset
+  (`Hilos\Auth\SecondFactor\SecondFactorLockPolicy`, HIL-1285). See
+  [second-factor.md](second-factor.md).
 
 ## Workflow: Guarding A New Action
 
