@@ -11,6 +11,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\View\Collection\UserMerges;
 use Hilos\Hilos;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\LegalCatalogResolver;
@@ -26,20 +27,22 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * The one place the standing of an account is composed (HIL-945).
  *
- * Three facts go in, each read from where it is stored or derived: the block from the person's
- * row, the scheduled deletion from the person's standing request, and the lapsed documents from
- * the person's acceptance records against the declared revisions on the server's date. The freeze
- * is then the lapsed documents under the installation's refusal setting - nothing stores it, so
- * a revision published with a past effective date freezes everyone it catches the moment the
- * node starts with it, with no sweep and no cron.
+ * Four facts go in, each read from where it is stored or derived: the merge from the tombstone
+ * table, with the live end of its chain and that account's name (HIL-1292); the block from the
+ * person's row; the scheduled deletion from the person's standing request; and the lapsed
+ * documents from the person's acceptance records against the declared revisions on the server's
+ * date. The freeze is then the lapsed documents under the installation's refusal setting -
+ * nothing stores it, so a revision published with a past effective date freezes everyone it
+ * catches the moment the node starts with it, with no sweep and no cron. The block flag of a
+ * merged account is read as it is and never touched here: the merge set it to close the sign-in.
  *
  * The page guard ({@see PageAccessGate}) asks here on every delivery, so each process keeps the
  * verdict per person in memory. The memory belongs to one epoch - the server's date and the
  * refusal setting - and a new epoch starts empty, which is how a deadline that has just passed and
  * a setting just changed reach every verdict without anybody announcing them. Within an epoch a
  * person's verdict is dropped by the change of any fact it was built from:
- * {@see AccountStandingChangeSubscriber} hears the writes of the three sources in every process,
- * because all three are read process-wide.
+ * {@see AccountStandingChangeSubscriber} hears the writes of the four sources in every process,
+ * because all four are read process-wide.
  *
  * A faulty catalog lapses nobody: what there is to accept is unknown, and closing the product to
  * everyone for the author's mistake is not the answer - the fault is shown in red on the root of
@@ -69,7 +72,7 @@ final class AccountStandingResolver
      *
      * @param int $userId Person whose standing to tell
      * @return AccountStanding The composed verdict
-     * @throws DatabaseException When the person, the deletion request, the acceptance records or the setting cannot be read
+     * @throws DatabaseException When the person, the merge row, the deletion request, the acceptance records or the setting cannot be read
      * @throws SettingException When the refusal setting is invalid
      * @throws InvalidArgumentException When a loaded object does not match its collection or a query is invalid
      * @throws LogicException When a collection is not configured
@@ -89,7 +92,7 @@ final class AccountStandingResolver
      *
      * @param int $userId Person asked about
      * @return bool Whether the person is frozen now
-     * @throws DatabaseException When the person, the deletion request, the acceptance records or the setting cannot be read
+     * @throws DatabaseException When the person, the merge row, the deletion request, the acceptance records or the setting cannot be read
      * @throws SettingException When the refusal setting is invalid
      * @throws InvalidArgumentException When a loaded object does not match its collection or a query is invalid
      * @throws LogicException When a collection is not configured
@@ -101,12 +104,15 @@ final class AccountStandingResolver
     }
 
     /**
-     * Composes the verdict out of the three facts - the only composition there is.
+     * Composes the verdict out of the four facts - the only composition there is.
      *
-     * Shown is the fact that takes the most away: blocked, then frozen, then deletion scheduled.
-     * The documents inside their window are carried through untouched: they are the fact the
-     * re-consent screen is drawn from (HIL-500), not a part of the verdict.
+     * Shown is the fact that takes the most away: merged, then blocked, then frozen, then deletion
+     * scheduled. The documents inside their window are carried through untouched: they are the fact
+     * the re-consent screen is drawn from (HIL-500), not a part of the verdict.
      *
+     * @param bool $merged Whether the account was folded into another one
+     * @param ?int $mergedInto Live end of the merge chain, or null when not merged or the chain leads nowhere
+     * @param ?string $mergedIntoName Name of that account, or null when there is none to name
      * @param bool $blocked Whether an administrator blocked the account
      * @param ?int $deletionEffectiveAt Moment the scheduled erasure falls due in milliseconds, or null when none is scheduled
      * @param list<LegalDocumentStanding> $lapsed Documents past their deadline for this person
@@ -115,6 +121,9 @@ final class AccountStandingResolver
      * @return AccountStanding The verdict
      */
     public static function compose(
+        bool $merged,
+        ?int $mergedInto,
+        ?string $mergedIntoName,
         bool $blocked,
         ?int $deletionEffectiveAt,
         array $lapsed,
@@ -125,6 +134,7 @@ final class AccountStandingResolver
 
         return new AccountStanding(
             match (true) {
+                $merged => AccountStandingKind::MERGED,
                 $blocked => AccountStandingKind::BLOCKED,
                 $frozen => AccountStandingKind::FROZEN,
                 $deletionEffectiveAt !== null => AccountStandingKind::DELETION_SCHEDULED,
@@ -135,6 +145,8 @@ final class AccountStandingResolver
             $deletionEffectiveAt,
             $lapsed,
             $window,
+            $mergedInto,
+            $mergedIntoName,
         );
     }
 
@@ -199,13 +211,16 @@ final class AccountStandingResolver
     }
 
     /**
-     * Reads the three facts of one person and composes them.
+     * Reads the four facts of one person and composes them.
+     *
+     * The merge is the tombstone row keyed by the person; where it leads is the live end of the chain
+     * ({@see UserMerges::liveSurvivorOf()}) and that account's name as the people hold it now.
      *
      * @param int $userId Person whose standing to compose
      * @param string $today Server's calendar date of this epoch, YYYY-MM-DD
      * @param string $refusal Refusal setting of this epoch
      * @return AccountStanding The verdict, with nothing held when the process has no database layer
-     * @throws DatabaseException When the person, the deletion request or the acceptance records cannot be read
+     * @throws DatabaseException When the person, the merge row, the deletion request or the acceptance records cannot be read
      * @throws InvalidArgumentException When a loaded object does not match its collection or a query is invalid
      * @throws LogicException When a collection is not configured
      * @throws ObjectGetIdStringNotImplementedException When a loaded row lacks its primary key
@@ -214,13 +229,18 @@ final class AccountStandingResolver
     {
         $db = Hilos::$db;
         if ($db === null) {
-            return self::compose(false, null, [], [], $refusal);
+            return self::compose(false, null, null, false, null, [], [], $refusal);
         }
 
+        $merged = $db->userMerges[$userId] !== null;
+        $mergedInto = $merged ? $db->userMerges->liveSurvivorOf($userId) : null;
         $deletion = $db->accountDeletions->liveOf($userId);
         $documents = self::documentsOf($db, $userId, $today);
 
         return self::compose(
+            $merged,
+            $mergedInto,
+            $mergedInto === null ? null : $db->users[$mergedInto]?->name,
             ($db->users[$userId] ?? null)?->block === true,
             $deletion === null ? null : TimeHelper::sqlToMs($deletion->effectiveAt),
             self::inStanding($documents, LegalStanding::LAPSED),

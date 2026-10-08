@@ -29,6 +29,8 @@ import {
 import { USER_ENTITY_TYPE } from '../state/entity.js'
 import { type EntityRef } from '../state/EntityStore.js'
 import { readString, readStringOrNull } from '../state/fieldReaders.js'
+import { hideable } from '../state/hideableSchema.js'
+import { type Hideable } from '../state/hiddenValue.js'
 import { ingest } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
@@ -371,11 +373,12 @@ export interface AccountBlockedNotice {
 
 /**
  * The one fact of an account's standing that is shown (HIL-945), the one that
- * takes the most away: blocked, then frozen, then a scheduled deletion. Byte-equal
- * to the backend `AccountStandingKind`.
+ * takes the most away: merged (HIL-1292), then blocked, then frozen, then a
+ * scheduled deletion. Byte-equal to the backend `AccountStandingKind`.
  */
 export type HilosAccountStandingKind =
   | 'none'
+  | 'merged'
   | 'blocked'
   | 'frozen'
   | 'deletion_scheduled'
@@ -392,9 +395,11 @@ export interface HilosAccountStandingLapse {
 }
 
 /**
- * An account's standing (HIL-945): three independent facts and the one of them
+ * An account's standing (HIL-945): four independent facts and the one of them
  * shown. Composed in one place on the backend and read in the same shape by the
- * shell (the session's own), the admin card and its live frame.
+ * shell (the session's own), the admin card and its live frame. A merged account
+ * says where it went (HIL-1292): the live end of its merge chain and that
+ * account's name, both `null` for anybody else.
  */
 export interface HilosAccountStanding {
   /** The one fact shown, the one that takes the most away. */
@@ -413,6 +418,16 @@ export interface HilosAccountStanding {
    * its reminder in the header are drawn from them.
    */
   readonly window: readonly HilosAccountStandingLapse[]
+  /**
+   * The account a merged one leads to, down the chain to its live end, or `null`
+   * when the account was never merged or the chain leads nowhere (HIL-1292).
+   */
+  readonly mergedInto: number | null
+  /**
+   * That account's name, or `null` when there is none to name; a viewer of the
+   * admin view mode is sent it hidden, the way every person's name is.
+   */
+  readonly mergedIntoName: Hideable<string> | null
 }
 
 /**
@@ -423,12 +438,14 @@ export interface HilosAccountStanding {
  * standing with it.
  */
 export const accountStandingSchema = z.looseObject({
-  shown: z.enum(['none', 'blocked', 'frozen', 'deletion_scheduled']),
+  shown: z.enum(['none', 'merged', 'blocked', 'frozen', 'deletion_scheduled']),
   blocked: z.boolean(),
   frozen: z.boolean(),
   deletionEffectiveAt: z.number().nullable(),
   lapsed: z.array(z.unknown()),
   window: z.array(z.unknown()),
+  mergedInto: z.number().nullable(),
+  mergedIntoName: hideable(z.string().nullable()),
 })
 
 /** One lapsed document, or one inside its window, as the wire carries it. */
@@ -1225,6 +1242,8 @@ export function readHilosAccountStanding(
       deletionEffectiveAt === null ? null : toLocal(deletionEffectiveAt),
     lapsed: readStandingDocuments(parsed.data.lapsed),
     window: readStandingDocuments(parsed.data.window),
+    mergedInto: parsed.data.mergedInto,
+    mergedIntoName: parsed.data.mergedIntoName,
   }
 }
 

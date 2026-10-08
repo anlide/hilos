@@ -53,6 +53,8 @@ function standing(facts: Record<string, unknown> = {}) {
     deletionEffectiveAt: null,
     lapsed: [],
     window: [],
+    mergedInto: null,
+    mergedIntoName: null,
     ...facts,
   }
 }

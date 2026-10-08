@@ -19,6 +19,7 @@ import {
   hilosPasswordFateChoices,
   HILOS_USER_CARD_STEP_UP_OPERATIONS,
   hilosUserLifecycleSections,
+  hilosUserMergedNotice,
   hilosUserLifecyclePrompt,
   resolveHilosMergeCandidateRow,
   resolveHilosUserRow,
@@ -687,6 +688,8 @@ function wireStanding(
     deletionEffectiveAt: null,
     lapsed: [],
     window: [],
+    mergedInto: null,
+    mergedIntoName: null,
     ...facts,
   }
 }
@@ -706,6 +709,8 @@ function readStanding(
     deletionEffectiveAt: null,
     lapsed: [],
     window: [],
+    mergedInto: null,
+    mergedIntoName: null,
     ...facts,
   }
 }
@@ -809,6 +814,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     block: false,
     deletionEffectiveAt: null,
     unverifiedPasswordAddress: null,
+    merged: false,
   }
 
   it('reads the block and the deletion from the verdict rather than the row', () => {
@@ -932,6 +938,106 @@ describe('hilosStandingBadge (HIL-945)', () => {
       tone: 'warning',
       icon: 'bi-trash',
     })
+    expect(hilosStandingBadge('merged')).toEqual({
+      label: 'Merged',
+      tone: 'secondary',
+      icon: 'bi-sign-merge-left',
+    })
+  })
+})
+
+describe('a merged account on the card (HIL-1292)', () => {
+  const detail: HilosUserDetailRow = {
+    id: 5,
+    name: 'Maria',
+    lastActivity: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+    hasPassword: true,
+    hasSecondFactor: false,
+    admin: false,
+    block: true,
+    deletionEffectiveAt: null,
+    unverifiedPasswordAddress: null,
+    merged: false,
+  }
+  const merged = readStanding({
+    shown: 'merged',
+    blocked: true,
+    mergedInto: 9,
+    mergedIntoName: 'Bob',
+  })
+
+  it('names where the account went and the way to that card', () => {
+    expect(hilosUserMergedNotice(null)).toBeNull()
+    expect(
+      hilosUserMergedNotice(readStanding({ shown: 'blocked', blocked: true })),
+    ).toBeNull()
+    expect(hilosUserMergedNotice(merged)).toEqual({
+      userId: 9,
+      name: 'Bob',
+      path: '/hilos/user/9',
+    })
+    // A viewer of the admin view mode keeps the number and the way, not the name.
+    expect(
+      hilosUserMergedNotice(
+        readStanding({
+          shown: 'merged',
+          mergedInto: 9,
+          mergedIntoName: HIDDEN_VALUE,
+        }),
+      ),
+    ).toEqual({ userId: 9, name: HIDDEN_VALUE, path: '/hilos/user/9' })
+  })
+
+  it('has nobody to point at when the chain leads nowhere', () => {
+    expect(
+      hilosUserMergedNotice(readStanding({ shown: 'merged', blocked: true })),
+    ).toEqual({ userId: null, name: null, path: null })
+  })
+
+  it('offers no section at all: every action over it is refused', () => {
+    expect(hilosUserLifecycleSections(detail, 99, 30, 0, merged)).toEqual([])
+    expect(
+      hilosUserImpersonationSection(
+        detail,
+        99,
+        {
+          allowed: true,
+          scope: 'act',
+          carryAdmin: false,
+          blocked: true,
+          frozen: true,
+          equal: true,
+        },
+        merged,
+      ),
+    ).toBeNull()
+    // The same card with the block alone keeps its sections.
+    expect(
+      hilosUserLifecycleSections(
+        detail,
+        99,
+        30,
+        0,
+        readStanding({ shown: 'blocked', blocked: true }),
+      ),
+    ).not.toEqual([])
+  })
+
+  it('reads the merge flag of a people row off its inline merge slot', () => {
+    const { scopes, users } = userStore()
+    const page = scopes.page()!
+    const ref = { type: 'user', id: 4 }
+    page.entities.upsert(ref, { id: 4, name: 'Olena' })
+    page.tables.upsert('hilosUsers', 4, { users: ref })
+    const rows = scopes.pageTableSignal('hilosUsers')
+    const row = (): TableRow => rows.get()[0]
+
+    expect(resolveHilosUserRow(row(), users).merged).toBe(false)
+
+    page.tables.upsert('hilosUsers', 4, { users: ref, merge: { merged: true } })
+    expect(resolveHilosUserRow(row(), users).merged).toBe(true)
   })
 })
 
@@ -1401,6 +1507,7 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
       block: false,
       deletionEffectiveAt: null,
       unverifiedPasswordAddress: null,
+      merged: false,
     }
 
     const sectionOff = hilosUserImpersonationSection(
@@ -1444,6 +1551,7 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     block: false,
     deletionEffectiveAt: null,
     unverifiedPasswordAddress: null,
+    merged: false,
   }
 
   /**

@@ -66,6 +66,8 @@ final class HandshakeResponseSignalDataTest extends TestCase
         'deletionEffectiveAt' => 1_767_225_600_000,
         'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
         'window' => [['document' => 'privacy', 'deadline' => '2026-11-10']],
+        'mergedInto' => null,
+        'mergedIntoName' => null,
     ];
 
     public function testPendingRegistrationConsentSurvivesTheTransportRoundtrip(): void

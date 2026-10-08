@@ -32,7 +32,9 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
     /**
      * @param int $userId Person the card shows
      * @param array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding Their standing
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Their standing
      * @throws InvalidFormatException When the id names no account (zero or negative)
      */
     public function __construct(

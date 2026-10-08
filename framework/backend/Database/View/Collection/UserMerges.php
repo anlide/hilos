@@ -19,7 +19,8 @@ use Hilos\Database\View\Item\UserMerge;
  *
  * `Hilos::$db->userMerges[$userId]` is that account's merge row, or null when it was never
  * folded into another one - which is how "is this account merged" is asked. The accounts
- * folded into one person are read by foldedInto().
+ * folded into one person are read by foldedInto(); the live end of the chain a folded
+ * account leads to, by liveSurvivorOf().
  *
  * @extends DbCollection<UserMerge, ObjectUserMerges>
  * @method ObjectUserMerges|null getObjectCollection()
@@ -46,5 +47,39 @@ class UserMerges extends DbCollection
     public function foldedInto(int $survivorUserId): static
     {
         return $this->whereColumnIs(ObjectUserMerge::survivorUserId, $survivorUserId);
+    }
+
+    /**
+     * The live end of the chain a folded account leads to: the first account up the chain that has
+     * no merge row of its own (HIL-1292).
+     *
+     * Each step reads one row by key, the way "is this account merged" is asked, and runs no query:
+     * the table is read process-wide. Null when the account was never folded, when the chain stops
+     * at a row whose survivor was erased before HIL-1200 began taking folded accounts along, and
+     * when the rows close a loop - a chain that names no live account has no end to point at.
+     *
+     * @param int $userId Folded account asked about
+     * @return ?int Live account the chain ends at, or null when there is none
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object does not match the collection
+     * @throws DatabaseException When lazy-loading a merge row from the database fails
+     */
+    public function liveSurvivorOf(int $userId): ?int
+    {
+        $visited = [];
+        $current = $userId;
+        while (!isset($visited[$current])) {
+            $visited[$current] = true;
+            $merge = $this[$current];
+            if ($merge === null) {
+                return $current === $userId ? null : $current;
+            }
+            $current = $merge->survivorUserId;
+            if ($current === null) {
+                return null;
+            }
+        }
+
+        return null;
     }
 }

@@ -67,16 +67,18 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      * @var list<string> Framework tables this case needs. `hilos_setting` is the one
      *     framework collection loaded eagerly, so mounting the context reaches for it;
      *     the unfinished registration the handshake response asks about is a column on
-     *     `hilos_session` since HIL-612 and needs no table of its own. The people and their
-     *     deletion requests have to be there to be empty (HIL-945): every state frame the holder
-     *     sends carries the standing of the person the session acts as. The access log joins
-     *     because the operator's sign-in writes a row of it (HIL-1174).
+     *     `hilos_session` since HIL-612 and needs no table of its own. The people, their
+     *     deletion requests and the merge table have to be there to be empty (HIL-945, HIL-1292):
+     *     every state frame the holder sends carries the standing of the person the session acts
+     *     as, and the standing reads whether that person was folded into another one. The access
+     *     log joins because the operator's sign-in writes a row of it (HIL-1174).
      */
     private const array TABLES = [
         'hilos_user',
         'hilos_session',
         'hilos_setting',
         'hilos_account_deletion',
+        'hilos_user_merge',
         'hilos_access_log',
     ];
 

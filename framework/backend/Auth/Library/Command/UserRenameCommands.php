@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
@@ -31,7 +32,9 @@ final class UserRenameCommands extends AbstractLibraryCommands
      * Renames one person and records who did it.
      *
      * A name that is already the person's, once trimmed, writes nothing - no journal row, no
-     * notice, no hook - and answers null: nothing happened that anybody should hear of.
+     * notice, no hook - and answers null: nothing happened that anybody should hear of. An account
+     * folded into another one is refused before anything is read of it (HIL-1292): its name is a
+     * tombstone's, and the card of a merged account offers no rename.
      *
      * @param int $userId Person to rename
      * @param string $newName Name to give; trimmed and held to the frame of {@see UserActions::rename()}
@@ -39,7 +42,7 @@ final class UserRenameCommands extends AbstractLibraryCommands
      *     themselves - or null when the author is not a person
      * @return ?UserRename Journal row of this rename, or null when the name was already the person's
      * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the name is empty, too short or too long
+     * @throws ValidationException When the account was merged into another one, or the name is empty, too short or too long
      * @throws HilosException When the name, the journal row or the transaction cannot be written
      */
     public function rename(int $userId, string $newName, ?int $renamedByUserId): ?UserRename
@@ -47,6 +50,9 @@ final class UserRenameCommands extends AbstractLibraryCommands
         $user = Hilos::$db->users[$userId];
         if ($user === null) {
             throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+        if (Hilos::$db->userMerges[$userId] !== null) {
+            throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
         $oldName = $user->name;
         if (trim($newName) === $oldName) {

@@ -13,13 +13,18 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 
 /**
- * The standing of one account: three independent facts and the one of them that is shown (HIL-945).
+ * The standing of one account: four independent facts and the one of them that is shown (HIL-945).
  *
- * A block and a scheduled deletion are stored; a freeze is not - it is what the acceptance records
- * and the revision catalog say today under the installation's refusal setting. None of the three
- * replaces another, so the verdict names each of them and picks the one to show separately
+ * A merge, a block and a scheduled deletion are stored; a freeze is not - it is what the acceptance
+ * records and the revision catalog say today under the installation's refusal setting. None of the
+ * four replaces another, so the verdict names each of them and picks the one to show separately
  * ({@see AccountStandingKind}). Composed in exactly one place, {@see AccountStandingResolver},
  * and read by the session frame, the page guard and the admin card alike.
+ *
+ * A merged account carries where it went (HIL-1292): the live end of its merge chain and that
+ * account's name, so the card and the people list can say "merged into" rather than "blocked".
+ * Both are null for an account that was never folded, and the end alone is null when the chain
+ * leads nowhere - its survivor erased before HIL-1200, or a loop.
  *
  * The documents still inside their window ride along (HIL-500): they take nothing away and play no
  * part in the verdict, but they are what the "the terms have changed" screen and its reminder in
@@ -38,6 +43,8 @@ final readonly class AccountStanding
     public const string window = 'window';
     public const string document = 'document';
     public const string deadline = 'deadline';
+    public const string mergedInto = 'mergedInto';
+    public const string mergedIntoName = 'mergedIntoName';
 
     /**
      * @param AccountStandingKind $shown The one fact shown, the one that takes the most away
@@ -46,6 +53,8 @@ final readonly class AccountStanding
      * @param ?int $deletionEffectiveAt Moment the scheduled erasure falls due, milliseconds since the epoch, or null
      * @param list<LegalDocumentStanding> $lapsed Documents whose deadline has passed, whatever the refusal setting says
      * @param list<LegalDocumentStanding> $window Documents whose deadline is still ahead, whatever the refusal setting says
+     * @param ?int $mergedInto Live end of the merge chain a folded account leads to, or null when not merged or the chain leads nowhere
+     * @param ?string $mergedIntoName Name of that account, or null when there is none to name
      */
     public function __construct(
         public AccountStandingKind $shown,
@@ -54,6 +63,8 @@ final readonly class AccountStanding
         public ?int $deletionEffectiveAt,
         public array $lapsed,
         public array $window,
+        public ?int $mergedInto = null,
+        public ?string $mergedIntoName = null,
     ) {
     }
 
@@ -62,7 +73,8 @@ final readonly class AccountStanding
      *
      * @return array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>,
-     *     window: list<array{document: string, deadline: ?string}>} Wire form of the verdict
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} Wire form of the verdict
      */
     public function toArray(): array
     {
@@ -73,6 +85,8 @@ final readonly class AccountStanding
             self::deletionEffectiveAt => $this->deletionEffectiveAt,
             self::lapsed => self::documentsToArray($this->lapsed),
             self::window => self::documentsToArray($this->window),
+            self::mergedInto => $this->mergedInto,
+            self::mergedIntoName => $this->mergedIntoName,
         ];
     }
 
@@ -85,7 +99,9 @@ final readonly class AccountStanding
      * the stored facts, and the documents with their deadlines are the revision catalog and acceptance
      * records that are not personal ({@see LegalAcceptance}). The date a scheduled erasure falls due is
      * opened by the owner's word (2026-10-01): it names nobody, and without it the card would tell a
-     * viewer no deletion is scheduled; the columns of the deletion table stay hidden.
+     * viewer no deletion is scheduled; the columns of the deletion table stay hidden. Where a merged
+     * account went is the survivor's id and name, each by the verdict of its column of the people
+     * (HIL-1292): the number is open, the name is a person's and hidden.
      *
      * @return array<string, WireField> Standing field to where it comes from
      */
@@ -103,6 +119,8 @@ final readonly class AccountStanding
             self::deletionEffectiveAt => WireField::notPersonal(),
             self::lapsed => $documents,
             self::window => $documents,
+            self::mergedInto => WireField::column(HilosDbContext::users, ObjectUser::id),
+            self::mergedIntoName => WireField::column(HilosDbContext::users, ObjectUser::name),
         ];
     }
 

@@ -1,11 +1,15 @@
 // The user detail page selectors: the requested user resolved by reference into
-// the profile the page renders, plus the reactive runtime presence. The profile
-// arrives as a page entity (UserPage::buildPagePayload), so a rename fans out
-// here for free; presence and the session count ride the reactive `userPresence`
-// data slot. The view reads this signal and never touches a raw store.
+// the profile the page renders, plus the reactive runtime presence and the merge
+// the account may have gone into (HIL-1292). The profile arrives as a page entity
+// (UserPage::buildPagePayload), so a rename fans out here for free; presence and
+// the session count ride the reactive `userPresence` data slot, and the merge
+// rides the `userMerge` slot, which is absent for an account never merged. The
+// view reads this signal and never touches a raw store.
 import {
   computedSignal,
   readNumber,
+  readNumberOrNull,
+  readStringOrNull,
   type EntityRef,
   type ReadonlySignal,
 } from '@hilos/core'
@@ -14,14 +18,20 @@ import { scopes } from '../../bootstrap/session'
 import { Users, toPresence } from '../../types'
 import { type UserDetail } from './types/UserDetail'
 
-// Wire keys: the user profile entity slot (backend UserPage::ENTITY_SLOT) and
-// the presence data slot (backend ChatBrowserTable::USER_PRESENCE).
+// Wire keys: the user profile entity slot (backend UserPage::ENTITY_SLOT), the
+// presence data slot (backend ChatBrowserData::USER_PRESENCE) and the merge data
+// slot (backend ChatBrowserData::USER_MERGE).
 const USER_ENTITY_SLOT = 'user'
 const USER_PRESENCE_DATA = 'userPresence'
+const USER_MERGE_DATA = 'userMerge'
 // The presence summary fields, mirroring the backend
 // Hilos\Runtime\View\DTO\HilosUserPresenceSummary.
 const PRESENCE_FIELD = 'presence'
 const ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
+// The merge fields, mirroring the backend HilosUserTableRow::FIELD_MERGED_INTO
+// and UserMergeBrowserData::FIELD_MERGED_INTO_NAME.
+const MERGED_INTO_FIELD = 'mergedInto'
+const MERGED_INTO_NAME_FIELD = 'mergedIntoName'
 
 /** Read a page data slot as an inline record, or undefined. */
 function recordSlot(slot: unknown): Record<string, unknown> | undefined {
@@ -32,6 +42,7 @@ function recordSlot(slot: unknown): Record<string, unknown> | undefined {
 
 const userRef = scopes.pageDataSignal(USER_ENTITY_SLOT)
 const userPresenceData = scopes.pageDataSignal(USER_PRESENCE_DATA)
+const userMergeData = scopes.pageDataSignal(USER_MERGE_DATA)
 
 /**
  * The requested user's detail, or undefined until its profile entity lands: the
@@ -46,6 +57,8 @@ export const userDetail: ReadonlySignal<UserDetail | undefined> =
       return undefined
     }
     const presence = recordSlot(userPresenceData.get())
+    // The merge slot exists only for an account that was folded into another one.
+    const merge = recordSlot(userMergeData.get())
 
     return {
       name: user.name,
@@ -54,5 +67,10 @@ export const userDetail: ReadonlySignal<UserDetail | undefined> =
       onlineSessionCount: presence
         ? readNumber(presence, ONLINE_SESSION_COUNT_FIELD)
         : 0,
+      merged: merge !== undefined,
+      mergedInto: merge ? readNumberOrNull(merge, MERGED_INTO_FIELD) : null,
+      mergedIntoName: merge
+        ? readStringOrNull(merge, MERGED_INTO_NAME_FIELD)
+        : null,
     }
   })

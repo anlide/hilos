@@ -35,10 +35,12 @@ import {
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_IMPERSONATION_COPY,
+  HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
+  hilosUserMergedNotice,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
@@ -88,6 +90,7 @@ import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosHideable } from '../../HilosHideable.js'
+import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
@@ -174,6 +177,10 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const standingBadge =
     standing === null ? null : hilosStandingBadge(standing.shown)
   const frozenRow = hilosUserFrozenRow(standing)
+  // A merged account (HIL-1292): the notice under the header stands in for
+  // every action section, which the core leaves empty for it.
+  const mergedNotice = hilosUserMergedNotice(standing)
+  const mergedCopy = HILOS_USER_MERGED_COPY
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now())
   useEffect(() => {
     setLifecycleNow(Date.now())
@@ -681,6 +688,22 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     rename.clearRenameError()
   }
 
+  // A merge that lands under an open window closes it (HIL-1292): there is
+  // nothing left to do over the account. A window whose action is in flight
+  // stays, and the server's answer comes as usual - a refusal.
+  const merged = mergedNotice !== null
+  useEffect(() => {
+    if (!merged) {
+      return
+    }
+    if (!loading) closeEdit()
+    if (!mergeAction.busy) closeMerge()
+    closeLifecycle()
+    closeImpersonate()
+    // Only the merge landing closes the windows; the flags it reads are the
+    // ones the windows themselves move, so they are not what this effect follows.
+  }, [merged])
+
   function submit(): void {
     if (!detail || !valid || loading || live.gone || live.conflict) {
       return
@@ -747,14 +770,16 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                   {standingBadge.label}
                 </span>
               )}
-              <button
-                type="button"
-                className="btn btn-outline-primary btn-sm ms-auto"
-                data-id="hilos-user-edit"
-                onClick={openEdit}
-              >
-                Edit
-              </button>
+              {mergedNotice === null ? (
+                <button
+                  type="button"
+                  className="btn btn-outline-primary btn-sm ms-auto"
+                  data-id="hilos-user-edit"
+                  onClick={openEdit}
+                >
+                  Edit
+                </button>
+              ) : null}
             </div>
             <div className="card-body">
               <dl className="row mb-0">
@@ -777,6 +802,33 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               </dl>
             </div>
           </div>
+          {/* A merged account says where it went and offers nothing to press:
+          every action over it is refused by the server (HIL-1292). */}
+          {mergedNotice !== null ? (
+            <div
+              className="alert alert-secondary mt-4"
+              role="status"
+              data-id="hilos-user-merged"
+            >
+              {mergedNotice.userId !== null ? (
+                <>
+                  {mergedCopy.into} <HilosHideable value={mergedNotice.name} />{' '}
+                  (#{mergedNotice.userId}).{' '}
+                  {mergedNotice.path !== null ? (
+                    <HilosLink
+                      className="alert-link"
+                      data-id="hilos-user-merged-link"
+                      to={mergedNotice.path}
+                    >
+                      {mergedCopy.open}
+                    </HilosLink>
+                  ) : null}
+                </>
+              ) : (
+                mergedCopy.gone
+              )}
+            </div>
+          ) : null}
           {lifecycleSections.map((section) => (
             <section
               key={section.key}
@@ -867,7 +919,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               </div>
             </section>
           ))}
-          {context.accountMerge ? (
+          {context.accountMerge && mergedNotice === null ? (
             <section
               className="card border-danger mt-4"
               data-id="hilos-user-merge-zone"

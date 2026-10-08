@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Chat\Browser\ChatBrowserData;
 use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Database\Actions\Collection\EventMessagesActions;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -12,11 +14,21 @@ use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
+use Demo\Chat\Pages\UserPage;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -24,11 +36,18 @@ use Hilos\Database\Exception\DatabaseException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
+use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Tables\Users\AbstractHilosUsersTable;
+use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
+use Hilos\Users\AccountStandingKind;
+use Hilos\Users\AccountStandingResolver;
+use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -406,6 +425,167 @@ final class AccountMergeTest extends IntegrationTestCase
 
         $this->assertSame($repaired, $this->passkeyUserId($brokenId));
         $this->assertSame($untouched, $this->passkeyUserId($soundId));
+    }
+
+    /**
+     * After a merge the loser's standing says merged and where it went (HIL-1292): the survivor by
+     * id and by name. A second merge of the survivor moves the loser's standing to the chain's
+     * live end, and a rename of that account moves the name - with nobody telling the resolver to
+     * forget anything: the writes themselves are the announcement.
+     *
+     * @throws HilosException When setup or a merge fails
+     */
+    public function testAMergedAccountsStandingNamesWhereItWentAndFollowsTheChain(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Loser')->id;
+        $thirdId = (int) Hilos::$db->users->actions->createWithName('Third')->id;
+        AccountStandingResolver::forgetAll();
+        $this->assertSame(AccountStandingKind::NONE, AccountStandingResolver::of($loserId)->shown);
+
+        $this->mergeOk($survivorId, $loserId);
+
+        $standing = AccountStandingResolver::of($loserId);
+        $this->assertSame(AccountStandingKind::MERGED, $standing->shown);
+        $this->assertTrue($standing->blocked, 'The merge closed the sign-in with the block flag, and the flag stays named');
+        $this->assertSame($survivorId, $standing->mergedInto);
+        $this->assertSame('Survivor', $standing->mergedIntoName);
+        $this->assertSame(AccountStandingKind::NONE, AccountStandingResolver::of($survivorId)->shown);
+
+        $this->mergeOk($thirdId, $survivorId);
+        $this->assertSame($thirdId, AccountStandingResolver::of($loserId)->mergedInto, 'The chain is followed to its live end');
+        $this->assertSame('Third', AccountStandingResolver::of($loserId)->mergedIntoName);
+
+        Hilos::$db->users[$thirdId]->actions->rename('Third Renamed');
+        $this->assertSame('Third Renamed', AccountStandingResolver::of($loserId)->mergedIntoName);
+    }
+
+    /**
+     * A merged account is neither renamed nor taken over (HIL-1292). Both refusals speak the merge
+     * refusal's words: the rename as the exception the card turns into its fail ack, the takeover
+     * as the operator's error reply - before any setting of the takeover is asked.
+     *
+     * @throws HilosException When setup or the merge fails
+     */
+    public function testTheRenameAndTheTakeoverOfAMergedAccountAreRefused(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Loser')->id;
+        $admin = Hilos::$db->users->actions->createWithName('Administrator');
+        $admin->actions->setAdmin(true);
+        $adminId = (int) $admin->id;
+        $this->mergeOk($survivorId, $loserId);
+
+        try {
+            $this->usersLibrary()->renameUser($loserId, 'Somebody Else', $adminId);
+            $this->fail('Expected the rename of a merged account to be refused');
+        } catch (ValidationException $refusal) {
+            $this->assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $refusal->getMessage());
+        }
+        $this->assertSame('Loser', Hilos::$db->users[$loserId]?->name);
+
+        $token = RandomHelper::hex(16);
+        Hilos::$db->sessions->actions->createAnonymous($token)->actions->bindUser($adminId);
+        $library = $this->sessionsLibrary();
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $library->getId()),
+            static function () use ($library, $token, $loserId): void {
+                $library->onSignalCommand(new CommandRequestDTO(
+                    correlationId: RandomHelper::hex(8),
+                    command: CliCommands::IMPERSONATE_START,
+                    payload: [
+                        AdminCommandConstants::FIELD_SESSION_TOKEN => $token,
+                        AdminCommandConstants::FIELD_TARGET_USER_ID => $loserId,
+                    ],
+                ), '', '');
+            },
+        );
+        $reply = $this->consumeMergeReply();
+        $this->assertFalse($reply->isOk(), 'The takeover of a merged account went through');
+        $this->assertSame(
+            AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+            $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null,
+        );
+    }
+
+    /**
+     * The people list marks a merged account in its own inline merge slot and nowhere else
+     * (HIL-1292): the flag is read off the merge table when the row is built, so the row rebuilt
+     * for the block flag's change already says merged, and the users slot stays the person's row.
+     *
+     * @throws HilosException When setup or the merge fails
+     */
+    public function testThePeopleListMarksTheMergedAccountInItsMergeSlot(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Loser')->id;
+        $this->mergeOk($survivorId, $loserId);
+
+        $table = Hilos::$table->hilosUsers;
+        $loserRow = $table->rowFromUser(Hilos::$db->users[$loserId]);
+        $this->assertTrue($loserRow->merged);
+        $this->assertFalse($table->rowFromUser(Hilos::$db->users[$survivorId])->merged);
+
+        $sources = $table->browserRow($loserRow)[BrowserPageSignalData::sources];
+        $this->assertSame([HilosUserTableRow::merged => true], $sources[AbstractHilosUsersTable::SLOT_MERGE]);
+        $this->assertArrayNotHasKey(HilosUserTableRow::merged, $sources[AbstractHilosUsersTable::SLOT_USER]);
+    }
+
+    /**
+     * The public page of a person carries the merge as data of its own (HIL-1292): nothing for an
+     * account never merged, and for a merged one the tombstone's key, the live end of the chain and
+     * that account's name - what the page draws in place of the sessions and the activity.
+     *
+     * @throws HilosException When setup, the merge or the subscription fails
+     */
+    public function testTheUserPageDataSaysWhereAMergedAccountWent(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Loser')->id;
+        Hilos::initBrowser();
+        try {
+            $this->assertNull($this->userMergeData($loserId));
+
+            $this->mergeOk($survivorId, $loserId);
+
+            $merge = $this->userMergeData($loserId);
+            $this->assertNotNull($merge);
+            $this->assertSame($loserId, $merge[ObjectUserMerge::userId]);
+            $this->assertSame($survivorId, $merge[HilosUserTableRow::FIELD_MERGED_INTO]);
+            $this->assertSame('Survivor', $merge[HilosUserTableRow::FIELD_MERGED_INTO_NAME]);
+            $this->assertNull($this->userMergeData($survivorId), 'The survivor was folded into nobody');
+        } finally {
+            Hilos::initBrowser();
+        }
+    }
+
+    /**
+     * Subscribes a fresh connection to the public page of a person and reads the merge data its
+     * answer carries.
+     *
+     * @param int $userId Person whose page is opened
+     * @return ?array<string, mixed> The `userMerge` data, or null when the page carries none
+     * @throws HilosException When the subscription fails
+     */
+    private function userMergeData(int $userId): ?array
+    {
+        $acceptKey = 'account-merge-page-' . $userId . '-' . RandomHelper::hex(4);
+        $params = [UserPageSubscribeParams::USER_ID => (string) $userId];
+        Hilos::$sr->subscribeToPage(UserPage::PAGE, new WebSocketPageSubscribeSignalDTO($acceptKey, UserPage::PAGE, $params));
+        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), static function () use ($acceptKey, $params): void {
+            new UserPage(new ChatAgent())->onSubscribe($acceptKey, new PageRouteParams($params));
+        });
+        $data = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== SignalTypeConstants::PAGE_RESPONSE || !$signal->data instanceof WebSocketSignalData) {
+                continue;
+            }
+            $data ??= $signal->data->data->toArray()[PageResponseSignalData::payload][PagePayload::data] ?? null;
+        }
+        $this->assertIsArray($data, 'The page answered without its data section');
+        $merge = $data[ChatBrowserData::USER_MERGE] ?? null;
+
+        return is_array($merge) && $merge !== [] ? $merge : null;
     }
 
     /**

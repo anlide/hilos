@@ -8,12 +8,14 @@ cell except the trailing actions cell, which a project fills through the
 person's card since HIL-1170. The bar's "Past deadline on" filter narrows the
 list to the people past one legal document's deadline and lives in the address
 too (`/hilos/users/terms`, HIL-945): the legal section's root links its count
-there, and changing the filter rewrites the address.
+there, and changing the filter rewrites the address. An account folded into
+another one wears a gray "Merged" badge beside its name (HIL-1292).
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosUsersTable,
   HilosPages,
+  hilosStandingBadge,
   type HilosUserRow,
   type HilosUsersContext,
 } from '@hilos/core'
@@ -45,6 +47,10 @@ const usersTable = users.controller
 // window, and unbind on unmount.
 onMounted(() => users.start())
 onUnmounted(() => users.dispose())
+
+// The one badge the list draws: the merged standing, read off the row's merge
+// slot rather than off a standing the list does not carry.
+const mergedBadge = hilosStandingBadge('merged')
 </script>
 
 <template>
@@ -52,8 +58,15 @@ onUnmounted(() => users.dispose())
     <HilosViewportTable :controller="usersTable">
       <template #cell-id="{ row }">{{ row.id }}</template>
       <template #cell-name="{ row }"
-        ><HilosHideable :value="row.name"
-      /></template>
+        ><HilosHideable :value="row.name" /><span
+          v-if="row.merged && mergedBadge !== null"
+          class="badge ms-1"
+          :class="`text-bg-${mergedBadge.tone}`"
+          data-id="hilos-users-merged"
+          ><i class="bi me-1" :class="mergedBadge.icon" aria-hidden="true"></i
+          >{{ mergedBadge.label }}</span
+        ></template
+      >
       <template #cell-presence="{ row }">
         <span
           class="badge"

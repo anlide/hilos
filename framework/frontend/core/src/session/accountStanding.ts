@@ -84,9 +84,10 @@ export const ACCOUNT_STANDING_STRIP_COPY = {
 /**
  * The Bootstrap color a standing is shown in, read by the strips, the avatar
  * mark and the admin card's badge alike: a color names how much was taken away,
- * not which feature took it.
+ * not which feature took it. Gray is for a merged account (HIL-1292): nothing
+ * was taken from a person, the account itself is gone into another.
  */
-export type HilosStandingTone = 'warning' | 'danger' | 'info'
+export type HilosStandingTone = 'warning' | 'danger' | 'info' | 'secondary'
 
 /** The mark by the avatar in the header: a ring of the tone and an icon in its corner. */
 export interface HilosAvatarMark {
@@ -103,8 +104,10 @@ export interface HilosDeletionStrip {
 }
 
 /**
- * The tone a standing is shown in: red for a block, blue for a freeze, yellow
- * otherwise — a scheduled deletion and a plain account alike.
+ * The tone a standing is shown in: gray for a merged account, red for a block,
+ * blue for a freeze, yellow otherwise — a scheduled deletion and a plain account
+ * alike. The strips and the avatar mark never draw a merged account: its
+ * sessions are closed by the merge and a takeover of it is refused.
  *
  * @param kind The standing shown.
  */
@@ -112,6 +115,8 @@ export function hilosStandingTone(
   kind: HilosAccountStandingKind,
 ): HilosStandingTone {
   switch (kind) {
+    case 'merged':
+      return 'secondary'
     case 'blocked':
       return 'danger'
     case 'frozen':

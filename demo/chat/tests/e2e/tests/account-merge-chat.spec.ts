@@ -24,7 +24,10 @@ const SURVIVOR_PASSWORD = 'the survivor password stays'
 // independent sessions, the loser publishes project-owned content, and the
 // administrator folds it into the survivor from the framework user card. The
 // assertions after the click cover both halves of the transaction: framework
-// identities/sessions and the chat project's message rows.
+// identities/sessions and the chat project's message rows - and the two open
+// surfaces of the merged account (HIL-1292): the administrator's second tab on
+// its card, and a guest on its public page, both told where it went without a
+// reload.
 test('merges another account into the user on the admin card', async ({
   browser,
   page,
@@ -38,8 +41,15 @@ test('merges another account into the user on the admin card', async ({
     baseURL,
     ignoreHTTPSErrors,
   })
+  const guestContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
   const survivorPage = await survivorContext.newPage()
   const loserPage = await loserContext.newPage()
+  const guestPage = await guestContext.newPage()
+  // The administrator's second tab, on the card of the account about to be merged.
+  const loserCardPage = await page.context().newPage()
 
   try {
     await signUpAdmin(page)
@@ -68,6 +78,17 @@ test('merges another account into the user on the admin card', async ({
     })
     await expect(loserEvent).toBeVisible()
     await expect(loserEvent.getByTestId('event-author')).toHaveText(loser.name)
+
+    // Two surfaces of the loser stay open through the merge: the administrator's
+    // card of it, with every control, and a guest's public page of it.
+    await gotoPage(loserCardPage, `/hilos/user/${loser.userId}`)
+    await expect(loserCardPage.getByTestId('hilos-user-edit')).toBeVisible()
+    await expect(
+      loserCardPage.getByTestId('hilos-user-merge-zone'),
+    ).toBeVisible()
+    await gotoPage(guestPage, `/user/${loser.userId}`)
+    await expect(guestPage.getByTestId('user-name')).toHaveText(loser.name)
+    await expect(guestPage.getByTestId('user-sessions')).toBeVisible()
 
     await gotoPage(page, `/hilos/user/${survivor.userId}`)
     await clickSubmit(page.getByTestId('hilos-user-merge-open'))
@@ -104,6 +125,30 @@ test('merges another account into the user on the admin card', async ({
     const outcome = `Merged #${loser.userId} into #${survivor.userId}. Moved: sign-in methods 1, messages 1.`
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(page.getByTestId('hilos-toast-success')).toContainText(outcome)
+
+    // The open card of the merged account turns without a reload (HIL-1292): the
+    // badge says Merged, the notice leads to the survivor's card, and nothing is
+    // left to press.
+    await expect(loserCardPage.getByTestId('user-standing-badge')).toHaveText(
+      'Merged',
+    )
+    await expect(
+      loserCardPage.getByTestId('hilos-user-merged-link'),
+    ).toHaveAttribute('href', `/hilos/user/${survivor.userId}`)
+    await expect(loserCardPage.getByTestId('hilos-user-edit')).toHaveCount(0)
+    await expect(
+      loserCardPage.getByTestId('hilos-user-merge-zone'),
+    ).toHaveCount(0)
+    // So does the guest's public page: the survivor by name and by the way to
+    // their page, and no sessions of its own any more.
+    await expect(guestPage.getByTestId('user-merged-badge')).toBeVisible()
+    await expect(guestPage.getByTestId('user-merged-into-link')).toHaveText(
+      survivor.name,
+    )
+    await expect(
+      guestPage.getByTestId('user-merged-into-link'),
+    ).toHaveAttribute('href', `/user/${survivor.userId}`)
+    await expect(guestPage.getByTestId('user-sessions')).toHaveCount(0)
 
     // Every live session of the tombstoned account is rebound to anonymous.
     await expect(loserPage.getByTestId('message-signin')).toBeVisible()
@@ -148,6 +193,8 @@ test('merges another account into the user on the admin card', async ({
       String(survivor.userId),
     )
   } finally {
+    await loserCardPage.close()
+    await guestContext.close()
     await survivorContext.close()
     await loserContext.close()
   }

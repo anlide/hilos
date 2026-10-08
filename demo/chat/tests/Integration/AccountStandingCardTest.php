@@ -61,6 +61,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
         Hilos::initBrowser();
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
         TruthSourceRegistry::register(HilosDbContext::accountDeletions, TruthSourceKeys::all(), self::TEST_AGENT);
+        TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::TEST_AGENT);
         Hilos::$rt->connections->actions->clear();
         AccountStandingAudience::reset();
         AccountStandingResolver::forgetAll();
@@ -119,6 +120,44 @@ final class AccountStandingCardTest extends IntegrationTestCase
         $frames = $this->standingFrames();
         self::assertCount(1, $frames);
         self::assertSame('none', $frames[0]->accountStanding[AccountStanding::shown]);
+    }
+
+    /**
+     * A merge written under the open card reaches it on the next tick as the merged standing, naming
+     * where the account went (HIL-1292); the chain growing past the survivor and the survivor's
+     * rename move the card the same way, with nobody telling the resolver to forget anything.
+     */
+    public function testAMergeUnderTheOpenCardReachesItWithWhereTheAccountWent(): void
+    {
+        $this->subscribeToCard();
+        $agent = new DemoHilosAgent();
+        $survivor = Hilos::$db->users->actions->createWithName('Lesya Ukrainka');
+        $survivorId = (int) $survivor->id;
+
+        // The tombstone first, the block second - the order the merge writes them in.
+        Hilos::$db->userMerges->actions->add($this->personId, $survivorId);
+        Hilos::$db->users[$this->personId]->actions->setBlock(true);
+        AccountStandingAudience::onAgentTick($agent);
+        $frames = $this->standingFrames();
+        self::assertCount(1, $frames);
+        self::assertSame('merged', $frames[0]->accountStanding[AccountStanding::shown]);
+        self::assertTrue($frames[0]->accountStanding[AccountStanding::blocked], 'The block stays named under the merge');
+        self::assertSame($survivorId, $frames[0]->accountStanding[AccountStanding::mergedInto]);
+        self::assertSame('Lesya Ukrainka', $frames[0]->accountStanding[AccountStanding::mergedIntoName]);
+
+        $survivor->actions->rename('Larysa Kosach');
+        AccountStandingAudience::onAgentTick($agent);
+        $frames = $this->standingFrames();
+        self::assertCount(1, $frames);
+        self::assertSame('Larysa Kosach', $frames[0]->accountStanding[AccountStanding::mergedIntoName]);
+
+        $thirdId = (int) Hilos::$db->users->actions->createWithName('Olha Kobylianska')->id;
+        Hilos::$db->userMerges->actions->add($survivorId, $thirdId);
+        AccountStandingAudience::onAgentTick($agent);
+        $frames = $this->standingFrames();
+        self::assertCount(1, $frames);
+        self::assertSame($thirdId, $frames[0]->accountStanding[AccountStanding::mergedInto], 'The card follows the chain to its live end');
+        self::assertSame('Olha Kobylianska', $frames[0]->accountStanding[AccountStanding::mergedIntoName]);
     }
 
     public function testTheListNarrowedToALapsedDocumentHoldsExactlyThePeopleTheLegalRootCounts(): void

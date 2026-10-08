@@ -16,15 +16,20 @@ use Hilos\Database\Entity\Item\User as EntityUser;
 /**
  * Drops the remembered standing of a person when a fact it was composed from changes (HIL-945).
  *
- * The three sources are read process-wide, so their writes reach this subscriber in every process,
- * whichever process made them. Nobody who writes a block, a deletion request or an acceptance has
- * to remember whom to tell: the write is the announcement.
+ * The four sources are read process-wide, so their writes reach this subscriber in every process,
+ * whichever process made them. Nobody who writes a merge, a block, a deletion request or an
+ * acceptance has to remember whom to tell: the write is the announcement.
  *
  * A person's row is written far more often than its block changes - the last activity moves on
  * every visit - so only a change that carries the block drops the verdict; otherwise the memory
  * would be emptied faster than the guard reads it. A deletion request's update carries only the
  * columns that moved, and those do not name the person; such a change, and a cleared table, drop
  * every verdict instead of guessing whose it was.
+ *
+ * Two writes stand in other people's verdicts and so drop every one of them (HIL-1292): a merge
+ * row, because it moves the live end of a chain somebody further down may lead to, and a change
+ * of a person's name, because that name is carried by the verdict of every account folded into
+ * them. Merges and renames are rare; what the drop costs is one re-read per open card.
  *
  * A mirror rather than a reaction: the verdict it drops is this process's own memory, read by the
  * very code that may still be inside the transaction that wrote the block, so it is told at the
@@ -45,9 +50,14 @@ final class AccountStandingChangeSubscriber implements SourceMirrorSubscriberInt
 
         switch ($change->sourceKey) {
             case HilosDbContext::users:
-                if ($change->mutationType !== TableMutationType::Update || array_key_exists(EntityUser::block, $change->row)) {
+                if ($change->mutationType === TableMutationType::Update && array_key_exists(EntityUser::name, $change->row)) {
+                    AccountStandingResolver::forgetAll();
+                } elseif ($change->mutationType !== TableMutationType::Update || array_key_exists(EntityUser::block, $change->row)) {
                     $this->forget($change, $change->sourceId === '' ? null : (int) $change->sourceId);
                 }
+                break;
+            case HilosDbContext::userMerges:
+                AccountStandingResolver::forgetAll();
                 break;
             case HilosDbContext::accountDeletions:
                 $this->forget($change, $this->userIdOf($change, EntityAccountDeletion::user_id));

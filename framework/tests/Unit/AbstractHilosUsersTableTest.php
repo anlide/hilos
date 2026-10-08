@@ -30,7 +30,11 @@ final class AbstractHilosUsersTableTest extends TestCase
         $this->assertNull($mutation);
     }
 
-    public function testBrowserRowSplitsIntoUserAndConnectionsSlots(): void
+    /**
+     * The merge flag rides its own inline slot, never the users slot: that one is normalized into
+     * the person entity on the frontend, and a fact of the merge table would settle there (HIL-1292).
+     */
+    public function testBrowserRowSplitsIntoUserConnectionsAndMergeSlots(): void
     {
         $this->assertSame(
             [
@@ -47,9 +51,12 @@ final class AbstractHilosUsersTableTest extends TestCase
                         HilosUserTableRow::presence => null,
                         HilosUserTableRow::onlineSessionCount => 0,
                     ],
+                    AbstractHilosUsersTable::SLOT_MERGE => [
+                        HilosUserTableRow::merged => true,
+                    ],
                 ],
             ],
-            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann')),
+            $this->table()->browserRow(new HilosUserTableRow(5, name: 'Ann', merged: true)),
         );
     }
 

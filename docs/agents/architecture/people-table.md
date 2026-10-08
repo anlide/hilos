@@ -145,7 +145,10 @@ settings (`ImpersonationSettings`, HIL-1170): impersonation must be allowed
 its switch is on (`auth.impersonation.blocked`, `.frozen`, `.equal`). A refusal
 speaks the words the card shows under its switched-off button
 (`ImpersonationMessages`). The asker naming themselves is not "another
-administrator": the library refuses that on its own, after.
+administrator": the library refuses that on its own, after. An account folded
+into another one is refused before any setting is asked (HIL-1292): a tombstone
+is nobody to act as, whatever the settings allow, and its card offers no
+takeover.
 
 These settings are judged at the start and nowhere later: a takeover under way
 is not ended by a later switch, the way a sign-in method switched off signs
@@ -197,11 +200,29 @@ trust revocation and session consequences are specified in
 
 A folded account is refused, both ways, the admin flag and the block
 (`applyAdminGrant()`, `applyAccountBlock()`), an administrator's deletion after
-the refusal to an administrator (`assertAdministratorMayDelete()`), and a place
-in the administrators' circle (`AdminAudience`) — the last one asked by name
-even though the merge blocked it, since the flag can be lifted past the library.
-The table is read process-wide beside the people for that reason. The person's
-data copy carries both sides of their merges in its `merges` section.
+the refusal to an administrator (`assertAdministratorMayDelete()`), a rename
+(`UserRenameCommands::rename()`, before anything is read of the name), a
+takeover (`assertImpersonationAllowed()`, right after the target is found and
+before any setting is asked; HIL-1292), and a place in the administrators'
+circle (`AdminAudience`) — the last one asked by name even though the merge
+blocked it, since the flag can be lifted past the library. Every refusal speaks
+`MERGED_ACCOUNT_REFUSED_MESSAGE`. The table is read process-wide beside the
+people for that reason. The person's data copy carries both sides of their
+merges in its `merges` section.
+
+Where a folded account is seen (HIL-1292): as the `merged` fact of its standing
+([account-standing.md](account-standing.md)), shown ahead of the block the merge
+left, with the live end of its chain and that account's name — on the admin
+card, which says where the account went and offers no action; in the people
+list, as a gray "Merged" badge read off the row's inline `merge` slot
+(`AbstractHilosUsersTable::SLOT_MERGE`); and on a project's own page of the
+person through two computed fields of a person's row,
+`HilosUserTableRow::FIELD_MERGED_INTO` and `FIELD_MERGED_INTO_NAME`
+(`BrowserContext::computeBrowserField()`, over `UserMerges::liveSurvivorOf()`),
+which the chat demo's `/user/{id}` reads as its `userMerge` data and stays on
+the merged account's own address with. The chain is followed up to the first
+account with no merge row of its own; a chain that stops at an erased survivor
+or closes a loop ends nowhere, and the card says so without a link.
 
 ## Foreign Keys Onto The Person
 

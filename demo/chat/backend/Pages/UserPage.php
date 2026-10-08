@@ -37,14 +37,16 @@ use Hilos\Core\Page\PageRouteParams;
  * Contributes the requested user's profile as a page-scope entity through
  * buildPagePayload(); the runtime presence rides the reactive browser snapshot
  * (the `userPresence` data source), so it stays out of the one-shot entity
- * payload.
+ * payload. An account folded into another one keeps this page at its own address
+ * (HIL-1292): the `userMerge` data source says so and names where it went, and
+ * the page draws that in place of the sessions and the activity.
  *
  * @property ChatAgent $agent
  */
 final class UserPage extends AbstractPage
 {
-    /** @var list<string> The person this page is about */
-    public const array READS_DB = [ChatDbContext::users];
+    /** @var list<string> The person this page is about, and the merge table that may say they are gone */
+    public const array READS_DB = [ChatDbContext::users, ChatDbContext::userMerges];
 
     public const string PAGE = PageConstants::USER;
 

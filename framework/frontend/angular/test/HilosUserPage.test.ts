@@ -1265,6 +1265,8 @@ describe('HilosUserPage standing (HIL-945)', () => {
       deletionEffectiveAt: null,
       lapsed: [],
       window: [],
+      mergedInto: null,
+      mergedIntoName: null,
       ...facts,
     }
   }
@@ -1639,5 +1641,134 @@ describe('HilosUserPage in the admin view mode', () => {
     await click(fixture, 'hilos-user-admin-open')
 
     expect(world.sent[0]?.action).toBe('hilos_step_up_start')
+  })
+})
+
+describe('HilosUserPage merged account (HIL-1292)', () => {
+  afterEach(() => {
+    document.body.classList.remove('modal-open')
+  })
+
+  /**
+   * The standing of an account folded into another one, as the wire carries it.
+   *
+   * @param facts The facts that differ from a merge into Bob (#9).
+   */
+  function merged(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      shown: 'merged',
+      blocked: true,
+      frozen: false,
+      deletionEffectiveAt: null,
+      lapsed: [],
+      window: [],
+      mergedInto: 9,
+      mergedIntoName: 'Bob',
+      ...facts,
+    }
+  }
+
+  /**
+   * Mount the card on a context.
+   *
+   * @param context The project context the card reads.
+   * @returns The fixture and a helper that applies a change and settles the view.
+   */
+  function mountCard(context: HilosUsersContext): {
+    fixture: ComponentFixture<HilosUserPage>
+    change: (fn: () => void) => Promise<void>
+  } {
+    TestBed.resetTestingModule()
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return {
+      fixture,
+      async change(fn: () => void): Promise<void> {
+        fn()
+        await Promise.resolve()
+        fixture.detectChanges()
+        await fixture.whenStable()
+        fixture.detectChanges()
+      },
+    }
+  }
+
+  it('says where the account went and offers nothing to press', async () => {
+    const { context, standingFrame } = userContext(true, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    const { fixture, change } = mountCard(context)
+    const find = (id: string) => el(fixture, id)
+    expect(find('hilos-user-edit')).not.toBeNull()
+    expect(find('hilos-user-access')).not.toBeNull()
+    expect(find('hilos-user-merge-zone')).not.toBeNull()
+    expect(find('hilos-user-impersonate-open')).not.toBeNull()
+
+    // The merge lands under the open card: the badge turns, the notice names the
+    // survivor, and every control goes - the server refuses them all.
+    await change(() => {
+      standingFrame({ userId: 1, accountStanding: merged() })
+    })
+    const badge = find('user-standing-badge')
+    expect(badge?.textContent?.trim()).toBe('Merged')
+    expect(badge?.classList.contains('text-bg-secondary')).toBe(true)
+    expect(badge?.querySelector('.bi-sign-merge-left')).not.toBeNull()
+    const notice = find('hilos-user-merged')
+    expect(notice?.textContent).toContain('This account was merged into')
+    expect(notice?.textContent).toContain('Bob')
+    expect(notice?.textContent).toContain('(#9)')
+    const link = find('hilos-user-merged-link')
+    expect(link?.getAttribute('href')).toBe('/hilos/user/9')
+    expect(link?.textContent).toBe('Open card')
+    expect(find('hilos-user-edit')).toBeNull()
+    expect(find('hilos-user-rights')).toBeNull()
+    expect(find('hilos-user-access')).toBeNull()
+    expect(find('hilos-user-merge-zone')).toBeNull()
+    expect(find('hilos-user-impersonate-open')).toBeNull()
+    expect(find('hilos-user-sessions')).not.toBeNull()
+
+    // A viewer of the admin view mode keeps the number and the way, not the name.
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: merged({ mergedIntoName: { _hidden: true } }),
+      })
+    })
+    expect(
+      find('hilos-user-merged')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(find('hilos-user-merged')?.textContent).toContain('(#9)')
+    expect(find('hilos-user-merged-link')).not.toBeNull()
+
+    // A chain that leads nowhere: merged, with nobody to point at.
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: merged({ mergedInto: null, mergedIntoName: null }),
+      })
+    })
+    expect(find('hilos-user-merged')?.textContent?.trim()).toBe(
+      'This account was merged into another one.',
+    )
+    expect(find('hilos-user-merged-link')).toBeNull()
+  })
+
+  it('closes an open window when the merge lands', async () => {
+    const { context, standingFrame } = userContext()
+    const fixture = openModal(context)
+    expect(el(fixture, 'modal')).not.toBeNull()
+
+    standingFrame({ userId: 1, accountStanding: merged() })
+    await settle(fixture)
+
+    expect(el(fixture, 'modal')).toBeNull()
+    expect(el(fixture, 'hilos-user-merged')).not.toBeNull()
   })
 })

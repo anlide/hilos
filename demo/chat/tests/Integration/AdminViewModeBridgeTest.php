@@ -81,6 +81,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         Hilos::initBrowser();
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
         TruthSourceRegistry::register(HilosDbContext::accountDeletions, TruthSourceKeys::all(), self::TEST_AGENT);
+        TruthSourceRegistry::register(HilosDbContext::userMerges, TruthSourceKeys::all(), self::TEST_AGENT);
         Hilos::$rt->connections->actions->clear();
         AccountStandingAudience::reset();
         AccountStandingResolver::forgetAll();
@@ -152,6 +153,10 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertTrue($standing[AccountStanding::blocked]);
         self::assertFalse($standing[AccountStanding::frozen]);
         self::assertIsInt($standing[AccountStanding::deletionEffectiveAt]);
+        // The one personal member of a standing is the name of the account a merged one went into
+        // (HIL-1292); it is hidden whatever it holds, and everything else is shown.
+        self::assertTrue(HiddenValue::isMark($standing[AccountStanding::mergedIntoName]));
+        unset($standing[AccountStanding::mergedIntoName]);
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode($standing, JSON_THROW_ON_ERROR));
         $sent = json_encode(self::payloads($frames), JSON_THROW_ON_ERROR);
         self::assertStringNotContainsString('Olena Kovalenko', $sent);
@@ -215,6 +220,8 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertSame(AccountStandingKind::DELETION_SCHEDULED->value, $standing[AccountStanding::shown]);
         self::assertFalse($standing[AccountStanding::blocked]);
         self::assertIsInt($standing[AccountStanding::deletionEffectiveAt]);
+        self::assertTrue(HiddenValue::isMark($standing[AccountStanding::mergedIntoName]), 'The survivor name is personal (HIL-1292)');
+        unset($frame[AccountStandingStateSignalData::accountStanding][AccountStanding::mergedIntoName]);
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode($frame, JSON_THROW_ON_ERROR));
     }
 
@@ -239,6 +246,36 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         self::assertIsArray($sections);
         self::assertNotSame([], $sections);
         self::assertFalse(HiddenValue::isMark($sections));
+    }
+
+    /**
+     * A merged person's card tells a viewer the survivor's number and keeps the survivor's name hidden,
+     * as every person's name is; the people list shows the merge flag open, a fact of the merge table
+     * and not of the person (HIL-1292).
+     */
+    public function testAViewerSeesAMergedPersonsSurvivorByNumberAndNotByName(): void
+    {
+        $survivorId = (int) Hilos::$db->users->actions->createWithName('Yaroslava Survivor')->id;
+        Hilos::$db->userMerges->actions->add($this->personId, $survivorId);
+        $this->connect(admin: false);
+
+        $card = $this->subscribe(UserPage::class, ['userId' => (string) $this->personId]);
+        $standing = $this->pageData($card)[UserPage::ACCOUNT_STANDING];
+        self::assertSame(AccountStandingKind::MERGED->value, $standing[AccountStanding::shown]);
+        self::assertSame($survivorId, $standing[AccountStanding::mergedInto]);
+        self::assertTrue(HiddenValue::isMark($standing[AccountStanding::mergedIntoName]));
+        self::assertStringNotContainsString('Yaroslava Survivor', json_encode(self::payloads($card), JSON_THROW_ON_ERROR));
+
+        // The first window of the list, whoever is in it: the flag is open to the viewer on every
+        // row, and says of each person exactly what the merge table says.
+        $rows = $this->window($this->subscribe(UsersPage::class), ChatTableContext::hilosUsers)[TableWindowSignalData::rows];
+        self::assertNotSame([], $rows);
+        foreach ($rows as $row) {
+            $flag = $row[PagePayload::slots][AbstractHilosUsersTable::SLOT_MERGE][HilosUserTableRow::merged];
+            self::assertIsBool($flag);
+            $id = $row[PagePayload::slots][AbstractHilosUsersTable::SLOT_USER][HilosUserTableRow::id];
+            self::assertSame(Hilos::$db->userMerges[(int) $id] !== null, $flag, "merged flag of person {$id}");
+        }
     }
 
     public function testAnAdminIsSentThePagesWithoutASingleMark(): void

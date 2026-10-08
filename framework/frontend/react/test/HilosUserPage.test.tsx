@@ -1257,6 +1257,8 @@ describe('HilosUserPage standing (HIL-945)', () => {
       deletionEffectiveAt: null,
       lapsed: [],
       window: [],
+      mergedInto: null,
+      mergedIntoName: null,
       ...facts,
     }
   }
@@ -1560,5 +1562,111 @@ describe('HilosUserPage in the admin view mode', () => {
     await click('hilos-user-admin-open')
 
     expect(context.sent[0]?.action).toBe('hilos_step_up_start')
+  })
+})
+
+describe('HilosUserPage merged account (HIL-1292)', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+  })
+
+  /**
+   * The standing of an account folded into another one, as the wire carries it.
+   *
+   * @param facts The facts that differ from a merge into Bob (#9).
+   */
+  function merged(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      shown: 'merged',
+      blocked: true,
+      frozen: false,
+      deletionEffectiveAt: null,
+      lapsed: [],
+      window: [],
+      mergedInto: 9,
+      mergedIntoName: 'Bob',
+      ...facts,
+    }
+  }
+
+  const change = async (fn: () => void) => {
+    await act(async () => {
+      fn()
+    })
+  }
+
+  it('says where the account went and offers nothing to press', async () => {
+    const context = userContext(true, true, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    renderPage(context)
+    expect(byId('hilos-user-edit')).not.toBeNull()
+    expect(byId('hilos-user-access')).not.toBeNull()
+    expect(byId('hilos-user-merge-zone')).not.toBeNull()
+    expect(byId('hilos-user-impersonate-open')).not.toBeNull()
+
+    // The merge lands under the open card: the badge turns, the notice names the
+    // survivor, and every control goes - the server refuses them all.
+    await change(() => {
+      context.standingFrame({ userId: 1, accountStanding: merged() })
+    })
+    const badge = byId('user-standing-badge')
+    expect(badge?.textContent?.trim()).toBe('Merged')
+    expect(badge?.classList.contains('text-bg-secondary')).toBe(true)
+    expect(badge?.querySelector('.bi-sign-merge-left')).not.toBeNull()
+    const notice = byId('hilos-user-merged')
+    expect(notice?.textContent).toContain('This account was merged into')
+    expect(notice?.textContent).toContain('Bob')
+    expect(notice?.textContent).toContain('(#9)')
+    const link = byId('hilos-user-merged-link')
+    expect(link?.getAttribute('href')).toBe('/hilos/user/9')
+    expect(link?.textContent).toBe('Open card')
+    expect(byId('hilos-user-edit')).toBeNull()
+    expect(byId('hilos-user-rights')).toBeNull()
+    expect(byId('hilos-user-access')).toBeNull()
+    expect(byId('hilos-user-merge-zone')).toBeNull()
+    expect(byId('hilos-user-impersonate-open')).toBeNull()
+    expect(byId('hilos-user-sessions')).not.toBeNull()
+
+    // A viewer of the admin view mode keeps the number and the way, not the name.
+    await change(() => {
+      context.standingFrame({
+        userId: 1,
+        accountStanding: merged({ mergedIntoName: { _hidden: true } }),
+      })
+    })
+    expect(
+      byId('hilos-user-merged')?.querySelector('[data-id="hilos-hidden"]'),
+    ).not.toBeNull()
+    expect(byId('hilos-user-merged')?.textContent).toContain('(#9)')
+    expect(byId('hilos-user-merged-link')).not.toBeNull()
+
+    // A chain that leads nowhere: merged, with nobody to point at.
+    await change(() => {
+      context.standingFrame({
+        userId: 1,
+        accountStanding: merged({ mergedInto: null, mergedIntoName: null }),
+      })
+    })
+    expect(byId('hilos-user-merged')?.textContent?.trim()).toBe(
+      'This account was merged into another one.',
+    )
+    expect(byId('hilos-user-merged-link')).toBeNull()
+  })
+
+  it('closes an open window when the merge lands', async () => {
+    const context = userContext(true)
+    openModal(context)
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+
+    await change(() => {
+      context.standingFrame({ userId: 1, accountStanding: merged() })
+    })
+
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(byId('hilos-user-merged')).not.toBeNull()
   })
 })

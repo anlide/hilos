@@ -22,7 +22,7 @@ final class HilosUserTableRowTest extends TestCase
     /**
      * The order of the keys is part of the wire, and the tables' own assertions compare it exactly.
      */
-    public function testToArrayCarriesTheSevenFieldsInTheWireOrder(): void
+    public function testToArrayCarriesTheEightFieldsInTheWireOrder(): void
     {
         $row = new HilosUserTableRow(
             id: 42,
@@ -32,6 +32,7 @@ final class HilosUserTableRowTest extends TestCase
             lastActivity: '2026-09-30 10:00:00',
             onlineSessionCount: 3,
             presence: 'online',
+            merged: true,
         );
 
         $this->assertSame(
@@ -43,9 +44,16 @@ final class HilosUserTableRowTest extends TestCase
                 HilosUserTableRow::presence => 'online',
                 HilosUserTableRow::name => 'Ann',
                 HilosUserTableRow::lastActivity => '2026-09-30 10:00:00',
+                HilosUserTableRow::merged => true,
             ],
             $row->toArray(),
         );
+    }
+
+    public function testARowIsNotMergedUnlessTheTableSaysSo(): void
+    {
+        $this->assertFalse((new HilosUserTableRow(42))->merged);
+        $this->assertFalse((new HilosUserTableRow(42))->toArray()[HilosUserTableRow::merged]);
     }
 
     public function testARowSurvivesTheRoundTripThroughItsPayload(): void

@@ -119,6 +119,12 @@ export interface HilosUserRow {
   readonly presence: HilosPresence
   /** Count of the user's currently open sessions. */
   readonly onlineSessionCount: number
+  /**
+   * Whether the account was folded into another one by a merge (HIL-1292), from
+   * the inline `merge` slot of the people list; the card's own table carries no
+   * such slot and reads it from the person's standing instead.
+   */
+  readonly merged: boolean
 }
 
 /** One user-detail row, including whether its account owns a password identity. */
@@ -272,6 +278,8 @@ const USER_DELETION_GRACE_DAYS_KEY = 'accountDeletionGraceDays'
 /** Page data key of the impersonation settings the card's takeover section reads (PHP `AbstractHilosUserPage::IMPERSONATION`). */
 const USER_IMPERSONATION_KEY = 'impersonation'
 const MERGE_SLOT = 'merge'
+/** People-row payload key of whether the account was merged into another one, in the inline merge slot (HIL-1292). */
+export const USER_MERGED_FIELD = 'merged'
 const MERGE_IDENTITY_TYPE_FIELD = 'type'
 const MERGE_IDENTITY_IDENTIFIER_FIELD = 'identifier'
 const MERGE_IDENTITY_PROVIDER_FIELD = 'provider'
@@ -452,6 +460,7 @@ export function resolveHilosUserRow<TUser extends User>(
   const ref = row.slots[USER_SLOT] as EntityRef | undefined
   const user = ref ? users.signal(ref).get() : undefined
   const connection = recordSlot(row.slots[USER_CONNECTIONS_SLOT])
+  const merge = recordSlot(row.slots[MERGE_SLOT])
 
   // The typed person keeps a string name for every reader outside the admin
   // section; the row asks the collection whether it arrived hidden.
@@ -465,6 +474,7 @@ export function resolveHilosUserRow<TUser extends User>(
     onlineSessionCount: connection
       ? readNumber(connection, USER_ONLINE_SESSION_COUNT_FIELD)
       : 0,
+    merged: merge ? readBoolean(merge, USER_MERGED_FIELD) : false,
   }
 }
 
@@ -989,14 +999,21 @@ export function createHilosUserStanding(
   }
 }
 
-/** The badge a card's header shows for the standing shown (HIL-945). */
+/**
+ * The badge a card's header shows for the standing shown (HIL-945); the people
+ * list shows the merged one beside the name (HIL-1292).
+ */
 export interface HilosStandingBadge {
   /** The badge's word. */
-  readonly label: 'Blocked' | 'Frozen' | 'Deletion scheduled'
+  readonly label: 'Merged' | 'Blocked' | 'Frozen' | 'Deletion scheduled'
   /** The Bootstrap color of the badge, the one the shell uses for the same standing. */
   readonly tone: HilosStandingTone
   /** The Bootstrap Icon beside the word. */
-  readonly icon: 'bi-slash-circle' | 'bi-snow' | 'bi-trash'
+  readonly icon:
+    | 'bi-sign-merge-left'
+    | 'bi-slash-circle'
+    | 'bi-snow'
+    | 'bi-trash'
 }
 
 /**
@@ -1010,6 +1027,12 @@ export function hilosStandingBadge(
   kind: HilosAccountStandingKind,
 ): HilosStandingBadge | null {
   switch (kind) {
+    case 'merged':
+      return {
+        label: 'Merged',
+        tone: hilosStandingTone(kind),
+        icon: 'bi-sign-merge-left',
+      }
     case 'blocked':
       return {
         label: 'Blocked',
@@ -1026,6 +1049,52 @@ export function hilosStandingBadge(
       }
     default:
       return null
+  }
+}
+
+/** What the card of a merged account says in place of its action sections (HIL-1292). */
+export const HILOS_USER_MERGED_COPY = {
+  into: 'This account was merged into',
+  gone: 'This account was merged into another one.',
+  open: 'Open card',
+} as const
+
+/**
+ * The notice a card draws under its header for a merged account (HIL-1292): the
+ * account it went into, down the chain to its live end, and the way there.
+ */
+export interface HilosUserMergedNotice {
+  /** The live end of the merge chain, or `null` when the chain leads nowhere. */
+  readonly userId: number | null
+  /** That account's name, hidden for a viewer of the admin view mode, or `null` with no account to name. */
+  readonly name: Hideable<string> | null
+  /** The path of that account's card, or `null` when there is no account to open. */
+  readonly path: string | null
+}
+
+/**
+ * The merged notice of a card, or `null` for an account that was never merged
+ * or while the card has no standing to read it from. The card of a merged
+ * account draws this and no action section: every action over it is refused
+ * by the server, so there is nothing to offer.
+ *
+ * @param standing The person's standing, or `null` while the card has none.
+ */
+export function hilosUserMergedNotice(
+  standing: HilosAccountStanding | null,
+): HilosUserMergedNotice | null {
+  if (standing === null || standing.shown !== 'merged') {
+    return null
+  }
+  const userId = standing.mergedInto
+
+  return {
+    userId,
+    name: standing.mergedIntoName,
+    path:
+      userId === null
+        ? null
+        : resolveHilosPath(HilosPages.USER, { userId: String(userId) }),
   }
 }
 
@@ -1438,7 +1507,9 @@ export interface HilosUserLifecycleSection {
  *
  * The block and the deletion are read from the person's standing when the card
  * has one (HIL-945) — the verdict the header badge shows too — and from the
- * committed row only while it has none, as before the verdict existed.
+ * committed row only while it has none, as before the verdict existed. A merged
+ * account has no sections at all (HIL-1292): the server refuses every action
+ * over it, and the card says where the account went instead.
  *
  * @param detail The committed user row, absent until the table arrives.
  * @param currentUserId The person behind this session.
@@ -1453,7 +1524,7 @@ export function hilosUserLifecycleSections(
   now: number,
   standing: HilosAccountStanding | null = null,
 ): readonly HilosUserLifecycleSection[] {
-  if (!detail) return []
+  if (!detail || standing?.shown === 'merged') return []
   const copy = HILOS_USER_LIFECYCLE_COPY
   const own = detail.id === currentUserId
   const blocked = standing?.blocked ?? detail.block
@@ -1721,8 +1792,9 @@ export interface HilosUserImpersonationSection {
 }
 
 /**
- * The card's takeover section, or `null` when impersonation is switched off or
- * the card has no settings to read (HIL-1170).
+ * The card's takeover section, or `null` when impersonation is switched off,
+ * the card has no settings to read (HIL-1170), or the account was merged into
+ * another one (HIL-1292) — a tombstone is nobody to act as.
  *
  * The button is switched off with its reason on the person's own card, and on a
  * blocked person, a frozen person or another administrator while the row of the
@@ -1740,7 +1812,12 @@ export function hilosUserImpersonationSection(
   settings: HilosUserImpersonationSettings | null,
   standing: HilosAccountStanding | null = null,
 ): HilosUserImpersonationSection | null {
-  if (!detail || settings === null || !settings.allowed) {
+  if (
+    !detail ||
+    settings === null ||
+    !settings.allowed ||
+    standing?.shown === 'merged'
+  ) {
     return null
   }
   const copy = HILOS_USER_IMPERSONATION_COPY

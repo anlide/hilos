@@ -69,6 +69,16 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     public const string SLOT_CONNECTIONS = 'connections';
 
     /**
+     * Wire slot the merge flag rides, inline (matches the FE users admin MERGE_SLOT; HIL-1292).
+     *
+     * Not the users slot: that one is normalized into the person entity on the frontend, and a
+     * fact of the people table would settle in the entity. The flag is read off the merge table,
+     * not off a column of the person, and a database row has no second copy to fall behind, so
+     * the slot is never stale.
+     */
+    public const string SLOT_MERGE = 'merge';
+
+    /**
      * Filter-map key: narrow the people to those past the deadline of one legal document (HIL-945).
      *
      * The value is the document's key (`terms`, `privacy`). The people are those the legal section's
@@ -146,7 +156,8 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      *
      * The window/delta path splits the typed row the same way the declarative
      * source fan-out does: the runtime presence fields ride the inline
-     * {@see self::SLOT_CONNECTIONS} slot, and the rest — the user identity and
+     * {@see self::SLOT_CONNECTIONS} slot, the merge flag rides the inline
+     * {@see self::SLOT_MERGE} slot, and the rest — the user identity and
      * profile fields — ride the {@see self::SLOT_USER} entity slot the frontend
      * resolves through its user collection (so a rename still fans out for free).
      *
@@ -168,9 +179,13 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             HilosUserTableRow::presence => $fields[HilosUserTableRow::presence] ?? null,
             HilosUserTableRow::onlineSessionCount => $fields[HilosUserTableRow::onlineSessionCount] ?? 0,
         ];
+        $merge = [
+            HilosUserTableRow::merged => $fields[HilosUserTableRow::merged] ?? false,
+        ];
         unset(
             $fields[HilosUserTableRow::presence],
             $fields[HilosUserTableRow::onlineSessionCount],
+            $fields[HilosUserTableRow::merged],
         );
 
         $rowKey = $row->requireRowKey();
@@ -179,6 +194,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             BrowserPageSignalData::sources => [
                 self::SLOT_USER => $fields,
                 self::SLOT_CONNECTIONS => $connections,
+                self::SLOT_MERGE => $merge,
             ],
         ];
         if ($this->presenceForUser((int) $rowKey)->stale) {
@@ -189,11 +205,14 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     }
 
     /**
-     * Builds the Hilos users row from DB fields plus runtime presence.
+     * Builds the Hilos users row from DB fields plus runtime presence, and the merge table's word on the account.
+     *
+     * The merge is read at the moment the row is built. A merge writes its row before the loser's
+     * block flag, so the row rebuilt for that flag's change already sees the tombstone (HIL-1292).
      *
      * @param DbUser $user User DB item to project into the Hilos users table
      * @return HilosUserTableRow Runtime-enriched Hilos users table row
-     * @throws HilosException When the presence source cannot be found or cannot read its runtime state
+     * @throws HilosException When the presence source cannot be found or cannot read its runtime state, or the merge row cannot be read
      */
     public function rowFromUser(DbUser $user): HilosUserTableRow
     {
@@ -207,6 +226,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             lastActivity: $user->lastActivity,
             onlineSessionCount: $summary->onlineSessionCount,
             presence: $summary->presence,
+            merged: Hilos::$db->userMerges[(int) $user->id] !== null,
         );
     }
 
@@ -344,8 +364,9 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      * The name is declared as a column and hidden by the column's verdict (FAKE_NAME) rather than by
      * omission in the map; the id, the admin and block flags and the last activity are non-personal by
      * their column verdicts; presence and onlineSessionCount are aggregates of runtime connections and
-     * declared non-personal. The name being the one field searched, a viewer's window is served without
-     * the search and without the order by name.
+     * declared non-personal, as is whether the account was merged - a fact of the merge table, not a
+     * column of the person (HIL-1292). The name being the one field searched, a viewer's window is
+     * served without the search and without the order by name.
      *
      * @return array<string, WireField> Person's row field to where it comes from
      */
@@ -359,6 +380,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             HilosUserTableRow::lastActivity => WireField::column(HilosDbContext::users, ObjectUser::lastActivity),
             HilosUserTableRow::presence => WireField::notPersonal(),
             HilosUserTableRow::onlineSessionCount => WireField::notPersonal(),
+            HilosUserTableRow::merged => WireField::notPersonal(),
         ];
     }
 

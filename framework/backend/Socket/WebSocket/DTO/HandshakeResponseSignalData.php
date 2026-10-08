@@ -204,7 +204,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as ({@see AccountStanding}), or null when it is anonymous
      * @param ?bool $adminViewMode Whether this node is in the admin view mode, or null before the framework stamp
      * @param ?array{viewOnly: bool, carryAdmin: bool, allowed: bool, accountAccess: bool,
@@ -311,7 +313,9 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * on every send path and the project never builds it. Null for an anonymous session.
      *
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same response carrying that standing
      */
@@ -629,13 +633,15 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * Reads the standing of the person the session acts as back into its declared shape (HIL-945).
      *
      * Shared with {@see SessionStateSignalData}, which carries the same node under the same key. A
-     * present node comes back with all six members: the verdict names every fact, not only the one
-     * it shows, and the documents still inside their window ride beside the lapsed ones (HIL-500).
+     * present node comes back with all eight members: the verdict names every fact, not only the one
+     * it shows, the documents still inside their window ride beside the lapsed ones (HIL-500), and
+     * a merged account says where it went (HIL-1292) - both of those members null for anybody else.
      *
      * @param array<string, mixed> $section Map holding the node under `accountStanding`
      * @return ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
      *     lapsed: list<array{document: string, deadline: ?string}>,
-     *     window: list<array{document: string, deadline: ?string}>} Node, or null for an anonymous session
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} Node, or null for an anonymous session
      * @throws InvalidFormatException When the node or one of its members is not of the declared type
      */
     public static function readAccountStanding(array $section): ?array
@@ -652,6 +658,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             AccountStanding::deletionEffectiveAt => self::optionalInt($node, AccountStanding::deletionEffectiveAt),
             AccountStanding::lapsed => self::readStandingDocuments($node, AccountStanding::lapsed),
             AccountStanding::window => self::readStandingDocuments($node, AccountStanding::window),
+            AccountStanding::mergedInto => self::optionalInt($node, AccountStanding::mergedInto),
+            AccountStanding::mergedIntoName => self::optionalString($node, AccountStanding::mergedIntoName),
         ];
     }
 

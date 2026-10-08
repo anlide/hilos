@@ -44,10 +44,12 @@ import {
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_IMPERSONATION_COPY,
+  HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
+  hilosUserMergedNotice,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
@@ -93,6 +95,7 @@ import HilosEditNotice from '../../HilosEditNotice.vue'
 import HilosFormError from '../../HilosFormError.vue'
 import HilosHiddenMark from '../../HilosHiddenMark.vue'
 import HilosHideable from '../../HilosHideable.vue'
+import HilosLink from '../../HilosLink.vue'
 import HilosModal from '../../HilosModal.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import LoadingButton from '../../LoadingButton.vue'
@@ -169,6 +172,10 @@ const standingBadge = computed(() =>
   standing.value === null ? null : hilosStandingBadge(standing.value.shown),
 )
 const frozenRow = computed(() => hilosUserFrozenRow(standing.value))
+// A merged account (HIL-1292): the notice under the header stands in for every
+// action section, which the core leaves empty for it.
+const mergedNotice = computed(() => hilosUserMergedNotice(standing.value))
+const mergedCopy = HILOS_USER_MERGED_COPY
 const lifecycleNow = ref(Date.now())
 watch(
   [
@@ -629,6 +636,19 @@ function closeEdit(): void {
   rename.clearRenameError()
 }
 
+// A merge that lands under an open window closes it (HIL-1292): there is nothing
+// left to do over the account. A window whose action is in flight stays, and the
+// server's answer comes as usual - a refusal.
+watch(mergedNotice, (notice) => {
+  if (notice === null) {
+    return
+  }
+  if (!loading.value) closeEdit()
+  if (!mergeAction.busy.value) closeMerge()
+  closeLifecycle()
+  closeImpersonate()
+})
+
 function submit(): void {
   const current = detail.value
   const typed = draft.value
@@ -708,6 +728,7 @@ watch(error, (reason) => {
             >{{ standingBadge.label }}
           </span>
           <button
+            v-if="mergedNotice === null"
             type="button"
             class="btn btn-outline-primary btn-sm ms-auto"
             data-id="hilos-user-edit"
@@ -732,6 +753,29 @@ watch(error, (reason) => {
             </template>
           </dl>
         </div>
+      </div>
+      <!-- A merged account says where it went and offers nothing to press: every
+      action over it is refused by the server (HIL-1292). -->
+      <div
+        v-if="mergedNotice !== null"
+        class="alert alert-secondary mt-4"
+        role="status"
+        data-id="hilos-user-merged"
+      >
+        <template v-if="mergedNotice.userId !== null">
+          {{ mergedCopy.into }}
+          <HilosHideable :value="mergedNotice.name" /> (#{{
+            mergedNotice.userId
+          }}).
+          <HilosLink
+            v-if="mergedNotice.path !== null"
+            class="alert-link"
+            data-id="hilos-user-merged-link"
+            :to="mergedNotice.path"
+            >{{ mergedCopy.open }}</HilosLink
+          >
+        </template>
+        <template v-else>{{ mergedCopy.gone }}</template>
       </div>
       <section
         v-for="section in lifecycleSections"
@@ -815,7 +859,7 @@ watch(error, (reason) => {
         </div>
       </section>
       <section
-        v-if="context.accountMerge"
+        v-if="context.accountMerge && mergedNotice === null"
         class="card border-danger mt-4"
         data-id="hilos-user-merge-zone"
       >

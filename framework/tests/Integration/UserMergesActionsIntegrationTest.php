@@ -145,6 +145,56 @@ final class UserMergesActionsIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * The live end of a chain is the first account up it with no merge row of its own (HIL-1292):
+     * an account never folded has no end to speak of, a straight merge ends at its survivor, and
+     * a chain of merges ends at the last survivor, read row by row.
+     *
+     * @throws HilosException On database error
+     */
+    public function testLiveSurvivorOfWalksTheChainToItsLiveEnd(): void
+    {
+        $first = self::seedPerson('First');
+        $second = self::seedPerson('Second');
+        $third = self::seedPerson('Third');
+        $alone = self::seedPerson('Alone');
+        Hilos::$db->userMerges->actions->add($first, $second);
+
+        $this->assertNull(Hilos::$db->userMerges->liveSurvivorOf($alone));
+        $this->assertSame($second, Hilos::$db->userMerges->liveSurvivorOf($first));
+
+        Hilos::$db->userMerges->actions->add($second, $third);
+
+        $this->assertSame($third, Hilos::$db->userMerges->liveSurvivorOf($first));
+        $this->assertSame($third, Hilos::$db->userMerges->liveSurvivorOf($second));
+        $this->assertNull(Hilos::$db->userMerges->liveSurvivorOf($third));
+    }
+
+    /**
+     * A chain that names no live account has no end to point at: a survivor erased before HIL-1200
+     * left its row pointing at nobody, and rows closing a loop lead back to where they started.
+     *
+     * @throws HilosException On database error
+     */
+    public function testLiveSurvivorOfAnswersNullWhenTheChainLeadsNowhere(): void
+    {
+        $orphan = self::seedPerson('Orphan');
+        $loopA = self::seedPerson('LoopA');
+        $loopB = self::seedPerson('LoopB');
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, NULL, NULL)',
+            [$orphan],
+        );
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NULL), (?, ?, NULL)',
+            [$loopA, $loopB, $loopB, $loopA],
+        );
+
+        $this->assertNull(Hilos::$db->userMerges->liveSurvivorOf($orphan));
+        $this->assertNull(Hilos::$db->userMerges->liveSurvivorOf($loopA));
+        $this->assertNull(Hilos::$db->userMerges->liveSurvivorOf($loopB));
+    }
+
+    /**
      * The erasure of a folded account takes its merge row; an account never folded has none,
      * which is not an error.
      *

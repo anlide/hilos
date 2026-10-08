@@ -1566,7 +1566,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      *     themselves - or null when the author is not a person
      * @return ?UserRename Journal row of this rename, or null when the name was already the person's
      * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the name is empty, too short or too long
+     * @throws ValidationException When the account was merged into another one, or the name is empty, too short or too long
      * @throws HilosException When the name, the journal row or the transaction cannot be written
      */
     public function renameUser(int $userId, string $newName, ?int $renamedByUserId): ?UserRename

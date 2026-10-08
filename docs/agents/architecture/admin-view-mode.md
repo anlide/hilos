@@ -405,8 +405,13 @@ nobody is asked*).
   the session count, worked out of runtime connections; whether a password is
   set, worked out of the identity's type; and the account standing whole — the
   fact shown, the block, the freeze, the documents and their deadlines, the
-  date a scheduled deletion falls due — on the card's page data and on its live
-  frame alike, by one map (`AccountStanding::wireFields()`). Hidden: the
+  date a scheduled deletion falls due, and for a merged account the number of
+  the account it went into — on the card's page data and on its live frame
+  alike, by one map (`AccountStanding::wireFields()`); whether a person in the
+  list was merged, a fact of the merge table in the row's inline `merge` slot
+  (HIL-1292). Hidden: the name of the account a merged one went into, a
+  person's name like any other, whatever it holds — a viewer keeps the number
+  and the way to the card; the
   addresses, the unconfirmed password address among them; a candidate's
   sign-in methods whole, because the merge window reads the list as one value
   and the methods' types without their addresses tell a viewer nothing; the

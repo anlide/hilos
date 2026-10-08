@@ -9,6 +9,11 @@ use Demo\Chat\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLegalAgentDaemon;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\Chat\Browser\ChatBrowserRef;
+use Demo\Chat\Browser\Data\UserMergeBrowserData;
+use Demo\Chat\Browser\Data\UserPresenceBrowserData;
+use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
+use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvPage;
@@ -343,6 +348,29 @@ final class ChatTopologyRegistryTest extends TestCase
     }
 
     /** Legal administration is bound to its own worker, page routes and tables. */
+    /**
+     * The chat user page is drawn from two data sources over the same person (HIL-1292): the
+     * runtime presence, and the merge the account may have gone into - the second bound to the
+     * page by the same route parameter as the first.
+     */
+    public function testTheUserPageCarriesThePresenceAndTheMergeData(): void
+    {
+        $this->assertSame(UserPresenceBrowserData::class, Hilos::BROWSER_DATA[UserPresenceBrowserData::DATA]);
+        $this->assertSame(UserMergeBrowserData::class, Hilos::BROWSER_DATA[UserMergeBrowserData::DATA]);
+        $binding = [
+            BrowserParamKey::PARAMS => [
+                UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
+            ],
+        ];
+        $this->assertSame(
+            [
+                UserPresenceBrowserData::DATA => $binding,
+                UserMergeBrowserData::DATA => $binding,
+            ],
+            Hilos::PAGE_DATA[ChatUserPage::PAGE],
+        );
+    }
+
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
         $this->assertSame(DemoHilosLegalAgent::class, Hilos::AGENTS[AgentType::HILOS_LEGAL][AgentRegistryKey::WORKER]);

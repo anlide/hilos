@@ -2296,6 +2296,27 @@ abstract class BrowserContext
             }
         }
 
+        if ($field === HilosUserTableRow::FIELD_MERGED_INTO) {
+            try {
+                return Hilos::$db->userMerges->liveSurvivorOf((int) $rowKey);
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Merge target could not be resolved', $exception);
+            }
+        }
+
+        // Computed beside the id rather than joined by it: a joined row is held to the row key of
+        // the person shown, and the survivor is somebody else. Read when the row is built, so a
+        // rename of the survivor reaches an open page of the merged account on its next build.
+        if ($field === HilosUserTableRow::FIELD_MERGED_INTO_NAME) {
+            try {
+                $survivorId = Hilos::$db->userMerges->liveSurvivorOf((int) $rowKey);
+
+                return $survivorId === null ? null : Hilos::$db->users[$survivorId]?->name;
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Merge target name could not be resolved', $exception);
+            }
+        }
+
         if ($browserKey === HilosUserPhotoBrowserTable::TABLE && $field === HilosUserPhotoBrowserTable::FIELD_PHOTO) {
             try {
                 $photo = Hilos::$db->userPhotos[(int)$rowKey];

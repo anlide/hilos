@@ -5065,7 +5065,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Every half is refused by throwing. The first two keep the order the chat demo ran them in
      * before the check moved here (HIL-1197): the asker must be an administrator, and only then is
      * the target looked up at all, so an unprivileged caller never learns from this whether the id
-     * it named exists. Then the administrator's settings (HIL-1170, {@see ImpersonationSettings}):
+     * it named exists. A target folded into another account is refused next (HIL-1292), before any
+     * setting is asked: a tombstone is nobody to act as, whatever the settings allow. Then the
+     * administrator's settings (HIL-1170, {@see ImpersonationSettings}):
      * impersonation must exist in the product, and the target must not be a blocked person, a
      * frozen person or another administrator whose row of the settings is switched off. The
      * refusal reaches an operator as the command's error reply and a browser as the action's fail
@@ -5079,8 +5081,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
-     * @throws ValidationException When the asker is not an administrator, the target is unknown, or a setting closes the takeover
-     * @throws DatabaseException When reading the user collection, the target's standing or a setting fails
+     * @throws ValidationException When the asker is not an administrator, the target is unknown or merged into another
+     *     account, or a setting closes the takeover
+     * @throws DatabaseException When reading the user collection, the target's merge row or standing, or a setting fails
      * @throws SettingException When a setting catalog or value is invalid
      * @throws InvalidArgumentException When a loaded user object does not match the collection
      * @throws LogicException When the user collection is not configured
@@ -5096,6 +5099,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $target = Hilos::$db->users[$targetUserId] ?? null;
         if ($target === null) {
             throw new ValidationException("No such user: {$targetUserId}");
+        }
+        if (Hilos::$db->userMerges[$targetUserId] !== null) {
+            throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
 
         if (!ImpersonationSettings::isAllowed()) {

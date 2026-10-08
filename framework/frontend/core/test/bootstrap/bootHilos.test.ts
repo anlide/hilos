@@ -341,6 +341,8 @@ describe('bootHilos', () => {
           deletionEffectiveAt: null,
           lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
           window: [],
+          mergedInto: null,
+          mergedIntoName: null,
         },
       },
       entities: { currentUser: { id: 1, name: 'Ada' } },

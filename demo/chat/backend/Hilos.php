@@ -56,6 +56,7 @@ use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Data\BotStatusBrowserData;
 use Demo\Chat\Browser\Data\SelfConnectionBrowserData;
+use Demo\Chat\Browser\Data\UserMergeBrowserData;
 use Demo\Chat\Browser\Data\UserPresenceBrowserData;
 use Demo\Chat\Browser\List\MainBotsBrowserList;
 use Demo\Chat\Browser\List\MainEventsBrowserList;
@@ -690,6 +691,7 @@ final class Hilos extends HilosFacade
         SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
         BotStatusBrowserData::DATA => BotStatusBrowserData::class,
         UserPresenceBrowserData::DATA => UserPresenceBrowserData::class,
+        UserMergeBrowserData::DATA => UserMergeBrowserData::class,
         LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
     ];
 
@@ -762,6 +764,11 @@ final class Hilos extends HilosFacade
         ],
         ChatUserPage::PAGE => [
             UserPresenceBrowserData::DATA => [
+                BrowserParamKey::PARAMS => [
+                    UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
+                ],
+            ],
+            UserMergeBrowserData::DATA => [
                 BrowserParamKey::PARAMS => [
                     UserPageSubscribeParams::USER_ID => ChatBrowserRef::USER_ID,
                 ],

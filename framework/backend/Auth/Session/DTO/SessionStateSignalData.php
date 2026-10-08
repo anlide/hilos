@@ -73,7 +73,9 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked Blocked account the session lost, named by its confirmed
      *     address or not at all, or null when the session holds no such card
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding Standing of the person
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Standing of the person
      *     the session acts as, or null when it is anonymous
      * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket
      */
@@ -132,7 +134,9 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * Returns the same frame stamped with the standing of the person the session acts as (HIL-945).
      *
      * @param ?array{shown: string, blocked: bool, frozen: bool, deletionEffectiveAt: ?int,
-     *     lapsed: list<array{document: string, deadline: ?string}>} $accountStanding
+     *     lapsed: list<array{document: string, deadline: ?string}>,
+     *     window: list<array{document: string, deadline: ?string}>,
+     *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same frame carrying that standing
      * @throws InvalidArgumentException When the frame answers an action or hands over a rotation ticket and names more than one socket

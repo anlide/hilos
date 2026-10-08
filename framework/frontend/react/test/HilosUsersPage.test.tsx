@@ -51,12 +51,15 @@ interface UserSeed {
   lastActivity: string | null
   presence: string
   onlineSessionCount: number
+  /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
+  merged?: boolean
 }
 
 // A users context whose connection answers each viewport request with a window
 // built from the seeded users — the server-windowed table's data path in one hop.
 // The `users` slot carries the entity fragment the binder upserts under the user
-// collection's type; the `connections` slot stays inline (no id), as on the wire.
+// collection's type; the `connections` and `merge` slots stay inline (no id), as
+// on the wire.
 function seededContext(users: UserSeed[]): HilosUsersContext {
   const scopes = new ScopeManager()
   scopes.openPage('hilos_users')
@@ -79,6 +82,7 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
             presence: user.presence,
             onlineSessionCount: user.onlineSessionCount,
           },
+          merge: { merged: user.merged ?? false },
         },
       })),
       totalCount: users.length,
@@ -213,6 +217,60 @@ describe('HilosUsersPage', () => {
     const row = container.querySelector('[data-id="hilos-table-row-1"]')
 
     expect(row?.querySelector('[data-id="hilos-hidden"]')).not.toBeNull()
+  })
+
+  it('marks a merged account beside its name and nobody else (HIL-1292)', () => {
+    const context = seededContext([
+      {
+        id: 1,
+        name: 'Alice',
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+        merged: true,
+      },
+      {
+        id: 2,
+        name: 'Bob',
+        lastActivity: null,
+        presence: 'online',
+        onlineSessionCount: 1,
+      },
+    ])
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={context} />
+      </HilosRouterContext.Provider>,
+    )
+
+    // The table draws every row twice - the row and the card of the narrow
+    // layout - so the badge is counted by whose row it sits in, not by number.
+    const badges = Array.from(
+      container.querySelectorAll('[data-id="hilos-users-merged"]'),
+    )
+    expect(badges.length).toBeGreaterThan(0)
+    for (const badge of badges) {
+      expect(badge.textContent?.trim()).toBe('Merged')
+      expect(badge.classList.contains('text-bg-secondary')).toBe(true)
+      expect(badge.querySelector('.bi-sign-merge-left')).not.toBeNull()
+      expect(
+        badge
+          .closest(
+            '[data-id^="hilos-table-row-"], [data-id^="hilos-table-card-"]',
+          )
+          ?.getAttribute('data-id'),
+      ).toMatch(/-1$/)
+    }
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-1"]')
+        ?.querySelector('[data-id="hilos-users-merged"]'),
+    ).not.toBeNull()
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-2"]')
+        ?.querySelector('[data-id="hilos-users-merged"]'),
+    ).toBeNull()
   })
 
   it('draws a cell under every declared column, aligned the way the column says', () => {

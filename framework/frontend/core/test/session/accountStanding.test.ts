@@ -94,6 +94,8 @@ function standing(
     deletionEffectiveAt: null,
     lapsed: [],
     window: [],
+    mergedInto: null,
+    mergedIntoName: null,
     ...facts,
   }
 }
@@ -183,6 +185,8 @@ describe('the session standing (HIL-945)', () => {
       deletionEffectiveAt: null,
       lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
       window: [],
+      mergedInto: null,
+      mergedIntoName: null,
     })
     expect(hilosDeletionStrip.get()).toBeNull()
     expect(hilosSessionAvatarMark.get()).toBeNull()
@@ -285,7 +289,8 @@ describe('the session standing (HIL-945)', () => {
 })
 
 describe('hilosStandingTone', () => {
-  it('is red for a block, blue for a freeze and yellow otherwise', () => {
+  it('is gray for a merge, red for a block, blue for a freeze and yellow otherwise', () => {
+    expect(hilosStandingTone('merged')).toBe('secondary')
     expect(hilosStandingTone('blocked')).toBe('danger')
     expect(hilosStandingTone('frozen')).toBe('info')
     expect(hilosStandingTone('deletion_scheduled')).toBe('warning')

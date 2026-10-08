@@ -49,15 +49,19 @@ final class AccountStandingResolverTest extends TestCase
         $lapsed = [$this->lapsedTerms()];
         $freeze = LegalSettings::REFUSAL_FREEZE;
 
-        self::assertSame(AccountStandingKind::BLOCKED, AccountStandingResolver::compose(true, 1000, $lapsed, [], $freeze)->shown);
-        self::assertSame(AccountStandingKind::FROZEN, AccountStandingResolver::compose(false, 1000, $lapsed, [], $freeze)->shown);
-        self::assertSame(AccountStandingKind::DELETION_SCHEDULED, AccountStandingResolver::compose(false, 1000, [], [], $freeze)->shown);
-        self::assertSame(AccountStandingKind::NONE, AccountStandingResolver::compose(false, null, [], [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::MERGED, AccountStandingResolver::compose(true, 9, 'S', true, 1000, $lapsed, [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::BLOCKED, AccountStandingResolver::compose(false, null, null, true, 1000, $lapsed, [], $freeze)->shown);
+        self::assertSame(AccountStandingKind::FROZEN, AccountStandingResolver::compose(false, null, null, false, 1000, $lapsed, [], $freeze)->shown);
+        self::assertSame(
+            AccountStandingKind::DELETION_SCHEDULED,
+            AccountStandingResolver::compose(false, null, null, false, 1000, [], [], $freeze)->shown,
+        );
+        self::assertSame(AccountStandingKind::NONE, AccountStandingResolver::compose(false, null, null, false, null, [], [], $freeze)->shown);
     }
 
     public function testEveryFactIsNamedWhateverIsShown(): void
     {
-        $standing = AccountStandingResolver::compose(true, 1000, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_FREEZE);
+        $standing = AccountStandingResolver::compose(false, null, null, true, 1000, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_FREEZE);
 
         self::assertTrue($standing->blocked);
         self::assertTrue($standing->frozen);
@@ -67,18 +71,27 @@ final class AccountStandingResolverTest extends TestCase
 
     public function testALapseFreezesOnlyUnderTheFreezeSetting(): void
     {
-        $remind = AccountStandingResolver::compose(false, null, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_REMIND);
+        $remind = AccountStandingResolver::compose(false, null, null, false, null, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_REMIND);
 
         self::assertFalse($remind->frozen);
         self::assertSame(AccountStandingKind::NONE, $remind->shown);
         // The card still says the deadline passed: the lapse is named under either setting.
         self::assertCount(1, $remind->lapsed);
-        self::assertFalse(AccountStandingResolver::compose(false, null, [], [], LegalSettings::REFUSAL_FREEZE)->frozen);
+        self::assertFalse(AccountStandingResolver::compose(false, null, null, false, null, [], [], LegalSettings::REFUSAL_FREEZE)->frozen);
     }
 
     public function testTheVerdictTravelsInOneShape(): void
     {
-        $standing = AccountStandingResolver::compose(false, 1767225600000, [$this->lapsedTerms()], [], LegalSettings::REFUSAL_FREEZE);
+        $standing = AccountStandingResolver::compose(
+            false,
+            null,
+            null,
+            false,
+            1767225600000,
+            [$this->lapsedTerms()],
+            [],
+            LegalSettings::REFUSAL_FREEZE,
+        );
 
         self::assertSame([
             'shown' => 'frozen',
@@ -87,12 +100,45 @@ final class AccountStandingResolverTest extends TestCase
             'deletionEffectiveAt' => 1767225600000,
             'lapsed' => [['document' => 'terms', 'deadline' => '2026-03-01']],
             'window' => [],
+            'mergedInto' => null,
+            'mergedIntoName' => null,
         ], $standing->toArray());
+    }
+
+    /**
+     * A merged account is shown merged ahead of every other fact (HIL-1292): the merge closed its
+     * sign-in with the block flag, and that flag stays named, but what the account is now is the
+     * tombstone, and where it went travels with the verdict.
+     */
+    public function testAMergeIsShownAheadOfTheBlockAndNamesWhereTheAccountWent(): void
+    {
+        $lapsed = [$this->lapsedTerms()];
+        $standing = AccountStandingResolver::compose(true, 9, 'Survivor', true, 1000, $lapsed, [], LegalSettings::REFUSAL_FREEZE);
+
+        self::assertSame(AccountStandingKind::MERGED, $standing->shown);
+        self::assertTrue($standing->blocked);
+        self::assertTrue($standing->frozen);
+        self::assertSame(1000, $standing->deletionEffectiveAt);
+        self::assertSame(9, $standing->toArray()['mergedInto']);
+        self::assertSame('Survivor', $standing->toArray()['mergedIntoName']);
+    }
+
+    /**
+     * A merge whose chain leads nowhere - the survivor erased before HIL-1200, or a loop - is still
+     * shown merged, with nobody to point at.
+     */
+    public function testAMergeWithNoLiveEndIsShownMergedWithNobodyToPointAt(): void
+    {
+        $standing = AccountStandingResolver::compose(true, null, null, true, null, [], [], LegalSettings::REFUSAL_FREEZE);
+
+        self::assertSame(AccountStandingKind::MERGED, $standing->shown);
+        self::assertNull($standing->mergedInto);
+        self::assertNull($standing->mergedIntoName);
     }
 
     public function testTheDocumentsInsideTheirWindowRideAlongAndTakeNothingAway(): void
     {
-        $standing = AccountStandingResolver::compose(false, null, [], [$this->termsInWindow()], LegalSettings::REFUSAL_FREEZE);
+        $standing = AccountStandingResolver::compose(false, null, null, false, null, [], [$this->termsInWindow()], LegalSettings::REFUSAL_FREEZE);
 
         self::assertFalse($standing->frozen);
         self::assertSame(AccountStandingKind::NONE, $standing->shown);

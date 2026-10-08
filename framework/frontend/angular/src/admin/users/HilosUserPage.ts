@@ -50,10 +50,12 @@ import {
   HILOS_STEP_UP_COPY,
   createHilosUserStanding,
   HILOS_USER_IMPERSONATION_COPY,
+  HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
   hilosStandingBadge,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
+  hilosUserMergedNotice,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   submitHilosUserLifecycle,
@@ -113,6 +115,7 @@ import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { HilosFormError } from '../../HilosFormError.js'
 import { HilosHiddenMark } from '../../HilosHiddenMark.js'
 import { HilosHideable } from '../../HilosHideable.js'
+import { HilosLink } from '../../HilosLink.js'
 import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
@@ -166,6 +169,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
     HilosFormError,
     HilosHiddenMark,
     HilosHideable,
+    HilosLink,
     HilosModal,
     HilosStepUpStep,
     HilosTableCell,
@@ -194,14 +198,16 @@ function noticeText(live: RowEditState<UserEditFields>): string {
                 >{{ badge.label }}
               </span>
             }
-            <button
-              type="button"
-              class="btn btn-outline-primary btn-sm ms-auto"
-              data-id="hilos-user-edit"
-              (click)="openEdit()"
-            >
-              Edit
-            </button>
+            @if (mergedNotice() === null) {
+              <button
+                type="button"
+                class="btn btn-outline-primary btn-sm ms-auto"
+                data-id="hilos-user-edit"
+                (click)="openEdit()"
+              >
+                Edit
+              </button>
+            }
           </div>
           <div class="card-body">
             <dl class="row mb-0">
@@ -220,6 +226,30 @@ function noticeText(live: RowEditState<UserEditFields>): string {
             </dl>
           </div>
         </div>
+        <!-- A merged account says where it went and offers nothing to press:
+        every action over it is refused by the server (HIL-1292). -->
+        @if (mergedNotice(); as merged) {
+          <div
+            class="alert alert-secondary mt-4"
+            role="status"
+            data-id="hilos-user-merged"
+          >
+            @if (merged.userId !== null) {
+              {{ mergedCopy.into }}
+              <hilos-hideable [value]="merged.name" /> (#{{ merged.userId }}).
+              @if (merged.path !== null) {
+                <a
+                  class="alert-link"
+                  data-id="hilos-user-merged-link"
+                  [hilosLink]="merged.path"
+                  >{{ mergedCopy.open }}</a
+                >
+              }
+            } @else {
+              {{ mergedCopy.gone }}
+            }
+          </div>
+        }
         @for (section of lifecycleSections(); track section.key) {
           <section
             class="card mt-4"
@@ -311,7 +341,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
             </div>
           </section>
         }
-        @if (context().accountMerge) {
+        @if (context().accountMerge && mergedNotice() === null) {
           <section
             class="card border-danger mt-4"
             data-id="hilos-user-merge-zone"
@@ -1002,6 +1032,12 @@ export class HilosUserPage {
   protected readonly frozenRow = computed(() =>
     hilosUserFrozenRow(this.standing()),
   )
+  // A merged account (HIL-1292): the notice under the header stands in for every
+  // action section, which the core leaves empty for it.
+  protected readonly mergedNotice = computed(() =>
+    hilosUserMergedNotice(this.standing()),
+  )
+  protected readonly mergedCopy = HILOS_USER_MERGED_COPY
   protected readonly lifecycleSections = computed<
     readonly HilosUserLifecycleSection[]
   >(() =>
@@ -1414,6 +1450,21 @@ export class HilosUserPage {
         if (editing && settle) {
           this.applyStep(settle)
         }
+      })
+    })
+
+    // A merge that lands under an open window closes it (HIL-1292): there is
+    // nothing left to do over the account. A window whose action is in flight
+    // stays, and the server's answer comes as usual - a refusal.
+    effect(() => {
+      if (this.mergedNotice() === null) {
+        return
+      }
+      untracked(() => {
+        if (!this.loading()) this.onEditOpenChange(false)
+        if (!this.mergeAction.busy()) this.onMergeOpenChange(false)
+        if (!this.lifecycleAction.busy()) this.lifecyclePrompt.set(null)
+        if (!this.impersonateAction.busy()) this.impersonateTarget.set(null)
       })
     })
 

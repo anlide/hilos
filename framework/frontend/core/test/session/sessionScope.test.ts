@@ -30,6 +30,7 @@ import {
   SESSION_SIGNAL_SCHEMAS,
 } from '../../src/session/sessionScope.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
+import { HIDDEN_VALUE } from '../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { subscribeSignal } from '../../src/state/signal.js'
 import { type HilosConnection, type ProjectSignal } from '../../src/index.js'
@@ -549,6 +550,8 @@ describe('sessionScope', () => {
               { document: 'cookies', deadline: '2026-11-10' },
               'garbage',
             ],
+            mergedInto: null,
+            mergedIntoName: null,
           },
         },
       })
@@ -559,7 +562,48 @@ describe('sessionScope', () => {
         deletionEffectiveAt: LOCAL_NOW + 86_400_000,
         lapsed: [{ document: 'terms', deadline: '2026-09-01' }],
         window: [{ document: 'privacy', deadline: '2026-11-10' }],
+        mergedInto: null,
+        mergedIntoName: null,
       })
+
+      // A merged account says where it went (HIL-1292); a viewer of the admin
+      // view mode reads the survivor's name as the one hidden value.
+      connection.emitHandshakeResponse({
+        data: {
+          accountStanding: {
+            shown: 'merged',
+            blocked: true,
+            frozen: false,
+            deletionEffectiveAt: null,
+            lapsed: [],
+            window: [],
+            mergedInto: 9,
+            mergedIntoName: 'Bob',
+          },
+        },
+      })
+      expect(standing.get()).toMatchObject({
+        shown: 'merged',
+        blocked: true,
+        mergedInto: 9,
+        mergedIntoName: 'Bob',
+      })
+      connection.emitHandshakeResponse({
+        data: {
+          accountStanding: {
+            shown: 'merged',
+            blocked: true,
+            frozen: false,
+            deletionEffectiveAt: null,
+            lapsed: [],
+            window: [],
+            mergedInto: 9,
+            mergedIntoName: { _hidden: true },
+          },
+        },
+      })
+      expect(standing.get()?.mergedInto).toBe(9)
+      expect(standing.get()?.mergedIntoName).toBe(HIDDEN_VALUE)
 
       // A hidden mark, or any shape that is not a standing, reads as none.
       connection.emitHandshakeResponse({
@@ -575,6 +619,8 @@ describe('sessionScope', () => {
             deletionEffectiveAt: null,
             lapsed: [],
             window: [],
+            mergedInto: null,
+            mergedIntoName: null,
           },
         },
       })

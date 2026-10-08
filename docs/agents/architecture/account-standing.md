@@ -7,21 +7,28 @@ drawing the standing in the shell or in the admin (HIL-945).
 
 ## The Verdict
 
-Three independent facts go in, and one of them is shown:
+Four independent facts go in, and one of them is shown:
 
 | Fact | Where it comes from |
 |---|---|
+| merged | the person's row in `hilos_user_merge`, the tombstone a merge leaves ([people-table.md](people-table.md), *A Merged Account*; HIL-1292) |
 | blocked | `hilos_user.block`, an administrator's decision, stored ([people-table.md](people-table.md); HIL-289) |
 | deletion scheduled | the live request in `hilos_account_deletion` and its `effective_at` ([account-deletion.md](account-deletion.md)) |
 | frozen | not stored: computed from the person's acceptance records ([legal-documents.md](legal-documents.md)) |
 
 `AccountStanding` names each fact — `blocked`, `frozen`, `deletionEffectiveAt`
 (epoch milliseconds or `null`), `lapsed` (one `{document, deadline}` per document
-past its deadline) — and one `shown` (`AccountStandingKind`): the fact that takes
-the most away, in this order: `blocked` → `frozen` → `deletion_scheduled` →
-`none`. None of the three replaces another. A blocked person with a scheduled
-deletion is shown blocked and keeps the deletion; lifting the block of a person
-who did not accept the new revision leaves them frozen, with nothing to restore.
+past its deadline), and for a merged account where it went: `mergedInto`, the
+live end of its merge chain (`UserMerges::liveSurvivorOf()`; `null` when the
+survivor was erased or the rows close a loop), and `mergedIntoName`, that
+account's name — and one `shown` (`AccountStandingKind`): the fact that takes
+the most away, in this order: `merged` → `blocked` → `frozen` →
+`deletion_scheduled` → `none`. None of the four replaces another. A merged
+account is shown merged and keeps the block the merge closed its sign-in with
+(the flag is read as it is and never touched here); a blocked person with a
+scheduled deletion is shown blocked and keeps the deletion; lifting the block of
+a person who did not accept the new revision leaves them frozen, with nothing to
+restore.
 
 ## The Freeze Is Computed
 
@@ -79,15 +86,20 @@ stale:
 
 - `users` — only a change that carries `block`, and any insert, delete or clear.
   The row is written on every visit; dropping on each write would empty the
-  memory faster than the gate reads it.
+  memory faster than the gate reads it. A change that carries `name` drops
+  every verdict instead (HIL-1292): the name is carried by the verdict of every
+  account folded into that person, and renames are rare.
+- `userMerges` — every verdict, on any change: a merge row moves the live end of
+  a chain somebody further down may lead to, and merges are rare.
 - `accountDeletions` and `legalAcceptances` — the verdict of the person named by
   `user_id` in the row or in its previous values. A change that does not name the
   person (a deletion request's update carries only the columns that moved), and a
   clear, drop every verdict.
 
 Any drop takes the lapsed lists with it. For those writes to reach every
-process where the gate stands, `accountDeletions` and `legalAcceptances` are
-declared in `HilosDbContext::processWideReadCollections()`, beside `users`.
+process where the gate stands, `userMerges`, `accountDeletions` and
+`legalAcceptances` are declared in `HilosDbContext::processWideReadCollections()`,
+beside `users`.
 
 ## The Guard
 
@@ -157,11 +169,15 @@ lifts a freeze ([legal-documents.md](legal-documents.md), Re-consent).
 ## The Wire
 
 One shape everywhere: `{shown, blocked, frozen, deletionEffectiveAt, lapsed:
-[{document, deadline}], window: [{document, deadline}]}`
-(`AccountStanding::toArray()`); nobody sends it back. `window` names the
-documents whose deadline is still ahead, whatever the refusal setting says: it
-takes nothing away and plays no part in the verdict, but it is what the
+[{document, deadline}], window: [{document, deadline}], mergedInto,
+mergedIntoName}` (`AccountStanding::toArray()`); nobody sends it back. `window`
+names the documents whose deadline is still ahead, whatever the refusal setting
+says: it takes nothing away and plays no part in the verdict, but it is what the
 re-consent window and its icon in the header are drawn from (HIL-500).
+`mergedInto` and `mergedIntoName` are `null` for anybody not merged; to a viewer
+of the admin view mode the id is open and the name is hidden, by the verdicts
+of the two columns of the people they come from (`AccountStanding::wireFields()`,
+HIL-1292).
 
 - **Session.** `accountStanding` on every `hilos_session_state` frame
   (`SessionStateSignalData`) and in the `data` section of the handshake response
@@ -224,9 +240,20 @@ The core binds the session's standing once, in `bootHilos`
   in the same tone; for one's own scheduled deletion, the trash in `warning`;
   otherwise none. Each demo passes it to the `HilosAvatar` of its header.
 - **Admin card** — one badge beside the presence for the shown standing
-  (`hilosStandingBadge()`: "Blocked", "Frozen", "Deletion scheduled"), and the
-  frozen row between the block and the deletion rows, with no button
-  (`hilosUserFrozenRow()`).
+  (`hilosStandingBadge()`: "Merged", "Blocked", "Frozen", "Deletion scheduled"),
+  and the frozen row between the block and the deletion rows, with no button
+  (`hilosUserFrozenRow()`). A merged account (HIL-1292) gets the gray badge, a
+  notice under the header — "This account was merged into {name} (#id)" with
+  the way to the survivor's card, or "...into another one." when the chain
+  leads nowhere (`hilosUserMergedNotice()`, `HILOS_USER_MERGED_COPY`) — and no
+  action at all: no Edit, no rights or access section, no merge zone, no
+  takeover; the core answers those sections empty for it, and a window open
+  when the merge lands closes unless its action is in flight. The people list
+  wears the same badge beside the name, read off the row's inline `merge` slot
+  (`AbstractHilosUsersTable::SLOT_MERGE`), not off a standing.
+- The shell draws nothing for a merged account — no strip, no mark: its
+  sessions are closed by the merge and a takeover of it is refused. Its tone,
+  `secondary`, exists for the badges alone.
 - A block and a freeze get no strip and no mark. A block puts the "Access
   closed" card in place of the shell (HIL-289). A freeze puts the "the terms have
   changed" screen in place of the content on every page but those
@@ -244,7 +271,11 @@ The core binds the session's standing once, in `bootHilos`
 - The gate, the actions, the exits and the frozen cases over the real router,
   the wire and the holder's tick:
   `framework/tests/Integration/AccountStandingIntegrationTest.php`.
-- The card and the lapsed list: `demo/chat/tests/Integration/AccountStandingCardTest.php`.
+- The card and the lapsed list, and the live merged frame on the open card:
+  `demo/chat/tests/Integration/AccountStandingCardTest.php`; the merged standing
+  after a real merge, the chain and the survivor's rename:
+  `demo/chat/tests/Integration/AccountMergeTest.php`; the chain itself:
+  `framework/tests/Integration/UserMergesActionsIntegrationTest.php`.
 - Chat's third terms revision is substantial and in force the day it was
   published, so a person the `test:legal:hold` command puts on the second is
   frozen at once: `legal-reconsent.spec.ts` covers the freeze screen and the

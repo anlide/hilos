@@ -8,8 +8,9 @@
 // lives on the person's card since HIL-1170. The bar's "Past deadline on" filter
 // narrows the list to the people past one legal document's deadline and lives
 // in the address too (`/hilos/users/terms`, HIL-945): the legal section's root
-// links its count there, and changing the filter rewrites the address.
-// Bootstrap classes only (styling-rules.md).
+// links its count there, and changing the filter rewrites the address. An
+// account folded into another one wears a gray "Merged" badge beside its name
+// (HIL-1292). Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -18,6 +19,7 @@ import {
   USER_ONLINE_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   createHilosUsersTable,
+  hilosStandingBadge,
 } from '@hilos/core'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
@@ -25,6 +27,10 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+
+// The one badge the list draws: the merged standing, read off the row's merge
+// slot rather than off a standing the list does not carry.
+const mergedBadge = hilosStandingBadge('merged')
 
 /** Props for {@link HilosUsersPage}. */
 export interface HilosUsersPageProps {
@@ -63,7 +69,23 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         controller={users.controller}
         cells={{
           id: (row) => row.id,
-          name: (row) => <HilosHideable value={row.name} />,
+          name: (row) => (
+            <>
+              <HilosHideable value={row.name} />
+              {row.merged && mergedBadge !== null ? (
+                <span
+                  className={`badge text-bg-${mergedBadge.tone} ms-1`}
+                  data-id="hilos-users-merged"
+                >
+                  <i
+                    className={`bi ${mergedBadge.icon} me-1`}
+                    aria-hidden="true"
+                  />
+                  {mergedBadge.label}
+                </span>
+              ) : null}
+            </>
+          ),
           [USER_PRESENCE_FIELD]: (row) => (
             <span
               className={`badge ${

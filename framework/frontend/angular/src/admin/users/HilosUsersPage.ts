@@ -9,7 +9,8 @@
 // on" filter narrows the list to the people past one legal document's deadline
 // and lives in the address too (`/hilos/users/terms`, HIL-945): the legal
 // section's root links its count there, and changing the filter rewrites the
-// address. Bootstrap classes only (styling-rules.md).
+// address. An account folded into another one wears a gray "Merged" badge
+// beside its name (HIL-1292). Bootstrap classes only (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -21,7 +22,11 @@ import {
   input,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
-import { HilosPages, createHilosUsersTable } from '@hilos/core'
+import {
+  HilosPages,
+  createHilosUsersTable,
+  hilosStandingBadge,
+} from '@hilos/core'
 import type { HilosUserRow, HilosUsersContext } from '@hilos/core'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -52,8 +57,21 @@ export interface UsersRowActionsContext {
       <hilos-viewport-table [controller]="users().controller">
         <ng-template hilosTableCell="id" let-row>{{ row.id }}</ng-template>
         <ng-template hilosTableCell="name" let-row
-          ><hilos-hideable [value]="row.name"
-        /></ng-template>
+          ><hilos-hideable [value]="row.name" />
+          @if (row.merged && mergedBadge !== null) {
+            <span
+              class="badge ms-1"
+              [class]="'text-bg-' + mergedBadge.tone"
+              data-id="hilos-users-merged"
+              ><i
+                class="bi me-1"
+                [class]="mergedBadge.icon"
+                aria-hidden="true"
+              ></i
+              >{{ mergedBadge.label }}</span
+            >
+          }
+        </ng-template>
         <ng-template hilosTableCell="presence" let-row>
           <span
             [class]="
@@ -88,6 +106,9 @@ export class HilosUsersPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USERS
+  // The one badge the list draws: the merged standing, read off the row's merge
+  // slot rather than off a standing the list does not carry.
+  protected readonly mergedBadge = hilosStandingBadge('merged')
   // The lapsed filter is read from the address the page opened on and written
   // back as it changes; mounted without a navigator, the list opens whole and
   // leaves the address alone.

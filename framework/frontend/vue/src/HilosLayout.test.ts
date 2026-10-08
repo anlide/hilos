@@ -437,6 +437,8 @@ function standingHandshake(
         deletionEffectiveAt,
         lapsed: [],
         window: [],
+        mergedInto: null,
+        mergedIntoName: null,
       },
     },
     entities: {
@@ -1035,6 +1037,8 @@ function reconsentHandshake(
               deletionEffectiveAt: null,
               lapsed: [],
               window: [],
+              mergedInto: null,
+              mergedIntoName: null,
               ...facts,
             },
     },
