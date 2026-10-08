@@ -123,6 +123,9 @@ const CODE_SEND_CLOSING_STATES: readonly string[] = [
 /** Backend refusal when a provider's first sign-in proof can no longer be used. */
 const OAUTH_SIGN_IN_EXPIRED_CODE = 'oauth_sign_in_expired'
 
+/** Backend refusal of the anti-abuse guard (PHP `ActionRateLimitedException::ERROR_CODE`). */
+const RATE_LIMITED_ERROR_CODE = 'rate_limited'
+
 /** What the server answers an order for a phone code with: the ticket of the send it opened. */
 const codeSendOrderReplySchema = z.object({ ticket: z.string() })
 
@@ -923,7 +926,7 @@ function requestPhoneCode(
         settleOnLine()
       })
       .catch((error: unknown) => {
-        settle({ ok: false, message: describeAuthError(error), channel })
+        settle({ ...failedOutcome(error), channel })
       })
   })
 }
@@ -1040,8 +1043,31 @@ async function dispatchFlow(
 
     return authFlowOutcomeOf(reply)
   } catch (error) {
-    return { ok: false, message: describeAuthError(error) }
+    return failedOutcome(error)
   }
+}
+
+/**
+ * Reduce a failed auth action to the outcome the machine applies.
+ *
+ * The refusal of the anti-abuse guard is named by its code and nothing else: the
+ * server sends a placeholder in place of the refusal's own sentence, and the
+ * surface draws the code in its own words, "Too many attempts…" (HIL-1280).
+ * Every other failure carries its sentence.
+ *
+ * @param error The caught failure from the action lifecycle.
+ * @returns The failed outcome, with the code or the sentence to show inline.
+ */
+function failedOutcome(error: unknown): AuthFlowSubmitOutcome {
+  if (
+    error instanceof ActionError &&
+    error.outcome === 'fail' &&
+    error.errorCode === RATE_LIMITED_ERROR_CODE
+  ) {
+    return { ok: false, code: RATE_LIMITED_ERROR_CODE }
+  }
+
+  return { ok: false, message: describeAuthError(error) }
 }
 
 /**

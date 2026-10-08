@@ -523,17 +523,16 @@ final class ChatTopologyRegistryTest extends TestCase
 
         // Node-local state, so one replica per node: the log directory itself, the analytics
         // journal of the node, the carrier that moves rotated log batches into the archive,
-        // throttle counters, the code pool.
+        // the code pool.
         $this->assertSame([
             HilosAgentType::HILOS_LOG_STORE,
             HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosAgentType::HILOS_LOG_CARRIER,
             HilosAgentType::HILOS_DAEMON_NODE,
-            AgentType::HILOS_AUTH_THROTTLE,
             AgentType::HILOS_AUTH_CODE,
         ], $nodeScoped);
 
-        // The six libraries, the backup agent, the delivery shards and the log aggregator: one
+        // The six libraries, the backup agent, the delivery shards, the log aggregator and the auth throttle: one
         // instance cluster-wide (per shard index, for the shards), on the node policy picks. An
         // entity library is placed rather than pinned by rule, and each has a reason
         // of its own besides: minting an account is a claim one process holds wherever it sits,
@@ -546,7 +545,9 @@ final class ChatTopologyRegistryTest extends TestCase
         // leadership would move it on every master restart to a node whose directory holds none
         // of its archives. The aggregator is placed so that one holder of the merged log picture
         // survives a re-election instead of dying with the term, and the analytics writer so that
-        // one loader of the journals does, wherever it stands.
+        // one loader of the journals does, wherever it stands. The auth throttle is placed too: its
+        // counters are one runtime collection for the whole cluster, so one agent counts them, and
+        // pinning it to the leader would buy the guard nothing (HIL-1280).
         $this->assertSame([
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_USER,
@@ -565,6 +566,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosAgentType::HILOS_ANALYTICS_WRITER,
+            AgentType::HILOS_AUTH_THROTTLE,
         ], $policyPlaced);
     }
 

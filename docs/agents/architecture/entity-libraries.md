@@ -91,8 +91,8 @@ matrix rather than as options bolted onto the chosen one:
 | Scope | Placement | What it is |
 |---|---|---|
 | `CLUSTER` | `LEADER` | the leader-hosted cluster singleton; every agent that declares nothing |
-| `CLUSTER` | `POLICY` | an entity library; also the delivery pools and the cluster stands' probe fleet |
-| `NODE` | — | a replica on every node; log rotation, throttle counters, the code pool |
+| `CLUSTER` | `POLICY` | an entity library; also the delivery pools, the auth throttle and the cluster stands' probe fleet |
+| `NODE` | — | a replica on every node; log rotation, the code pool |
 
 The machinery a `POLICY` library needs is in place on both sides.
 `ClusterPlacement::placeAgentOnBestNode()` ranks the online nodes by fit and

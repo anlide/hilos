@@ -315,7 +315,7 @@ final class Hilos extends HilosFacade
         AuthThrottleAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
-            AgentRegistryKey::SCOPE => AgentScope::NODE,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,

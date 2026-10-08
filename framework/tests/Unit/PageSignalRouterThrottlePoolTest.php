@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Page\AbstractPage;
@@ -26,6 +28,9 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Database\Settings\Validation\NonNegativeIntegerRule;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos as HilosFacade;
@@ -45,7 +50,8 @@ use Throwable;
  * every key allowed it, and is refused with a retry-after the moment any key does not. The
  * two ways a wait can end badly are pinned too, because both are silent failures otherwise
  * - a verdict that never arrives must run the action rather than strand it, and a block
- * already visible in this worker's replica must refuse without a signal at all.
+ * already visible in this worker's replica must refuse without a signal at all. Past the
+ * grace a silent agent is given, though, the missing verdict refuses instead (HIL-1280).
  */
 final class PageSignalRouterThrottlePoolTest extends TestCase
 {
@@ -65,13 +71,18 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
 
     private ?RtContext $previousRt = null;
 
+    private ?SettingsAccessor $previousSetting = null;
+
     protected function setUp(): void
     {
         $this->previousSignalRouter = HilosFacade::$sr;
         $this->previousEnv = HilosFacade::$env;
         $this->previousRt = HilosFacade::$rt;
+        $this->previousSetting = HilosFacade::$setting;
         HilosFacade::$sr = new SignalRouter();
         HilosFacade::$env = new EnvAccessor(EnvCatalogStub::class);
+        // No settings at all: the grace a silent agent is given is the catalog default.
+        HilosFacade::$setting = null;
     }
 
     protected function tearDown(): void
@@ -81,6 +92,7 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
         putenv(EnvConstants::HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS->name);
         putenv(EnvConstants::HILOS_AUTH_THROTTLE_ENABLED->name);
         HilosFacade::$rt = $this->previousRt;
+        HilosFacade::$setting = $this->previousSetting;
         HilosFacade::$env = $this->previousEnv;
         HilosFacade::$sr = $this->previousSignalRouter;
         HilosFacade::resetBrowser();
@@ -169,6 +181,21 @@ final class PageSignalRouterThrottlePoolTest extends TestCase
 
         $this->assertTrue($page->handled);
         $this->assertNull($page->actionException);
+    }
+
+    public function testASilenceLongerThanTheGraceRefusesTheAction(): void
+    {
+        putenv(EnvConstants::HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS->name . '=1');
+        HilosFacade::$setting = new SettingsAccessor(ThrottlePoolTestZeroGraceCatalog::class);
+        $page = $this->dispatchThrottledAction();
+
+        usleep(5000);
+        $page->router->releaseExpiredDeferredActions();
+
+        $this->assertFalse($page->handled);
+        $this->assertInstanceOf(ActionRateLimitedException::class, $page->actionException);
+        $this->assertSame(ActionRateLimitedException::ERROR_CODE, $page->actionException->errorCode);
+        $this->assertSame(1, $page->actionException->retryAfter);
     }
 
     public function testABlockAlreadyInForceRefusesWithoutAskingTheAgent(): void
@@ -448,5 +475,23 @@ final class ThrottlePoolTestRtContext extends RtContext
      */
     public function configure(): void
     {
+    }
+}
+
+/** Settings catalog fixture that gives a silent throttle agent no grace at all. */
+final class ThrottlePoolTestZeroGraceCatalog implements CatalogProviderInterface
+{
+    /**
+     * @return array<string, array<string, mixed>> The grace key alone, defaulting to zero
+     */
+    public static function getCatalog(): array
+    {
+        return [
+            AuthThrottleSettings::OUTAGE_GRACE_SECONDS_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 0,
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => NonNegativeIntegerRule::class,
+            ],
+        ];
     }
 }

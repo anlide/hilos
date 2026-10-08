@@ -428,9 +428,11 @@ enum EnvConstants
     case HILOS_AUTH_THROTTLE_STEPS;
 
     /**
-     * Milliseconds a deferred action waits for the agent's verdict before it is
-     * executed anyway. Default 1000. A verdict that never arrives is a fault of
-     * this server, not evidence against the client; blocks already consummated
+     * Milliseconds a deferred action waits for the agent's verdict. Default 1000.
+     * A verdict that never arrives is a fault of this server, not evidence against
+     * the client, so the action is executed anyway while the agent has been silent
+     * for less than the `auth.throttle.outage_grace_seconds` setting, and refused
+     * past it until the agent answers again (HIL-1280). Blocks already consummated
      * do not leak through it, since those are refused by the fast path.
      */
     case HILOS_AUTH_THROTTLE_VERDICT_TIMEOUT_MS;

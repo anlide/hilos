@@ -30,7 +30,8 @@ final class DeferredAction
      * @param ActionPayloadDTO $dto Parsed action payload
      * @param ?string $requestId Client-minted request id, or null for an untracked action
      * @param ?string $clientIp Peer address supplied with the action, or null
-     * @param float $deadline Unix seconds after which the action runs whether or not a verdict arrived
+     * @param float $askedAt Unix seconds when the throttle agent was asked; a silence of the agent is measured from here
+     * @param float $deadline Unix seconds after which the action stops waiting for its verdict
      * @param int $awaitingVerdicts Verdicts still outstanding; the action runs when the last allow lands
      */
     public function __construct(
@@ -40,6 +41,7 @@ final class DeferredAction
         public readonly ActionPayloadDTO $dto,
         public readonly ?string $requestId,
         public readonly ?string $clientIp,
+        public readonly float $askedAt,
         public readonly float $deadline,
         public int $awaitingVerdicts,
     ) {

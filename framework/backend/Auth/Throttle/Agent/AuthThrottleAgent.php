@@ -34,12 +34,14 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Throwable;
 
 /**
- * Per-node owner of the anti-abuse attempt counters and blocks (HIL-420).
+ * The cluster's one owner of the anti-abuse attempt counters and blocks (HIL-420, HIL-1280).
  *
  * The single truth source of the `hilosAuthAttempts` collection, which is what makes it an
  * agent at all: a worker may read its replica of the counters but not write it, so counting
- * has to happen in one process and be handed to the rest over runtime sync. It is per-node
- * and not monopolistic ({@see AuthThrottleAgentDaemon}).
+ * has to happen in one process and be handed to the rest over runtime sync. The collection is
+ * one for the whole cluster, so the agent is one too: the placement policy picks its node, as
+ * it does for the entity libraries, and it is deliberately not pinned to the leader - that
+ * buys the guard nothing. It is not monopolistic ({@see AuthThrottleAgentDaemon}).
  *
  * It answers one question, over one signal: a worker that could not settle an attempt from
  * its own replica asks {@see HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK}, and the
@@ -52,6 +54,9 @@ use Throwable;
  * process, and without it restarting the daemon would be a way to have a block forgotten.
  * Window counts are deliberately not replayed - an in-flight window is worth less than the
  * complexity of persisting it, and losing one costs an abuser a few attempts, not a block.
+ * A move to another node is the same event as a restart and carries no code of its own: the
+ * new owner starts from empty windows and replays the blocks, and an abuser has no hand in when
+ * the cluster moves its agents.
  */
 final class AuthThrottleAgent extends AbstractAgent
 {
@@ -78,8 +83,8 @@ final class AuthThrottleAgent extends AbstractAgent
     public const string AGENT_TYPE = HilosAgentType::HILOS_AUTH_THROTTLE;
 
     /**
-     * Worker → agent route for the verdict request. A singleton per node, so it maps
-     * straight to its payload DTO with no index field.
+     * Worker → agent route for the verdict request. One agent for the whole cluster, so it
+     * maps straight to its payload DTO with no index field.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,

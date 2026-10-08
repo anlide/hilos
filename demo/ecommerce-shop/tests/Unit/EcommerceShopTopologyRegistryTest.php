@@ -38,6 +38,7 @@ use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
@@ -613,6 +614,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
             ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+            AuthThrottleSettings::OUTAGE_GRACE_SECONDS_KEY,
         ], array_keys($catalog));
         foreach (ThemeSettingsCatalog::KEYS as $key) {
             $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);

@@ -59,7 +59,6 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
-use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
@@ -219,7 +218,7 @@ final class Hilos extends HilosFacade
         AuthThrottleAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
-            AgentRegistryKey::SCOPE => AgentScope::NODE,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         BackupAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => BackupAgent::class,

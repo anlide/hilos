@@ -93,19 +93,52 @@ Two orderings are load-bearing:
   yet is held first; keying it earlier would count a signed-in person's attempts
   against the anonymous bucket.
 
-A verdict that misses its deadline releases the action and **runs it**
-(`releaseExpiredDeferredActions()`): a missing verdict is this server's failure — a
-dropped signal, a stopped agent — and not evidence against the client. Blocks in
-force do not leak through that door, since answer 2 refuses them without parking.
-A parked action resumes into the identical steps it was stopped before.
+A verdict that misses its deadline releases the action
+(`releaseExpiredDeferredActions()`), and what happens to it depends on how long the
+agent has been silent. A missing verdict is this server's failure — a dropped
+signal, a stopped agent, an agent moving to another node — and not evidence against
+the client, so **within the grace the action runs**. **Past the grace it is
+refused** with the very refusal a block gives — `rate_limited`, `retryAfter` equal
+to the grace and never under one second — and every guarded door keeps refusing
+until the agent answers again: an absent guard is not a guard that said yes
+(HIL-1280). The grace is the `auth.throttle.outage_grace_seconds` setting (see
+*Configuration*).
+
+The silence is measured by the process that holds the parked actions, on its own:
+it starts at the moment the first question that went unanswered was asked — not
+when the sweep notices — and **any** verdict ends it, even one that came too late
+for its action, since a slow but living agent is not a missing one. It is never
+measured from the last answer: after a quiet night the first sign-in of the
+morning would fall straight into a refusal. The log gets one line per turn — the
+silence passing the grace, the agent answering again — and none per refused
+action; an action run within the grace keeps its own line.
+
+Blocks in force do not leak through either door, since answer 2 refuses them
+without parking. A parked action resumes into the identical steps it was stopped
+before.
 
 ## Who Owns What
 
-`Hilos\Auth\Throttle\Agent\AuthThrottleAgent` is the per-node truth source of the
-`hilosAuthAttempts` runtime collection and its only writer. A worker reads its own
-replica and asks the agent whenever it cannot settle an attempt from it; all the
-arithmetic and the durable write live in the agent, so a worker never reaches the
-database on the auth path.
+`Hilos\Auth\Throttle\Agent\AuthThrottleAgent` is the truth source of the
+`hilosAuthAttempts` runtime collection and its only writer, and there is **one for
+the whole cluster** (HIL-1280): the collection is one per cluster (HIL-586), so its
+owner is too. The registry places it with `AgentRegistryKey::PLACEMENT =>
+AgentPlacement::POLICY`, the way the entity libraries are placed — the placement
+policy picks its node, and it is deliberately **not** pinned to the leader, which
+would buy the guard nothing. A worker on any node reads its own replica and asks the
+agent wherever it runs; the check and the verdict cross nodes over the ordinary
+peer delivery, with no route of their own. All the arithmetic and the durable write
+live in the agent, so a worker never reaches the database on the auth path — with
+one exception, the fresh read of the grace setting, and only on a pass that found a
+verdict gone missing.
+
+When the agent moves — its node died, left or was rebuilt — the move carries no code
+of its own: the new owner starts from **empty windows** and replays the blocks out of
+`hilos_auth_block` on `onStart()`, exactly as on a restart. An abuser has no hand in
+when the cluster moves its agents, so the windows lost on the way are not worth
+carrying. While the agent is between nodes the guarded doors are under the grace
+above: a move shorter than the grace is not noticed, and a longer one refuses them
+until the new owner answers.
 
 The state has two halves and they survive differently:
 
@@ -163,13 +196,19 @@ payload (`actionErrorSignalDataSchema` in
 `framework/frontend/core/src/protocol/envelope.ts`).
 
 The refusal has **no screen of its own**: it travels the ordinary action-error path
-every failed action uses. A denial that arrived without a number still denies —
+every failed action uses. Its words are the client's, not the server's: the
+exception is not of the person-facing family, so the frame carries the placeholder
+reason (`SignalConstants::ACTION_FAILED_REASON`) beside the code, and the sign-in
+surface draws `rate_limited` in its own words — "Too many attempts…". The core hands
+it the code alone for exactly that reason (`failedOutcome()` in
+`framework/frontend/core/src/auth/authActions.ts`, HIL-1280); before that the
+surface showed the placeholder. A denial that arrived without a number still denies —
 dropping a decision because a hint went missing would let a blocked key through —
 and the client is told the shortest wait the ladder can impose instead.
 
 ## Configuration
 
-Every number is an env value with a default. The source of truth is
+Every number but one is an env value with a default. The source of truth is
 `Hilos\Constants\EnvConstants`; this table is a map to it, not a second copy.
 
 | Key | What it sets | Default |
@@ -189,6 +228,18 @@ default. The test environment turns the layer **off** deliberately
 (`demo/chat/tests/.env.example`) — suites request codes far faster than a human
 would, and counters carried across a run would make every test depend on the ones
 before it.
+
+**One number is a setting, not an env value:** `auth.throttle.outage_grace_seconds`,
+how many seconds of the agent's silence the guarded doors still run through
+(HIL-1280). It is an integer of zero or more and defaults to 5; zero refuses the very
+first verdict that misses its deadline. Being a setting, it takes effect at once on
+every node, read fresh on each pass that found a missed verdict
+(`Hilos\Auth\Throttle\AuthThrottleSettings`); a read that fails falls back to the
+default and says so in the log. The key comes as a catalog fragment,
+`Hilos\Auth\Throttle\AuthThrottleSettingsCatalog`, which a project declaring the
+feature folds into its own `SETTINGS_CATALOG` — `AuthThrottleFeature` requires it, and
+the start of a project that did not is refused. Once folded in, it is a row on the
+general settings screen like any other key.
 
 ### Which Address The IP Scope Counts
 
@@ -342,10 +393,17 @@ theirs to document; these are signposts only.
 ## Validation
 
 `composer run test:framework:unit` — the window and ladder arithmetic
-(`AuthThrottleLadderTest`), the deferred-action pool
-(`PageSignalRouterThrottlePoolTest`), the agent-action guard rails
+(`AuthThrottleLadderTest`), the deferred-action pool and the refusal past the grace
+(`PageSignalRouterThrottlePoolTest`), the measure of the agent's silence
+(`AuthThrottleOutageGraceTest`), the agent-action guard rails
 (`AgentActionRailsTest`), the trusted-proxy list and the address the handshake
 settles on (`TrustedProxiesTest`, `WebSocketClientHandshakeClientIpTest`), and the
 markdown rules that keep this file's links intact.
 In `demo/chat`, `composer run test:unit` pins the topology snapshot that carries the
-throttle agent, its signals and its test-only reset command.
+throttle agent, its placement, its signals and its test-only reset command.
+In `demo/ecommerce-shop`, `throttle.spec.ts` is the refusal seen in a browser: a run
+of wrong passwords ends in "Too many attempts…", and the right one is refused too
+while the block holds.
+On the cluster stand `binance-btc-tracker-cluster`, scenarios 20 (rt set width across
+nodes) and 25 (freeze settles on every master) run with the throttle on and its one
+agent wherever the policy put it.

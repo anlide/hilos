@@ -7,7 +7,9 @@ namespace Demo\BinanceBtcTracker\Database\Settings;
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
+use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Feature\Definition\LogsFeature;
 use Hilos\Core\Feature\Definition\NotificationDeliveryFeature;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -24,10 +26,11 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * orphans.
  *
  * The catalog is deliberately narrow: it carries what an activated feature requires, the
- * framework example keys, and the shared theme settings. Two features refuse to start without
+ * framework example keys, and the shared theme settings. Three features refuse to start without
  * their fragment - the logs section needs the rotation thresholds and the logging modes its
- * screens write, and notification
- * delivery needs one block per registered channel and the delivery-journal keys. The three
+ * screens write, notification
+ * delivery needs one block per registered channel and the delivery-journal keys, and the auth
+ * throttle needs the grace it gives its agent's silence. The three
  * example keys are what the settings and toast specs write, so no spec has to invent a
  * project-specific setting. The sign-in fragments are left out on purpose: no spec of this demo
  * reads one, and the step-up list and the deletion grace period answer their declared defaults
@@ -36,6 +39,7 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * @see SettingsCatalogConstants
  * @see LogsFeature The feature whose required fragment the log keys are
  * @see NotificationDeliveryFeature The feature whose required fragments the channel and journal keys are
+ * @see AuthThrottleFeature The feature whose required fragment the throttle grace key is
  * @see LogSettingsCatalog Keys of the logs feature this demo activates
  */
 final class BinanceBtcTrackerSettingsCatalog implements CatalogProviderInterface
@@ -65,6 +69,7 @@ final class BinanceBtcTrackerSettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            AuthThrottleSettingsCatalog::getCatalog(),
         );
     }
 }

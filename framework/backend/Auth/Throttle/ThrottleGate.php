@@ -36,11 +36,28 @@ use Hilos\Utils\Logger;
  * An action is keyed twice, once per scope: the IP a crowd shares and the session one browser
  * holds. Both are counted, so passing one limit does not excuse the other, and a refusal by
  * either refuses the action.
+ *
+ * The gate also remembers whether the agent is answering at all (HIL-1280). A verdict that does
+ * not arrive in time is this server's failure, so within the grace of
+ * {@see AuthThrottleSettings::outageGraceSeconds()} the action runs; past it the doors are
+ * refused until the agent answers again. The silence is this process's own measure: it starts
+ * when the first question that went unanswered was asked, and any verdict ends it, even one that
+ * came too late for its action. It is never counted from the last answer - after a quiet night
+ * the first sign-in of the morning would otherwise fall straight into a refusal.
  */
 final class ThrottleGate
 {
+    /** The shortest wait a refusal for silence names, so a grace of zero still tells the client to come back. */
+    private const int SHORTEST_SILENCE_REFUSAL_SECONDS = 1;
+
     /** Configured limits, read from the environment on first use in this worker. */
     private ?ThrottlePolicy $policy = null;
+
+    /** Unix seconds when the oldest question still unanswered was asked, or null while the agent answers. */
+    private ?float $silentSince = null;
+
+    /** Whether the silence has outlasted the grace, so the doors refuse; logged once on each turn. */
+    private bool $refusing = false;
 
     /**
      * Whether the layer refuses anything at all in this deployment.
@@ -53,7 +70,7 @@ final class ThrottleGate
     }
 
     /**
-     * How long a parked action waits for its verdict before it is run regardless.
+     * How long a parked action waits for its verdict before the silence of the agent is judged.
      *
      * @return float Seconds to wait
      */
@@ -198,6 +215,53 @@ final class ThrottleGate
         }
 
         return $verdict->retryAfter ?? $this->policy()->blockSecondsFor(1);
+    }
+
+    /**
+     * Records that the agent answered, which ends any silence this process was measuring.
+     *
+     * @param float $now Current unix seconds
+     */
+    public function noteAnswered(float $now): void
+    {
+        if ($this->refusing) {
+            $silence = round($now - ($this->silentSince ?? $now), 1);
+            Logger::warning("Auth throttle answers again after {$silence} s of silence");
+            $this->refusing = false;
+        }
+
+        $this->silentSince = null;
+    }
+
+    /**
+     * Judges one action whose verdict did not arrive in time against the silence of the agent.
+     *
+     * The first such action opens the silence at the moment it asked, not at the moment it is
+     * judged: the agent has been silent since the question, and the sweep that notices comes a
+     * tick later.
+     *
+     * @param float $askedAt Unix seconds when this action asked the agent
+     * @param float $now Current unix seconds
+     * @param int $graceSeconds Seconds of silence the guarded doors still run through
+     * @return ?int Seconds the caller must wait, or null when the silence is still within the grace and the action may run
+     */
+    public function silenceRefusal(float $askedAt, float $now, int $graceSeconds): ?int
+    {
+        $this->silentSince ??= $askedAt;
+        $silence = $now - $this->silentSince;
+        if ($silence < $graceSeconds) {
+            return null;
+        }
+
+        if (!$this->refusing) {
+            Logger::error(
+                'Auth throttle silent for ' . round($silence, 1) . " s, past the grace of {$graceSeconds} s: "
+                    . 'guarded actions are refused until it answers',
+            );
+            $this->refusing = true;
+        }
+
+        return max(self::SHORTEST_SILENCE_REFUSAL_SECONDS, $graceSeconds);
     }
 
     /**

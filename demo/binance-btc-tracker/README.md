@@ -173,9 +173,9 @@ Nothing here drives the stand: the framework's shared cluster harness
 the scenarios it names — 1 master-slave mesh, 2 master-master, 5 leader-kill
 re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate
-refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on
-every master, 25 freeze settles on every master (parked, P-456), 29 a node with
-its own cluster directory refused on both ends, and 30 a ready export copy
+refused, 20 rt set width across nodes, 23 verifier circle on every master, 25
+freeze settles on every master, 29 a node with its own cluster directory
+refused on both ends, and 30 a ready export copy
 outliving the node its agent lived on, 33 every master takes browsers, 34 a
 tab is the same on every master under protected mode, 35 rt row deleted while
 cut off is swept, and 36 a slave cut off with its leader stops its work

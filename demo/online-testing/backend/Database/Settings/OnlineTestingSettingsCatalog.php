@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\OnlineTesting\Database\Settings;
 
+use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
@@ -13,13 +14,15 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * Project settings catalog for the online-testing demo.
  *
  * The three example keys are exercised by settings and notification e2e coverage. The catalog
- * also carries shared theme settings and the logs fragment needed to persist logging modes.
+ * also carries shared theme settings, the logs fragment needed to persist logging modes, and
+ * the auth throttle fragment its feature requires.
  * Auth, OAuth and legal fragments are absent because those settings features are not activated
  * here; step-up and
  * account deletion use their framework defaults.
  *
  * @see SettingsCatalogConstants
  * @see LogSettingsCatalog
+ * @see AuthThrottleSettingsCatalog
  */
 final class OnlineTestingSettingsCatalog implements CatalogProviderInterface
 {
@@ -46,6 +49,7 @@ final class OnlineTestingSettingsCatalog implements CatalogProviderInterface
         ],
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            AuthThrottleSettingsCatalog::getCatalog(),
         );
     }
 }

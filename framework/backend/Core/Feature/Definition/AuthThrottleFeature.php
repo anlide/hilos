@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Feature\Definition;
 
+use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\FeatureRequirements;
@@ -34,6 +35,10 @@ use Hilos\Runtime\View\Context\RtContext;
  *
  * Whether the layer refuses anything stays an env switch, and the test environment turns it
  * off; the registry answers what the project is built with, deployment answers what is on.
+ * One number is required, though: {@see AuthThrottleSettingsCatalog} puts on the settings screen
+ * how long the guarded doors may run while the agent is silent, and the start of a project whose
+ * settings catalog never folded the fragment in is refused, since the grace would otherwise sit
+ * at its default with no administrator able to reach it.
  */
 final class AuthThrottleFeature extends FeatureDefinition
 {
@@ -46,13 +51,14 @@ final class AuthThrottleFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The throttle agent pair and the durable block table
+     * @return FeatureRequirements The throttle agent pair, the durable block table and the settings fragment
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredAgents: [HilosAgentType::HILOS_AUTH_THROTTLE],
             requiredDbTables: [AuthBlock::_table],
+            requiredCatalogFragments: [AuthThrottleSettingsCatalog::class],
         );
     }
 

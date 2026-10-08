@@ -7,7 +7,10 @@ import {
   type AuthFlowState,
 } from '../../src/auth/authFlow.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
-import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import {
+  ActionError,
+  type ActionLifecycle,
+} from '../../src/connection/actionLifecycle.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { consentTerms } from '../legal/consentFixture.js'
 
@@ -307,5 +310,56 @@ describe('provider first sign-in consent on the wire (HIL-1235)', () => {
     } finally {
       pending.mockRestore()
     }
+  })
+})
+
+describe('a refusal of the anti-abuse guard (HIL-1280)', () => {
+  /** An adapter whose every dispatch the server refuses with the given failure. */
+  function refusing(failure: ActionError) {
+    const actions = {
+      dispatch() {
+        return { done: Promise.reject(failure) }
+      },
+    } as unknown as ActionLifecycle
+    const context = createHilosAuthContext({
+      connection: { on: () => () => {} } as unknown as HilosConnection,
+      actions,
+      scopes: new ScopeManager(),
+      channels: [],
+    })
+    return createAuthActions(context)
+  }
+
+  const SIGN_IN: AuthFlowState = {
+    ...FLOW,
+    step: 'identifier',
+    intent: 'login',
+  }
+
+  it('reaches the surface as its code, not as the placeholder sent in place of its words', async () => {
+    const actions = refusing(
+      new ActionError(
+        'hilos_login',
+        'fail',
+        'The action could not be completed.',
+        undefined,
+        undefined,
+        'rate_limited',
+      ),
+    )
+
+    const outcome = await actions.onSubmit('submit', SIGN_IN, FORM)
+
+    expect(outcome).toEqual({ ok: false, code: 'rate_limited' })
+  })
+
+  it('keeps the sentence of any other refusal', async () => {
+    const actions = refusing(
+      new ActionError('hilos_login', 'fail', 'Wrong email or password.'),
+    )
+
+    const outcome = await actions.onSubmit('submit', SIGN_IN, FORM)
+
+    expect(outcome).toEqual({ ok: false, message: 'Wrong email or password.' })
   })
 })

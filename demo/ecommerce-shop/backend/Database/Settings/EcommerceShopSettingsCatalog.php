@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop\Database\Settings;
 
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
+use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Theme\ThemeSettingsCatalog;
@@ -17,7 +18,8 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * through Hilos::$setting->catalog(). Keys present in the DB but absent here are treated as
  * orphans.
  *
- * The catalog carries the three example keys and the shared theme settings. The settings and
+ * The catalog carries the three example keys, the shared theme settings and the grace of a
+ * silent throttle agent, which the auth throttle feature requires. The settings and
  * toast specs write the example keys. The step-up list and the deletion
  * grace period answer their declared defaults when the catalog carries no key for them
  * ({@see StepUpSettings}, {@see AccountDeletionSettings}).
@@ -46,6 +48,6 @@ final class EcommerceShopSettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
-        ], ThemeSettingsCatalog::getCatalog());
+        ], ThemeSettingsCatalog::getCatalog(), AuthThrottleSettingsCatalog::getCatalog());
     }
 }

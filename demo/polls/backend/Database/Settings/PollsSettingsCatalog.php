@@ -9,6 +9,7 @@ use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
+use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Auth\Verification\VerificationSweepSettingsCatalog;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -30,6 +31,7 @@ use Hilos\Theme\ThemeSettingsCatalog;
  *
  * @see SettingsCatalogConstants
  * @see LogSettingsCatalog Keys of the logs feature this demo activates
+ * @see AuthThrottleSettingsCatalog The grace of a silent throttle agent, required by the throttle feature
  */
 final class PollsSettingsCatalog implements CatalogProviderInterface
 {
@@ -64,6 +66,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             ImpersonationSettingsCatalog::getCatalog(),
             AccountDeletionSettingsCatalog::getCatalog(),
             VerificationSweepSettingsCatalog::getCatalog(),
+            AuthThrottleSettingsCatalog::getCatalog(),
         );
     }
 }

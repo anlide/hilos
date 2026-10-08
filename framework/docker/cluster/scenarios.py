@@ -3582,24 +3582,6 @@ FLAKY_SKIP = {
     # rows.
     "16 recreated node leaves no phantom fleet":
         "P-441/2: a recreated node keeps a copy of the fleet rows it no longer reads",
-    # 20 is red on the binance-btc-tracker stand - the first stand of a whole demo - for a defect
-    # of the demo, not of the scenario: the auth throttle (AuthThrottleAgent, SCOPE NODE) claims
-    # hilosAuthAttempts whole on every node, the leader refuses all of them but one, and which
-    # one it keeps changes with every re-link, so the count of refused claims that step (5) reads
-    # moves under it. With the throttle taken out of the demo the scenario is green on the same
-    # stand. How the throttle holds its collection on a cluster is not decided (P-456, the return
-    # of P-082). Whoever fixes the throttle pays this loan off: this line removed and `-- 20`
-    # green on the binance stand. Until then no scenario guards the width of a set across nodes
-    # (HIL-1116).
-    "20 rt set width across nodes":
-        "P-456: the auth throttle claims its collection whole on every node",
-    # 2026-10-04: foreign baseline failure, attempt 0 for HIL-1305. After scenario 23,
-    # scenario 25 closes a freeze while m2 has not stopped hilos_auth_throttle again.
-    # The throttle claims hilosAuthAttempts whole on every node (P-456), so the
-    # owner's decision parks this assertion. TODO(HIL-1280): fix the claim, remove
-    # this line and run -- 25 on the binance stand to pay off the loan.
-    "25 freeze settles on every master":
-        "P-456: m2 does not stop hilos_auth_throttle again after the freeze closes",
     # The two below were parked on the owner's word on 2026-10-04, ahead of the HIL-1186 and
     # HIL-1232 full runs: timing flakes foreign to both, each red in full runs and green on the
     # rerun of the same sha. Each is paid off by finding the cause, its line removed, and

@@ -52,7 +52,7 @@ final class HilosAgentType
     /** @var string Hilos web-push agent (sharded pool delivering the push channel to a recipient's device endpoints) */
     public const string HILOS_PUSH = 'hilos_push';
 
-    /** @var string Hilos auth throttle agent (per-node truth source of the anti-abuse attempt counters and blocks) */
+    /** @var string Hilos auth throttle agent (the cluster's one truth source of the anti-abuse attempt counters and blocks) */
     public const string HILOS_AUTH_THROTTLE = 'hilos_auth_throttle';
 
     /** @var string Hilos uploads agent (sole owner of the upload sessions: declared files, their signed chunks and temporary files) */

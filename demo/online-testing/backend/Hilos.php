@@ -284,7 +284,7 @@ final class Hilos extends HilosFacade
         AuthThrottleAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AuthThrottleAgent::class,
             AgentRegistryKey::DAEMON => AuthThrottleAgentDaemon::class,
-            AgentRegistryKey::SCOPE => AgentScope::NODE,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         // The probes of this demo's cluster stand - scenario 24 reads the fleet, scenario 11
         // writes and reads through the database probe. A probe starts only on a clustered node of

@@ -9,6 +9,7 @@ use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Auth\Impersonation\ImpersonationAccountAccess;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\Takeover;
+use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Throttle\ThrottleGate;
 use Hilos\Constants\ErrorConstants;
@@ -74,6 +75,8 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -1276,6 +1279,7 @@ class PageSignalRouter
             dto: $dto,
             requestId: $data->requestId,
             clientIp: $data->clientIp,
+            askedAt: $now,
             deadline: $now + $this->throttleGate->verdictTimeoutSeconds(),
             awaitingVerdicts: count($checks),
         );
@@ -1293,13 +1297,16 @@ class PageSignalRouter
      * An action is keyed per scope and so waits on one verdict per key: the first refusal
      * settles it, and it runs only once every key has allowed it. A verdict for a key this
      * router no longer holds is not an error - its action was already refused by a sibling
-     * verdict or released by the deadline - so it is dropped in silence.
+     * verdict or released by the deadline - so it is dropped in silence. It still says the
+     * agent answers, though, and that is recorded before the lookup: a slow but living agent
+     * whose verdicts all come after the deadline must not read as a missing one.
      *
      * @param ThrottleVerdictSignalData $verdict Verdict from the throttle agent
      * @throws FramePopOrderException When the execution frame is unwound out of order
      */
     private function applyThrottleVerdict(ThrottleVerdictSignalData $verdict): void
     {
+        $this->throttleGate->noteAnswered(microtime(true));
         $entry = $this->deferredActions[$verdict->requestKey] ?? null;
         if ($entry === null) {
             return;
@@ -1315,12 +1322,20 @@ class PageSignalRouter
     }
 
     /**
-     * Runs every parked action whose verdict did not arrive in time.
+     * Finishes every parked action whose verdict did not arrive in time.
      *
      * Called once per worker tick. A missing verdict is this server's failure - a dropped
-     * signal, a stopped agent - and not evidence against the client, so the action runs.
-     * Blocks already in force do not leak out through this door: the fast path refuses
-     * those without ever parking anything.
+     * signal, a stopped agent, an agent moving to another node - and not evidence against the
+     * client, so while the agent has been silent for less than the grace the action runs. Past
+     * the grace the guard is simply not there, and the doors it keeps are refused with the same
+     * rate-limit refusal a block gives, until the agent answers again (HIL-1280). Blocks already
+     * in force do not leak out through either door: the fast path refuses those without ever
+     * parking anything.
+     *
+     * The grace is a setting and is read fresh, once per pass and only on a pass that found an
+     * expired action - the one read of the database on the auth path, and only on a verdict that
+     * went missing. Expired actions are judged oldest first, the order they were parked in, so
+     * the oldest unanswered question is the one that opens the silence.
      *
      * @throws FramePopOrderException When the execution frame is unwound out of order
      */
@@ -1331,17 +1346,49 @@ class PageSignalRouter
         }
 
         $now = microtime(true);
+        $expired = [];
         foreach ($this->deferredActions as $requestKey => $entry) {
-            if ($entry->deadline > $now) {
-                continue;
+            if ($entry->deadline <= $now) {
+                $expired[$requestKey] = $entry;
             }
+        }
+        if ($expired === []) {
+            return;
+        }
 
+        $grace = $this->outageGraceSeconds();
+        foreach ($expired as $requestKey => $entry) {
             unset($this->deferredActions[$requestKey]);
+            $refusalSeconds = $this->throttleGate->silenceRefusal($entry->askedAt, $now, $grace);
+            if ($refusalSeconds === null) {
+                Logger::error(
+                    "Throttle verdict timed out, running the action anyway: "
+                        . "host={$entry->host->actionHostName()}, action={$entry->action}, acceptKey={$entry->acceptKey}",
+                );
+            }
+            $this->resumeDeferredAction($entry, $refusalSeconds);
+        }
+    }
+
+    /**
+     * The grace a silent throttle agent is given, falling back to the catalog default when it cannot be read.
+     *
+     * A failed read must not decide on its own whether the doors open or close, so it lands on
+     * the value an untouched installation runs with.
+     *
+     * @return int Seconds of silence the guarded doors still run through
+     */
+    private function outageGraceSeconds(): int
+    {
+        try {
+            return AuthThrottleSettings::outageGraceSeconds();
+        } catch (DatabaseException|SettingException $e) {
             Logger::error(
-                "Throttle verdict timed out, running the action anyway: "
-                    . "host={$entry->host->actionHostName()}, action={$entry->action}, acceptKey={$entry->acceptKey}",
+                'Auth throttle grace could not be read, using the default of '
+                    . AuthThrottleSettings::DEFAULT_OUTAGE_GRACE_SECONDS . " s: {$e->getMessage()}",
             );
-            $this->resumeDeferredAction($entry, null);
+
+            return AuthThrottleSettings::DEFAULT_OUTAGE_GRACE_SECONDS;
         }
     }
 
