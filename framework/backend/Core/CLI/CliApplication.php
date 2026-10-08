@@ -68,6 +68,7 @@ final class CliApplication
         // $argv[1] is the command; null means none was named, which the manager reads as help.
         $command = $argv[1] ?? null;
 
+        $exitCode = ExitCode::ERROR;
         try {
             EntrypointPrelude::initEnvironment($hilosClass, $projectRoot);
 
@@ -93,25 +94,21 @@ final class CliApplication
                 LogWriteLevelApplier::applyFromSettings();
             }
 
+            // The command is one handler: a transaction it leaves open and the failed announcements
+            // of its commits fail it once it returns, or after its own failure.
+            Database::handlerStart();
             $exitCode = $cliManager->run();
-
-            // A transaction lives inside the command that opened it. One left open here would
-            // die with the process uncommitted anyway - what is owed is the word: rolled back,
-            // announcements dropped, and the command failed rather than exited as it pleased.
-            $leftOpen = Database::rollBackLeftOpen();
-            if ($leftOpen !== null) {
-                throw $leftOpen;
-            }
-
-            exit($exitCode);
         } catch (Throwable $e) {
-            Logger::error('CLI failed: ' . $e->getMessage(), [
-                ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
-                ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
-                ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
-            ]);
-            exit(ExitCode::ERROR);
+            self::logFailure($e);
+            $exitCode = ExitCode::ERROR;
         }
+
+        foreach (Database::handlerEnd() as $owed) {
+            self::logFailure($owed);
+            $exitCode = ExitCode::ERROR;
+        }
+
+        exit($exitCode);
     }
 
     /**
@@ -173,5 +170,19 @@ final class CliApplication
             . self::UNCHECKABLE_DETAIL . "\n";
 
         return ExitCode::CONFIG_ERROR;
+    }
+
+    /**
+     * Writes the journal line of a failure that fails the command.
+     *
+     * @param Throwable $failure What the command, or the handler it ran in, failed with
+     */
+    private static function logFailure(Throwable $failure): void
+    {
+        Logger::error('CLI failed: ' . $failure->getMessage(), [
+            ErrorConstants::CONTEXT_KEY_FILE => $failure->getFile(),
+            ErrorConstants::CONTEXT_KEY_LINE => $failure->getLine(),
+            ErrorConstants::CONTEXT_KEY_TRACE => $failure->getTraceAsString(),
+        ]);
     }
 }

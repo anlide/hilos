@@ -70,9 +70,10 @@ final class SourceChangeBus
      *
      * A fact reaches the mirrors now and the reactions once the transaction it was made under
      * commits - now, when there is none - with the provenance the write had at this moment, not
-     * the one in force when the commit releases it. A failing reaction released by a commit
-     * reaches the caller of that commit instead. A runtime fact is no exception: the transaction
-     * covers the runtime as it covers the database.
+     * the one in force when the commit releases it. A failing reaction released by a commit does
+     * not undo it: it reaches the end of the handler inside that commit's
+     * AnnouncementFailedException ({@see Database::handlerEnd()}). A runtime fact is no exception:
+     * the transaction covers the runtime as it covers the database.
      *
      * @param SourceChange $change Fact describing what happened to the source
      * @throws SourceChangeSubscriberException When a subscriber's reaction fails

@@ -32,6 +32,7 @@ use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Base class for integration tests.
@@ -83,6 +84,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::notificationPreferences, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::legalAcceptances, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::accessLogEntries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Database::handlerStart();
     }
 
     /**
@@ -328,20 +330,21 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Closes the transaction a case left open and unregisters test truth-source ownership.
+     * Ends the case's handler and unregisters test truth-source ownership.
      *
-     * The case fails for the transaction: left on the connection, it would refuse every later
-     * case its start.
+     * The case fails for what it owes at its end: a failed announcement of its commits, and a
+     * transaction it left open - left on the connection, that one would refuse every later case
+     * its start.
      */
     protected function tearDown(): void
     {
-        $leftOpen = Database::rollBackLeftOpen();
+        $owed = Database::handlerEnd();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
 
-        if ($leftOpen !== null) {
-            self::fail($leftOpen->getMessage());
+        if ($owed !== []) {
+            self::fail(implode("\n", array_map(static fn (Throwable $failure): string => $failure->getMessage(), $owed)));
         }
     }
 }

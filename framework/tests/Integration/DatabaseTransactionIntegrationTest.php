@@ -23,12 +23,15 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\ObjectCollectionNotFoundException;
+use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
+use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
 use Hilos\Database\Object\Collection\AccountDeletions;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Utils\Logger;
 use RuntimeException;
 use Throwable;
 
@@ -214,7 +217,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         }
         Database::transactionRollback();
 
-        self::assertNull(Database::rollBackLeftOpen(), 'Both refusals left the open transaction to its own rollback');
+        self::assertSame([], Database::handlerEnd(), 'Both refusals left the open transaction to its own rollback');
     }
 
     /**
@@ -276,7 +279,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
 
         Database::transactionRollback();
 
-        self::assertNull(Database::rollBackLeftOpen());
+        self::assertSame([], Database::handlerEnd());
     }
 
     /**
@@ -310,7 +313,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         }
         Database::transactionRollback();
 
-        self::assertNull(Database::rollBackLeftOpen(), 'The rollback closed the failed level');
+        self::assertSame([], Database::handlerEnd(), 'The rollback closed the failed level');
         self::assertSame([], $this->drainDbFrames());
         self::assertSame([], $this->reaction->seen);
 
@@ -353,7 +356,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         }
         Database::transactionRollback();
 
-        self::assertNull(Database::rollBackLeftOpen(), 'The rollback closed the failed level');
+        self::assertSame([], Database::handlerEnd(), 'The rollback closed the failed level');
         self::assertSame([], $this->drainDbFrames());
         self::assertSame([], $this->reaction->seen);
 
@@ -370,18 +373,19 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         Database::transactionStart();
         $this->request(self::FIRST_USER_ID);
 
-        $left = Database::rollBackLeftOpen();
+        $owed = Database::handlerEnd();
 
-        self::assertNotNull($left);
+        self::assertCount(1, $owed);
+        self::assertInstanceOf(TransactionLeftOpenException::class, $owed[0]);
         self::assertMatchesRegularExpression(
             '/^A transaction was left open on connection 0 at depth 1; it was rolled back and its [1-9]\d* held'
             . ' announcements were dropped$/',
-            $left->getMessage(),
+            $owed[0]->getMessage(),
         );
         self::assertSame(0, self::requestRows());
         self::assertSame([], $this->drainDbFrames());
         self::assertSame([], $this->reaction->seen);
-        self::assertNull(Database::rollBackLeftOpen(), 'The second call finds nothing left');
+        self::assertSame([], Database::handlerEnd(), 'The second call finds nothing left');
     }
 
     /**
@@ -395,7 +399,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         Database::transactionStart();
         Database::close();
         Database::transactionCommit();
-        self::assertNull(Database::rollBackLeftOpen(), 'The commit closed a level that never reached the server');
+        self::assertSame([], Database::handlerEnd(), 'The commit closed a level that never reached the server');
 
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
         Database::transactionStart();
@@ -409,7 +413,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         }
         Database::transactionRollback();
 
-        self::assertNull(Database::rollBackLeftOpen());
+        self::assertSame([], Database::handlerEnd());
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
     }
 
@@ -491,7 +495,7 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         self::assertSame(self::EFFECTIVE_AT, $object->effectiveAt);
 
         Database::transactionRollback();
-        self::assertNull(Database::rollBackLeftOpen());
+        self::assertSame([], Database::handlerEnd());
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
     }
 
@@ -560,34 +564,146 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     }
 
     /**
-     * A reaction that fails when the commit releases it reaches the caller of the commit, after
-     * every other held announcement was made: the commit already stands, and a swallowed failure
-     * would be a sync that vanished without a trace. The caller's catch then rolls back a
-     * transaction that no longer exists, and loses nothing by it.
+     * A reaction that fails when the commit releases it does not fail the commit: the commit
+     * returns, every other held announcement is made, and the failure - wrapped in the commit's
+     * AnnouncementFailedException even though it is a Hilos exception - waits for the end of the
+     * handler, which hands it over once.
      *
-     * @throws HilosException When a write or the rollback fails
+     * @throws HilosException When a write or the commit fails
      */
-    public function testAFailingReactionAtTheCommitReachesTheCallerAfterTheCommitStands(): void
+    public function testAFailingReactionAtTheCommitIsHeldForTheEndOfTheHandler(): void
     {
         SourceChangeBus::subscribe(new TransactionTestFailingReaction(new RuntimeException('the reaction could not be served')));
         Database::transactionStart();
         $id = $this->request(self::FIRST_USER_ID);
 
-        try {
-            Database::transactionCommit();
-            self::fail('The failure of a released reaction reaches the caller of the commit');
-        } catch (SourceChangeSubscriberException $wrapped) {
-            self::assertSame('the reaction could not be served', $wrapped->getPrevious()?->getMessage());
-        }
+        Database::transactionCommit();
 
-        self::assertSame(1, self::requestRows(), 'The commit already stood');
+        self::assertSame(1, self::requestRows(), 'The commit stood');
         self::assertSame([$id], $this->drainDbFrames(), 'The other announcements were still made');
         self::assertSame([$id], $this->reaction->seen);
+
+        $owed = Database::handlerEnd();
+        self::assertCount(1, $owed, 'One card for the one commit');
+        self::assertInstanceOf(AnnouncementFailedException::class, $owed[0]);
+        $wrapped = $owed[0]->getPrevious();
+        self::assertInstanceOf(SourceChangeSubscriberException::class, $wrapped, 'A Hilos exception is wrapped all the same');
+        self::assertSame('the reaction could not be served', $wrapped->getPrevious()?->getMessage());
+        self::assertStringContainsString('stood', $owed[0]->getMessage());
+        self::assertStringContainsString('1 of its', $owed[0]->getMessage());
+        self::assertSame([], Database::handlerEnd(), 'The failure is handed over once');
+    }
+
+    /**
+     * Outside a handler there is nobody to hold the failure for: it reaches the caller of the
+     * commit at once, wrapped the same way, while the commit stands - and the caller's rollback
+     * then has nothing to roll back.
+     *
+     * @throws HilosException When a write or the rollback fails
+     */
+    public function testOutsideAHandlerAFailedAnnouncementReachesTheCallerOfTheCommitAtOnce(): void
+    {
+        // The base opened a handler for the case; this one runs without.
+        Database::handlerEnd();
+        SourceChangeBus::subscribe(new TransactionTestFailingReaction(new RuntimeException('the reaction could not be served')));
+        Database::transactionStart();
+        $this->request(self::FIRST_USER_ID);
+
+        try {
+            Database::transactionCommit();
+            self::fail('Outside a handler the failure reaches the caller of the commit');
+        } catch (AnnouncementFailedException $card) {
+            self::assertInstanceOf(SourceChangeSubscriberException::class, $card->getPrevious());
+        }
+        self::assertSame(1, self::requestRows(), 'The commit stood');
 
         Database::transactionRollback();
 
         self::assertSame(1, self::requestRows(), 'There was nothing left to roll back');
-        self::assertNull(Database::rollBackLeftOpen());
+        self::assertSame([], Database::handlerEnd(), 'Nothing was held');
+    }
+
+    /**
+     * Two commits of one handler, each with a failed announcement: one card per commit, handed
+     * over in the order of the commits.
+     *
+     * @throws HilosException When a write or a commit fails
+     */
+    public function testEachCommitWithAFailedAnnouncementIsOneCardInTheOrderOfTheCommits(): void
+    {
+        SourceChangeBus::subscribe(new TransactionTestFailingReaction(new RuntimeException('the reaction could not be served')));
+        Database::transactionStart();
+        $first = $this->request(self::FIRST_USER_ID);
+        Database::transactionCommit();
+        Database::transactionStart();
+        $second = $this->request(self::SECOND_USER_ID);
+        Database::transactionCommit();
+
+        self::assertSame(2, self::requestRows(), 'Both commits stood');
+        $owed = Database::handlerEnd();
+        self::assertCount(2, $owed);
+        self::assertContainsOnlyInstancesOf(AnnouncementFailedException::class, $owed);
+        self::assertStringContainsString("[{$first}]", $owed[0]->getMessage());
+        self::assertStringContainsString("[{$second}]", $owed[1]->getMessage());
+    }
+
+    /**
+     * Two announcements of one commit fail: one card names both, keeps the first in previous, and
+     * nothing reaches the journal before the handler ends.
+     *
+     * @throws HilosException When a write or the commit fails
+     */
+    public function testTwoFailedAnnouncementsOfOneCommitAreOneCardAndNothingIsLoggedAtTheFailure(): void
+    {
+        $logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-transaction-announcement');
+        Logger::setLogFile($logFile);
+        try {
+            SourceChangeBus::subscribe(new TransactionTestFailingReaction(new RuntimeException('the reaction could not be served')));
+            Database::transactionStart();
+            $first = $this->request(self::FIRST_USER_ID);
+            $second = $this->request(self::SECOND_USER_ID);
+            Database::transactionCommit();
+
+            self::assertStringNotContainsString(
+                'the reaction could not be served',
+                (string)file_get_contents($logFile),
+                'Nothing is logged at the moment of the failure',
+            );
+        } finally {
+            Logger::resetLogFile();
+            unlink($logFile);
+        }
+
+        $owed = Database::handlerEnd();
+        self::assertCount(1, $owed, 'One card for the one commit');
+        self::assertInstanceOf(AnnouncementFailedException::class, $owed[0]);
+        self::assertStringContainsString("[{$first}]", (string)$owed[0]->getPrevious()?->getMessage(), 'The first failure is previous');
+        self::assertStringContainsString("[{$first}]", $owed[0]->getMessage());
+        self::assertStringContainsString("[{$second}]", $owed[0]->getMessage());
+        self::assertStringContainsString('2 of its', $owed[0]->getMessage());
+    }
+
+    /**
+     * A handler that commits with a failed announcement and then leaves a transaction open owes
+     * both: the commit's card first, the transaction left open after it.
+     *
+     * @throws HilosException When a write or the commit fails
+     */
+    public function testTheCardsOfTheCommitsComeBeforeTheTransactionLeftOpen(): void
+    {
+        SourceChangeBus::subscribe(new TransactionTestFailingReaction(new RuntimeException('the reaction could not be served')));
+        Database::transactionStart();
+        $this->request(self::FIRST_USER_ID);
+        Database::transactionCommit();
+        Database::transactionStart();
+        $this->request(self::SECOND_USER_ID);
+
+        $owed = Database::handlerEnd();
+
+        self::assertCount(2, $owed);
+        self::assertInstanceOf(AnnouncementFailedException::class, $owed[0]);
+        self::assertInstanceOf(TransactionLeftOpenException::class, $owed[1]);
+        self::assertSame(1, self::requestRows(), 'The commit stood, the transaction left open went back');
     }
 
     /**

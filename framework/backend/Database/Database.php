@@ -19,6 +19,7 @@ use Hilos\Database\ResultSet\ResultSet;
 use Hilos\Database\ResultSet\ResultSetCollection;
 use Hilos\Database\Transaction\TransactionLevel;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use mysqli;
 use mysqli_result;
@@ -66,6 +67,12 @@ class Database
      * @var array<int, list<TransactionLevel>>
      */
     private static array $transactions = [];
+
+    /** Whether a handler is open: from handlerStart() to handlerEnd() a failed announcement waits for the handler's end */
+    private static bool $handlerOpen = false;
+
+    /** @var list<AnnouncementFailedException> Failures of the commits made since the handler opened, in the order of the commits */
+    private static array $announcementFailures = [];
 
     /** @var array<int, true> Connection indices explicitly closed by a caller */
     private static array $closedByHand = [];
@@ -878,15 +885,17 @@ class Database
      * A nested level releases its savepoint and hands the announcements it held and its memory
      * journal to the level under it; the outermost level commits, throws its journal away - the
      * memory stays as the writes left it - and then releases every announcement the transaction
-     * held, in the order the writes were made. A level that never reached the server commits
-     * without SQL. A commit that fails rolls its own level back, puts its memory back, drops
-     * what the level held and leaves the level standing as failed for the caller's rollback to
-     * close - taken off here, that rollback would reach the parent level.
+     * held, in the order the writes were made. A failed announcement does not undo the commit:
+     * the commit returns, and the failure waits for the end of the handler
+     * ({@see self::handlerEnd()}), or is raised here when no handler is open. A level that never
+     * reached the server commits without SQL. A commit that fails rolls its own level back, puts
+     * its memory back, drops what the level held and leaves the level standing as failed for the
+     * caller's rollback to close - taken off here, that rollback would reach the parent level.
      *
      * @throws TransactionNotOpenException When no transaction is open, or the innermost level already failed to commit
      * @throws DatabaseConnectionException When not connected
      * @throws DatabaseRuntimeException When the commit or the savepoint release fails
-     * @throws HilosException Whatever a released announcement raises, once the commit stands
+     * @throws AnnouncementFailedException When an announcement the commit released failed and no handler is open to hold the failure
      */
     public static function transactionCommit(): void
     {
@@ -931,15 +940,15 @@ class Database
             return;
         }
         // The journal leaves with the level: the commit stands, and nothing is to be put back.
-        self::release($level->takeHeld());
+        self::release($index, $level->takeHeld());
     }
 
     /**
      * Rolls back the innermost level of the current connection, if there is one.
      *
-     * Silent with no transaction open, like ROLLBACK in MySQL: after a commit whose released
-     * announcement failed, the caller's catch rolls back a transaction that already stands, and
-     * loses nothing by it. A level whose commit failed is already rolled back, its memory
+     * Silent with no transaction open, like ROLLBACK in MySQL: after a commit made outside any
+     * handler whose released announcement failed, the caller's catch rolls back a transaction
+     * that already stands, and loses nothing by it. A level whose commit failed is already rolled back, its memory
      * included, and is only closed here. The level leaves the stack and drops what it held
      * before the SQL is sent, so a failing ROLLBACK still closes it.
      *
@@ -1001,9 +1010,11 @@ class Database
      * hands it to its parent, the outermost commit makes it, a rollback drops it. With no open
      * level - no transaction, no connection at all, or only a level whose commit already failed
      * and whose writes are gone - it is made at once, as every announcement was before there
-     * were transactions to wait for. What the announcement raises reaches whoever made it run:
-     * the caller here when it runs at once, the caller of the commit that released it otherwise.
-     * Its pair for the memory a write changed is {@see self::onRollback()}.
+     * were transactions to wait for. What the announcement raises reaches whoever made it run
+     * when it runs at once. Released by a commit, it does not undo the commit: it waits for the
+     * end of the handler inside that commit's AnnouncementFailedException, or reaches the caller
+     * of the commit when no handler is open. Its pair for the memory a write changed is
+     * {@see self::onRollback()}.
      *
      * @param Closure $announce Announcement to make
      */
@@ -1049,52 +1060,47 @@ class Database
     }
 
     /**
-     * Closes every transaction a handler left open, on every connection, and says so.
+     * Opens a handler: from here to {@see self::handlerEnd()} a commit holds the failure of an
+     * announcement it released instead of raising it.
+     *
+     * A handler is one unit of a worker's tick, one CLI command, one test case of an integration
+     * base. Whoever opens it is bound to close it with {@see self::handlerEnd()}, which charges
+     * the handler with what it owes. A start while a handler is open changes nothing.
+     */
+    public static function handlerStart(): void
+    {
+        self::$handlerOpen = true;
+    }
+
+    /**
+     * Closes the handler and hands back everything it owes: the failed announcements of its
+     * commits and the transactions it left open.
      *
      * Called by the framework at the end of a handler - one unit of a worker's tick, one CLI
-     * command, a test's tearDown. The held announcements are dropped, the memory every level
-     * changed goes back - innermost level first, a failing step logged - the outermost level is
-     * rolled back where it reached the server and still stands on a live connection, and the
-     * stacks are emptied, so the next handler starts clean whatever this one did. Nothing is
-     * raised here: what the failure means for its unit is the caller's to decide, so it is
-     * handed back.
+     * command, a test case. First come the AnnouncementFailedException of every commit whose
+     * released announcement failed, one per commit, in the order of the commits; then, when the
+     * handler left a transaction open on any connection, the TransactionLeftOpenException of
+     * {@see self::rollBackLeftOpen()}, which closes it. Nothing is raised here: what the failures
+     * mean for the handler is the caller's to decide, so they are handed back.
      *
-     * @return ?TransactionLeftOpenException Failure naming every connection concerned, or null when nothing was left open
+     * Without an open handler it works all the same: it rolls back what was left open and hands
+     * back what there is. Outside a {@see self::handlerStart()} / handlerEnd() pair a commit
+     * raises the failure of its announcement at once, to its own caller.
+     *
+     * @return list<AnnouncementFailedException|TransactionLeftOpenException> What the handler owes, in that order; empty when nothing
      */
-    public static function rollBackLeftOpen(): ?TransactionLeftOpenException
+    public static function handlerEnd(): array
     {
-        $descriptions = [];
-        $rollbackFailure = null;
-        foreach (self::$transactions as $index => $levels) {
-            if ($levels === []) {
-                continue;
-            }
+        $owed = self::$announcementFailures;
+        self::$announcementFailures = [];
+        self::$handlerOpen = false;
 
-            $heldCount = 0;
-            for ($position = count($levels) - 1; $position >= 0; $position--) {
-                $heldCount += count($levels[$position]->takeHeld());
-                self::restoreMemory($index, $position + 1, $levels[$position]);
-            }
-            $descriptions[] = TransactionLeftOpenException::describe($index, count($levels), $heldCount);
-
-            $mysqli = self::$connections[$index] ?? null;
-            if ($mysqli !== null && $levels[0]->isOpened() && !$levels[0]->isFailed()) {
-                try {
-                    mysqli_rollback($mysqli);
-                } catch (mysqli_sql_exception $e) {
-                    try {
-                        MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::ROLLBACK);
-                    } catch (DatabaseRuntimeException $mapped) {
-                        $rollbackFailure ??= $mapped;
-                    }
-                }
-            }
-            self::$transactions[$index] = [];
+        $leftOpen = self::rollBackLeftOpen();
+        if ($leftOpen !== null) {
+            $owed[] = $leftOpen;
         }
 
-        return $descriptions === []
-            ? null
-            : TransactionLeftOpenException::forConnections($descriptions, $rollbackFailure);
+        return $owed;
     }
 
     /**
@@ -1329,36 +1335,85 @@ class Database
     }
 
     /**
+     * Closes every transaction a handler left open, on every connection, and says so.
+     *
+     * The held announcements are dropped, the memory every level changed goes back - innermost
+     * level first, a failing step logged - the outermost level is rolled back where it reached
+     * the server and still stands on a live connection, and the stacks are emptied, so the next
+     * handler starts clean whatever this one did.
+     *
+     * @return ?TransactionLeftOpenException Failure naming every connection concerned, or null when nothing was left open
+     */
+    private static function rollBackLeftOpen(): ?TransactionLeftOpenException
+    {
+        $descriptions = [];
+        $rollbackFailure = null;
+        foreach (self::$transactions as $index => $levels) {
+            if ($levels === []) {
+                continue;
+            }
+
+            $heldCount = 0;
+            for ($position = count($levels) - 1; $position >= 0; $position--) {
+                $heldCount += count($levels[$position]->takeHeld());
+                self::restoreMemory($index, $position + 1, $levels[$position]);
+            }
+            $descriptions[] = TransactionLeftOpenException::describe($index, count($levels), $heldCount);
+
+            $mysqli = self::$connections[$index] ?? null;
+            if ($mysqli !== null && $levels[0]->isOpened() && !$levels[0]->isFailed()) {
+                try {
+                    mysqli_rollback($mysqli);
+                } catch (mysqli_sql_exception $e) {
+                    try {
+                        MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::ROLLBACK);
+                    } catch (DatabaseRuntimeException $mapped) {
+                        $rollbackFailure ??= $mapped;
+                    }
+                }
+            }
+            self::$transactions[$index] = [];
+        }
+
+        return $descriptions === []
+            ? null
+            : TransactionLeftOpenException::forConnections($descriptions, $rollbackFailure);
+    }
+
+    /**
      * Makes the announcements a committed transaction held, in the order they were held.
      *
      * The commit already stands, so a failing announcement does not stop the others: every one
-     * is made, the first failure is raised afterwards and the rest are logged - swallowed, one
-     * would be a sync that vanished without a trace. A Hilos exception is raised as it is; anything
-     * else is wrapped, so the commit keeps the one contract its callers catch by.
+     * is made. Whatever failed is put in one AnnouncementFailedException for the commit - a Hilos
+     * exception too, so the failure says from its first word that the data stands - and nothing
+     * is logged at the moment of the failure. With a handler open the failure is held for its end
+     * ({@see self::handlerEnd()}) and the commit returns; with none it is raised here, since there
+     * is nobody to hold it for - swallowed, it would be a sync that vanished without a trace.
      *
+     * @param int $index Connection the commit stood on
      * @param list<Closure> $announcements Announcements to make
-     * @throws HilosException The first failure an announcement raised
+     * @throws AnnouncementFailedException When an announcement failed and no handler is open
      */
-    private static function release(array $announcements): void
+    private static function release(int $index, array $announcements): void
     {
-        $first = null;
+        $failures = [];
+        $firstFailedAt = null;
         foreach ($announcements as $announce) {
             try {
                 $announce();
             } catch (Throwable $failure) {
-                if ($first === null) {
-                    $first = $failure;
-                    continue;
-                }
-                Logger::error('An announcement held for the commit failed after it: ' . $failure->getMessage());
+                $failures[] = $failure;
+                $firstFailedAt ??= TimeHelper::getTimestampWithMs();
             }
         }
+        if ($failures === []) {
+            return;
+        }
 
-        if ($first instanceof HilosException) {
-            throw $first;
+        $card = AnnouncementFailedException::forCommit($index, count($announcements), $failures, $firstFailedAt);
+        if (!self::$handlerOpen) {
+            throw $card;
         }
-        if ($first !== null) {
-            throw new AnnouncementFailedException($first);
-        }
+        self::$announcementFailures[] = $card;
     }
 }

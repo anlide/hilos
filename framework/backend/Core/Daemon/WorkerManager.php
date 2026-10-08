@@ -374,8 +374,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
                 // Process messages from daemon queue. Every unit below ends through endUnit(),
                 // whether it returned or raised: a transaction lives inside the unit that opened
-                // it, and one left standing would take in every later write of this worker.
+                // it, and one left standing would take in every later write of this worker. And
+                // every unit starts with Database::handlerStart(), so a commit inside it holds a
+                // failed announcement for the unit's card.
                 while (($message = $this->daemonClient->getNextMessage()) !== null) {
+                    Database::handlerStart();
                     try {
                         $this->handleDaemonMessage($message);
                         $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, $message->getType());
@@ -388,6 +391,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
                 // Call tick method (only when connected)
                 $this->setCurrentAgentId(null);
+                Database::handlerStart();
                 try {
                     $this->onTick();
                     $this->endUnit(WorkerTickUnit::WORKER_TICK, self::ADDRESS_ON_TICK);
@@ -400,6 +404,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
                 // Dispatch accumulated signals (send to daemon)
                 $this->setCurrentAgentId(null);
+                Database::handlerStart();
                 try {
                     $this->dispatchSignals();
                     $this->endUnit(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS);
@@ -407,6 +412,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     $this->endUnit(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
                 }
 
+                Database::handlerStart();
                 try {
                     Hilos::$ac?->tick();
                     $this->endUnit(WorkerTickUnit::ANALYTICS, self::ADDRESS_ANALYTICS_TICK);
@@ -2745,6 +2751,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     private function handleReleasedFrame(WorkerDTO $message): void
     {
+        Database::handlerStart();
         try {
             $this->handleDaemonMessage($message);
             $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, $message->getType());
@@ -3193,6 +3200,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             $this->setCurrentAgentId($agent->getId());
 
+            Database::handlerStart();
             try {
                 $agent->onTick();
                 $this->releaseDeferredWork($agentId);
@@ -3437,13 +3445,17 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Ends one unit of the tick: closes the transaction it left open, then contains its failures.
+     * Ends one unit of the tick: ends its handler - the transaction it left open is rolled back,
+     * the failed announcements of its commits are taken - then contains the unit's own failure
+     * and what the handler owed, in that order.
      *
      * A transaction lives inside the handler that opened it: left standing on the worker's
      * connection, it would take in every later write this worker makes and be committed by an
      * unrelated BEGIN. So the end of every unit rolls it back, drops what it held and writes the
      * failure as the unit's own - the same card, the same journal line and the same project hook
-     * as a failure the unit raised itself, after that failure when there is one.
+     * as a failure the unit raised itself, after that failure when there is one. A commit whose
+     * released announcement failed is charged the same way, one card per commit, in the order of
+     * the commits and before the transaction left open.
      *
      * The rollback comes first, before the project is told anything: told inside the leaked
      * transaction, whatever the project's hook wrote about the failure would be rolled back with
@@ -3455,12 +3467,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     private function endUnit(WorkerTickUnit $unit, string $address, ?Throwable $failure = null): void
     {
-        $leftOpen = Database::rollBackLeftOpen();
+        $owed = Database::handlerEnd();
         if ($failure !== null) {
             $this->containFailure($unit, $address, $failure);
         }
-        if ($leftOpen !== null) {
-            $this->containFailure($unit, $address, $leftOpen);
+        foreach ($owed as $owedFailure) {
+            $this->containFailure($unit, $address, $owedFailure);
         }
     }
 

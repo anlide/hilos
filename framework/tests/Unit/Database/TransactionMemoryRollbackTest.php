@@ -108,7 +108,7 @@ final class TransactionMemoryRollbackTest extends TestCase
 
     protected function tearDown(): void
     {
-        Database::rollBackLeftOpen();
+        Database::handlerEnd();
         TruthSourceRegistry::unregister(MemoryRollbackObjects::COLLECTION_KEY, self::AGENT);
         RtTruthSourceRegistry::unregister(MemoryRollbackRtContext::COLLECTION, self::AGENT);
         SourceChangeBus::reset();
@@ -324,7 +324,7 @@ final class TransactionMemoryRollbackTest extends TestCase
 
         $this->assertSame('first-before', $first->mark());
         $this->assertSame('second-before', $second->mark());
-        $this->assertNull(Database::rollBackLeftOpen(), 'The level left the stack all the same');
+        $this->assertSame([], Database::handlerEnd(), 'The level left the stack all the same');
     }
 
     /**
@@ -359,7 +359,7 @@ final class TransactionMemoryRollbackTest extends TestCase
         Database::transactionCommit();
         Database::transactionRollback();
 
-        $this->assertNull(Database::rollBackLeftOpen());
+        $this->assertSame([], Database::handlerEnd());
     }
 
     /**

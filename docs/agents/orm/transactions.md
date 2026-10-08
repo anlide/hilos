@@ -113,16 +113,27 @@ project may mark its transactions; the `NESTABLE-TRANSACTION` guard reads
 
 A handler is one unit of a worker's tick — a daemon message, the project's tick,
 an agent's tick together with its stop, the signal dispatch, the analytics tick —
-or one CLI command. A transaction open at the end of its handler is rolled back
-by the framework, its held announcements are dropped, and
-`TransactionLeftOpenException` is raised: in a worker it is contained as a
-failure of that very unit, on the same card and with the same project hook as a
-failure the unit raised itself; in the CLI the command fails with the error exit
-code. The test bases do the same right after the test body and fail the case for it,
-so one case that forgets its rollback does not refuse every case after it a
-start. The worker's shutdown is outside this: the stop hooks it runs on the way
-out are no unit of a tick, and what one of them leaves open dies uncommitted with
-the process, charged to nobody.
+or one CLI command. It is declared, not inferred: `Database::handlerStart()`
+opens it and `Database::handlerEnd()` closes it and hands back everything it
+owes. Three kinds of caller open and close the pair — every unit of the worker's
+tick, the CLI command, and the integration test bases around each case — and a
+new kind of handler is bound to do the same.
+
+What a handler owes comes back from `handlerEnd()` in one order: first the
+`AnnouncementFailedException` of every commit whose released announcement failed,
+one per commit, in the order of the commits (see the edges below); then, when a
+transaction was left open, `TransactionLeftOpenException` — the framework rolls
+that transaction back and drops its held announcements. In a worker each item is
+contained as a failure of that very unit, after the unit's own failure, on the
+same card and with the same project hook as a failure the unit raised itself; in
+the CLI each one fails the command with the error exit code, after the command's
+own failure too. The test bases do the same right after the test body and fail
+the case for any item, so one case that forgets its rollback does not refuse
+every case after it a start; a case that needs the failure takes it with
+`handlerEnd()` itself. The worker's shutdown is outside this: the stop hooks it
+runs on the way out are no unit of a tick, what one of them leaves open dies
+uncommitted with the process, charged to nobody, and a failed announcement of a
+commit made there reaches the stop hook at once.
 
 This is what gives the picture the rule was written for: while a transaction
 runs, whoever is outside it sees the old value; after the commit, everyone sees
@@ -204,16 +215,22 @@ link is not reopened after `BEGIN`.
   `TransactionNotOpenException`: the caller believes its writes are saved, and
   they either went out one by one or vanished with a closed connection.
 - **A rollback with no open transaction** does nothing, like `ROLLBACK` in
-  MySQL. After a commit whose released announcement failed, the caller's catch
-  rolls back a transaction that already stands, and loses nothing by it.
+  MySQL. After a commit made outside any handler whose released announcement
+  failed, the caller's catch rolls back a transaction that already stands, and
+  loses nothing by it.
 - **A commit that fails** — `COMMIT` or `RELEASE SAVEPOINT` refused — rolls its
   own level back, puts its memory back, drops what the level held and leaves the
   level standing as *failed*. The caller's rollback closes it without SQL; a
   second commit of it is refused. The level is not removed early on purpose: in
   a nested chain the caller's rollback would otherwise reach the parent.
-- **A released announcement that fails** reaches the caller of the commit,
-  after every other held announcement was made: the commit already stands, and
-  a swallowed failure here would be a sync that vanished without a trace.
+- **A released announcement that fails** does not fail the commit. The commit
+  returns and the caller goes its success path. Every failed announcement of that
+  commit, wrapped in one `AnnouncementFailedException` — a Hilos exception too, so
+  the card says the data stands — is held for the end of the handler and charged
+  there: a card of the worker's unit, the CLI command's error exit, a failed test
+  case. Nothing is logged at the moment of the failure. Outside a handler there is
+  nobody to hold it for, so it reaches the caller of the commit at once —
+  swallowed, it would be a sync that vanished without a trace.
 - **No reconnect inside a transaction.** A query on a connection that lost its
   link is not retried on a new one once the transaction has sent its `BEGIN`:
   the new session would know nothing of the transaction, the remaining writes

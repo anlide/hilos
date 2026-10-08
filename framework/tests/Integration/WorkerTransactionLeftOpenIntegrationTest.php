@@ -16,6 +16,7 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -27,14 +28,16 @@ use Hilos\Utils\WorkerTickFailureLog;
 use RuntimeException;
 
 /**
- * A transaction does not outlive the unit of the worker's tick that opened it (HIL-1164).
+ * A transaction does not outlive the unit of the worker's tick that opened it (HIL-1164), and a
+ * failed announcement of a commit is charged to that unit rather than to the commit (HIL-1299).
  *
- * The worker's loop contains a failure per unit; this pins the other thing every unit owes at
+ * The worker's loop contains a failure per unit; this pins the other things every unit owes at
  * its end - a transaction it left open is rolled back, what it held is dropped, and the failure
  * is written as the unit's own, so the next unit starts on a clean connection and the journal
- * says which handler kept it. Driven the way the tick guard's cases drive the manager, one loop
- * iteration with no daemon socket, but over a real connection: the rollback and the clean stack
- * cannot be seen anywhere else.
+ * says which handler kept it; an announcement a commit released that failed leaves the commit
+ * standing and the unit going on, and is written as the unit's own the same way. Driven the way
+ * the tick guard's cases drive the manager, one loop iteration with no daemon socket, but over a
+ * real connection: the rollback and the clean stack cannot be seen anywhere else.
  */
 final class WorkerTransactionLeftOpenIntegrationTest extends FrameworkIntegrationTestCase
 {
@@ -115,7 +118,7 @@ final class WorkerTransactionLeftOpenIntegrationTest extends FrameworkIntegratio
         self::assertSame(1, $neighbour->ticks, 'The next agent ticks');
         self::assertSame(0, self::fixtureRows(), 'The row the agent wrote went with the rollback');
         self::assertFalse($leaving->announced, 'The announcement the agent held was dropped');
-        self::assertNull(Database::rollBackLeftOpen(), 'The stack is empty once the unit ended');
+        self::assertSame([], Database::handlerEnd(), 'The stack is empty once the unit ended');
         self::assertCount(1, $manager->containedFailures);
         self::assertSame(WorkerTickUnit::AGENT, $manager->containedFailures[0]->unit);
         self::assertSame($leaving->getId(), $manager->containedFailures[0]->address);
@@ -225,18 +228,56 @@ final class WorkerTransactionLeftOpenIntegrationTest extends FrameworkIntegratio
     }
 
     /**
+     * An agent whose commit released an announcement that failed: the commit returns and the
+     * tick goes on past it, the row stands, and the failure is one card of that agent's unit -
+     * the agent after it ticks with no card of its own.
+     */
+    public function testAFailedAnnouncementOfACommitIsChargedToTheAgentWhoseTickGoesOn(): void
+    {
+        $manager = new WorkerTransactionLeftOpenTestManager();
+        $committing = new WorkerTransactionLeftOpenTestAgent('1');
+        $committing->commitsTransaction = true;
+        $committing->announcementFails = true;
+        $neighbour = new WorkerTransactionLeftOpenTestAgent('2');
+        $manager->addTestAgent($committing);
+        $manager->addTestAgent($neighbour);
+
+        $manager->run();
+
+        self::assertTrue($committing->reachedTheEndOfItsTick, 'The commit returned, and the tick went on past it');
+        self::assertSame(1, self::fixtureRows(), 'The commit stood');
+        self::assertSame(1, $neighbour->ticks, 'The next agent ticks');
+        self::assertCount(1, $manager->containedFailures);
+        self::assertSame(WorkerTickUnit::AGENT, $manager->containedFailures[0]->unit);
+        self::assertSame($committing->getId(), $manager->containedFailures[0]->address);
+        self::assertInstanceOf(AnnouncementFailedException::class, $manager->containedFailures[0]->failure);
+        self::assertSame(
+            WorkerTransactionLeftOpenTestAgent::ANNOUNCEMENT_FAILURE,
+            $manager->containedFailures[0]->failure->getPrevious()?->getMessage(),
+        );
+        self::assertStringContainsString(
+            'contained a failure in agent (' . $committing->getId() . ')',
+            $this->logged(),
+        );
+    }
+
+    /**
      * Opens a transaction on the current connection and writes one row into the fixture table,
      * holding an announcement, the way a unit under test does.
      *
      * @param string $mark Value telling this row apart
      * @param bool $announcedFlag Flag the held announcement raises when it is made
+     * @param bool $announcementFails Whether the held announcement raises instead, when it is made
      * @throws HilosException When the start or the write fails
      */
-    public static function openAndWrite(string $mark, bool &$announcedFlag): void
+    public static function openAndWrite(string $mark, bool &$announcedFlag, bool $announcementFails = false): void
     {
         Database::transactionStart();
         Database::sqlRun('INSERT INTO `' . self::FIXTURE_TABLE . '` (`mark`) VALUES (?)', [$mark]);
-        Database::afterCommit(static function () use (&$announcedFlag): void {
+        Database::afterCommit(static function () use (&$announcedFlag, $announcementFails): void {
+            if ($announcementFails) {
+                throw new RuntimeException(WorkerTransactionLeftOpenTestAgent::ANNOUNCEMENT_FAILURE);
+            }
             $announcedFlag = true;
         });
     }
@@ -419,6 +460,9 @@ final class WorkerTransactionLeftOpenTestAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'integration_transaction_left_open';
 
+    /** What the announcement of a commit raises when the case asks it to fail. */
+    public const string ANNOUNCEMENT_FAILURE = 'the announcement could not be made';
+
     /** Whether this agent's tick opens a transaction, writes, and returns without closing it. */
     public bool $leavesTransactionOpen = false;
 
@@ -427,6 +471,12 @@ final class WorkerTransactionLeftOpenTestAgent extends AbstractAgent
 
     /** Whether this agent's tick raises after its write, with the transaction still open. */
     public bool $raisesAfterTheWrite = false;
+
+    /** Whether the announcement the tick holds raises when the commit makes it. */
+    public bool $announcementFails = false;
+
+    /** Whether the tick ran to its last line. */
+    public bool $reachedTheEndOfItsTick = false;
 
     /** Whether the announcement the tick held was made. */
     public bool $announced = false;
@@ -451,7 +501,7 @@ final class WorkerTransactionLeftOpenTestAgent extends AbstractAgent
         $this->ticks++;
 
         if ($this->leavesTransactionOpen || $this->commitsTransaction) {
-            WorkerTransactionLeftOpenIntegrationTest::openAndWrite($this->getId(), $this->announced);
+            WorkerTransactionLeftOpenIntegrationTest::openAndWrite($this->getId(), $this->announced, $this->announcementFails);
         }
         if ($this->raisesAfterTheWrite) {
             throw new RuntimeException('agent tick refused after its write');
@@ -459,6 +509,7 @@ final class WorkerTransactionLeftOpenTestAgent extends AbstractAgent
         if ($this->commitsTransaction) {
             Database::transactionCommit();
         }
+        $this->reachedTheEndOfItsTick = true;
     }
 
     public function onStop(): void

@@ -16,6 +16,7 @@ use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Base class for framework integration tests that use Hilos\Database\Database.
@@ -64,7 +65,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     ];
 
     /**
-     * Configures connection index 0 from environment and opens the mysqli link.
+     * Configures connection index 0 from environment, opens the mysqli link and opens the case's handler.
      *
      * @throws EnvException When env variables are missing or invalid
      * @throws DatabaseConnectionException When connect fails
@@ -98,35 +99,38 @@ abstract class FrameworkIntegrationTestCase extends TestCase
             maxRetries: DatabaseConnectionPolicy::CONNECT_RETRY_MAX_ATTEMPTS,
             retryDelaySeconds: DatabaseConnectionPolicy::CONNECT_RETRY_DELAY_SECONDS,
         );
+        Database::handlerStart();
     }
 
     /**
-     * Closes the transaction a passing case left open, and fails the case for it - before tearDown.
+     * Ends the handler of a passing case and fails the case for what the case owes at its end -
+     * a failed announcement of its commits, a transaction left open - before tearDown.
      *
      * Here rather than in tearDown because a subclass's tearDown may drop its stub tables, and
      * DDL commits an open transaction implicitly: the leak would be committed into the shared test
      * database and then reported as rolled back. PHPUnit runs this after a test body that passed;
-     * a failing one is red already, and tearDown below closes its transaction after the fact.
+     * a failing one is red already, and tearDown below ends its handler after the fact.
      */
     protected function assertPostConditions(): void
     {
         parent::assertPostConditions();
 
-        $leftOpen = Database::rollBackLeftOpen();
-        if ($leftOpen !== null) {
-            self::fail($leftOpen->getMessage());
+        $owed = Database::handlerEnd();
+        if ($owed !== []) {
+            self::fail(implode("\n", array_map(static fn (Throwable $failure): string => $failure->getMessage(), $owed)));
         }
     }
 
     /**
-     * Closes the transaction a failing case left open, then connection index 0 when still open.
+     * Ends the handler of a failing case - closing the transaction it left open - then connection
+     * index 0 when still open.
      *
      * The transaction goes first: closed with the connection instead, its levels would stay on
      * the stack as failed and every later case would be refused a start.
      */
     protected function tearDown(): void
     {
-        Database::rollBackLeftOpen();
+        Database::handlerEnd();
         if (Database::isConnected()) {
             Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
         }
