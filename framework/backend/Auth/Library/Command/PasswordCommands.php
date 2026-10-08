@@ -557,7 +557,8 @@ final class PasswordCommands extends AbstractLibraryCommands
      *
      * The way off a code screen (HIL-486), whichever intent opened it. It forgets the wait -
      * the durable memory and the parked sockets alike - so this session's tabs go to the
-     * identifier field together, and a reconnect is answered with no step at all.
+     * identifier field together, and a reconnect is answered with no step at all. The holder
+     * forgets the session's wait on a password recovery too, grant included (HIL-1319).
      *
      * The hold goes with it (HIL-829), and the two events that used to share this door are
      * why. PRESSING the way out says the registration is not wanted, so the address is freed

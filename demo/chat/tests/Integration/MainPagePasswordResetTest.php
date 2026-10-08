@@ -8,6 +8,7 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
+use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
@@ -746,6 +747,122 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
+     * "Back" from the recovery code leaves nothing for a fresh tab to resume (HIL-1319).
+     *
+     * The way off a code screen says the wait is not needed, whichever code it was. The
+     * handshake asks about recovery first, so a row left standing would put the next tab
+     * of this session back on the code the person had just left.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testBackFromTheRecoveryCodeLeavesNoStepBehind(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'back-code-ak');
+
+        try {
+            $this->requestReset($agent, 'back-code-ak', $email);
+            $this->seedKnownCode($email);
+
+            $this->cancel($agent, 'back-code-ak');
+            $this->assertNull(Hilos::$rt->hilosRecoveryWaiters['back-code-ak'], 'The wait is let go');
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'back-code-resume-ak', $token);
+
+            $this->assertNull(
+                $this->drainHandshakeResponses()['back-code-resume-ak']?->pendingAuthStep,
+                'A session that went back is not put on the recovery code again',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * "Back" from the password step takes the grant away with the wait (HIL-1319).
+     *
+     * The grant lives on the session's rows, so releasing them is what spends it: a fresh
+     * tab is no longer opened on the password step of a recovery the person walked off.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testBackFromThePasswordStepTakesTheGrantAway(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'back-grant-ak');
+
+        try {
+            $this->requestReset($agent, 'back-grant-ak', $email);
+            $this->seedKnownCode($email);
+            $this->confirm($agent, 'back-grant-ak', $email, self::CODE);
+
+            $this->cancel($agent, 'back-grant-ak');
+            $this->assertNull(Hilos::$rt->hilosRecoveryWaiters['back-grant-ak'], 'The granted wait is let go');
+
+            $this->drainHandshakeResponses();
+            $this->openSession($agent, 'back-grant-resume-ak', $token);
+
+            $this->assertNull(
+                $this->drainHandshakeResponses()['back-grant-resume-ak']?->pendingAuthStep,
+                'A session that went back is not put on the password step again',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
+     * "Back" in one tab sends the other recovering tab of the session to the address (HIL-1319).
+     *
+     * The recovery twin of the registration case: the wait is one per session, so the tab
+     * with no row of its own is named by the session's recovery address and goes to the
+     * field under sign-in, the address having an account. The tab that pressed is moved
+     * by its own button, and a second order for the same move would race the first.
+     *
+     * @throws HilosException When setup or reset handling fails
+     */
+    public function testBackInOneTabSendsTheOtherRecoveringTabToTheAddress(): void
+    {
+        $agent = $this->bootAgent();
+        $email = $this->uniqueEmail();
+        $this->seedUserWithPassword($email);
+        $token = $this->openSession($agent, 'back-listener-ak');
+        $this->openSession($agent, 'back-actor-ak', $token);
+
+        try {
+            $this->requestReset($agent, 'back-actor-ak', $email);
+            $this->seedKnownCode($email);
+            $this->drainConvergeSignals();
+
+            $this->cancel($agent, 'back-actor-ak');
+            $converged = $this->drainConvergeSignals();
+
+            $this->assertArrayHasKey('back-listener-ak', $converged, 'The tab with no row is told too');
+            $this->assertSame($email, $converged['back-listener-ak']->identifier, 'Named by the recovery address');
+            $this->assertSame(AuthFlowStep::IDENTIFIER, $converged['back-listener-ak']->step);
+            $this->assertSame(AuthFlowIntent::LOGIN, $converged['back-listener-ak']->intent);
+            $this->assertNull($converged['back-listener-ak']->code);
+            $this->assertArrayNotHasKey(
+                'back-actor-ak',
+                $converged,
+                'The tab that pressed is moved by its own button, not by a converge',
+            );
+            $this->assertSame(
+                [],
+                Hilos::$rt->hilosRecoveryWaiters->forSessionToken($token),
+                'The session waits on no recovery any more',
+            );
+        } finally {
+            $this->cleanUp();
+        }
+    }
+
+    /**
      * Empties the signal queue and returns the handshake responses it held, by target.
      *
      * @return array<string, HandshakeResponseSignalData> Handshake payload by target accept key
@@ -952,6 +1069,23 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
         $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
 
         return $outcome;
+    }
+
+    /**
+     * Presses the way off a code screen - the action every code screen's "Back" sends.
+     *
+     * @param ChatAgent $agent Agent owning the page
+     * @param string $acceptKey Acting connection accept key
+     * @throws HilosException When the cancel handler or the hand-off fails
+     */
+    private function cancel(ChatAgent $agent, string $acceptKey): void
+    {
+        $this->runLibraryAction(
+            $agent,
+            $acceptKey,
+            HilosSignalConstants::HILOS_CANCEL_REGISTRATION,
+            new CancelRegistrationActionDTO(),
+        );
     }
 
     /**

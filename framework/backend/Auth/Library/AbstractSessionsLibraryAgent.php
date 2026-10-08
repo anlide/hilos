@@ -3457,6 +3457,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * durable wait is released. Without it, a tab the grant moved onto the password step
      * would stay there after a sibling pressed "Cancel registration".
      *
+     * The session's wait on a password recovery goes with it, grant of the password step
+     * included - pressing the way off a code screen says the wait is not needed (HIL-829),
+     * whichever code it was. The handshake asks about recovery FIRST
+     * ({@see self::pendingAuthStepFor()}), so a recovery row left standing put a second tab
+     * of the same session back on the code just left (HIL-1319). Its tabs are found the same
+     * two ways and sent to the identifier field under sign-in, the address having an account.
+     *
      * @param string $sessionToken Session cookie token canceling its registration
      * @param string $initiatorAcceptKey Accept key that asked, answered by its own action reply
      * @throws HilosException On runtime or database failure
@@ -3482,11 +3489,45 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
         }
 
+        // The recovery half is read by SESSION, never by address: another session recovering
+        // the same address is still recovering it. A tab with no row of its own is named by the
+        // address the handshake would describe - the granted row first, else the first parked.
+        $recovering = [];
+        $granted = null;
+        $firstParked = null;
+        foreach (Hilos::$rt->hilosRecoveryWaiters->forSessionToken($sessionToken) as $waiter) {
+            $recovering[$waiter->acceptKey] = $waiter->identifier;
+            $firstParked ??= $waiter->identifier;
+            if ($waiter->codeAccepted) {
+                $granted ??= $waiter->identifier;
+            }
+        }
+
+        $recoveryAddress = $granted ?? $firstParked;
+        if ($recoveryAddress !== null) {
+            foreach ($this->sessionConnectionKeys($sessionToken) as $acceptKey) {
+                $recovering[$acceptKey] ??= $recoveryAddress;
+            }
+        }
+
         // The durable memory goes ahead of the signals, for the reason the expiry sweep
         // drops it in the same order: a tab reconnecting a moment later must be told the
         // identifier step by the handshake, not parked again on a screen this call closes.
         $session?->actions->releasePendingRegistration();
         $this->dropCodeSendProgress($sessionToken);
+
+        foreach ($recovering as $acceptKey => $recoveredIdentifier) {
+            Hilos::$rt->hilosRecoveryWaiters->actions->release($acceptKey);
+            if ($acceptKey === $initiatorAcceptKey) {
+                continue;
+            }
+
+            $this->sendToUser(
+                HilosSignalConstants::HILOS_AUTH_CONVERGE,
+                $acceptKey,
+                new AuthConvergeSignalData($acceptKey, $recoveredIdentifier, AuthFlowStep::IDENTIFIER, AuthFlowIntent::LOGIN),
+            );
+        }
 
         foreach ($parked as $acceptKey => $waitedIdentifier) {
             Hilos::$rt->hilosRegistrationWaiters->actions->release($acceptKey);

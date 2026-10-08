@@ -854,6 +854,13 @@ export interface AuthFlow {
    * A ceremony still running under the screen - the passkey ending of a
    * registration (HIL-1104) - is ended first, device prompt included, and
    * whatever it would have answered is dropped.
+   *
+   * Any other dispatch of this tab still in flight - a code send, a resend, the
+   * registration asked from the consent screen - is orphaned the same way: its
+   * late answer neither moves the step nor sets an error, and the buttons are
+   * free at once. Since HIL-826 the code screen opens before the send answers,
+   * and that send's late "code sent" used to put the person back on the code
+   * they had just left (HIL-1319).
    */
   backToIdentifier(): void
   /**
@@ -2971,15 +2978,15 @@ export function createAuthFlow(options: AuthFlowOptions): AuthFlow {
       if (ceremony !== null) {
         // Calling a registration off while its passkey ending runs (HIL-1104) has
         // to END the ceremony, as a cancel and a reset do: an open device prompt a
-        // late finger satisfies would create the account just refused. The
-        // generation moves so that ceremony's outcome is orphaned, and pending is
-        // released because it may never settle.
+        // late finger satisfies would create the account just refused.
         ceremony.controller.abort()
         ceremony.canceled = { at: Date.now(), intent: leaving.intent }
         ceremony = null
-        dispatchSeq += 1
-        pending.set(false)
       }
+      // Any dispatch still in flight is orphaned, as an identifier edit does: its
+      // late "code sent" would put the screen back on the code just left (HIL-1319).
+      dispatchSeq += 1
+      pending.set(false)
       returnToIdentifier()
       if (SECOND_FACTOR_WAIT_STEPS.includes(leaving.step)) {
         // Told, not waited for: the person is on the field already, and the

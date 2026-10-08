@@ -1865,6 +1865,105 @@ describe('dispatch generations', () => {
     expect(flow.flow.get().step).toBe('identifier')
     expect(flow.pending.get()).toBe(false)
   })
+
+  /** A flow on a found number whose sends wait for the test to answer them. */
+  async function phoneFlowWithHeldSends(): Promise<{
+    flow: ReturnType<typeof createAuthFlow>
+    onSubmit: ReturnType<typeof vi.fn>
+    release: (outcome: AuthFlowSubmitOutcome) => void
+  }> {
+    const answers: ((outcome: AuthFlowSubmitOutcome) => void)[] = []
+    const onSubmit = vi.fn(
+      async () =>
+        await new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          answers.push(resolve)
+        }),
+    )
+    const flow = setup({
+      onSubmit,
+      onDetect: async (identifier) =>
+        detected({
+          identifier,
+          normalized: identifier,
+          kind: 'phone',
+          status: 'active',
+          methods: ['sms'],
+        }),
+    })
+    await typeAndDetect(flow, '+79991234567')
+
+    return {
+      flow,
+      onSubmit,
+      release: (outcome) => answers.shift()?.(outcome),
+    }
+  }
+
+  it('Back orphans a code send still in flight: its late answer neither moves nor errs', async () => {
+    const { flow, onSubmit, release } = await phoneFlowWithHeldSends()
+    const sending = flow.chooseChannel('sms')
+    flow.setField('code', '000000')
+
+    flow.backToIdentifier()
+    expect(flow.pending.get()).toBe(false)
+    expect(flow.flow.get().step).toBe('identifier')
+
+    // The send's own "code sent" lands after the person left the screen.
+    release({
+      ok: true,
+      next: { step: 'code' },
+      expiresAt: Date.now() + 300 * SECOND_MS,
+    })
+    await sending
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.error.get()).toBeNull()
+    expect(flow.expiresAt.get()).toBeNull()
+
+    // A new send is free at once and opens the code screen with an empty field.
+    const resending = flow.chooseChannel('sms')
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(flow.flow.get().step).toBe('code')
+    expect(flow.form.get().code).toBe('')
+    release({ ok: true, next: { step: 'code' } })
+    await resending
+  })
+
+  it('Back orphans a refused send: no rollback line on the field', async () => {
+    const { flow, release } = await phoneFlowWithHeldSends()
+    const sending = flow.chooseChannel('sms')
+
+    flow.backToIdentifier()
+    release({ ok: false, message: 'not this way' })
+    await sending
+
+    expect(flow.error.get()).toBeNull()
+    expect(flow.flow.get().step).toBe('identifier')
+  })
+
+  it('Back from the terms orphans the registration in flight', async () => {
+    let release: (outcome: AuthFlowSubmitOutcome) => void = () => undefined
+    const flow = setup({
+      onSubmit: async () =>
+        await new Promise<AuthFlowSubmitOutcome>((resolve) => {
+          release = resolve
+        }),
+      onDetect: async (identifier) =>
+        detected({ identifier, status: 'none', methods: [] }),
+    })
+    await typeAndDetect(flow, 'new@b.com')
+    await flow.submit()
+    await Promise.resolve()
+    expect(flow.flow.get().step).toBe('consent')
+    flow.setField('consentAccepted', true)
+    const registering = flow.submit()
+
+    flow.backToIdentifier()
+    release({ ok: true, next: { step: 'code' } })
+    await registering
+
+    expect(flow.flow.get().step).toBe('identifier')
+    expect(flow.pending.get()).toBe(false)
+  })
 })
 
 describe('startRecovery', () => {
