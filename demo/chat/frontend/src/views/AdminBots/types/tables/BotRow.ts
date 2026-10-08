@@ -22,5 +22,5 @@ export interface BotRow {
   /** Whether the bot is active (its agent should run). */
   readonly active: boolean
   /** Live agent presence (from the inline `botAgentStatuses` slot). */
-  readonly presence: HilosPresence
+  readonly status: HilosPresence
 }

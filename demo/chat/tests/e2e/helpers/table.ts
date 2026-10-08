@@ -15,11 +15,8 @@ import {
 // shared folder refuses (its index.ts), and a helper that drives Playwright stays
 // with the demo that runs it (HIL-954).
 
-/** The footer's count: `${N} total` while it is exact, `${N}+ total` at the ceiling. */
+/** The footer's count: `${start} – ${end} of ${total}` (or `${total}+` at the ceiling). */
 const COUNT = 'hilos-table-count'
-
-/** The props-drawn footer's page caption, `${page} / ${pageCount}`. */
-const PAGE_CAPTION = 'hilos-table-page'
 
 /** The control that turns to the next page, disabled exactly when there is none. */
 const NEXT = 'hilos-table-next'
@@ -48,9 +45,11 @@ function rows(page: Page): Locator {
  */
 export async function tableTotal(page: Page): Promise<number> {
   const count = page.getByTestId(COUNT)
-  await expect(count).toHaveText(/^\s*\d+\+? total\s*$/)
+  await expect(count).toHaveText(/^\s*\d+ – \d+ of \d+\+?\s*$/)
+  const text = (await count.textContent()) ?? ''
+  const match = text.match(/of\s+(\d+)/)
 
-  return Number.parseInt(((await count.textContent()) ?? '').trim(), 10)
+  return match ? Number.parseInt(match[1], 10) : 0
 }
 
 /**
@@ -68,7 +67,9 @@ export async function expectTableTotal(
   page: Page,
   total: number,
 ): Promise<void> {
-  await expect(page.getByTestId(COUNT)).toHaveText(`${total} total`)
+  await expect(page.getByTestId(COUNT)).toHaveText(
+    new RegExp(`of ${total}\\s*$`),
+  )
 }
 
 /**
@@ -113,19 +114,15 @@ export async function tableRowKeyByText(
  * @returns The 1-based page number.
  */
 async function captionPage(page: Page): Promise<number> {
-  const caption = page.getByTestId(PAGE_CAPTION)
   const activePage = page.locator(
     '[data-id^="hilos-table-page-"][aria-current="page"]',
   )
   const next = page.getByTestId(NEXT)
 
-  // Wait until either the props-drawn caption, a numbered page button, or a table
-  // row arrives so we do not read an unmounted or settling footer.
+  // Wait until either a numbered page button, next control, or a table row
+  // arrives so we do not read an unmounted or settling footer.
   await expect
     .poll(async () => {
-      if ((await caption.count()) > 0) {
-        return true
-      }
       if ((await activePage.count()) > 0) {
         return true
       }
@@ -136,12 +133,6 @@ async function captionPage(page: Page): Promise<number> {
       return (await tableRowKeys(page)).length > 0
     })
     .toBe(true)
-
-  if ((await caption.count()) > 0) {
-    await expect(caption).toHaveText(/^\s*\d+ \/ \d+\s*$/)
-
-    return Number.parseInt(((await caption.textContent()) ?? '').trim(), 10)
-  }
 
   if ((await activePage.count()) > 0) {
     return Number.parseInt(((await activePage.textContent()) ?? '').trim(), 10)
@@ -181,21 +172,19 @@ export async function pageBackOnce(page: Page): Promise<void> {
 /**
  * Turn pages until there is no next one, waiting for each window to arrive.
  *
- * The caption alone does not say a window arrived: the controller moves the page
- * number the moment Next is pressed, and the rows of the page before stay on
+ * The page number alone does not say a window arrived: the controller moves the
+ * page number the moment Next is pressed, and the rows of the page before stay on
  * screen until the answer comes (TableViewportController.nextPage). A test that
  * trusted the number read the old rows, and one that pressed Next again paged
  * from a boundary the server had not answered yet. So after every press this
  * waits for the number AND for a first row that is not the one the page before
  * began with — two pages of one order share no row, so a different first row is
- * the new window and nothing else. A caption that is missing is a failure here,
- * not a reason to stop on the first page.
+ * the new window and nothing else.
  *
  * @param page The Playwright page showing the table.
  * @returns The 1-based number of the page reached.
  */
 export async function goToLastPage(page: Page): Promise<number> {
-  const caption = page.getByTestId(PAGE_CAPTION)
   const next = page.getByTestId(NEXT)
   let reached = await captionPage(page)
 
@@ -207,17 +196,11 @@ export async function goToLastPage(page: Page): Promise<number> {
     const firstKeyBefore = (await tableRowKeys(page))[0]
     await next.click()
     reached += 1
-    if ((await caption.count()) > 0) {
-      await expect(caption).toHaveText(
-        new RegExp(`^\\s*${reached} / \\d+\\s*$`),
-      )
-    } else {
-      const active = page.locator(
-        `[data-id="hilos-table-page-${reached}"][aria-current="page"]`,
-      )
-      if ((await active.count()) > 0) {
-        await expect(active).toHaveText(String(reached))
-      }
+    const active = page.locator(
+      `[data-id="hilos-table-page-${reached}"][aria-current="page"]`,
+    )
+    if ((await active.count()) > 0) {
+      await expect(active).toHaveText(String(reached))
     }
     await expect
       .poll(async () => {

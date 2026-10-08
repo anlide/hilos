@@ -25,7 +25,6 @@ import {
   useSignal,
   useTrackedAction,
 } from '@hilos/vue'
-import { type HilosTableColumn } from '@hilos/vue'
 import {
   keepMineRowEdit,
   openRowEdit,
@@ -44,30 +43,22 @@ import {
   type BotInput,
 } from './adminBotsActions'
 import { PAGE_ADMIN_BOTS } from '../../pages/keys'
-import { botsTable, disposeBotsTable, startBotsTable } from './adminBotsPage'
+import { createBotsTable } from './adminBotsPage'
 import { type BotRow } from './types/tables/BotRow'
 
 defineOptions({ name: 'AdminBotsPage' })
 
-const columns: HilosTableColumn[] = [
-  { key: 'name', label: 'Name', sortable: true },
-  { key: 'description', label: 'Description' },
-  // Sort key is the backend row field (`status`: joined/left), which groups the
-  // same as the rendered online/offline presence.
-  { key: 'status', label: 'Status', sortable: true },
-  { key: 'active', label: 'Active', sortable: true },
-  { key: 'actions', label: '', headerClass: 'text-end' },
-]
+const bots = createBotsTable({ openAdd: openCreate })
 
 // The row the open dialog holds in focus, which the server follows wherever it
 // goes; undefined once the row is gone. The edit form and the delete dialog both
 // read it: one dialog is open at a time, and it is the one holding the focus.
-const focusedRow = useSignal(botsTable.focusedRow)
+const focusedRow = useSignal(bots.controller.focusedRow)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
-onMounted(startBotsTable)
-onUnmounted(disposeBotsTable)
+onMounted(bots.start)
+onUnmounted(bots.dispose)
 
 /** The labels of the edited fields as the form shows them. */
 const FIELD_LABELS: Record<keyof BotInput, string> = {
@@ -249,7 +240,7 @@ function openEdit(row: BotRow): void {
   // Flush pending and take the row into focus, so the form edits the latest
   // committed row and follows it from here; a row removed by someone else (now a
   // placeholder) declines to open.
-  const fresh = botsTable.focusRow(String(row.id))
+  const fresh = bots.controller.focusRow(String(row.id))
   if (!fresh) {
     return
   }
@@ -268,7 +259,7 @@ function openEdit(row: BotRow): void {
 
 function closeForm(): void {
   formOpen.value = false
-  botsTable.releaseFocus()
+  bots.controller.releaseFocus()
 }
 
 // Put a step of the helper into the form: the snapshot moves, and every value
@@ -365,7 +356,7 @@ const deleteLabel = computed(() => (deleteGone.value ? 'Deleted' : 'Delete'))
 function openDelete(row: BotRow): void {
   // Flush pending and take the row into focus; a row already removed by someone
   // else does not open a delete.
-  const fresh = botsTable.focusRow(String(row.id))
+  const fresh = bots.controller.focusRow(String(row.id))
   if (!fresh) {
     return
   }
@@ -376,7 +367,7 @@ function openDelete(row: BotRow): void {
 
 function closeDelete(): void {
   deleteOpen.value = false
-  botsTable.releaseFocus()
+  bots.controller.releaseFocus()
 }
 
 async function submitDelete(): Promise<void> {
@@ -393,84 +384,63 @@ async function submitDelete(): Promise<void> {
 <template>
   <HilosAdminPage :page="PAGE_ADMIN_BOTS">
     <section data-id="admin-bots-view">
-      <div class="d-flex justify-content-end mb-4">
-        <button
-          type="button"
-          class="btn btn-primary flex-shrink-0"
-          data-id="admin-bots-add"
-          @click="openCreate"
-        >
-          <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add bot
-        </button>
-      </div>
-
-      <HilosViewportTable
-        label="Bots"
-        :controller="botsTable"
-        :columns="columns"
-        searchable
-        search-placeholder="Search bots…"
-        empty-text="No bots yet."
-      >
-        <template #row="{ row }">
-          <td>
-            <span class="fw-medium">{{ row.name }}</span>
-          </td>
-          <td style="max-width: 18rem">
-            <span
-              class="text-truncate d-block text-body-secondary"
-              :title="row.description ?? ''"
-              >{{ row.description ?? '—' }}</span
-            >
-          </td>
-          <td>
-            <span
-              v-if="row.presence === 'online'"
-              class="badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle"
-              >online</span
-            >
-            <span
-              v-else
-              class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-              >offline</span
-            >
-          </td>
-          <td>
-            <span
-              v-if="row.active"
-              class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
-              >active</span
-            >
-            <span
-              v-else
-              class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-              >off</span
-            >
-          </td>
-          <td class="text-end">
-            <div class="d-flex gap-1 justify-content-end">
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-primary"
-                title="Edit"
-                aria-label="Edit"
-                :data-id="`admin-bots-edit-${row.id}`"
-                @click="openEdit(row)"
-              >
-                <i class="bi bi-pencil" aria-hidden="true"></i>
-              </button>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline-danger"
-                title="Delete"
-                aria-label="Delete"
-                :data-id="`admin-bots-delete-${row.id}`"
-                @click="openDelete(row)"
-              >
-                <i class="bi bi-trash" aria-hidden="true"></i>
-              </button>
-            </div>
-          </td>
+      <HilosViewportTable :controller="bots.controller">
+        <template #cell-name="{ row }">
+          <span class="fw-medium">{{ row.name }}</span>
+        </template>
+        <template #cell-description="{ row }">
+          <span
+            class="text-truncate d-block text-body-secondary"
+            style="max-width: 18rem"
+            :title="row.description ?? ''"
+            >{{ row.description ?? '—' }}</span
+          >
+        </template>
+        <template #cell-status="{ row }">
+          <span
+            v-if="row.status === 'online'"
+            class="badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle"
+            >online</span
+          >
+          <span
+            v-else
+            class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+            >offline</span
+          >
+        </template>
+        <template #cell-active="{ row }">
+          <span
+            v-if="row.active"
+            class="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle"
+            >active</span
+          >
+          <span
+            v-else
+            class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+            >off</span
+          >
+        </template>
+        <template #cell-actions="{ row }">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            title="Edit"
+            aria-label="Edit"
+            :data-id="`admin-bots-edit-${row.id}`"
+            @click="openEdit(row)"
+          >
+            <i class="bi bi-pencil" aria-hidden="true"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-danger"
+            title="Delete"
+            aria-label="Delete"
+            :data-id="`admin-bots-delete-${row.id}`"
+            @click="openDelete(row)"
+          >
+            <i class="bi bi-trash" aria-hidden="true"></i>
+          </button>
         </template>
       </HilosViewportTable>
 

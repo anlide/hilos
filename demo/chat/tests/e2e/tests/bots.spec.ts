@@ -2,6 +2,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 import {
   dismissToasts,
+  shownByTestId,
+  sidewaysOverflow,
   watchFirstRowTop,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { signUpAdmin } from '../helpers/adminGrant'
@@ -106,7 +108,7 @@ async function openBots(page: Page): Promise<void> {
  * @param name The bot's name.
  */
 async function createBot(page: Page, name: string): Promise<void> {
-  await page.getByTestId('admin-bots-add').click()
+  await page.getByTestId('hilos-table-main-action').click()
   await typeInto(page.getByTestId('admin-bots-name'), name)
   await typeInto(page.getByTestId('admin-bots-description'), 'made by e2e')
   await page.getByTestId('admin-bots-active').uncheck()
@@ -130,8 +132,26 @@ async function editBotDescription(
   rowKey: string,
   description: string,
 ): Promise<void> {
-  await page.getByTestId(`admin-bots-edit-${rowKey}`).click()
+  await shownByTestId(page, `admin-bots-edit-${rowKey}`).click()
   await typeInto(page.getByTestId('admin-bots-description'), description)
+  await clickSubmit(page.getByTestId('admin-bots-save'))
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+}
+
+/**
+ * Change a bot's style through the edit dialog.
+ *
+ * @param page The Playwright page on the bots admin.
+ * @param rowKey The bot's row key.
+ * @param style The new style.
+ */
+async function editBotStyle(
+  page: Page,
+  rowKey: string,
+  style: string,
+): Promise<void> {
+  await shownByTestId(page, `admin-bots-edit-${rowKey}`).click()
+  await typeInto(page.getByTestId('admin-bots-style'), style)
   await clickSubmit(page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
 }
@@ -149,7 +169,7 @@ async function renameBot(
   rowKey: string,
   name: string,
 ): Promise<void> {
-  await page.getByTestId(`admin-bots-edit-${rowKey}`).click()
+  await shownByTestId(page, `admin-bots-edit-${rowKey}`).click()
   await typeInto(page.getByTestId('admin-bots-name'), name)
   await clickSubmit(page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
@@ -209,7 +229,7 @@ async function deletePads(page: Page, names: string[]): Promise<void> {
  * @param rowKey The bot's row key.
  */
 async function deleteBot(page: Page, rowKey: string): Promise<void> {
-  await page.getByTestId(`admin-bots-delete-${rowKey}`).click()
+  await shownByTestId(page, `admin-bots-delete-${rowKey}`).click()
   await clickSubmit(page.getByTestId('admin-bots-delete-confirm'))
   await expect(page.getByTestId('admin-bots-delete-confirm')).toHaveCount(0)
   await expect(page.getByTestId(`admin-bots-delete-${rowKey}`)).toHaveCount(0)
@@ -289,7 +309,7 @@ test('a bot created here takes the place the sort gives it, and edits and delete
   await expect(page.getByTestId(`hilos-table-row-${key}`)).not.toContainText(
     description,
   )
-  await page.getByTestId(`admin-bots-edit-${key}`).click()
+  await shownByTestId(page, `admin-bots-edit-${key}`).click()
   await expect(page.getByTestId('admin-bots-description')).toHaveValue('')
   await page.getByTestId('modal-close').click()
   await expect(page.getByTestId('modal')).toBeHidden()
@@ -537,7 +557,6 @@ test('after Show the footer names the tail, Next is off, and Back reaches the fi
   await goToLastPage(tabB)
   const base = await tableTotal(tabB)
   const keysBefore = await tableRowKeys(tabB)
-  const caption = tabB.getByTestId('hilos-table-page')
   const next = tabB.getByTestId('hilos-table-next')
   const prev = tabB.getByTestId('hilos-table-prev')
   // Read off what the table was found holding, never written as literals: a retry runs
@@ -561,8 +580,16 @@ test('after Show the footer names the tail, Next is off, and Back reaches the fi
   // presses instead would read this as page two of three and offer a Next into nothing.
   expect(await tableRowKeys(tabB)).toEqual(keysBefore)
   await expectTableTotal(tabB, base + 1)
-  await expect(caption).toHaveText(
-    new RegExp(`^\\s*${lastPage} / ${pagesAfter}\\s*$`),
+  await expect(
+    tabB.locator(
+      `[data-id="hilos-table-page-${lastPage}"][aria-current="page"]`,
+    ),
+  ).toBeVisible()
+  await expect(tabB.getByTestId(`hilos-table-page-${pagesAfter}`)).toHaveCount(
+    1,
+  )
+  await expect(tabB.getByTestId('hilos-table-count')).toHaveText(
+    new RegExp(`– ${base + 1} of ${base + 1}\\s*$`),
   )
   await expect(next).toBeDisabled()
   await expect(prev).toBeEnabled()
@@ -575,7 +602,10 @@ test('after Show the footer names the tail, Next is off, and Back reaches the fi
   await pageBackOnce(tabB)
   expect((await tableRowKeys(tabB))[0]).toBe(key)
   await expect(prev).toBeDisabled()
-  await expect(caption).toHaveText(new RegExp(`^\\s*1 / ${pagesAfter}\\s*$`))
+  await expect(
+    tabB.locator('[data-id="hilos-table-page-1"][aria-current="page"]'),
+  ).toBeVisible()
+  await expect(tabB.getByTestId('hilos-table-count')).toHaveText(/^\s*1 – /)
 
   // Cleanup: B holds the bot A made.
   await deleteBot(tabB, key)
@@ -808,7 +838,7 @@ test('a bot deleted in another tab, the last under a search, leaves Nothing foun
   await deleteBot(tabB, key)
 
   await expect(
-    page.getByTestId(`hilos-table-pending-remove-${key}`),
+    shownByTestId(page, `hilos-table-pending-remove-${key}`),
   ).toBeVisible()
   const apply = page.getByTestId('hilos-table-apply')
   await expect(apply).toBeVisible()
@@ -817,7 +847,7 @@ test('a bot deleted in another tab, the last under a search, leaves Nothing foun
 
   // The set count is zero and no live row remains. Apply empties the window into
   // the same filtered empty state a reload would bring, without reloading.
-  await expect(page.getByTestId('hilos-table-no-matches')).toBeVisible()
+  await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
   await expect(page.getByTestId('hilos-table-placeholder')).toHaveCount(0)
   await expect(page.getByTestId(`hilos-table-row-${key}`)).toHaveCount(0)
   await tabB.close()
@@ -844,17 +874,30 @@ test('an open edit follows the other tab field by field, and a delete dialog rea
   await openBots(tabB)
   await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toBeVisible()
 
-  // A opens the edit and touches nothing; B changes the description: it lands
-  // in A's form, the message line names the field, and there is nothing to save.
-  await page.getByTestId(`admin-bots-edit-${key}`).click()
+  // A opens the edit and touches nothing; B changes ONLY Style (not in any table
+  // column — reads test): it lands in A's form, the notice names Style, and
+  // Save stays locked.
+  await shownByTestId(page, `admin-bots-edit-${key}`).click()
   await expect(page.getByTestId('admin-bots-description')).toBeVisible()
   await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+  await editBotStyle(tabB, key, `style elsewhere ${stamp}`)
+  await expect(page.getByTestId('admin-bots-style')).toHaveValue(
+    `style elsewhere ${stamp}`,
+  )
+  await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
+    'Updated just now: Style',
+  )
+  await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
+  await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
+
+  // B changes the description: it lands in A's form too, and the notice names
+  // both fields in form order.
   await editBotDescription(tabB, key, `elsewhere one ${stamp}`)
   await expect(page.getByTestId('admin-bots-description')).toHaveValue(
     `elsewhere one ${stamp}`,
   )
   await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
-    'Updated just now: Description',
+    'Updated just now: Description, Style',
   )
   await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
   await expect(page.getByTestId('admin-bots-save')).toBeDisabled()
@@ -895,7 +938,7 @@ test('an open edit follows the other tab field by field, and a delete dialog rea
   await expect(page.getByTestId('conflict-badge')).toHaveCount(0)
   await clickSubmit(page.getByTestId('admin-bots-save'))
   await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
-  await tabB.getByTestId(`admin-bots-edit-${key}`).click()
+  await shownByTestId(tabB, `admin-bots-edit-${key}`).click()
   await expect(tabB.getByTestId('admin-bots-style')).toHaveValue(
     `style of A ${stamp}`,
   )
@@ -909,7 +952,7 @@ test('an open edit follows the other tab field by field, and a delete dialog rea
   // The delete dialog reads the live row: B renames the bot and A's dialog
   // shows the new name; B deletes it and A's button reads Deleted, locked, with
   // the reason on the message line. Cancel is all that is left to press.
-  await page.getByTestId(`admin-bots-delete-${key}`).click()
+  await shownByTestId(page, `admin-bots-delete-${key}`).click()
   await expect(page.getByTestId('admin-bots-delete-confirm')).toBeEnabled()
   await renameBot(tabB, key, renamed)
   await expect(page.getByTestId('modal')).toContainText(renamed)
@@ -948,11 +991,11 @@ test('an open edit follows its row past the window edge, and conflicts after it'
   // A opens the edit; B renames the bot past the window: A's row will leave,
   // and A's form takes the name silently — the dialog holds the row in focus,
   // and the frame that takes the row off the screen carries it (HIL-1050).
-  await page.getByTestId(`admin-bots-edit-${key}`).click()
+  await shownByTestId(page, `admin-bots-edit-${key}`).click()
   await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
   await renameBot(tabB, key, renamed)
   await expect(
-    page.getByTestId(`hilos-table-pending-remove-${key}`),
+    shownByTestId(page, `hilos-table-pending-remove-${key}`),
   ).toBeVisible()
   await expect(page.getByTestId('admin-bots-name')).toHaveValue(renamed)
   await expect(page.getByTestId('admin-bots-edit-notice')).toContainText(
@@ -1007,7 +1050,7 @@ test.describe('in the admin view mode', () => {
   }) => {
     await setAdminViewMode(true)
     await openBots(page)
-    await clickSubmit(page.getByTestId('admin-bots-add'))
+    await clickSubmit(page.getByTestId('hilos-table-main-action'))
 
     const name = page.getByTestId('admin-bots-name')
     await typeInto(name, 'Viewer draft')
@@ -1134,5 +1177,38 @@ test('an own create on a Back window pushes its first row above and Back retriev
 
   await pageBackOnce(page)
   expect((await tableRowKeys(page))[0]).toBe(topKey)
+  await deleteBot(page, key)
+})
+
+test('a narrow screen draws the table as cards without sideways overflow, and Edit opens from the card', async ({
+  page,
+}) => {
+  const name = nameBeforeAll(Date.now())
+
+  await signUpAdmin(page)
+  await openBots(page)
+  await createBot(page, name)
+  const key = await tableRowKeyByText(page, name)
+
+  const desktop = page.viewportSize() ?? { width: 1280, height: 720 }
+  await page.setViewportSize({ width: 375, height: desktop.height })
+
+  await typeInto(page.getByTestId('hilos-table-search'), name)
+
+  const cards = page.getByTestId('hilos-table-cards')
+  const card = cards.getByTestId(`hilos-table-card-${key}`)
+  const row = page.getByTestId(`hilos-table-row-${key}`)
+
+  await expect(cards).toBeVisible()
+  await expect(card).toBeVisible()
+  await expect(row).toBeHidden()
+
+  expect(await sidewaysOverflow(page)).toEqual([0, 0])
+
+  await shownByTestId(page, `admin-bots-edit-${key}`).click()
+  await expect(page.getByTestId('admin-bots-name')).toHaveValue(name)
+  await page.getByTestId('modal-close').click()
+  await expect(page.getByTestId('admin-bots-save')).toHaveCount(0)
+
   await deleteBot(page, key)
 })
