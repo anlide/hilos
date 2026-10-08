@@ -634,10 +634,10 @@ enum EnvConstants
      * @var string Grace period in ms a slave keeps its in-flight work running after a
      * leader change while it awaits the new leader's work-decision; bounds an isolated
      * slave so it does not run forever. Default 6000. Consumed by the self-fence
-     * (HIL-183, HIL-1217): any node that does not lead — a slave, or a master carrying
-     * placed work — cut off from its leader or left without a quorum stops its placed
-     * agents after this grace, and it is held at or below the failover grace so the old
-     * copy stops before the leader starts a new one.
+     * (HIL-183, HIL-1217, HIL-1287): any node that does not lead — a slave, or a master
+     * carrying placed work — cut off from its leader, released by it or left without a quorum
+     * stops its placed agents after this grace, and it is held at or below the failover grace
+     * so the old copy stops before the leader starts a new one.
      */
     case CLUSTER_SLAVE_WORK_GRACE_MS;
 

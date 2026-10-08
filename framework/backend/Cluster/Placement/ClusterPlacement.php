@@ -11,6 +11,7 @@ use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
@@ -76,12 +77,12 @@ use Throwable;
  * notifying the {@see PlacementObserver}) when no capable node is online; a node isolated
  * from the leader it answers to — the one that placed its work or took it over with a rebuild
  * query (HIL-440) — and a master that loses its quorum while hosting placed work, whatever it
- * answered to (HIL-1217), self-fence those agents after
- * `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover grace, so the old copy stops
- * before the leader starts a new one). A fresh leader places nothing it has no record of until
- * its rebuild is settled — every node has reported or been away for the failover grace — so
- * a copy still running on a node it has not heard from is adopted rather than started twice
- * (HIL-1217). On rejoin a node reports what it still hosts
+ * answered to (HIL-1217), and a node whose leader tells it that it stopped leading (HIL-1287),
+ * self-fence those agents after `CLUSTER_SLAVE_WORK_GRACE_MS` (held at or below the failover
+ * grace, so the old copy stops before the leader starts a new one). A fresh leader places
+ * nothing it has no record of until its rebuild is settled — every node has reported or been
+ * away for the failover grace — so a copy still running on a node it has not heard from is
+ * adopted rather than started twice (HIL-1217). On rejoin a node reports what it still hosts
  * ({@see onPeerHandshaked()}) and the leader reconciles against its view (leader = truth),
  * stopping anything already re-placed elsewhere. A node that hosts an agent the published view
  * gives to another node reports the same snapshot at once, without waiting for a relink
@@ -196,19 +197,23 @@ final class ClusterPlacement implements WorkerPlacement
 
     /**
      * Node id of the leader this node answers to: the one that placed its hosted agents or took
-     * them over with a rebuild query; null on a leader, after a self-fence and after a lost
-     * quorum. Stop reports go to it, the self-fence is armed against it, and a slave uses it
-     * to address leader-hosted agents because it does not run consensus (HIL-1304).
+     * them over with a rebuild query; null on a leader, after a self-fence, after a lost quorum
+     * and after its leader's release. Stop reports go to it, the self-fence is armed against it,
+     * and a slave uses it to address leader-hosted agents because it does not run consensus
+     * (HIL-1304).
      *
      * @var ?string
      */
     private ?string $placingLeaderId = null;
 
-    /** @var ?float Self-fence deadline (microtime) after the placing leader was lost, or null when not isolated */
+    /**
+     * @var ?float Self-fence deadline (microtime) after the placing leader was lost, released this
+     * node or the quorum was, or null when not isolated
+     */
     private ?float $selfFenceDeadline = null;
 
-    /** @var bool True when the armed self-fence was armed by a lost quorum rather than by the placing leader's loss */
-    private bool $selfFenceOnQuorum = false;
+    /** @var ?string Why the armed self-fence was armed, as its firing line names it; null when none is armed */
+    private ?string $selfFenceCause = null;
 
     /** @var array<string, float> Deadline (microtime) an agent's placement counts as already asked for until */
     private array $placementAsks = [];
@@ -862,6 +867,38 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Node side: a release from the leader this node answers to.
+     *
+     * That leader leads no more, so it is forgotten - its return says nothing, as after a lost
+     * quorum - and placed work is fenced unless a leader takes it over ({@see answerTo()}) or this
+     * node leads ({@see onBecameLeader()}); from any other node it changes nothing. The frame is
+     * lost only with its link, and a lost link to the leader arms the isolation fence anyway
+     * (HIL-1287).
+     *
+     * A node hosting nothing only forgets the leader, and a deadline already armed is not moved,
+     * nor is what armed it.
+     *
+     * @param string $fromNodeId Id of the node that stopped leading
+     * @param float $now Current microtime
+     */
+    public function onPlacementRelease(string $fromNodeId, float $now): void
+    {
+        if ($fromNodeId !== $this->placingLeaderId) {
+            return;
+        }
+
+        $this->placingLeaderId = null;
+        if (!$this->hostsPlacedWork() || $this->selfFenceDeadline !== null) {
+            return;
+        }
+
+        $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+        $this->selfFenceCause = "placing leader '{$fromNodeId}' stopped leading";
+        Logger::info("Self-fence armed: {$this->selfFenceCause}, {$this->placedCount()} placed agent(s) stop in "
+            . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless a leader takes them over');
+    }
+
+    /**
      * Leader side: places an agent another node asked for, having been unable to address it.
      *
      * The receiving end of {@see requirePlacement()}. Ignored on a node that does not lead: the
@@ -1110,7 +1147,7 @@ final class ClusterPlacement implements WorkerPlacement
         if ($this->selfFenceDeadline !== null) {
             Logger::info('Self-fence called off: this node leads now');
             $this->selfFenceDeadline = null;
-            $this->selfFenceOnQuorum = false;
+            $this->selfFenceCause = null;
         }
         $this->placingLeaderId = null;
         $this->registry->clear();
@@ -1165,9 +1202,14 @@ final class ClusterPlacement implements WorkerPlacement
      * placement-ask waiters and the rebuild with what it held drop with the view; the next leader
      * re-derives them from its own rebuilt placements. When each node went away is kept: it is
      * what this node needs should it win the next term.
+     *
+     * A node that led tells every linked node it leads no more, so a node that answered to it - a
+     * slave cut off with it from the majority knows nothing of a quorum - fences its placed work
+     * instead of running it beside the copy the majority's leader starts (HIL-1287).
      */
     public function onLostLeadership(): void
     {
+        $wasLeader = $this->isLeader;
         $this->isLeader = false;
         $this->registry->clear();
         $this->failoverDeadlines = [];
@@ -1180,6 +1222,10 @@ final class ClusterPlacement implements WorkerPlacement
         // Publishing is the leader's duty, so this node stops; what it published stays true
         // until the next leader publishes its own, which it does within a tick of winning.
         $this->publishedViewFingerprint = null;
+        if ($wasLeader) {
+            Logger::info('Placement release: this node no longer leads, telling every linked node');
+            $this->mesh->broadcastToNodes(new PeerPlacementReleaseDTO());
+        }
     }
 
     /**
@@ -1224,6 +1270,7 @@ final class ClusterPlacement implements WorkerPlacement
             && $this->hostsPlacedWork()
             && $this->selfFenceDeadline === null) {
             $this->selfFenceDeadline = $now + $this->slaveWorkGraceSec;
+            $this->selfFenceCause = "isolated from placing leader '{$nodeId}'";
             Logger::info("Self-fence armed: placing leader '{$nodeId}' went offline, {$this->placedCount()}"
                 . ' placed agent(s) stop in ' . sprintf('%.1f', $this->slaveWorkGraceSec) . 's unless it returns');
         }
@@ -1252,7 +1299,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->placingLeaderId = null;
-        $this->selfFenceOnQuorum = true;
+        $this->selfFenceCause = 'quorum lost';
         if ($this->selfFenceDeadline !== null) {
             return;
         }
@@ -1324,7 +1371,7 @@ final class ClusterPlacement implements WorkerPlacement
                 Logger::info("Self-fence disarmed: placing leader '{$nodeId}' is back before the grace elapsed");
             }
             $this->selfFenceDeadline = null;
-            $this->selfFenceOnQuorum = false;
+            $this->selfFenceCause = null;
         }
 
         if (!$this->isLeader) {
@@ -1365,7 +1412,7 @@ final class ClusterPlacement implements WorkerPlacement
             Logger::info("Self-fence called off: leader '{$leaderNodeId}' took over this node's placements"
                 . ($this->placingLeaderId === null ? '' : " from '{$this->placingLeaderId}'"));
             $this->selfFenceDeadline = null;
-            $this->selfFenceOnQuorum = false;
+            $this->selfFenceCause = null;
         }
 
         $this->placingLeaderId = $leaderNodeId;
@@ -1398,7 +1445,7 @@ final class ClusterPlacement implements WorkerPlacement
         if ($this->selfFenceDeadline !== null && $now >= $this->selfFenceDeadline) {
             $this->selfFenceDeadline = null;
             $this->selfFence();
-            $this->selfFenceOnQuorum = false;
+            $this->selfFenceCause = null;
         }
 
         $this->publishPlacementView();
@@ -1924,7 +1971,7 @@ final class ClusterPlacement implements WorkerPlacement
 
     /**
      * Node side: stops every agent this node hosts when isolated from the leader it answers to,
-     * or left without a quorum.
+     * left without a quorum, or told by the leader it answers to that it leads no more (HIL-1287).
      *
      * Prevents a double-run: an isolated node stops its (possibly truth-source) agents before
      * the leader's failover could start copies elsewhere, and a node in a minority before the
@@ -1944,13 +1991,7 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
 
-        if ($this->selfFenceOnQuorum) {
-            Logger::warning("Self-fence: quorum lost, stopping {$this->placedCount()} placed agent(s)");
-        } else {
-            Logger::warning(
-                "Self-fence: isolated from placing leader '{$this->placingLeaderId}', stopping {$this->placedCount()} placed agent(s)",
-            );
-        }
+        Logger::warning("Self-fence: {$this->selfFenceCause}, stopping {$this->placedCount()} placed agent(s)");
         foreach ($this->hosted as $record) {
             $this->executor->revokePlacement($record->agentType, $record->agentIndex);
         }

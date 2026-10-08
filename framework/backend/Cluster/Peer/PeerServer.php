@@ -1141,6 +1141,20 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Routes a received placement release to the placement coordinator, so a node that answered
+     * to the sender forgets it and fences its placed work.
+     *
+     * @param PeerLink $link Link the release arrived on
+     */
+    public function onPlacementReleaseReceived(PeerLink $link): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null) {
+            $this->placement?->onPlacementRelease($from, microtime(true));
+        }
+    }
+
+    /**
      * Routes a received placement request to the placement coordinator for the leader to place.
      *
      * @param PeerLink $link Link the request arrived on

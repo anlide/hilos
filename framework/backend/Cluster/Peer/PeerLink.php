@@ -26,6 +26,7 @@ use Hilos\Cluster\Peer\DTO\PeerPageAccessReassessDTO;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
@@ -442,6 +443,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerStopAgentDTO => $this->onStopAgent($frame),
             $frame instanceof PeerAgentStatusDTO => $this->onAgentStatus($frame),
             $frame instanceof PeerPlacementQueryDTO => $this->onPlacementQuery($frame),
+            $frame instanceof PeerPlacementReleaseDTO => $this->onPlacementRelease($frame),
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerPlacementViewDTO => $this->onPlacementView($frame),
             $frame instanceof PeerPlacementRequestDTO => $this->onPlacementRequest($frame),
@@ -740,6 +742,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('placement query');
         $this->server->onPlacementQueryReceived($this);
+    }
+
+    /**
+     * Hands a received placement release to the server so this node forgets a leader that stopped leading.
+     *
+     * @param PeerPlacementReleaseDTO $frame Incoming placement-release frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onPlacementRelease(PeerPlacementReleaseDTO $frame): void
+    {
+        $this->requireHandshaked('placement release');
+        $this->server->onPlacementReleaseReceived($this);
     }
 
     /**

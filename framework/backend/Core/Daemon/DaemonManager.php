@@ -7157,7 +7157,10 @@ abstract class DaemonManager extends BaseManager implements
      * relinquishes the singleton duties this node held as leader: it stops the
      * cluster-singleton agents and resets the ensure-once so a later promotion re-runs
      * the start (the mirror of {@see WorkerServer::onBecameSingletonHost()}), and drops the
-     * leader-side placement view (the next leader rebuilds it from the mesh). Only the agents
+     * leader-side placement view (the next leader rebuilds it from the mesh). The placement layer
+     * then tells every linked node that this node leads no more, and a node that answered to it
+     * fences its placed work unless a leader takes it over (HIL-1287) - so a project override that
+     * skips parent::onLostLeadership() leaves the slaves of this node running. Only the agents
      * declared {@see AgentScope::CLUSTER} with {@see AgentPlacement::LEADER} are stopped: a
      * policy-placed one lives on the node the policy picked and outlives the term, and a
      * replica was never tied to it. A project

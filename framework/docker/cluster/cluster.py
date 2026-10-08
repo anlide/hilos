@@ -29,6 +29,8 @@ directory; a demo calls this from its composer scripts)
   container-log <node> print a node's container log so far (docker logs, no follow)
   partition <node>     disconnect a node from the cluster network
   heal <node>          reconnect a node to the cluster network (static IP)
+  cut <node>...        cut nodes off the rest of the stand together, their links kept (HIL-1287)
+  mend <node>...       lift a cut
   logs <node>          follow a node's container logs
   stranger up|down     start / remove the stand's stranger, a node certified by an authority
                        the cluster does not trust (HIL-1034, scenario 17)
@@ -69,7 +71,8 @@ REFUSED = 2
 COMMANDS = ("up", "down", "restart", "status", "inspect", "inspect-local", "client",
             "entry-upgrade", "entry-welcome", "direct-upgrade", "entry-hold",
             "kill", "start", "recreate", "crash-daemon", "kill-worker", "container-id", "container-log",
-            "partition", "heal", "logs", "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",
+            "partition", "heal", "cut", "mend", "logs",
+            "stranger", "own-directory", "own-env", "db-sql", "db-log", "db-kill", "db-start",
             "db-proxy", "scenarios", "e2e")
 
 

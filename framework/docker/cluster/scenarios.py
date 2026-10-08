@@ -85,6 +85,8 @@ Plus scenarios beyond that matrix:
                                neighbours' is refused on both ends (HIL-1274)
  35 rt row deleted while cut    a cut-off neighbour sweeps rows deleted by each set owner on the
     off is swept               hand-over and keeps rows written just after it (HIL-1178)
+ 36 slave cut off with its     a slave cut off together with its leader fences its work once that
+    leader stops its work      leader stops leading, before the majority starts any of it (HIL-1287)
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
 
@@ -2701,6 +2703,16 @@ def scenario_34_a_tab_is_the_same_on_every_master():
 # framework/backend/Utils/Helpers/TimeHelper.php).
 QUORUM_FENCE_ARMED = re.compile(r"Self-fence armed: quorum lost, (\d+) placed agent\(s\)")
 QUORUM_FENCE_FIRED = re.compile(r"^\[([^\]]+)\].*Self-fence: quorum lost, stopping (\d+) placed agent\(s\)", re.M)
+# What a node writes when the leader it answers to tells it that it leads no more, and when that
+# fence fires (ClusterPlacement::onPlacementRelease() and selfFence()); what it writes when it arms
+# its fence because that leader went offline instead (ClusterPlacement::noteNodeOffline()); and
+# what a leader writes when it loses its quorum (ClusterCoordinator::tickLeader(),
+# framework/backend/Cluster/Consensus/ClusterCoordinator.php) - HIL-1287.
+RELEASE_FENCE_ARMED = re.compile(r"Self-fence armed: placing leader '([^']+)' stopped leading, (\d+) placed agent\(s\)")
+RELEASE_FENCE_FIRED = re.compile(
+    r"^\[([^\]]+)\].*Self-fence: placing leader '([^']+)' stopped leading, stopping (\d+) placed agent\(s\)", re.M)
+ISOLATION_FENCE_ARMED = re.compile(r"Self-fence armed: placing leader '([^']+)' went offline")
+LEADERSHIP_LOST_ON_QUORUM = re.compile(r"^\[([^\]]+)\].*Consensus: lost leadership held in term \d+: quorum lost", re.M)
 CONSENSUS_WON_TERM = re.compile(r"^\[([^\]]+)\].*Consensus: won term \d+ with ", re.M)
 LOG_LINE_TIME = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -2921,6 +2933,126 @@ def scenario_24_cut_off_leader_stops_its_work():
                 f"before the first came up on {', '.join(sorted(hosts))}; {new_leader} leads the rest")
     finally:
         ctl("recreate", cut_off)
+        wait_converge(ALL_NODES)
+
+
+def scenario_36_slave_cut_off_with_its_leader_stops_its_work():
+    """A slave cut off together with its leader stops its work once that leader stops leading (HIL-1287).
+
+    A slave knows nothing of a quorum, and its leader stays online to it while the two are cut off
+    from the majority together, so nothing but the leader can tell it that the work it placed is no
+    longer led. The leader and the slave carrying the most fleet members are cut off as an island
+    that keeps the link between them (`cut`); the leader, left without a quorum, stops leading and
+    tells the slave so, and the slave fences the members it carries. The majority elects a leader
+    that places those members elsewhere only after its rebuild waits for the slave (HIL-1217).
+
+    Asserted on the logs, read from the host: the slave fired a fence naming its leader's release
+    for at least its fleet members and armed it for as many; it never armed the fence for a leader
+    gone offline - then the island did not hold, and the scenario proves nothing; the leader lost
+    its leadership to a lost quorum; the majority placed none of those members before the fence
+    fired, and each came up on its new host only after it - an earlier start is two copies running
+    at once. The island is mended and both of its nodes recreated, as in scenario 8.
+    """
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the cut")
+    leader = leaders(views)[0]
+    carrying = {slave: hosted_by(views, slave) for slave in SLAVES}
+    slave = max(sorted(carrying), key=lambda node: len(carrying[node]))
+    members = carrying[slave]
+    if not members:
+        raise ScenarioPreconditionLost(f"no slave carries a fleet member under {leader}: the fleet is placed "
+                                       "elsewhere, and there is no slave to cut off with it")
+    majority = [n for n in MASTERS if n != leader]
+    asked = majority + [n for n in SLAVES if n != slave]
+    marks = {n: node_log_mark(n) for n in ALL_NODES}
+    print(f"    cutting {leader} off with {slave}, which carries {len(members)} fleet member(s): {sorted(members)}")
+    try:
+        out = ctl_out("cut", leader, slave)
+        assert out.startswith("cluster: cut"), f"the cut of {leader} and {slave} did not report success: {out!r}"
+
+        def majority_leads(v):
+            ls = [n for n in majority if is_leader(v.get(n))]
+            return len(ls) == 1 and v[ls[0]].get("hasQuorum") is True
+        views = wait_until(majority_leads, ELECTION_TIMEOUT, "the majority elects a leader with quorum", nodes=asked)
+        new_leader = next(n for n in majority if is_leader(views.get(n)))
+
+        def fence_fired(_views):
+            return any(said == leader for _stamp, said, _count
+                       in RELEASE_FENCE_FIRED.findall(node_log_since(slave, marks[slave])))
+
+        try:
+            wait_until(fence_fired, CONVERGE_TIMEOUT, f"{slave} fences its work", nodes=asked)
+            fired = True
+        except ScenarioTimeout:
+            fired = False
+        tail = node_log_since(slave, marks[slave])
+        assert not any(said == leader for said in ISOLATION_FENCE_ARMED.findall(tail)), (
+            f"{slave} lost its link to {leader} while the two were cut off together: the island did not hold, "
+            f"and the scenario proves nothing (read {node_log_path(slave)})")
+        assert fired, (f"{slave} carried {len(members)} fleet member(s) for {leader} and was cut off with it, yet "
+                       f"never fenced them: no \"Self-fence: placing leader '{leader}' stopped leading\" line in "
+                       f"{node_log_path(slave)}")
+        lost = LEADERSHIP_LOST_ON_QUORUM.findall(node_log_since(leader, marks[leader]))
+        assert lost, (f"{leader} was cut off with {slave} and never lost its leadership to a lost quorum "
+                      f"(read {node_log_path(leader)})")
+        armed = [int(count) for said, count in RELEASE_FENCE_ARMED.findall(tail) if said == leader]
+        fired_stamp, fired_count = next((stamp, int(count)) for stamp, said, count
+                                        in RELEASE_FENCE_FIRED.findall(tail) if said == leader)
+        assert armed, f"{slave} fired a release fence it never armed (read {node_log_path(slave)})"
+        for count, said in ((armed[0], "armed"), (fired_count, "fired")):
+            assert count >= len(members), (f"{slave} {said} its release fence for {count} placed agent(s), "
+                                           f"fewer than its {len(members)} fleet members")
+        fired_at = log_time(fired_stamp)
+        lost_at = log_time(lost[0])
+
+        def fleet_moved_off(v):
+            rows = worker_placements(v)
+            return fleet_started(v) and all(rows[member].get("nodeId") != slave for member in members)
+
+        views = wait_until(fleet_moved_off, CONVERGE_TIMEOUT,
+                           f"the whole fleet started under {new_leader}, none of it on {slave}", nodes=asked)
+        rows = worker_placements(views)
+        # A member placed at all before the slave's fence fired is the rebuild not waiting for it: the
+        # slave still ran its copy then.
+        for member in sorted(members):
+            for node in majority:
+                early = [(at, target) for at, target in placed_on_node_at(node_log_since(node, marks[node]), member)
+                         if at <= fired_at]
+                assert not early, (f"{node} placed {member} on {early[0][1]} at {early[0][0]} while {slave} "
+                                   f"stopped its copy only at {fired_at}: the rebuild did not wait for {slave}")
+
+        def started_since_cut():
+            hosts_of = {member: rows[member]["nodeId"] for member in members}
+            return {member: started_on_worker_at(node_log_since(host, marks[host]), member)
+                    for member, host in hosts_of.items()}
+
+        # The leader writes a member started as soon as its host takes the placement, and the host
+        # logs the start a moment later, once its worker reports the agent up: wait for those lines.
+        try:
+            wait_until(lambda _views: all(started_since_cut().values()), CONVERGE_TIMEOUT,
+                       "every moved member's start in its new host's log", nodes=asked)
+        except ScenarioTimeout:
+            pass
+        started = started_since_cut()
+        first_up = None
+        hosts = set()
+        for member in sorted(members):
+            host = rows[member]["nodeId"]
+            hosts.add(host)
+            starts = started[member]
+            assert starts, (f"{member} runs on {host} by the leader's table, but {host}'s log has not "
+                            "started it since the cut")
+            assert starts[0] > fired_at, (f"{member} came up on {host} at {starts[0]} while {slave} stopped its "
+                                          f"copy only at {fired_at}: two copies ran at once")
+            first_up = starts[0] if first_up is None else min(first_up, starts[0])
+        stopped_after = (fired_at - lost_at).total_seconds()
+        gap = (first_up - fired_at).total_seconds()
+        return (f"{slave} was cut off with {leader} carrying {len(members)} fleet member(s): {leader} stopped "
+                f"leading and {slave} stopped them {stopped_after:.1f}s later, {gap:.1f}s before the first came up "
+                f"on {', '.join(sorted(hosts))}; {new_leader} leads the rest")
+    finally:
+        ctl("mend", leader, slave)
+        ctl("recreate", leader)
+        ctl("recreate", slave)
         wait_converge(ALL_NODES)
 
 
@@ -3368,6 +3500,10 @@ SCENARIOS = [
     Scenario("6 hot-join", scenario_6_hot_join, Need(slaves=2)),
     Scenario("7 quorum-loss", scenario_7_quorum_loss, Need(masters=3, slaves=2)),
     Scenario("8 split-brain prevention", scenario_8_split_brain, Need(masters=3, slaves=2)),
+    # Beside 8: both cut the network and recreate whom they cut; it needs the fleet placed, not as
+    # the first placement laid it.
+    Scenario("36 slave cut off with its leader stops its work",
+             scenario_36_slave_cut_off_with_its_leader_stops_its_work, Need(masters=3, slaves=2, slave_ram=True)),
     Scenario("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal, Need(slaves=2)),
     Scenario("10 cross-node browser", scenario_10_cross_node_browser, Need(masters=2, slaves=1)),
     Scenario("11 cross-node db fact", scenario_11_cross_node_db_fact, Need(masters=2)),

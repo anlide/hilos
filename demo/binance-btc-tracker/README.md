@@ -177,8 +177,9 @@ refused, 20 rt set width across nodes (parked, P-456), 23 verifier circle on
 every master, 25 freeze settles on every master (parked, P-456), 29 a node with
 its own cluster directory refused on both ends, and 30 a ready export copy
 outliving the node its agent lived on, 33 every master takes browsers, 34 a
-tab is the same on every master under protected mode, and 35 rt row deleted while
-cut off is swept (`docs/agents/testing.md`,
+tab is the same on every master under protected mode, 35 rt row deleted while
+cut off is swept, and 36 a slave cut off with its leader stops its work
+(`docs/agents/testing.md`,
 "The cluster stands — three demos, three shapes"). The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
@@ -209,7 +210,7 @@ The stand remains up after this command, as it does after `test:cluster:scenario
 Every browser run starts with empty node log directories, rotation archives
 included; copy the previous run's logs before starting the next one.
 
-The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`,
+The harness's other commands — `kill`, `partition`, `cut`, `crash-daemon`, `inspect`,
 `stranger up`, `own-directory s1 on` and the rest — are called on the module
 directly, from `demo/binance-btc-tracker`:
 

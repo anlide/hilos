@@ -103,6 +103,32 @@ final class ClusterPlacementLocateTest extends TestCase
     }
 
     /**
+     * A slave released by its leader forgets it: that leader leads no more and holds no
+     * leader-hosted agent, and the slave knows no other until a new leader takes it over (HIL-1287).
+     */
+    public function testASlaveReleasedByItsLeaderNoLongerRoutesToIt(): void
+    {
+        $placement = $this->follower(leaderId: null);
+        Hilos::$cluster?->registerLeadership(new PendingLeadership());
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+
+        $placement->onPlacementRelease('node-b', 1000.0);
+
+        $this->assertSame(AgentLocationKind::Unknown, $placement->locate('chat', null)->kind);
+    }
+
+    public function testAReleaseFromAnotherNodeKeepsTheRoute(): void
+    {
+        $placement = $this->follower(leaderId: null);
+        Hilos::$cluster?->registerLeadership(new PendingLeadership());
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+
+        $placement->onPlacementRelease('node-c', 1000.0);
+
+        $this->assertSame('node-b', $placement->locate('chat', null)->nodeId);
+    }
+
+    /**
      * A cluster between terms knows no leader, so it cannot name the node hosting a leader-hosted
      * agent. That is the answer to give: delivering locally would hand the signal to workers that
      * are not running it, and the node cannot know it is not the leader-to-be either.

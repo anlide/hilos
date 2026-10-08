@@ -894,8 +894,20 @@ survivors keep working under the new leader.
   Before this, a leader cut off with placed work kept it running, and the majority ran a
   second copy — the one double-run the slave self-fence below did not cover, because a
   leader answers to nobody. Scenario 24 on the online-testing stand proves both halves on
-  the logs. A slave knows nothing of a quorum and is unchanged: a slave left in a minority
-  together with a former leader still runs its work (P-461).
+  the logs. A slave knows nothing of a quorum; it is told by its leader (*Released by its
+  leader* below).
+- **Released by its leader (HIL-1287).** A node that stops leading — quorum lost, a newer
+  term seen, a second leader in its own term; all three reach
+  `ClusterPlacement::onLostLeadership()` — sends `peer_placement_release` to every linked
+  node. A node that answered to it forgets it and, hosting placed work, arms the self-fence
+  (`Self-fence armed: placing leader '<L>' stopped leading, …` then `Self-fence: placing
+  leader '<L>' stopped leading, stopping N placed agent(s)`); a leader that takes the
+  placements over, or the node winning a term, calls it off, and that leader's return does
+  not. A release from a node it does not answer to changes nothing. The frame is lost only
+  with its link, and a lost link to the leader arms the isolation fence anyway. Scenario 36
+  on the binance-btc-tracker stand cuts the leader off together with a slave carrying fleet
+  members (the harness levers `cut`/`mend`) and proves on the logs that the slave stops them
+  before the majority starts any. Peer protocol 18.
 - **Resume.** No new hook — the project resurrects through the existing
   `onQuorumGained()` / `onBecameSingletonHost()` (leader) and the slave work-grant.
 - **Graceful-leave.** A planned stop broadcasts a `PeerNodeLeavingDTO` on the peer mesh
@@ -909,7 +921,8 @@ survivors keep working under the new leader.
 - **Slave grace.** On a leader change a slave keeps working (if it was) until a bounded
   grace deadline (`CLUSTER_SLAVE_WORK_GRACE_MS`) while it awaits the new leader's
   work-decision, so an isolated slave does not run forever. Now consumed by the self-fence
-  below (HIL-183). The new leader's `peer_placement_query` is that decision (HIL-440): a
+  below (HIL-183), or when its leader tells it that it stopped leading (HIL-1287). The new
+  leader's `peer_placement_query` is that decision (HIL-440): a
   slave answers to whichever leader placed its work or rebuilt its picture from it, so after
   a re-election it answers to the new one, and a fence it had armed against the old one is
   called off (`Self-fence called off: leader '<new>' took over this node's placements from
@@ -973,7 +986,8 @@ alone, so a fleet of equal free agents does not pile onto one node.
 - **Self-fence (no double-run).** A node that does not lead — a slave, or a master carrying
   placed work — that loses the link to the leader it answers to — the one that placed its
   work, or the one that took it over with a `peer_placement_query` after a re-election
-  (HIL-440) — stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects via the
+  (HIL-440) — or is told by that leader that it leads no more (*Released by its leader*
+  above), stops those agents after `CLUSTER_SLAVE_WORK_GRACE_MS`, then reconnects via the
   existing peer dial; a master that loses its quorum fences the same way whatever it answered
   to (*Placed work in a minority* above). The self-fence
   grace is held **at or below** the failover

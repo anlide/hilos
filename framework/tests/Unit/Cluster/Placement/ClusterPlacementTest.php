@@ -10,6 +10,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
@@ -824,6 +825,202 @@ final class ClusterPlacementTest extends TestCase
         $report = $mesh->broadcast[array_key_last($mesh->broadcast)] ?? null;
         $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
         $this->assertSame([], $report->agents, 'The fenced node runs nothing, and says so');
+    }
+
+    /**
+     * A leader that stops leading says so to every linked node: a slave cut off with it from the
+     * majority knows nothing of a quorum, and would otherwise run its work beside the copy the
+     * majority's leader starts (HIL-1287).
+     */
+    public function testALeaderThatStopsLeadingReleasesEveryLinkedNode(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['slave']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader(1000.0);
+
+        $placement->onLostLeadership();
+
+        $this->assertInstanceOf(PeerPlacementReleaseDTO::class, $mesh->broadcast[array_key_last($mesh->broadcast)] ?? null);
+        $this->assertStringContainsString(
+            'Placement release: this node no longer leads, telling every linked node',
+            (string)file_get_contents($logFile),
+        );
+        unlink($logFile);
+    }
+
+    public function testANodeThatDidNotLeadReleasesNobody(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $placement = new ClusterPlacement('master', $mesh, new FakePlacementExecutor());
+
+        $placement->onLostLeadership();
+
+        $this->assertSame(
+            [],
+            array_filter($mesh->broadcast, static fn(PeerDTO $frame): bool => $frame instanceof PeerPlacementReleaseDTO),
+            'Only a node that led has anything to release',
+        );
+    }
+
+    public function testASlaveReleasedByItsLeaderFencesItsWork(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->tick(1000.4);
+        $this->assertSame([], $executor->revoked, 'The slave keeps working through the grace window');
+
+        $placement->tick(1000.6);
+        $this->assertSame([['render', '9']], $executor->revoked, 'The released slave stops its placed agents past the grace');
+        $this->assertStringContainsString(
+            "Self-fence: placing leader 'leader' stopped leading, stopping 1 placed agent(s)",
+            (string)file_get_contents($logFile),
+        );
+        $this->assertSame(
+            ["Self-fence armed: placing leader 'leader' stopped leading, 1 placed agent(s) stop in 0.5s unless a leader takes them over"],
+            $this->selfFenceLines($logFile),
+        );
+    }
+
+    public function testAReleaseFromALeaderTheNodeDoesNotAnswerToChangesNothing(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader', 'leader-b']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader-b', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->tick(1000.6);
+        $this->assertSame([], $executor->revoked, 'A node this one does not answer to releases nothing here');
+
+        $placement->noteNodeOffline('leader-b', 1001.0);
+        $placement->tick(1001.6);
+        $this->assertSame([['render', '9']], $executor->revoked, 'The leader it answers to is still the fence target');
+        $this->assertSame(
+            ["Self-fence armed: placing leader 'leader-b' went offline, 1 placed agent(s) stop in 0.5s unless it returns"],
+            $this->selfFenceLines($logFile),
+        );
+    }
+
+    public function testANewLeaderTakingOverCallsOffTheReleaseFence(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader', 'leader-b']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->onPlacementQuery('leader-b');
+        $placement->tick(1000.6);
+
+        $this->assertSame([], $executor->revoked, 'A leader that took the placements over holds the work again');
+        $this->assertSame([
+            "Self-fence armed: placing leader 'leader' stopped leading, 1 placed agent(s) stop in 0.5s unless a leader takes them over",
+            "Self-fence called off: leader 'leader-b' took over this node's placements",
+        ], $this->selfFenceLines($logFile));
+    }
+
+    public function testTheReleasingLeaderWinningAgainCallsOffItsFence(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->onPlacementQuery('leader');
+        $placement->tick(1000.6);
+
+        $this->assertSame([], $executor->revoked, 'The former leader leading again takes the placements back');
+        $this->assertSame([
+            "Self-fence armed: placing leader 'leader' stopped leading, 1 placed agent(s) stop in 0.5s unless a leader takes them over",
+            "Self-fence called off: leader 'leader' took over this node's placements",
+        ], $this->selfFenceLines($logFile));
+    }
+
+    /**
+     * The link to a released node's former leader coming back says nothing: that leader leads no
+     * more, and it was forgotten with the release.
+     */
+    public function testTheReleasingLeadersReturnCallsNothingOff(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->noteNodeOffline('leader', 1000.1);
+        $placement->noteNodeOnline('leader', 1000.2);
+        $placement->tick(1000.6);
+
+        $this->assertSame([['render', '9']], $executor->revoked, 'The former leader coming back does not call the fence off');
+        $this->assertSame(
+            ["Self-fence armed: placing leader 'leader' stopped leading, 1 placed agent(s) stop in 0.5s unless a leader takes them over"],
+            $this->selfFenceLines($logFile),
+        );
+    }
+
+    public function testAReleasedNodeHostingNothingArmsNothing(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(), null, slaveWorkGraceMs: 500);
+        $placement->onPlacementQuery('leader');
+        $mesh->sent = [];
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->tick(1000.6);
+
+        $this->assertSame([], $this->selfFenceLines($logFile), 'A node with nothing placed has nothing to fence');
+        $this->assertSame([], $mesh->sent);
+    }
+
+    /**
+     * A master in a minority has fenced on its lost quorum already and forgotten its leader, so the
+     * release that leader sends next moves neither the deadline nor what the firing line names.
+     */
+    public function testAReleaseKeepsTheQuorumFenceItsDeadlineAndCause(): void
+    {
+        $logFile = $this->captureLog();
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('master', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+
+        $placement->noteQuorumLost(1000.0);
+        $placement->onPlacementRelease('leader', 1000.3);
+        $placement->tick(1000.6);
+
+        $this->assertSame([['render', '9']], $executor->revoked, 'The quorum fence fires on its own deadline');
+        $this->assertStringContainsString('Self-fence: quorum lost, stopping 1 placed agent(s)', (string)file_get_contents($logFile));
+        $this->assertSame(
+            ['Self-fence armed: quorum lost, 1 placed agent(s) stop in 0.5s unless a leader takes them over'],
+            $this->selfFenceLines($logFile),
+        );
+    }
+
+    public function testADeferredPlacementIsFencedOnRelease(): void
+    {
+        $mesh = new FakePlacementMesh([], linked: ['leader']);
+        $executor = new FakePlacementExecutor();
+        $executor->waitsForWorker = true;
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+
+        $placement->onPlacementRelease('leader', 1000.0);
+        $placement->tick(1000.6);
+
+        $this->assertSame([['render', null]], $executor->revoked, 'A placement still waiting for a worker is fenced too');
     }
 
     /**

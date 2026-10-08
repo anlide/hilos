@@ -10,6 +10,7 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
@@ -170,6 +171,15 @@ final class PeerPlacementDTOTest extends TestCase
         $parsed = PeerDTO::fromWire(new PeerPlacementQueryDTO()->toJson());
 
         $this->assertInstanceOf(PeerPlacementQueryDTO::class, $parsed);
+    }
+
+    /** The release carries nothing but its type: the link it arrives on names the sender (HIL-1287). */
+    public function testPlacementReleaseRoundTrips(): void
+    {
+        $parsed = PeerDTO::fromWire(new PeerPlacementReleaseDTO()->toJson());
+
+        $this->assertInstanceOf(PeerPlacementReleaseDTO::class, $parsed);
+        $this->assertSame([PeerDTO::TYPE], array_keys($parsed->toArray()));
     }
 
     /**

@@ -19,11 +19,12 @@ namespace Hilos\Cluster\Peer;
  * A command reply answered on another node returns to the asking node as of HIL-1232.
  * HIL-1286 adds ready/ack before routing and a drain marker on a replaced link.
  * A change of person behind a connection drops its group memberships on every node as of HIL-1284.
+ * A leader that stops leading releases the nodes that answered to it as of HIL-1287.
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 17;
+    public const int VERSION = 18;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

@@ -1,9 +1,11 @@
 """
 control.py - the host-side controller of a cluster stand (HIL-185), for any stand the harness
-reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus the four fault
+reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus the five fault
 switches the scenarios need - `docker kill -9` (node-down / failover), `docker network
-disconnect` (partition / split-brain), and a SIGKILL of the daemon or one worker inside a live
-container (crash recovery / partial failure) - and one lever on the stand's database, `db-sql`
+disconnect` (partition / split-brain), a SIGKILL of the daemon or one worker inside a live
+container (crash recovery / partial failure), and a blackhole route between an island of nodes
+and the rest of the stand (a partition that keeps the island linked within itself, scenario 36,
+HIL-1287) - and one lever on the stand's database, `db-sql`
 (a node reading another database marker, HIL-1206; each member of a clustered database asked,
 HIL-1230). It also recreates a node with an empty copy of the stand's cluster directory of its
 own: the directory guard refuses it (HIL-1242/HIL-1243). Assertions live in the scenario
@@ -33,6 +35,9 @@ Outcome = namedtuple("Outcome", "code out err")
 
 # Where the application sits inside a node's container and the cli container.
 CLI_ENTRY = ["php", "backend/Bootstrap/cli.php"]
+# The helper that steps into a node's network namespace to lay or lift a blackhole route - busybox
+# `ip` does it, and the node images carry no ip tool (HIL-1287).
+NETNS_IMAGE = "alpine:3.24.2"
 
 
 def _run(args, merge_stderr=False, input_text=None):
@@ -561,6 +566,66 @@ def heal(stand, node_id):
                  f"cluster: reconnected {node.container}")
 
 
+def _blackhole(node, verb, ips):
+    """Lay (`add`) or lift (`del`) a blackhole route to each address in one node's network
+    namespace, from a throwaway container that shares it. A route to lift that is not there is no
+    error: a node recreated meanwhile has none left."""
+    if verb == "add":
+        script = " && ".join(f"ip route add blackhole {ip}/32" for ip in ips)
+    else:
+        script = "; ".join(f"ip route del blackhole {ip}/32 2>/dev/null" for ip in ips) + "; true"
+    return _run(["docker", "run", "--rm", "--network", f"container:{node.container}", "--cap-add", "NET_ADMIN",
+                 NETNS_IMAGE, "sh", "-c", script])
+
+
+def _island(stand, node_ids, command):
+    """The nodes named as an island and the members of the stand left outside it.
+
+    Refused when the island names no node or leaves none outside it."""
+    island = [stand.member(node_id) for node_id in node_ids]
+    rest = [node for node_id, node in stand.members.items() if node_id not in node_ids]
+    if not island or not rest:
+        raise StandRefused(f"usage: cluster {command} <node>... — the island must leave some node outside it")
+    return island, rest
+
+
+def _route_island(island, rest, verb, failed):
+    """Lay or lift the blackhole routes on both sides of an island: in each node of the island to
+    every node of the rest, and in each node of the rest back to the island. Every node is visited
+    even after one refuses, so that lifting leaves no route behind; the first refusal answers."""
+    sides = [*((node, rest) for node in island), *((node, island) for node in rest)]
+    refused = None
+    for node, others in sides:
+        outcome = _blackhole(node, verb, [other.ip for other in others])
+        if outcome.code != 0 and refused is None:
+            refused = outcome._replace(out="", err=outcome.err + f"cluster: could not {failed} {node.container}\n")
+    return refused
+
+
+def cut(stand, *node_ids):
+    """Cut an island of nodes off the rest of the stand together.
+
+    An island that keeps its links within itself, to the database and to the cli container - the
+    partition `partition` cannot make, since it takes a node off the network whole (HIL-1287). So
+    a node of the island is asked through the cli container as usual."""
+    island, rest = _island(stand, node_ids, "cut")
+    refused = _route_island(island, rest, "add", "cut")
+    if refused is not None:
+        return refused
+    return Outcome(0, f"cluster: cut {', '.join(node.id for node in island)} "
+                      f"off {', '.join(node.id for node in rest)}\n", "")
+
+
+def mend(stand, *node_ids):
+    """Lift a cut from both sides; a node recreated meanwhile has no route left to lift."""
+    island, rest = _island(stand, node_ids, "mend")
+    refused = _route_island(island, rest, "del", "mend")
+    if refused is not None:
+        return refused
+    return Outcome(0, f"cluster: mended {', '.join(node.id for node in island)} "
+                      f"with {', '.join(node.id for node in rest)}\n", "")
+
+
 def logs(stand, node_id):
     """Follow a node's container logs."""
     return compose(stand, "logs", "-f", stand.member(node_id).service, capture=False)
@@ -734,6 +799,8 @@ NODE_COMMANDS = {
     "container-log": container_log,
     "partition": partition,
     "heal": heal,
+    "cut": cut,
+    "mend": mend,
     "entry-upgrade": entry_upgrade,
     "entry-welcome": entry_welcome,
     "direct-upgrade": direct_upgrade,
@@ -781,6 +848,8 @@ def execute(stand, command, *args):
         if len(args) != 2:
             raise StandRefused("usage: cluster entry-hold <master> {up|down}")
         return entry_hold(stand, *args)
+    if command in ("cut", "mend"):
+        return NODE_COMMANDS[command](stand, *args)
     if not args:
         raise StandRefused(f"unknown node '' (expected one of: {' '.join(stand.members)})")
     return NODE_COMMANDS[command](stand, *args)
