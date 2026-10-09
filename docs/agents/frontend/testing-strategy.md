@@ -262,8 +262,9 @@ belongs beside its emulator.
 Why the moves: on 2026-10-03 (run 0786, nova-de, seven lanes), chat's chain —
 `chat-php`, `chat-e2e` and `chat-check` on one stand — took 18m48s of the full
 run's 19m14s. `chat-e2e` alone carried 211 tests and took 891 seconds. After
-HIL-1324 and HIL-1325, the chain is expected at about 11 minutes, level with
-the framework suite.
+HIL-1324 and HIL-1325 moved their specs (run 0995, nova-de, 2026-10-09),
+`chat-e2e` carried 129 tests and took 572 seconds, and the chain about 11m54s
+(`chat-php` 117 s, `chat-e2e` 572 s, `chat-check` 25 s).
 
 ## Backend state — full reset per test
 
