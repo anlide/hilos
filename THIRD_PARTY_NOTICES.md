@@ -10,8 +10,7 @@ Copyright © 1991–2026 Unicode, Inc. Used under the
 [Unicode License v3](https://www.unicode.org/license.txt).
 
 The languages, country currency symbols, locales, country default locales and
-country names in that catalog are ported from the local hleb source,
-`/home/cloud/hleb/main/Service/Constant/Languages.php`.
+country names in that catalog are ported from the hleb catalog.
 
 ## Common passwords
 
