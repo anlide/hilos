@@ -144,7 +144,6 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -2561,13 +2560,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     $rename,
                     ActionRefusal::said(AbstractUserAgent::renameRefusalWords($rename->userId, $e)),
                 ),
-            );
-
-            return;
-        } catch (InvalidFormatException) {
-            $this->sendToAgent(
-                $rename->replySignal,
-                HandoverAnswerSignalData::to($rename, ActionRefusal::said("User #{$rename->userId} not found")),
             );
 
             return;
