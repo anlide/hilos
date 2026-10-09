@@ -49,14 +49,14 @@ The core exposes `hilosThemePick: ReadonlySignal<ThemePick>`,
 `hilosThemeChoice: ReadonlySignal<ThemeChoice | null>`;
 `setHilosThemePick(pick)` changes the current tab and remembers the pick.
 `resolveThemeChoice` and `THEME_POSITIONS` are what the header and the profile
-row read: the position, its icon and its label, or no control when switching
-is off. `ThemePick` is `light | dark | system | null`;
-`ThemeMode` is `light | dark`. The header and the profile mark
-the **position**; a person who never picked sees the default's position marked
-as the default, which the worn theme alone cannot tell. `HilosProfileRootStore.theme`
-reads `hilosThemeChoice` to supply the profile row line. The Vue header and the
-Vue profile row do this (HIL-1433, HIL-1434). The React and Angular headers and
-profile rows are not in the code yet — HIL-1440, HIL-1441.
+row read: the position, its icon and its label, or no control when switching is
+off. `ThemePick` is `light | dark | system | null`; `ThemeMode` is
+`light | dark`. The header and the profile mark the **position**; a person who
+never picked sees the default's position marked as the default, which the worn
+theme alone cannot tell. `HilosProfileRootStore.theme` reads `hilosThemeChoice`
+to supply the profile row line. The Vue header and the Vue profile row do this
+(HIL-1433, HIL-1434). The React and Angular headers and profile rows are not in
+the code yet — HIL-1440, HIL-1441.
 
 ## Who Sets It
 

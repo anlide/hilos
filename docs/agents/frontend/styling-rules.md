@@ -223,8 +223,8 @@ Bootstrap's stock ones, only the framework sets `data-bs-theme` (see Theming
 below), and a palette is later work, not a Sass-layer exception. The view layer
 imports Bootstrap's **compiled** stylesheet directly and loads a thin Sass layer
 (`hilos-styles.scss`) **after** it for the few documented declarations stock
-utilities cannot express. The layer
-is one file per view package — `framework/frontend/vue/src/hilos-styles.scss`,
+utilities cannot express. The layer is one file per view package —
+`framework/frontend/vue/src/hilos-styles.scss`,
 `framework/frontend/react/src/hilos-styles.scss`,
 `framework/frontend/angular/src/hilos-styles.scss` — and where it is allowed to
 live is guarded by `STYLE-SHEET-HOME`, whose `SANCTIONED_STYLE_SHEETS` in

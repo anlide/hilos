@@ -29,13 +29,13 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * The catalog is deliberately narrow: it carries what an activated feature requires, the
  * framework example keys, and the shared theme settings. Three features refuse to start without
  * their fragment - the logs section needs the rotation thresholds and the logging modes its
- * screens write, notification
- * delivery needs one block per registered channel and the delivery-journal keys, and the auth
- * throttle needs the grace it gives its agent's silence. The three
- * example keys are what the settings and toast specs write, so no spec has to invent a
+ * screens write, notification delivery needs one block per registered channel and the
+ * delivery-journal keys, and the auth throttle needs the grace it gives its agent's silence. The
+ * three example keys are what the settings and toast specs write, so no spec has to invent a
  * project-specific setting. The sign-in fragments are left out on purpose: no spec of this demo
  * reads one, and the step-up list and the deletion grace period answer their declared defaults
- * when the catalog carries no key for them ({@see StepUpSettings}, {@see AccountDeletionSettings}).
+ * when the catalog carries no key for them ({@see StepUpSettings},
+ * {@see AccountDeletionSettings}).
  *
  * @see SettingsCatalogConstants
  * @see LogsFeature The feature whose required fragment the log keys are

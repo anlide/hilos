@@ -20,10 +20,10 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * orphans.
  *
  * The catalog carries the three example keys, the shared theme settings and the grace of a
- * silent throttle agent, which the auth throttle feature requires. The settings and
- * toast specs write the example keys. The step-up list and the deletion
- * grace period answer their declared defaults when the catalog carries no key for them
- * ({@see StepUpSettings}, {@see AccountDeletionSettings}).
+ * silent throttle agent, which the auth throttle feature requires. The settings and toast
+ * specs write the example keys. The step-up list and the deletion grace period answer their
+ * declared defaults when the catalog carries no key for them ({@see StepUpSettings},
+ * {@see AccountDeletionSettings}).
  *
  * @see SettingsCatalogConstants
  */

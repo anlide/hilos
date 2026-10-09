@@ -16,10 +16,9 @@ use Hilos\Theme\ThemeSettingsCatalog;
  *
  * The three example keys are exercised by settings and notification e2e coverage. The catalog
  * also carries shared theme settings, the logs fragment needed to persist logging modes, and
- * the auth throttle fragment its feature requires.
- * Auth, OAuth and legal fragments are absent because those settings features are not activated
- * here; step-up and
- * account deletion use their framework defaults.
+ * the auth throttle fragment its feature requires. Auth, OAuth and legal fragments are absent
+ * because those settings features are not activated here; step-up and account deletion use
+ * their framework defaults.
  *
  * @see SettingsCatalogConstants
  * @see LogSettingsCatalog

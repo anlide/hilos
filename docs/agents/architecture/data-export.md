@@ -42,13 +42,14 @@ rechecks step-up. A blocked-card order also checks that the account remains
 blocked. Product-access restrictions are not consulted.
 
 The card's `dataExport` node arrives with `accountBlocked` in session state and
-the handshake. Its connections join `DataExportGroup` as the handshake response is
-sent (`AbstractAgent::sendHandshakeResponse()`), after a change of person has dropped
-every group of the connection (HIL-1284); transitions send the same node in
-`hilos_data_export_state`. An anonymous tab answered without the card leaves the
-membership, and a change of person removes it with every other group. The core store follows the initial node and group frames; the flow
-orders through the action lifecycle. `HilosDataExport` in each SDK consumes that
-store and flow. Their owner starts the store and disposes both when it is done.
+the handshake. Its connections join `DataExportGroup` as the handshake response
+is sent (`AbstractAgent::sendHandshakeResponse()`), after a change of person has
+dropped every group of the connection (HIL-1284); transitions send the same node
+in `hilos_data_export_state`. An anonymous tab answered without the card leaves
+the membership, and a change of person removes it with every other group. The
+core store follows the initial node and group frames; the flow orders through the
+action lifecycle. `HilosDataExport` in each SDK consumes that store and flow.
+Their owner starts the store and disposes both when it is done.
 
 ## The Profile Section
 

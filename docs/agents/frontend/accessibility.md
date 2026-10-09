@@ -17,9 +17,9 @@ small and stops it from regressing:
   components carry `:focus-visible` focus rings, a nuanced
   `prefers-reduced-motion` story (it *slows* spinners rather than freezing them),
   and stock colors AA-tuned in both the light and the dark mode (the
-  `-subtle`/`-emphasis` pairs and `text-bg-*`
-  use computed contrast). Because every view is built from stock Bootstrap
-  classes ([styling-rules.md](styling-rules.md)), these come for free.
+  `-subtle`/`-emphasis` pairs and `text-bg-*` use computed contrast). Because
+  every view is built from stock Bootstrap classes
+  ([styling-rules.md](styling-rules.md)), these come for free.
 - **Hilos owns structure and semantics.** Landmarks, headings, ARIA roles and
   names, the use-of-color text alternatives, focus management, and the live
   regions are the application's job — they are what the rest of this document

@@ -76,21 +76,20 @@ use Hilos\Theme\DTO\ThemeSettingsSignalData;
  * performs ({@see HandoverAskInterface}) - nothing here calls for the stamp.
  *
  * BESIDES ITS ANSWERS IT SENDS five installation-wide frames. The sign-in method set
- * (HIL-427) is one. An
- * administrator narrows the methods through one setting, and every open sign-in surface has
- * to rebuild itself when that setting moves - whichever door moved it: the sign-in methods
- * screen, the general settings table, a preset. This library is the only writer all three
- * pass through, so it is the one place a change of the set can be seen whole: it reads the
- * frame of the set before and after each write, and when the two differ it sends the new
- * frame to every connection ({@see HilosSignalConstants::HILOS_AUTH_METHODS}). The frame
- * carries the passkey policy as well ({@see PasskeyAddressPolicy}, HIL-1105), so a write that
- * moved only the policy is sent the same way. A screen could not do it - the general table
- * knows nothing of sign-in - and a subscriber to the settings collection would fire once per
- * worker instead of once per write. The second-factor policy (HIL-494), code delivery
- * availability (HIL-1102), the impersonation policy (HIL-1170) and theme settings
- * (HIL-1428) travel separately: they have
- * readers independent of the method set. Each is compared around the same write, whichever door
- * requested it.
+ * (HIL-427) is one. An administrator narrows the methods through one setting, and every open
+ * sign-in surface has to rebuild itself when that setting moves - whichever door moved it:
+ * the sign-in methods screen, the general settings table, a preset. This library is the only
+ * writer all three pass through, so it is the one place a change of the set can be seen
+ * whole: it reads the frame of the set before and after each write, and when the two differ
+ * it sends the new frame to every connection
+ * ({@see HilosSignalConstants::HILOS_AUTH_METHODS}). The frame carries the passkey policy as
+ * well ({@see PasskeyAddressPolicy}, HIL-1105), so a write that moved only the policy is sent
+ * the same way. A screen could not do it - the general table knows nothing of sign-in - and a
+ * subscriber to the settings collection would fire once per worker instead of once per write.
+ * The second-factor policy (HIL-494), code delivery availability (HIL-1102), the
+ * impersonation policy (HIL-1170) and theme settings (HIL-1428) travel separately: they have
+ * readers independent of the method set. Each is compared around the same write, whichever
+ * door requested it.
  *
  * WHY THE REPLY NAME RIDES IN THE ASK. There are three gatekeepers to this one scribe, and a
  * fixed pair of names would make it know each screen by name - the next screen that writes a
