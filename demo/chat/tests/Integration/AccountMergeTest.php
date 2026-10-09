@@ -19,15 +19,17 @@ use Demo\Chat\Pages\UserPage;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Database\Database;
@@ -48,6 +50,7 @@ use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -477,12 +480,31 @@ final class AccountMergeTest extends IntegrationTestCase
         $adminId = (int) $admin->id;
         $this->mergeOk($survivorId, $loserId);
 
-        try {
-            $this->usersLibrary()->renameUser($loserId, 'Somebody Else', $adminId);
-            $this->fail('Expected the rename of a merged account to be refused');
-        } catch (ValidationException $refusal) {
-            $this->assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $refusal->getMessage());
+        $this->drainSignals();
+        $this->usersLibrary()->onSignalAgent(
+            new AgentSignalData(data: new AdminRenameSignalData(
+                userId: $loserId,
+                name: 'Somebody Else',
+                replySignal: HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE,
+                acceptKey: 'merge-rename-ak',
+                requestId: null,
+                action: HilosSignalConstants::HILOS_USER_UPDATE,
+                successMessage: null,
+                adminUserId: $adminId,
+            )),
+            '',
+            HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
+        );
+        // The person's agent refuses the write and the library answers the card (HIL-1404).
+        $this->deliverPersonAgentFrames();
+        $answer = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $answer = $signal->data->data;
+            }
         }
+        $this->assertNotNull($answer, 'The card is answered');
+        $this->assertSame('Failed to update user: ' . AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $answer->error);
         $this->assertSame('Loser', Hilos::$db->users[$loserId]?->name);
 
         $token = RandomHelper::hex(16);

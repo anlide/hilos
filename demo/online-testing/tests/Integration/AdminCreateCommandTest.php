@@ -138,6 +138,8 @@ final class AdminCreateCommandTest extends IntegrationTestCase
             '',
             '',
         );
+        // A person who exists is flagged by their own agent, and the reply waits for its answer (HIL-1404).
+        $this->deliverPersonAgentFrames();
 
         return $this->consumeReply();
     }

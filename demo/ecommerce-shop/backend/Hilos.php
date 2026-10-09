@@ -245,21 +245,19 @@ final class Hilos extends HilosFacade
      * today, and startup refuses both a pair that is missing from this list and a row whose
      * owners no longer collide.
      *
-     * Three rows, all of them signing in: the people, their step-up proofs and the registration
-     * holds, each shared by the sessions and the users library. They stand the same way in every
-     * demo that switches the feature on; the rows the provider and the code agents add elsewhere
-     * do not arise here, because this demo runs neither. The rows are parted by their own leaves:
-     * users by HIL-1404, stepUps by HIL-1407, and registrationReservations by HIL-1411.
+     * Two rows, both of them signing in: the step-up proofs and the registration holds, each
+     * shared by the sessions and the users library. They stand the same way in every demo that
+     * switches the feature on; the rows the provider and the code agents add elsewhere do not
+     * arise here, because this demo runs neither. The people are no longer among them: an edit of
+     * one person is that person's agent's, and the libraries' shares of the row no longer collide
+     * (HIL-1404). The rows are parted by their own leaves: stepUps by HIL-1407, and
+     * registrationReservations by HIL-1411.
      * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
      */
     public const array SHARED_DB_OWNERS = [
         HilosDbContext::stepUps => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-1407',
-        ],
-        HilosDbContext::users => [
-            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-1404',
         ],
         HilosDbContext::registrationReservations => [
             SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],

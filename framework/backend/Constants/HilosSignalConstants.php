@@ -115,6 +115,14 @@ use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserRenameDoneSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 
 /**
  * Signal names used by framework-level Hilos admin pages.
@@ -421,6 +429,74 @@ final class HilosSignalConstants
      * ack its own surface has always listened for. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_USER_ADMIN_RENAME_DONE = 'hilos_user_admin_rename_done';
+
+    /**
+     * Users library → the person's agent: give this person that name (HIL-1404).
+     *
+     * The library judged who may rename and keeps what follows; the name and its journal row are
+     * written by the agent of the person, in one transaction. Carried by
+     * {@see UserRenameSignalData}, an ask of the handover form, so the write is stamped with
+     * whoever pressed the button.
+     */
+    public const string HILOS_USER_RENAME = 'hilos_user_rename';
+
+    /**
+     * The person's agent → users library: the name is written, or why not (HIL-1404).
+     *
+     * Carries the ask back untouched beside the journal row, so the library tells the person,
+     * runs the project's hook and answers whoever waits without remembering anything between the
+     * hops. Carried by {@see UserRenameDoneSignalData}.
+     */
+    public const string HILOS_USER_RENAME_DONE = 'hilos_user_rename_done';
+
+    /**
+     * Sessions library → the person's agent: write the admin flag the card asked for (HIL-1404).
+     *
+     * The library judged the request - the confirmation step, the own rights, the last
+     * administrator - and the agent writes it. Carried by {@see UserAdminWriteSignalData}, an ask
+     * of the handover form.
+     */
+    public const string HILOS_USER_ADMIN_WRITE = 'hilos_user_admin_write';
+
+    /**
+     * The person's agent → sessions library: the admin flag is written, or why not (HIL-1404).
+     *
+     * The library tells the person's open tabs and answers the card. Carried by
+     * {@see UserAdminWriteDoneSignalData}.
+     */
+    public const string HILOS_USER_ADMIN_WRITE_DONE = 'hilos_user_admin_write_done';
+
+    /**
+     * Sessions library → the person's agent: write the admin flag an operator's command asked for (HIL-1404).
+     *
+     * Apart from {@see self::HILOS_USER_ADMIN_WRITE} because a command has no connection to stamp
+     * the write with: it carries the command's correlation id instead. Carried by
+     * {@see UserAdminCommandSignalData}.
+     */
+    public const string HILOS_USER_ADMIN_COMMAND = 'hilos_user_admin_command';
+
+    /**
+     * The person's agent → sessions library: the command's admin flag is written, or why not (HIL-1404).
+     *
+     * The library binds the session or tells the tabs, then answers the parked command. Carried by
+     * {@see UserAdminCommandDoneSignalData}.
+     */
+    public const string HILOS_USER_ADMIN_COMMAND_DONE = 'hilos_user_admin_command_done';
+
+    /**
+     * Sessions library → the person's agent: write the block flag the card asked for (HIL-1404).
+     *
+     * Carried by {@see UserBlockWriteSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_BLOCK_WRITE = 'hilos_user_block_write';
+
+    /**
+     * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).
+     *
+     * The library ends the blocked person's sessions only now, because the pass that ends them
+     * reads the written flag. Carried by {@see UserBlockWriteDoneSignalData}.
+     */
+    public const string HILOS_USER_BLOCK_WRITE_DONE = 'hilos_user_block_write_done';
 
     // ── Hilos settings admin: table mutation actions (client → server) ──
     /** Client → server: add a setting override on the HILOS_SETTINGS page. */
@@ -1757,8 +1833,8 @@ final class HilosSignalConstants
     /**
      * Hilos user page → sessions library: set administrator rights (HIL-304).
      *
-     * The page keeps the ADMIN gate and defers the submit. The owning library judges the
-     * request and writes it. Carried by {@see AccountAdminSetSignalData}.
+     * The page keeps the ADMIN gate and defers the submit. The library judges the request, and
+     * the person's agent writes it (HIL-1404). Carried by {@see AccountAdminSetSignalData}.
      */
     public const string HILOS_ACCOUNT_ADMIN_SET = 'hilos_account_admin_set';
 
@@ -1773,8 +1849,8 @@ final class HilosSignalConstants
     /**
      * Hilos user page → sessions library: set account blocking (HIL-304).
      *
-     * The page keeps the ADMIN gate and defers the submit. The owning library judges the
-     * request and writes it. Carried by {@see AccountBlockSetSignalData}.
+     * The page keeps the ADMIN gate and defers the submit. The library judges the request, and
+     * the person's agent writes it (HIL-1404). Carried by {@see AccountBlockSetSignalData}.
      */
     public const string HILOS_ACCOUNT_BLOCK_SET = 'hilos_account_block_set';
 

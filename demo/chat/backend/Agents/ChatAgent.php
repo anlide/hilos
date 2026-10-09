@@ -55,7 +55,8 @@ final class ChatAgent extends AbstractAgent
      *
      * The session set is not among them, nor are the two runtime lists of the browsers parked on
      * a confirmation code: they belong to {@see SessionsLibraryAgent}, which claims them in its
-     * own process (HIL-710).
+     * own process (HIL-710). Nor are the accounts: every process reads them, and an edit of one is
+     * that person's agent's (HIL-1404).
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -67,7 +68,6 @@ final class ChatAgent extends AbstractAgent
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::userRenames => [TruthSourceOperation::Update],
         ChatDbContext::eventAttachments => TruthSourceOperation::BY_KIND,
-        ChatDbContext::users => TruthSourceOperation::BY_KIND,
     ];
 
     /**

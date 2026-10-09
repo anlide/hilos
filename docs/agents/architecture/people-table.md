@@ -49,16 +49,19 @@ first project chain over a people table is the chat demo's on the rename journal
 
 ## Who Owns The Row
 
-The row belongs to the framework's people library — the users library agent
-(`AbstractUsersLibraryAgent`), which already owns the person's ways in, codes,
-reservations and second factor. Its claim on `users` is declared on the base
-class itself, not in a project subclass.
+The set of people belongs to the framework's people library — the users library
+agent (`AbstractUsersLibraryAgent`), which already owns the person's ways in,
+codes, reservations and second factor. Its claim on `users` is declared on the
+base class itself, not in a project subclass, and covers creating a person.
 Ownership and the reader interest a claim raises:
 [truth-source.md](truth-source.md).
 
-The row's name, administrator flag and block edits move to the person's own
-agent — [instance-owners.md](instance-owners.md)
-(not in the code yet — HIL-1404); creation stays with the library.
+The row's name, administrator flag and block are written by the person's own
+agent (`AbstractUserAgent`, HIL-1404) — [instance-owners.md](instance-owners.md).
+The libraries judge those edits and do what follows them; creation stays with the
+users library, and the sessions library keeps three set operations on the row:
+minting the first administrator, the loser's block inside a merge, and the
+erased person's row.
 
 ## What The Framework Does For A Person
 
@@ -69,8 +72,8 @@ where it is today — a hook the project implements.
 | What | Leaf |
 |---|---|
 | Creating a person, the name shown for one, "an administrator is not deleted" (`assertAdministratorMayDelete()`) | HIL-1194 |
-| Renaming a person — the write, the journal row, the notification (`renameUser()`, `afterUserRenamed()`) | HIL-1195 |
-| Creating the first administrator (`ensureAdminUser()`), granting and removing rights (`applyAdminGrant()`), blocking (`applyAccountBlock()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197 |
+| Renaming a person — the write, the journal row, the notification (`AbstractUserAgent::renamePerson()`, `askRename()`, `afterUserRenamed()`) | HIL-1195, HIL-1404 |
+| Creating the first administrator (`mintAdminUser()`), granting and removing rights (`AbstractUserAgent::writeAdminFlag()`), blocking (`AbstractUserAgent::writeBlockFlag()`), whether one person may take another over (`assertImpersonationAllowed()`) | HIL-1197, HIL-1404 |
 | The `ADMIN` gate (`BrowserContext::isAdmin()`), reading `block` (the column itself, wherever a guard stands), the circle of administrators (`AdminAudience`, behind `ADMIN_AUDIENCE`), the "me" the handshake answers with (`AbstractAgent::handshakeIdentity()`) | HIL-1198 |
 | The tombstone of a merged account and "is this account already folded" (`assertMergeable()`, the merge table `hilos_user_merge`), the refusals to a folded account | HIL-1199 |
 | Erasing a person — the framework deletes the person's rename journal and row after the project's rows, along with accounts folded into that person ([account-deletion.md](account-deletion.md)) | HIL-1200 |
@@ -98,12 +101,15 @@ photo column on `hilos_user`. Its details, checking and browser wire are in
 
 ## Renaming A Person
 
-A rename is a framework operation of the people library
-(`AbstractUsersLibraryAgent::renameUser()`, HIL-1195). One transaction writes
-`hilos_user.name` and one row of the framework's rename journal
+A rename is a framework operation (HIL-1195): the people library asks for it
+(`AbstractUsersLibraryAgent::askRename()`) and the person's own agent writes it
+(`AbstractUserAgent::renamePerson()`, HIL-1404). One transaction in the agent
+writes `hilos_user.name` and one row of the framework's rename journal
 `hilos_user_rename`: whom (`user_id`), by whom (`renamed_by_user_id`), the old
 name (`old_name`), the new name (`new_name`), when (`renamed_at`). A name the
-person already carries writes nothing.
+person already carries writes nothing. The journal row is in the person's set,
+so the agent claims adding rows to that set alone; the library holds the journal
+for editing, to read the row back and let the project's hook add to it.
 
 Who renamed is the owner's frame (2026-09-28, the HIL-1195 interview), in the
 owner's words rendered in English: *put the id of the user who renamed into
@@ -115,11 +121,13 @@ never recorded the author and are empty there. When an author's account is
 erased, the database clears the reference and the row stays: it is the renamed
 person's history.
 
-After the commit, a person renamed by somebody else — an empty author included —
-receives the framework notification `user.renamed`
+On the agent's answer, the library tells a person renamed by somebody else — an
+empty author included — with the framework notification `user.renamed`
 (`UserNotificationType::RENAMED`), not a mandatory one; then the project's hook
 `afterUserRenamed()` runs with the journal row. What the hook writes is news: its
-failure is logged and does not undo the rename.
+failure is logged and does not undo the rename. Then the library answers whoever
+waits: the card under the name it gave, or — for a person renaming themselves —
+their own connection, and only with a refusal.
 
 The handler of `hilos_user_admin_rename`
 (`HilosSignalConstants::HILOS_USER_ADMIN_RENAME`) is the framework's, and so is
@@ -202,9 +210,10 @@ trust revocation and session consequences are specified in
 [second-factor.md](second-factor.md#account-merge).
 
 A folded account is refused, both ways, the admin flag and the block
-(`applyAdminGrant()`, `applyAccountBlock()`), an administrator's deletion after
-the refusal to an administrator (`assertAdministratorMayDelete()`), a rename
-(`UserRenameCommands::rename()`, before anything is read of the name), a
+(`AbstractUserAgent::writeAdminFlag()`, `writeBlockFlag()`), an administrator's
+deletion after the refusal to an administrator (`assertAdministratorMayDelete()`),
+a rename (`AbstractUserAgent::renamePerson()`, before anything is read of the
+name), a
 takeover (`assertImpersonationAllowed()`, right after the target is found and
 before any setting is asked; HIL-1292), and a place in the administrators'
 circle (`AdminAudience`) — the last one asked by name even though the merge

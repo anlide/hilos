@@ -623,25 +623,19 @@ final class Hilos extends HilosFacade
      * owners no longer collide. The rights of nobody changed when the list was written - what
      * writes today goes on writing, out loud instead of by eye.
      *
-     * One of the rows is this demo's own table: the person is held by the chat agent together with
-     * the sessions and the users library. The sessions library joined it when it began to mint
-     * administrators and write the flags for every demo (HIL-1197), which made its share whole
-     * beside the tombstone and the erasure it already wrote. The other four are the framework's
-     * auth libraries and the code agent sharing the tables of signing in, and they stand the same
-     * way in every demo that switches those features on.
+     * The four rows are the framework's auth libraries and the code agent sharing the tables of
+     * signing in, and they stand the same way in every demo that switches those features on. The
+     * person is no longer among them: an edit of one person is that person's agent's, and the
+     * libraries' shares of the row no longer collide (HIL-1404).
      *
-     * The rows are parted by their own leaves: users by HIL-1404, identities by HIL-1405,
-     * stepUps by HIL-1407, and verifications and registrationReservations by HIL-1411.
+     * The rows are parted by their own leaves: identities by HIL-1405, stepUps by HIL-1407, and
+     * verifications and registrationReservations by HIL-1411.
      * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
      */
     public const array SHARED_DB_OWNERS = [
         HilosDbContext::stepUps => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
             SharedOwnersKey::DEBT => 'HIL-1407',
-        ],
-        ChatDbContext::users => [
-            SharedOwnersKey::OWNERS => [ChatAgent::class, SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-1404',
         ],
         HilosDbContext::identities => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, OAuthAgent::class],

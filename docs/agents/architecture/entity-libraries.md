@@ -633,7 +633,7 @@ each piece lands:
 | HIL-628 | raising an instance owner on demand and stopping it when idle |
 | HIL-629 | delivering a signal to an agent that is not up yet — a library needs it for the same reason an owner does |
 | HIL-630 | the person's own agent as a figure: raised on demand, asleep when idle, holding its row and set |
-| HIL-1404…HIL-1410 | the edits of one person moving to that person's agent |
+| HIL-1405…HIL-1410 | the remaining edits of one person moving to that person's agent |
 | HIL-632 | the instance-owner rule: [instance-owners.md](instance-owners.md) |
 | HIL-946 | the settings library: one writer for a collection three admin screens write, and the first library that holds a write without holding a read |
 

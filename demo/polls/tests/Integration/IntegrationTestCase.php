@@ -6,6 +6,7 @@ namespace Demo\Polls\Tests\Integration;
 
 use Demo\Polls\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Polls\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Polls\Agents\Hilos\UserAgent;
 use Demo\Polls\Agents\Hilos\UsersLibraryAgent;
 use Demo\Polls\Agents\PollsAgent;
 use Demo\Polls\Database\Database;
@@ -31,6 +32,10 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
@@ -44,6 +49,13 @@ abstract class IntegrationTestCase extends TestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
+    /** @var list<string> Answers of a person's agent that the sessions library finishes on (HIL-1404) */
+    private const array SESSIONS_LIBRARY_ANSWERS = [
+        HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE,
+        HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE,
+        HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE,
+    ];
+
     /** @var bool Whether the database has been initialized for this test process */
     protected static bool $dbInitialized = false;
 
@@ -55,6 +67,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?NotificationsLibraryAgent Library the notification tables live in, built on first use */
     private ?NotificationsLibraryAgent $notificationsLibrary = null;
+
+    /** @var array<int, UserAgent> Agents of the people a case's frames reached, by person */
+    private array $personAgents = [];
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -246,7 +261,9 @@ abstract class IntegrationTestCase extends TestCase
      * The sibling of {@see self::deliverLibraryFrames()} for the hops a page makes into a
      * library that owns a table (HIL-771): an admin rename asks the users library, and writing
      * the row emits a notification, which asks the notifications library in turn. Both hops are
-     * a worker taking its turn in a node and this one call in a case.
+     * a worker taking its turn in a node and this one call in a case. An edit of one person goes
+     * one hop further (HIL-1404): the library asks that person's agent, which writes and answers
+     * the library back - each dispatch under its own agent's id, the way its worker runs it.
      *
      * The loop re-reads the queue rather than a snapshot of it, which is what carries that
      * chain: the frame the first library queues is picked up by the same pass. Everything else
@@ -269,8 +286,21 @@ abstract class IntegrationTestCase extends TestCase
                 continue;
             }
 
-            if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME) {
-                $this->usersLibrary()->onSignalAgent($data, '', $name);
+            $person = $data->data;
+            if ($name === HilosSignalConstants::HILOS_USER_ADMIN_RENAME || $name === HilosSignalConstants::HILOS_USER_RENAME_DONE) {
+                $library = $this->usersLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+            } elseif (in_array($name, self::SESSIONS_LIBRARY_ANSWERS, true)) {
+                $library = $this->sessionsLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+            } elseif (
+                $person instanceof UserRenameSignalData
+                || $person instanceof UserAdminWriteSignalData
+                || $person instanceof UserAdminCommandSignalData
+                || $person instanceof UserBlockWriteSignalData
+            ) {
+                $agent = $this->personAgent($person->userId);
+                $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
             } elseif ($name === HilosSignalConstants::HILOS_NOTIFICATION_EMIT) {
                 $this->notificationsLibrary()->onSignalAgent($data, '', $name);
             } else {
@@ -281,6 +311,23 @@ abstract class IntegrationTestCase extends TestCase
         foreach ($rest as $signal) {
             Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
         }
+    }
+
+    /**
+     * Raises the agent of one person the way a node does on the first frame to it.
+     *
+     * @param int $userId Person the frame is addressed to
+     * @return UserAgent The person's agent, started
+     * @throws HilosException When the agent's own startup fails
+     */
+    protected function personAgent(int $userId): UserAgent
+    {
+        if (!isset($this->personAgents[$userId])) {
+            $this->personAgents[$userId] = new UserAgent((string)$userId);
+            $this->startAgent($this->personAgents[$userId]);
+        }
+
+        return $this->personAgents[$userId];
     }
 
     /**

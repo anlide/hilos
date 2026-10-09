@@ -11,6 +11,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -24,18 +25,24 @@ use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\Users\DTO\UserRenameDoneSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\UserNotificationType;
 
 /**
- * Renaming a person as the framework's users library does it (HIL-1195).
+ * Renaming a person as the framework does it: the users library asks, the person's agent writes,
+ * the library tells the news (HIL-1195, HIL-1404).
  *
- * The library under test is the base class with only its hook overridden to watch it, so what
- * answers is the framework's own body over `hilos_user` and `hilos_user_rename`. Every write runs
- * in the library's own frame and under the claim the library itself declares, which is what
- * proves the base holds the name and its journal.
+ * The library under test is the base class with only its hook overridden to watch it, and the
+ * agent is the base class with nothing overridden, so what answers is the framework's own body
+ * over `hilos_user` and `hilos_user_rename`. Each runs in its own frame and under the claims its
+ * own class declares, and the frames between them are carried by the case, which is what proves
+ * the agent holds the name and its journal row and the library only what follows.
  */
 final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const int MISSING_USER_ID = 9999;
 
     /** Accept key standing in for the admin's browser. */
@@ -46,6 +53,9 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
     private ?SignalRouter $previousRouter = null;
 
     private ?HilosNotifier $previousNotify = null;
+
+    /** @var list<SignalDTO> Frames the library and the agents sent anywhere but to each other */
+    private array $outbox = [];
 
     /**
      * @throws HilosException When the schema reset or the context build fails
@@ -68,6 +78,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         TruthSourceRegistry::unregisterAgent($this->library->getId());
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->library->getId()));
         Hilos::$sr = $this->previousRouter;
@@ -84,15 +95,15 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         $adminId = self::seedPerson('Root', admin: true);
         $userId = self::seedPerson('Ada', admin: false);
 
-        $rename = $this->inLibrary(fn (): ?UserRename => $this->library->renameUser($userId, '  Grace  ', $adminId));
+        $renameId = $this->rename($userId, '  Grace  ', $adminId);
 
-        self::assertNotNull($rename);
+        self::assertNotNull($renameId);
         self::assertSame('Grace', self::nameOf($userId));
         self::assertSame(
             [['user_id' => $userId, 'renamed_by_user_id' => $adminId, 'old_name' => 'Ada', 'new_name' => 'Grace']],
             self::journal(),
         );
-        self::assertSame($rename->id, self::journalIds()[0]);
+        self::assertSame($renameId, self::journalIds()[0]);
 
         $notices = $this->notices();
         self::assertCount(1, $notices);
@@ -103,7 +114,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         self::assertSame(['oldName' => 'Ada', 'newName' => 'Grace', 'actorUserId' => $adminId], $notices[0]->data);
 
         self::assertCount(1, $this->library->renamed);
-        self::assertSame($rename->id, $this->library->renamed[0]->id);
+        self::assertSame($renameId, (int)$this->library->renamed[0]->id);
     }
 
     /**
@@ -113,7 +124,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
     {
         $adminId = self::seedPerson('Root', admin: true);
 
-        $this->inLibrary(fn (): ?UserRename => $this->library->renameUser($adminId, 'Groot', $adminId));
+        $this->rename($adminId, 'Groot', $adminId);
 
         self::assertSame(
             [['user_id' => $adminId, 'renamed_by_user_id' => $adminId, 'old_name' => 'Root', 'new_name' => 'Groot']],
@@ -130,7 +141,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
     {
         $userId = self::seedPerson('Ada', admin: false);
 
-        $this->inLibrary(fn (): ?UserRename => $this->library->renameUser($userId, 'Grace', null));
+        $this->rename($userId, 'Grace', null);
 
         self::assertSame(
             [['user_id' => $userId, 'renamed_by_user_id' => null, 'old_name' => 'Ada', 'new_name' => 'Grace']],
@@ -149,9 +160,9 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         $adminId = self::seedPerson('Root', admin: true);
         $userId = self::seedPerson('Ada', admin: false);
 
-        $rename = $this->inLibrary(fn (): ?UserRename => $this->library->renameUser($userId, ' Ada ', $adminId));
+        $renameId = $this->rename($userId, ' Ada ', $adminId);
 
-        self::assertNull($rename);
+        self::assertNull($renameId);
         self::assertSame('Ada', self::nameOf($userId));
         self::assertSame([], self::journal());
         self::assertSame([], $this->notices());
@@ -223,7 +234,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
     {
         $adminId = self::seedPerson('Root', admin: true);
         $userId = self::seedPerson('Ada', admin: false);
-        $this->inLibrary(fn (): ?UserRename => $this->library->renameUser($userId, 'Grace', $adminId));
+        $this->rename($userId, 'Grace', $adminId);
 
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$adminId]);
 
@@ -244,6 +255,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
      */
     private function askRename(int $userId, string $name, int $adminUserId): HandoverAnswerSignalData
     {
+        $this->outbox = [];
         $this->inLibrary(fn () => $this->library->onSignalAgent(
             new AgentSignalData(data: new AdminRenameSignalData(
                 userId: $userId,
@@ -258,9 +270,10 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
             '',
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
         ));
+        $this->carry();
 
         $answers = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->outbox as $signal) {
             $data = $signal->data;
             if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE
                 && $data instanceof AgentSignalData
@@ -273,11 +286,66 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         return $answers[0];
     }
 
+    /**
+     * Asks the library to rename one person on somebody's word, the way a project asks it.
+     *
+     * @param int $userId Person to rename
+     * @param string $name Name to give
+     * @param ?int $renamedByUserId Person who did the rename, or null when the author is not a person
+     * @return ?int Journal row the agent answered with, or null when it wrote none
+     * @throws HilosException When a frame handler fails
+     */
+    private function rename(int $userId, string $name, ?int $renamedByUserId): ?int
+    {
+        $this->inLibrary(fn () => $this->library->ask(new UserRenameSignalData(
+            userId: $userId,
+            name: $name,
+            renamedByUserId: $renamedByUserId,
+            replySignal: HilosSignalConstants::HILOS_USER_RENAME_DONE,
+            acceptKey: self::ACCEPT_KEY,
+            requestId: null,
+            action: 'rename',
+            successMessage: null,
+            answerSignal: null,
+        )));
+
+        return $this->carry()?->renameId;
+    }
+
+    /**
+     * Carries the frames between the library and the person's agent until neither has more to say.
+     *
+     * @return ?UserRenameDoneSignalData The last answer the agent gave, or null when it gave none
+     * @throws HilosException When a frame handler fails
+     */
+    private function carry(): ?UserRenameDoneSignalData
+    {
+        $answer = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if ($name === HilosSignalConstants::HILOS_USER_RENAME) {
+                $this->deliverToPerson($signal);
+                continue;
+            }
+            if ($name === HilosSignalConstants::HILOS_USER_RENAME_DONE) {
+                $data = $signal->data;
+                self::assertInstanceOf(AgentSignalData::class, $data);
+                self::assertInstanceOf(UserRenameDoneSignalData::class, $data->data);
+                $answer = $data->data;
+                $this->inLibrary(fn () => $this->library->onSignalAgent($data, '', $name));
+                continue;
+            }
+            $this->outbox[] = $signal;
+        }
+
+        return $answer;
+    }
+
     /** @return list<NotificationEmitSignalData> Notices queued for the notifications library */
     private function notices(): array
     {
         $notices = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->outbox as $signal) {
             if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_NOTIFICATION_EMIT) {
                 continue;
             }
@@ -371,6 +439,17 @@ final class UsersLibraryRenameTestLibrary extends AbstractUsersLibraryAgent
 
     /** @var list<UserRename> Journal rows the hook was handed, in order */
     public array $renamed = [];
+
+    /**
+     * Opens the protected rename ask to the test.
+     *
+     * @param UserRenameSignalData $ask Whom to rename, to what, and whom to answer
+     * @throws HilosException Whatever the framework's ask raises
+     */
+    public function ask(UserRenameSignalData $ask): void
+    {
+        $this->askRename($ask);
+    }
 
     /** Failure the hook raises after it has seen the row, or null to let it pass. */
     public ?HilosException $hookFailure = null;

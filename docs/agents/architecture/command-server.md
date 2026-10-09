@@ -184,10 +184,13 @@ is the one copy of it, and the wait budget is not a thing a command has an opini
 ## Worked example — `admin:grant` / `admin:revoke`
 
 The grant itself is an **ordinary user action**, not a bespoke signal: the sessions
-library's `applyAdminGrant()` calls `setAdmin($bool)` on the person's `hilos_user`
-row, which persists and `sync()`s, and the existing browser source fan-out pushes
-the changed user to everyone viewing the users list. The command channel only
-carries the request and the outcome (success / "no such user" / already-set). The
+library checks the request and sends `hilos_user_admin_command` to the person's
+agent, whose `writeAdminFlag()` calls `setAdmin($bool)` on the person's `hilos_user`
+row (HIL-1404); the row persists and `sync()`s, and the existing browser source
+fan-out pushes the changed user to everyone viewing the users list. The agent
+answers on `hilos_user_admin_command_done` carrying the request back, and the
+library answers the parked command from it. The command channel only carries the
+request and the outcome (success / "no such user" / already-set). The
 two `AbstractSetAdminCommand` subclasses (`admin:grant`, `admin:revoke`) are real
 operator commands — not `TestOnlyCommand`. `admin:revoke` refuses to remove the last
 active administrator, using the same guard as the admin account card.
@@ -195,9 +198,11 @@ active administrator, using the same guard as the admin account card.
 It is answered by the **sessions library**, beside `admin:create` and for the same
 reason (HIL-729): the flag changes what a browser may open, so every live session of
 that user has to be told, and the sessions are the library's. The framework does the
-telling — one `hilos_session_state` frame per live session — and `applyAdminGrant()`
-writes nothing but the flag. Before that merge each demo carried its own copy of the
-re-greeting, and the two that were not chat had lost fields from it.
+telling — one `hilos_session_state` frame per live session, once the agent answered —
+and the agent writes nothing but the flag. Before that merge each demo carried its
+own copy of the re-greeting, and the two that were not chat had lost fields from it.
+A revoke on its way to the agent counts against the last active administrator until
+it is answered, so two revokes crossing each other cannot both pass.
 
 This is what makes a `BrowserGuardType::ACCESS` gate usable against guest auth:
 identity is a persistent httpOnly cookie, so **one browser is a stable user**.
@@ -218,8 +223,9 @@ row when the session carries none. The cookie's name is the installation's own
 name, unless `HILOS_SESSION_COOKIE_NAME` sets it), and the command's help prints it. Its two halves are
 `AdminCreateCommand` on the CLI and
 `AbstractSessionsLibraryAgent::handleAdminCreateCommand()` on the agent, with
-`ensureAdminUser()` writing the `hilos_user` row — the framework's in every
-project since HIL-1197.
+`mintAdminUser()` writing a new `hilos_user` row — the framework's in every
+project since HIL-1197. A session that already carries a person has that person
+flagged by their own agent, and the session is bound on its answer (HIL-1404).
 
 A session whose expiry has passed is dropped by the same door a handshake goes
 through (`resolveHandshakeSession()`, the HIL-398 rule), so the user it carried is

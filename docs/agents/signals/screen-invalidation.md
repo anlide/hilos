@@ -81,9 +81,9 @@ are told who their person now is: `PageAccessReassessment::forUser()` queues one
 then runs `PageAccessReassessment::sweepThisWorker()` over its own live page
 subscriptions and queues one `page_access_reassess` frame per page that person
 has open there. Its one call site is the project's, and a grant reaches it the way
-every other identity change does: `AbstractSessionsLibraryAgent` writes the flag
-through `applyAdminGrant()` and then restates each live session of
-that person (HIL-729).
+every other identity change does: `AbstractSessionsLibraryAgent` has the
+person's agent write the flag and, on its answer, restates each live session of
+that person (HIL-729, HIL-1404).
 A session losing its person is the same obligation with the other criterion:
 `forConnections()` / `sweepThisWorkerConnections()` name the accept keys instead,
 because the identity the first pair matches on is precisely what signing out

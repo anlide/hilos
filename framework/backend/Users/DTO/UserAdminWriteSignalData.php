@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace Hilos\Users\DTO;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\BaseDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Users\Agent\AbstractUserAgent;
 
 /**
- * Hilos user page → sessions library: change administrator rights.
+ * Sessions library → the person's agent: write the admin flag the card asked for (HIL-1404).
  *
- * The page keeps the ADMIN gate; the library judges the request, the person's agent writes it
- * (HIL-1404), and the library returns the outcome to the waiting submit. The ask is handed on to
- * the agent with the same author, which the receipt stamps the write with.
+ * What {@see HilosSignalConstants::HILOS_USER_ADMIN_WRITE} carries. {@see AbstractSessionsLibraryAgent}
+ * judged the request; {@see AbstractUserAgent} writes the flag and sends this ask back inside
+ * {@see UserAdminWriteDoneSignalData}. The handover fields are the card's, echoed from
+ * {@see AccountAdminSetSignalData}, and the last field is the name the card waits for its answer
+ * under - the card's reply name, which the library answers on once the tabs are told.
  */
-final class AccountAdminSetSignalData extends BaseDTO implements HandoverAskInterface
+final class UserAdminWriteSignalData extends BaseDTO implements HandoverAskInterface
 {
     public const string userId = 'userId';
     public const string admin = 'admin';
@@ -24,16 +29,18 @@ final class AccountAdminSetSignalData extends BaseDTO implements HandoverAskInte
     public const string requestId = 'requestId';
     public const string action = 'action';
     public const string successMessage = 'successMessage';
+    public const string answerSignal = 'answerSignal';
 
     /**
-     * @param int $userId Target account id
-     * @param bool $admin Requested state
-     * @param string $replySignal Agent signal for the library's answer
-     * @param string $acceptKey Initiating connection accept key
-     * @param ?string $requestId Tracked request id, or null when untracked
-     * @param string $action Browser action to answer
-     * @param ?string $successMessage Initial success text, null until the library answers
-     * @throws InvalidFormatException When the account id is not positive
+     * @param int $userId Person whose flag is written, and the index of the agent the ask is for
+     * @param bool $admin Flag to write
+     * @param string $replySignal Agent signal the agent answers the library under
+     * @param string $acceptKey Accept key of the connection that asked, and the origin of the write
+     * @param ?string $requestId Client-minted request id of the tracked submit, or null when untracked
+     * @param string $action Browser action name the ack is addressed to
+     * @param ?string $successMessage Sentence to speak on success, or null until the library composes it
+     * @param string $answerSignal Name the library answers the card under
+     * @throws InvalidFormatException When the person id is not positive
      */
     public function __construct(
         public readonly int $userId,
@@ -43,6 +50,7 @@ final class AccountAdminSetSignalData extends BaseDTO implements HandoverAskInte
         public readonly ?string $requestId,
         public readonly string $action,
         public readonly ?string $successMessage,
+        public readonly string $answerSignal,
     ) {
         if ($userId <= 0) {
             throw new InvalidFormatException('User id must be positive');
@@ -51,8 +59,8 @@ final class AccountAdminSetSignalData extends BaseDTO implements HandoverAskInte
 
     /**
      * @param array<string, mixed> $data Transport payload
-     * @return static Account lifecycle handover request
-     * @throws InvalidFormatException When the target, state or waiting submit is invalid
+     * @return static Admin flag ask
+     * @throws InvalidFormatException When the person, the flag or the waiting submit is invalid
      */
     public static function fromArray(array $data): static
     {
@@ -64,6 +72,7 @@ final class AccountAdminSetSignalData extends BaseDTO implements HandoverAskInte
             requestId: self::optionalString($data, self::requestId),
             action: self::requireString($data, self::action),
             successMessage: self::optionalString($data, self::successMessage),
+            answerSignal: self::requireString($data, self::answerSignal),
         );
     }
 
@@ -78,6 +87,7 @@ final class AccountAdminSetSignalData extends BaseDTO implements HandoverAskInte
             self::requestId => $this->requestId,
             self::action => $this->action,
             self::successMessage => $this->successMessage,
+            self::answerSignal => $this->answerSignal,
         ];
     }
 }

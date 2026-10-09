@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
+use Demo\Chat\Agents\Hilos\UserAgent;
 use Demo\Chat\Agents\Hilos\UsersLibraryAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
@@ -40,6 +41,14 @@ use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserRenameDoneSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
 use Throwable;
@@ -61,6 +70,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
     private ?SessionsLibraryAgent $sessionsLibrary = null;
+
+    /** @var array<int, UserAgent> Agents of the people a case's frames reached, by person */
+    private array $personAgents = [];
 
     /** @var ?NotificationsLibraryAgent Library the notification tables live in, built on first use */
     private ?NotificationsLibraryAgent $notificationsLibrary = null;
@@ -434,6 +446,79 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         return $written;
+    }
+
+    /**
+     * Carries every edit of one person to that person's agent, and its answer back to the library
+     * that asked (HIL-1404).
+     *
+     * A library judges an edit and asks the person's agent to write it; the agent answers and the
+     * library finishes - tells the tabs, ends the sessions, writes the feed line, answers whoever
+     * waits. Each hop is a worker taking its turn in a node and this one call in a case, under the
+     * id of the agent it is addressed to. The loop re-reads the queue, so a chain is carried in one
+     * pass; everything else goes back in the order it was taken off.
+     *
+     * @return int Frames carried
+     * @throws HilosException When a frame's handler fails
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     */
+    protected function deliverPersonAgentFrames(): int
+    {
+        $rest = [];
+        $carried = 0;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $name = $signal->signalName->getName();
+            $data = $signal->data;
+            $frame = $data instanceof AgentSignalData ? $data->data : null;
+            if (
+                $frame instanceof UserRenameSignalData
+                || $frame instanceof UserAdminWriteSignalData
+                || $frame instanceof UserAdminCommandSignalData
+                || $frame instanceof UserBlockWriteSignalData
+            ) {
+                $agent = $this->personAgent($frame->userId);
+                $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
+            } elseif ($frame instanceof UserRenameDoneSignalData) {
+                $library = $this->usersLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+            } elseif (
+                $frame instanceof UserAdminWriteDoneSignalData
+                || $frame instanceof UserAdminCommandDoneSignalData
+                || $frame instanceof UserBlockWriteDoneSignalData
+            ) {
+                $library = $this->sessionsLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+            } else {
+                $rest[] = $signal;
+
+                continue;
+            }
+            $carried++;
+        }
+
+        foreach ($rest as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+
+        return $carried;
+    }
+
+    /**
+     * Raises the agent of one person the way a node does on the first frame to it.
+     *
+     * @param int $userId Person the frame is addressed to
+     * @return UserAgent The person's agent, started
+     * @throws HilosException When the agent's own startup fails
+     */
+    protected function personAgent(int $userId): UserAgent
+    {
+        if (!isset($this->personAgents[$userId])) {
+            $this->personAgents[$userId] = new UserAgent((string)$userId);
+            $this->startAgent($this->personAgents[$userId]);
+        }
+
+        return $this->personAgents[$userId];
     }
 
     /**

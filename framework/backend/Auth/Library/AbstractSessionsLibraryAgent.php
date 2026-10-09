@@ -44,6 +44,13 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
@@ -101,6 +108,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
@@ -219,9 +227,10 @@ use Throwable;
  * It is ABSTRACT by convention alone, like {@see AbstractNotificationsLibraryAgent} and
  * {@see AbstractUsersLibraryAgent}: every Hilos agent is mounted through a concrete class in the
  * project's registry. The operations over the person are the framework's over `hilos_user` in
- * every project (HIL-1197) - minting the first administrator ({@see ensureAdminUser()}), the admin
- * flag ({@see applyAdminGrant()}), the block ({@see applyAccountBlock()}) and whether one person
- * may take another over ({@see assertImpersonationAllowed()}). So is whether two accounts may be
+ * every project (HIL-1197) - minting the first administrator ({@see mintAdminUser()}), judging the
+ * admin flag and the block and doing what follows them once the person's agent has written them
+ * (HIL-1404, {@see AbstractUserAgent}), and whether one person may take another over
+ * ({@see assertImpersonationAllowed()}). So is whether two accounts may be
  * merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). The framework also
  * removes the person, their rename journal and the accounts folded into them on erasure
  * (HIL-1200). What a project adds is the claims over its own way in - the sign-in waits and the
@@ -274,10 +283,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * one is lazy. Unconditional because the writer is a method of this class, not a project seam:
      * a project that wires the merge inherits it.
      *
-     * The person table is the users library's too, and this library holds a narrower share of it:
-     * adding, editing and removing the erased person's row (HIL-1197, HIL-1200). It mints the
-     * first administrator ({@see ensureAdminUser()}) and writes the admin and block flags
-     * ({@see applyAdminGrant()}, {@see applyAccountBlock()}). The share may add, so the start does
+     * The person table is held here for three set operations, a declared shape in
+     * docs/agents/architecture/instance-owners.md#operations-over-many-instances (HIL-1404): adding
+     * the first administrator an operator's command mints ({@see mintAdminUser()}), editing the
+     * loser's block flag inside the merge transaction ({@see foldAccount()}), and removing the
+     * erased person's row (HIL-1200). The ordinary edits of one person - the admin flag and the
+     * block an administrator asks for - are judged here and written by that person's agent
+     * ({@see AbstractUserAgent}); the claim cannot tell the merge's edit from those, which is the
+     * accepted price of keeping the merge in one transaction. The share may add, so the start does
      * not wait for it the way it waits for a borrowed claim; nothing here reads a person at start,
      * which is what a co-owner that may add owes (docs/agents/architecture/truth-source.md).
      * Unconditional for the reason the identity entry is: the writers are methods of this class,
@@ -319,8 +332,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public const array OWNS_DB = [
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
-        // TODO(HIL-1404): the admin and block flags move to the person's own agent.
-        // Creating the first administrator and deleting the erased person's row remain library set operations.
+        // Minting the first administrator, the loser's block in the merge transaction and the erased person's row:
+        // set operations of this library. The admin flag and the block are written by the person's agent.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::users => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         // Borrowed for the account erasure and merge, each held by this library in one transaction.
@@ -449,8 +462,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * gone, a wait to let go.
      *
      * A block-change frame has no fixed sender (HIL-289): whoever wrote a person's flag asks
-     * this library to enforce it. Two requests from the admin card (HIL-304) write rights and
-     * block flags here; their answer names belong to the page that deferred the submit.
+     * this library to enforce it. Two requests from the admin card (HIL-304) ask for rights and
+     * block flags here; their answer names belong to the page that deferred the submit. This
+     * library judges them and the person's agent writes them (HIL-1404), so three answers of that
+     * agent are here too - the card's admin flag, the command's admin flag and the block - each
+     * carrying back what this library needs to finish: tell the tabs, bind the session, end the
+     * sessions, answer whoever waits.
      *
      * One more is the users library's (HIL-1182): a profile window of a session reached a step or
      * finished. The record of how far it got is the session's, so it is written here, and
@@ -488,6 +505,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_FLOW_STEP => ProfileFlowStepSignalData::class,
         HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE => UserSessionsRestateSignalData::class,
+        HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
     ];
 
     /**
@@ -590,8 +610,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * already has the request's update right and owns the erasure and session sign-out.
      *
      * Every project that registers the library answers all seven. The first five are the
-     * framework's code over `hilos_user` in every one of them ({@see ensureAdminUser()},
-     * {@see applyAdminGrant()}, {@see assertImpersonationAllowed()}, HIL-1197); only the merge
+     * framework's code over `hilos_user` in every one of them ({@see mintAdminUser()},
+     * {@see AbstractUserAgent::writeAdminFlag()}, {@see assertImpersonationAllowed()}, HIL-1197); only the merge
      * still answers a REFUSAL by default, in a project that never wired it
      * ({@see applyAccountMerge()}), rather than nothing at all. That is the honest outcome for an
      * operator who typed it into the wrong installation: before the move the name was carried by
@@ -709,6 +729,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** @var list<int> People the running pass has still to compare, in the order it takes them */
     private array $standingQueue = [];
+
+    /**
+     * @var array<int, true> Administrators whose rights or block are sent to their agent and not yet
+     *     answered (HIL-1404): the last-administrator check counts them as gone already
+     */
+    private array $adminRemovalsInFlight = [];
 
     /**
      * Arms the scheduled sweeps, and ends what a predecessor left open.
@@ -1462,7 +1488,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The card is about an account that is no longer blocked by the time this is asked. It still
      * gives nothing back when the account is gone, when it is blocked again - a merged loser stays
-     * blocked for good, {@see applyAccountBlock()} refuses to lift it - when somebody is already
+     * blocked for good, {@see AbstractUserAgent::writeBlockFlag()} refuses to lift it - when somebody is already
      * signed in on the row, or when the row has outlived its own expiry: the limit of a return is
      * the life of the session, not the length of the block.
      *
@@ -1833,12 +1859,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * {@see CliCommands::ADMIN_CREATE} (HIL-609).
      *
      * One path, taken whole every time: resolve the session by its token, take the user it
-     * carries or mint one through {@see self::ensureAdminUser()}, then authenticate the
+     * carries or mint one through {@see self::mintAdminUser()}, then authenticate the
      * session onto that user. The five outcomes an operator can meet - a session with no
      * user, a session carrying a visitor, a session that is already an administrator, a
      * session whose expiry has passed, a token naming no session - fall out of that one path
      * rather than out of five branches, which would be five places to forget the re-point
      * that makes the grant visible.
+     *
+     * A person who already exists is flagged by their own agent (HIL-1404): the frame carries the
+     * session's token and its expiry, and the bind and the reply happen on the agent's answer
+     * ({@see self::finishAdminCommand()}). Minting a new person is an operation over the set and
+     * stays here, without a hop.
      *
      * {@see self::authenticateSession()} runs even when the flag was already set: it is what
      * re-points the session's live connections and fans the handshake response out to every
@@ -1884,6 +1915,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // external-boundary: an operator's command line, refused a line below
         $sessionToken = (string)($data->payload[AdminCommandConstants::FIELD_SESSION_TOKEN] ?? '');
 
+        $request = null;
+        $userId = null;
         try {
             SessionToken::ensureValid($sessionToken);
             $session = Hilos::$db->sessions->findByToken($sessionToken);
@@ -1898,12 +1931,23 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $userIdBeforeDoor = $session->userId;
             $session = $this->resolveSession($sessionToken, cookieReplaceable: false, atHandshake: false)->session;
 
-            $created = $session->userId === null;
             // The door unbinds a user for exactly one reason - the expiry - so the two reads
             // around it name it without repeating the TTL comparison that lives inside.
             $expired = $userIdBeforeDoor !== null && $session->userId === null;
-            $userId = $this->ensureAdminUser($session->userId);
-            $this->authenticateSession($session->token, $userId, null);
+            if ($session->userId !== null) {
+                $request = new UserAdminCommandSignalData(
+                    userId: $session->userId,
+                    admin: true,
+                    replySignal: HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE,
+                    correlationId: $data->correlationId,
+                    command: $data->command,
+                    sessionToken: $session->token,
+                    expired: $expired,
+                );
+            } else {
+                $userId = $this->mintAdminUser();
+                $this->authenticateSession($session->token, $userId, null);
+            }
         } catch (WiringRefusal $refusal) {
             // Answered rather than raised: the command socket parks its caller until a reply
             // arrives ({@see self::onSignalCommand()}), so a throw would hang the operator at
@@ -1922,47 +1966,40 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
+        if ($request !== null) {
+            $this->sendToAgent(HilosSignalConstants::HILOS_USER_ADMIN_COMMAND, $request);
+
+            return;
+        }
+
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             AdminCommandConstants::FIELD_USER_ID => $userId,
             AdminCommandConstants::FIELD_ADMIN => true,
-            AdminCommandConstants::FIELD_CREATED => $created,
+            AdminCommandConstants::FIELD_CREATED => true,
             AdminCommandConstants::FIELD_EXPIRED => $expired,
         ]));
     }
 
     /**
-     * Makes one user an administrator, minting the `hilos_user` row when there is no user yet -
-     * the write behind {@see self::handleAdminCreateCommand()}.
+     * Mints a new person who is an administrator - the write behind {@see self::handleAdminCreateCommand()}
+     * for a session that carries nobody.
      *
      * The framework's in every project, the chat demo included (owner's decision 2026-09-28,
      * HIL-1197): the command is the one way out of an installation whose every sign-in method
-     * is switched off, so no project may be left without it. One method rather than two,
-     * because the caller's question is one question: make this session's person an
-     * administrator.
+     * is switched off, so no project may be left without it. Creating a person is an operation
+     * over the set and stays here; flagging a person who already exists is their agent's
+     * (HIL-1404).
      *
      * Not final, for the reason {@see AbstractUsersLibraryAgent::createUser()} gives: the
      * framework's test stands replace it to pin the command route apart from the table. The
      * session bind is not done here - the command does it around this call.
      *
-     * @param ?int $userId User the session carries, or null when it carries none
-     * @return int Id of the user that is now an administrator
-     * @throws ItemNotFoundForUpdateException When the session names a user with no row behind it
-     * @throws HilosException On database failure while minting or flagging
+     * @return int Id of the administrator just minted
+     * @throws HilosException On database failure while minting
      */
-    protected function ensureAdminUser(?int $userId): int
+    protected function mintAdminUser(): int
     {
-        if ($userId === null) {
-            return (int)Hilos::$db->users->actions->registerAdmin()->id;
-        }
-
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-
-        $user->actions->setAdmin(true);
-
-        return $userId;
+        return (int)Hilos::$db->users->actions->registerAdmin()->id;
     }
 
     /**
@@ -1974,10 +2011,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * but the boolean, and a second copy of the lookup would be a second place to get it
      * wrong.
      *
-     * The write is {@see self::applyAdminGrant()}, where an unknown user is refused. Any
-     * failure from there - an unknown user, a project's own refusal, a database error -
-     * becomes one error reply, because a CLI parked on the command socket must learn the
-     * outcome rather than time out.
+     * The write is the person's agent's (HIL-1404), where an unknown or merged user is refused;
+     * this library checks the last administrator first and answers on the agent's answer
+     * ({@see self::finishAdminCommand()}). Any failure - an unknown user, a merged one, a
+     * database error - becomes one error reply, because a CLI parked on the command socket must
+     * learn the outcome rather than time out.
      *
      * The ANNOUNCEMENT is not the write's, and that is what the move to this library
      * bought (HIL-729): a flag written in silence reaches the browser only on the next
@@ -1993,9 +2031,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * flag and no answer at all, until his CLI gave up waiting. It now hands back what it
      * managed to do, and the reply stays ok - the write really did happen, and calling it an
      * error would be the more misleading of the two lies - carrying the announcement's
-     * outcome as three keys of its own. The try around {@see self::applyAdminGrant()} is
-     * deliberately NOT widened over it: the two halves answer the operator differently, and
-     * one catch for both would have to work out which of them it had caught.
+     * outcome as three keys of its own, and it runs only once the agent answered that the flag
+     * is written.
      *
      * @param CommandRequestDTO $data Command request carrying the target user id and admin flag
      * @throws InvalidArgumentException When the reply carries an empty correlation id
@@ -2023,18 +2060,81 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if (!$admin) {
                 $this->refuseLastAdministrator($userId);
             }
-            $this->applyAdminGrant($userId, $admin);
+            $request = new UserAdminCommandSignalData(
+                userId: $userId,
+                admin: $admin,
+                replySignal: HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE,
+                correlationId: $data->correlationId,
+                command: $data->command,
+                sessionToken: null,
+                expired: false,
+            );
         } catch (Throwable $e) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
 
             return;
         }
 
-        $announcement = $this->announceAdminGrant($userId);
+        if (!$admin) {
+            $this->adminRemovalsInFlight[$userId] = true;
+        }
+        $this->sendToAgent(HilosSignalConstants::HILOS_USER_ADMIN_COMMAND, $request);
+    }
 
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            AdminCommandConstants::FIELD_USER_ID => $userId,
-            AdminCommandConstants::FIELD_ADMIN => $admin,
+    /**
+     * Finishes an operator's admin command once the person's agent answered (HIL-1404).
+     *
+     * A refusal is the command's error, in the words the write raised. A create command binds its
+     * session to the person and answers the four fields it always did; a grant or a revoke tells
+     * the person's open tabs and answers its five. Every branch answers: a CLI parked on the
+     * command socket would otherwise wait until its timeout.
+     *
+     * @param UserAdminCommandDoneSignalData $done The agent's answer, carrying the request back
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function finishAdminCommand(UserAdminCommandDoneSignalData $done): void
+    {
+        $request = $done->request;
+        unset($this->adminRemovalsInFlight[$request->userId]);
+        if ($done->error !== null) {
+            $this->replyToCommand(CommandReplyDTO::error($request->correlationId, $done->errorDetail ?? $done->error));
+
+            return;
+        }
+
+        // The token rides on the create command alone, which binds that session to the person now.
+        if ($request->sessionToken !== null) {
+            try {
+                $this->authenticateSession($request->sessionToken, $request->userId, null);
+            } catch (WiringRefusal $refusal) {
+                $this->logAgentError("Admin create could not read the sessions here: {$refusal->getMessage()}");
+                $this->replyToCommand(CommandReplyDTO::error(
+                    $request->correlationId,
+                    'This process does not read the sessions collection: ' . $refusal->getMessage(),
+                ));
+
+                return;
+            } catch (Throwable $e) {
+                $this->replyToCommand(CommandReplyDTO::error($request->correlationId, $e->getMessage()));
+
+                return;
+            }
+
+            $this->replyToCommand(CommandReplyDTO::ok($request->correlationId, [
+                AdminCommandConstants::FIELD_USER_ID => $request->userId,
+                AdminCommandConstants::FIELD_ADMIN => true,
+                AdminCommandConstants::FIELD_CREATED => false,
+                AdminCommandConstants::FIELD_EXPIRED => $request->expired,
+            ]));
+
+            return;
+        }
+
+        $announcement = $this->announceAdminGrant($request->userId);
+
+        $this->replyToCommand(CommandReplyDTO::ok($request->correlationId, [
+            AdminCommandConstants::FIELD_USER_ID => $request->userId,
+            AdminCommandConstants::FIELD_ADMIN => $request->admin,
             AdminCommandConstants::FIELD_ANNOUNCED => $announcement->error === null,
             AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS => $announcement->sessions,
             AdminCommandConstants::FIELD_ANNOUNCE_ERROR => $announcement->error,
@@ -2133,62 +2233,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         return new AdminGrantAnnouncement($sessions, null, $tabs);
-    }
-
-    /**
-     * Writes the admin flag of one user's `hilos_user` row, and nothing else.
-     *
-     * Telling the person's browsers is {@see self::announceAdminGrant()}; before HIL-729 it was
-     * part of this write, and each of the three demos wrote its own version of the announcement.
-     * An account folded into another one is refused, both ways, before the write (HIL-1199): its
-     * rights belong to the account it became. A project with a refusal of its own overrides this
-     * and refuses BEFORE calling the parent, because the parent writes. Not final, for the reason
-     * {@see self::ensureAdminUser()} gives.
-     *
-     * @param int $userId Target user id, already validated as positive
-     * @param bool $admin New admin flag
-     * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws ValidationException When the account was merged into another one
-     * @throws HilosException On database failure while reading or writing the flag
-     */
-    protected function applyAdminGrant(int $userId, bool $admin): void
-    {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-        if (Hilos::$db->userMerges[$userId] !== null) {
-            throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
-        }
-
-        $user->actions->setAdmin($admin);
-    }
-
-    /**
-     * Writes the block flag of one user's `hilos_user` row; the library enforces it after the write.
-     *
-     * The same shape as {@see self::applyAdminGrant()}: a folded account is refused, both ways,
-     * before the write - the merge closed its sign-in with the flag, and the flag is not an
-     * administrator's to reopen. A project with a refusal of its own overrides this and refuses
-     * before calling the parent.
-     *
-     * @param int $userId Target account id
-     * @param bool $block Requested block flag
-     * @throws ItemNotFoundForUpdateException When no user carries that id
-     * @throws ValidationException When the account was merged into another one
-     * @throws HilosException On database or truth-source failure while reading or writing the flag
-     */
-    protected function applyAccountBlock(int $userId, bool $block): void
-    {
-        $user = Hilos::$db->users[$userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
-        }
-        if (Hilos::$db->userMerges[$userId] !== null) {
-            throw new ValidationException(self::MERGED_ACCOUNT_REFUSED_MESSAGE);
-        }
-
-        $user->actions->setBlock($block);
     }
 
     /**
@@ -3730,7 +3774,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * restore left (HIL-846), two about a provider sign-in a tab is waiting on and one from the
      * master about agents that are gone (HIL-1044), one from whoever wrote a block flag (HIL-289),
      * two from the admin card asking to write rights or a block (HIL-304), the password
-     * change's request to end other sessions (HIL-300), and a profile window's step (HIL-1182).
+     * change's request to end other sessions (HIL-300), a profile window's step (HIL-1182), and
+     * three answers of a person's agent that wrote what this library judged (HIL-1404).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -3918,6 +3963,33 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET:
                 $this->handleBlockSetRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE:
+                if (!$data->data instanceof UserAdminWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminWriteDoneSignalData::class, $data->data);
+                }
+
+                $this->finishAdminWrite($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE:
+                if (!$data->data instanceof UserAdminCommandDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminCommandDoneSignalData::class, $data->data);
+                }
+
+                $this->finishAdminCommand($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE:
+                if (!$data->data instanceof UserBlockWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserBlockWriteDoneSignalData::class, $data->data);
+                }
+
+                $this->finishBlockWrite($data->data);
 
                 return;
 
@@ -5174,7 +5246,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * ended by a switch, the way a sign-in method switched off signs nobody out. What may be done
      * inside is judged on every action instead, by the action dispatcher. The asker naming their own
      * user is not "another administrator": that one the library refuses on its own, after.
-     * Not final, for the reason {@see self::ensureAdminUser()} gives.
+     * Not final, for the reason {@see self::mintAdminUser()} gives.
      *
      * @param int $adminUserId User the acting session currently carries
      * @param int $targetUserId User that session asks to act as
@@ -5534,8 +5606,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * candidates hears of the merge by the change of the person's row, and reads "is this account
      * merged" from the merge table at that moment - so the row has to be there already.
      *
-     * The flag is written straight rather than through {@see self::applyAccountBlock()}, which
-     * refuses a folded account and would arm the "Access closed" card: a merged loser is not a
+     * The flag is written straight rather than through the person's agent
+     * ({@see AbstractUserAgent::writeBlockFlag()}), which refuses a folded account and whose answer
+     * here would arm the "Access closed" card: a merged loser is not a
      * punished person, and its tabs get the plain sign-in form ({@see self::killUserSessions()}).
      * The flag stays because it is what every sign-in check reads, the ways in the merge left
      * the loser among them.
@@ -7959,22 +8032,35 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Refuses to take the rights of the last active administrator.
+     *
+     * The rights and blocks already sent to a person's agent and not yet answered count as taken
+     * (HIL-1404): the check and the write are two hops now, and two removals crossing each other
+     * would otherwise both see a second administrator. The mark is in this library's memory alone,
+     * so a restart forgets it - which can only let through what the database already decides.
+     *
      * @param int $userId Account whose administrator rights would be removed
      * @throws ValidationException When it is the last active administrator
      * @throws HilosException When the project's administrator list cannot be read
      */
     private function refuseLastAdministrator(int $userId): void
     {
-        $all = Hilos::adminAudienceClass()::all();
+        $all = array_values(array_diff(Hilos::adminAudienceClass()::all(), array_keys($this->adminRemovalsInFlight)));
         if (in_array($userId, $all, true) && count($all) === 1) {
             throw new ValidationException('The last active administrator cannot lose the rights');
         }
     }
 
     /**
+     * Judges the card's request for administrator rights and asks the person's agent to write it (HIL-1404).
+     *
+     * The confirmation step, the own rights and the last administrator are checked here, and a
+     * refusal answers the card at once, without raising the agent. A removal is marked in flight
+     * until the agent answers ({@see self::refuseLastAdministrator()}).
+     *
      * @param AccountAdminSetSignalData $request Target rights and waiting administrator
      * @throws WiringRefusal When this worker cannot access a required source
-     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     * @throws InvalidArgumentException When the ask or the answer frame cannot be named or queued
      */
     private function handleAdminSetRequest(AccountAdminSetSignalData $request): void
     {
@@ -7989,21 +8075,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
                 $this->refuseLastAdministrator($request->userId);
             }
-            $this->applyAdminGrant($request->userId, $request->admin);
-            $announcement = $this->announceAdminGrant($request->userId);
-            if ($announcement->error !== null) {
-                $message = $request->admin
-                    ? "Admin rights granted, but not every tab was told: {$announcement->tabs} updated, the rest learn on reconnect"
-                    : "Admin rights removed, but not every tab was told: {$announcement->tabs} updated, the rest learn on reconnect";
-            } elseif ($announcement->tabs > 0) {
-                $message = $request->admin
-                    ? "Admin rights granted. Open tabs updated: {$announcement->tabs}"
-                    : "Admin rights removed. Open tabs updated: {$announcement->tabs}";
-            } else {
-                $message = $request->admin
-                    ? 'Admin rights granted. No open tabs: they apply at the next sign-in'
-                    : 'Admin rights removed. No open tabs: it applies at the next sign-in';
-            }
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
@@ -8016,21 +8087,68 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+        if (!$request->admin) {
+            $this->adminRemovalsInFlight[$request->userId] = true;
+        }
+        $this->sendToAgent(HilosSignalConstants::HILOS_USER_ADMIN_WRITE, new UserAdminWriteSignalData(
+            userId: $request->userId,
+            admin: $request->admin,
+            replySignal: HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE,
             acceptKey: $request->acceptKey,
             requestId: $request->requestId,
             action: $request->action,
-            successMessage: $message,
-            error: null,
-            errorType: null,
-            errorDetail: null,
+            successMessage: $request->successMessage,
+            answerSignal: $request->replySignal,
         ));
     }
 
     /**
+     * Tells the person's tabs their rights changed and answers the card, once the agent wrote them.
+     *
+     * @param UserAdminWriteDoneSignalData $done The agent's answer, carrying the ask back
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function finishAdminWrite(UserAdminWriteDoneSignalData $done): void
+    {
+        $ask = $done->ask;
+        unset($this->adminRemovalsInFlight[$ask->userId]);
+        if ($done->error !== null) {
+            $this->sendToAgent(
+                $ask->answerSignal,
+                self::handoverAnswer($ask, $ask->successMessage, $done->error, $done->errorType, $done->errorDetail),
+            );
+
+            return;
+        }
+
+        $announcement = $this->announceAdminGrant($ask->userId);
+        if ($announcement->error !== null) {
+            $message = $ask->admin
+                ? "Admin rights granted, but not every tab was told: {$announcement->tabs} updated, the rest learn on reconnect"
+                : "Admin rights removed, but not every tab was told: {$announcement->tabs} updated, the rest learn on reconnect";
+        } elseif ($announcement->tabs > 0) {
+            $message = $ask->admin
+                ? "Admin rights granted. Open tabs updated: {$announcement->tabs}"
+                : "Admin rights removed. Open tabs updated: {$announcement->tabs}";
+        } else {
+            $message = $ask->admin
+                ? 'Admin rights granted. No open tabs: they apply at the next sign-in'
+                : 'Admin rights removed. No open tabs: it applies at the next sign-in';
+        }
+
+        $this->sendToAgent($ask->answerSignal, self::handoverAnswer($ask, $message, null, null, null));
+    }
+
+    /**
+     * Judges the card's request for a block and asks the person's agent to write it (HIL-1404).
+     *
+     * The confirmation step and the own account are checked here, and a refusal answers the card
+     * at once. Blocking an administrator is marked in flight until the agent answers, so the
+     * last-administrator check counts them gone already ({@see self::refuseLastAdministrator()}).
+     *
      * @param AccountBlockSetSignalData $request Target block and waiting administrator
      * @throws WiringRefusal When this worker cannot access a required source
-     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     * @throws InvalidArgumentException When the ask or the answer frame cannot be named or queued
      */
     private function handleBlockSetRequest(AccountBlockSetSignalData $request): void
     {
@@ -8042,14 +8160,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if ($request->userId === $by) {
                 throw new ValidationException('You cannot block yourself');
             }
-            $this->applyAccountBlock($request->userId, $request->block);
-            $ended = $this->enforceAccountBlock($request->userId);
-            $this->logAgentInfo('account_block_set ' . json_encode([
-                'event' => 'account_block_set',
-                'user' => $request->userId,
-                'by' => $by,
-                'block' => $request->block,
-            ]));
+            $blocksAdministrator = $request->block && in_array($request->userId, Hilos::adminAudienceClass()::all(), true);
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
@@ -8062,16 +8173,100 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+        if ($blocksAdministrator) {
+            $this->adminRemovalsInFlight[$request->userId] = true;
+        }
+        $this->sendToAgent(HilosSignalConstants::HILOS_USER_BLOCK_WRITE, new UserBlockWriteSignalData(
+            userId: $request->userId,
+            block: $request->block,
+            by: $by,
+            replySignal: HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE,
             acceptKey: $request->acceptKey,
             requestId: $request->requestId,
             action: $request->action,
-            successMessage: $request->block
-                ? "Account blocked. Sessions ended: {$ended}"
-                : 'Block lifted. The person can sign in again',
-            error: null,
-            errorType: null,
-            errorDetail: null,
+            successMessage: $request->successMessage,
+            answerSignal: $request->replySignal,
         ));
+    }
+
+    /**
+     * Ends or gives back the person's sessions and answers the card, once the agent wrote the block.
+     *
+     * The sessions are dealt with only now, because the pass reads the flag from the row
+     * ({@see self::enforceAccountBlock()}) and before the write it would find nothing to do.
+     *
+     * @param UserBlockWriteDoneSignalData $done The agent's answer, carrying the ask back
+     * @throws WiringRefusal When this worker cannot access a required source
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function finishBlockWrite(UserBlockWriteDoneSignalData $done): void
+    {
+        $ask = $done->ask;
+        unset($this->adminRemovalsInFlight[$ask->userId]);
+        if ($done->error !== null) {
+            $this->sendToAgent(
+                $ask->answerSignal,
+                self::handoverAnswer($ask, $ask->successMessage, $done->error, $done->errorType, $done->errorDetail),
+            );
+
+            return;
+        }
+
+        try {
+            $ended = $this->enforceAccountBlock($ask->userId);
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Account block for #{$ask->userId} failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($ask->answerSignal, HandoverAnswerSignalData::to($ask, $refusal));
+
+            return;
+        }
+
+        $this->logAgentInfo('account_block_set ' . json_encode([
+            'event' => 'account_block_set',
+            'user' => $ask->userId,
+            'by' => $ask->by,
+            'block' => $ask->block,
+        ]));
+
+        $this->sendToAgent($ask->answerSignal, self::handoverAnswer(
+            $ask,
+            $ask->block ? "Account blocked. Sessions ended: {$ended}" : 'Block lifted. The person can sign in again',
+            null,
+            null,
+            null,
+        ));
+    }
+
+    /**
+     * Builds the card's answer off an ask the person's agent carried back.
+     *
+     * @param HandoverAskInterface $ask The ask the agent answered
+     * @param ?string $successMessage Sentence to speak on success, or null where the gesture has none
+     * @param ?string $error Why the write was refused, or null when it went through
+     * @param ?string $errorType Class name of the failure the refusal stands for, or null when nothing was held back
+     * @param ?string $errorDetail Original message of that failure, or null when nothing was held back
+     * @return HandoverAnswerSignalData Answer addressed to whoever the ask names
+     */
+    private static function handoverAnswer(
+        HandoverAskInterface $ask,
+        ?string $successMessage,
+        ?string $error,
+        ?string $errorType,
+        ?string $errorDetail,
+    ): HandoverAnswerSignalData {
+        return new HandoverAnswerSignalData(
+            acceptKey: $ask->acceptKey,
+            requestId: $ask->requestId,
+            action: $ask->action,
+            successMessage: $successMessage,
+            error: $error,
+            errorType: $errorType,
+            errorDetail: $errorDetail,
+        );
     }
 }

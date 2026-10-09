@@ -44,13 +44,13 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 final class TasksAgent extends AbstractAgent
 {
     /**
-     * @var array<string, list<TruthSourceOperation>> The accounts it serves and the guest rows
-     *     behind them, so their changes fan out to the browser. The guest table is this agent's
-     *     own: it is the one process that mints a guest row for a session and drops it when that
-     *     session signs in or its session row is swept (HIL-716, HIL-1075).
+     * @var array<string, list<TruthSourceOperation>> The guest rows behind the visitors it serves,
+     *     so their changes fan out to the browser. The guest table is this agent's own: it is the one
+     *     process that mints a guest row for a session and drops it when that session signs in or its
+     *     session row is swept (HIL-716, HIL-1075). The accounts are not here: every process reads
+     *     them, and an edit of one is that person's agent's (HIL-1404).
      */
     public const array OWNS_DB = [
-        TasksDbContext::users => TruthSourceOperation::BY_KIND,
         TasksDbContext::guests => TruthSourceOperation::BY_KIND,
     ];
 

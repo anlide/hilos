@@ -380,6 +380,7 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         $this->drainSignals();
         $library = $this->sessionsLibrary();
         $this->underAgent($library, static fn () => $library->onSignalAgent(new AgentSignalData($request), '', $name));
+        $this->deliverPersonAgentFrames();
         $this->deliverLibraryFrames($this->holder);
         $reply = null;
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {

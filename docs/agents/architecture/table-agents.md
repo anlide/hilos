@@ -314,8 +314,9 @@ figure has landed; its write routes and the table agent remain open.
 
 1. **The instance owner's write routes are not built yet.** A table over an instance
    subject takes its rows from the [owner of that instance](instance-owners.md).
-   The person's agent figure exists (HIL-630); ordinary edits reach it only after
-   HIL-1404 through HIL-1409. This page does not wait for those routes: it writes
+   The person's agent figure exists (HIL-630) and writes the name, the administrator
+   flag and the block (HIL-1404); the other ordinary edits reach it only after
+   HIL-1405 through HIL-1409. This page does not wait for those routes: it writes
    the approach. The first leaf of the epic that takes a table over an instance
    subject stands behind HIL-630; a table over a set subject does
    not, because the users library is in the code

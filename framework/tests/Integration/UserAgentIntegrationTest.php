@@ -151,7 +151,10 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::users, '43', []);
-        foreach (array_keys(UserAgentIntegrationWorker::OWNS_DB_SET) as $collection) {
+        // The rename journal is the one set the agent adds to, and only to its own person's set.
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::userRenames, static fn (): array => [self::USER_ID]);
+        $this->assertCreateDenied(HilosDbContext::userRenames, ['43']);
+        foreach (self::borrowedSets() as $collection) {
             TruthSourceRegistry::checkCanWriteItem(
                 $collection,
                 '1',
@@ -173,8 +176,31 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
     {
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
         $this->assertWriteDenied(HilosDbContext::users, self::USER_ID, []);
-        foreach (array_keys(UserAgentIntegrationWorker::OWNS_DB_SET) as $collection) {
+        $this->assertCreateDenied(HilosDbContext::userRenames, [self::USER_ID]);
+        foreach (self::borrowedSets() as $collection) {
             $this->assertWriteDenied($collection, '1', [self::USER_ID]);
+        }
+    }
+
+    /**
+     * @return list<string> Child sets the agent borrows to edit and remove, never to add
+     */
+    private static function borrowedSets(): array
+    {
+        return array_values(array_diff(array_keys(UserAgentIntegrationWorker::OWNS_DB_SET), [HilosDbContext::userRenames]));
+    }
+
+    /**
+     * @param string $collection Collection being checked
+     * @param list<string> $setKeys Root set keys of the row that would be created
+     */
+    private function assertCreateDenied(string $collection, array $setKeys): void
+    {
+        try {
+            TruthSourceRegistry::checkCanCreate($collection, static fn (): array => $setKeys);
+            self::fail("{$collection} allowed a creation in set [" . implode(', ', $setKeys) . '] outside this agent\'s claim');
+        } catch (CreateNotAllowedException) {
+            // Refused, which is what the claim promises.
         }
     }
 

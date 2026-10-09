@@ -27,11 +27,12 @@ use Hilos\Users\UserNotificationType;
 /**
  * Chat renames through the framework's journal and writes each rename into its feed (HIL-1196).
  *
- * Both ways a chat person is renamed end in the framework's renameUser(): an administrator's
- * frame is the framework library's to handle, and a moderated rename of oneself calls it once the
- * moderator allowed the name. After the commit chat's hook writes the feed event and links the
- * journal row to it. The event's type follows the row's author, and a person renamed by somebody
- * else is told so. Clearing the room's history takes the rows off their events and keeps them.
+ * Both ways a chat person is renamed end in the framework's rename ask: an administrator's frame
+ * is the framework library's to hand on, and a moderated rename of oneself asks once the moderator
+ * allowed the name. The person's agent writes the name and the journal row and answers the library
+ * (HIL-1404); on that answer chat's hook writes the feed event and links the journal row to it.
+ * The event's type follows the row's author, and a person renamed by somebody else is told so.
+ * Clearing the room's history takes the rows off their events and keeps them.
  */
 final class RenameFeedTest extends IntegrationTestCase
 {
@@ -190,6 +191,7 @@ final class RenameFeedTest extends IntegrationTestCase
             '',
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
         );
+        $this->deliverPersonAgentFrames();
         $this->deliverNotificationFrames();
 
         $answers = [];
@@ -227,6 +229,7 @@ final class RenameFeedTest extends IntegrationTestCase
         ExecutionContext::setCurrentAcceptKey($signal->getAcceptKey());
         try {
             $this->usersLibrary()->onSignalAgent($signal, '', ChatSignalConstants::RENAME_MODERATION_RESULT);
+            $this->deliverPersonAgentFrames();
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
         }

@@ -174,9 +174,9 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
     /**
      * Hands the moderator's verdict to the library that owns the account (HIL-771).
      *
-     * The whole round trip is one agent's now: the profile submit asks from the users library
-     * and the answer comes back to it, because applying a verdict means writing the row - which
-     * the page it used to arrive on holds no claim over.
+     * The verdict comes back to the users library the profile submit asked from, and an approved
+     * name goes one hop further: the person's agent writes it and answers the library, which then
+     * writes the feed line (HIL-1404). Both hops are carried here, as the workers would carry them.
      *
      * @param RenameModerationResultSignalData $result Verdict as the moderator sends it
      * @throws HilosException When the verdict cannot be applied
@@ -191,6 +191,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
                 '',
                 ChatSignalConstants::RENAME_MODERATION_RESULT,
             );
+            $this->deliverPersonAgentFrames();
         } finally {
             ExecutionContext::setCurrentAcceptKey(null);
         }

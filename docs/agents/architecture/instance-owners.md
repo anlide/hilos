@@ -17,9 +17,10 @@ A top-level entity around which many interactions gather gets an agent per
 instance. That agent is the sole writer of ordinary content edits made by the
 person or an administrator: its own row and every row whose set tree ends at
 that instance. For a person, the indexed agent, its row and set claims, and
-its idle lifetime are built (HIL-630). The edits move to it in the leaves named in
+its idle lifetime are built (HIL-630). The name, the administrator flag and the
+block are written by it (HIL-1404). The other edits move to it in the leaves named in
 [Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409, HIL-1410).
+(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409, HIL-1410).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -53,8 +54,9 @@ can find the two Entity constants, but cannot decide the second question.
 ## What The Owner Writes, And What It Does Not
 
 The owner writes ordinary edits of one instance's content, whether the person
-or an administrator requested them. For the person those moves are still ahead
-(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+or an administrator requested them. For the person the name, the administrator
+flag and the block have moved (HIL-1404); the rest are still ahead
+(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
 rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
@@ -87,16 +89,19 @@ whose delay has elapsed to the person's agent
 
 The sessions holder's responsibility is authorization. The person's other
 ordinary content edits go to the person's own agent, with erasure and merge
-remaining the declared set operations below (owner's decision, 2026-10-04)
-(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+remaining the declared set operations below (owner's decision, 2026-10-04). It
+judges the administrator flag and the block and the person's agent writes them
+(HIL-1404); the other edits are still ahead
+(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 Whether a session itself needs an instance owner is open in HIL-1403. Until
 that answer, this rule neither puts the session in the person's set nor rules
 it out as a future decision; it does not change the current Entity declaration.
 
 ## How It Is Declared
 
-The person's agent now declares the index, idle window, row claim and child-set
-claims (HIL-630). Production signals and pages addressed to it remain later work:
+The person's agent declares the index, idle window, row claim and child-set
+claims (HIL-630), and takes the frames of the edits that have moved to it
+(HIL-1404). Pages addressed to it remain later work:
 
 - The agent index is the instance id. The first frame addressed to it raises
   it, and `AgentRegistryKey::IDLE_TIMEOUT` lets it stop when idle. Follow
@@ -112,12 +117,46 @@ claims (HIL-630). Production signals and pages addressed to it remain later work
   `ownedDbSetKey()`, **without `Add`**. That is a borrowed claim beside the
   libraries that create the rows. The exact widths, operations, reads and
   startup refusals belong to [A Claim Over A Set](truth-source.md#a-claim-over-a-set).
+  The one exception is a row the owner writes in the same transaction as its
+  own row: the person's rename journal row is added with the name, so the agent
+  claims that set **with `Add`** and nothing else (HIL-1404).
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
-starting an agent (owner's decision, 2026-10-04). The figure exists; the
-content write paths still move
-(not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+starting an agent (owner's decision, 2026-10-04). The remaining content write
+paths still move
+(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+
+An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
+
+- **The coordinator judges, the owner writes, the coordinator finishes.** The
+  coordinator is whoever judged the edit before it moved — the users library
+  for the name, the sessions holder for the administrator flag and the block. It
+  checks exactly what it checked before and refuses at once, without raising the
+  agent. What passes becomes a frame to the agent; the agent writes and answers;
+  the coordinator does what follows the write — tells the tabs, ends the
+  sessions, tells the renamed person, runs the project's hook, binds the session
+  of `admin:create` — and answers whoever waits. What follows reads the written
+  row, so it can only come after the answer.
+- **The frame carries everything the coordinator needs to finish**, and the
+  agent sends it back untouched inside its answer, so the coordinator holds no
+  state between the hops and a restart in between loses no addressee. The four
+  frames to the agent are `hilos_user_rename`, `hilos_user_admin_write`,
+  `hilos_user_admin_command` and `hilos_user_block_write`, each indexed by
+  `userId`; each has a `_done` answer declared on its coordinator.
+- **A frame born of a press in a browser is a handover ask**
+  (`HandoverAskInterface`), so the agent's write is stamped with whoever pressed
+  the button. An operator's command has no connection to stamp, and its frame is
+  a plain one carrying the command's correlation id.
+- **The agent always answers**, a refusal and a wiring refusal included: the
+  coordinator continues only on the answer, and a card or a parked command is
+  waiting on it.
+- **A check the hop splits is held across it.** The sessions holder counts a
+  removal of rights, or a block of an administrator, that it has sent and the
+  agent has not yet answered as done, so two removals crossing each other cannot
+  both pass "the last active administrator". The mark lives in the holder's
+  memory and is conservative when lost: it can only refuse a removal that would
+  have left one.
 
 ## Memory
 
@@ -147,10 +186,13 @@ These are declared shapes, not debts waiting for an instance owner:
   chat agent has the borrowed write needed to clear the room reference.
 
 Creating the first administrator is creation, so it remains a library operation;
-deleting the erased person's row is part of the erasure transaction. Neither is
-an ordinary edit of a living person's content. The admin and block flag edits
-outside those set operations move to the person's agent
-(not in the code yet — HIL-1404).
+deleting the erased person's row is part of the erasure transaction, and
+blocking the losing account is part of the merge transaction. None of them is
+an ordinary edit of a living person's content. The administrator flag and block
+edits outside those set operations are the person's agent's (HIL-1404). The
+sessions holder's claim on `hilos_user` cannot tell the merge's edit from an
+ordinary one; that is the accepted price of keeping the merge in one transaction
+(owner's decision at the split, 2026-10-04).
 
 The borrowed claims for these operations carry an ordinary code comment: name
 the erasure, merge or sweep, say why it writes here, and point to this section.
@@ -160,9 +202,10 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 ## Anti-Patterns
 
 - **A library writes ordinary content edits of one owned instance.** Send the
-  edit to the instance owner. This is the current arrangement the person's
-  content moves replace, not evidence that the rule is already implemented
-  (not in the code yet — HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+  edit to the instance owner. For the name, the administrator flag and the block
+  this is done (HIL-1404); for the person's other content it is the current
+  arrangement the moves replace, not evidence that the rule is already implemented
+  (not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
@@ -184,7 +227,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | Leaf | Piece |
 |---|---|
 | HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (built). |
-| HIL-1404 | Name, administrator flag and block edits (not in the code yet — HIL-1404). |
+| HIL-1404 | Name, administrator flag and block edits (built). |
 | HIL-1405 | Sign-in methods and passkey credentials, including sign-in (not in the code yet — HIL-1405). |
 | HIL-1406 | Second factor, including a reset whose delay elapsed (not in the code yet — HIL-1406). |
 | HIL-1407 | Step-up confirmations and browser trust (not in the code yet — HIL-1407). |

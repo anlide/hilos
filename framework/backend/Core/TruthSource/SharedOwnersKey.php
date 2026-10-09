@@ -16,9 +16,9 @@ use Hilos\Hilos;
  *
  * ```php
  * public const array SHARED_DB_OWNERS = [
- *     ChatDbContext::users => [
- *         SharedOwnersKey::OWNERS => [ChatAgent::class, UsersLibraryAgent::class],
- *         SharedOwnersKey::DEBT => 'HIL-1404',
+ *     HilosDbContext::stepUps => [
+ *         SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
+ *         SharedOwnersKey::DEBT => 'HIL-1407',
  *     ],
  * ];
  * ```

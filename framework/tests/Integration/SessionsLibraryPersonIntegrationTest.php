@@ -25,16 +25,18 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\AdminAudience;
+use Hilos\Users\Agent\AbstractUserAgent;
 
 /**
- * The person as the framework's sessions library mints, flags, blocks and judges it (HIL-1197),
- * and an account folded into another one as it refuses it (HIL-1199).
+ * The person as the framework's sessions library mints and judges it (HIL-1197) and as the
+ * person's own agent flags and blocks it (HIL-1404), and an account folded into another one as
+ * the agent refuses it (HIL-1199).
  *
- * The library under test is the base class with nothing overridden, so what answers is the
- * framework's own body over `hilos_user`, and no project stands between the two. Every write
- * runs in the library's own frame and under the claim the library itself declares: in a frame
- * a write passes only by that agent's own grant, which is what proves the base holds the share
- * of the row it writes.
+ * The library and the agent under test are the base classes with nothing overridden, so what
+ * answers is the framework's own body over `hilos_user`, and no project stands between the two.
+ * Every write runs in its writer's own frame and under the claim that writer's class declares:
+ * in a frame a write passes only by that agent's own grant, which is what proves each holds the
+ * share of the row it writes.
  *
  * Whom a takeover may reach is judged with the impersonation settings of the installation
  * (HIL-1170), read from a fixture catalog whose defaults a case switches off: a default is the
@@ -42,6 +44,8 @@ use Hilos\Users\AdminAudience;
  */
 final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const int MISSING_USER_ID = 9999;
 
     private SessionsLibraryPersonTestLibrary $library;
@@ -67,6 +71,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         AccountStandingResolver::forgetAll();
         Hilos::$setting = $this->previousSetting;
         TruthSourceRegistry::unregisterAgent($this->library->getId());
@@ -80,7 +85,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
      */
     public function testMintsAnAdministratorForASessionCarryingNobody(): void
     {
-        $userId = $this->inLibrary(fn (): int => $this->library->ensureAdmin(null));
+        $userId = $this->inLibrary(fn (): int => $this->library->mintAdmin());
 
         self::assertGreaterThan(0, $userId);
         $row = self::personRow($userId);
@@ -92,43 +97,14 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     /**
      * @throws HilosException When a fixture row cannot be written or the flag cannot be read
      */
-    public function testFlagsThePersonTheSessionCarriesAndMintsNobody(): void
-    {
-        $userId = self::seedPerson('Ada', admin: false, block: false);
-
-        $adminId = $this->inLibrary(fn (): int => $this->library->ensureAdmin($userId));
-
-        self::assertSame($userId, $adminId);
-        self::assertSame(1, (int)self::personRow($userId)['admin']);
-        self::assertSame(1, self::personCount());
-    }
-
-    /**
-     * @throws HilosException When the table cannot be counted
-     */
-    public function testRefusesToFlagASessionPersonWithNoRow(): void
-    {
-        try {
-            $this->inLibrary(fn (): int => $this->library->ensureAdmin(self::MISSING_USER_ID));
-            self::fail('A person with no row must not be made an administrator');
-        } catch (ItemNotFoundForUpdateException $e) {
-            self::assertSame('No such user: ' . self::MISSING_USER_ID, $e->getMessage());
-        }
-
-        self::assertSame(0, self::personCount());
-    }
-
-    /**
-     * @throws HilosException When a fixture row cannot be written or the flag cannot be read
-     */
     public function testGrantsAndRevokesTheAdminFlag(): void
     {
         $userId = self::seedPerson('Grace', admin: false, block: false);
 
-        $this->inLibrary(fn () => $this->library->grant($userId, true));
+        $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->grant(true));
         self::assertSame(1, (int)self::personRow($userId)['admin']);
 
-        $this->inLibrary(fn () => $this->library->grant($userId, false));
+        $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->grant(false));
         self::assertSame(0, (int)self::personRow($userId)['admin']);
     }
 
@@ -140,7 +116,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         $this->expectException(ItemNotFoundForUpdateException::class);
         $this->expectExceptionMessage('No such user: ' . self::MISSING_USER_ID);
 
-        $this->inLibrary(fn () => $this->library->grant(self::MISSING_USER_ID, true));
+        $this->asPerson(self::MISSING_USER_ID, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->grant(true));
     }
 
     /**
@@ -150,10 +126,10 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     {
         $userId = self::seedPerson('Linus', admin: false, block: false);
 
-        $this->inLibrary(fn () => $this->library->block($userId, true));
+        $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->block(true));
         self::assertSame(1, (int)self::personRow($userId)['block']);
 
-        $this->inLibrary(fn () => $this->library->block($userId, false));
+        $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->block(false));
         self::assertSame(0, (int)self::personRow($userId)['block']);
     }
 
@@ -165,7 +141,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
         $this->expectException(ItemNotFoundForUpdateException::class);
         $this->expectExceptionMessage('No such user: ' . self::MISSING_USER_ID);
 
-        $this->inLibrary(fn () => $this->library->block(self::MISSING_USER_ID, true));
+        $this->asPerson(self::MISSING_USER_ID, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->block(true));
     }
 
     /**
@@ -184,7 +160,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 
         foreach ([[$plainId, true], [$adminId, false]] as [$userId, $admin]) {
             try {
-                $this->inLibrary(fn () => $this->library->grant($userId, $admin));
+                $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->grant($admin));
                 self::fail('A merged account must not have its rights changed');
             } catch (ValidationException $e) {
                 self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $e->getMessage());
@@ -211,7 +187,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 
         foreach ([[$closedId, false], [$reopenedId, true]] as [$userId, $block]) {
             try {
-                $this->inLibrary(fn () => $this->library->block($userId, $block));
+                $this->asPerson($userId, static fn (SessionsLibraryPersonTestUserAgent $agent) => $agent->block($block));
                 self::fail('A merged account must not have its block changed');
             } catch (ValidationException $e) {
                 self::assertSame(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE, $e->getMessage());
@@ -380,6 +356,15 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
     }
 
     /**
+     * @param string $userId Person id as the agent address carries it
+     * @return SessionsLibraryPersonTestUserAgent The person's agent with its two flag writes opened
+     */
+    private function newPersonAgent(string $userId): SessionsLibraryPersonTestUserAgent
+    {
+        return new SessionsLibraryPersonTestUserAgent($userId);
+    }
+
+    /**
      * Mounts the impersonation settings with these yes-or-no keys switched off and every other on its default.
      *
      * A fresh accessor, because an accessor asks its catalog once.
@@ -469,7 +454,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
 /**
  * The framework's sessions library under a test name, with no method of the person overridden.
  *
- * The four methods it opens are protected on the base; the wrappers below only make them
+ * The two methods it opens are protected on the base; the wrappers below only make them
  * reachable from the case, and add nothing to what they do.
  */
 final class SessionsLibraryPersonTestLibrary extends AbstractSessionsLibraryAgent
@@ -479,37 +464,12 @@ final class SessionsLibraryPersonTestLibrary extends AbstractSessionsLibraryAgen
     /**
      * Opens the protected administrator mint to the test.
      *
-     * @param ?int $userId User the session carries, or null when it carries none
-     * @return int Id of the user that is now an administrator
+     * @return int Id of the administrator just minted
      * @throws HilosException Whatever the framework's write raises
      */
-    public function ensureAdmin(?int $userId): int
+    public function mintAdmin(): int
     {
-        return $this->ensureAdminUser($userId);
-    }
-
-    /**
-     * Opens the protected admin flag write to the test.
-     *
-     * @param int $userId Target user id
-     * @param bool $admin New admin flag
-     * @throws HilosException Whatever the framework's write raises
-     */
-    public function grant(int $userId, bool $admin): void
-    {
-        $this->applyAdminGrant($userId, $admin);
-    }
-
-    /**
-     * Opens the protected block flag write to the test.
-     *
-     * @param int $userId Target account id
-     * @param bool $block Requested block flag
-     * @throws HilosException Whatever the framework's write raises
-     */
-    public function block(int $userId, bool $block): void
-    {
-        $this->applyAccountBlock($userId, $block);
+        return $this->mintAdminUser();
     }
 
     /**
@@ -522,6 +482,35 @@ final class SessionsLibraryPersonTestLibrary extends AbstractSessionsLibraryAgen
     public function mayImpersonate(int $adminUserId, int $targetUserId): void
     {
         $this->assertImpersonationAllowed($adminUserId, $targetUserId);
+    }
+}
+
+/**
+ * The framework's agent of one person, with its two flag writes opened to the case and nothing
+ * overridden.
+ */
+final class SessionsLibraryPersonTestUserAgent extends AbstractUserAgent
+{
+    /**
+     * Opens the protected admin flag write to the test.
+     *
+     * @param bool $admin New admin flag
+     * @throws HilosException Whatever the framework's write raises
+     */
+    public function grant(bool $admin): void
+    {
+        $this->writeAdminFlag($admin);
+    }
+
+    /**
+     * Opens the protected block flag write to the test.
+     *
+     * @param bool $block New block flag
+     * @throws HilosException Whatever the framework's write raises
+     */
+    public function block(bool $block): void
+    {
+        $this->writeBlockFlag($block);
     }
 }
 

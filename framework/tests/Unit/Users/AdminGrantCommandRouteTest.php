@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Users;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -21,6 +22,9 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Tests\Integration\SessionsLibraryPersonIntegrationTest;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\AdminAudience;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -30,9 +34,10 @@ use PHPUnit\Framework\TestCase;
  * and is answered by whatever reaches the unauthenticated command socket - the CLI class that
  * normally sends it is not on the path. What needs pinning here is everything the framework
  * owns: that both wire names land on the handler, that the payload is validated before the
- * write is called, and that the write's outcome - refusal, failure, success - always becomes
- * exactly one reply. The write itself is the framework's over `hilos_user` since HIL-1197 and is
- * replaced here, so the route is pinned apart from the table; its row is pinned by
+ * write is asked for, and that the write's outcome - refusal, failure, success - always becomes
+ * exactly one reply. The write is the person's agent's since HIL-1404: the library sends it a
+ * frame and finishes on its answer, so the test carries the frame there and the answer back. The
+ * agent's write is replaced, so the route is pinned apart from the table; its row is pinned by
  * {@see SessionsLibraryPersonIntegrationTest}.
  *
  * A write that lands is ANNOUNCED, and the announcement is what moving the route bought: one
@@ -81,19 +86,21 @@ final class AdminGrantCommandRouteTest extends TestCase
         self::assertContains(CliCommands::ADMIN_REVOKE, AbstractSessionsLibraryAgent::AGENT_COMMANDS);
     }
 
-    public function testGrantReachesTheProjectSeamAndAnswersWithTheFlag(): void
+    public function testGrantReachesThePersonsAgentAndAnswersWithTheFlag(): void
     {
         $agent = new AdminGrantRouteTestAgent();
+        $person = new AdminGrantRouteTestUserAgent((string)self::LIVE_USER_ID);
 
         $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
             AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
 
         $this->consumeAnnouncement(self::LIVE_USER_ID);
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
-        self::assertSame([self::LIVE_USER_ID, true], $agent->applied);
+        self::assertSame([self::LIVE_USER_ID, true], $person->applied);
         self::assertSame(self::LIVE_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
@@ -106,16 +113,18 @@ final class AdminGrantCommandRouteTest extends TestCase
         // The flag travels in the payload rather than in the wire name, so the revoke path
         // is only honest if a false flag survives the handler that both names share.
         $agent = new AdminGrantRouteTestAgent();
+        $person = new AdminGrantRouteTestUserAgent((string)self::LIVE_USER_ID);
 
         $this->sendCommand($agent, CliCommands::ADMIN_REVOKE, [
             AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => false,
         ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
 
         $this->consumeAnnouncement(self::LIVE_USER_ID);
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk());
-        self::assertSame([self::LIVE_USER_ID, false], $agent->applied);
+        self::assertSame([self::LIVE_USER_ID, false], $person->applied);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
         self::assertSame(1, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
@@ -134,18 +143,43 @@ final class AdminGrantCommandRouteTest extends TestCase
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertSame('The last active administrator cannot lose the rights', $reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertNull($agent->applied);
+    }
+
+    public function testARevokeOnItsWayCountsAgainstTheLastAdministrator(): void
+    {
+        // Two administrators, and the first revoke has gone to the person's agent unanswered:
+        // the second must not see a second administrator still standing (HIL-1404).
+        $agent = new AdminGrantRouteTestAgent();
+        $this->sendCommand($agent, CliCommands::ADMIN_REVOKE, [
+            AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
+            AdminCommandConstants::FIELD_ADMIN => false,
+        ]);
+        $first = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($first);
+        self::assertInstanceOf(AgentSignalData::class, $first->data);
+        self::assertInstanceOf(UserAdminCommandSignalData::class, $first->data->data);
+
+        $this->sendCommand($agent, CliCommands::ADMIN_REVOKE, [
+            AdminCommandConstants::FIELD_USER_ID => 8,
+            AdminCommandConstants::FIELD_ADMIN => false,
+        ]);
+
+        $reply = $this->consumeReply();
+        self::assertFalse($reply->isOk());
+        self::assertSame('The last active administrator cannot lose the rights', $reply->payload[CommandConstants::FIELD_MESSAGE]);
     }
 
     public function testAnUnknownUserAnswersAsAnErrorReply(): void
     {
         $agent = new AdminGrantRouteTestAgent();
-        $agent->refuseWith = new ItemNotFoundForUpdateException('No such user: 404');
+        $person = new AdminGrantRouteTestUserAgent('404');
+        $person->refuseWith = new ItemNotFoundForUpdateException('No such user: 404');
 
         $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
             AdminCommandConstants::FIELD_USER_ID => 404,
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
 
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
@@ -164,7 +198,6 @@ final class AdminGrantCommandRouteTest extends TestCase
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('positive userId', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertNull($agent->applied, 'A rejected payload never reaches the write');
     }
 
     public function testAMissingUserIdIsRefusedRatherThanReadAsZero(): void
@@ -179,7 +212,6 @@ final class AdminGrantCommandRouteTest extends TestCase
 
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
-        self::assertNull($agent->applied);
     }
 
     public function testAFailedAnnouncementStillAnswersTheOperator(): void
@@ -189,15 +221,17 @@ final class AdminGrantCommandRouteTest extends TestCase
         Hilos::$rt = new AdminGrantRouteTestFailingRtContext();
         Hilos::$rt->configure();
         $agent = new AdminGrantRouteTestAgent();
+        $person = new AdminGrantRouteTestUserAgent((string)self::LIVE_USER_ID);
 
         $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
             AdminCommandConstants::FIELD_USER_ID => self::LIVE_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
+        $this->carryThroughThePersonsAgent($agent, $person);
 
         $reply = $this->consumeReply();
         self::assertTrue($reply->isOk(), 'A written flag is not reported as an error');
-        self::assertSame([self::LIVE_USER_ID, true], $agent->applied);
+        self::assertSame([self::LIVE_USER_ID, true], $person->applied);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_ANNOUNCED]);
         self::assertSame(0, $reply->payload[AdminCommandConstants::FIELD_ANNOUNCED_SESSIONS]);
         self::assertNotSame('', (string)$reply->payload[AdminCommandConstants::FIELD_ANNOUNCE_ERROR]);
@@ -217,6 +251,32 @@ final class AdminGrantCommandRouteTest extends TestCase
             '',
             '',
         );
+    }
+
+    /**
+     * Carries the library's frame to the person's agent, and the agent's answer back.
+     *
+     * Asserts on the way that what the library queued is exactly one frame to the person's agent,
+     * which is what pins that no reply went out before the write was answered.
+     *
+     * @param AdminGrantRouteTestAgent $library Library under test
+     * @param AdminGrantRouteTestUserAgent $person Agent of the person the command names
+     */
+    private function carryThroughThePersonsAgent(AdminGrantRouteTestAgent $library, AdminGrantRouteTestUserAgent $person): void
+    {
+        $ask = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($ask, 'The write is asked of the person\'s agent');
+        self::assertSame(HilosSignalConstants::HILOS_USER_ADMIN_COMMAND, $ask->signalName->getName());
+        self::assertInstanceOf(AgentSignalData::class, $ask->data);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'Nothing is answered before the agent is');
+        $person->onSignalAgent($ask->data, '', HilosSignalConstants::HILOS_USER_ADMIN_COMMAND);
+
+        $answer = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($answer, 'The person\'s agent always answers');
+        self::assertSame(HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE, $answer->signalName->getName());
+        self::assertInstanceOf(AgentSignalData::class, $answer->data);
+        self::assertInstanceOf(UserAdminCommandDoneSignalData::class, $answer->data->data);
+        $library->onSignalAgent($answer->data, '', HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE);
     }
 
     /**
@@ -260,38 +320,42 @@ final class AdminGrantCommandRouteTest extends TestCase
 }
 
 /**
- * Sessions library with the framework's grant replaced, so the route is pinned apart from the
- * person table: it records the call instead of writing a row, and can be told to fail the way
- * the framework refuses an unknown user. The announcement is stubbed too - reading a person's
- * sessions needs a database this suite deliberately does not have, so the fixture states the
- * one session it pretends to hold.
+ * Sessions library as the framework declares it. The announcement reads a person's sessions off a
+ * runtime this suite stubs: the fixture states the one session it pretends to hold.
  */
 final class AdminGrantRouteTestAgent extends AbstractSessionsLibraryAgent
 {
-    /** @var ?array{int, bool} Arguments the write was called with, or null when it was not */
+    public function onStop(): void
+    {
+    }
+}
+
+/**
+ * The person's agent with the framework's flag write replaced, so the route is pinned apart from
+ * the person table: it records the call instead of writing a row, and can be told to fail the way
+ * the framework refuses an unknown user.
+ */
+final class AdminGrantRouteTestUserAgent extends AbstractUserAgent
+{
+    /** @var ?array{int, bool} Person and flag the write was called with, or null when it was not */
     public ?array $applied = null;
 
     /** @var ?ItemNotFoundForUpdateException Failure the write raises instead of writing */
     public ?ItemNotFoundForUpdateException $refuseWith = null;
 
-    public function onStop(): void
-    {
-    }
-
     /**
      * Records the grant, or fails the way the framework refuses an unknown user.
      *
-     * @param int $userId Target user id
      * @param bool $admin New admin flag
      * @throws ItemNotFoundForUpdateException When the test asked this write to refuse
      */
-    protected function applyAdminGrant(int $userId, bool $admin): void
+    protected function writeAdminFlag(bool $admin): void
     {
         if ($this->refuseWith !== null) {
             throw $this->refuseWith;
         }
 
-        $this->applied = [$userId, $admin];
+        $this->applied = [(int)$this->getIndex(), $admin];
     }
 }
 

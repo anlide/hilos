@@ -245,8 +245,9 @@ Follow the framework extension contract in
   in on a new token, walking one refused before the second factor on to it, and
   a browser away at that moment at its own handshake; a password change or "end
   other sessions" cancels the return of the others (HIL-1188). The admin card
-  is the exception to sending that frame: the sessions library calls
-  `applyAccountBlock()` and enforces the flag directly.
+  is the exception to sending that frame: the sessions library has the person's
+  agent write the flag (`writeBlockFlag()`) and enforces it directly on the
+  agent's answer (HIL-1404).
 
 ## hilos-users base
 
@@ -263,16 +264,17 @@ A project's own admin table (Mode 2) is not a hilos-users extension. The chat
 demo's bots table is that separate table; the framework feature is the panel
 operators, the project table is the project's own.
 
-The account card requires `applyAccountBlock()` on the sessions library,
+The account card requires `writeBlockFlag()` on the person's agent
+(`AbstractUserAgent`, asked by the sessions library, HIL-1404),
 `assertAdministratorMayDelete()` on the users library, and `ADMIN_AUDIENCE`.
 That audience judges the requesting administrator and protects the last active
 one. All three are the framework's implementation, since the columns they read
-are the framework's. `applyAccountBlock()` writes the block flag of the person's
+are the framework's. `writeBlockFlag()` writes the block flag of the person's
 `hilos_user` row and refuses a missing account and, both ways, an account folded
 into another one — the merge table `hilos_user_merge` is the framework's too
 (HIL-1199, [people-table.md](people-table.md), *A Merged Account*); a project
-with a refusal of its own overrides it and refuses BEFORE calling the parent,
-because the parent writes. `assertAdministratorMayDelete()` refuses a missing
+with a refusal of its own overrides it in its agent binding and refuses BEFORE
+calling the parent, because the parent writes. `assertAdministratorMayDelete()` refuses a missing
 account, an administrator and a folded account, in that order, and a project
 with a refusal of its own overrides it and calls the parent first, because that
 one only reads. `ADMIN_AUDIENCE`'s default `AdminAudience` answers the unblocked,

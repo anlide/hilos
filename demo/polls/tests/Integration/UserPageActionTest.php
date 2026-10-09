@@ -125,6 +125,8 @@ final class UserPageActionTest extends IntegrationTestCase
                 '',
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET,
             ));
+            // The person's agent writes the flag, and the library answers the card on its answer (HIL-1404).
+            $this->deliverHilosLibraryFrames();
             $reply = null;
             while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
                 if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {

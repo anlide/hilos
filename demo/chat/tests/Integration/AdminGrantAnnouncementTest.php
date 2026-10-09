@@ -59,6 +59,7 @@ final class AdminGrantAnnouncementTest extends IntegrationTestCase
 
         try {
             $this->sessionsLibrary()->onSignalCommand($this->grantCommand($userId), '', '');
+            $this->deliverPersonAgentFrames();
             $this->deliverLibraryFrames($agent);
 
             $response = $this->lastHandshakeResponseFor(self::OPEN_TAB_ACCEPT_KEY);

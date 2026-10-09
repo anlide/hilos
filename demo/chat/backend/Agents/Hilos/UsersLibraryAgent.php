@@ -21,6 +21,7 @@ use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\OAuth\OAuthService;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -44,6 +45,7 @@ use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Users\DTO\UserRenameSignalData;
 use Random\RandomException;
 
 /**
@@ -193,9 +195,9 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * @throws AgentUnknownSignalException When the name is not one this library declared
      * @throws LogicException When the verdict payload is not the one its name promises
      * @throws AgentException When the verdict does not match a rename this connection is running
-     * @throws ValidationException When the approved name is refused, or a framework frame carries the wrong payload
+     * @throws ValidationException When a framework frame carries the wrong payload
      * @throws InvalidArgumentException When a frame the handler sends cannot be named or queued
-     * @throws HilosException When the account read or the rename fails
+     * @throws HilosException When the account read or the rename ask fails
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -296,9 +298,11 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      * Applies an approved rename moderation result or tells the asker it was refused.
      *
      * Stale connection results fail the agent-signal contract and never rename a user. An
-     * approved name is given by the framework, as the person's own rename: the name and its
-     * journal row, then the feed line {@see afterUserRenamed()} writes (HIL-1196). The name the
-     * person already carries writes nothing.
+     * approved name is given by the framework, as the person's own rename: the person's agent
+     * writes the name and its journal row, then the feed line {@see afterUserRenamed()} writes
+     * (HIL-1196, HIL-1404). The name the person already carries writes nothing. A write the agent
+     * refuses - the account was merged away meanwhile - reaches the person's window in the same
+     * frame a moderation refusal does.
      *
      * The refusal is addressed to the connection that asked, as the action_error of the
      * `rename` action it submitted - the same frame, for the same action name, that the page
@@ -308,8 +312,7 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
      *
      * @param RenameModerationResultSignalData $result Moderation result for a requested display name
      * @throws AgentException When result does not match an active connection rename request
-     * @throws InvalidArgumentException When the refusal frame cannot be named or queued
-     * @throws ValidationException When the approved name is empty, too short or too long
+     * @throws InvalidArgumentException When the refusal frame or the rename ask cannot be named or queued
      * @throws HilosException On database, runtime, truth-source, or signal failure
      */
     private function applyRenameModerationResult(RenameModerationResultSignalData $result): void
@@ -354,7 +357,17 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
         }
 
         $connection->actions->clearRenameModeration();
-        $this->renameUser($result->userId, $result->newName, $result->userId);
+        $this->askRename(new UserRenameSignalData(
+            userId: $result->userId,
+            name: $result->newName,
+            renamedByUserId: $result->userId,
+            replySignal: HilosSignalConstants::HILOS_USER_RENAME_DONE,
+            acceptKey: $result->acceptKey,
+            requestId: null,
+            action: ChatSignalConstants::RENAME,
+            successMessage: null,
+            answerSignal: null,
+        ));
     }
 
     /**

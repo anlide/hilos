@@ -125,24 +125,30 @@ final class AgentTruthSourceOperationsTest extends TestCase
     }
 
     /**
-     * The person row is the library's whole, although what a library does by default is add and remove.
+     * The library only creates people: an edit of one person is that person's agent's (HIL-1404).
      *
      * The claim is read off the class the way a start reads it, so no project subclass stands
-     * between the base's declaration and the answer (HIL-1194).
+     * between the base's declaration and the answer (HIL-1194). The rename journal is held for
+     * editing alone - the agent adds its row, the library reads it back and its hook may add to it.
      */
-    public function testLibraryAgentHoldsThePersonRowWithEveryOperation(): void
+    public function testLibraryAgentOnlyCreatesThePersonRow(): void
     {
         $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestLibrary::class);
 
         $this->assertArrayHasKey(HilosDbContext::users, $claims);
-        $this->assertTrue($claims[HilosDbContext::users]->isComplete());
+        $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Add));
+        $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Update));
+        $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Remove));
+        $this->assertTrue($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Update));
+        $this->assertFalse($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Add));
     }
 
     /**
      * The sessions library holds a share of the person row and not the row: it adds, edits and removes.
      *
-     * It mints the first administrator and writes the admin and block flags (HIL-1197); it also
-     * removes an erased person's row (HIL-1200). Read off an empty subclass, so what answers is the base's
+     * It mints the first administrator (HIL-1197), blocks the loser inside the merge transaction
+     * and removes an erased person's row (HIL-1200); the admin and block flags an administrator
+     * asks for are written by the person's agent (HIL-1404). Read off an empty subclass, so what answers is the base's
      * own declaration and no project's addition to it.
      */
     public function testSessionsLibraryMayAddEditAndEraseThePersonRow(): void

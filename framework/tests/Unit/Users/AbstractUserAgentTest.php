@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Users;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -17,6 +20,10 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -101,10 +108,12 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::notifications,
             HilosDbContext::notificationPreferences,
             HilosDbContext::pushSubscriptions,
+            HilosDbContext::userRenames,
         ], array_keys(TestUserAgent::OWNS_DB_SET));
-        foreach (TestUserAgent::OWNS_DB_SET as $operations) {
-            self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], $operations);
+        foreach (self::borrowedSets() as $collection) {
+            self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[$collection]);
         }
+        self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::userRenames]);
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame([], TestUserAgent::READS_DB);
         self::assertSame([], TestUserAgent::OWNS_RT);
@@ -121,7 +130,8 @@ final class AbstractUserAgentTest extends TestCase
         ExecutionContext::setCurrentAgentId($agent->getId());
 
         TruthSourceRegistry::checkCanWriteItem(HilosDbContext::users, '42', static fn (): array => [], TruthSourceOperation::Update);
-        foreach (array_keys(TestUserAgent::OWNS_DB_SET) as $collection) {
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::userRenames, static fn (): array => ['42']);
+        foreach (self::borrowedSets() as $collection) {
             TruthSourceRegistry::checkCanWriteItem($collection, '1', static fn (): array => ['42'], TruthSourceOperation::Update);
             TruthSourceRegistry::checkCanWriteItem($collection, '1', static fn (): array => ['42'], TruthSourceOperation::Remove);
             self::assertFalse(TruthSourceRegistry::hasCreateSource($collection));
@@ -134,6 +144,41 @@ final class AbstractUserAgentTest extends TestCase
             static fn (): array => ['43'],
             TruthSourceOperation::Update,
         );
+    }
+
+    public function testRenameJournalRowsOfAnotherPersonAreNotCreated(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new TestUserAgent('42');
+        OwnershipDeclaration::claimDbSet($agent);
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        $this->expectException(CreateNotAllowedException::class);
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::userRenames, static fn (): array => ['43']);
+    }
+
+    public function testEveryEditFrameIsAddressedByThePersonId(): void
+    {
+        self::assertSame([
+            HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
+            HilosSignalConstants::HILOS_USER_BLOCK_WRITE => UserBlockWriteSignalData::class,
+        ], array_map(
+            static fn (array $config): string => $config[AgentSignalConfigKey::DTO],
+            TestUserAgent::AGENT_SIGNALS,
+        ));
+        foreach (TestUserAgent::AGENT_SIGNALS as $config) {
+            self::assertSame('userId', $config[AgentSignalConfigKey::INDEX_FIELD]);
+        }
+    }
+
+    /**
+     * @return list<string> Child sets the agent borrows to edit and remove, never to add
+     */
+    private static function borrowedSets(): array
+    {
+        return array_values(array_diff(array_keys(TestUserAgent::OWNS_DB_SET), [HilosDbContext::userRenames]));
     }
 }
 

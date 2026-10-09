@@ -8,6 +8,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Router\AgentSignalData;
@@ -27,6 +28,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\Agent\AbstractUserAgent;
 
 /**
  * The agent side of the admin:create command route (HIL-609).
@@ -38,14 +40,17 @@ use Hilos\Users\AdminCommandConstants;
  * raised from their migration stubs here.
  *
  * What is pinned is the route: that a token naming no session and a failing write each become
- * exactly one error reply, that the write is reached with the user the session carries (or
- * with null when it carries none, expiry included), that `created` tells a mint from a grant
- * and `expired` tells why the user changed (HIL-700). The write itself is the framework's over
- * `hilos_user` since HIL-1197 and is replaced here, so the route is pinned apart from the
- * table; {@see SessionsLibraryPersonIntegrationTest} pins the row it writes.
+ * exactly one error reply, that the user the session carries is flagged by their own agent and
+ * the session bound on its answer (HIL-1404), that a session carrying nobody - expiry included -
+ * has an administrator minted, that `created` tells a mint from a grant and `expired` tells why
+ * the user changed (HIL-700). The mint and the agent's write are the framework's over
+ * `hilos_user` and are replaced here, so the route is pinned apart from the table;
+ * {@see SessionsLibraryPersonIntegrationTest} pins the row they write.
  */
 final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     /** Token of a session that exists in every case below; the shape SessionToken accepts. */
     private const string TOKEN = '4f9c1b8e2d7a6053c4e1f8b90a2d3c56';
 
@@ -94,6 +99,9 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /** @var list<SessionStateSignalData> State frames queued alongside the command reply */
     private array $sessionFrames = [];
 
+    /** Failure the person's agent raises instead of writing the flag, or null to let it write. */
+    private ?ItemNotFoundForUpdateException $personRefusal = null;
+
     /**
      * @throws DatabaseException When a stub statement fails
      * @throws HilosException When the runtime cannot be mounted
@@ -130,6 +138,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         Hilos::$rt = $this->previousRt;
@@ -151,10 +160,11 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $this->sendCommand($agent, self::UNKNOWN_TOKEN);
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('No session', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
-        self::assertFalse($agent->called, 'A token nobody holds never reaches the write');
+        self::assertFalse($agent->called, 'A token nobody holds never reaches the mint');
+        self::assertSame([], $this->personAgents, 'A token nobody holds never reaches a person');
     }
 
     /**
@@ -167,24 +177,29 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $this->sendCommand($agent, 'not-a-token');
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertFalse($reply->isOk());
         self::assertFalse($agent->called);
+        self::assertSame([], $this->personAgents);
     }
 
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testASessionCarryingAUserReachesTheWriteWithThatId(): void
+    public function testASessionCarryingAUserIsFlaggedByThatPersonsAgent(): void
     {
         self::seedSession(self::TOKEN, self::EXISTING_USER_ID);
         $agent = new AdminCreateRouteTestAgent();
 
         $this->sendCommand($agent, self::TOKEN);
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
-        self::assertSame(self::EXISTING_USER_ID, $agent->seenUserId);
+        self::assertFalse($agent->called, 'A person who exists is not minted');
+        self::assertSame([self::EXISTING_USER_ID], array_keys($this->personAgents));
+        $person = $this->personAgents[self::EXISTING_USER_ID];
+        self::assertInstanceOf(AdminCreateRouteTestUserAgent::class, $person);
+        self::assertTrue($person->flagged);
         self::assertSame(self::EXISTING_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_ADMIN]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_CREATED], 'Nothing was minted');
@@ -195,17 +210,17 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     /**
      * @throws DatabaseException When the seed or the read-back fails
      */
-    public function testASessionCarryingNoUserReachesTheWriteWithNullAndIsBoundToWhatItMints(): void
+    public function testASessionCarryingNoUserMintsAnAdministratorAndIsBoundToIt(): void
     {
         self::seedSession(self::TOKEN, null);
         $agent = new AdminCreateRouteTestAgent();
 
         $this->sendCommand($agent, self::TOKEN);
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
-        self::assertTrue($agent->called);
-        self::assertNull($agent->seenUserId, 'A session with no user asks the write to mint one');
+        self::assertTrue($agent->called, 'A session with no user has an administrator minted');
+        self::assertSame([], $this->personAgents);
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertFalse($reply->payload[AdminCommandConstants::FIELD_EXPIRED], 'It carried nobody to lose');
@@ -220,9 +235,9 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      * The point of HIL-700. The command used to find the row with a plain lookup, so a
      * cookie whose expiry had passed was re-bound and slid forward - an expired access
      * became an administrator. It now goes through the same door a handshake uses, which
-     * drops it to anonymous first (HIL-398), so the write is asked to mint rather than handed
-     * the stale user, and `expired` is what tells the operator why the reply names a user id
-     * he has never seen.
+     * drops it to anonymous first (HIL-398), so an administrator is minted rather than the stale
+     * user flagged, and `expired` is what tells the operator why the reply names a user id he has
+     * never seen.
      *
      * @throws DatabaseException When the seed or the read-back fails
      */
@@ -234,10 +249,10 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
 
         $this->sendCommand($agent, self::TOKEN);
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
         self::assertTrue($agent->called);
-        self::assertNull($agent->seenUserId, 'The expired user is gone before the write is asked');
+        self::assertSame([], $this->personAgents, 'The expired user is gone before anybody is flagged');
         self::assertSame(AdminCreateRouteTestAgent::MINTED_USER_ID, $reply->payload[AdminCommandConstants::FIELD_USER_ID]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_CREATED]);
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
@@ -260,9 +275,10 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         Hilos::$rt->addConnection(AdminCreateRouteTestConnection::create('first-tab', self::EXISTING_USER_ID, self::TOKEN));
         Hilos::$rt->addConnection(AdminCreateRouteTestConnection::create('second-tab', self::EXISTING_USER_ID, self::TOKEN));
 
-        $this->sendCommand(new AdminCreateRouteTestAgent(), self::TOKEN);
+        $agent = new AdminCreateRouteTestAgent();
+        $this->sendCommand($agent, self::TOKEN);
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertTrue($reply->isOk());
         self::assertTrue($reply->payload[AdminCommandConstants::FIELD_EXPIRED]);
         self::assertNull(Hilos::$db->sessions->findByToken(self::TOKEN));
@@ -291,13 +307,14 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
     {
         self::seedSession(self::TOKEN, self::EXISTING_USER_ID);
         $agent = new AdminCreateRouteTestAgent();
-        $agent->refuseWith = new ItemNotFoundForUpdateException('No such user: 7');
+        $this->personRefusal = new ItemNotFoundForUpdateException('No such user: 7');
 
         $this->sendCommand($agent, self::TOKEN);
 
-        $reply = $this->consumeReply();
+        $reply = $this->consumeReply($agent);
         self::assertFalse($reply->isOk());
         self::assertStringContainsString('No such user', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame(self::EXISTING_USER_ID, self::boundUserId(self::TOKEN), 'The session keeps its person');
     }
 
     /**
@@ -324,15 +341,23 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      *
      * The whole queue is drained rather than read once because the bind writes a row, and a
      * row this worker owns is announced to the others as a DB-sync signal - so the reply is
-     * not alone in there on the paths that succeed.
+     * not alone in there on the paths that succeed. A frame to the person's agent is carried
+     * there and its answer back to the library on the way, the way the two workers would.
      *
+     * @param AdminCreateRouteTestAgent $agent Library under test
      * @return CommandReplyDTO The queued reply
      */
-    private function consumeReply(): CommandReplyDTO
+    private function consumeReply(AdminCreateRouteTestAgent $agent): CommandReplyDTO
     {
         $replies = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            if ($signal->data instanceof CommandReplyDTO) {
+            $name = $signal->signalName->getName();
+            if ($name === HilosSignalConstants::HILOS_USER_ADMIN_COMMAND) {
+                $this->deliverToPerson($signal);
+            } elseif ($name === HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                $agent->onSignalAgent($signal->data, '', $name);
+            } elseif ($signal->data instanceof CommandReplyDTO) {
                 $replies[] = $signal->data;
             } elseif ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SessionStateSignalData) {
                 $this->sessionFrames[] = $signal->data->data;
@@ -342,6 +367,18 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
         self::assertCount(1, $replies, 'Every command branch answers exactly once');
 
         return $replies[0];
+    }
+
+    /**
+     * @param string $userId Person id as the agent address carries it
+     * @return AdminCreateRouteTestUserAgent The person's agent with its flag write replaced
+     */
+    private function newPersonAgent(string $userId): AdminCreateRouteTestUserAgent
+    {
+        $agent = new AdminCreateRouteTestUserAgent($userId);
+        $agent->refuseWith = $this->personRefusal;
+
+        return $agent;
     }
 
     /**
@@ -406,42 +443,55 @@ final class AdminCreateRouteTestDbContext extends HilosDbContext
 }
 
 /**
- * The sessions library with the framework's administrator write replaced, so the route is
- * pinned apart from the person table: it inherits the command route whole, holds no connections
- * of its own, and records what the write was asked and names a user instead of writing a row.
- * The write itself is pinned by {@see SessionsLibraryPersonIntegrationTest}.
+ * The sessions library with the framework's administrator mint replaced, so the route is pinned
+ * apart from the person table: it inherits the command route whole, holds no connections of its
+ * own, and records that the mint was asked and names a user instead of writing a row. The mint
+ * itself is pinned by {@see SessionsLibraryPersonIntegrationTest}.
  */
 final class AdminCreateRouteTestAgent extends AbstractSessionsLibraryAgent
 {
-    /** @var int User id this write reports having minted for a session that carried none */
+    /** @var int User id this mint reports for a session that carried none */
     public const int MINTED_USER_ID = 42;
 
-    /** @var bool Whether the write was reached at all */
+    /** @var bool Whether the mint was reached at all */
     public bool $called = false;
 
-    /** @var ?int User id the write was handed, meaningful only once called */
-    public ?int $seenUserId = null;
+    /**
+     * Records the call and names the user the fixture seeded for it.
+     *
+     * @return int Id of the administrator just minted
+     */
+    protected function mintAdminUser(): int
+    {
+        $this->called = true;
 
-    /** @var ?ItemNotFoundForUpdateException Failure the write raises instead of naming a user */
+        return self::MINTED_USER_ID;
+    }
+}
+
+/**
+ * The person's agent with the framework's admin flag write replaced: it records the write, or
+ * fails the way the framework refuses an unknown person.
+ */
+final class AdminCreateRouteTestUserAgent extends AbstractUserAgent
+{
+    /** @var bool Whether the flag write was asked and let through */
+    public bool $flagged = false;
+
+    /** @var ?ItemNotFoundForUpdateException Failure the write raises instead of writing */
     public ?ItemNotFoundForUpdateException $refuseWith = null;
 
     /**
-     * Records the call and names the user, or fails the way the framework refuses an unknown one.
-     *
-     * @param ?int $userId User the session carries, or null when it carries none
-     * @return int Id of the user that is now an administrator
+     * @param bool $admin New admin flag
      * @throws ItemNotFoundForUpdateException When the test asked this write to refuse
      */
-    protected function ensureAdminUser(?int $userId): int
+    protected function writeAdminFlag(bool $admin): void
     {
         if ($this->refuseWith !== null) {
             throw $this->refuseWith;
         }
 
-        $this->called = true;
-        $this->seenUserId = $userId;
-
-        return $userId ?? self::MINTED_USER_ID;
+        $this->flagged = $admin;
     }
 }
 

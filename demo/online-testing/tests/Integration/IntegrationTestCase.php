@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\OnlineTesting\Tests\Integration;
 
 use Demo\OnlineTesting\Agents\Hilos\SessionsLibraryAgent;
+use Demo\OnlineTesting\Agents\Hilos\UserAgent;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Database\Database;
 use Demo\OnlineTesting\Hilos;
@@ -27,6 +28,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
@@ -45,6 +48,9 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
     private ?SessionsLibraryAgent $sessionsLibrary = null;
+
+    /** @var array<int, UserAgent> Agents of the people a case's frames reached, by person */
+    private array $personAgents = [];
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -185,6 +191,57 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         return $found;
+    }
+
+    /**
+     * Carries an edit of one person to that person's agent, and its answer back to the sessions library (HIL-1404).
+     *
+     * The library asks the agent to write and finishes on its answer; both hops are a worker taking
+     * its turn in a node and this one call in a case, each under its own agent's id. Everything
+     * else goes back on the queue in the order it was taken off.
+     *
+     * @throws HilosException When a frame's handler fails
+     * @throws AgentUnknownSignalException When an agent does not know a frame it is handed
+     * @throws InvalidArgumentException When a signal put back on the queue has no name
+     */
+    protected function deliverPersonAgentFrames(): void
+    {
+        $rest = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            $name = $signal->signalName->getName();
+            $data = $signal->data;
+            $person = $data instanceof AgentSignalData ? $data->data : null;
+            if ($person instanceof UserAdminCommandSignalData) {
+                $agent = $this->personAgent($person->userId);
+                $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
+            } elseif ($person instanceof UserAdminCommandDoneSignalData) {
+                $library = $this->sessionsLibrary();
+                $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
+            } else {
+                $rest[] = $signal;
+            }
+        }
+
+        foreach ($rest as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+    }
+
+    /**
+     * Raises the agent of one person the way a node does on the first frame to it.
+     *
+     * @param int $userId Person the frame is addressed to
+     * @return UserAgent The person's agent, started
+     * @throws HilosException When the agent's own startup fails
+     */
+    protected function personAgent(int $userId): UserAgent
+    {
+        if (!isset($this->personAgents[$userId])) {
+            $this->personAgents[$userId] = new UserAgent((string)$userId);
+            $this->startAgent($this->personAgents[$userId]);
+        }
+
+        return $this->personAgents[$userId];
     }
 
     /**

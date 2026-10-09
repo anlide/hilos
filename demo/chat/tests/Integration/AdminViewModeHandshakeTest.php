@@ -112,6 +112,7 @@ final class AdminViewModeHandshakeTest extends IntegrationTestCase
         $this->drainSignals();
 
         $this->sessionsLibrary()->onSignalCommand($this->grantCommand($userId), '', '');
+        $this->deliverPersonAgentFrames();
         $this->deliverLibraryFrames($agent);
 
         $response = $this->lastHandshakeResponseFor(self::TAB_ACCEPT_KEY);
