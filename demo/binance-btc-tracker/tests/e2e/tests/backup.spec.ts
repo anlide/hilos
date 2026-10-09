@@ -818,7 +818,7 @@ test('offers a restore on this stand and holds it behind the typed id', async ({
 test('deletes marked backups in bulk and names the one that was gone before its turn', async ({
   context,
 }) => {
-  // Two real dumps, the same headroom the parked strip test above takes.
+  // Two real dumps, the same headroom as the test of another tab's page above.
   test.slow()
 
   const tabA = await context.newPage()
@@ -826,8 +826,7 @@ test('deletes marked backups in bulk and names the one that was gone before its 
   const goneFirst = await createNamedBackup(tabA)
   const deletedInBulk = await createNamedBackup(tabA)
 
-  // A fresh page once both runs are over: the page rebuilds itself right after a run
-  // ends (P-310), and whatever this test holds on screen would go with it.
+  // Both rows are read from a fresh page once both runs are over.
   await gotoPage(tabA, '/hilos/backup')
   const goneFirstRow = tabA.getByTestId(`hilos-table-row-${goneFirst}`)
   const deletedInBulkRow = tabA.getByTestId(`hilos-table-row-${deletedInBulk}`)
