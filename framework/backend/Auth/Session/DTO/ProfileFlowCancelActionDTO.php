@@ -16,8 +16,9 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  *
  * The Discard of the "Discard?" question a window asks when it is closed with a flow behind it.
  * It names WHICH window by its operation key ({@see StepUpOperationKey::CHANGE_EMAIL},
- * CHANGE_PASSWORD, DELETE_ACCOUNT or ADD_SIGN_IN_METHOD), because a session can have several at once; the session itself is the
- * acting connection's, so a window of another browser is simply not in reach.
+ * CHANGE_PASSWORD, DELETE_ACCOUNT or ADD_SIGN_IN_METHOD), because a session can have several at
+ * once; the session itself is the acting connection's, so a window of another browser is simply
+ * not in reach.
  *
  * Owned by {@see AbstractSessionsLibraryAgent} through AGENT_ACTIONS: the flow it ends is the
  * session's record, and the windows of every tab of that session close on it.

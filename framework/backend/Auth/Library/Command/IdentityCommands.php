@@ -243,11 +243,12 @@ final class IdentityCommands extends AbstractLibraryCommands
      * against the `email_add` challenge; a missing, expired or wrong code - or a challenge
      * minted for a different person than this session's - is refused with the same generic
      * message. The address comes from the session's email-code step; a missing or foreign
-     * step is refused before the code is spent. Uniqueness is re-checked after the code (a magic-link-verified collision on
-     * the same email would slip past the password-scoped duplicate guard of the write)
-     * before the write. On success a verified `password` identity is attached on the
-     * now-proven email and the password-updated signal (added) is fanned to all the
-     * person's connections; the new identity also arrives over the projection re-emit.
+     * step is refused before the code is spent. Uniqueness is re-checked after the code (a
+     * magic-link-verified collision on the same email would slip past the password-scoped
+     * duplicate guard of the write) before the write. On success a verified `password`
+     * identity is attached on the now-proven email and the password-updated signal (added)
+     * is fanned to all the person's connections; the new identity also arrives over the
+     * projection re-emit.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileAddPasswordConfirmActionDTO $dto Code received by the email in the session's flow and new password

@@ -1577,10 +1577,10 @@ final class HilosSignalConstants
      * half-way through (HIL-1182).
      *
      * Addressed to the SESSION for the reason {@see HILOS_CODE_SEND_PROGRESS} is: a second tab and
-     * a reloaded one open the email-change, password-change or account-deletion window on the step already reached,
-     * and another browser of the same person sees nothing. It carries the whole list
-     * {flows: [{operation, step, address, target}]}, so a handshake and an ordinary step are one
-     * sentence; an empty list is the legal frame that closes every window. Carried by
+     * a reloaded one open the email-change, password-change or account-deletion window on the step
+     * already reached, and another browser of the same person sees nothing. It carries the whole
+     * list {flows: [{operation, step, address, target}]}, so a handshake and an ordinary step are
+     * one sentence; an empty list is the legal frame that closes every window. Carried by
      * {@see ProfileFlowsSignalData}.
      */
     public const string HILOS_PROFILE_FLOWS = 'hilos_profile_flows';
@@ -1589,10 +1589,10 @@ final class HilosSignalConstants
      * Users library → sessions library: a profile window of this session reached a step, or its
      * flow is over (HIL-1182).
      *
-     * The one door every step of the email-change, password-change and account-deletion windows is written through:
-     * the library runs the step and spends the codes, the holder owns the record of the session and
-     * writes it, tells every tab, and answers the submitting one LAST. Carried by
-     * {@see ProfileFlowStepSignalData}.
+     * The one door every step of the email-change, password-change and account-deletion windows is
+     * written through: the library runs the step and spends the codes, the holder owns the record
+     * of the session and writes it, tells every tab, and answers the submitting one LAST. Carried
+     * by {@see ProfileFlowStepSignalData}.
      */
     public const string HILOS_PROFILE_FLOW_STEP = 'hilos_profile_flow_step';
 

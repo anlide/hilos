@@ -13,11 +13,11 @@ use Hilos\Runtime\State\Collection\HilosProfileFlows;
  * HilosProfileFlow - how far one profile window of one browser session has got (HIL-1182).
  *
  * The record behind the email-change, password-change, account-deletion and add-sign-in windows.
- * A window used to keep its step in the tab that drew it; for email and password changes, a matched code
- * travelled with that tab from submit to submit. So a second tab of the same
- * browser started the flow from the first step, its "Send code" voided the first tab's code, and
- * a reload threw the flow away. The step and any proof now live here, in the session,
- * and every tab of it opens the window on the same step.
+ * A window used to keep its step in the tab that drew it; for email and password changes, a
+ * matched code travelled with that tab from submit to submit. So a second tab of the same browser
+ * started the flow from the first step, its "Send code" voided the first tab's code, and a reload
+ * threw the flow away. The step and any proof now live here, in the session, and every tab of it
+ * opens the window on the same step.
  *
  * ONE ROW PER SESSION AND WINDOW: the id is the hash of the session's cookie token - the form the
  * toast stack and the send-progress line use - joined to the operation key of the window

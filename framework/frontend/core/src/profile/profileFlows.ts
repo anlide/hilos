@@ -1,6 +1,6 @@
 // The profile windows a browser session is half-way through (HIL-1182): how far
-// the email change, password change, account deletion and add-method dialog have got, held by the SESSION rather
-// than by the tab that opened them.
+// the email change, password change, account deletion and add-method dialog have
+// got, held by the SESSION rather than by the tab that opened them.
 //
 // A window used to keep its step in the tab that drew it, so a second tab of the
 // same browser started over from step one and a reload threw the flow away. The
@@ -60,10 +60,11 @@ export const PROFILE_FLOW_STEP_EMAIL_SENT = 'email_sent'
 /**
  * The frame: every live flow of the session, which may be none.
  *
- * `operation` names the window (`change_email`, `change_password`, `delete_account`, `add_sign_in_method`), `step` says
- * what has happened in it, `address` is the account's address the proof stands
- * on, and `target` is the new email on `new_sent`, the added address or number
- * on `phone_sent` or `email_sent`, and null elsewhere.
+ * `operation` names the window (`change_email`, `change_password`,
+ * `delete_account`, `add_sign_in_method`), `step` says what has happened in it,
+ * `address` is the account's address the proof stands on, and `target` is the
+ * new email on `new_sent`, the added address or number on `phone_sent` or
+ * `email_sent`, and null elsewhere.
  */
 export const profileFlowsSchema = z.looseObject({
   flows: z.array(
