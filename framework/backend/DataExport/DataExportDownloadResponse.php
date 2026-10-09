@@ -31,7 +31,7 @@ final readonly class DataExportDownloadResponse
      * @param FsFile $file Authorized archive on disk
      * @param string $finishedAt Archive readiness date in SQL form
      * @param string $xAccelLocation Internal nginx location, or empty for direct transport
-     * @param ?string $localNodeId This node's id, null off a cluster
+     * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
      * @return self Private download or refusal
      * @throws FsException When the existing file cannot be measured
      */

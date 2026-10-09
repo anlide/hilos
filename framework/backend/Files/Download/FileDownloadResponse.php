@@ -80,7 +80,7 @@ final readonly class FileDownloadResponse
      * @param FilesStorageInterface $storage Where the file is kept
      * @param string $xAccelLocation Internal nginx location of the files directory, empty when the
      *     daemon sends the bytes itself ({@see EnvConstants::HILOS_FILES_XACCEL_LOCATION})
-     * @param ?string $localNodeId This node's id, null off a cluster
+     * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
      * @return self Response, or the refusal that stands in for it
      * @throws FsException When the storage itself cannot be reached
      * @throws HilosException When the file row refuses a field it is read for
@@ -103,7 +103,7 @@ final readonly class FileDownloadResponse
      * @param FileVariant $variant Registered copy to serve
      * @param FilesStorageInterface $storage Where the copy is kept
      * @param string $xAccelLocation Internal nginx location, empty for a direct reply
-     * @param ?string $localNodeId This node's id, null off a cluster
+     * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
      * @return self Copy response or its storage refusal
      * @throws FsException When the storage cannot be reached
      */
@@ -130,7 +130,7 @@ final readonly class FileDownloadResponse
      * @param File $file Original to send in place of its unavailable variant
      * @param FilesStorageInterface $storage Where the original is kept
      * @param string $xAccelLocation Internal nginx location, empty for a direct reply
-     * @param ?string $localNodeId This node's id, null off a cluster
+     * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
      * @return self Original response with a short cache lifetime, or its storage refusal
      * @throws FsException When the storage cannot be reached
      */
@@ -154,7 +154,7 @@ final readonly class FileDownloadResponse
      * @param string $cacheControl Cache policy selected by the response kind
      * @param FilesStorageInterface $storage Where the bytes are kept
      * @param string $xAccelLocation Internal nginx location, empty for direct transport
-     * @param ?string $localNodeId This node's id, null off a cluster
+     * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
      * @return self Served response or the precise storage refusal
      * @throws FsException When the storage cannot be reached
      */
