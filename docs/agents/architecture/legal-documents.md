@@ -331,9 +331,14 @@ registering its five pages and tables and a project subclass of
 `hilos_legal_acceptance_export` table, and by listing the agent in the
 project's system bootstrap; there is no `HilosFeature` case for this section.
 The start refuses a project that registers the agent and no `legal_export`
-directory. Chat, tasks and polls provide these bindings. The framework owns the pages,
-projections, settings rules and all three SDK views. The project supplies person
-names and name searches to `AbstractHilosLegalAcceptancesTable`.
+directory. The project also hands `/_hilos/legal-acceptances-export` to the
+daemon wherever its page is served: nginx in test and production (a
+`location =` for the address and the internal location over the
+`legal_export` volume), and the dev server's proxy on the local stand, as for
+`/_hilos/data-export` (`vite.config.ts` in chat and tasks, `proxy.conf.json` in
+polls). Chat, tasks and polls provide these bindings. The framework owns the
+pages, projections, settings rules and all three SDK views. The project supplies
+person names and name searches to `AbstractHilosLegalAcceptancesTable`.
 
 | Route | Contents |
 |---|---|
