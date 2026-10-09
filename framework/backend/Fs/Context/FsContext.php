@@ -197,11 +197,12 @@ abstract class FsContext
      * What the registrations declare wrong; every fault is collected, none stops the walk.
      *
      * Three rules. Tmp is the cluster's whatever features the project declares. The reserved
-     * files, data_export and legal_export are the cluster's, so any declared NODE is a fault;
-     * the reserved analytics_journal is the node's, so it declared CLUSTER is one. One path is one
-     * directory with one owner, so names registered on one path with different owners are a fault, tmp counted under
-     * its reserved name. Paths are compared as written, less trailing separators: a directory is
-     * created on first use and may not exist at start, so there is nothing to resolve yet.
+     * files, data_export and legal_export are the cluster's, so any declared NODE is a fault; the
+     * reserved analytics_journal is the node's, so it declared CLUSTER is one. One path is one
+     * directory with one owner, so names registered on one path with different owners are a fault,
+     * tmp counted under its reserved name. Paths are compared as written, less trailing
+     * separators: a directory is created on first use and may not exist at start, so there is
+     * nothing to resolve yet.
      *
      * @return list<string> Fault messages, tmp first, then reserved directories, then paths; empty when the declaration holds
      */

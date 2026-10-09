@@ -49,12 +49,11 @@ project declarations with variants from enabled framework features.
 Startup collects all activation errors: missing FILES or agent pair, IMAGES
 without a tmp directory, variants without IMAGES, IMAGES without variants,
 malformed declarations, a worker outside the `ImagesAgent` family, or an engine
-that cannot write the declared
-formats. The default needs PHP GD with the relevant output codecs. A project
-without IMAGES needs no GD. The chat declares IMAGES with one variant,
-`chat_thumb` (384×384, contain, WEBP), the picture its feed shows in place of
-an attached image; its image builds GD with JPEG and WEBP
-(`demo/chat/docker/Dockerfile`).
+that cannot write the declared formats. The default needs PHP GD with the
+relevant output codecs. A project without IMAGES needs no GD. The chat declares
+IMAGES with one variant, `chat_thumb` (384×384, contain, WEBP), the picture its
+feed shows in place of an attached image; its image builds GD with JPEG and
+WEBP (`demo/chat/docker/Dockerfile`).
 
 ## The Address
 

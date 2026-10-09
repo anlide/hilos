@@ -66,6 +66,6 @@ file id to the files library after commit. A personal data copy writes a
 The image variant is derived and is not copied separately.
 
 The checker reads the upload's temporary file from the cluster's tmp directory,
-even when it lives on another node. The files registry's shared
-storage and the image renderer follow their own cluster rules in
+even when it lives on another node. The files registry's shared storage and the
+image renderer follow their own cluster rules in
 [files-registry.md](files-registry.md) and [images.md](images.md).

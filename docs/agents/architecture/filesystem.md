@@ -31,27 +31,25 @@ name through the directory's ArrayAccess
 index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
 The framework reserves five names: `tmp` (`FsContext::TMP`, the cluster's: files
-are handed to the files library through it), `files`
-(`FsContext::FILES`, HIL-336), `data_export` (`FsContext::DATA_EXPORT`,
-HIL-303), `legal_export` (`FsContext::LEGAL_EXPORT`, HIL-1234, the
-administrators' exports of acceptance records —
-[legal-documents.md](legal-documents.md)) and `analytics_journal`
+are handed to the files library through it), `files` (`FsContext::FILES`,
+HIL-336), `data_export` (`FsContext::DATA_EXPORT`, HIL-303), `legal_export`
+(`FsContext::LEGAL_EXPORT`, HIL-1234, the administrators' exports of acceptance
+records — [legal-documents.md](legal-documents.md)) and `analytics_journal`
 (`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a node directory whose one owner is
 the node's journal agent — [analytics.md](analytics.md)). The start refuses
 `UPLOADS` or `IMAGES` without tmp, `FILES` without `files`, `AUTH` without
 `data_export`, a registered legal agent (`HilosAgentType::HILOS_LEGAL`) without
-`legal_export`
-and `ANALYTICS` without `analytics_journal` (`refuseUploadsWithoutTmp()`,
-`refuseImagesWithoutTmp()`, `refuseFilesWithoutDirectory()`,
-`refuseDataExportWithoutDirectory()`,
+`legal_export` and `ANALYTICS` without `analytics_journal`
+(`refuseUploadsWithoutTmp()`, `refuseImagesWithoutTmp()`,
+`refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()`,
 `refuseLegalExportWithoutDirectory()` and
 `refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`). A
 sixth refusal, `refuseMisdeclaredDirectories()`, throws
 `InvalidTopologyException` when `tmp`, `files`, `data_export` or `legal_export`
 is declared `NODE`, when `analytics_journal` is declared `CLUSTER`, or when one
-path is declared by
-two owners; the rules live in `FsContext::declarationErrors()`, which a
-project's unit test can call on its own context.
+path is declared by two owners; the rules live in
+`FsContext::declarationErrors()`, which a project's unit test can call on its
+own context.
 
 ## Node Or Cluster
 
@@ -138,15 +136,15 @@ directory (HIL-1242). Without it an installation without a shared volume learns
 of that by a 404 on a download, or by ready copies gone after the export agent
 moved.
 
-**The marker.** Every cluster directory — tmp too —
-carries the file `.hilos-cluster-directory.json` at its root: the format
-version, a marker of 32 hex characters, the `CLUSTER_NODE_ID` of the node that
-wrote it and when (`ClusterDirectoryMarker`,
-`framework/backend/Fs/ClusterDirectoryMarker.php`). The marker is a random name
-of the directory, not a digest of its content and not derived from anything: a
-node with an empty directory of its own would derive the same name and pass.
-The context lists the directories it covers with `clusterDirectories()` — tmp
-first, then the registration order; two names on one path read one file.
+**The marker.** Every cluster directory — tmp too — carries the file
+`.hilos-cluster-directory.json` at its root: the format version, a marker of 32
+hex characters, the `CLUSTER_NODE_ID` of the node that wrote it and when
+(`ClusterDirectoryMarker`, `framework/backend/Fs/ClusterDirectoryMarker.php`).
+The marker is a random name of the directory, not a digest of its content and
+not derived from anything: a node with an empty directory of its own would
+derive the same name and pass. The context lists the directories it covers with
+`clusterDirectories()` — tmp first, then the registration order; two names on
+one path read one file.
 
 **Who reads it, and when.** Only the start of a cluster node's daemon, once,
 right after the database marker and before the peer port opens

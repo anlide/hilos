@@ -61,15 +61,14 @@ $this->registerDirectory(FsContext::FILES, $path, DirectoryScope::CLUSTER);
 ```
 
 `FsContext::FILES` is a name the framework reserves, as it reserves `tmp`. Both
-are the cluster's: the library takes a handed-over file from tmp on its own node
-([filesystem.md](filesystem.md)). The start refuses the feature without the
-library pair (and the pair without the feature), without the settings library
-or the catalog fragment, and — once the
-FS context is configured — without the files directory. The chat demo
-registers its attachments directory under this name, which is why its earlier
-attachments became registry rows without a file moving (HIL-144). The files
-directory is the cluster's: every node and its nginx see it
-([filesystem.md](filesystem.md)).
+are the cluster's: the library takes a handed-over file from tmp on its own
+node ([filesystem.md](filesystem.md)). The start refuses the feature without
+the library pair (and the pair without the feature), without the settings
+library or the catalog fragment, and — once the FS context is configured —
+without the files directory. The chat demo registers its attachments directory
+under this name, which is why its earlier attachments became registry rows
+without a file moving (HIL-144). The files directory is the cluster's: every
+node and its nginx see it ([filesystem.md](filesystem.md)).
 
 ## Publishing
 
