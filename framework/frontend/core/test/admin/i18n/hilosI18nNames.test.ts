@@ -8,6 +8,7 @@ import {
   resolveHilosI18nNameRow,
 } from '../../../src/admin/i18n/hilosI18nNames.js'
 import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18nLanguage.js'
+import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import {
   type HilosConnection,
   type TableViewportDescriptor,
@@ -43,7 +44,11 @@ function recordingContext(
     ) => sent.push(descriptor) > 0,
   } as unknown as HilosConnection
 
-  return { connection, scopes: new ScopeManager() }
+  return {
+    connection,
+    scopes: new ScopeManager(),
+    actions: {} as ActionLifecycle,
+  }
 }
 
 describe('resolveHilosI18nNameRow', () => {

@@ -245,6 +245,16 @@ final class CliCommands
     public const string LEGAL_TEST_HOLD = 'test:legal:hold';
 
     /**
+     * Create and enable a known language through the i18n library (test-only).
+     *
+     * The CLI process has no write ownership; the library answers this command over the
+     * command channel and makes the row available for language-page tests.
+     *
+     * @var string Command: Create and enable a built-in language (test-only)
+     */
+    public const string I18N_TEST_LANGUAGE_ON = 'test:i18n:language:on';
+
+    /**
      * Append lines to this node's own log through the live daemon (test-only).
      *
      * Doubles as the command-channel wire name routed to {@see LogStoreAgent}, the same

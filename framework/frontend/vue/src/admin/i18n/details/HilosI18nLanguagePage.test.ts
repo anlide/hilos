@@ -4,6 +4,7 @@ import {
   HilosPages,
   LANGUAGE_CARD_DATA,
   ScopeManager,
+  type ActionLifecycle,
   type HilosConnection,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
@@ -70,6 +71,7 @@ function harness(childrenBuilt = false) {
   const context: HilosI18nLanguageContext = {
     connection: {} as HilosConnection,
     scopes,
+    actions: {} as ActionLifecycle,
   }
   const navigation = router(childrenBuilt)
   const view = mount(HilosI18nLanguagePage, {
@@ -124,7 +126,14 @@ describe('HilosI18nLanguagePage', () => {
         .find('[data-id="language-card-tabs"] a')
         .attributes('aria-current'),
     ).toBe('page')
-    expect(h.view.findAll('button')).toHaveLength(0)
+    expect(
+      h.view.findAll('[data-id="language-card-state"] button'),
+    ).toHaveLength(1)
+    expect(
+      h.view
+        .find('[data-id="language-card-switch-off"]')
+        .attributes('disabled'),
+    ).toBeDefined()
     expect(h.view.findAll('input')).toHaveLength(0)
     h.view.unmount()
   })
@@ -161,7 +170,9 @@ describe('HilosI18nLanguagePage', () => {
     expect(h.view.find('[data-id="language-card-delete-verdict"]').text()).toBe(
       'Can be deleted',
     )
-    expect(h.view.findAll('button')).toHaveLength(0)
+    expect(h.view.find('[data-id="language-card-switch-off"]').exists()).toBe(
+      false,
+    )
 
     h.scope.data.set(LANGUAGE_CARD_DATA, [])
     await nextTick()

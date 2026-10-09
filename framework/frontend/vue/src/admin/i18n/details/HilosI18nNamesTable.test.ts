@@ -4,6 +4,7 @@ import {
   createSignal,
   HILOS_I18N_LANGUAGE_NAMES,
   ScopeManager,
+  type ActionLifecycle,
   type HilosConnection,
   type HilosI18nNameRow,
   type TableRow,
@@ -36,6 +37,7 @@ function mountNames(): {
     {
       connection: {} as HilosConnection,
       scopes: new ScopeManager(),
+      actions: {} as ActionLifecycle,
     },
     HILOS_I18N_LANGUAGE_NAMES,
     createSignal('de'),

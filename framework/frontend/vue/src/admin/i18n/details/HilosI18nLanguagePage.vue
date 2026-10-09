@@ -1,5 +1,5 @@
-<!-- The language main card is read-only until the action leaves land. Its one
-page-scoped browser datum supplies both the initial view and live updates. -->
+<!-- The language main card and its switch-off control share one page-scoped
+browser datum for both the initial view and live updates. -->
 <script setup lang="ts">
 import {
   createHilosI18nLanguageCard,
@@ -12,6 +12,7 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
+import HilosI18nLanguageSwitchOff from './HilosI18nLanguageSwitchOff.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
 const card = useSignal(createHilosI18nLanguageCard(props.context))
@@ -60,8 +61,13 @@ const loading = useSignal(router.pageLoading)
           </p>
           <dl class="row mb-0">
             <dt class="col-sm-4">Availability</dt>
-            <dd class="col-sm-8" data-id="language-card-enabled">
-              {{ card.enabled ? 'Enabled' : 'Disabled' }}
+            <dd class="col-sm-8">
+              <span data-id="language-card-enabled">
+                {{ card.enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+              <div :class="card.enabled ? 'mt-2' : undefined">
+                <HilosI18nLanguageSwitchOff :context="context" :card="card" />
+              </div>
             </dd>
             <dt class="col-sm-4">Delete language</dt>
             <dd class="col-sm-8" data-id="language-card-delete-verdict">

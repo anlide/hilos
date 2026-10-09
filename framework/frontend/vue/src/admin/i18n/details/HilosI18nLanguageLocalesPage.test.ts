@@ -5,6 +5,7 @@ import {
   HilosPages,
   LANGUAGE_CARD_DATA,
   ScopeManager,
+  type ActionLifecycle,
   type HilosConnection,
   type HilosI18nLanguageCard,
   type HilosRouter,
@@ -146,7 +147,7 @@ async function mountPage() {
   const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
   scope.data.set(LANGUAGE_CARD_DATA, russianCard)
   const wrapper = mount(HilosI18nLanguageLocalesPage, {
-    props: { context: { connection, scopes } },
+    props: { context: { connection, scopes, actions: {} as ActionLifecycle } },
     global: {
       provide: { [hilosRouterKey as symbol]: router(route) },
       stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
@@ -171,7 +172,9 @@ describe('HilosI18nLanguageLocalesPage', () => {
     scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
     const pageLoading = createSignal(true)
     const wrapper = mount(HilosI18nLanguageLocalesPage, {
-      props: { context: { connection, scopes } },
+      props: {
+        context: { connection, scopes, actions: {} as ActionLifecycle },
+      },
       global: {
         provide: { [hilosRouterKey as symbol]: router(route, pageLoading) },
         stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },

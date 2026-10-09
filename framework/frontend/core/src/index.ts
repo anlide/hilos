@@ -45,6 +45,12 @@ export {
   type HilosI18nLanguageContext,
 } from './admin/i18n/hilosI18nLanguage.js'
 export {
+  HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
+  HILOS_I18N_LANGUAGE_SWITCH_OFF_COPY,
+  createHilosI18nLanguageSwitchOff,
+  hilosI18nLanguageSwitchOff,
+} from './admin/i18n/hilosI18nLanguageSwitch.js'
+export {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAMES_FILTER,
   HILOS_I18N_COUNTRY_NAMES_TABLE,

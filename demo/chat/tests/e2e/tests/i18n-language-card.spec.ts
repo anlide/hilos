@@ -53,7 +53,11 @@ test('opens the default language card directly with read-only details and staged
     page.getByTestId('language-card-main').locator('button, input'),
   ).toHaveCount(0)
   await expect(
-    page.getByTestId('language-card-state').locator('button, input'),
+    page.getByTestId('language-card-state').locator('button'),
+  ).toHaveCount(1)
+  await expect(page.getByTestId('language-card-switch-off')).toBeDisabled()
+  await expect(
+    page.getByTestId('language-card-state').locator('input'),
   ).toHaveCount(0)
 
   await gotoPage(page, '/hilos/i18n/languages', PAGE_REFUSED)

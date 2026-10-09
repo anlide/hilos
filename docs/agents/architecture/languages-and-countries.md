@@ -170,8 +170,9 @@ and left off will be refreshed by the next reflow. The edit modal says so in
 one line; no extra column protects that gap (owner's decision, 2026-09-12).
 
 - The language item action refuses switching off the default language.
-  The section's switch action follows in HIL-1486; switching off another
-  language keeps its locales and names (not in the code yet — HIL-1486).
+  The section's language card switches off another language through a confirmation
+  window and reports success without a tab count; its locales and names stay in place.
+  Tests create and enable a known language with `test:i18n:language:on <code>`.
 - Switching on a language requires no completeness check, but warns when it
   has no countryless locale (not in the code yet — HIL-1487).
 - A country can be switched on without a default locale
@@ -413,7 +414,8 @@ names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales
 at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476); the parent root/list
 still returns `not_served`/404, the names of a country in Vue until HIL-1483. The card shows the code,
 native name, direction, enabled state, locale/name counts, and read-only delete
-verdict. Its future action controls belong to HIL-1485/1486/1487/1488.
+verdict. The main card has a Switch off control (HIL-1486); its other action
+controls belong to HIL-1485/1487/1488.
 Vue serves the main country card at `/hilos/i18n/countries/{countryCode}`
 (HIL-1482); the country list and its names tab still return `not_served`/404.
 The card shows the name, code, currency, default locale, enabled state and
