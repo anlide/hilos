@@ -241,7 +241,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         }
 
         $this->parked = null;
-        Hilos::$ac?->finishApiRequest($parked->analytics, $reply->status, self::millisecondsSince($parked->startedAtNs));
+        $durationMs = self::millisecondsSince($parked->startedAtNs);
+        Hilos::$ac?->finishApiRequest($parked->analytics, $reply->status, $durationMs);
+        $this->router?->traffic()->record($parked->request->method, $parked->request->path, $reply->status, $durationMs, time());
         $this->queueResponse([
             HttpConstants::RESPONSE_KEY_STATUS => $reply->status,
             HttpConstants::RESPONSE_KEY_HEADERS => $reply->headers,
@@ -283,6 +285,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      */
     private function refuseRequest(int $status): void
     {
+        $this->router?->traffic()->recordUnrouted($status, 0, time());
         $this->readBuffer = '';
         $this->writeBuffer = $this->buildResponse([
             HttpConstants::RESPONSE_KEY_STATUS => $status,
@@ -433,7 +436,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         $request = $parked->request;
         Logger::warning("HTTP: the browser left while {$request->method} {$request->path} #{$request->correlationId} was parked");
         $this->parked = null;
-        Hilos::$ac?->finishApiRequest($parked->analytics, null, self::millisecondsSince($parked->startedAtNs));
+        $durationMs = self::millisecondsSince($parked->startedAtNs);
+        Hilos::$ac?->finishApiRequest($parked->analytics, null, $durationMs);
+        $this->router?->traffic()->record($request->method, $request->path, null, $durationMs, time());
         $this->server?->abandon($request->correlationId);
     }
 

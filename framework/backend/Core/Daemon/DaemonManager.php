@@ -57,6 +57,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
@@ -128,9 +129,12 @@ use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateRound;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRuleReport;
+use Hilos\DaemonSection\DaemonHttpPicture;
+use Hilos\DaemonSection\DaemonHttpRoutePicture;
 use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
@@ -341,6 +345,8 @@ abstract class DaemonManager extends BaseManager implements
     private const float CRON_FRAME_REANNOUNCE_SECONDS = 60.0;
     private const float STANDING_SAMPLE_SECONDS = 1.0;
     private const float STANDING_REANNOUNCE_SECONDS = 60.0;
+    private const float HTTP_FRAME_SAMPLE_SECONDS = 1.0;
+    private const float HTTP_FRAME_REANNOUNCE_SECONDS = 60.0;
 
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
@@ -519,6 +525,13 @@ abstract class DaemonManager extends BaseManager implements
     private float $standingLastSentAt = 0.0;
     private float $standingRetryAt = 0.0;
     private bool $standingForce = false;
+
+    private ?DaemonHttpPicture $httpFrameLastSent = null;
+    private float $httpFrameSampledAt = 0.0;
+    private float $httpFrameLastSentAt = 0.0;
+    private bool $httpFrameForce = false;
+    private int $httpFrameRevision = -1;
+    private int $httpFrameHour = -1;
 
     /**
      * Initializes daemon manager.
@@ -932,6 +945,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->tickProcessRoster($loopStartTime);
             $this->tickCronFrame($loopStartTime);
             $this->tickStanding($loopStartTime);
+            $this->tickHttpFrame($loopStartTime);
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
@@ -1251,6 +1265,110 @@ abstract class DaemonManager extends BaseManager implements
             $this->standingRetryAt = $now + self::STANDING_REANNOUNCE_SECONDS;
             $this->standingForce = false;
         }
+    }
+
+    /**
+     * Sends this master's HTTP listener and route counts on change and once a minute.
+     *
+     * @param float $now Start time of this main-loop pass
+     */
+    private function tickHttpFrame(float $now): void
+    {
+        if ($this->shouldExit) {
+            return;
+        }
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze !== null && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->httpFrameForce = true;
+            return;
+        }
+        if (!$this->agentManagerDaemon->isAgentStarted(HilosAgentType::HILOS_DAEMON_NODE)) {
+            return;
+        }
+        if (!$this->httpFrameForce && $now - $this->httpFrameSampledAt < self::HTTP_FRAME_SAMPLE_SECONDS) {
+            return;
+        }
+
+        $this->httpFrameSampledAt = $now;
+        $server = $this->findHttpServer();
+        $router = $this->httpRouter;
+        if ($server === null || $router === null) {
+            return;
+        }
+        if (!$this->httpFrameForce && isset($this->masterFrameDeliveryProblems[HilosSignalConstants::DAEMON_MASTER_HTTP])
+            && $now - $this->httpFrameLastSentAt < self::HTTP_FRAME_REANNOUNCE_SECONDS) {
+            return;
+        }
+        $traffic = $router->traffic();
+        $revision = $traffic->revision();
+        $hour = intdiv((int)$now, TimeConstants::SECONDS_PER_HOUR);
+        if (!$this->httpFrameForce && $revision === $this->httpFrameRevision && $hour === $this->httpFrameHour
+            && $now - $this->httpFrameLastSentAt < self::HTTP_FRAME_REANNOUNCE_SECONDS) {
+            return;
+        }
+
+        try {
+            $http = $this->sampleHttp($server, $router, (int)$now);
+            $this->httpFrameRevision = $revision;
+            $this->httpFrameHour = $hour;
+            if (!$this->httpFrameForce && $http == $this->httpFrameLastSent
+                && $now - $this->httpFrameLastSentAt < self::HTTP_FRAME_REANNOUNCE_SECONDS) {
+                return;
+            }
+            $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+            $this->sendToAgent(
+                HilosAgentType::HILOS_DAEMON_NODE,
+                null,
+                HilosSignalConstants::DAEMON_MASTER_HTTP,
+                new DaemonMasterHttpSignalData($nodeId, $http),
+            );
+            $this->httpFrameLastSent = $http;
+            $this->httpFrameLastSentAt = $now;
+            $this->httpFrameForce = false;
+        } catch (Throwable $failure) {
+            $this->reportMasterSignalDropped(
+                HilosSignalConstants::DAEMON_MASTER_HTTP,
+                'agent ' . HilosAgentType::HILOS_DAEMON_NODE,
+                get_class($failure) . ': ' . $failure->getMessage(),
+            );
+            $this->httpFrameRevision = $revision;
+            $this->httpFrameHour = $hour;
+            $this->httpFrameLastSentAt = $now;
+            $this->httpFrameForce = false;
+        }
+    }
+
+    /**
+     * @param HttpServer $server Registered HTTP listener
+     * @param HttpRouter $router Router whose registered templates own the counts
+     * @param int $now Unix second selecting the current hour window
+     * @return DaemonHttpPicture Sorted HTTP section for the node agent
+     * @throws InvalidFormatException When a route or tally violates the picture contract
+     */
+    private function sampleHttp(HttpServer $server, HttpRouter $router, int $now): DaemonHttpPicture
+    {
+        $traffic = $router->traffic();
+        $rows = [];
+        foreach ($router->getRegistry()->getRoutes() as $method => $paths) {
+            foreach ($paths as $path => $route) {
+                $rows[] = new DaemonHttpRoutePicture(
+                    $method,
+                    $path,
+                    $router->agentTypeAt($method, $path),
+                    $traffic->tally($method, $path, $now),
+                );
+            }
+        }
+        usort($rows, static fn (DaemonHttpRoutePicture $a, DaemonHttpRoutePicture $b): int =>
+            strcmp($a->path, $b->path) ?: strcmp($a->method, $b->method));
+
+        return new DaemonHttpPicture(
+            $server->getHost(),
+            $server->getPort(),
+            $traffic->countingSince(),
+            $rows,
+            $traffic->unroutedTally($now),
+        );
     }
 
     /**
@@ -1603,6 +1721,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->processRosterForce = true;
             $this->cronFrameForce = true;
             $this->standingForce = true;
+            $this->httpFrameForce = true;
         }
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
@@ -1986,6 +2105,7 @@ abstract class DaemonManager extends BaseManager implements
                         HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
                         HilosSignalConstants::DAEMON_MASTER_CRON,
                         HilosSignalConstants::DAEMON_MASTER_STANDING,
+                        HilosSignalConstants::DAEMON_MASTER_HTTP,
                     ], true)) {
                         unset($this->masterFrameDeliveryProblems[$signalName]);
                     }
@@ -5414,6 +5534,7 @@ abstract class DaemonManager extends BaseManager implements
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
             HilosSignalConstants::DAEMON_MASTER_CRON,
             HilosSignalConstants::DAEMON_MASTER_STANDING,
+            HilosSignalConstants::DAEMON_MASTER_HTTP,
         ], true)) {
             if ($reason === ($this->masterFrameDeliveryProblems[$signalName] ?? null)) {
                 return;

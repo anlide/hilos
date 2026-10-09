@@ -2382,6 +2382,9 @@ final class HilosSignalConstants
     /** Browser sessions, connections, and consensus from a master to its own Daemon node agent (HIL-1374). */
     public const string DAEMON_MASTER_STANDING = 'daemon_master_standing';
 
+    /** HTTP listener and route counts from a master to its own Daemon node agent (HIL-1376). */
+    public const string DAEMON_MASTER_HTTP = 'daemon_master_http';
+
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';

@@ -24,6 +24,7 @@ use Hilos\DaemonSection\DaemonCronRulePicture;
 use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
@@ -47,6 +48,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => DaemonMasterProcessRosterSignalData::class,
         HilosSignalConstants::DAEMON_MASTER_CRON => DaemonMasterCronSignalData::class,
         HilosSignalConstants::DAEMON_MASTER_STANDING => DaemonMasterStandingSignalData::class,
+        HilosSignalConstants::DAEMON_MASTER_HTTP => DaemonMasterHttpSignalData::class,
         HilosSignalConstants::DAEMON_AGENT_CRON => DaemonAgentCronSignalData::class,
     ];
 
@@ -139,6 +141,17 @@ final class DaemonNodeAgent extends AbstractHilosAgent
                     throw new AgentException('Daemon standing frame must come from this node\'s master');
                 }
                 $this->updatePicture($this->picture->withStanding($standing->standing));
+                return;
+
+            case HilosSignalConstants::DAEMON_MASTER_HTTP:
+                $http = $data->data;
+                if (!$http instanceof DaemonMasterHttpSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonMasterHttpSignalData::class, $http);
+                }
+                if ($sender !== SignalSource::DAEMON || $http->nodeId !== $this->picture->nodeId) {
+                    throw new AgentException('Daemon HTTP frame must come from this node\'s master');
+                }
+                $this->updatePicture($this->picture->withHttp($http->http));
                 return;
 
             case HilosSignalConstants::DAEMON_AGENT_CRON:

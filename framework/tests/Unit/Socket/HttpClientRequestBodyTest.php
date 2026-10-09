@@ -42,6 +42,9 @@ final class HttpClientRequestBodyTest extends TestCase
     /** @var list<string> Bodies the route received, one per call, in call order */
     private array $receivedBodies = [];
 
+    /** @var ?HttpRouter Router attached to the most recently created fixture client */
+    private ?HttpRouter $router = null;
+
     /**
      * Restores the env facade, which the client and the router read at construction.
      *
@@ -63,6 +66,7 @@ final class HttpClientRequestBodyTest extends TestCase
         }
         $this->sockets = [];
         $this->receivedBodies = [];
+        $this->router = null;
 
         parent::tearDown();
     }
@@ -143,6 +147,7 @@ final class HttpClientRequestBodyTest extends TestCase
         $this->assertSame([HttpConstants::HTTP_PAYLOAD_TOO_LARGE], $this->statuses($this->receive($peer)));
         $this->assertTrue($client->shouldClose());
         $this->assertSame(0, $client->bufferedBytes());
+        $this->assertSame(1, $this->router->traffic()->unroutedTally(time())->requests);
     }
 
     /**
@@ -164,6 +169,7 @@ final class HttpClientRequestBodyTest extends TestCase
         $this->assertSame([], $this->receivedBodies);
         $this->assertSame([HttpConstants::HTTP_LENGTH_REQUIRED], $this->statuses($this->receive($peer)));
         $this->assertTrue($client->shouldClose());
+        $this->assertSame(1, $this->router->traffic()->unroutedTally(time())->requests);
     }
 
     /**
@@ -198,6 +204,7 @@ final class HttpClientRequestBodyTest extends TestCase
         $this->assertSame([], $this->receivedBodies);
         $this->assertSame([HttpConstants::HTTP_BAD_REQUEST], $this->statuses($this->receive($peer)));
         $this->assertTrue($client->shouldClose());
+        $this->assertSame(1, $this->router->traffic()->unroutedTally(time())->requests);
     }
 
     /**
@@ -214,6 +221,7 @@ final class HttpClientRequestBodyTest extends TestCase
         $this->sockets[] = $pair[1];
 
         $router = new HttpRouter();
+        $this->router = $router;
         $router->addRoute(HttpConstants::METHOD_GET, self::ECHO_PATH, $this->recordBody(...));
         $router->addRoute(HttpConstants::METHOD_POST, self::ECHO_PATH, $this->recordBody(...));
 

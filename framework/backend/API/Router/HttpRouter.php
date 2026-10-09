@@ -46,6 +46,9 @@ class HttpRouter
     /** @var RouteRegistry Route registry */
     private RouteRegistry $registry;
 
+    /** @var HttpRouteTraffic Hourly request counts for registered routes and unrouted requests */
+    private HttpRouteTraffic $traffic;
+
     /** @var array<string, array<string, string>> Agent type answering each agent-declared address, by method and path */
     private array $agentRoutes = [];
 
@@ -67,6 +70,7 @@ class HttpRouter
     public function __construct()
     {
         $this->registry = new RouteRegistry();
+        $this->traffic = new HttpRouteTraffic(time());
         $this->resolver = new RouteResolver();
         $this->sessionCookieName = SessionCookieName::resolve();
     }
@@ -103,6 +107,22 @@ class HttpRouter
     {
         $this->registry->register($method, $path, self::agentRouteMarker(...));
         $this->agentRoutes[strtoupper($method)][$path] = $agentType;
+    }
+
+    /** @return HttpRouteTraffic Counts owned by this router */
+    public function traffic(): HttpRouteTraffic
+    {
+        return $this->traffic;
+    }
+
+    /**
+     * @param string $method Registered HTTP method
+     * @param string $path Registered path
+     * @return ?string Agent type answering the address, or null for a handler
+     */
+    public function agentTypeAt(string $method, string $path): ?string
+    {
+        return $this->agentRoutes[strtoupper($method)][$path] ?? null;
     }
 
     /**
@@ -150,6 +170,7 @@ class HttpRouter
                 HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Not Found']),
             ];
             Hilos::$ac?->finishApiRequest($analytics, HttpConstants::HTTP_NOT_FOUND, 0);
+            $this->traffic->recordUnrouted(HttpConstants::HTTP_NOT_FOUND, 0, time());
             return $response;
         }
 
@@ -178,10 +199,12 @@ class HttpRouter
                 ? (int)$response[HttpConstants::RESPONSE_KEY_STATUS]
                 : HttpConstants::HTTP_OK;
             Hilos::$ac?->finishApiRequest($analytics, $statusCode, $durationMs);
+            $this->traffic->record($route['method'], $route['path'], $statusCode, $durationMs, time());
             return $response;
         } catch (Throwable $e) {
             $durationMs = (int)round((hrtime(true) - $startedAt) / TimeConstants::NS_PER_MILLISECOND);
             Hilos::$ac?->finishApiRequest($analytics, HttpConstants::HTTP_INTERNAL_ERROR, $durationMs);
+            $this->traffic->record($route['method'], $route['path'], HttpConstants::HTTP_INTERNAL_ERROR, $durationMs, time());
             return [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_INTERNAL_ERROR,
                 HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],

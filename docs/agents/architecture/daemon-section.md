@@ -58,7 +58,7 @@ An unfinished delivery names the leaf that will add it.
 | Placement and “unplaced” | [PlacementRegistry](../../../framework/backend/Cluster/Placement/PlacementRegistry.php), held by the leader | Sorted `runsNowhere()` ids in the leader's frame; null on other nodes |
 | Worker crashes in the last 24 hours | In-memory loss and replacement tracker in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | `workerRestarts24h` counts successful replacements after unexpected loss, not a daemon or agent restart |
 | Cron rules and last firing | [CronRule](../../../framework/backend/Core/Daemon/Cron/CronRule.php) and its `lastFiredAt`: daemon rules belong to the master and run only on the leader; agent schedules belong to the agents and run wherever those agents live | Master cron part on change and once a minute; agent schedules from the agents themselves |
-| HTTP server, including agent addresses | One [HttpServer](../../../framework/backend/Socket/Server/HttpServer.php) per daemon; no request counters there yet | HTTP counters (not in the code yet — HIL-1376) |
+| HTTP server, including agent addresses | [HttpRouter](../../../framework/backend/API/Router/HttpRouter.php) counts every answer per registered route in hourly cells (`HttpRouteTraffic`) | `http` part: host, port, countingSince, routes and unrouted; on change and once a minute |
 | Process measurements | [DaemonStatusSource](../../../framework/backend/Core/Daemon/DaemonStatusSource.php), implemented by `DaemonManager::daemonStatusSnapshot()` | Process samples (not in the code yet — HIL-1373) |
 | Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | `standing.consensus`: role, term, recognised leader, and quorum view (live masters of the static set, set size, majority) |
 | Node sessions and connections | The master's own handshaked WebSocket clients | `standing.sessions` / `standing.connections`; sessions are distinct session tokens among those clients |
@@ -136,6 +136,24 @@ node. The node agent does not expire a report by elapsed time: after its own
 restart, agent rows return on the agents' next changed or minute repair report,
 which can take up to a minute. The master forces its part as soon as the node
 agent starts.
+
+## The HTTP Counters
+
+The master counts each completed HTTP request on its registered method and path,
+including a route template rather than a raw address. Unmatched addresses and
+refusals before route selection share one `unrouted` line. An answer with status
+500–599 is a server error. A request lasting more than 1000 milliseconds is slow;
+`slowestMs` is the longest duration, or null when no request was counted.
+
+Each route keeps 24 hourly cells: the current hour and the 23 before it. The
+master counts an agent address when its parked request ends. If the browser leaves
+first, the request and its waiting time still count, but no server error does.
+Restarting the master clears the counters and begins a new `countingSince`.
+
+The master sends the whole `http` part on change and once a minute, and forces it
+after the node agent starts or a freeze lifts. Until it arrives, `http` is null;
+a section full of zero counts is a known, different state. A daemon without an
+HTTP server sends no part.
 
 ## The Circulation
 
@@ -287,8 +305,7 @@ to every frame-producing path. The master may read its own memory and kernel
 pseudo-files under `/proc` and `/sys/fs/cgroup`: the kernel produces them, with
 no ordinary disk file to wait for. `DaemonStatusSource` already restricts its
 sample to in-memory counters plus `/proc/stat`. Pack a frame once and put it
-on one local worker connection. HTTP request accounting is an increment in
-memory (not in the code yet — HIL-1376).
+on one local worker connection. HTTP request accounting is an increment in memory.
 
 No database access, ordinary file read, network work beyond that local worker
 connection, waiting for an answer, or packing instance-sized rosters on every

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\API\Router\HttpRouteTally;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
@@ -14,8 +15,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonNodeStanding;
+use Hilos\DaemonSection\DaemonHttpPicture;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
@@ -134,6 +137,46 @@ final class DaemonNodePictureTest extends TestCase
         $changed = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
         self::assertInstanceOf(DaemonNodePictureSignalData::class, $changed);
         self::assertSame(0, $changed->picture->standing?->sessions);
+    }
+
+    public function testMasterHttpReplacesTheSectionAndChangesTheNextWholeReport(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $http = new DaemonHttpPicture('127.0.0.1', 8080, 10, [], new HttpRouteTally(0, 0, 0, null));
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterHttpSignalData('standalone', $http)),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_HTTP,
+        );
+        $agent->reportIfDue(microtime(true) + 6.0);
+        $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
+        self::assertEquals($http, $reported->picture->http);
+        self::assertEquals($http, $reported->picture->withProcesses(new DaemonProcessRoster([], null, 0))->http);
+        self::assertEquals($http, $reported->picture->withStanding(null)->http);
+    }
+
+    public function testForeignMasterHttpIsRefused(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $http = new DaemonHttpPicture('127.0.0.1', 8080, 10, [], new HttpRouteTally(0, 0, 0, null));
+        foreach ([[SignalSource::AGENT, 'standalone'], [SignalSource::DAEMON, 'other-node']] as [$sender, $nodeId]) {
+            try {
+                $agent->onSignalAgent(
+                    new AgentSignalData(data: new DaemonMasterHttpSignalData($nodeId, $http)),
+                    $sender,
+                    HilosSignalConstants::DAEMON_MASTER_HTTP,
+                );
+                self::fail('Foreign master HTTP frame was accepted');
+            } catch (AgentException) {
+            }
+        }
+        $agent->reportIfDue(microtime(true) + 6.0);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testForeignMasterStandingIsRefused(): void

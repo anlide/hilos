@@ -78,7 +78,9 @@ router's ordinary 404.
    (`peer_http_reply`) to the node named as its origin otherwise, which writes
    it without routing again. The master writes status, headers and body, adds
    `Connection` by the keep-alive rule, records the completed request in the
-   analytics journal with the reply's status and time since parking, and goes on parsing.
+   analytics journal with the reply's status and time since parking, counts it on
+   its registered route ([daemon-section.md](daemon-section.md), *The HTTP Counters*),
+   and goes on parsing.
 
 The addressed agent may carry the held request onward in one of its own
 frames and answer when it returns. Whoever calls `replyToHttpRequest()` sends
@@ -100,7 +102,8 @@ stores and serves that copy without keeping a wait map of its own.
   default answers 500 and says so in the journal.
 - **The browser left** while parked: the server drops the hold and tells the
   master through the command channel's `AbandonedCommandSink`, which drops a
-  frame held for a starting agent. A reply that arrives later is a warning.
+  frame held for a starting agent. The request and its wait count on the route
+  without an answer status. A reply that arrives later is a warning.
 
 There is no server-side clock. An agent that neither answers nor throws — or
 throws something other than an `AgentException`, or dies with its worker — is

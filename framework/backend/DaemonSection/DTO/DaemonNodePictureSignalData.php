@@ -26,6 +26,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
     public const string cron = 'cron';
     public const string environment = 'environment';
     public const string standing = 'standing';
+    public const string http = 'http';
     public const string catalogKeys = 'catalogKeys';
     public const string missingRequired = 'missingRequired';
     public const string fromExample = 'fromExample';
@@ -77,6 +78,9 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
             self::standing => $this->picture->standing === null
                 ? null
                 : DaemonMasterStandingSignalData::standingToArray($this->picture->standing),
+            self::http => $this->picture->http === null
+                ? null
+                : DaemonMasterHttpSignalData::httpToArray($this->picture->http),
         ];
     }
 
@@ -97,6 +101,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
         $cron = self::requireNullableArray($data, self::cron);
         $environment = self::requireNullableArray($data, self::environment);
         $standing = self::requireNullableArray($data, self::standing);
+        $http = self::requireNullableArray($data, self::http);
 
         return new static(new NodeDaemonPicture(
             $nodeId,
@@ -113,6 +118,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
                 self::fingerprintsFromArray($environment),
             ),
             $standing === null ? null : DaemonMasterStandingSignalData::standingFromArray($standing),
+            $http === null ? null : DaemonMasterHttpSignalData::httpFromArray($http),
         ));
     }
 

@@ -99,6 +99,18 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         return $this->clients;
     }
 
+    /** @return string Host the server was configured to bind */
+    public function getHost(): string
+    {
+        return $this->host;
+    }
+
+    /** @return int Port the server was configured to bind */
+    public function getPort(): int
+    {
+        return $this->port;
+    }
+
     /**
      * Start server - create and bind socket.
      *

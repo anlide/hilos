@@ -122,7 +122,8 @@ final class HttpClientParkTest extends TestCase
     public function testTheAgentReplyIsWrittenWithItsStatusHeadersAndBody(): void
     {
         $server = new HttpServer('127.0.0.1', 0);
-        [$client, $peer] = $this->connect($server);
+        $router = $this->router();
+        [$client, $peer] = $this->connect($server, $router);
         $this->send($peer, $this->get(self::AGENT_PATH . '?id=42'));
         $client->read();
         $request = $this->takeRequest();
@@ -143,6 +144,32 @@ final class HttpClientParkTest extends TestCase
         $this->assertCount(1, $records);
         $this->assertSame(AnalyticsJournalRecord::TYPE_API_REQUEST, $records[0]['t']);
         $this->assertSame(HttpConstants::HTTP_OK, $records[0]['status']);
+        $tally = $router->traffic()->tally(HttpConstants::METHOD_GET, self::AGENT_PATH, time());
+        $this->assertSame(1, $tally->requests);
+        $this->assertSame(0, $tally->serverErrors);
+    }
+
+    /**
+     * @throws EnvException When the client or router cannot read their env values
+     * @throws SocketException When the socket refuses a read or write
+     * @throws HilosException When the parked request cannot be answered
+     */
+    public function testAgentRefusalIsCountedAsServerError(): void
+    {
+        $server = new HttpServer('127.0.0.1', 0);
+        $router = $this->router();
+        [$client, $peer] = $this->connect($server, $router);
+        $this->send($peer, $this->get(self::AGENT_PATH));
+        $client->read();
+        $request = $this->takeRequest();
+
+        $server->deliver($request->correlationId, HttpReplyDTO::refusal($request, HttpConstants::HTTP_SERVICE_UNAVAILABLE));
+        $client->write();
+
+        $this->assertSame([HttpConstants::HTTP_SERVICE_UNAVAILABLE], $this->statuses($this->receive($peer)));
+        $tally = $router->traffic()->tally(HttpConstants::METHOD_GET, self::AGENT_PATH, time());
+        $this->assertSame(1, $tally->requests);
+        $this->assertSame(1, $tally->serverErrors);
     }
 
     /**
@@ -179,7 +206,8 @@ final class HttpClientParkTest extends TestCase
         $server = new HttpServer('127.0.0.1', 0);
         $sink = new HttpClientParkTestAbandonedSink();
         $server->setAbandonedCommandSink($sink);
-        [$client, $peer] = $this->connect($server);
+        $router = $this->router();
+        [$client, $peer] = $this->connect($server, $router);
         $this->send($peer, $this->get(self::AGENT_PATH . '?id=42'));
         $client->read();
         $request = $this->takeRequest();
@@ -194,6 +222,9 @@ final class HttpClientParkTest extends TestCase
         $this->assertCount(1, $records);
         $this->assertSame(AnalyticsJournalRecord::TYPE_API_REQUEST, $records[0]['t']);
         $this->assertNull($records[0]['status']);
+        $tally = $router->traffic()->tally(HttpConstants::METHOD_GET, self::AGENT_PATH, time());
+        $this->assertSame(1, $tally->requests);
+        $this->assertSame(0, $tally->serverErrors);
     }
 
     /**
