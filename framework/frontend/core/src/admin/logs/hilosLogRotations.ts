@@ -6,12 +6,12 @@
 // (multiframework-core.md).
 //
 // A row is one archived batch ON ONE NODE: the same rotation moment on two nodes
-// is two directories on two machines, carried off apart. The rows ride the ordinary
-// server-windowed table (ordinary rows are re-served as windows because the
-// backend projects them from a mirror of the cluster picture); a row held by an
-// open dialog gets a focused-row reply beyond that window. Everything else on
-// the screen — whether there is a picture at all, which nodes
-// exist, and the rules in force — rides the page's own header signal.
+// is two directories on two machines, carried off apart. The rows ride the
+// ordinary server-windowed table (ordinary rows are re-served as windows because
+// the backend projects them from a mirror of the cluster picture); a row held by
+// an open dialog gets a focused-row reply beyond that window. Everything else on
+// the screen — whether there is a picture at all, which nodes exist, and the
+// rules in force — rides the page's own header signal.
 //
 // The screen judges nothing: the retention verdict is decided on the backend. It
 // does command two things — an operator's word that a recommended batch has been
@@ -373,9 +373,9 @@ export function logRotationsPath(state: string): string {
  * Ordinary rows arrive as windows, not live deltas, and the window is not
  * re-requested by the client either: the page re-serves it whenever the cluster
  * picture or the retention rule moves, over this same descriptor. A dialog holds
- * one row in focus and receives its change even after it leaves that window.
- * The returned handle's `start` binds the table
- * and requests the first window; `dispose` unbinds it.
+ * one row in focus and receives its change even after it leaves that window. The
+ * returned handle's `start` binds the table and requests the first window;
+ * `dispose` unbinds it.
  *
  * The state filter lives in the address too (HIL-903). An address carrying the
  * awaiting tail — where the overview banner links — opens the table with that
