@@ -120,6 +120,7 @@ export { default as HilosLogsViewPage } from './admin/logs/HilosLogsViewPage.vue
 export { default as HilosLogsWorkersPage } from './admin/logs/HilosLogsWorkersPage.vue'
 export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.vue'
 export { default as HilosI18nLanguagePage } from './admin/i18n/details/HilosI18nLanguagePage.vue'
+export { default as HilosI18nLanguagesPage } from './admin/i18n/lists/HilosI18nLanguagesPage.vue'
 export { default as HilosI18nLanguageNamesPage } from './admin/i18n/details/HilosI18nLanguageNamesPage.vue'
 export { default as HilosI18nLanguageLocalesPage } from './admin/i18n/details/HilosI18nLanguageLocalesPage.vue'
 export { default as HilosI18nCountryPage } from './admin/i18n/details/HilosI18nCountryPage.vue'

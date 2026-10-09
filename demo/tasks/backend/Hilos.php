@@ -15,6 +15,7 @@ use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -462,6 +463,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         TasksTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         TasksTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
+        TasksTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -568,6 +570,9 @@ final class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+        ],
+        LanguagesListPage::PAGE => [
+            TasksTableContext::hilosI18nLanguages => [],
         ],
         LanguageNamesPage::PAGE => [
             TasksTableContext::hilosI18nLanguageNames => [],

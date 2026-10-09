@@ -94,6 +94,7 @@ use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
 
@@ -266,6 +267,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
 
         $this->assertSame(HilosI18nLanguageLocalesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosI18nLanguageLocales]);
         $this->assertSame([EcommerceShopTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
+        $this->assertSame(HilosI18nLanguagesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosI18nLanguages]);
+        $this->assertSame([EcommerceShopTableContext::hilosI18nLanguages => []], Hilos::PAGE_TABLES[LanguagesListPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],

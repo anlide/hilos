@@ -12,12 +12,6 @@ export interface StagedChild {
 export const STAGED_CHILDREN: readonly StagedChild[] = [
   {
     layer: 'vue',
-    parent: 'hilos_i18n_languages',
-    child: 'hilos_i18n_language',
-    leaf: 'HIL-1478',
-  },
-  {
-    layer: 'vue',
     parent: 'hilos_i18n_countries',
     child: 'hilos_i18n_country',
     leaf: 'HIL-1482',

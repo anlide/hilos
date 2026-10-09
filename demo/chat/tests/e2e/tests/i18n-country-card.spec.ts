@@ -44,5 +44,5 @@ test('opens a reflowed country card directly with read-only details and staged t
   ).toHaveCount(0)
 
   await gotoPage(page, '/hilos/i18n/countries', PAGE_REFUSED)
-  await gotoPage(page, '/hilos/i18n', PAGE_REFUSED)
+  await gotoPage(page, '/hilos/i18n', PAGE_READY)
 })

@@ -28,6 +28,7 @@ use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -300,6 +301,8 @@ final class PollsTopologyRegistryTest extends TestCase
 
         $this->assertSame(HilosI18nLanguageLocalesTable::class, Hilos::TABLES[PollsTableContext::hilosI18nLanguageLocales]);
         $this->assertSame([PollsTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
+        $this->assertSame(HilosI18nLanguagesTable::class, Hilos::TABLES[PollsTableContext::hilosI18nLanguages]);
+        $this->assertSame([PollsTableContext::hilosI18nLanguages => []], Hilos::PAGE_TABLES[LanguagesListPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
@@ -678,6 +681,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             PollsTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
             PollsTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
+            PollsTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -708,6 +712,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 LegalSettingsPage::PAGE,
                 UsersPage::PAGE,
                 UserPage::PAGE,
+                LanguagesListPage::PAGE,
                 LanguageNamesPage::PAGE,
                 LanguageLocalesPage::PAGE,
                 CountryNamesPage::PAGE,

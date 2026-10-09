@@ -374,9 +374,11 @@ on the language the address names. So is its Vue locales page (HIL-1476): the
 locales table opened on that language, a row for the language alone and one for
 every country, keyed by the pair written as its locale's code, whether the pair has
 a locale or not, standing under the card's shared header and tabs fed by the same
-`languageCard` datum. The Vue section root, language and country lists and the names
-page of a country remain unbuilt — the country's in Vue until HIL-1483; React and
-Angular detail views remain unbuilt until their own leaves.
+`languageCard` datum. The Vue section root and the languages list are built
+(HIL-1474): the root shows the Languages card, and the list is the languages
+table, kept live by the table's own fan-out. The country list and the names
+page of a country remain unbuilt — the country's in Vue until HIL-1483; React
+and Angular remain unbuilt until their own leaves.
 
 | Page key | Route |
 |---|---|
@@ -407,12 +409,15 @@ The six demos have the feature, agent, server pages and migrations (HIL-1470).
 The names tables of a language and of a country (`hilosI18nLanguageNames`,
 `hilosI18nCountryNames`) are registered and bound to their pages in all six
 (HIL-1477), and so is the locales table of a language (`hilosI18nLanguageLocales`,
-HIL-1476); the languages and countries tables follow in HIL-1474/1475. All six demos
+HIL-1476). The languages table (`hilosI18nLanguages`) is registered and bound
+to the languages list in all six (HIL-1474); the countries table follows in
+HIL-1475. All six demos
 bind `languageCard` to the locales page as well as to the main language page. Vue serves
-the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
+the section root at `/hilos/i18n` and the languages list at `/hilos/i18n/languages`
+(HIL-1474), the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
 names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales
-at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476); the parent root/list
-still returns `not_served`/404, the names of a country in Vue until HIL-1483. The card shows the code,
+at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The country list
+still returns `not_served`/404, and the names of a country in Vue until HIL-1483. The card shows the code,
 native name, direction, enabled state, locale/name counts, and read-only delete
 verdict. The main card has a Switch off control (HIL-1486); its other action
 controls belong to HIL-1485/1487/1488.
@@ -436,10 +441,9 @@ subsections have no registered server page: the existing rule hides their cards
 and answers 404 for a page the project does not serve. Build no separate
 mechanism for that (owner's decision, 2026-10-04).
 
-Edits reach every open tab through the ordinary
-[browser table source fan-out](browser-source-fanout.md)
-(not in the code yet — HIL-1474).
-The other section tables follow in HIL-1475 and HIL-1477.
+Edits of the languages table reach every open tab through the ordinary
+[browser table source fan-out](browser-source-fanout.md) (HIL-1474).
+The countries table follows in HIL-1475.
 The columns are nonpersonal, so [admin view mode](admin-view-mode.md) shows
 the whole section without allowing the viewer to change anything.
 The country list uses names in the default language and falls back to the

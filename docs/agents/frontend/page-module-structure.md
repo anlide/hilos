@@ -209,7 +209,9 @@ parent key, child key and its own `HIL-<n>` — in the same change and without
 another interview: the plan that staged the two pages already decided it, and
 the row only records the decision. A row expires by itself: once the parent is
 built in that layer, or the child is listed unbuilt again, `UNBUILT-PAGE`
-reports the row as spent, and the change that spent it removes it. No other
+reports the row as spent, and the change that spent it removes it. The
+languages list's row was removed when that list was built in Vue (HIL-1474);
+the countries row remains until its list is. No other
 built child may hide under an unbuilt parent.
 
 ## Type placement: domain vs page-local

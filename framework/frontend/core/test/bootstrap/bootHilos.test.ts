@@ -172,8 +172,9 @@ describe('bootHilos', () => {
     'keeps i18n URLs closed before subscription in %s',
     (viewLayer) => {
       for (const page of [
-        HilosPages.I18N,
-        HilosPages.I18N_LANGUAGES,
+        ...(viewLayer === 'vue'
+          ? []
+          : [HilosPages.I18N, HilosPages.I18N_LANGUAGES]),
         HilosPages.I18N_COUNTRIES,
       ]) {
         const connection = fakeConnection()
@@ -199,6 +200,31 @@ describe('bootHilos', () => {
           entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
         })
         expect(connection.sent).toEqual([])
+      }
+      if (viewLayer === 'vue') {
+        for (const page of [HilosPages.I18N, HilosPages.I18N_LANGUAGES]) {
+          const connection = fakeConnection()
+          const hilosConnection = connection as unknown as HilosConnection
+          const router = bootHilos({
+            viewLayer,
+            connection: hilosConnection,
+            actions: new ActionLifecycle(hilosConnection),
+            scopes: new ScopeManager(),
+            router: createAppPageRouter(
+              { main: { path: '/', admin: false } },
+              { fallback: 'main' },
+            ),
+            navigationEnvironment: fakeNavigation(
+              HILOS_ROUTE_DECLARATIONS[page].path,
+            ),
+          })
+
+          expect(router.currentRoute.get().page).toBe(page)
+          expect(router.pageError.get()?.errorCode).toBeUndefined()
+          expect(router.resolvePath(page)).toBe(
+            HILOS_ROUTE_DECLARATIONS[page].path,
+          )
+        }
       }
     },
   )

@@ -127,6 +127,7 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -429,6 +430,7 @@ final class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         BinanceBtcTrackerTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         BinanceBtcTrackerTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
+        BinanceBtcTrackerTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -497,6 +499,9 @@ final class Hilos extends HilosFacade
         ],
         CommunicationsDeliveriesPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosNotificationDeliveries => [],
+        ],
+        LanguagesListPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosI18nLanguages => [],
         ],
         LanguageNamesPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosI18nLanguageNames => [],

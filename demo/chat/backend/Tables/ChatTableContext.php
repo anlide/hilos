@@ -17,6 +17,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -76,6 +77,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosSecurityStepUpTable $hilosSecurityStepUp
  * @property-read HilosSecurityImpersonationTable $hilosSecurityImpersonation
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
+ * @property-read HilosI18nLanguagesTable $hilosI18nLanguages
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
@@ -112,6 +114,7 @@ final class ChatTableContext extends TableContext
     public const string hilosSecurityStepUp = HilosSecurityStepUpTable::TABLE;
     public const string hilosSecurityImpersonation = HilosSecurityImpersonationTable::TABLE;
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
+    public const string hilosI18nLanguages = HilosI18nLanguagesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;

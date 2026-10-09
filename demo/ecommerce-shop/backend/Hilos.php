@@ -91,6 +91,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -312,6 +313,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         EcommerceShopTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         EcommerceShopTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
+        EcommerceShopTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
     ];
 
     public const array BROWSER_DATA = [
@@ -350,6 +352,9 @@ final class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+        ],
+        LanguagesListPage::PAGE => [
+            EcommerceShopTableContext::hilosI18nLanguages => [],
         ],
         LanguageNamesPage::PAGE => [
             EcommerceShopTableContext::hilosI18nLanguageNames => [],

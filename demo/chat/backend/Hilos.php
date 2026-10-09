@@ -15,6 +15,7 @@ use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -688,6 +689,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         ChatTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ChatTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
+        ChatTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
         ChatTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         ChatTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
     ];
@@ -904,6 +906,9 @@ final class Hilos extends HilosFacade
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
             HilosUserPhotoBrowserTable::TABLE => HilosUserPhotoBrowserTable::BINDING,
             ChatTableContext::hilosMergeCandidates => [],
+        ],
+        LanguagesListPage::PAGE => [
+            ChatTableContext::hilosI18nLanguages => [],
         ],
         LanguageNamesPage::PAGE => [
             ChatTableContext::hilosI18nLanguageNames => [],
