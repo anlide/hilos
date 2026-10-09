@@ -89,9 +89,9 @@ HIL-1453. The column mode for a custom trigger belongs to phase 2, HIL-1413.
   journaled bridge table (not in the code yet — HIL-1453).
 - A write without a receipt is allowed and produces a journal row with a NULL
   receipt number. The section reader returns one feed row per changed record
-  and includes it in the table history. The feed screen calls it
-  “Unknown — a change made past the application”
-  (not in the code yet — HIL-1457).
+  and includes it in the table history. The feed's core view model labels its
+  actor “Unknown”; the screen explains that the change was made past the
+  application (not in the code yet — HIL-1459).
 
 The journal row commits and rolls back with the write it describes: a trigger
 runs inside its statement's transaction, and both databases are on the same
@@ -141,7 +141,7 @@ the primary link, so the next handler cannot inherit its value.
 A receipt under which nothing journaled was written is deleted after the scope,
 including a no-op or a handler error. Cleanup checks for journal rows by receipt
 id and is safe to repeat. A process that dies before cleanup can leave an empty
-row; the feed must require a journal row (HIL-1457). Physical orphan cleanup must
+row; the feed requires a journal row. Physical orphan cleanup must
 wait for the handover lifetime in HIL-1454, so a recipient agent can still write.
 
 A web scope starts after the action guards and ends before the success or deferred
@@ -269,6 +269,17 @@ number with each label. It exposes live table names and column policies without
 exposing journal dictionary row numbers. A service trigger's valid-from
 migration comes from the header of its project SQL file, never from the SQL
 body sent to a browser.
+
+The framework tables `hilosChangeLogFeed` and `hilosChangeLogHistory` serve
+the feed and one table's history through that reader. They are frozen windows:
+a filter, search, sort, page change, or reopening the page asks for a fresh one;
+journal writes do not stream into an open window. A period starts at the time
+the server reads the request. Both tables hide person names from an admin-view
+mode viewer and search only by person number there. Numbered pages skip from
+the nearer edge of an exact set, while a count above the ceiling can only skip
+from the start. Their inline row slots have a `rowKey` but no `id` field: an
+`id` would make the frontend normalizer mistake the slot for an entity and
+lose the other row fields.
 
 ## Triggers Are Files
 

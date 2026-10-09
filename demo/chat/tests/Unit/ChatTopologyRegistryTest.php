@@ -21,6 +21,8 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonEnvMismatchPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
@@ -67,6 +69,8 @@ use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
@@ -353,6 +357,17 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame([ChatTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
+    }
+
+    /** The change-log agent serves both journal table viewports. */
+    public function testChangeLogSectionTables(): void
+    {
+        self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogFeed]);
+        self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogHistory]);
+        self::assertSame([ChatTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogDashboardPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTablePage::SUBSCRIPTION_AGENT_TYPE);
     }
 
     /** Appearance reuses the index agent and the framework's self-snapshot table. */

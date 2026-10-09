@@ -9,6 +9,7 @@ use DateTimeZone;
 use Demo\Chat\Database\Database;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\ChangeLogSectionReader;
 use Hilos\Database\ChangeLog\JournalReceiptData;
@@ -177,6 +178,20 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertSame(ChangeLogFeedItemKind::ENTRY, $feed[0]->kind);
         $this->assertSame(ChangeLogFeedItemKind::RECEIPT, $feed[1]->kind);
         $this->assertSame(2, $reader->feedCount($filter));
+        $this->assertSame($feed[0]->entry->id, $reader->feedWindow(
+            $filter, null, TableAnchorDirection::After, 1, -1,
+        )[0]->entry->id);
+        $this->assertSame([], $reader->feedWindow(
+            $filter, null, TableAnchorDirection::After, 1, TableConstants::COUNT_CEILING + 1,
+        ));
+        $this->assertSame([$receiptId], array_map(
+            static fn($item): int => $item->receipt->id,
+            $reader->feedWindow($filter, null, TableAnchorDirection::After, 1, 1),
+        ));
+        $this->assertSame([$feed[0]->entry->id], array_map(
+            static fn($item): int => $item->entry->id,
+            $reader->feedWindow($filter, null, TableAnchorDirection::Before, 1, 1),
+        ));
         $this->assertSame(2, $reader->feedCount($filter, 1));
         $this->assertSame(1, $reader->feedCountBefore($filter,
             new ChangeLogFeedAnchor($feed[1]->createdAt, $feed[1]->kind, $receiptId)));
@@ -229,6 +244,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertNotNull($receipt);
         $this->assertSame($actorId, $receipt->actor->userId);
         $this->assertSame('Section Actor 1452', $receipt->actor->label);
+        $this->assertFalse($receipt->actor->deleted);
         $this->assertCount(1, $reader->feedWindow(new ChangeLogFeedFilter(
             who: '#' . $actorId, table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50));
@@ -239,6 +255,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertSame($receiptId, $byName[0]->receipt->id);
         $this->assertSame('Section Actor 1452', $byName[0]->receipt->actor->label);
         $this->assertSame('Deleted user #' . $subjectId, $byName[0]->receipt->subject->label);
+        $this->assertTrue($byName[0]->receipt->subject->deleted);
         $this->assertSame([], $reader->feedWindow(new ChangeLogFeedFilter(
             who: 'Actor%1452', table: 'hilos_setting', since: $since,
         ), null, TableAnchorDirection::After, 50));
@@ -476,6 +493,20 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $newest = $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 50);
         $this->assertCount(4, $newest);
         $this->assertSame(4, $reader->historyCount('hilos_setting', $filter));
+        $this->assertSame($newest[0]->entry->id, $reader->historyWindow(
+            'hilos_setting', $filter, true, null, TableAnchorDirection::After, 1, -1,
+        )[0]->entry->id);
+        $this->assertSame([], $reader->historyWindow(
+            'hilos_setting', $filter, true, null, TableAnchorDirection::After, 1, TableConstants::COUNT_CEILING + 1,
+        ));
+        $this->assertSame([$newest[1]->entry->id, $newest[2]->entry->id], array_map(
+            static fn($row): int => $row->entry->id,
+            $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 2, 1),
+        ));
+        $this->assertSame([$newest[1]->entry->id, $newest[2]->entry->id], array_map(
+            static fn($row): int => $row->entry->id,
+            $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::Before, 2, 1),
+        ));
         $this->assertSame(3, $reader->historyCount('hilos_setting', $filter, 2));
         $this->assertSame(['create', 'delete', 'update', 'create'], array_map(
             static fn($row): string => $row->entry->mutation, $newest,
@@ -525,9 +556,36 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$actorId]);
         $afterErase = $reader->historyWindow('hilos_setting', $filter, true, null, TableAnchorDirection::After, 50);
         $this->assertSame('Deleted user #' . $actorId, $afterErase[1]->receipt->actor->label);
+        $this->assertTrue($afterErase[1]->receipt->actor->deleted);
 
         $this->expectException(InvalidArgumentException::class);
         $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(recordKey: []));
+    }
+
+    public function testFeedSkipWithAnAnchorIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new ChangeLogSectionReader()->feedWindow(
+            new ChangeLogFeedFilter(),
+            new ChangeLogFeedAnchor(new DateTimeImmutable('now', new DateTimeZone('UTC')), ChangeLogFeedItemKind::ENTRY, 1),
+            TableAnchorDirection::After,
+            1,
+            1,
+        );
+    }
+
+    public function testHistorySkipWithAnAnchorIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new ChangeLogSectionReader()->historyWindow(
+            'hilos_setting',
+            new ChangeLogHistoryFilter(),
+            true,
+            new ChangeLogHistoryAnchor(new DateTimeImmutable('now', new DateTimeZone('UTC')), 1),
+            TableAnchorDirection::After,
+            1,
+            1,
+        );
     }
 
     public function testMissingJournalSchemaPropagatesSqlFailure(): void

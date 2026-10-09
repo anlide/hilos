@@ -213,7 +213,9 @@ final class ChangeLogSectionReader
      * @param ?ChangeLogFeedAnchor $anchor Complete row key, or an edge of the set
      * @param TableAnchorDirection $direction Side of the anchor in newest-first order
      * @param int $limit Requested rows, capped at MAX_WINDOW_ROWS
+     * @param int $skip Rows to skip from the chosen edge when there is no anchor
      * @return list<ChangeLogFeedItem> Rows in canonical newest-first order
+     * @throws InvalidArgumentException When a skip is used with an anchor
      * @throws HilosException When journal or person SQL fails
      */
     public function feedWindow(
@@ -221,8 +223,16 @@ final class ChangeLogSectionReader
         ?ChangeLogFeedAnchor $anchor,
         TableAnchorDirection $direction,
         int $limit,
+        int $skip = 0,
     ): array {
-        return $this->onPrimary(function () use ($filter, $anchor, $direction, $limit): array {
+        if ($anchor !== null && $skip !== 0) {
+            throw new InvalidArgumentException('Change log skip requires an edge');
+        }
+        $skip = max(0, $skip);
+        if ($skip > TableConstants::COUNT_CEILING) {
+            return [];
+        }
+        return $this->onPrimary(function () use ($filter, $anchor, $direction, $limit, $skip): array {
             $limit = $this->boundedLimit($limit);
             if ($limit === 0) {
                 return [];
@@ -234,7 +244,7 @@ final class ChangeLogSectionReader
                 ? 'created_at DESC, kind ASC, id DESC' : 'created_at ASC, kind DESC, id ASC';
             Database::sql(
                 "SELECT feed.`created_at`, feed.`kind`, feed.`id` FROM ({$sources}) feed"
-                . " WHERE 1 = 1{$anchorClause} ORDER BY {$order} LIMIT {$limit}",
+                . " WHERE 1 = 1{$anchorClause} ORDER BY {$order} LIMIT {$limit} OFFSET {$skip}",
                 $params,
             );
             $rows = Database::rows();
@@ -364,8 +374,9 @@ final class ChangeLogSectionReader
      * @param ?ChangeLogHistoryAnchor $anchor Complete row key, or an edge of the set
      * @param TableAnchorDirection $direction Side of the anchor in the chosen order
      * @param int $limit Requested rows, capped at MAX_WINDOW_ROWS
+     * @param int $skip Rows to skip from the chosen edge when there is no anchor
      * @return list<ChangeLogHistoryRow> Journal rows in the chosen order
-     * @throws InvalidArgumentException When the record key does not match the live primary key
+     * @throws InvalidArgumentException When the record key is invalid or a skip is used with an anchor
      * @throws HilosException When journal, schema, or person SQL fails
      */
     public function historyWindow(
@@ -375,8 +386,16 @@ final class ChangeLogSectionReader
         ?ChangeLogHistoryAnchor $anchor,
         TableAnchorDirection $direction,
         int $limit,
+        int $skip = 0,
     ): array {
-        return $this->onPrimary(function () use ($table, $filter, $newestFirst, $anchor, $direction, $limit): array {
+        if ($anchor !== null && $skip !== 0) {
+            throw new InvalidArgumentException('Change log skip requires an edge');
+        }
+        $skip = max(0, $skip);
+        if ($skip > TableConstants::COUNT_CEILING) {
+            return [];
+        }
+        return $this->onPrimary(function () use ($table, $filter, $newestFirst, $anchor, $direction, $limit, $skip): array {
             $tableId = $this->journalTableId($table);
             $limit = $this->boundedLimit($limit);
             if ($tableId === null || $limit === 0) {
@@ -390,7 +409,7 @@ final class ChangeLogSectionReader
             $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
             Database::sql(
                 "SELECT l.`id` FROM {$database}.`hilos_change_log` l"
-                . " WHERE {$where}{$cursor} ORDER BY l.`created_at` {$order}, l.`id` {$order} LIMIT {$limit}",
+                . " WHERE {$where}{$cursor} ORDER BY l.`created_at` {$order}, l.`id` {$order} LIMIT {$limit} OFFSET {$skip}",
                 $params,
             );
             $ids = array_map(static fn(array $row): int => (int)$row['id'], Database::rows());
@@ -906,7 +925,7 @@ final class ChangeLogSectionReader
         }
         $people = [];
         foreach ($ids as $id) {
-            $people[$id] = new ChangeLogPerson($id, $names[$id] ?? 'Deleted user #' . $id);
+            $people[$id] = new ChangeLogPerson($id, $names[$id] ?? 'Deleted user #' . $id, !isset($names[$id]));
         }
         return $people;
     }

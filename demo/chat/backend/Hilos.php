@@ -102,6 +102,8 @@ use Demo\Chat\Pages\Hilos\Billing\BillingRefundsPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
@@ -689,6 +691,8 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         ChatTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ChatTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
+        ChatTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+        ChatTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -912,6 +916,12 @@ final class Hilos extends HilosFacade
         ],
         CountryNamesPage::PAGE => [
             ChatTableContext::hilosI18nCountryNames => [],
+        ],
+        ChangeLogDashboardPage::PAGE => [
+            ChatTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablePage::PAGE => [
+            ChatTableContext::hilosChangeLogHistory => [],
         ],
     ];
 

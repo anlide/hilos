@@ -1726,6 +1726,47 @@ export {
   type HilosDaemonWorkersTable,
 } from './admin/daemon/hilosDaemonWorkers.js'
 export {
+  CHANGE_LOG_FILTER_TABLE,
+  CHANGE_LOG_FILTER_PERIOD,
+  CHANGE_LOG_PERIODS,
+  CHANGE_LOG_CHANNELS,
+  formatChangeLogWho,
+  formatChangeLogOnBehalfOf,
+  formatChangeLogRecordKey,
+  formatChangeLogMutation,
+  formatChangeLogTouched,
+  type HilosChangeLogPersonFields,
+  type HilosChangeLogContext,
+  type HilosChangeLogTouched,
+} from './admin/changeLog/hilosChangeLog.js'
+export {
+  CHANGE_LOG_FEED_FILTER_CHANNEL,
+  CHANGE_LOG_FEED_CREATED_AT_FIELD,
+  CHANGE_LOG_FEED_ACTOR_LABEL_FIELD,
+  CHANGE_LOG_FEED_ACTION_FIELD,
+  CHANGE_LOG_FEED_TOUCHED_FIELD,
+  resolveHilosChangeLogFeedRow,
+  createHilosChangeLogFeedTable,
+  type HilosChangeLogFeedRow,
+  type HilosChangeLogFeedTable,
+  type HilosChangeLogFeedOptions,
+} from './admin/changeLog/hilosChangeLogFeed.js'
+export {
+  CHANGE_LOG_HISTORY_FILTER_RECORD,
+  CHANGE_LOG_HISTORY_FILTER_FIELD,
+  CHANGE_LOG_HISTORY_CREATED_AT_FIELD,
+  CHANGE_LOG_HISTORY_RECORD_KEY_FIELD,
+  CHANGE_LOG_HISTORY_MUTATION_FIELD,
+  CHANGE_LOG_HISTORY_CHANGES_FIELD,
+  CHANGE_LOG_HISTORY_ACTOR_LABEL_FIELD,
+  resolveHilosChangeLogHistoryRow,
+  createHilosChangeLogHistoryTable,
+  type HilosChangeLogFieldChange,
+  type HilosChangeLogHistoryRow,
+  type HilosChangeLogHistoryTable,
+  type HilosChangeLogHistoryOptions,
+} from './admin/changeLog/hilosChangeLogHistory.js'
+export {
   hilosLogSettingsVocabulary,
   formatLogWriteLevel,
   formatLogRotationSchedule,

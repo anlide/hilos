@@ -22,6 +22,8 @@ use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
@@ -76,6 +78,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
+ * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
+ * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
  */
 final class ChatTableContext extends TableContext
 {
@@ -110,6 +114,8 @@ final class ChatTableContext extends TableContext
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
+    public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
+    public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.
