@@ -6,6 +6,8 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -89,6 +91,47 @@ final class AdminCreateCommandTest extends IntegrationTestCase
         // The bind is what makes the mint usable: without it the operator owns an
         // administrator and no browser that is one.
         self::assertSame($mintedId, Hilos::$db->sessions->findByToken($sessionToken)?->userId);
+    }
+
+    /**
+     * admin:grant on an account folded into another is refused by the sessions library in the
+     * merge's words, and no frame goes to that account's agent, so none is started (HIL-1410).
+     *
+     * @throws HilosException On database failure
+     */
+    public function testGrantingAMergedAccountReachesNoAgent(): void
+    {
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $foldedId = (int)Hilos::$db->users->actions->createWithName('Folded')->id;
+        Hilos::$db->userMerges->actions->add($foldedId, $survivorId);
+        Hilos::$db->users[$foldedId]->actions->setBlock(true);
+        $this->drainSignals();
+
+        $this->sessionsLibrary()->onSignalCommand(
+            new CommandRequestDTO(
+                correlationId: 'corr-admin-grant',
+                command: CliCommands::ADMIN_GRANT,
+                payload: [AdminCommandConstants::FIELD_USER_ID => $foldedId, AdminCommandConstants::FIELD_ADMIN => true],
+            ),
+            '',
+            '',
+        );
+
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotSame(
+                HilosSignalConstants::HILOS_USER_ADMIN_COMMAND,
+                $signal->signalName->getName(),
+                'The library asked the folded account\'s agent',
+            );
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+            }
+        }
+        self::assertCount(1, $replies);
+        self::assertFalse($replies[0]->isOk());
+        self::assertSame('This account was merged into another one', $replies[0]->payload[CommandConstants::FIELD_MESSAGE] ?? null);
+        self::assertFalse(Hilos::$db->users[$foldedId]?->admin);
     }
 
     /**

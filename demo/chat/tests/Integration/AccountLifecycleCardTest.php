@@ -157,6 +157,41 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         self::assertFalse(Hilos::$db->users[$this->userId]->admin);
     }
 
+    /**
+     * A card naming nobody, or an account folded into another, is refused by the sessions library
+     * in the words it always used, and no frame goes to a person's agent: none is started for a
+     * person who cannot be addressed (HIL-1410).
+     */
+    public function testAnAbsentOrMergedPersonIsRefusedBeforeTheirAgent(): void
+    {
+        $this->confirm(StepUpOperationKey::GRANT_ADMIN);
+        $this->fold($this->userId, $this->adminId);
+        $missingId = $this->userId + 1000;
+        $refusals = [
+            [$missingId, 'No such user: ' . $missingId],
+            [$this->userId, 'This account was merged into another one'],
+        ];
+
+        foreach ($refusals as [$userId, $words]) {
+            self::assertSame($words, $this->refusedBeforeTheAgent(
+                HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET,
+                new AccountAdminSetSignalData(
+                    $userId, true, HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE,
+                    'admin-ak', 'lifecycle-request', HilosSignalConstants::HILOS_USER_ADMIN_SET, null,
+                ),
+            ));
+            self::assertSame($words, $this->refusedBeforeTheAgent(
+                HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET,
+                new AccountBlockSetSignalData(
+                    $userId, false, HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE,
+                    'admin-ak', 'lifecycle-request', HilosSignalConstants::HILOS_USER_BLOCK_SET, null,
+                ),
+            ));
+        }
+        self::assertTrue(Hilos::$db->users[$this->userId]->block);
+        self::assertFalse(Hilos::$db->users[$this->userId]->admin);
+    }
+
     public function testDeletionRefusesAnAdministratorFirstAndThenAMergedAccount(): void
     {
         $this->confirm(StepUpOperationKey::DELETE_OTHER_ACCOUNT);
@@ -373,6 +408,35 @@ final class AccountLifecycleCardTest extends IntegrationTestCase
         self::assertNotNull($reply);
 
         return $reply;
+    }
+
+    /**
+     * Hands one card request to the sessions library and reads its answer straight off the queue,
+     * failing when the library asked a person's agent for anything on the way.
+     *
+     * @param string $name Card request signal
+     * @param HandoverAskInterface $request The request
+     * @return ?string The refusal the card was answered with
+     */
+    private function refusedBeforeTheAgent(string $name, HandoverAskInterface $request): ?string
+    {
+        $this->drainSignals();
+        $library = $this->sessionsLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalAgent(new AgentSignalData($request), '', $name));
+        $reply = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotContains(
+                $signal->signalName->getName(),
+                [HilosSignalConstants::HILOS_USER_ADMIN_WRITE, HilosSignalConstants::HILOS_USER_BLOCK_WRITE],
+                'The library asked the person\'s agent',
+            );
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $reply = $signal->data->data;
+            }
+        }
+        self::assertNotNull($reply);
+
+        return $reply->error;
     }
 
     private function ask(string $name, HandoverAskInterface $request): HandoverAnswerSignalData
