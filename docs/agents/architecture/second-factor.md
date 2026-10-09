@@ -2,9 +2,9 @@
 
 Read this before changing anything about two-step verification (HIL-494): the
 gate a proven sign-in passes, the wait it is held in, the trust a browser earns,
-the backup codes, the delayed removal, and the ceiling on wrong app codes. The code lives in
-`framework/backend/Auth/SecondFactor/`, the sign-in half in the two libraries
-(`AbstractSessionsLibraryAgent`, `AbstractUsersLibraryAgent` with
+the backup codes, the delayed removal, and the ceiling on wrong app codes. The
+code lives in `framework/backend/Auth/SecondFactor/`, the sign-in half in the
+two libraries (`AbstractSessionsLibraryAgent`, `AbstractUsersLibraryAgent` with
 `Command/SecondFactorCommands.php`), and the browser half in
 `framework/frontend/core/src/auth/authFlow.ts` and `profile/secondFactor.ts`.
 

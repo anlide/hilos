@@ -26,8 +26,8 @@ use Hilos\Hilos;
  * The ladder does not run off its own end: a lock past the last step stays on it, and the last
  * duration repeats - so the step a row keeps never outgrows the ladder, however long a guesser
  * keeps at it. A day without a lock starts it again from the first step, as a day of quiet
- * forgives the throttle's ladder. The window and that day are deliberately not configurable: a shortened
- * window would hand a patient guesser its attempts back.
+ * forgives the throttle's ladder. The window and that day are deliberately not configurable: a
+ * shortened window would hand a patient guesser its attempts back.
  */
 final class SecondFactorLockPolicy
 {
