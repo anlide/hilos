@@ -3718,10 +3718,10 @@ abstract class DaemonManager extends BaseManager implements
         //
         // And the arriving frame IS freshness, exactly as a snapshot is, so the mark comes off
         // whichever branch runs. Without that, a row whose owner was re-placed onto another node
-        // would stay frozen for good: its new owner's deltas arrive and keep it current, while
-        // a hand-over from the previous owner may never name it again. A deleted row is cleared
-        // for the plainer reason - what no longer
-        // exists cannot be out of date, and nothing would ever reach the mark again.
+        // would stay frozen for good: its new owner's deltas arrive and keep it current, while a
+        // hand-over from the previous owner may never name it again. A deleted row is cleared
+        // for the plainer reason - what no longer exists cannot be out of date, and nothing
+        // would ever reach the mark again.
         if ($stateId !== null) {
             $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
             if ($carriedType === SignalTypeConstants::RT_SYNC_DELETED) {

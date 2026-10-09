@@ -185,8 +185,8 @@ final class RtSnapshot
      *
      * A row the frame carries outside these affected ids is DROPPED. The daemon filters them
      * against the declared claim before calling here, so an extra row cannot reach past its
-     * ownership check. A malformed row inside the affected ids costs that row and is logged, the same bargain
-     * {@see replace()} strikes and for the same reason.
+     * ownership check. A malformed row inside the affected ids costs that row and is logged,
+     * the same bargain {@see replace()} strikes and for the same reason.
      *
      * The deletions run inside the applied-remote window along with the writes, and unlike
      * {@see replace()} they HAVE to: that one empties the collection with a clear, which
