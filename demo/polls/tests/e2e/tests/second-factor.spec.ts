@@ -87,7 +87,12 @@ async function setRequired(
 }
 
 test.describe('two-step verification', () => {
-  test('asks the code on the next sign-in, and not again on a trusted browser', async ({
+  // Unstable since it moved here from chat (HIL-1325): red on the first attempt in
+  // runs 0994, 1005 and 1013, 2 of the 16 polls runs after the move, where its chat
+  // original was red once in 64 (0975). Each time the trusted browser was not let
+  // straight in: auth-surface still stood 5.1-5.75 s after the password. Parked by
+  // the owner on 09.10.2026 (HOTFIX) without a diagnosis.
+  test.fixme('asks the code on the next sign-in, and not again on a trusted browser', async ({
     page,
   }) => {
     const user = await signUp(page)
