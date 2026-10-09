@@ -9,8 +9,14 @@ import {
   type ThemeSettings,
 } from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
-import { createSignal, type ReadonlySignal } from '../state/signal.js'
 import {
+  computedSignal,
+  createSignal,
+  type ReadonlySignal,
+} from '../state/signal.js'
+import { resolveThemeChoice, type ThemeChoice } from './themeChoice.js'
+import {
+  DEFAULT_THEME_SETTINGS,
   readThemePick,
   readThemeSettings,
   THEME_PICK_STORAGE_KEY,
@@ -24,6 +30,8 @@ import {
 } from './themeRule.js'
 
 const pickSignal = createSignal<ThemePick>(null)
+// Catalog true/system until the first bind, the same pair an empty browser reads.
+const settingsSignal = createSignal<ThemeSettings>(DEFAULT_THEME_SETTINGS)
 const modeSignal = createSignal<ThemeMode>('light')
 
 /** The guest's current theme position, including no choice. */
@@ -31,6 +39,16 @@ export const hilosThemePick: ReadonlySignal<ThemePick> = pickSignal
 
 /** The light or dark mode currently applied to the page. */
 export const hilosThemeMode: ReadonlySignal<ThemeMode> = modeSignal
+
+/**
+ * The mark the header and the profile row read. Null means switching is off,
+ * so there is no control. It follows the same settings the worn theme does,
+ * including the snapshot remembered before the handshake.
+ */
+export const hilosThemeChoice: ReadonlySignal<ThemeChoice | null> =
+  computedSignal(() =>
+    resolveThemeChoice(pickSignal.get(), settingsSignal.get()),
+  )
 
 interface ThemeBinding {
   release(): void
@@ -106,7 +124,7 @@ export function bindThemeState(
   activeBinding?.release()
 
   const serverSettings = sessionThemeSettings(scopes)
-  let settings = readThemeSettings()
+  settingsSignal.set(readThemeSettings())
   let systemDark = false
   let media: MediaQueryList | null = null
   try {
@@ -117,7 +135,11 @@ export function bindThemeState(
   }
 
   const recompute = (): void => {
-    const mode = resolveThemeMode(pickSignal.get(), settings, systemDark)
+    const mode = resolveThemeMode(
+      pickSignal.get(),
+      settingsSignal.get(),
+      systemDark,
+    )
     modeSignal.set(mode)
     applyTheme(mode)
   }
@@ -158,8 +180,8 @@ export function bindThemeState(
     }
     // bindSessionScope was registered first. Read its typed selector after it
     // ingests this valid frame so all browser consumers see the same pair.
-    settings = serverSettings.get()
-    writeThemeSettings(settings)
+    settingsSignal.set(serverSettings.get())
+    writeThemeSettings(settingsSignal.get())
     recompute()
   })
 

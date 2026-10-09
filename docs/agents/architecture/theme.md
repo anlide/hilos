@@ -44,13 +44,18 @@ Follow the system through the `change` event of
 `matchMedia('(prefers-color-scheme: dark)')`, never by polling. If matchMedia is
 unavailable, `system` resolves to light until a browser can supply its preference.
 
-The core exposes `hilosThemePick: ReadonlySignal<ThemePick>` and
-`hilosThemeMode: ReadonlySignal<ThemeMode>`; `setHilosThemePick(pick)` changes the
-current tab and remembers the pick. `ThemePick` is `light | dark | system | null`;
+The core exposes `hilosThemePick: ReadonlySignal<ThemePick>`,
+`hilosThemeMode: ReadonlySignal<ThemeMode>`, and
+`hilosThemeChoice: ReadonlySignal<ThemeChoice | null>`;
+`setHilosThemePick(pick)` changes the current tab and remembers the pick.
+`resolveThemeChoice` and `THEME_POSITIONS` are what the header and the profile
+row read: the position, its icon and its label, or no control when switching
+is off. `ThemePick` is `light | dark | system | null`;
 `ThemeMode` is `light | dark`. The header and the profile mark
 the **position**; a person who never picked sees the default's position marked
-as the default, which the worn theme alone cannot tell
-(not in the code yet — HIL-1433, HIL-1434, HIL-1440, HIL-1441).
+as the default, which the worn theme alone cannot tell. The Vue header does
+this (HIL-1433). The profile row and the React and Angular headers are not in
+the code yet — HIL-1434, HIL-1440, HIL-1441.
 
 ## Who Sets It
 
@@ -143,7 +148,7 @@ again with the server's current pair; the guest's erased choice stays absent.
 Switching off has three consequences everywhere at once:
 
 - the header's theme icon disappears
-  (not in the code yet — HIL-1433, HIL-1440, HIL-1441);
+  (Vue does; not in the code yet — HIL-1440, HIL-1441);
 - the profile's Theme row disappears
   (not in the code yet — HIL-1434, HIL-1440, HIL-1441);
 - everyone wears the default, while people's picks in accounts and browsers are

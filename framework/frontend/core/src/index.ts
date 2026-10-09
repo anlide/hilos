@@ -315,11 +315,20 @@ export {
   HILOS_BROWSER_VALUES,
 } from './browser/browserValues.js'
 export {
+  formatHilosThemeLabel,
+  resolveThemeChoice,
+  THEME_COPY,
+  THEME_POSITIONS,
+  type ThemeChoice,
+  type ThemePosition,
+} from './theme/themeChoice.js'
+export {
   resolveThemeMode,
   type ThemeMode,
   type ThemePick,
 } from './theme/themeRule.js'
 export {
+  hilosThemeChoice,
   hilosThemeMode,
   hilosThemePick,
   setHilosThemePick,

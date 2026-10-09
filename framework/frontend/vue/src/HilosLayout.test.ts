@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 import {
   ActionLifecycle,
@@ -33,6 +33,8 @@ import type {
   ProtectedModeStatus,
 } from '@hilos/core'
 
+import { THEME_SETTINGS_STORAGE_KEY } from '../../core/src/theme/themeBrowser.js'
+import { bindThemeState } from '../../core/src/theme/themeState.js'
 import HilosLayout from './HilosLayout.vue'
 import LoadingButton from './LoadingButton.vue'
 import { hilosRouterKey } from './hilosRouterKey.js'
@@ -1357,5 +1359,119 @@ describe('HilosLayout view-mode strip (HIL-1260)', () => {
     session.handshake(viewerHandshake(false, true))
     await flushPromises()
     expect(shown()).toBe(true)
+  })
+})
+
+describe('HilosLayout theme icon', () => {
+  let releaseTheme: (() => void) | undefined
+
+  function dummyConnection(): HilosConnection {
+    return { on: () => () => {} } as unknown as HilosConnection
+  }
+
+  // Filled by construction, not by a storage write in this file: a setItem
+  // call here is a browser value the file does not declare.
+  function memoryStorage(raw: string): Storage {
+    const store = new Map<string, string>([[THEME_SETTINGS_STORAGE_KEY, raw]])
+
+    return {
+      get length() {
+        return store.size
+      },
+      clear() {
+        store.clear()
+      },
+      getItem(key: string) {
+        return store.get(key) ?? null
+      },
+      key(index: number) {
+        return [...store.keys()][index] ?? null
+      },
+      removeItem(key: string) {
+        store.delete(key)
+      },
+      setItem(key: string, value: string) {
+        store.set(key, value)
+      },
+    }
+  }
+
+  function bindSnapshot(switchingEnabled: boolean): void {
+    releaseTheme?.()
+    vi.stubGlobal(
+      'localStorage',
+      memoryStorage(
+        JSON.stringify({ switchingEnabled, defaultTheme: 'light' }),
+      ),
+    )
+    releaseTheme = bindThemeState(dummyConnection(), new ScopeManager())
+  }
+
+  function mountThemed(connection: HilosConnection) {
+    return mount(HilosLayout, {
+      props: { connection },
+      slots: {
+        default: '<p data-id="page-body">Page</p>',
+        user: '<span data-id="user-slot">Ada</span>',
+      },
+    })
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    releaseTheme = bindThemeState(dummyConnection(), new ScopeManager())
+  })
+
+  afterEach(() => {
+    releaseTheme?.()
+    releaseTheme = undefined
+    vi.unstubAllGlobals()
+    localStorage.clear()
+    const restore = bindThemeState(dummyConnection(), new ScopeManager())
+    restore()
+  })
+
+  it.each([
+    ['guest', null],
+    ['signed-in person', { id: 7, name: 'Ada' }],
+  ] as const)(
+    'draws the theme icon first in the right-hand group for a %s',
+    (_label, user) => {
+      const session = bindSession()
+      session.handshake({ entities: { currentUser: user } })
+      const wrapper = mountThemed(shellConnection())
+      const group = wrapper.get('nav .d-flex.align-items-center.gap-3')
+      const theme = group.get('[data-id="nav-theme"]')
+
+      expect(group.element.firstElementChild?.contains(theme.element)).toBe(
+        true,
+      )
+      expect(
+        theme.element.compareDocumentPosition(
+          group.get('[data-id="user-slot"]').element,
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0)
+
+      wrapper.unmount()
+      session.unbind()
+    },
+  )
+
+  it('draws no theme icon under maintenance', () => {
+    const wrapper = mountThemed(shellConnection(FROZEN))
+
+    expect(wrapper.find('[data-id="maintenance"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="nav-theme"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="conn-state"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('draws no theme icon when switching is off', () => {
+    bindSnapshot(false)
+    const wrapper = mountThemed(shellConnection())
+
+    expect(wrapper.find('[data-id="nav-brand"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="nav-theme"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

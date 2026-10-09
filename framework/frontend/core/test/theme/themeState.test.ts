@@ -12,6 +12,7 @@ import {
 } from '../../src/theme/themeBrowser.js'
 import {
   bindThemeState,
+  hilosThemeChoice,
   hilosThemeMode,
   hilosThemePick,
   setHilosThemePick,
@@ -252,5 +253,65 @@ describe('theme binding', () => {
     release?.()
     expect(mediaListeners.size).toBe(0)
     expect(second.listenerCount()).toBe(1)
+  })
+
+  it('publishes the header choice from the settings the page wears', () => {
+    storage.setItem(
+      THEME_SETTINGS_STORAGE_KEY,
+      JSON.stringify({ switchingEnabled: false, defaultTheme: 'dark' }),
+    )
+    const connection = start()
+    expect(hilosThemeChoice.get()).toBeNull()
+
+    connection.emit('handshake_response', {
+      data: {
+        themeSettings: { switchingEnabled: true, defaultTheme: 'dark' },
+      },
+    })
+    expect(hilosThemeChoice.get()).toEqual({
+      position: 'dark',
+      isDefault: true,
+    })
+
+    setHilosThemePick('dark')
+    expect(hilosThemeChoice.get()).toEqual({
+      position: 'dark',
+      isDefault: false,
+    })
+
+    connection.emit('hilos_theme_settings', {
+      switchingEnabled: false,
+      defaultTheme: 'light',
+    })
+    expect(hilosThemeChoice.get()).toBeNull()
+    connection.emit('hilos_theme_settings', {
+      switchingEnabled: true,
+      defaultTheme: 'dark',
+    })
+    expect(hilosThemeChoice.get()).toEqual({
+      position: 'dark',
+      isDefault: false,
+    })
+
+    storage.setItem(THEME_PICK_STORAGE_KEY, 'system')
+    storageChange(THEME_PICK_STORAGE_KEY)
+    expect(hilosThemeChoice.get()).toEqual({
+      position: 'system',
+      isDefault: false,
+    })
+    systemChange(true)
+    expect(hilosThemeChoice.get()).toEqual({
+      position: 'system',
+      isDefault: false,
+    })
+
+    connection.emit('hilos_theme_settings', {
+      switchingEnabled: true,
+      defaultTheme: 'nope',
+    })
+    expect(hilosThemeChoice.get()).toEqual({
+      position: 'system',
+      isDefault: false,
+    })
   })
 })

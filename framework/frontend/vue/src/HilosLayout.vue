@@ -1,6 +1,8 @@
 <!-- HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
 app frame a project fills rather than re-implements. It renders the top
-navigation bar carrying the project's brand, nav, and user slots, the framework admin
+navigation bar carrying the project's brand, nav, and user slots, the shell's
+theme icon first in the right-hand group (it disappears when switching is off
+and under maintenance), the framework admin
 entry (the gear linking to the Hilos dashboard, drawn for an admin and, in the
 admin view mode, for a viewer), the live connection indicator
 the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
@@ -86,6 +88,7 @@ import HilosLink from './HilosLink.vue'
 import LoadingButton from './LoadingButton.vue'
 import HilosMaintenance from './HilosMaintenance.vue'
 import HilosTakeoverScope from './HilosTakeoverScope.vue'
+import HilosThemeMenu from './HilosThemeMenu.vue'
 import HilosToastHost from './HilosToastHost.vue'
 import type { HilosToastCorner } from './hilosToastCorner.js'
 import HilosOAuthWaitModal from './auth/HilosOAuthWaitModal.vue'
@@ -115,8 +118,8 @@ const connectionState = useConnectionState(props.connection)
 
 // While the backend holds the node in protected mode the shell shows the
 // maintenance surface instead of the routed page, and drops everything that
-// leads anywhere: the brand, the nav, the user region, the admin gear, and the
-// footer all point at pages the freeze has shut. The connection indicator is
+// leads anywhere: the brand, the nav, the theme icon, the user region, the
+// admin gear, and the footer all point at pages the freeze has shut. The connection indicator is
 // the one thing that stays — during planned work it is the only status worth
 // telling the visitor. The state is read from the connection, not from a page
 // store, so it outlives routing and subscription lifecycles.
@@ -441,6 +444,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
         </div>
         <div class="d-flex align-items-center gap-3">
           <template v-if="!underMaintenance">
+            <HilosThemeMenu />
             <slot name="user" />
             <button
               v-if="reconsentDue !== null"
