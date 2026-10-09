@@ -14,6 +14,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
@@ -58,6 +59,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountErasure;
+use Hilos\Users\AddressablePerson;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
@@ -416,6 +418,28 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             self::assertTrue($agents[$erasedId]->shouldStop(), "The agent of {$erasedId} did not stop");
         }
         self::assertFalse($agents[self::NEIGHBOUR_ID]->shouldStop());
+    }
+
+    /**
+     * The process that erased a person forgets the row, so a late frame finds nobody to address.
+     *
+     * The holder deleted the row and kept it in its collection: a late grant or card change then
+     * passed AddressablePerson and started the agent of the erased person again (HIL-1410).
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testTheErasingProcessForgetsThePerson(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        self::assertNotNull(Hilos::$db->users[self::USER_ID], 'The holder knows the person before the sweep');
+
+        $this->runSweep();
+
+        self::assertNull(Hilos::$db->users[self::USER_ID]);
+        $this->expectException(ItemNotFoundForUpdateException::class);
+        $this->expectExceptionMessage('No such user: ' . self::USER_ID);
+        AddressablePerson::require(self::USER_ID);
     }
 
     /**
