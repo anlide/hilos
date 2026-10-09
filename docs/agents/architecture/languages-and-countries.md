@@ -372,7 +372,8 @@ The Vue names page of a language is built too (HIL-1477): the names table opened
 on the language the address names. So is its Vue locales page (HIL-1476): the
 locales table opened on that language, a row for the language alone and one for
 every country, keyed by the pair written as its locale's code, whether the pair has
-a locale or not. The Vue section root, language and country lists and the names
+a locale or not, standing under the card's shared header and tabs fed by the same
+`languageCard` datum. The Vue section root, language and country lists and the names
 page of a country remain unbuilt — the country's in Vue until HIL-1483; React and
 Angular detail views remain unbuilt until their own leaves.
 
@@ -405,7 +406,8 @@ The six demos have the feature, agent, server pages and migrations (HIL-1470).
 The names tables of a language and of a country (`hilosI18nLanguageNames`,
 `hilosI18nCountryNames`) are registered and bound to their pages in all six
 (HIL-1477), and so is the locales table of a language (`hilosI18nLanguageLocales`,
-HIL-1476); the languages and countries tables follow in HIL-1474/1475. Vue serves
+HIL-1476); the languages and countries tables follow in HIL-1474/1475. All six demos
+bind `languageCard` to the locales page as well as to the main language page. Vue serves
 the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
 names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales
 at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476); the parent root/list

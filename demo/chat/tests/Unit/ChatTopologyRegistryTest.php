@@ -635,6 +635,10 @@ final class ChatTopologyRegistryTest extends TestCase
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
             Hilos::PAGE_DATA[LanguageDetailPage::PAGE],
         );
+        $this->assertSame(
+            [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
+            Hilos::PAGE_DATA[LanguageLocalesPage::PAGE],
+        );
         $this->assertSame(CountryCardBrowserData::class, Hilos::BROWSER_DATA[CountryCardBrowserData::DATA]);
         $this->assertSame(
             [CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING],

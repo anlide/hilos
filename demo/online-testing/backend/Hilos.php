@@ -379,6 +379,9 @@ final class Hilos extends HilosFacade
         LanguageDetailPage::PAGE => [
             LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING,
         ],
+        LanguageLocalesPage::PAGE => [
+            LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING,
+        ],
         CountryDetailPage::PAGE => [
             CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING,
         ],

@@ -8,12 +8,14 @@ card's language, "— no country" on the language's own row; the locale's code o
 the "No locale" plate — a plate, not a dash, because a dash reads like a value; and
 the locale's switch as a disabled tick. A switched-off locale's text is muted with
 the secondary text color, which keeps its contrast, never with opacity. There are
-no buttons here — the action leaves put them in — and only the table stands here:
-the card's header and tabs above it arrive with HIL-1480. Bootstrap classes only,
-painted with classes that follow the theme (styling-rules.md). -->
+no buttons here — the action leaves put them in. The card's header and tabs (shared
+with the main language page and language names page) stand above the locales table,
+with three states matching the main page. Bootstrap classes only, painted with classes
+that follow the theme (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computedSignal,
+  createHilosI18nLanguageCard,
   createHilosI18nLanguageLocalesTable,
   HilosPages,
   type HilosI18nLanguageContext,
@@ -24,14 +26,18 @@ import { inject, onMounted, onUnmounted } from 'vue'
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+import { useSignal } from '../../../useSignal.js'
+import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
+const card = useSignal(createHilosI18nLanguageCard(props.context))
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
     'HilosI18nLanguageLocalesPage requires a provided router: app.provide(hilosRouterKey, router).',
   )
 }
+const loading = useSignal(router.pageLoading)
 const language = computedSignal(
   () =>
     (router.currentRoute.get().params.languageCode as string | undefined) ?? '',
@@ -51,50 +57,73 @@ function switchedOff(row: HilosI18nLocaleRow): boolean {
 
 <template>
   <HilosAdminPage :page="HilosPages.I18N_LANGUAGE_LOCALES">
-    <HilosViewportTable :controller="locales.controller">
-      <template #cell-countryCode="{ row }">
-        <span
-          v-if="row.countryCode === null"
-          class="fst-italic text-body-secondary"
-          :data-id="`i18n-locales-country-${row.rowKey}`"
-          >— no country</span
-        >
-        <span
-          v-else
-          :class="{ 'text-body-secondary': switchedOff(row) }"
-          :data-id="`i18n-locales-country-${row.rowKey}`"
-          ><span class="text-uppercase text-body-secondary me-1">{{
-            row.countryCode
-          }}</span
-          >{{ row.countryName }}</span
-        >
-      </template>
-      <template #cell-localeCode="{ row }">
-        <span
-          v-if="row.localeCode === null"
-          :class="PLATE"
-          :data-id="`i18n-locales-none-${row.rowKey}`"
-          ><i class="bi bi-dash-circle me-1" aria-hidden="true"></i>No
-          locale</span
-        >
-        <span
-          v-else
-          :class="{ 'text-body-secondary': switchedOff(row) }"
-          :data-id="`i18n-locales-code-${row.rowKey}`"
-          >{{ row.localeCode }}</span
-        >
-      </template>
-      <template #cell-enabled="{ row }">
-        <input
-          v-if="row.localeCode !== null"
-          class="form-check-input"
-          type="checkbox"
-          disabled
-          :checked="row.enabled === true"
-          aria-label="Enabled"
-          :data-id="`i18n-locales-enabled-${row.rowKey}`"
-        />
-      </template>
-    </HilosViewportTable>
+    <template v-if="card">
+      <HilosI18nLanguageHeader
+        :card="card"
+        :active-page="HilosPages.I18N_LANGUAGE_LOCALES"
+      />
+      <HilosViewportTable :controller="locales.controller">
+        <template #cell-countryCode="{ row }">
+          <span
+            v-if="row.countryCode === null"
+            class="fst-italic text-body-secondary"
+            :data-id="`i18n-locales-country-${row.rowKey}`"
+            >— no country</span
+          >
+          <span
+            v-else
+            :class="{ 'text-body-secondary': switchedOff(row) }"
+            :data-id="`i18n-locales-country-${row.rowKey}`"
+            ><span class="text-uppercase text-body-secondary me-1">{{
+              row.countryCode
+            }}</span
+            >{{ row.countryName }}</span
+          >
+        </template>
+        <template #cell-localeCode="{ row }">
+          <span
+            v-if="row.localeCode === null"
+            :class="PLATE"
+            :data-id="`i18n-locales-none-${row.rowKey}`"
+            ><i class="bi bi-dash-circle me-1" aria-hidden="true"></i>No
+            locale</span
+          >
+          <span
+            v-else
+            :class="{ 'text-body-secondary': switchedOff(row) }"
+            :data-id="`i18n-locales-code-${row.rowKey}`"
+            >{{ row.localeCode }}</span
+          >
+        </template>
+        <template #cell-enabled="{ row }">
+          <input
+            v-if="row.localeCode !== null"
+            class="form-check-input"
+            type="checkbox"
+            disabled
+            :checked="row.enabled === true"
+            aria-label="Enabled"
+            :data-id="`i18n-locales-enabled-${row.rowKey}`"
+          />
+        </template>
+      </HilosViewportTable>
+    </template>
+    <div
+      v-else-if="loading"
+      class="placeholder-glow"
+      role="status"
+      aria-label="Loading language"
+    >
+      <span class="placeholder col-6 d-block mb-2 rounded"></span>
+      <span class="placeholder col-4 d-block rounded"></span>
+    </div>
+    <p
+      v-else
+      class="alert alert-secondary"
+      role="status"
+      data-id="language-card-unavailable"
+    >
+      Language details are no longer available.
+    </p>
   </HilosAdminPage>
 </template>

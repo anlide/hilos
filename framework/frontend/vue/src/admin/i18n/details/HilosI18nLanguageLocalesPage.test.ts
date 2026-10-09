@@ -3,8 +3,10 @@ import {
   createSignal,
   HILOS_I18N_LANGUAGE_LOCALES_TABLE,
   HilosPages,
+  LANGUAGE_CARD_DATA,
   ScopeManager,
   type HilosConnection,
+  type HilosI18nLanguageCard,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
@@ -13,6 +15,21 @@ import { nextTick } from 'vue'
 
 import HilosI18nLanguageLocalesPage from './HilosI18nLanguageLocalesPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+
+const russianCard: HilosI18nLanguageCard = {
+  code: 'ru',
+  nativeName: 'Русский',
+  rtl: false,
+  enabled: true,
+  summary: {
+    isDefault: false,
+    isOwn: false,
+    localeCount: 3,
+    nameCount: 5,
+    canDelete: true,
+    deleteReason: null,
+  },
+}
 
 /** The address of the locales page of Russian, a signal so a test can move it to another language. */
 function localesRoute() {
@@ -23,16 +40,25 @@ function localesRoute() {
   })
 }
 
-function router(route: ReturnType<typeof localesRoute>): HilosRouter {
+function router(
+  route: ReturnType<typeof localesRoute>,
+  pageLoading = createSignal(false),
+): HilosRouter {
   return {
     currentRoute: route,
     currentPath: createSignal('/hilos/i18n/languages/ru/locales'),
     currentTitle: createSignal(''),
     pageError: createSignal(null),
-    pageLoading: createSignal(false),
+    pageLoading,
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
-    resolvePath: () => undefined,
+    resolvePath: (page, params) => {
+      const base = `/hilos/i18n/languages/${params?.languageCode}`
+      if (page === HilosPages.I18N_LANGUAGE) return base
+      if (page === HilosPages.I18N_LANGUAGE_NAMES) return `${base}/names`
+      if (page === HilosPages.I18N_LANGUAGE_LOCALES) return `${base}/locales`
+      return undefined
+    },
     clearPageError: () => {},
     denyCurrentPage: () => {},
     awaitPageAnswer: () => {},
@@ -117,7 +143,8 @@ async function mountPage() {
   const { connection, pushWindow, filters } = makeConnection()
   const route = localesRoute()
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
+  const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
+  scope.data.set(LANGUAGE_CARD_DATA, russianCard)
   const wrapper = mount(HilosI18nLanguageLocalesPage, {
     props: { context: { connection, scopes } },
     global: {
@@ -133,10 +160,80 @@ async function mountPage() {
   ])
   await nextTick()
 
-  return { wrapper, filters, route }
+  return { wrapper, filters, route, scope }
 }
 
 describe('HilosI18nLanguageLocalesPage', () => {
+  it('shows a loading skeleton while the card is loading, with no header or table cells', async () => {
+    const { connection } = makeConnection()
+    const route = localesRoute()
+    const scopes = new ScopeManager()
+    scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
+    const pageLoading = createSignal(true)
+    const wrapper = mount(HilosI18nLanguageLocalesPage, {
+      props: { context: { connection, scopes } },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router(route, pageLoading) },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+
+    expect(wrapper.find('[aria-label="Loading language"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id^="i18n-locales-"]').exists()).toBe(false)
+  })
+
+  it('renders the header and tabs above the locales table once the card arrives', async () => {
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('[data-id="language-card-native-name"]').text()).toBe(
+      'Русский',
+    )
+    expect(wrapper.find('[data-id="language-card-counts"]').text()).toBe(
+      'Locales: 3 · Names: 5',
+    )
+
+    const localesTab = wrapper.find(
+      '[data-id="language-card-tab-hilos_i18n_language_locales"]',
+    )
+    expect(localesTab.attributes('aria-current')).toBe('page')
+    expect(localesTab.attributes('href')).toBe(
+      '/hilos/i18n/languages/ru/locales',
+    )
+
+    const mainTab = wrapper.find(
+      '[data-id="language-card-tab-hilos_i18n_language"]',
+    )
+    expect(mainTab.attributes('href')).toBe('/hilos/i18n/languages/ru')
+
+    expect(wrapper.find('table').exists()).toBe(true)
+    expect(wrapper.findAll('button')).toHaveLength(0)
+
+    const inputs = wrapper.findAll('input')
+    for (const input of inputs) {
+      expect(input.attributes('type')).toBe('checkbox')
+      expect(input.attributes('disabled')).toBeDefined()
+    }
+  })
+
+  it('says language details are no longer available when the card is cleared after deletion', async () => {
+    const { wrapper, scope } = await mountPage()
+
+    scope.data.set(LANGUAGE_CARD_DATA, [])
+    await nextTick()
+
+    expect(wrapper.find('[data-id="language-card-unavailable"]').text()).toBe(
+      'Language details are no longer available.',
+    )
+    expect(wrapper.find('[data-id="language-card-header"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('table').exists()).toBe(false)
+  })
+
   it('asks for the window of another language when the address moves to it', async () => {
     const { filters, route } = await mountPage()
 
