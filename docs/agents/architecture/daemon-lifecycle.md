@@ -923,11 +923,10 @@ survivors keep working under the new leader.
   grace deadline (`CLUSTER_SLAVE_WORK_GRACE_MS`) while it awaits the new leader's
   work-decision, so an isolated slave does not run forever. Now consumed by the self-fence
   below (HIL-183), or when its leader tells it that it stopped leading (HIL-1287). The new
-  leader's `peer_placement_query` is that decision (HIL-440): a
-  slave answers to whichever leader placed its work or rebuilt its picture from it, so after
-  a re-election it answers to the new one, and a fence it had armed against the old one is
-  called off (`Self-fence called off: leader '<new>' took over this node's placements from
-  '<old>'`).
+  leader's `peer_placement_query` is that decision (HIL-440): a slave answers to whichever
+  leader placed its work or rebuilt its picture from it, so after a re-election it answers
+  to the new one, and a fence it had armed against the old one is called off (`Self-fence
+  called off: leader '<new>' took over this node's placements from '<old>'`).
 
 ## Node health and failover (HIL-183)
 

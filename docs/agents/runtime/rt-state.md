@@ -208,18 +208,16 @@ that permission is checked; bypassing them lets a second writer mutate the
 store. A direct `clear()` also loses the per-row deletions and cache clear.
 
 Four files change a **mounted collection's** membership directly, and the list
-is closed:
-`Runtime/View/Actions/Collection/RtActions.php` and
+is closed: `Runtime/View/Actions/Collection/RtActions.php` and
 `Runtime/View/Actions/Item/RtActions.php` are the base methods themselves, while
 `Runtime/RtSyncApplicator.php` and `Runtime/RtSnapshot.php` apply a change this
 process did not decide — an incoming sync or a snapshot. Their point mutations
 run inside `SourceChangeBus::whileApplyingRemote()`: announcements repair local
-views, but the outbound subscriber does not send them back to the network.
-The snapshot's whole-collection `clear()` stays silent and its caller clears
-the view cache explicitly. The row array
-`$this->states` belongs to `RtStates` alone: a concrete collection narrows a
-lookup by reading it, and writing it is what `add()`, `remove()` and `clear()`
-are for.
+views, but the outbound subscriber does not send them back to the network. The
+snapshot's whole-collection `clear()` stays silent and its caller clears the
+view cache explicitly. The row array `$this->states` belongs to `RtStates`
+alone: a concrete collection narrows a lookup by reading it, and writing it is
+what `add()`, `remove()` and `clear()` are for.
 
 Unmounted stores are outside that list. `HilosConnections::forUser()` builds a
 detached copy with `$stateCollection::init()` and fills it row by row: it holds

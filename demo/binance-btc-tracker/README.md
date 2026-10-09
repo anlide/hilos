@@ -175,12 +175,11 @@ re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate
 refused, 20 rt set width across nodes, 23 verifier circle on every master, 25
 freeze settles on every master, 29 a node with its own cluster directory
-refused on both ends, and 30 a ready export copy
-outliving the node its agent lived on, 33 every master takes browsers, 34 a
-tab is the same on every master under protected mode, 35 rt row deleted while
-cut off is swept, and 36 a slave cut off with its leader stops its work
-(`docs/agents/testing.md`,
-"The cluster stands — three demos, three shapes"). The
+refused on both ends, and 30 a ready export copy outliving the node its agent
+lived on, 33 every master takes browsers, 34 a tab is the same on every master
+under protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
+cut off with its leader stops its work (`docs/agents/testing.md`, "The cluster
+stands — three demos, three shapes"). The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.
