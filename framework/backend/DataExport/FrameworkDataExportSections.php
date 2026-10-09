@@ -186,7 +186,7 @@ final class FrameworkDataExportSections
         }
 
         $subscriptions = [];
-        // Push storage is optional; store-only projects have no subscription table.
+        // Push storage comes with notifications (HIL-1296); a project without them has no subscription table.
         if (Schema::getTable(EntityPushSubscription::_table) !== null) {
             foreach (Hilos::$db->pushSubscriptions->whereColumnIs(ObjectPushSubscription::userId, $userId) as $subscription) {
                 $subscriptions[] = [

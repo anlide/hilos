@@ -10,6 +10,7 @@ use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\Entity\Item\Notification;
 use Hilos\Database\Entity\Item\NotificationPreference;
+use Hilos\Database\Entity\Item\PushSubscription;
 use Hilos\Groups\AbstractHilosNotificationsGroup;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 
@@ -26,6 +27,12 @@ use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
  * table because the dispatcher reads a recipient's preferences before it stores anything, so a
  * project that migrated one and not the other has notifications that fail on the first send
  * rather than a feature it can see is missing.
+ *
+ * Push subscriptions belong to the framework's notifications too (HIL-1296): subscribing,
+ * unsubscribing and removing a device are actions of this library in every project with the
+ * feature, whether it delivers push or not, so without the table they would write into a table
+ * that is not there. A project without a push channel carries it empty - a table smaller than its
+ * feature comes with the feature whole (docs/agents/orm/migrations.md, "Which tables").
  *
  * The group stands on its own since HIL-860 retired the notifications page: the bell lives in
  * the layout above whatever page the person is on, and the per-user group is the only thing
@@ -44,14 +51,15 @@ final class NotificationsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The library agent, the notifications group, and the notification and preference tables
+     * @return FeatureRequirements The library agent, the notifications group, and the notification, preference and push
+     *     subscription tables
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
             requiredAgents: [HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY],
             requiredGroups: [AbstractHilosNotificationsGroup::class],
-            requiredDbTables: [Notification::_table, NotificationPreference::_table],
+            requiredDbTables: [Notification::_table, NotificationPreference::_table, PushSubscription::_table],
         );
     }
 }

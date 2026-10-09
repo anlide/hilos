@@ -16,7 +16,8 @@ use Hilos\Sms\Delivery\SmsDeliveryChannel;
  * ({@see MailDeliveryChannel}), which the notification specs switch on, mute and read the
  * letter of, and the SMS channel ({@see SmsDeliveryChannel}), whose sender field the
  * communications spec edits. Web push is not switched on here: no spec of this demo drives it,
- * and it would bring VAPID keys, the hilos_push_subscription table and the devices page along.
+ * and it would bring VAPID keys and the devices page along. The hilos_push_subscription table is
+ * already here, with notifications (HIL-1296).
  */
 final class BinanceBtcTrackerDeliveryChannelRegistry extends DeliveryChannelRegistry
 {

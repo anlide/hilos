@@ -390,13 +390,16 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
-     * A store-only project has no push table, which must not prevent its export.
+     * A project without notifications has no push table, which must not prevent its export.
      *
      * @throws HilosException When a fixture or archive write fails
      */
-    public function testBuildsWhenPushStorageIsNotActivated(): void
+    public function testBuildsForAProjectWithoutNotifications(): void
     {
+        DataExportWithoutNotificationsTestHilos::initBrowser();
         Database::sqlRun('DROP TABLE hilos_push_subscription');
+        Database::sqlRun('DROP TABLE hilos_notification_preference');
+        Database::sqlRun('DROP TABLE hilos_notification');
         Schema::reset();
         Schema::initialize();
         $export = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
@@ -406,6 +409,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame(DataExportState::READY, $export->state);
         $archive = new PharData($this->directory . '/' . $export->storedName);
         self::assertSame([], self::section($archive, 'push_subscriptions'));
+        self::assertFalse(isset($archive['notifications.json']));
+        self::assertFalse(isset($archive['notification_preferences.json']));
         self::assertSame([], self::section($archive, 'legal_acceptances'));
     }
 
@@ -577,6 +582,11 @@ class DataExportTestHilos extends Hilos
 final class DataExportPhotoTestHilos extends DataExportTestHilos
 {
     protected const array FEATURES = [HilosFeature::NOTIFICATIONS, HilosFeature::PROFILE_PHOTO];
+}
+
+final class DataExportWithoutNotificationsTestHilos extends DataExportTestHilos
+{
+    protected const array FEATURES = [];
 }
 
 final class DataExportTestAgent extends AbstractDataExportAgent
