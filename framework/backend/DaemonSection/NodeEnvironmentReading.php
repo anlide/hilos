@@ -54,7 +54,9 @@ final readonly class NodeEnvironmentReading
         $missingRequired = 0;
         $fromExample = 0;
         $drifted = 0;
+        $fingerprints = [];
         foreach ($this->keys as $key) {
+            $fingerprints[] = NodeEnvironmentFingerprint::of($key->key, $key->type, $key->process, $key->perNode);
             if ($key->required && $key->process->source === EnvSource::MISSING) {
                 $missingRequired++;
             }
@@ -66,7 +68,7 @@ final readonly class NodeEnvironmentReading
             }
         }
 
-        return new NodeEnvironmentSummary(count($this->keys), $missingRequired, $fromExample, $drifted, count($this->orphans));
+        return new NodeEnvironmentSummary(count($this->keys), $missingRequired, $fromExample, $drifted, count($this->orphans), $fingerprints);
     }
 
     /**

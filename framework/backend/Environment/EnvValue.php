@@ -69,11 +69,9 @@ final readonly class EnvValue
         $this->ensureType(EnvCatalogConstants::TYPE_INTEGER);
         $value = $this->resolveValue();
 
-        if (is_int($value)) {
-            return $value;
-        }
-        if (is_string($value) && preg_match('/^-?\d+$/', trim($value)) === 1) {
-            return (int)$value;
+        $integer = self::integerOf($value);
+        if ($integer !== null) {
+            return $integer;
         }
 
         throw new EnvInvalidValueException("Environment variable '{$this->key}' value is not a valid integer");
@@ -94,11 +92,9 @@ final readonly class EnvValue
         $this->ensureType(EnvCatalogConstants::TYPE_FLOAT);
         $value = $this->resolveValue();
 
-        if (is_float($value) || is_int($value)) {
-            return (float)$value;
-        }
-        if (is_string($value) && is_numeric(trim($value))) {
-            return (float)$value;
+        $float = self::floatOf($value);
+        if ($float !== null) {
+            return $float;
         }
 
         throw new EnvInvalidValueException("Environment variable '{$this->key}' value is not a valid float");
@@ -119,6 +115,17 @@ final readonly class EnvValue
         $this->ensureType(EnvCatalogConstants::TYPE_BOOLEAN);
         $value = $this->resolveValue();
 
+        $boolean = self::booleanOf($value);
+        if ($boolean !== null) {
+            return $boolean;
+        }
+
+        throw new EnvInvalidValueException("Environment variable '{$this->key}' value is not a valid boolean");
+    }
+
+    /** @return ?bool Parsed boolean, or null when the value cannot be read as one */
+    public static function booleanOf(mixed $value): ?bool
+    {
         if (is_bool($value)) {
             return $value;
         }
@@ -129,11 +136,28 @@ final readonly class EnvValue
             return match (strtolower(trim($value))) {
                 '1', 'true', 'yes', 'on' => true,
                 '0', 'false', 'no', 'off' => false,
-                default => throw new EnvInvalidValueException("Environment variable '{$this->key}' value is not a valid boolean"),
+                default => null,
             };
         }
+        return null;
+    }
 
-        throw new EnvInvalidValueException("Environment variable '{$this->key}' value is not a valid boolean");
+    /** @return ?int Parsed integer, or null when the value cannot be read as one */
+    public static function integerOf(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        return is_string($value) && preg_match('/^-?\d+$/', trim($value)) === 1 ? (int)$value : null;
+    }
+
+    /** @return ?float Parsed float, or null when the value cannot be read as one */
+    public static function floatOf(mixed $value): ?float
+    {
+        if (is_float($value) || is_int($value)) {
+            return (float)$value;
+        }
+        return is_string($value) && is_numeric(trim($value)) ? (float)$value : null;
     }
 
     /**

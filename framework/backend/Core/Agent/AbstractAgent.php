@@ -1144,6 +1144,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      * @throws HilosException Whatever the concrete agent's start raises
      * @throws NativeLogicException When an agent factory rejects an unsupported guardian id
+     * @throws RandomException When a concrete agent cannot draw required secure entropy on start
      */
     public function onStart(): void
     {

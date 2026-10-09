@@ -8,8 +8,10 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\DaemonSection\NodeEnvironmentReader;
 use Hilos\DaemonSection\NodeEnvironmentReading;
+use Hilos\DaemonSection\NodeEnvironmentFingerprint;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
+use Hilos\Environment\EnvResolution;
 use Hilos\Environment\EnvSource;
 use PHPUnit\Framework\TestCase;
 
@@ -101,6 +103,59 @@ final class NodeEnvironmentReaderTest extends TestCase
         $this->assertTrue($admin[NodeEnvironmentReading::CLUSTER]);
         $this->assertStringNotContainsString('super-secret', (string)json_encode($admin));
         $this->assertStringNotContainsString('private-orphan', (string)json_encode($admin));
+    }
+
+    public function testSummaryCarriesOnlyCatalogFingerprintsInDeclarationOrder(): void
+    {
+        $reading = NodeEnvironmentReader::read($this->env(), 'node-A', 10);
+        $fingerprints = $reading->summary()->fingerprints;
+
+        $this->assertSame([
+            self::PROCESS_KEY,
+            self::FILE_KEY,
+            self::EXAMPLE_KEY,
+            self::DEFAULT_KEY,
+            self::MISSING_KEY,
+            self::SECRET_KEY,
+            self::VISIBLE_KEY,
+        ], array_map(static fn (NodeEnvironmentFingerprint $fingerprint): string => $fingerprint->key, $fingerprints));
+        $this->assertSame(EnvSource::MISSING, $fingerprints[4]->source);
+        $this->assertNull($fingerprints[4]->digest);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', $fingerprints[5]->digest);
+        $this->assertStringNotContainsString('super-secret', (string)json_encode($reading->summary()));
+        $this->assertStringNotContainsString(self::ORPHAN_KEY, (string)json_encode($reading->summary()));
+    }
+
+    public function testFingerprintCanonicalizesTypedValuesButKeepsUnreadableTextSeparate(): void
+    {
+        $digest = static fn (string $type, EnvSource $source, mixed $value): string =>
+            NodeEnvironmentFingerprint::of('SAME_KEY', $type, new EnvResolution($source, $value), false)->digest;
+
+        $this->assertSame(
+            $digest(EnvCatalogConstants::TYPE_BOOLEAN, EnvSource::ENV_FILE, '0'),
+            $digest(EnvCatalogConstants::TYPE_BOOLEAN, EnvSource::CATALOG_DEFAULT, false),
+        );
+        $this->assertSame(
+            $digest(EnvCatalogConstants::TYPE_INTEGER, EnvSource::ENV_FILE, '007'),
+            $digest(EnvCatalogConstants::TYPE_INTEGER, EnvSource::CATALOG_DEFAULT, 7),
+        );
+        $this->assertNotSame(
+            $digest(EnvCatalogConstants::TYPE_BOOLEAN, EnvSource::ENV_FILE, 'maybe'),
+            $digest(EnvCatalogConstants::TYPE_BOOLEAN, EnvSource::ENV_FILE, 'false'),
+        );
+        $this->assertSame(
+            $digest(EnvCatalogConstants::TYPE_BOOLEAN, EnvSource::ENV_FILE, 'maybe'),
+            $digest(EnvCatalogConstants::TYPE_BOOLEAN, EnvSource::PROCESS, 'maybe'),
+        );
+        $this->assertNotSame(
+            $digest(EnvCatalogConstants::TYPE_STRING, EnvSource::PROCESS, 'same'),
+            NodeEnvironmentFingerprint::of(
+                'OTHER_KEY',
+                EnvCatalogConstants::TYPE_STRING,
+                new EnvResolution(EnvSource::PROCESS, 'same'),
+                false,
+            )->digest,
+        );
     }
 
     public function testViewerSeesDiskDriftOnlyForAnOpenKey(): void

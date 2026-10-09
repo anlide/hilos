@@ -20,6 +20,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use LogicException as NativeLogicException;
+use Random\RandomException;
 
 /**
  * AgentInterface - Interface for agents running in worker processes.
@@ -79,6 +80,7 @@ interface AgentInterface
      *
      * @throws HilosException Whatever the concrete agent's start raises
      * @throws NativeLogicException When a concrete agent rejects an unsupported guardian id
+     * @throws RandomException When a concrete agent cannot draw required secure entropy on start
      */
     public function onStart(): void;
 

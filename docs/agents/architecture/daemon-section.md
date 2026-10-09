@@ -184,8 +184,8 @@ No orphan `.env` key exposes its value: nothing declares that it may be shown.
 
 The environment page of node X is served by node X's agent. It answers the
 subscription with one whole `page_response`, directly to the asking socket.
-The collector's picture contains counts only. For a silent node the section
-agent answers “node silent” with no values. A directory watch and periodic
+The collector's picture contains counts and value-free labels. For a silent
+node the section agent answers “node silent” with no values. A directory watch and periodic
 rescan make the node agent re-answer open environment pages after `.env` or
 `.env.example` changes.
 
@@ -197,15 +197,21 @@ mark for a closed key's set value and omits that key's drift entirely; an orphan
 is hidden for a viewer and length-only for an administrator. See
 [admin-view-mode.md](admin-view-mode.md).
 
-A fingerprint — type, source and value hash — travels only from node to collector
-(not in the code yet — HIL-1379). The screen receives a label salted for the
-collector's lifetime, not that hash; equal labels mean equal values within one
-picture (not in the code yet — HIL-1379). An unsalted short hash of a small set
-of candidates (`prod`/`staging`, `true`/`false`, a short password) can be matched
+A fingerprint — type, source and a 16-hex SHA-256 hash of the catalog key and
+its value in the catalog type — travels only from node to collector. Boolean
+`0`/`false`/`no`/`off` have one canonical value. The collector replaces each hash
+on receipt with a 16-hex HMAC label using a salt minted for its lifetime; it
+does not retain the node hash. The mirror receives a whole snapshot after a
+collector restart, so labels from two collector lifetimes do not mix. Equal
+labels mean equal values within one picture. An unsalted short hash of a small
+set of candidates (`prod`/`staging`, `true`/`false`, a short password) can be matched
 by trying those candidates. The comparison must reveal what differs without
 revealing the value; the short label in the cell still serves that comparison.
-Keys declared `per_node` differ by design and do not count as discrepancies
-(not in the code yet — HIL-1379).
+`ClusterDaemonPicture::environmentComparison()` compares the labels, types and
+sources of answering nodes. It separates divergent keys, equal values from
+different sources, and `per_node` keys, which differ by design. Each key has a
+`known`, `unknown` or `undeclared` cell for every node; a silent node is unknown,
+while a missing declaration on an answering node is a discrepancy.
 
 The September 16 decision carried fingerprints in synchronized RT; the October 4
 decomposition moved them to the node frame, preserving the boundary on values.

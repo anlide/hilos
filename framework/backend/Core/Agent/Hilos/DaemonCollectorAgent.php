@@ -16,11 +16,14 @@ use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\DaemonSection\NodeEnvironmentFingerprint;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Utils\Helpers\RandomHelper;
+use Random\RandomException;
 
 /** Cluster owner of the last whole Daemon frame from each node. */
 final class DaemonCollectorAgent extends AbstractHilosAgent
@@ -37,10 +40,12 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
 
     private const float FANOUT_WINDOW_SECONDS = 0.5;
     private const float WATCH_LEASE_SECONDS = 90.0;
+    private const int LABEL_SALT_BYTES = 32;
     private const string WATCH_RENEWED_AT = 'renewedAt';
     private const string WATCH_SENT_REVISION = 'sentRevision';
 
     private ClusterDaemonPicture $picture;
+    private string $labelSalt;
 
     /** @var array<string, array{renewedAt: float, sentRevision: int}> */
     private array $watchers = [];
@@ -55,9 +60,14 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
     private float $lastFanoutAt = 0.0;
     private float $lastProjectionAt = 0.0;
 
-    /** Starts with no reports; each node's next complete frame repairs this state. */
+    /**
+     * Starts with no reports and a fresh salt for this collector lifetime.
+     *
+     * @throws RandomException When the secure random source refuses a salt
+     */
     public function onStart(): void
     {
+        $this->labelSalt = RandomHelper::secureBytes(self::LABEL_SALT_BYTES);
         $this->picture = ClusterDaemonPicture::empty();
     }
 
@@ -68,6 +78,20 @@ final class DaemonCollectorAgent extends AbstractHilosAgent
      */
     public function applyNodePicture(NodeDaemonPicture $picture): void
     {
+        $environment = $picture->environment;
+        if ($environment !== null) {
+            $fingerprints = array_map(
+                fn (NodeEnvironmentFingerprint $fingerprint): NodeEnvironmentFingerprint => $fingerprint->withDigest(
+                    $fingerprint->digest === null ? null : substr(
+                        hash_hmac('sha256', $fingerprint->digest, $this->labelSalt),
+                        0,
+                        NodeEnvironmentFingerprint::DIGEST_HEX_LENGTH,
+                    ),
+                ),
+                $environment->fingerprints,
+            );
+            $picture = $picture->withEnvironment($environment->withFingerprints($fingerprints));
+        }
         $slot = new ClusterDaemonNodeSlot($picture->nodeId, $picture, time());
         $this->picture = $this->picture->withNode(new ClusterDaemonNodeView($picture->nodeId, false, $slot));
         $this->nodeRevisions[$picture->nodeId] = ++$this->revision;

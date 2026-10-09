@@ -6,6 +6,7 @@ namespace Hilos\DaemonSection;
 
 use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\NodeRole;
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /** Immutable cluster picture, ordered by node id regardless of frame arrival order. */
 final class ClusterDaemonPicture
@@ -93,5 +94,14 @@ final class ClusterDaemonPicture
             return null;
         }
         return $this->leader()?->nodeId === $nodeId ? DaemonNodeState::Leader : DaemonNodeState::Standby;
+    }
+
+    /**
+     * @return ClusterEnvironmentComparison Comparison from projected node views with online state
+     * @throws InvalidArgumentException When a generated cell contradicts its state
+     */
+    public function environmentComparison(): ClusterEnvironmentComparison
+    {
+        return ClusterEnvironmentComparison::of($this->nodes());
     }
 }

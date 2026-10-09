@@ -11,6 +11,9 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\DaemonSection\NodeEnvironmentFingerprint;
+use Hilos\DaemonSection\NodeEnvironmentSummary;
+use Hilos\Environment\EnvSource;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
@@ -103,6 +106,30 @@ final class DaemonCollectorPictureTest extends TestCase
         $agent->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 10));
         $agent->fanOutIfDue(microtime(true) + 91.0);
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    public function testCollectorReplacesNodeDigestsWithLifetimeLabelsBeforeStoringReports(): void
+    {
+        $digest = '0123456789abcdef';
+        $fingerprint = new NodeEnvironmentFingerprint('APP_MODE', 'string', EnvSource::PROCESS, false, $digest);
+        $missing = new NodeEnvironmentFingerprint('MISSING', 'string', EnvSource::MISSING, false, null);
+        $summary = new NodeEnvironmentSummary(2, 0, 0, 0, 0, [$fingerprint, $missing]);
+        $first = new DaemonCollectorAgent();
+        $first->onStart();
+        $first->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 10, environment: $summary));
+        $first->applyNodePicture(new NodeDaemonPicture('n2', NodeRole::Slave, 10, environment: $summary));
+
+        $label = $first->clusterPicture()->node('n1')?->slot?->picture->environment?->fingerprints[0]->digest;
+        self::assertMatchesRegularExpression('/^[0-9a-f]{16}$/', $label);
+        self::assertNotSame($digest, $label);
+        self::assertSame($label, $first->clusterPicture()->node('n2')?->slot?->picture->environment?->fingerprints[0]->digest);
+        self::assertNull($first->clusterPicture()->node('n1')?->slot?->picture->environment?->fingerprints[1]->digest);
+        self::assertSame($digest, $summary->fingerprints[0]->digest);
+
+        $second = new DaemonCollectorAgent();
+        $second->onStart();
+        $second->applyNodePicture(new NodeDaemonPicture('n1', NodeRole::Master, 10, environment: $summary));
+        self::assertNotSame($label, $second->clusterPicture()->node('n1')?->slot?->picture->environment?->fingerprints[0]->digest);
     }
 
     private function drainRuntimeFrames(): void

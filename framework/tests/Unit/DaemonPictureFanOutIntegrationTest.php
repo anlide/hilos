@@ -26,8 +26,14 @@ use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
+use Hilos\DaemonSection\NodeEnvironmentFingerprint;
+use Hilos\Environment\EnvSource;
+use Hilos\Environment\EnvResolution;
+use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /** All three Daemon frames travel through their real array serialization. */
@@ -52,6 +58,7 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
 
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterDaemon(HilosClusterNode::RT_COLLECTION);
         ClusterDaemonPictureMirror::forgetPicture();
         foreach (ClusterDaemonPictureMirror::viewerKeys() as $key) {
             ClusterDaemonPictureMirror::removeViewer($key);
@@ -88,7 +95,7 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
     public function testEnvironmentCountsCrossCollectorAndMirrorWithoutValues(): void
     {
         $collector = $this->collector();
-        $summary = new NodeEnvironmentSummary(7, 1, 2, 3, 4);
+        $summary = new NodeEnvironmentSummary(7, 1, 2, 3, 4, []);
         $wire = new DaemonNodePictureSignalData(new NodeDaemonPicture('n1', NodeRole::Master, 10, environment: $summary));
         $collector->onSignalAgent(
             new AgentSignalData(data: DaemonNodePictureSignalData::fromArray($wire->toArray())),
@@ -104,9 +111,57 @@ final class DaemonPictureFanOutIntegrationTest extends TestCase
         $this->assertEquals($summary, $portion->nodes[0]->slot?->picture->environment);
         $this->assertEquals($summary, ClusterDaemonPictureMirror::picture()?->node('n1')?->slot?->picture->environment);
         $this->assertSame(
-            ['catalogKeys', 'missingRequired', 'fromExample', 'drifted', 'orphans'],
+            ['catalogKeys', 'missingRequired', 'fromExample', 'drifted', 'orphans', 'fingerprints'],
             array_keys($wire->toArray()[DaemonNodePictureSignalData::environment]),
         );
+    }
+
+    public function testThreeNodeEnvironmentLabelsReachMirrorAndProduceTheSameVerdict(): void
+    {
+        Hilos::$rt = new DaemonPictureFanOutRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->mountFeatureRuntime([]);
+        RtTruthSourceRegistry::registerDaemon(HilosClusterNode::RT_COLLECTION);
+        foreach (['n1', 'n2', 'n3'] as $nodeId) {
+            Hilos::$rt->hilosClusterNodes->actions->publish($nodeId, 'master', [], null, true, microtime(true));
+        }
+        $this->drain();
+
+        $collector = $this->collector();
+        $inputDigest = NodeEnvironmentFingerprint::of(
+            'SECRET',
+            EnvCatalogConstants::TYPE_STRING,
+            new EnvResolution(EnvSource::PROCESS, 'secret-value'),
+            false,
+        )->digest;
+        foreach (['n1' => $inputDigest, 'n2' => 'fedcba9876543210', 'n3' => $inputDigest] as $nodeId => $digest) {
+            $summary = new NodeEnvironmentSummary(1, 0, 0, 0, 0, [
+                new NodeEnvironmentFingerprint('SECRET', 'string', EnvSource::PROCESS, false, $digest),
+            ]);
+            $wire = new DaemonNodePictureSignalData(new NodeDaemonPicture($nodeId, NodeRole::Master, 10, environment: $summary));
+            self::assertStringNotContainsString('secret-value', (string)json_encode($wire->toArray()));
+            $collector->onSignalAgent(
+                new AgentSignalData(data: DaemonNodePictureSignalData::fromArray($wire->toArray())),
+                'agent/hilos_daemon_node',
+                HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT,
+            );
+        }
+
+        $pages = new DaemonPictureFanOutProbeAgent();
+        ClusterDaemonPictureMirror::addViewer('ak');
+        $pages->tickAt($this->at(0.0));
+        $this->carryClaim($collector);
+        $portion = $this->carryPortion($pages);
+        $mirror = ClusterDaemonPictureMirror::picture();
+        $firstLabel = $mirror?->node('n1')?->slot?->picture->environment?->fingerprints[0]->digest;
+        self::assertNotSame($inputDigest, $firstLabel);
+        self::assertSame($firstLabel, $mirror?->node('n3')?->slot?->picture->environment?->fingerprints[0]->digest);
+        self::assertNotSame($firstLabel, $mirror?->node('n2')?->slot?->picture->environment?->fingerprints[0]->digest);
+        self::assertSame(['SECRET'], array_map(
+            static fn ($row): string => $row->key, $mirror?->environmentComparison()->diverged ?? [],
+        ));
+        self::assertStringNotContainsString($inputDigest, (string)json_encode($portion->toArray()));
+        self::assertStringNotContainsString('secret-value', (string)json_encode($portion->toArray()));
     }
 
     public function testAFirstClaimOrSnapshotLossKeepsTheOneSecondRetry(): void
@@ -293,5 +348,13 @@ final class DaemonPictureFanOutProbeAgent extends AbstractHilosDaemonAgent
     public function tickAt(float $now): void
     {
         $this->watchIfDue($now);
+    }
+}
+
+/** Runtime context carrying the cluster roster for picture fan-out tests. */
+final class DaemonPictureFanOutRtContext extends RtContext
+{
+    public function configure(): void
+    {
     }
 }

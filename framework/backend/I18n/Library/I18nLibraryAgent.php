@@ -17,6 +17,7 @@ use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\MeasurementSystem;
 use JsonException;
 use LogicException as NativeLogicException;
+use Random\RandomException;
 use Throwable;
 
 /** Cluster library that serves i18n section pages and owns its five reference tables and the reflow record. */
@@ -44,6 +45,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      *
      * @throws HilosException When configuration, ownership or persistence refuses provision or the reflow
      * @throws NativeLogicException When the inherited agent startup rejects its state
+     * @throws RandomException When inherited startup cannot draw secure entropy
      */
     public function onStart(): void
     {

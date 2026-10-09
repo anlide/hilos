@@ -21,6 +21,7 @@ use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use LogicException;
+use Random\RandomException;
 
 /**
  * Serves the five legal pages and holds their acceptance histograms in its own process.
@@ -62,6 +63,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
      *
      * @throws HilosException When the export directory, an order or a state frame cannot be read or written
      * @throws LogicException When an internal invariant is violated
+     * @throws RandomException When inherited startup cannot draw secure entropy
      */
     public function onStart(): void
     {

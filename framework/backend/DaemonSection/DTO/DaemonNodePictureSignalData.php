@@ -12,6 +12,9 @@ use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRulePicture;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
+use Hilos\DaemonSection\NodeEnvironmentFingerprint;
+use Hilos\Environment\EnvCatalogConstants;
+use Hilos\Environment\EnvSource;
 
 /** Complete node picture sent from the node agent to the collector. */
 final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInterface
@@ -28,6 +31,12 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
     public const string fromExample = 'fromExample';
     public const string drifted = 'drifted';
     public const string orphans = 'orphans';
+    public const string fingerprints = 'fingerprints';
+    public const string key = 'key';
+    public const string type = 'type';
+    public const string source = 'source';
+    public const string perNode = 'perNode';
+    public const string digest = 'digest';
     public const string idleReason = 'idleReason';
     public const string rules = 'rules';
     public const string agentId = 'agentId';
@@ -57,6 +66,13 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
                 self::fromExample => $this->picture->environment->fromExample,
                 self::drifted => $this->picture->environment->drifted,
                 self::orphans => $this->picture->environment->orphans,
+                self::fingerprints => array_map(static fn (NodeEnvironmentFingerprint $fingerprint): array => [
+                    self::key => $fingerprint->key,
+                    self::type => $fingerprint->type,
+                    self::source => $fingerprint->source->value,
+                    self::perNode => $fingerprint->perNode,
+                    self::digest => $fingerprint->digest,
+                ], $this->picture->environment->fingerprints),
             ],
             self::standing => $this->picture->standing === null
                 ? null
@@ -94,6 +110,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
                 self::nonNegativeInt($environment, self::fromExample),
                 self::nonNegativeInt($environment, self::drifted),
                 self::nonNegativeInt($environment, self::orphans),
+                self::fingerprintsFromArray($environment),
             ),
             $standing === null ? null : DaemonMasterStandingSignalData::standingFromArray($standing),
         ));
@@ -113,6 +130,44 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
         }
 
         return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $environment Environment wire object
+     * @return list<NodeEnvironmentFingerprint> Validated fingerprints
+     * @throws InvalidFormatException When a fingerprint is absent, mistyped, or duplicated
+     */
+    private static function fingerprintsFromArray(array $environment): array
+    {
+        $rows = self::requireArray($environment, self::fingerprints);
+        if (!array_is_list($rows)) {
+            throw new InvalidFormatException('Daemon environment fingerprints must be a list');
+        }
+        $fingerprints = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || array_is_list($row)) {
+                throw new InvalidFormatException('Daemon environment fingerprint must be an object');
+            }
+            $key = self::requireString($row, self::key);
+            $type = self::requireString($row, self::type);
+            $source = EnvSource::tryFrom(self::requireString($row, self::source));
+            $perNode = self::requireBool($row, self::perNode);
+            $digest = self::requiredNullableString($row, self::digest);
+            if ($key === '' || isset($seen[$key]) || !in_array($type, [
+                EnvCatalogConstants::TYPE_STRING,
+                EnvCatalogConstants::TYPE_INTEGER,
+                EnvCatalogConstants::TYPE_FLOAT,
+                EnvCatalogConstants::TYPE_BOOLEAN,
+            ], true) || $source === null || ($digest === null) !== ($source === EnvSource::MISSING)
+                || ($digest !== null && (strlen($digest) !== NodeEnvironmentFingerprint::DIGEST_HEX_LENGTH
+                    || preg_match('/^[0-9a-f]+$/', $digest) !== 1))) {
+                throw new InvalidFormatException('Daemon environment fingerprint has invalid key, type, source, or digest');
+            }
+            $seen[$key] = true;
+            $fingerprints[] = new NodeEnvironmentFingerprint($key, $type, $source, $perNode, $digest);
+        }
+        return $fingerprints;
     }
 
     /**

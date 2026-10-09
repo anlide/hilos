@@ -19,6 +19,8 @@ use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
+use Hilos\DaemonSection\NodeEnvironmentFingerprint;
+use Hilos\Environment\EnvSource;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRulePicture;
@@ -198,7 +200,8 @@ final class DaemonNodePictureTest extends TestCase
 
     public function testEnvironmentSummaryIsRequiredOnWireAndPreservedByOtherPictureUpdates(): void
     {
-        $summary = new NodeEnvironmentSummary(8, 1, 2, 3, 4);
+        $fingerprint = new NodeEnvironmentFingerprint('APP_MODE', 'string', EnvSource::PROCESS, false, '0123456789abcdef');
+        $summary = new NodeEnvironmentSummary(8, 1, 2, 3, 4, [$fingerprint]);
         $picture = new NodeDaemonPicture('n1', NodeRole::Master, 12, environment: $summary);
         $wire = new DaemonNodePictureSignalData($picture);
         $this->assertSame([
@@ -207,6 +210,13 @@ final class DaemonNodePictureTest extends TestCase
             DaemonNodePictureSignalData::fromExample => 2,
             DaemonNodePictureSignalData::drifted => 3,
             DaemonNodePictureSignalData::orphans => 4,
+            DaemonNodePictureSignalData::fingerprints => [[
+                DaemonNodePictureSignalData::key => 'APP_MODE',
+                DaemonNodePictureSignalData::type => 'string',
+                DaemonNodePictureSignalData::source => 'process',
+                DaemonNodePictureSignalData::perNode => false,
+                DaemonNodePictureSignalData::digest => '0123456789abcdef',
+            ]],
         ], $wire->toArray()[DaemonNodePictureSignalData::environment]);
         $this->assertEquals($summary, DaemonNodePictureSignalData::fromArray($wire->toArray())->picture->environment);
         $this->assertEquals($summary, $picture->withProcesses(new DaemonProcessRoster([], null, 0))->environment);
@@ -225,6 +235,45 @@ final class DaemonNodePictureTest extends TestCase
         $negative[DaemonNodePictureSignalData::environment][DaemonNodePictureSignalData::drifted] = -1;
         $this->expectException(InvalidFormatException::class);
         DaemonNodePictureSignalData::fromArray($negative);
+    }
+
+    public function testEnvironmentFingerprintWireRejectsInvalidRows(): void
+    {
+        $fingerprint = new NodeEnvironmentFingerprint('APP_MODE', 'string', EnvSource::PROCESS, false, '0123456789abcdef');
+        $wire = (new DaemonNodePictureSignalData(new NodeDaemonPicture(
+            'n1', NodeRole::Master, 12, environment: new NodeEnvironmentSummary(1, 0, 0, 0, 0, [$fingerprint]),
+        )))->toArray();
+
+        $invalid = [];
+        $missing = $wire;
+        unset($missing[DaemonNodePictureSignalData::environment][DaemonNodePictureSignalData::fingerprints]);
+        $invalid[] = $missing;
+        foreach ([
+            [DaemonNodePictureSignalData::type, 'other'],
+            [DaemonNodePictureSignalData::source, 'other'],
+            [DaemonNodePictureSignalData::digest, null],
+            [DaemonNodePictureSignalData::digest, '0123456789abcdeg'],
+            [DaemonNodePictureSignalData::perNode, 'false'],
+        ] as [$key, $value]) {
+            $changed = $wire;
+            $changed[DaemonNodePictureSignalData::environment][DaemonNodePictureSignalData::fingerprints][0][$key] = $value;
+            $invalid[] = $changed;
+        }
+        $duplicate = $wire;
+        $duplicate[DaemonNodePictureSignalData::environment][DaemonNodePictureSignalData::fingerprints][] =
+            $duplicate[DaemonNodePictureSignalData::environment][DaemonNodePictureSignalData::fingerprints][0];
+        $invalid[] = $duplicate;
+
+        $refused = 0;
+        foreach ($invalid as $payload) {
+            try {
+                DaemonNodePictureSignalData::fromArray($payload);
+                $this->fail('Invalid fingerprint wire row was accepted');
+            } catch (InvalidFormatException) {
+                $refused++;
+            }
+        }
+        $this->assertSame(count($invalid), $refused);
     }
 
     public function testCronWireRejectsMissingNullableRowTime(): void
