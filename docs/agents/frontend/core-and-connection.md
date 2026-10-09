@@ -41,11 +41,11 @@ own identity, and any browser presenting a valid one-time code is admitted to
 check the result. Both admissions belong to the window — they exist only while
 it is open, and either way out of it ends them.
 
-The same mode can close visitors out by hand, without an operation: a verification
-window from entry, serving pages to the admitted while others get the stub;
-the initiating browser never sees that stub, and lifting still reloads everyone
-([../architecture/protected-mode.md](../architecture/protected-mode.md),
-*Manual Maintenance*) (not in the code yet — HIL-1355).
+The same mode also takes an agent's direct request, without an operation: a
+verification window from entry, serving pages to the admitted while others get
+the stub; the initiating browser never sees that stub, and lifting still reloads
+everyone ([../architecture/protected-mode.md](../architecture/protected-mode.md),
+*Manual Maintenance*).
 
 Two bits ride the connection so a surface can tell those states apart:
 `acceptsPass` says the verification window is open, `passIssued` says at least
