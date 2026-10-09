@@ -16,7 +16,12 @@ import {
 } from '../../helpers/logs.js'
 import { gotoPage, PAGE_READY } from '../../helpers/page.js'
 
-test('the logs overview names every member node', async ({ browser }) => {
+// Red on the first attempt once in the 80 runs after HIL-1506 (0982, one lane) and
+// green on its retry: hilos-logs-node-m1 did not show within 5 s. The journals of
+// every node of that run are kept in
+// runs/0982/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+// Parked by the owner on 09.10.2026 (HOTFIX) without a diagnosis.
+test.fixme('the logs overview names every member node', async ({ browser }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
     await grantAdminToSelf(page)
