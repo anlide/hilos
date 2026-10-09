@@ -370,11 +370,12 @@ together (HIL-1473). The Vue main language card is built (HIL-1478) and opens
 by direct URL with one subscribed `languageCard` snapshot and live updates; the
 Vue main country card is built the same way with `countryCard` (HIL-1482).
 The Vue names page of a language is built too (HIL-1477): the names table opened
-on the language the address names. So is its Vue locales page (HIL-1476): the
-locales table opened on that language, a row for the language alone and one for
-every country, keyed by the pair written as its locale's code, whether the pair has
-a locale or not, standing under the card's shared header and tabs fed by the same
-`languageCard` datum. The Vue section root and the languages list are built
+on the language the address names, standing under the card's shared header and
+tabs fed by the same `languageCard` datum (HIL-1479). So is its Vue locales page
+(HIL-1476): the locales table opened on that language, a row for the language
+alone and one for every country, keyed by the pair written as its locale's code,
+whether the pair has a locale or not, standing under the card's shared header and
+tabs fed by the same `languageCard` datum. The Vue section root and the languages list are built
 (HIL-1474): the root shows the Languages card, and the list is the languages
 table, kept live by the table's own fan-out. The country list and the names
 page of a country remain unbuilt — the country's in Vue until HIL-1483; React
@@ -412,7 +413,8 @@ The names tables of a language and of a country (`hilosI18nLanguageNames`,
 HIL-1476). The languages table (`hilosI18nLanguages`) is registered and bound
 to the languages list in all six (HIL-1474); the countries table follows in
 HIL-1475. All six demos
-bind `languageCard` to the locales page as well as to the main language page. Vue serves
+bind `languageCard` to the names and locales pages as well as to the main
+language page (HIL-1479). Vue serves
 the section root at `/hilos/i18n` and the languages list at `/hilos/i18n/languages`
 (HIL-1474), the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
 names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales

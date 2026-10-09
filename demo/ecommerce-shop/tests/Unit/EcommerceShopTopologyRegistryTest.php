@@ -276,6 +276,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         );
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
+            Hilos::PAGE_DATA[LanguageNamesPage::PAGE],
+        );
+        $this->assertSame(
+            [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
             Hilos::PAGE_DATA[LanguageLocalesPage::PAGE],
         );
         $this->assertSame(CountryCardBrowserData::class, Hilos::BROWSER_DATA[CountryCardBrowserData::DATA]);
