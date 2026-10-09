@@ -363,42 +363,41 @@ nobody is asked*).
   card, log settings in overview and rotations frames, and each member of a
   preset card. A derived value needs every source key open. A closed preset
   member appears as Hidden within the values map, while its drift is omitted
-  altogether: even the fact of a difference would reveal a comparison. A
-  closed selection key hides both the applied name and all differences. The
-  general settings table never searches or sorts on value for a viewer,
-  including open rows, because an order or a match could reveal a closed row.
-  Keys, types, captions and the existing value source remain visible. Fixed
-  nonsecret framework keys are open; channel enablement is open, but the
-  channel's project-defined config fields and project settings stay closed
-  unless their own catalog entry opens them. `Setting.value` remains
+  altogether: even the fact of a difference would reveal a comparison. A closed
+  selection key hides both the applied name and all differences. The general
+  settings table never searches or sorts on value for a viewer, including open
+  rows, because an order or a match could reveal a closed row. Keys, types,
+  captions and the existing value source remain visible. Fixed nonsecret
+  framework keys are open; channel enablement is open, but the channel's
+  project-defined config fields and project settings stay closed unless their
+  own catalog entry opens them. `Setting.value` remains
   `AnonymizationStrategy::MASK` for restore anonymization. At startup an open
   key is refused if any default-reference ancestor is closed, even when its
   current value has an override. OAuth providers follow their entity verdict
   rather than the settings catalog (HIL-1255). An environment value is closed to
-  a viewer unless its own catalog entry explicitly says `admin_view_visible =>
-  true`; a `sensitive` entry can never be opened. No current environment key is
-  open to viewers. Keys, types, sources, requiredness and the set/unset fact can
-  remain visible; the node agent hides closed values on the wire and omits their drift.
-  A log line shows its time, level and node, and
-  its text is hidden; there is no marking at write time. The logs page asks
+  a viewer unless its own catalog entry explicitly says
+  `admin_view_visible => true`; a `sensitive` entry can never be opened. No
+  current environment key is open to viewers. Keys, types, sources, requiredness
+  and the set/unset fact can remain visible; the node agent hides closed values
+  on the wire and omits their drift. A log line shows its time, level and node,
+  and its text is hidden; there is no marking at write time. The logs page asks
   whether its connection is a viewer on each read or follow, forwards `hideText`
   to the file owner and removes a viewer's substring filter before forwarding:
   searching hidden text would reveal whether it contains the term. The owner
   sends a hidden mark in `text`, while `time` and `level` stay visible. A change
-  of verdict during a follow stops it with a `stopped` frame.
-  A person's name is hidden (HIL-1254). Rows
-  assembled by hand past the marking are classified by the leaves of their
-  sections: the people rows and the merge candidates (HIL-1254). The verifier
-  circle shows a viewer the sign-in type and whether a member is online, the
-  address hidden; the deliveries show everything but the notification's title,
-  the error and the recipient's signature; the backup history shows everything
-  but the three refusal texts — of the copy, of the copying and of the restore —
-  while the migration note the code writes out of connection numbers and levels
-  is shown, as are the restore sections and the check windows on the page and
-  the phase with the time left on the bar (HIL-1256). The maintenance phrases
-  that carry an address are marked by nothing: the answer and the refusal of an
-  action go only to the acting connection, and a viewer's action is refused
-  before its handler.
+  of verdict during a follow stops it with a `stopped` frame. A person's name is
+  hidden (HIL-1254). Rows assembled by hand past the marking are classified by
+  the leaves of their sections: the people rows and the merge candidates
+  (HIL-1254). The verifier circle shows a viewer the sign-in type and whether a
+  member is online, the address hidden; the deliveries show everything but the
+  notification's title, the error and the recipient's signature; the backup
+  history shows everything but the three refusal texts — of the copy, of the
+  copying and of the restore — while the migration note the code writes out of
+  connection numbers and levels is shown, as are the restore sections and the
+  check windows on the page and the phase with the time left on the bar
+  (HIL-1256). The maintenance phrases that carry an address are marked by
+  nothing: the answer and the refusal of an action go only to the acting
+  connection, and a viewer's action is refused before its handler.
 - The people (HIL-1254). The list, the card of one person and the merge
   candidates show a viewer the id, the admin and block flags and the last
   activity by their column verdicts, the name hidden by its own; presence and

@@ -34,9 +34,9 @@ For the declarations and valid combinations, read
 ## Core Rule
 
 Keep what a node's processes produce in the producing process's memory and hand
-it on as a whole frame. The master hands its frame to its node agent.
-The node agent hands its picture to the collector,
-and the collector hands whole node slots to the page agent.
+it on as a whole frame. The master hands its frame to its node agent. The node
+agent hands its picture to the collector, and the collector hands whole node
+slots to the page agent.
 
 None of these pictures belongs in RT: it would duplicate an owner and replicate
 a derived view. This is the rule in [logs.md](logs.md), *Rules This Feature Proved,
@@ -70,12 +70,12 @@ A worker may read the file; the master loop may not.
 ## The Master Frame
 
 The master hands the whole frame to the agent of its own node through
-`MasterSignalSender::sendToAgent()`. The node agent accepts that frame only
-from its own master and for its own node ID.
-The existing precedent is `AnalyticsJournalOutbox::flush()` and the master's
-dispatch of that batch to its own journal agent — [analytics.md](analytics.md),
-*The Chain*. Routing remains declarative; see
-[daemon-lifecycle.md](daemon-lifecycle.md), *Handing work out of the master*.
+`MasterSignalSender::sendToAgent()`. The node agent accepts that frame only from
+its own master and for its own node ID. The existing precedent is
+`AnalyticsJournalOutbox::flush()` and the master's dispatch of that batch to its
+own journal agent — [analytics.md](analytics.md), *The Chain*. Routing remains
+declarative; see [daemon-lifecycle.md](daemon-lifecycle.md), *Handing work out
+of the master*.
 
 `DaemonManager::publishClusterNodes()` already writes the node-local
 `hilosClusterNodes` register. That does not make RT the master frame's carrier:
@@ -87,28 +87,28 @@ dispatch of that batch to its own journal agent — [analytics.md](analytics.md)
   [../runtime/rt-context.md](../runtime/rt-context.md), *The truth source is unique
   per cluster, not per process*.
 
-Frequent process measurements join the frame with HIL-1373 (not in the code yet).
-The roster parts that grow with the number of agent instances — workers,
-instances and placement — leave on change and once a minute to repair a lost
-frame; they are never packed on every measurement interval. They are built in
-bounded passes, and a changed source revision discards the unfinished build.
-The small set of daemon cron rules leaves as a whole part on change and once a
-minute to repair a lost frame. Agent schedules leave from their own workers,
-not through the master. There may be thousands of agent instances; do not pack
-their schedules on the master loop. Apply
+Process measurements leave every interval (not in the code yet — HIL-1373). The
+roster parts that grow with the number of agent instances — workers, instances
+and placement — leave on change and once a minute to repair a lost frame; they
+are never packed on every measurement interval. They are built in bounded
+passes, and a changed source revision discards the unfinished build. The small
+set of daemon cron rules leaves as a whole part on change and once a minute to
+repair a lost frame. Agent schedules leave from their own workers, not through
+the master. There may be thousands of agent instances; do not pack their
+schedules on the master loop. Apply
 [../antipatterns/heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md),
 *Work proportional to something that grows*.
 
 Do not await a reply or retry a frame: the next whole frame repairs a lost one.
 A restarted node agent gets a new full frame after it starts; until then its
-`processes` field is null, distinct from a known `workers: []`. The future screen
-says “no picture yet” for an absent node picture (not in the code yet — HIL-1392).
+`processes` field is null, distinct from a known `workers: []`. The future
+screen says “no picture yet” for an absent node picture
+(not in the code yet — HIL-1392).
 
 While the node's freeze row holds, the master sends no frames: the freeze has
-stopped the node agent.
-The precedent is the collector in the master in [analytics.md](analytics.md),
-*The Freeze*. Report a delivery refusal once when the outcome changes, not on
-each frame, following the third rule in
+stopped the node agent. The precedent is the collector in the master in
+[analytics.md](analytics.md), *The Freeze*. Report a delivery refusal once when
+the outcome changes, not on each frame, following the third rule in
 [logs.md](logs.md), *Rules This Feature Proved, Wider Than Logs*.
 
 ## The Schedule
@@ -129,13 +129,13 @@ an invalid expression. Daemon rules have no next run on a node that is not the
 leader; `idleReason: not_leader` says why. Agent rules continue to have next
 runs on that node.
 
-Until the master's cron part arrives, the `cron` section is null rather than
-an empty rule list. Rows are sorted with daemon rules first, then by agent id
-and rule name. A new process roster removes rows of agents no longer on this
-node. The node agent does not expire a report by elapsed time: after its own
-restart, agent rows return on the agents' next changed or minute repair report,
-which can take up to a minute. The master forces its part as soon as the node
-agent starts.
+Until the master's cron part arrives, the `cron` section is null rather than an
+empty rule list. Rows are sorted with daemon rules first, then by agent id and
+rule name. A new process roster removes rows of agents no longer on this node.
+The node agent does not expire a report by elapsed time: after its own restart,
+agent rows return on the agents' next changed or minute repair report, which can
+take up to a minute. The master forces its part as soon as the node agent
+starts.
 
 ## The HTTP Counters
 
@@ -313,23 +313,23 @@ measurement interval. The `.env` on disk belongs to the node agent.
 
 ## Switching The Section On
 
-The project declares the feature in `Hilos::FEATURES`.
-Startup requires the section's pages and its three agents, refusing a partial activation.
-The section is enabled in the demos that already enable `LOGS`: chat, tasks,
-polls, binance-btc-tracker and online-testing.
-The page agent serves the section, replacing the index agent in chat. The
-environment child page is the exception: its thin project subclass inherits
-the framework's node-addressed `SUBSCRIPTION_AGENT_TYPE` and declares none of
-its own.
-The six node child addresses carry a required node ID, including on standalone
-installations; Env mismatch is a cluster-wide address without one.
+The project declares the feature in `Hilos::FEATURES`. Startup requires the
+section's pages and its three agents, refusing a partial activation. The section
+is enabled in the demos that already enable `LOGS`: chat, tasks, polls,
+binance-btc-tracker and online-testing. The page agent serves the section,
+replacing the index agent in chat. The environment child page is the exception:
+its thin project subclass inherits the framework's node-addressed
+`SUBSCRIPTION_AGENT_TYPE` and declares none of its own. The six node child
+addresses carry a required node ID, including on standalone installations; Env
+mismatch is a cluster-wide address without one.
 
 The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. All eight keys remain in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts).
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
-[admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon section*.
+[admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon
+section*.
 
 ## Anti-Patterns
 

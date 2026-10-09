@@ -20,7 +20,8 @@ Use this skill only inside a Hilos repository. Start by reading `agents.md`, the
   on another node may read: `docs/agents/architecture/entity-libraries.md`
 - Who owns a node's log directory, and how a file on another node is read
   through the agent of the node that holds it: `docs/agents/architecture/logs.md`
-- Where a page gets what only the master knows, what the master may do to hand it on, and what never leaves a node: `docs/agents/architecture/daemon-section.md`
+- Where a page gets what only the master knows, what the master may do to hand it
+  on, and what never leaves a node: `docs/agents/architecture/daemon-section.md`
 - Whose a `$fs` directory is — its node's or the cluster's — and why only
   names travel between nodes: `docs/agents/architecture/filesystem.md`
 - Blocking risks in handlers or ticks: `docs/agents/antipatterns/blocking-in-ontick.md`
