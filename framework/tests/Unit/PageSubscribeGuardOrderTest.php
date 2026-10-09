@@ -433,7 +433,8 @@ final class SubscribeGuardOrderTestRtContext extends RtContext
     }
 
     /**
-     * Mounts the injected protected-mode runtime singleton flat, as RtContext::mountFeatureRuntime() does for every project.
+     * Mounts the injected protected-mode runtime singleton flat, as
+     * RtContext::mountFeatureRuntime() does for every project.
      */
     public function configure(): void
     {

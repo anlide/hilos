@@ -17,10 +17,9 @@ use Hilos\Environment\Exception\EnvException;
  * {@see AbstractCommandChannelTestCommand}, so it refuses on a production-like env): it puts an
  * accept key into this node's own half of the cluster connection index, with no socket behind
  * it. That is how a scenario gives the mesh a browser without opening one — and everything
- * downstream of the socket is the
- * production path, which is what makes the scenario worth running. The key is announced to the
- * other nodes by the ordinary per-tick diff, so it becomes addressable exactly as a real one
- * does (HIL-668).
+ * downstream of the socket is the production path, which is what makes the scenario worth
+ * running. The key is announced to the other nodes by the ordinary per-tick diff, so it becomes
+ * addressable exactly as a real one does (HIL-668).
  *
  * Database-free by contract, like the inspector beside it: it talks to nothing but the local
  * command socket, so it still answers on a node partitioned away from MySQL.
