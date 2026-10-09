@@ -70,9 +70,11 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
             AccountDeletionSettingsCatalog::getCatalog(),
             VerificationSweepSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
-            // Tasks opts in to accounts without an address (owner, 26.09.2026, HIL-1106).
+            // Tasks opts in to accounts without an address for the passkey specs HIL-1324 moved here, as chat
+            // does on the owner's word of 26.09.2026 (HIL-1106); kept on 09.10.2026, tasks switches everything on.
             [PasskeyAddressPolicy::SETTING_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
             ]],
         );

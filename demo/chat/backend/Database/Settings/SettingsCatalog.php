@@ -151,11 +151,13 @@ final class SettingsCatalog implements CatalogProviderInterface
             // Chat opts in to accounts without an address (owner, 26.09.2026).
             [PasskeyAddressPolicy::SETTING_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
             ]],
             // Chat keeps its 100 MB of attachments, as before the registry held them (HIL-144).
             [FilesSettingsCatalog::MAX_TOTAL_BYTES_KEY => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES,
             ]],
         );
