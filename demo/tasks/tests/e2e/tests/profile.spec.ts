@@ -2,7 +2,7 @@
 // the live socket. The person's own line carries the session name; Name has no
 // Change, because this demo hands the page no rename of its own. The framework
 // list supplies the confirmed Email row. The rows are the sections of
-// the catalog this demo serves, in catalog order — Security, then Your data —
+// the catalog this demo serves, in catalog order — Ways to sign in, Security, then Your data —
 // and each opens its page, whose "Profile" crumb now leads back.
 import { expect, test, type Page } from '@playwright/test'
 
@@ -48,7 +48,7 @@ test('the header avatar leads to the profile root and its sections', async ({
   await expect(page.getByTestId('profile-identity-email')).toHaveText(email)
   await expect(page.getByTestId('profile-email')).toContainText(email)
 
-  const sections = ['security', 'data']
+  const sections = ['sign-in', 'security', 'data']
   await expect(page.getByTestId('profile-section')).toHaveCount(sections.length)
   expect(
     await page

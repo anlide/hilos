@@ -3,8 +3,11 @@ import { test, expect, type BrowserContext } from '@playwright/test'
 import {
   isRotateCookie,
   isSessionCookie,
+} from '../../../../../framework/frontend/e2e/index.js'
+import {
   logout,
   nameFromEmail,
+  openSignIn,
   register,
   uniqueEmail,
 } from '../helpers/session'
@@ -54,7 +57,7 @@ test('a login moves the live session onto a new cookie value', async ({
   expect(planted).not.toBe('')
 
   const email = uniqueEmail()
-  await page.getByTestId('message-signin').click()
+  await openSignIn(page)
   await register(page, email)
   await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
@@ -86,7 +89,7 @@ test('a second tab of the same browser comes back into the rotated session', asy
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
 
   const email = uniqueEmail()
-  await tabA.getByTestId('message-signin').click()
+  await openSignIn(tabA)
   await register(tabA, email)
   await expect(tabA.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
@@ -114,7 +117,7 @@ test('a sign-out moves the browser onto a new cookie, and a second tab comes bac
   const anonymousToken = await cookieValue(context, isSessionCookie)
   expect(anonymousToken).not.toBe('')
   const email = uniqueEmail()
-  await tabA.getByTestId('message-signin').click()
+  await openSignIn(tabA)
   await register(tabA, email)
   await expect(async () => {
     expect(await cookieValue(context, isSessionCookie)).not.toBe(anonymousToken)
@@ -136,7 +139,7 @@ test('a sign-out moves the browser onto a new cookie, and a second tab comes bac
   }).toPass()
   await siblingReconnect
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
-  await expect(tabB.getByTestId('nav-profile')).toHaveCount(0)
+  await expect(tabB.getByTestId('nav-profile-name')).toHaveCount(0)
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
 
   await tabB.close()

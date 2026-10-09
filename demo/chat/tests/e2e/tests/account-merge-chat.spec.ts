@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test'
 
-import { shownByTestId } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  connectFirstApp,
+  shownByTestId,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { dictateModerationVerdict } from '../helpers/moderation.js'
@@ -13,7 +16,6 @@ import {
   signUp,
   typeInto,
 } from '../helpers/session.js'
-import { connectFirstApp } from '../helpers/secondFactor.js'
 
 // spec-owner: demo — verifies that the merge reassigns the chat message to the survivor.
 
@@ -111,7 +113,8 @@ test('merges another account into the user on the admin card', async ({
     await expect(confirm).toBeEnabled()
 
     // Enrollment in the other browser changes the open summary without a reload.
-    const app = await connectFirstApp(loserPage)
+    await gotoPage(loserPage, '/profile/security')
+    const app = await connectFirstApp(loserPage, PASSWORD)
     await gotoPage(loserPage, '/')
     const protection = page.getByTestId('hilos-user-merge-second-factor-both')
     await expect(protection).toBeVisible()

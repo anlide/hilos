@@ -36,27 +36,6 @@ import {
 export const PASSWORD = 'correct horse battery'
 
 /**
- * Session cookie prefix derived by the framework when HILOS_SESSION_COOKIE_NAME is unset.
- * The auxiliary rotation cookie shares this prefix and ends with '_rotate'.
- */
-export const SESSION_COOKIE_PREFIX = 'hilos_session_token_'
-export const ROTATE_COOKIE_SUFFIX = '_rotate'
-
-export function isSessionCookie(name: string): boolean {
-  return (
-    name.startsWith(SESSION_COOKIE_PREFIX) &&
-    !name.endsWith(ROTATE_COOKIE_SUFFIX)
-  )
-}
-
-export function isRotateCookie(name: string): boolean {
-  return (
-    name.startsWith(SESSION_COOKIE_PREFIX) &&
-    name.endsWith(ROTATE_COOKIE_SUFFIX)
-  )
-}
-
-/**
  * A session token of the minted shape (32 lowercase hex, SessionToken::isValid)
  * that names no session on the server.
  *
@@ -322,33 +301,6 @@ export async function finishWithoutPassword(page: Page): Promise<void> {
 }
 
 /**
- * Take the passkey ending of the registration password step (HIL-1104).
- *
- * The third ending of the same screen: the device makes a key, and the account is
- * created on it with the proved address beside it and no password. The key comes
- * from whatever authenticator the page carries - a spec attaches a virtual one
- * first - and it settles where the other two endings settle, on the same landing.
- *
- * @param page The page sitting on the registration password step.
- */
-export async function finishWithPasskey(page: Page): Promise<void> {
-  await clickSubmit(page.getByTestId('auth-complete-passkey'))
-  await waitDoneSettled(page)
-}
-
-/**
- * Create an account without an address, through consent and the device key (HIL-1106).
- *
- * @param page The page with an empty sign-in field and a platform authenticator.
- */
-export async function createAccountWithPasskey(page: Page): Promise<void> {
-  await clickSubmit(page.getByTestId('auth-create-passkey'))
-  await page.getByTestId('auth-consent-accept').check()
-  await clickSubmit(page.getByTestId('auth-submit'))
-  await waitDoneSettled(page)
-}
-
-/**
  * Register an account with NO password end to end, the way somebody who means to
  * sign in by a mailed link does (HIL-1008): submit the address, confirm the code,
  * then take the exit instead of choosing a password.
@@ -606,34 +558,4 @@ export async function signUpWithVerifiedEmail(
   await expect(page.getByTestId('profile-password-change')).toBeVisible()
 
   return { email, name, userId }
-}
-
-/**
- * Walk the add window's password steps from their first one: name the address,
- * prove it with the mailed code and set a password on it (HIL-1166).
- *
- * The window must already stand on `profile-add-password-email` — the step an
- * account without a confirmed address opens on, whether it chose Password in the
- * window or came straight from a button that named the way. Done when the window
- * has closed on the server's profile_password_updated.
- *
- * @param page Page whose add window stands on the address step.
- * @param email The address the password goes on; a fresh one, never seen by the stand.
- */
-export async function addPasswordFromAddressStep(
-  page: Page,
-  email: string,
-): Promise<void> {
-  await expect(page.getByTestId('profile-add-password-email')).toBeVisible()
-  await typeInto(page.getByTestId('profile-add-password-email'), email)
-  await clickSubmit(page.getByTestId('profile-add-password-request'))
-  await expect(page.getByTestId('profile-add-password-code')).toBeVisible()
-  await typeInto(
-    page.getByTestId('profile-add-password-code'),
-    await waitForMailCode(email, EMAIL_ADD_SUBJECT),
-  )
-  await typeInto(page.getByTestId('profile-add-password-new'), PASSWORD)
-  await typeInto(page.getByTestId('profile-add-password-confirm'), PASSWORD)
-  await clickSubmit(page.getByTestId('profile-add-password-save'))
-  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
 }

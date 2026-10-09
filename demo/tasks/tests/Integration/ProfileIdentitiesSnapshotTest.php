@@ -7,6 +7,7 @@ namespace Demo\Tasks\Tests\Integration;
 use Demo\Tasks\Database\TasksDbContext;
 use Demo\Tasks\Hilos;
 use Demo\Tasks\Pages\Hilos\ProfilePage;
+use Demo\Tasks\Pages\Hilos\ProfileSignInPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageRouteParams;
@@ -42,20 +43,25 @@ final class ProfileIdentitiesSnapshotTest extends IntegrationTestCase
 
             // The worker has not fetched either identity by key.
             Hilos::$db->getObjectCollection(TasksDbContext::identities)?->clearInMemory();
-            $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
-                ProfilePage::PAGE,
-                self::ACCEPT_KEY,
-                new PageRouteParams([]),
-            );
-            $this->assertNotNull($snapshot);
 
-            $this->assertSame(
-                [(int) $oauth->id, (int) $sms->id],
-                array_map(
-                    static fn (array $identity): int => (int) $identity[Identity::id],
-                    $this->identitiesOfSnapshotItem($snapshot),
-                ),
-            );
+            foreach ([ProfilePage::PAGE, ProfileSignInPage::PAGE] as $page) {
+                Hilos::$db->getObjectCollection(TasksDbContext::identities)?->clearInMemory();
+                $snapshot = Hilos::$browser?->buildSubscribeSnapshot(
+                    $page,
+                    self::ACCEPT_KEY,
+                    new PageRouteParams([]),
+                );
+                $this->assertNotNull($snapshot);
+
+                $this->assertSame(
+                    [(int) $oauth->id, (int) $sms->id],
+                    array_map(
+                        static fn (array $identity): int => (int) $identity[Identity::id],
+                        $this->identitiesOfSnapshotItem($snapshot),
+                    ),
+                    $page,
+                );
+            }
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$sr = null;

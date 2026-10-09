@@ -72,8 +72,10 @@ use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityTwoFactorPage;
+use Demo\Tasks\Pages\Hilos\ProfileSignInPage;
 use Demo\Tasks\Pages\Hilos\Users\UserPage;
 use Demo\Tasks\Pages\Hilos\Users\UsersPage;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Demo\Tasks\Pages\MainPage;
 use Demo\Tasks\Runtime\View\Context\TasksRtContext;
 use Demo\Tasks\Tables\HilosUser\HilosUsersTable;
@@ -914,5 +916,20 @@ final class TasksTopologyRegistryTest extends TestCase
         }
 
         $this->addToAssertionCount(1);
+    }
+
+    public function testProfileSignInPageIsActivated(): void
+    {
+        $this->assertSame(ProfileSignInPage::class, Hilos::PAGES[HilosPageConstants::HILOS_PROFILE_SIGN_IN]);
+        $this->assertSame(AgentType::TASKS, ProfileSignInPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(AgentType::TASKS, Hilos::getPageRoutes()[HilosPageConstants::HILOS_PROFILE_SIGN_IN]);
+        $this->assertSame(
+            HilosPageConstants::HILOS_PROFILE_SIGN_IN,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_LINK_OAUTH_START],
+        );
+        $this->assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[HilosPageConstants::HILOS_PROFILE_SIGN_IN],
+        );
     }
 }

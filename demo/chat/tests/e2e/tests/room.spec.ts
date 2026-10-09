@@ -1,6 +1,14 @@
 import { test, expect } from '@playwright/test'
 
-import { clickSubmit, signUp, typeInto } from '../helpers/session'
+import {
+  clickSubmit,
+  logout,
+  nameFromEmail,
+  register,
+  signUp,
+  typeInto,
+  uniqueEmail,
+} from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { dictateModerationVerdict } from '../helpers/moderation'
@@ -151,4 +159,51 @@ test('the event stream is its own scroll region', async ({ page }) => {
       document.documentElement.clientHeight + 1,
   )
   expect(documentScrolls).toBe(false)
+})
+
+test('gates sending behind the surface, and returns the identity line to anonymous on logout', async ({
+  page,
+}) => {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+
+  // Anonymous read: the live event stream renders without a session.
+  await expect(page.getByTestId('events-scroll')).toBeVisible()
+
+  // The composer is gated: the message input is disabled and the send control
+  // becomes a Sign in button rather than sending.
+  await expect(page.getByTestId('message-input')).toBeDisabled()
+  await expect(page.getByTestId('message-signin')).toBeVisible()
+
+  // The composer's Sign in button opens the same surface as the auth-gate modal (requireAuth),
+  // in place over the live page.
+  await page.getByTestId('message-signin').click()
+  const modal = page.getByTestId('modal')
+  await expect(modal).toBeVisible()
+  await expect(modal.getByTestId('auth-surface')).toBeVisible()
+
+  // Registering through the modal upgrades the session; the gate closes the modal
+  // off the session upgrade and the composer un-gates in place.
+  await register(page, email)
+  await expect(modal).toBeHidden()
+  await expect(page.getByTestId('message-input')).toBeEnabled()
+  await expect(page.getByTestId('message-signin')).toHaveCount(0)
+  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+
+  // The identity line's live transition (HIL-625). Logging out is one of the
+  // four ways into the anonymous state named in the ticket — purge, expiry and
+  // an anonymized restore are the others — and on the wire all four are the
+  // same thing: a handshake response with no current user. This is the one of
+  // them a browser can walk into, and it walks into it WITHOUT a navigation: the
+  // session scope drops the user, and the line re-renders off that ref the same
+  // way the shell drops the profile link. What the line must not do is keep the
+  // "Signed in as" sentence with the name gone from it.
+  await logout(page)
+
+  await expect(page.getByTestId('self-anonymous')).toHaveText(
+    'Browsing anonymously',
+  )
+  await expect(page.getByTestId('self-user')).toHaveCount(0)
 })

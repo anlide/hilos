@@ -3,15 +3,15 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   armSocketDrop,
   dropSocket,
+  isSessionCookie,
+  SESSION_COOKIE_PREFIX,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { gotoPage } from '../helpers/page'
 import {
   clickSubmit,
-  isSessionCookie,
   login,
   logout,
   orphanSessionToken,
-  SESSION_COOKIE_PREFIX,
   signUp,
   typeInto,
 } from '../helpers/session'

@@ -2,10 +2,9 @@ import { test, expect } from '@playwright/test'
 
 import {
   isSessionCookie,
-  orphanSessionToken,
   SESSION_COOKIE_PREFIX,
-  signUp,
-} from '../helpers/session'
+} from '../../../../../framework/frontend/e2e/index.js'
+import { orphanSessionToken, signUp } from '../helpers/session'
 import { gotoPage } from '../helpers/page'
 
 // Step-7.1 transport e2e (testing-strategy.md): the built app reaches the

@@ -163,12 +163,14 @@ polls (Angular) → online-testing (Angular).
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
 | The operations half of tasks | ecommerce-shop: users, settings, notifications, protected-mode, maintenance, backup-reopen | ecommerce-shop | HIL-1225 |
 | The operations half of polls | online-testing: users, settings, notifications, protected-mode, maintenance, logs | online-testing | HIL-1226 |
-| Sign-in on the server — third-party providers and their failures, codes over Telegram, SMS and phone, sign-in by a code and by a link, sign-up in several tabs of one browser | chat: auth, all but what stays | tasks | HIL-1324 |
-| Step-up, session rotation, passkey | chat: step-up, session-rotation, passkey | tasks | HIL-1324 |
+| Sign-in on the server — third-party providers and their failures, codes over Telegram, SMS and phone, sign-in by a code and by a link, sign-up in several tabs of one browser | tasks: auth, oauth, phone-codes, admin-view-mode (the sign-in methods viewer case) | tasks | HIL-1324 |
+| Step-up, session rotation, passkey | tasks: step-up, session-rotation, passkey | tasks | HIL-1324 |
 | Profile on the server — password, address, other browsers' sessions, the GitHub link, devices | chat: profile, all but what stays | polls | HIL-1325 |
 | Second factor | chat: second-factor | polls | HIL-1325 |
 | Legal | chat: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
 | Data and privacy | chat: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
+
+tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324).
 
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
@@ -177,10 +179,9 @@ specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
 switched on only in chat), and `account-deletion` and `profile-data` (tasks and
 polls carry their own copies of those screens). From `auth`, chat keeps the
 narrow-screen layout and the still button, sign-up with a return, a wrong
-password, a message sent behind the sign-in surface, and the re-check of an
-open admin and profile on sign-out. From `profile`, it keeps the header link,
-the rename, the tab conflict and the narrow screen. Everything else of
-`auth` and `profile` moves.
+password, and the re-check of an open admin and profile on sign-out. From
+`profile`, it keeps the header link, the rename, the tab conflict and the
+narrow screen. Everything else of `auth` and `profile` moves.
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
 over people, and they go with settings, people and admin: framework-level
@@ -313,6 +314,10 @@ import-type rule above; a round trip that needs only `node:net` belongs in
 `framework/frontend/scripts/` beside `timeout-scale.mjs`. Nothing about that
 mechanic is Playwright's, and the scripts folder is a vitest project, so
 `commandChannel.mjs` carries the shared rule together with a running unit test.
+The authenticator-app code (`totp.mjs`) is node-side, in
+`framework/frontend/scripts/`; connecting the first app (`secondFactor.ts`) and
+session-cookie name helpers (`sessionCookie.ts`) live in
+`framework/frontend/e2e/`.
 
 The helpers of the stand's residents live in the same two homes, once for every
 demo that reaches the stand: `standGateway.mjs`, `standOAuth.mjs`, `standSms.mjs`,

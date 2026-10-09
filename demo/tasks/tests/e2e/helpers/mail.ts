@@ -37,6 +37,23 @@ const REGISTER_SUBJECT = 'Confirm your email address'
 /** The subject PasswordResetMailTemplate sends the recovery code under. */
 const PASSWORD_RESET_SUBJECT = 'Reset your password'
 
+/** The subject MagicLinkMailTemplate sends the sign-in letter under. */
+export const MAGIC_LINK_SUBJECT = 'Your sign-in link'
+
+// The magic-link letter carries TWO secrets (HIL-606), and only one of them is
+// typed: the line that offers the code is what the read anchors on. A bare
+// digit-run match cannot be used here — the URL above it is hex, so any four
+// digits inside the token would answer first, and the spec would type a slice of
+// somebody's link into the code field and call the flow broken.
+const MAGIC_LINK_CODE_PATTERN =
+  /Or enter this code on the page that asked for it:\s*(\d+)/
+
+// The other half of the same letter, anchored on its own line for the same
+// reason: the URL is the only thing on the letter that a loose match could pick
+// the code out of, and vice versa. Read as the letter offers it — whole — because
+// what the click has to reproduce is the address a mail client would open.
+const MAGIC_LINK_URL_PATTERN = /Use this link to sign in:\s*(\S+)/
+
 /** One intercepted message, as a spec reads it back. */
 export interface InterceptedMail {
   /** Subject line, which is how a wait picked this message out. */
@@ -130,6 +147,69 @@ export async function readRegisterCode(email: string): Promise<string> {
  */
 export async function readPasswordResetCode(email: string): Promise<string> {
   return waitForMailCode(email, PASSWORD_RESET_SUBJECT)
+}
+
+/**
+ * Wait for the sign-in letter and return the plaintext code it carries.
+ *
+ * Registration codes and recovery codes are framed as instructions and can be
+ * matched loosely on any four-to-six-digit run (waitForMailCode); the magic-link
+ * letter carries a URL above the code whose token has hex digits, so any run of
+ * digits would match the URL before the code. This matches the exact sentence
+ * MagicLinkMailTemplate wraps the code in.
+ *
+ * @param email The address the letter was sent to.
+ * @returns The plaintext companion sign-in code.
+ * @throws Error When the delivered letter offers no code to type.
+ */
+export async function readMagicLinkCode(email: string): Promise<string> {
+  const mail = await waitForMailTo(email, MAGIC_LINK_SUBJECT)
+  const code = MAGIC_LINK_CODE_PATTERN.exec(mail.text)?.[1]
+  if (code === undefined) {
+    throw new Error(`sign-in letter to ${email} offered no code to type`)
+  }
+
+  return code
+}
+
+/**
+ * Wait for the sign-in letter and return the link it carries beside the code.
+ *
+ * The companion of {@link readMagicLinkCode} for the person who CAN click: the
+ * half the code screen never exercises, and the half whose click reached no
+ * server at all until HIL-607. The URL comes back whole, host and all — it is
+ * built from `HILOS_MAGIC_LINK_URL`, which is not the stand's own base address,
+ * so a spec opens its path rather than the string itself.
+ *
+ * @param email The address the letter was sent to.
+ * @returns The sign-in URL as the letter spells it.
+ * @throws Error When the delivered letter carries no link.
+ */
+export async function readMagicLinkUrl(email: string): Promise<string> {
+  const mail = await waitForMailTo(email, MAGIC_LINK_SUBJECT)
+  const url = MAGIC_LINK_URL_PATTERN.exec(mail.text)?.[1]
+  if (url === undefined) {
+    throw new Error(`sign-in letter to ${email} carried no link to click`)
+  }
+
+  return url
+}
+
+/**
+ * Every letter the interceptor holds for one address, newest first.
+ *
+ * Counting is what proves a *second* letter was never sent — an assertion about
+ * the whole mailbox of an address rather than about one subject — so this read
+ * is deliberately not narrowed by subject, and deliberately does not wait: the
+ * caller has already awaited the letter whose absence of a sibling it asserts.
+ *
+ * @param email The recipient address.
+ * @returns The delivered messages, newest first (the order Mailpit lists in).
+ */
+export async function mailsTo(email: string): Promise<InterceptedMail[]> {
+  const entries = await entriesTo(email)
+
+  return Promise.all(entries.map((entry) => readMessage(entry.ID)))
 }
 
 /**

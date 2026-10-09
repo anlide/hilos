@@ -7,9 +7,14 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 
 import {
+  connectFirstApp,
   enableEmailChannel,
   shownByTestId,
 } from '../../../../../framework/frontend/e2e/index.js'
+import {
+  nextTotpCode,
+  totpStep,
+} from '../../../../../framework/frontend/scripts/totp.mjs'
 import { signUpAdmin } from '../helpers/adminGrant'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import { waitForMailTo } from '../helpers/mail'
@@ -19,7 +24,6 @@ import {
   gotoPage,
   PAGE_READY,
 } from '../helpers/page'
-import { connectFirstApp } from '../helpers/secondFactor'
 import {
   PASSWORD,
   clickSubmit,
@@ -28,7 +32,6 @@ import {
   signUp,
   typeInto,
 } from '../helpers/session'
-import { nextTotpCode, totpStep } from '../helpers/totp'
 
 /** The subject of the notice that a removal was asked for. */
 const RESET_REQUESTED_SUBJECT = 'Removal of two-step verification requested'
@@ -102,7 +105,8 @@ test.describe('two-step verification', () => {
     page,
   }) => {
     const user = await signUp(page)
-    const app = await connectFirstApp(page)
+    await gotoPage(page, '/profile/security')
+    const app = await connectFirstApp(page, PASSWORD)
 
     await logout(page)
     await signInToCodeStep(page, user.email)
@@ -122,7 +126,8 @@ test.describe('two-step verification', () => {
 
   test('takes a backup code once', async ({ page, browser }) => {
     const user = await signUp(page)
-    const app = await connectFirstApp(page)
+    await gotoPage(page, '/profile/security')
+    const app = await connectFirstApp(page, PASSWORD)
     const backupCode = app.backupCodes[0] ?? ''
 
     const first = await freshPage(browser)
@@ -150,7 +155,8 @@ test.describe('two-step verification', () => {
     await gotoPage(admin, '/hilos/communications')
     await enableEmailChannel(admin)
     const user = await signUp(page)
-    await connectFirstApp(page)
+    await gotoPage(page, '/profile/security')
+    await connectFirstApp(page, PASSWORD)
 
     await clickSubmit(page.getByTestId('profile-2fa-reset-request'))
     await clickSubmit(page.getByTestId('profile-2fa-reset-submit'))

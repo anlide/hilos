@@ -85,6 +85,7 @@ use Demo\Tasks\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Tasks\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfilePage;
+use Demo\Tasks\Pages\Hilos\ProfileSignInPage;
 use Demo\Tasks\Pages\Hilos\ProfileSecurityPage;
 use Demo\Tasks\Pages\Hilos\ProfileDataPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityStepUpPage;
@@ -248,6 +249,7 @@ final class Hilos extends HilosFacade
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
+        ProfileSignInPage::PAGE => ProfileSignInPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
         ProfileDataPage::PAGE => ProfileDataPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
@@ -454,6 +456,9 @@ final class Hilos extends HilosFacade
 
     public const array PAGE_LISTS = [
         ProfilePage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileSignInPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
     ];

@@ -135,3 +135,18 @@ test('a guest opens a legal setting, reads its value and cannot save it', async 
   await clickSubmit(page.getByTestId('legal-setting-cancel'))
   await expect(dialog).toBeHidden()
 })
+
+test('a guest sees the open sign-in switch but cannot change it', async ({
+  page,
+}) => {
+  await setAdminViewMode(true)
+  await gotoPage(page, '/hilos/security/sign-in-methods', PAGE_READY)
+  const enabled = shownByTestId(page, 'hilos-sign-in-method-enabled-magic_link')
+  await expect(enabled).toBeVisible()
+  await expect(enabled).toBeDisabled()
+  await expect(
+    shownByTestId(page, 'hilos-table-row-magic_link').getByTestId(
+      'hilos-hidden',
+    ),
+  ).toHaveCount(0)
+})

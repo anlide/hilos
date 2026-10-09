@@ -1,7 +1,12 @@
 import { expect, type Page } from '@playwright/test'
 
+import {
+  isSessionCookie,
+  SESSION_COOKIE_PREFIX,
+} from '../../../../../framework/frontend/e2e/index.js'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { gotoPage } from './page'
+import { signUp } from './session'
 
 // The daemon command channel — the same socket the CLI admin:create command
 // speaks. The Playwright runner has no PHP,
@@ -20,20 +25,6 @@ const sendCommand = createCommandChannel({
   port: COMMAND_PORT,
   timeoutMs: REPLY_TIMEOUT_MS,
 })
-
-/**
- * Session cookie prefix derived by the framework when HILOS_SESSION_COOKIE_NAME is unset.
- * The auxiliary rotation cookie shares this prefix and ends with '_rotate'.
- */
-const SESSION_COOKIE_PREFIX = 'hilos_session_token_'
-const ROTATE_COOKIE_SUFFIX = '_rotate'
-
-function isSessionCookie(name: string): boolean {
-  return (
-    name.startsWith(SESSION_COOKIE_PREFIX) &&
-    !name.endsWith(ROTATE_COOKIE_SUFFIX)
-  )
-}
 
 /**
  * Reads the session cookie of a browser context — the address admin:create
@@ -96,4 +87,16 @@ export async function grantAdminToSelf(page: Page): Promise<number> {
   await expect(page.getByTestId('nav-admin')).toBeVisible()
 
   return userId
+}
+
+/**
+ * Registers a fresh account with a password and grants it admin over the command channel.
+ *
+ * @param page Playwright page, in a browser context that has not opened the app yet.
+ * @returns The granted account's durable user id.
+ */
+export async function signUpAdmin(page: Page): Promise<number> {
+  await signUp(page)
+
+  return grantAdminToSelf(page)
 }

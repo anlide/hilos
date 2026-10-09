@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
-import { isSessionCookie } from './session'
+import { isSessionCookie } from '../../../../../framework/frontend/e2e/index.js'
 
 const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)

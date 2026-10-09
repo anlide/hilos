@@ -55,6 +55,7 @@ import HilosLegalRevision from './views/Hilos/Legal/LegalRevision.js'
 import HilosLegalAcceptances from './views/Hilos/Legal/LegalAcceptances.js'
 import HilosLegalSettings from './views/Hilos/Legal/LegalSettings.js'
 import Profile from './views/Profile/Profile.js'
+import ProfileSignIn from './views/Profile/ProfileSignIn.js'
 import ProfileSecurity from './views/Profile/ProfileSecurity'
 import ProfileData from './views/Profile/ProfileData.js'
 import HilosUser from './views/Hilos/Users/User'
@@ -122,6 +123,7 @@ const pages: Record<string, ComponentType> = {
   [HilosPages.LEGAL_ACCEPTANCES]: HilosLegalAcceptances,
   [HilosPages.LEGAL_SETTINGS]: HilosLegalSettings,
   [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_SIGN_IN]: ProfileSignIn,
   [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
   [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.ABOUT]: About,

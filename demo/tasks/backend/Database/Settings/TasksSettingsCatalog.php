@@ -6,6 +6,7 @@ namespace Demo\Tasks\Database\Settings;
 
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
+use Hilos\Auth\Method\PasskeyAddressPolicy;
 use Hilos\Auth\OAuth\OAuthSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
@@ -67,6 +68,11 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
             AccountDeletionSettingsCatalog::getCatalog(),
             VerificationSweepSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
+            // Tasks opts in to accounts without an address (owner, 26.09.2026, HIL-1106).
+            [PasskeyAddressPolicy::SETTING_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => true,
+            ]],
         );
     }
 }

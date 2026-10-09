@@ -1,6 +1,8 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
-import { readRegisterCode } from './mail'
+import { readRegisterCode, waitForMailCode } from './mail'
+import { gotoPage } from './page'
+import { waitForSmsCode } from '../../../../../framework/frontend/scripts/standSms.mjs'
 
 // Sign-in helpers for the tasks demo (HIL-623). A fresh browser context is a
 // guest: it reads the app and carries a guest name, but has no account until it
@@ -232,6 +234,66 @@ export async function submitFirstPassword(
 }
 
 /**
+ * Take the way PAST the password on the registration password step (HIL-1008).
+ *
+ * The other ending of the same screen: the account is created here, with no
+ * secret of its own, and the mailed link is what it signs in by from then on. It
+ * settles exactly where the password save settles, because what follows it is
+ * the same landing.
+ *
+ * @param page The page sitting on the registration password step.
+ */
+export async function finishWithoutPassword(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-complete-passwordless'))
+  await waitDoneSettled(page)
+}
+
+/**
+ * Take the passkey ending of the registration password step (HIL-1104).
+ *
+ * The third ending of the same screen: the device makes a key, and the account is
+ * created on it with the proved address beside it and no password. The key comes
+ * from whatever authenticator the page carries — a spec attaches a virtual one
+ * first — and it settles where the other two endings settle, on the same landing.
+ *
+ * @param page The page sitting on the registration password step.
+ */
+export async function finishWithPasskey(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-complete-passkey'))
+  await waitDoneSettled(page)
+}
+
+/**
+ * Create an account without an address, through consent and the device key (HIL-1106).
+ *
+ * @param page The page with an empty sign-in field and a platform authenticator.
+ */
+export async function createAccountWithPasskey(page: Page): Promise<void> {
+  await clickSubmit(page.getByTestId('auth-create-passkey'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitDoneSettled(page)
+}
+
+/**
+ * Register an account with NO password end to end, the way somebody who means to
+ * sign in by a mailed link does (HIL-1008): submit the address, confirm the code,
+ * then take the exit instead of choosing a password.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param email The address to register.
+ */
+export async function registerWithoutPassword(
+  page: Page,
+  email: string,
+): Promise<void> {
+  await submitRegistration(page, email)
+  await submitRegistrationCode(page, await readRegisterCode(email))
+  await finishWithoutPassword(page)
+  await continueFromDone(page)
+}
+
+/**
  * Register an account end to end on the currently mounted auth surface: submit
  * the address, read the code out of the delivered letter, confirm it, choose a
  * password, and acknowledge the finished panel.
@@ -297,4 +359,125 @@ export async function openSignIn(page: Page): Promise<void> {
 export async function logout(page: Page): Promise<void> {
   await page.getByTestId('nav-logout').click()
   await expect(page.getByTestId('nav-profile-name')).toHaveCount(0)
+}
+
+/**
+ * Register a verified-email account that deliberately has no password, from the
+ * profile's own sign-in surface, and land on the profile signed in.
+ *
+ * @param page Page starting from any location (it navigates to '/profile').
+ * @returns The account's confirmed address.
+ */
+export async function registerEmailOnly(page: Page): Promise<string> {
+  const email = uniqueEmail()
+  await gotoPage(page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await registerWithoutPassword(page, email)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+
+  return email
+}
+
+/**
+ * Sign in a FRESH number end to end: pick the SMS channel, accept the terms, read
+ * the texted code, confirm it, and acknowledge the finished panel.
+ *
+ * Written for a number with no account, which is what makes it linear: an unknown
+ * identifier means the register intent, and under that intent choosing a channel
+ * only STORES the choice — the terms screen is what sends. An existing number
+ * skips the terms, so this helper is not the way to sign one back in.
+ *
+ * @param page The page with the auth surface mounted.
+ * @param phone The fresh number to mint an account for.
+ * @returns The code the sign-in was proven with, for a later wait on this
+ *          number that has to pass this one over.
+ */
+export async function signInByPhone(
+  page: Page,
+  phone: string,
+): Promise<string> {
+  await typeInto(page.getByTestId('auth-identifier'), phone)
+  await clickSubmit(page.getByTestId('auth-channel-sms'))
+  await page.getByTestId('auth-consent-accept').check()
+  await clickSubmit(page.getByTestId('auth-submit'))
+
+  // The request is asynchronous for every channel (HIL-492): its ack means only
+  // "accepted", and the surface advances when the code agent signals that a code
+  // really went out. So the code field appearing is what says the code has been
+  // issued — and only then is there an artifact to read.
+  await expect(page.getByTestId('auth-code')).toBeVisible()
+  const code = await waitForSmsCode(phone)
+  await typeInto(page.getByTestId('auth-code'), code)
+  await clickSubmit(page.getByTestId('auth-submit'))
+  await waitDoneSettled(page)
+  await continueFromDone(page)
+
+  return code
+}
+
+/** A registered session: the account's email, its derived display name, and its
+ * durable user id (as the self user exposes it). */
+export interface SignedInUser {
+  email: string
+  name: string
+  userId: number
+}
+
+/**
+ * Register a fresh account from the anonymous main page and return its identity.
+ *
+ * Opens the auth-gate modal through the shell's sign-in button and registers,
+ * code step included; confirming the code creates the account and upgrades the
+ * live session in place, so the page is left on '/' signed in with the self user
+ * resolved. This is the standard way an authenticated spec obtains its user
+ * under the session≠user model.
+ *
+ * @param page Page starting from any location (it navigates to '/')
+ * @returns The registered account's email, display name, and durable user id
+ */
+export async function signUp(page: Page): Promise<SignedInUser> {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(page)
+  await register(page, email)
+
+  const name = nameFromEmail(email)
+  // The confirmed code resolves the self user in place; assert the name to be sure
+  // the session upgrade landed before reading the id.
+  await expect(page.getByTestId('self-user')).toHaveText(name)
+  const userId = Number(await page.getByTestId('self-user-id').textContent())
+
+  return { email, name, userId }
+}
+
+/**
+ * Walk the add window's password steps from their first one: name the address,
+ * prove it with the mailed code and set a password on it (HIL-1166).
+ *
+ * The window must already stand on `profile-add-password-email` — the step an
+ * account without a confirmed address opens on, whether it chose Password in the
+ * window or came straight from a button that named the way. Done when the window
+ * has closed on the server's profile_password_updated.
+ *
+ * @param page Page whose add window stands on the address step.
+ * @param email The address the password goes on; a fresh one, never seen by the stand.
+ */
+export async function addPasswordFromAddressStep(
+  page: Page,
+  email: string,
+): Promise<void> {
+  await expect(page.getByTestId('profile-add-password-email')).toBeVisible()
+  await typeInto(page.getByTestId('profile-add-password-email'), email)
+  await clickSubmit(page.getByTestId('profile-add-password-request'))
+  await expect(page.getByTestId('profile-add-password-code')).toBeVisible()
+  await typeInto(
+    page.getByTestId('profile-add-password-code'),
+    await waitForMailCode(email, 'Confirm your email address'),
+  )
+  await typeInto(page.getByTestId('profile-add-password-new'), PASSWORD)
+  await typeInto(page.getByTestId('profile-add-password-confirm'), PASSWORD)
+  await clickSubmit(page.getByTestId('profile-add-password-save'))
+  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
 }
