@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\BinanceBtcTracker\Database\Settings;
 
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
@@ -69,6 +70,7 @@ final class BinanceBtcTrackerSettingsCatalog implements CatalogProviderInterface
             DeliveryLogSettingsCatalog::getCatalog(),
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            AnalyticsSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
         );
     }

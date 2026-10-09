@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Database\Settings;
 
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
@@ -48,6 +49,6 @@ final class EcommerceShopSettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
-        ], ThemeSettingsCatalog::getCatalog(), AuthThrottleSettingsCatalog::getCatalog());
+        ], ThemeSettingsCatalog::getCatalog(), AnalyticsSettingsCatalog::getCatalog(), AuthThrottleSettingsCatalog::getCatalog());
     }
 }

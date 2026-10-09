@@ -62,7 +62,7 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
     }
 
     /**
-     * The latest revisions declare four stricter terms clauses and two looser privacy clauses.
+     * The latest revisions declare four stricter terms clauses and two stricter privacy clauses.
      */
     public function testTheLatestRevisionsCarryTheChatDeviations(): void
     {
@@ -75,8 +75,8 @@ final class ChatLegalCatalogSnapshotTest extends TestCase
                     StandardSetCatalog::CLAUSE_AVAILABILITY => DeviationDirection::STRICTER,
                 ],
                 LegalDocument::PRIVACY->value => [
-                    StandardSetCatalog::CLAUSE_DELETION => DeviationDirection::LOOSER,
-                    StandardSetCatalog::CLAUSE_ACCESS_LOG => DeviationDirection::LOOSER,
+                    StandardSetCatalog::CLAUSE_DELETION => DeviationDirection::STRICTER,
+                    StandardSetCatalog::CLAUSE_ACCESS_LOG => DeviationDirection::STRICTER,
                 ],
             ],
             [

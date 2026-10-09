@@ -8,12 +8,17 @@ use Demo\Polls\Hilos;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 
-/** Shared directories of the project's account exports and of the administrators' exports of acceptance records. */
+/** Shared export directories and the node-local analytics journal. */
 final class PollsFsContext extends FsContext
 {
-    /** Registers storage shared by the project's nodes and their web servers. */
+    /** Registers shared account exports and node-local analytics journal storage. */
     public function configure(): void
     {
+        $this->registerDirectory(
+            FsContext::ANALYTICS_JOURNAL,
+            dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/analytics_journal',
+            DirectoryScope::NODE,
+        );
         $this->registerDirectory(
             FsContext::DATA_EXPORT,
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export',

@@ -12,9 +12,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the tasks filesystem context (HIL-1240).
  *
- * The two directories the project registers keep the account exports and the administrators'
- * exports of acceptance records (HIL-1234); the agents writing them may move between nodes, so
- * both are the cluster's and the start accepts the declaration.
+ * The account and acceptance exports belong to the cluster; the analytics journal belongs to each node.
  */
 final class TasksFsContextTest extends TestCase
 {
@@ -23,7 +21,8 @@ final class TasksFsContextTest extends TestCase
         $context = new TasksFsContext();
         $context->configure();
 
-        self::assertSame([FsContext::DATA_EXPORT, FsContext::LEGAL_EXPORT], array_keys($context->getDirectories()));
+        self::assertSame([FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::LEGAL_EXPORT], array_keys($context->getDirectories()));
+        self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::DATA_EXPORT)->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::LEGAL_EXPORT)->getScope());
         self::assertSame([], $context->declarationErrors());

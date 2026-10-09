@@ -37,15 +37,15 @@ test('reads the current documents before registration and records both accepted 
   await expect(page.getByTestId('legal-consent-standard-toggle')).toHaveText(
     'Standard Hilos terms · 13 clauses',
   )
-  // Four Terms and two Privacy deviations, including the analytics declaration.
+  // Four Terms and two stricter Privacy deviations, including the analytics declaration.
   await expect(page.getByTestId('legal-consent-deviation')).toHaveCount(6)
   await expect(page.getByTestId('legal-consent-direction')).toHaveText([
     'stricter',
     'stricter',
     'stricter',
     'stricter',
-    'looser',
-    'looser',
+    'stricter',
+    'stricter',
   ])
   await expect(page.getByTestId('legal-consent-deviation')).toContainText([
     'Hilos standard:',

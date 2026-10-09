@@ -171,13 +171,13 @@ final class LegalCatalog implements LegalCatalogProviderInterface
                     deviations: [
                         new Deviation(
                             clauseKey: StandardSetCatalog::CLAUSE_ACCESS_LOG,
-                            direction: DeviationDirection::LOOSER,
+                            direction: DeviationDirection::STRICTER,
                             statement: 'The separate access log is disabled; analytics records use and addresses',
                             textFile: self::TEXT_DIRECTORY . '/privacy/standard.access_log.2026-10-05.txt',
                         ),
                         new Deviation(
                             clauseKey: StandardSetCatalog::CLAUSE_DELETION,
-                            direction: DeviationDirection::LOOSER,
+                            direction: DeviationDirection::STRICTER,
                             statement: 'Account deletion leaves numbered analytics events and network addresses',
                             textFile: self::TEXT_DIRECTORY . '/privacy/standard.deletion.2026-10-05.txt',
                         ),

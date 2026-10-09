@@ -14,6 +14,9 @@ use Hilos\Constants\HilosAgentType;
  */
 final class AgentType
 {
+    /** Analytics section agent type. */
+    public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;
+
     /** @var string Binance BTC tracker app agent type (monopolistic) */
     public const string BINANCE_BTC_TRACKER = 'binance_btc_tracker';
 

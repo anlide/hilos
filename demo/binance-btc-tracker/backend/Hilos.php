@@ -7,6 +7,7 @@ namespace Demo\BinanceBtcTracker;
 use Demo\BinanceBtcTracker\Agents\BinanceBtcTrackerAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DataExportAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
@@ -18,6 +19,7 @@ use Demo\BinanceBtcTracker\Backup\BackupCatalog;
 use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -37,6 +39,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\AnalyticsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -88,6 +91,10 @@ use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
@@ -188,6 +195,7 @@ final class Hilos extends HilosFacade
     protected const string NOTIFICATION_CHANNEL_REGISTRY = BinanceBtcTrackerDeliveryChannelRegistry::class;
 
     protected const array FEATURES = [
+        HilosFeature::ANALYTICS,
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
@@ -208,6 +216,7 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        AnalyticsPage::PAGE => AnalyticsPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
@@ -258,6 +267,20 @@ final class Hilos extends HilosFacade
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosAnalyticsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        AnalyticsJournalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsJournalAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsJournalAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        AnalyticsWriterAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsWriterAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsWriterAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosDaemonAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,

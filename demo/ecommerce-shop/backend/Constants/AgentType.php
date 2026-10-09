@@ -14,6 +14,9 @@ use Hilos\Constants\HilosAgentType;
  */
 final class AgentType
 {
+    /** Analytics section agent type. */
+    public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;
+
     /** @var string E-commerce shop app agent type (monopolistic) */
     public const string ECOMMERCE_SHOP = 'ecommerce_shop';
 

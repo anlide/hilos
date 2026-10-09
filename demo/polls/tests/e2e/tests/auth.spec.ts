@@ -87,7 +87,10 @@ test('holds the address in a modal over the page, and signs the session in on th
     'Create your account',
   )
   await clickSubmit(page.getByTestId('auth-submit'))
-  await expect(page.getByTestId('legal-consent-no-deviations')).toBeVisible()
+  await expect(page.getByTestId('legal-consent-deviation')).toHaveCount(1)
+  await expect(page.getByTestId('legal-consent-direction')).toHaveText(
+    'stricter',
+  )
   await page.getByTestId('auth-consent-accept').check()
   await clickSubmit(page.getByTestId('auth-submit'))
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Tasks\Database\Settings;
 
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
 use Hilos\Auth\Method\AuthMethodSettingsCatalog;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
@@ -59,6 +60,7 @@ final class TasksSettingsCatalog implements CatalogProviderInterface
         ],
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            AnalyticsSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),

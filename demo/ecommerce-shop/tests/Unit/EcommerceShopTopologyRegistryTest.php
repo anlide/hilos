@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Unit;
 
+use Demo\EcommerceShop\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
+
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
@@ -39,6 +52,7 @@ use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
@@ -47,6 +61,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -115,6 +130,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
+            AnalyticsPage::PAGE => AnalyticsPage::class,
             BackupPage::PAGE => BackupPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
@@ -189,6 +205,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame([
             AgentType::ECOMMERCE_SHOP,
             AgentType::HILOS_INDEX,
+            AgentType::HILOS_ANALYTICS,
+            HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosAgentType::HILOS_DATA_EXPORT,
             HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosAgentType::HILOS_USER,
@@ -332,6 +351,11 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ECOMMERCE_SHOP,
+                HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosSignalConstants::ANALYTICS_JOURNAL_READ => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
+                HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 // The other half of the seam, and the endings the users library hands over:
                 // what a sign-in became reaches the library that owns the session.
@@ -428,6 +452,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         // people (HIL-1225), whose actions are their pages' and so stay out of this map, and
         // notifications without delivery, whose actions close the map.
         $this->assertSame([
+            HilosFeature::ANALYTICS,
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::BACKUP,
@@ -628,6 +653,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             SettingsCatalogConstants::STUB_KEY_EXAMPLE_BOOLEAN,
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
             ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+            AnalyticsSettingsCatalog::JOURNAL_MAX_BYTES,
             AuthThrottleSettings::OUTAGE_GRACE_SECONDS_KEY,
         ], array_keys($catalog));
         foreach (ThemeSettingsCatalog::KEYS as $key) {
@@ -702,6 +728,43 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $this->assertLessThanOrEqual(3, count(Hilos::SHARED_DB_OWNERS));
         $this->assertLessThanOrEqual(1, count(Hilos::SHARED_RT_OWNERS));
+    }
+
+    /** Checks the project's complete activation of the framework Analytics section. */
+    public function testAnalyticsFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
+        $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+
+        $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
+        $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));
+        $this->assertSame(DemoHilosAnalyticsAgentDaemon::class, AgentRegistry::daemonClass($reader));
+        $this->assertTrue((new DemoHilosAnalyticsAgentDaemon())->requiresMonopolisticProcess());
+        $this->assertArrayNotHasKey(AgentRegistryKey::SCOPE, $reader);
+        $this->assertArrayNotHasKey(AgentRegistryKey::PLACEMENT, $reader);
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($reader));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($reader));
+
+        $journal = Hilos::AGENTS[HilosAgentType::HILOS_ANALYTICS_JOURNAL];
+        $this->assertSame(AnalyticsJournalAgent::class, AgentRegistry::workerClass($journal));
+        $this->assertSame(AnalyticsJournalAgentDaemon::class, AgentRegistry::daemonClass($journal));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($journal));
+
+        $writer = Hilos::AGENTS[HilosAgentType::HILOS_ANALYTICS_WRITER];
+        $this->assertSame(AnalyticsWriterAgent::class, AgentRegistry::workerClass($writer));
+        $this->assertSame(AnalyticsWriterAgentDaemon::class, AgentRegistry::daemonClass($writer));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($writer));
+
+        $journalDtos = Hilos::getAgentSignalDtoRoutes();
+        $this->assertSame(AnalyticsJournalAppendSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_APPEND]);
+        $this->assertSame(AnalyticsJournalReadSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_READ]);
+        $this->assertSame(AnalyticsJournalLoadedSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_LOADED]);
+        $this->assertSame(AnalyticsJournalPortionSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_PORTION]);
+        $this->assertSame(AnalyticsJournalReadySignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_READY]);
+        $nodeFields = Hilos::getAgentSignalNodeFields();
+        $this->assertSame(AnalyticsJournalReadSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_READ]);
+        $this->assertSame(AnalyticsJournalLoadedSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_LOADED]);
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

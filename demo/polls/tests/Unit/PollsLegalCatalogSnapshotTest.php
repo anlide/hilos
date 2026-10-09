@@ -6,8 +6,10 @@ namespace Demo\Polls\Tests\Unit;
 
 use Demo\Polls\Hilos;
 use Demo\Polls\Legal\PollsLegalCatalog;
+use Hilos\Legal\DeviationDirection;
 use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalDocument;
+use Hilos\Legal\StandardSetCatalog;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -51,23 +53,48 @@ final class PollsLegalCatalogSnapshotTest extends TestCase
         self::assertSame(
             [
                 LegalDocument::TERMS->value => ['2026-09-17' => 1],
-                LegalDocument::PRIVACY->value => ['2026-09-17' => 1],
+                LegalDocument::PRIVACY->value => ['2026-09-17' => 1, '2026-10-09' => 1],
             ],
             $published,
             'revision ids and the standard set version each adopts',
         );
     }
 
-    /**
-     * The polls demo departs from nothing: every clause of both documents is the standard one.
-     */
-    public function testNeitherDocumentDeviatesFromTheStandard(): void
+    /** Terms stays standard; the current Privacy revision declares one stricter deletion clause. */
+    public function testTheCurrentDocumentsDeclareTheAnalyticsException(): void
     {
-        foreach (LegalCatalogResolver::documents() as $document) {
-            $revision = LegalCatalogResolver::latestRevision($document);
-            foreach (LegalCatalogResolver::compose($document, $revision->id)->clauses as $clause) {
-                self::assertNull($clause->deviation, "{$document->value}: {$clause->standard->key}");
+        $terms = LegalCatalogResolver::latestRevision(LegalDocument::TERMS);
+        foreach (LegalCatalogResolver::compose(LegalDocument::TERMS, $terms->id)->clauses as $clause) {
+            self::assertNull($clause->deviation, $clause->standard->key);
+        }
+
+        $privacy = LegalCatalogResolver::latestRevision(LegalDocument::PRIVACY);
+        $deviations = [];
+        foreach (LegalCatalogResolver::compose(LegalDocument::PRIVACY, $privacy->id)->clauses as $clause) {
+            if ($clause->deviation !== null) {
+                $deviations[$clause->standard->key] = $clause->deviation->direction;
             }
         }
+        self::assertSame([StandardSetCatalog::CLAUSE_DELETION => DeviationDirection::STRICTER], $deviations);
+    }
+
+    /** The legal deviation and public Privacy page disclose the analytics that remains. */
+    public function testPrivacyTextStatesTheAnalyticsException(): void
+    {
+        $privacy = LegalCatalogResolver::latestRevision(LegalDocument::PRIVACY);
+        self::assertCount(1, $privacy->deviations);
+        $text = LegalCatalogResolver::text($privacy->deviations[0]->textFile);
+        self::assertStringContainsString('network addresses remain', $text);
+        self::assertStringContainsString('no automatic deletion period', $text);
+        self::assertStringContainsString('Analytics records', $text);
+
+        $page = file_get_contents(dirname(__DIR__, 2) . '/frontend/src/app/views/privacy/privacy.ts');
+        self::assertIsString($page);
+        $page = preg_replace('/\s+/', ' ', $page);
+        self::assertIsString($page);
+        self::assertStringContainsString('records analytics', $page);
+        self::assertStringContainsString('network addresses remain', $page);
+        self::assertStringContainsString('no automatic deletion period', $page);
+        self::assertStringNotContainsString('No analytics', $page);
     }
 }

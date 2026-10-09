@@ -21,6 +21,7 @@ use Hilos\Tables\Legal\HilosLegalSettingsTable;
 
 use Demo\Polls\Agents\Hilos\DataExportAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosAgent;
+use Demo\Polls\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Polls\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Polls\Agents\Hilos\NotificationsLibraryAgent;
@@ -34,6 +35,7 @@ use Demo\Polls\Auth\PollsCodeChannelRegistry;
 use Demo\Polls\Auth\PollsOAuthProviderDirectory;
 use Demo\Polls\Browser\PollsBrowserContext;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Polls\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -49,6 +51,7 @@ use Demo\Polls\Fs\PollsFsContext;
 use Demo\Polls\Legal\PollsLegalCatalog;
 use Demo\Polls\Pages\Hilos\AboutPage;
 use Demo\Polls\Pages\Hilos\DashboardPage;
+use Demo\Polls\Pages\Hilos\AnalyticsPage;
 use Demo\Polls\Pages\Hilos\LicensePage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonPage;
 use Demo\Polls\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -106,6 +109,10 @@ use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
 use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
@@ -184,6 +191,7 @@ final class Hilos extends HilosFacade
     // TODO(HIL-1090): switch HilosFeature::BACKUP on in polls once more than six demos are implemented.
     // Until then, its page answers 404 and has no dashboard card.
     protected const array FEATURES = [
+        HilosFeature::ANALYTICS,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
@@ -203,6 +211,7 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        AnalyticsPage::PAGE => AnalyticsPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -299,6 +308,20 @@ final class Hilos extends HilosFacade
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosAnalyticsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        AnalyticsJournalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsJournalAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsJournalAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        AnalyticsWriterAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsWriterAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsWriterAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosDaemonAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,

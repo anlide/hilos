@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\OnlineTesting\Database\Settings;
 
+use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
@@ -49,6 +50,7 @@ final class OnlineTestingSettingsCatalog implements CatalogProviderInterface
         ],
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
+            AnalyticsSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
         );
     }

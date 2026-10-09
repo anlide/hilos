@@ -75,6 +75,6 @@ provider for the life of the process.
 ## What Is Not Here
 
 No screen reads the log: neither the profile nor the user card draws it. Showing
-a session's address on screen is design debt D-166. The chat's analytics, which
-keep addresses of their own, are HIL-1283. The change history of an account is
-HIL-351.
+a session's address on screen is design debt D-166. Analytics keeps addresses of
+its own, as described in [analytics.md](analytics.md). The change history of an
+account is HIL-351.

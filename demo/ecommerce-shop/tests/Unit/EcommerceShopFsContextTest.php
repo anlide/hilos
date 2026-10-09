@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Unit tests for the ecommerce-shop filesystem context (HIL-1240).
  *
- * The one directory the project registers keeps the account exports, and the export agent may
+ * The directories the project registers keeps the account exports, and the export agent may
  * move between nodes, so the directory is the cluster's and the start accepts the declaration.
  */
 final class EcommerceShopFsContextTest extends TestCase
@@ -22,7 +22,8 @@ final class EcommerceShopFsContextTest extends TestCase
         $context = new EcommerceShopFsContext();
         $context->configure();
 
-        self::assertSame([FsContext::DATA_EXPORT], array_keys($context->getDirectories()));
+        self::assertSame([FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT], array_keys($context->getDirectories()));
+        self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::DATA_EXPORT)->getScope());
         self::assertSame([], $context->declarationErrors());
     }

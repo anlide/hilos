@@ -7,6 +7,7 @@ namespace Demo\OnlineTesting;
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Agents\Hilos\DataExportAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAgent;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\OnlineTesting\Agents\Hilos\NotificationsLibraryAgent;
@@ -17,6 +18,7 @@ use Demo\OnlineTesting\Auth\OnlineTestingAuthMethodDirectory;
 use Demo\OnlineTesting\Browser\OnlineTestingBrowserContext;
 use Demo\OnlineTesting\Core\Agent\Daemon\OnlineTestingAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -31,6 +33,7 @@ use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
+use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
 use Demo\OnlineTesting\Pages\Hilos\LicensePage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonPage;
 use Demo\OnlineTesting\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -77,6 +80,10 @@ use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
 use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\TruthSource\SharedOwnersKey;
@@ -146,6 +153,7 @@ final class Hilos extends HilosFacade
     protected const ?string LEGAL_CATALOG = OnlineTestingLegalCatalog::class;
 
     protected const array FEATURES = [
+        HilosFeature::ANALYTICS,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
@@ -164,6 +172,7 @@ final class Hilos extends HilosFacade
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
+        AnalyticsPage::PAGE => AnalyticsPage::class,
         SettingsPage::PAGE => SettingsPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -208,6 +217,20 @@ final class Hilos extends HilosFacade
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosAnalyticsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        AnalyticsJournalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsJournalAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsJournalAgentDaemon::class,
+            AgentRegistryKey::SCOPE => AgentScope::NODE,
+        ],
+        AnalyticsWriterAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => AnalyticsWriterAgent::class,
+            AgentRegistryKey::DAEMON => AnalyticsWriterAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosDaemonAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosDaemonAgent::class,

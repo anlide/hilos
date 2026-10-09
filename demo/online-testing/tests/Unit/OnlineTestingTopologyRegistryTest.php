@@ -4,6 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\OnlineTesting\Tests\Unit;
 
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\OnlineTesting\Pages\Hilos\AnalyticsPage;
+use Hilos\Core\Analytics\AnalyticsJournalAgent;
+use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
+use Hilos\Core\Analytics\AnalyticsWriterAgent;
+use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalAppendSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalLoadedSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalPortionSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
+use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
+
 use Demo\OnlineTesting\Agents\OnlineTestingAgent;
 use Demo\OnlineTesting\Agents\Hilos\DataExportAgent;
 use Demo\OnlineTesting\Agents\Hilos\DemoHilosAgent;
@@ -61,6 +74,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -140,6 +154,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
+            AnalyticsPage::PAGE => AnalyticsPage::class,
             SettingsPage::PAGE => SettingsPage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
@@ -231,6 +246,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([
             AgentType::ONLINE_TESTING,
             AgentType::HILOS_INDEX,
+            AgentType::HILOS_ANALYTICS,
+            HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+            HilosAgentType::HILOS_ANALYTICS_WRITER,
             AgentType::HILOS_DAEMON,
             AgentType::HILOS_LOGS,
             HilosAgentType::HILOS_DATA_EXPORT,
@@ -371,6 +389,11 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ONLINE_TESTING,
+                HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosSignalConstants::ANALYTICS_JOURNAL_READ => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
+                HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
+                HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
                 HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
                 HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
@@ -465,7 +488,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         // stopped being routed here would otherwise look like a working surface until somebody
         // submitted the form it belongs to.
         $this->assertSame([
-            HilosFeature::SETTINGS,
+            HilosFeature::ANALYTICS,
+                HilosFeature::SETTINGS,
             HilosFeature::I18N,
             HilosFeature::HILOS_USERS,
             HilosFeature::LOGS,
@@ -761,6 +785,43 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     {
         $this->assertLessThanOrEqual(3, count(Hilos::SHARED_DB_OWNERS));
         $this->assertSame([], Hilos::SHARED_RT_OWNERS);
+    }
+
+    /** Checks the project's complete activation of the framework Analytics section. */
+    public function testAnalyticsFeatureIsActivated(): void
+    {
+        $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
+        $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
+        $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+
+        $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
+        $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));
+        $this->assertSame(DemoHilosAnalyticsAgentDaemon::class, AgentRegistry::daemonClass($reader));
+        $this->assertTrue((new DemoHilosAnalyticsAgentDaemon())->requiresMonopolisticProcess());
+        $this->assertArrayNotHasKey(AgentRegistryKey::SCOPE, $reader);
+        $this->assertArrayNotHasKey(AgentRegistryKey::PLACEMENT, $reader);
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($reader));
+        $this->assertSame(AgentPlacement::LEADER, AgentRegistry::placement($reader));
+
+        $journal = Hilos::AGENTS[HilosAgentType::HILOS_ANALYTICS_JOURNAL];
+        $this->assertSame(AnalyticsJournalAgent::class, AgentRegistry::workerClass($journal));
+        $this->assertSame(AnalyticsJournalAgentDaemon::class, AgentRegistry::daemonClass($journal));
+        $this->assertSame(AgentScope::NODE, AgentRegistry::scope($journal));
+
+        $writer = Hilos::AGENTS[HilosAgentType::HILOS_ANALYTICS_WRITER];
+        $this->assertSame(AnalyticsWriterAgent::class, AgentRegistry::workerClass($writer));
+        $this->assertSame(AnalyticsWriterAgentDaemon::class, AgentRegistry::daemonClass($writer));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($writer));
+
+        $journalDtos = Hilos::getAgentSignalDtoRoutes();
+        $this->assertSame(AnalyticsJournalAppendSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_APPEND]);
+        $this->assertSame(AnalyticsJournalReadSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_READ]);
+        $this->assertSame(AnalyticsJournalLoadedSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_LOADED]);
+        $this->assertSame(AnalyticsJournalPortionSignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_PORTION]);
+        $this->assertSame(AnalyticsJournalReadySignalData::class, $journalDtos[HilosSignalConstants::ANALYTICS_JOURNAL_READY]);
+        $nodeFields = Hilos::getAgentSignalNodeFields();
+        $this->assertSame(AnalyticsJournalReadSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_READ]);
+        $this->assertSame(AnalyticsJournalLoadedSignalData::nodeId, $nodeFields[HilosSignalConstants::ANALYTICS_JOURNAL_LOADED]);
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

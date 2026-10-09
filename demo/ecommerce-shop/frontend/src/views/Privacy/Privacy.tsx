@@ -16,9 +16,17 @@ export default function Privacy() {
         address, the terms you accepted, your browser sessions, and — for a
         while — the network address of repeated failed attempts.
       </p>
+      <p>
+        This demo records analytics: times, network addresses, browser and
+        language details, visited pages and route parameters, and names of
+        actions and internal signals. It does not store action contents or
+        arbitrary API request bodies in analytics.
+      </p>
       <p className="mb-0">
-        No analytics or third-party trackers are used, and demo data may be
-        reset at any time.
+        After account deletion, your numeric account number, analytics events,
+        and network addresses remain. There is currently no automatic deletion
+        period for raw analytics. This demo uses no third-party trackers, and
+        demo data may be reset at any time.
       </p>
     </HilosPrivacyPage>
   )

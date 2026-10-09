@@ -96,9 +96,8 @@ collects, how long it keeps it, and what remains after account deletion.
 The admin analytics section comes with this same case, with no case of its own;
 see [The Admin Section](#the-admin-section). Its visible overview is HIL-1418.
 All six demos with accounts — chat, binance-btc-tracker, ecommerce-shop, tasks,
-online-testing and polls — declare it (not in the code yet — HIL-1416); today
-only chat does. The owner, 04.10.2026: «Аналитику включить во всех 6 demo» — "Turn
-analytics on in all six demos".
+online-testing and polls — declare it. The owner, 04.10.2026: «Аналитику включить
+во всех 6 demo» — "Turn analytics on in all six demos".
 
 ## The Directory
 
