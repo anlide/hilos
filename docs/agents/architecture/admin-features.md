@@ -275,12 +275,12 @@ are the framework's. `writeBlockFlag()` writes the block flag of the person's
 into another one — the merge table `hilos_user_merge` is the framework's too
 (HIL-1199, [people-table.md](people-table.md), *A Merged Account*); a project
 with a refusal of its own overrides it in its agent binding and refuses BEFORE
-calling the parent, because the parent writes. `assertAdministratorMayDelete()` refuses a missing
-account, an administrator and a folded account, in that order, and a project
-with a refusal of its own overrides it and calls the parent first, because that
-one only reads. `ADMIN_AUDIENCE`'s default `AdminAudience` answers the unblocked,
-unmerged `hilos_user` rows that say admin, and a project points the constant at
-a subclass only to narrow that circle further; no demo does.
+calling the parent, because the parent writes. `assertAdministratorMayDelete()`
+refuses a missing account, an administrator and a folded account, in that order,
+and a project with a refusal of its own overrides it and calls the parent first,
+because that one only reads. `ADMIN_AUDIENCE`'s default `AdminAudience` answers
+the unblocked, unmerged `hilos_user` rows that say admin, and a project points
+the constant at a subclass only to narrow that circle further; no demo does.
 
 ## Preferred Shape
 

@@ -612,8 +612,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Every project that registers the library answers all seven. The first five are the
      * framework's code over `hilos_user` in every one of them ({@see mintAdminUser()},
-     * {@see AbstractUserAgent::writeAdminFlag()}, {@see assertImpersonationAllowed()}, HIL-1197); only the merge
-     * still answers a REFUSAL by default, in a project that never wired it
+     * {@see AbstractUserAgent::writeAdminFlag()}, {@see assertImpersonationAllowed()}, HIL-1197);
+     * only the merge still answers a REFUSAL by default, in a project that never wired it
      * ({@see applyAccountMerge()}), rather than nothing at all. That is the honest outcome for an
      * operator who typed it into the wrong installation: before the move the name was carried by
      * whichever agent chose to, so a project that did not left the command socket silent - which
@@ -1489,9 +1489,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The card is about an account that is no longer blocked by the time this is asked. It still
      * gives nothing back when the account is gone, when it is blocked again - a merged loser stays
-     * blocked for good, {@see AbstractUserAgent::writeBlockFlag()} refuses to lift it - when somebody is already
-     * signed in on the row, or when the row has outlived its own expiry: the limit of a return is
-     * the life of the session, not the length of the block.
+     * blocked for good, {@see AbstractUserAgent::writeBlockFlag()} refuses to lift it - when
+     * somebody is already signed in on the row, or when the row has outlived its own expiry: the
+     * limit of a return is the life of the session, not the length of the block.
      *
      * @param Session $session Session holding the card
      * @return ?int Person to sign back in, or null when the card can only be lowered
@@ -5610,11 +5610,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * merged" from the merge table at that moment - so the row has to be there already.
      *
      * The flag is written straight rather than through the person's agent
-     * ({@see AbstractUserAgent::writeBlockFlag()}), which refuses a folded account and whose answer
-     * here would arm the "Access closed" card: a merged loser is not a
-     * punished person, and its tabs get the plain sign-in form ({@see self::killUserSessions()}).
-     * The flag stays because it is what every sign-in check reads, the ways in the merge left
-     * the loser among them.
+     * ({@see AbstractUserAgent::writeBlockFlag()}), which refuses a folded account and whose
+     * answer here would arm the "Access closed" card: a merged loser is not a punished person,
+     * and its tabs get the plain sign-in form ({@see self::killUserSessions()}). The flag stays
+     * because it is what every sign-in check reads, the ways in the merge left the loser among
+     * them.
      *
      * Runs inside the merge transaction, after the project moved its rows.
      *
