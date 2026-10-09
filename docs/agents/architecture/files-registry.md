@@ -118,10 +118,10 @@ a moderation verdict. Declare that name in the consuming agent's
   files to the library: temporary file, name, type — the one read from the
   content where the target sniffs, the declared one otherwise — owner and
   fingerprint. Storage names the registry row's size after it keeps the file.
-  The owner is the person signed in at publication, not
-  at the declaration. Between the upload row going and the registry row being
-  written nobody counts the file in the storage limit — a known limit
-  ([uploads.md](uploads.md), *Targets And Checks*).
+  The owner is the person signed in at publication, not at the declaration.
+  Between the upload row going and the registry row being written nobody counts
+  the file in the storage limit — a known limit ([uploads.md](uploads.md),
+  *Targets And Checks*).
 
   When that person is erased, `hilos_file.owner_user_id` becomes `NULL` through
   its `ON DELETE SET NULL` key (HIL-1202). After the commit the files library

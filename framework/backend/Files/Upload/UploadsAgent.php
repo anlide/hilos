@@ -611,9 +611,9 @@ final class UploadsAgent extends AbstractAgent
      * Judges the whole received file and completes or fails the upload.
      *
      * Picture metadata is stripped before fingerprinting and sniffing. The fingerprint and the
-     * sniffed type are written onto the row before the checks run, so
-     * every check - a project's included - reads them there; the row does not become complete
-     * until they all let it through.
+     * sniffed type are written onto the row before the checks run, so every check - a
+     * project's included - reads them there; the row does not become complete until they all
+     * let it through.
      *
      * @param HilosUpload $upload Upload whose declared bytes have all arrived
      * @throws HilosException Whatever writing the upload row or deleting its file raises

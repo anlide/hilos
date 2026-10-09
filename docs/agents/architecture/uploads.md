@@ -153,8 +153,8 @@ than declared fail the upload `size_overflow`; an append that fails,
 metadata (below), then writes onto the row, in one write, the fingerprint of
 the bytes that remain (`contentHash`, sha256 counted while the chunks arrived
 if no bytes changed) and, for a sniffing target, the type read from the head
-of the file with libmagic; then the received checks run, and the upload completes
-or fails with the refusing check's code (`content_mismatch`,
+of the file with libmagic; then the received checks run, and the upload
+completes or fails with the refusing check's code (`content_mismatch`,
 `duplicate_content`, `storage_error` when the file cannot be read back, or a
 project check's own).
 
