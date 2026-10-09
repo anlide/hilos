@@ -61,14 +61,13 @@ final class PeerModule implements DaemonModule
      * The node's TLS files are checked first ({@see ClusterTlsConfig::fromEnv()}), then the node
      * reads the markers it names to its peers on every handshake - the database marker
      * ({@see DatabaseMarker}), the marker of every cluster directory of `$fs`
-     * ({@see ClusterDirectoryMarker}), each written here by the first node to start, and the admin
-     * view mode variable. Those reads
-     * are the one database and file access of the master outside its loop that the peer channel
-     * needs: a one-time bootstrap read before {@see DaemonManager::run()}, which the rule against
-     * heavy work in the master allows (docs/agents/antipatterns/heavy-work-in-master.md,
-     * *Exceptions*), as it allows the anonymization gate's schema read and the admin view mode
-     * latch. The handshake itself touches neither the database nor the disk: the markers live in
-     * memory from here on.
+     * ({@see ClusterDirectoryMarker}), each written here by the first node to start, and the
+     * admin view mode variable. Those reads are the one database and file access of the master
+     * outside its loop that the peer channel needs: a one-time bootstrap read before
+     * {@see DaemonManager::run()}, which the rule against heavy work in the master allows
+     * (docs/agents/antipatterns/heavy-work-in-master.md, *Exceptions*), as it allows the
+     * anonymization gate's schema read and the admin view mode latch. The handshake itself
+     * touches neither the database nor the disk: the markers live in memory from here on.
      *
      * @param DaemonManager $daemon Daemon to register the peer server on
      * @param DaemonContext $context Resolved path context (unused; peer wiring is env-driven)

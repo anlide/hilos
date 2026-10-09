@@ -571,19 +571,18 @@ The marker lives in the master's memory from here on; the handshake touches no d
 
 **On the handshake.** A hello and a welcome carry the field `markers` — the sender's
 markers by kind: `database`, `directory:<name>` for every cluster directory of `$fs`,
-and `admin-view-mode` (*Cluster directories* and *The admin view mode* below). The field
-is required, and `PeerProtocol::VERSION` was
-raised to `9` for these markers, to `10` when HIL-1297 added initiator identity, to
-`11` when HIL-1304 added WebSocket readiness to the leader heartbeat, to `12` when HIL-1305
-spread operator identity and code admission, to `13` when HIL-1306 added sibling
-drops and page re-decision announcements, to `14` when HIL-1232 added the
-cross-node command reply ([command-server.md](command-server.md)), and to `15` when
-HIL-1178 added the RT row deletion sweep. A node of the
-previous protocol and a node of this one do not link, with the line about the version.
-The accepting side on a hello and the dialing side on a welcome check, in order: the
-protocol version, the certificate name, the markers. The rule
-(`PeerMarkers::refusalFor()`): a kind named by either side is named by the other with
-the same value. A breach drops the link through the existing branch —
+and `admin-view-mode` (*Cluster directories* and *The admin view mode* below). The
+field is required, and `PeerProtocol::VERSION` was raised to `9` for these markers, to
+`10` when HIL-1297 added initiator identity, to `11` when HIL-1304 added WebSocket
+readiness to the leader heartbeat, to `12` when HIL-1305 spread operator identity and
+code admission, to `13` when HIL-1306 added sibling drops and page re-decision
+announcements, to `14` when HIL-1232 added the cross-node command reply
+([command-server.md](command-server.md)), and to `15` when HIL-1178 added the RT row
+deletion sweep. A node of the previous protocol and a node of this one do not link,
+with the line about the version. The accepting side on a hello and the dialing side on
+a welcome check, in order: the protocol version, the certificate name, the markers.
+The rule (`PeerMarkers::refusalFor()`): a kind named by either side is named by the
+other with the same value. A breach drops the link through the existing branch —
 `Peer link dropped: …` at WARNING — before the link remembers the peer or tells the
 server; the accepting side sends no welcome, and the dialing side writes its own line
 about a link closed before the welcome. The refusals, literally:
@@ -631,10 +630,9 @@ On the handshake the kind is judged by the same rule and refused in the same wor
 being `cluster directory <name> at <path>`:
 `Peer handshake from node '<id>' names directory:data_export marker '<theirs>', but this node reads '<ours>' from cluster directory data_export at /app/data/data_export: the two nodes do not read one directory:data_export`.
 The directory marker did not itself raise `PeerProtocol::VERSION`: the frame kept its
-shape. At the time of the directory marker change,
-a node of the previous build that named no directory kind was refused by the
-marker rule. What the marker means for the files beside it, and who may remove
-it — [filesystem.md](filesystem.md), "The Guard".
+shape. At the time of the directory marker change, a node of the previous build that
+named no directory kind was refused by the marker rule. What the marker means for the
+files beside it, and who may remove it — [filesystem.md](filesystem.md), "The Guard".
 
 **The admin view mode (HIL-1274).** After the database and directory markers,
 `PeerModule` names the value of `HILOS_ADMIN_VIEW_MODE_ENABLED` as `on` or `off` under
