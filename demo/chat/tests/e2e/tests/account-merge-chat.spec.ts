@@ -29,7 +29,8 @@ const SURVIVOR_PASSWORD = 'the survivor password stays'
 // identities/sessions and the chat project's message rows - and the two open
 // surfaces of the merged account (HIL-1292): the administrator's second tab on
 // its card, and a guest on its public page, both told where it went without a
-// reload.
+// reload. Another tab of the same administrator, already on that survivor's
+// merge, is told the candidate is no longer available (HIL-1294).
 test('merges another account into the user on the admin card', async ({
   browser,
   page,
@@ -52,6 +53,8 @@ test('merges another account into the user on the admin card', async ({
   const guestPage = await guestContext.newPage()
   // The administrator's second tab, on the card of the account about to be merged.
   const loserCardPage = await page.context().newPage()
+  // The same administrator's other tab, on the survivor, held on the merge (HIL-1294).
+  const survivorCardPage = await page.context().newPage()
 
   try {
     await signUpAdmin(page)
@@ -105,6 +108,22 @@ test('merges another account into the user on the admin card', async ({
     await loserChoice.check()
     await clickSubmit(page.getByTestId('hilos-user-merge-next'))
 
+    // The other tab reaches the same step while this one still holds the merge.
+    // The confirmation already given on this session is not asked again (HIL-1330).
+    await gotoPage(survivorCardPage, `/hilos/user/${survivor.userId}`)
+    await clickSubmit(survivorCardPage.getByTestId('hilos-user-merge-open'))
+    await expect(survivorCardPage.getByTestId('step-up-password')).toHaveCount(
+      0,
+    )
+    await typeInto(
+      survivorCardPage.getByTestId('hilos-table-search'),
+      loser.email,
+    )
+    const survivorTabChoice = shownByTestId(survivorCardPage, loserChoiceId)
+    await expect(survivorTabChoice).toBeVisible()
+    await survivorTabChoice.check()
+    await clickSubmit(survivorCardPage.getByTestId('hilos-user-merge-next'))
+
     const survivorFate = page.getByTestId('hilos-user-merge-fate-survivor')
     const confirm = page.getByTestId('hilos-user-merge-confirm')
     await expect(survivorFate).toBeVisible()
@@ -128,6 +147,15 @@ test('merges another account into the user on the admin card', async ({
     const outcome = `Merged #${loser.userId} into #${survivor.userId}. Moved: sign-in methods 1, messages 1.`
     await expect(page.getByTestId('modal')).toBeHidden()
     await expect(page.getByTestId('hilos-toast-success')).toContainText(outcome)
+
+    // The other tab was not reloaded: the candidate it had chosen is gone, and
+    // Merge cannot be pressed (HIL-1294).
+    await expect(
+      survivorCardPage.getByTestId('hilos-user-merge-gone'),
+    ).toHaveText('No longer available')
+    await expect(
+      survivorCardPage.getByTestId('hilos-user-merge-confirm'),
+    ).toBeDisabled()
 
     // The open card of the merged account turns without a reload (HIL-1292): the
     // badge says Merged, the notice leads to the survivor's card, and nothing is
@@ -196,6 +224,7 @@ test('merges another account into the user on the admin card', async ({
       String(survivor.userId),
     )
   } finally {
+    await survivorCardPage.close()
     await loserCardPage.close()
     await guestContext.close()
     await survivorContext.close()

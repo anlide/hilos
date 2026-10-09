@@ -1177,6 +1177,10 @@ describe('HilosUserPage confirmation step (HIL-1275)', () => {
     expect(world.sent[0]?.action).toBe('hilos_step_up_start')
     expect(modalEl('step-up')).toBeNull()
     expect(modalEl('hilos-user-merge-row-2')).not.toBeNull()
+    // A candidate's name and id stay apart in its row: "Bob #2", not "Bob#2".
+    expect(
+      modalEl('hilos-user-merge-row-2')?.closest('tr')?.textContent,
+    ).toContain('Bob #2')
   })
 
   it('draws a refusal with Cancel alone', async () => {

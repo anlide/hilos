@@ -249,6 +249,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Refusal of a write over an account folded into another one (HIL-1199). */
     public const string MERGED_ACCOUNT_REFUSED_MESSAGE = 'This account was merged into another one';
 
+    /** Refusal when the account being folded was already merged (HIL-1294). */
+    public const string ACCOUNT_MERGE_ALREADY_MERGED_MESSAGE = '%s was already merged into %s';
+
+    /** Refusal when the account that would absorb the other was itself merged (HIL-1294). */
+    public const string ACCOUNT_MERGE_SURVIVOR_MERGED_MESSAGE = '%s was itself merged into %s';
+
+    /** Named end of a merge chain when that chain has no live account (HIL-1294). */
+    public const string ACCOUNT_MERGE_ANOTHER_ACCOUNT = 'another account';
+
     /**
      * The session set, plus the identity rows an account merge moves.
      *
@@ -5732,10 +5741,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Both accounts are vouched for here, in the framework, because both questions are asked of
      * its own tables: whether a user id names anybody, and whether that account has already been
      * folded into a third ({@see HilosDbContext::userMerges}). The survivor is asked first, then
-     * the loser; the order and the wording are the ones the chat demo refused in before the merge
-     * table was the framework's, so no refusal an operator or an administrator can see has
-     * changed. It is asked before the passwords are weighed, so an id that names nobody is refused
-     * as such rather than as a password question.
+     * the loser; the order is the one the chat demo refused in before the merge table was the
+     * framework's. The words name both accounts by name and number, and a merged account by the
+     * live end of its chain, so the console and the window receive one sentence (HIL-1294). It is
+     * asked before the passwords are weighed, so an id that names nobody is refused as such
+     * rather than as a password question.
      *
      * A project with a refusal of its own overrides this and calls the parent FIRST, so the
      * framework's refusals keep their order and the project only adds to them.
@@ -5743,7 +5753,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param int $survivorUserId Survivor user id that would absorb the loser
      * @param int $loserUserId Loser user id that would be folded in
      * @throws ValidationException When either id names nobody, or either account is already merged
-     * @throws HilosException On database failure while reading the two accounts
+     * @throws HilosException On database failure while reading the two accounts or a merge chain
      */
     protected function assertMergeable(int $survivorUserId, int $loserUserId): void
     {
@@ -5751,15 +5761,57 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException("No such user: {$survivorUserId}");
         }
         if (Hilos::$db->userMerges[$survivorUserId] !== null) {
-            throw new ValidationException("Survivor {$survivorUserId} is itself a merged account");
+            throw new ValidationException(sprintf(
+                self::ACCOUNT_MERGE_SURVIVOR_MERGED_MESSAGE,
+                $this->mergeRefusalAccountLabel($survivorUserId),
+                $this->mergeRefusalTargetLabel($survivorUserId),
+            ));
         }
 
         if (Hilos::$db->users[$loserUserId] === null) {
             throw new ValidationException("No such user: {$loserUserId}");
         }
         if (Hilos::$db->userMerges[$loserUserId] !== null) {
-            throw new ValidationException("Loser {$loserUserId} is already merged");
+            throw new ValidationException(sprintf(
+                self::ACCOUNT_MERGE_ALREADY_MERGED_MESSAGE,
+                $this->mergeRefusalAccountLabel($loserUserId),
+                $this->mergeRefusalTargetLabel($loserUserId),
+            ));
         }
+    }
+
+    /**
+     * Names an account in a merge refusal: its name and number, or the number alone when the
+     * account has no name or no row (HIL-1294).
+     *
+     * @param int $userId Account the refusal is about
+     * @return string Name and number, or the number alone
+     */
+    private function mergeRefusalAccountLabel(int $userId): string
+    {
+        $name = Hilos::$db->users[$userId]?->name;
+        $number = '#' . $userId;
+        if ($name === null || $name === '') {
+            return $number;
+        }
+
+        return $name . ' (' . $number . ')';
+    }
+
+    /**
+     * Names the live end of an account's merge chain, or says the chain has no live end (HIL-1294).
+     *
+     * @param int $userId Folded account whose chain is followed
+     * @return string The live account, or the words for a chain that ends nowhere
+     */
+    private function mergeRefusalTargetLabel(int $userId): string
+    {
+        $liveUserId = Hilos::$db->userMerges->liveSurvivorOf($userId);
+        if ($liveUserId === null) {
+            return self::ACCOUNT_MERGE_ANOTHER_ACCOUNT;
+        }
+
+        return $this->mergeRefusalAccountLabel($liveUserId);
     }
 
     /**

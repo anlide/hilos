@@ -189,7 +189,10 @@ the second-factor sets and the project's own rows
 tombstone writes the merge row FIRST and the loser's block flag second: the
 merge-candidates table hears of the merge by the change of the person's row, and
 reads "is this account merged" from the table at that moment. The flag is
-written straight, not as a block: a merged loser is not a punished person.
+written straight, not as a block: a merged loser is not a punished person. A
+refusal from `assertMergeable()` names both accounts by name and number, and a
+merged account by the live end of its chain (HIL-1294); the window and the
+console receive that one sentence.
 
 The second-factor choice is independent of the password choice. A protected
 loser requires an explicit transfer, or retaining the survivor's existing
@@ -222,7 +225,11 @@ person through two computed fields of a person's row,
 which the chat demo's `/user/{id}` reads as its `userMerge` data and stays on
 the merged account's own address with. The chain is followed up to the first
 account with no merge row of its own; a chain that stops at an erased survivor
-or closes a loop ends nowhere, and the card says so without a link.
+or closes a loop ends nowhere, and the card says so without a link. Chains are
+allowed: a survivor may later be merged into a third account. The earlier
+tombstone row is not rewritten — it stays the record of who was folded into
+whom, and when — and readers follow the chain, up through `liveSurvivorOf()`
+and down through `foldedInto()`.
 
 ## Foreign Keys Onto The Person
 

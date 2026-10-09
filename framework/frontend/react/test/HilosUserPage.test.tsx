@@ -87,6 +87,8 @@ function userContext(
   failRename: () => void
   standingFrame: (data: Record<string, unknown>) => void
   answerImpersonate: (reason?: string) => void
+  answerMerge: (reason?: string) => void
+  removeCandidate: () => void
   sent: Array<{ action: string; data: unknown; requestId?: string }>
 } {
   const scopes = new ScopeManager()
@@ -163,6 +165,7 @@ function userContext(
     },
   ]
   const tableWindowListeners: Array<(signal: unknown) => void> = []
+  const tableDeltaListeners: Array<(signal: unknown) => void> = []
   const serveCandidates = (): void => {
     const signal = {
       kind: 'tableWindow',
@@ -237,6 +240,9 @@ function userContext(
     if (event === 'tableWindow') {
       tableWindowListeners.push(listener as (signal: unknown) => void)
     }
+    if (event === 'tableViewportDelta') {
+      tableDeltaListeners.push(listener as (signal: unknown) => void)
+    }
     if (event === 'actionSuccess' || event === 'actionError') {
       actionListeners.set(event, [
         ...(actionListeners.get(event) ?? []),
@@ -271,6 +277,40 @@ function userContext(
           type: 'hilos_account_standing_state',
           data,
         })
+      }
+    },
+    answerMerge(reason?: string): void {
+      const requestId = sent.at(-1)?.requestId
+      const signal =
+        reason === undefined
+          ? {
+              kind: 'actionSuccess',
+              action: 'hilos_user_merge',
+              requestId,
+              message: 'Merged.',
+            }
+          : {
+              kind: 'actionError',
+              action: 'hilos_user_merge',
+              requestId,
+              reason,
+            }
+      for (const listener of actionListeners.get(signal.kind) ?? []) {
+        listener(signal)
+      }
+    },
+    removeCandidate(): void {
+      const signal = {
+        data: {
+          page: HilosPages.USER,
+          tableKey: 'mergeCandidates',
+          kind: 'row_removed',
+          rowKey: '2',
+          reason: 'deleted',
+        },
+      }
+      for (const listener of tableDeltaListeners) {
+        listener(signal)
       }
     },
     answerImpersonate(reason?: string): void {
@@ -371,6 +411,39 @@ describe('HilosUserPage', () => {
     expect((byId('hilos-user-merge-next') as HTMLButtonElement).disabled).toBe(
       true,
     )
+  })
+
+  it("keeps a refused merge open in the server's words, then says the candidate is gone", async () => {
+    const context = userContext(true, true)
+    renderPage(context)
+    await act(async () => {
+      fireEvent.click(byId('hilos-user-merge-open') as Element)
+    })
+    await act(async () => {
+      fireEvent.click(byId('hilos-user-merge-row-2') as Element)
+    })
+    await act(async () => {
+      fireEvent.click(byId('hilos-user-merge-next') as Element)
+    })
+    await act(async () => {
+      fireEvent.click(byId('hilos-user-merge-confirm') as Element)
+    })
+    await act(async () => {
+      context.answerMerge('Merge refused')
+    })
+
+    expect(byId('modal')).not.toBeNull()
+    expect(document.body.textContent).toContain('Merge refused')
+
+    await act(async () => {
+      context.removeCandidate()
+    })
+    expect(byId('hilos-user-merge-gone')?.textContent).toContain(
+      'No longer available',
+    )
+    expect(
+      (byId('hilos-user-merge-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('opens the rename modal prefilled with the current name on Edit', () => {

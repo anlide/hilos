@@ -368,11 +368,17 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
 
         self::seedMerge(self::SURVIVOR_USER_ID, self::THIRD_USER_ID);
         $this->sendCommand($agent, self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
-        self::assertSame('Survivor ' . self::SURVIVOR_USER_ID . ' is itself a merged account', $this->refusal());
+        self::assertSame(
+            'Survivor (#' . self::SURVIVOR_USER_ID . ') was itself merged into Third (#' . self::THIRD_USER_ID . ')',
+            $this->refusal(),
+        );
 
         self::seedMerge(self::LOSER_USER_ID, self::THIRD_USER_ID);
         $this->sendCommand($agent, self::THIRD_USER_ID, self::LOSER_USER_ID);
-        self::assertSame('Loser ' . self::LOSER_USER_ID . ' is already merged', $this->refusal());
+        self::assertSame(
+            'Loser (#' . self::LOSER_USER_ID . ') was already merged into Third (#' . self::THIRD_USER_ID . ')',
+            $this->refusal(),
+        );
 
         self::assertNull($agent->vouchedFor);
         self::assertNull($agent->moved);
@@ -381,6 +387,30 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             self::LOSER_USER_ID,
             $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail)?->userId,
         );
+    }
+
+    /**
+     * A loser folded into an account that was itself folded is named by the live end of that
+     * chain, not by the account written on its own tombstone (HIL-1294).
+     *
+     * @throws HilosException When a seed or the merge fails
+     */
+    public function testAFoldedChainNamesTheLiveEnd(): void
+    {
+        $agent = new AccountMergeRouteTestAgent();
+        self::seedMerge(self::LOSER_USER_ID, self::SURVIVOR_USER_ID);
+        self::seedMerge(self::SURVIVOR_USER_ID, self::THIRD_USER_ID);
+
+        $this->sendCommand($agent, self::THIRD_USER_ID, self::LOSER_USER_ID);
+
+        self::assertSame(
+            'Loser (#' . self::LOSER_USER_ID . ') was already merged into Third (#' . self::THIRD_USER_ID . ')',
+            $this->refusal(),
+        );
+        self::assertNull($agent->vouchedFor);
+        self::assertNull($agent->moved);
+        self::assertSame(self::SURVIVOR_USER_ID, self::survivorOf(self::LOSER_USER_ID));
+        self::assertSame(self::THIRD_USER_ID, self::survivorOf(self::SURVIVOR_USER_ID));
     }
 
     /**
@@ -604,7 +634,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
-     * A refused browser merge hands the sentence back on the same frame.
+     * Two browser merges of one account: the first folds it, the second is told who it was
+     * folded into, and only the first tombstone is written (HIL-1294).
      *
      * @throws HilosException When the merge fails
      */
@@ -613,18 +644,37 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::openAdministratorsTab();
         self::confirmMerge();
         $agent = new AccountMergeRouteTestAgent();
-        self::seedMerge(self::LOSER_USER_ID, self::THIRD_USER_ID);
 
         $agent->onSignalAgent(
             new AgentSignalData($this->browserRequest()),
             '',
             HilosSignalConstants::HILOS_ACCOUNT_MERGE,
         );
+        $folded = $this->consumeMergeAnswer();
+        self::assertSame(self::ACCEPT_KEY, $folded->acceptKey);
+        self::assertNull($folded->error);
+        self::assertSame(
+            'Merged #12 into #11. Moved: sign-in methods 0, notes 3. No confirmed authenticator remains.',
+            $folded->successMessage,
+        );
 
-        $result = $this->consumeMergeAnswer();
-        self::assertSame(self::ACCEPT_KEY, $result->acceptKey);
-        self::assertSame('Loser 12 is already merged', $result->error);
-        self::assertNull($result->successMessage);
+        $agent->onSignalAgent(
+            new AgentSignalData($this->browserRequest(
+                survivorUserId: self::THIRD_USER_ID,
+                requestId: 'request-2',
+            )),
+            '',
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE,
+        );
+        $refused = $this->consumeMergeAnswer();
+        self::assertSame(self::ACCEPT_KEY, $refused->acceptKey);
+        self::assertSame(
+            'Loser (#' . self::LOSER_USER_ID . ') was already merged into Survivor (#' . self::SURVIVOR_USER_ID . ')',
+            $refused->error,
+        );
+        self::assertNull($refused->successMessage);
+        self::assertSame(self::SURVIVOR_USER_ID, self::survivorOf(self::LOSER_USER_ID));
+        self::assertNull(self::survivorOf(self::SURVIVOR_USER_ID));
     }
 
     /**
@@ -1143,12 +1193,17 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
      * Builds the browser's handed-over merge request.
      *
      * @param ?PasswordFate $passwordFate Fate named by the browser, or null
+     * @param int $survivorUserId Survivor the browser asked to absorb the loser
+     * @param string $requestId Client-minted tracked request id
      * @return AccountMergeSignalData Request addressed back to the test page
      */
-    private function browserRequest(?PasswordFate $passwordFate = null): AccountMergeSignalData
-    {
+    private function browserRequest(
+        ?PasswordFate $passwordFate = null,
+        int $survivorUserId = self::SURVIVOR_USER_ID,
+        string $requestId = 'request-1',
+    ): AccountMergeSignalData {
         return new AccountMergeSignalData(
-            survivorUserId: self::SURVIVOR_USER_ID,
+            survivorUserId: $survivorUserId,
             loserUserId: self::LOSER_USER_ID,
             passwordFate: $passwordFate?->value,
             secondFactorFate: null,
@@ -1156,7 +1211,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             expectedLoserHasSecondFactor: false,
             replySignal: HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE,
             acceptKey: self::ACCEPT_KEY,
-            requestId: 'request-1',
+            requestId: $requestId,
             action: HilosSignalConstants::HILOS_USER_MERGE,
             successMessage: null,
         );

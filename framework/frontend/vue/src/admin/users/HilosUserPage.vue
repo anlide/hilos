@@ -1217,8 +1217,10 @@ watch(error, (reason) => {
               />
             </template>
             <template #cell-name="{ row }">
+              <!-- The space before the id lives in its span: a
+                   whitespace-only node between two elements is dropped. -->
               <HilosHideable :value="row.name" />
-              <span class="text-body-secondary">#{{ row.id }}</span>
+              <span class="text-body-secondary"> #{{ row.id }}</span>
               <span
                 v-if="row.id === currentUserId"
                 class="badge text-bg-secondary ms-2"

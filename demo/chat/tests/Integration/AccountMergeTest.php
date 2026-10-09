@@ -200,7 +200,8 @@ final class AccountMergeTest extends IntegrationTestCase
     }
 
     /**
-     * Merging an already-merged loser is rejected before any write.
+     * Merging an already-merged loser is rejected before any write, and the refusal names both
+     * accounts (HIL-1294).
      *
      * @throws HilosException When setup or the first merge fails
      */
@@ -213,7 +214,7 @@ final class AccountMergeTest extends IntegrationTestCase
         $this->mergeOk($survivorId, $loserId);
 
         $this->assertSame(
-            "Loser {$loserId} is already merged",
+            "Loser (#{$loserId}) was already merged into Survivor (#{$survivorId})",
             $this->mergeRefused($secondSurvivorId, $loserId),
         );
     }
