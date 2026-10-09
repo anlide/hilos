@@ -1,11 +1,12 @@
 // Covers the profile root's state (HIL-1169): the row icons and ids, the
-// summary of each section from the page's answer and browser lists, and the
-// verified address the Email row shows.
-import { describe, expect, it } from 'vitest'
+// summary of each section from the page's answer and browser lists, the
+// verified address the Email row shows, and the Theme row line (HIL-1434).
+import { describe, expect, it, vi } from 'vitest'
 import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { describeHilosNotificationChannels } from '../../src/notifications/notificationPreferences.js'
 import { HILOS_PROFILE_IDENTITIES_LIST } from '../../src/profile/profileIdentities.js'
+import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import {
   createHilosProfileRootStore,
   hilosProfileSectionIcon,
@@ -14,9 +15,54 @@ import {
 } from '../../src/profile/profileRoot.js'
 import { type HilosProfileSignInIdentitySource } from '../../src/profile/profileSignInMethods.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
+import { bindSessionScope } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { ingest } from '../../src/state/normalizer.js'
 import { createSignal } from '../../src/state/signal.js'
+import {
+  bindThemeState,
+  setHilosThemePick,
+} from '../../src/theme/themeState.js'
+
+function fakeStorage(initial: Record<string, string> = {}): Storage {
+  const entries = new Map<string, string>(Object.entries(initial))
+
+  return {
+    get length(): number {
+      return entries.size
+    },
+    clear: () => entries.clear(),
+    getItem: (key) => entries.get(key) ?? null,
+    key: (index) => [...entries.keys()][index] ?? null,
+    removeItem: (key) => {
+      entries.delete(key)
+    },
+    setItem: (key, value) => {
+      entries.set(key, value)
+    },
+  }
+}
+
+function fakeConnection() {
+  const listeners = new Set<(signal: ProjectSignal) => void>()
+
+  return {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        listeners.add(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => listeners.delete(listener as (signal: ProjectSignal) => void)
+    },
+    emit(type: string, data: unknown): void {
+      const signal = { type, data } as ProjectSignal
+      for (const listener of listeners) {
+        listener(signal)
+      }
+    },
+    listenerCount: () => listeners.size,
+  }
+}
 
 const password = {
   id: 1,
@@ -215,5 +261,80 @@ describe('profile root store', () => {
     expect(store.passkeyOnly.get()).toBe(false)
     setWaysIn(scopes, [])
     expect(store.passkeyOnly.get()).toBe(false)
+  })
+
+  it('follows theme position, defaults, and switching live', () => {
+    const storage = fakeStorage()
+    vi.stubGlobal('localStorage', storage)
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const releaseTheme = bindThemeState(
+      connection as unknown as HilosConnection,
+      scopes,
+    )
+
+    try {
+      const store = rootStore(answeredScopes(), nameOnly())
+
+      // «System · default» without choice
+      setHilosThemePick(null)
+      expect(store.theme.get()).toBe('System · default')
+
+      // «Dark» with explicit dark
+      setHilosThemePick('dark')
+      expect(store.theme.get()).toBe('Dark')
+
+      // «System» with explicit system and default system (no default mark)
+      setHilosThemePick('system')
+      expect(store.theme.get()).toBe('System')
+
+      // «Dark · default» without choice when default dark
+      connection.emit('hilos_theme_settings', {
+        switchingEnabled: true,
+        defaultTheme: 'dark',
+      })
+      setHilosThemePick(null)
+      expect(store.theme.get()).toBe('Dark · default')
+
+      // null when switchingEnabled=false with any choice
+      connection.emit('hilos_theme_settings', {
+        switchingEnabled: false,
+        defaultTheme: 'dark',
+      })
+      expect(store.theme.get()).toBeNull()
+      setHilosThemePick('light')
+      expect(store.theme.get()).toBeNull()
+
+      // Live change: pick, settings frame, off -> null -> on -> previous string
+      connection.emit('hilos_theme_settings', {
+        switchingEnabled: true,
+        defaultTheme: 'system',
+      })
+      setHilosThemePick('light')
+      expect(store.theme.get()).toBe('Light')
+
+      connection.emit('hilos_theme_settings', {
+        switchingEnabled: true,
+        defaultTheme: 'dark',
+      })
+      expect(store.theme.get()).toBe('Light')
+
+      connection.emit('hilos_theme_settings', {
+        switchingEnabled: false,
+        defaultTheme: 'dark',
+      })
+      expect(store.theme.get()).toBeNull()
+
+      connection.emit('hilos_theme_settings', {
+        switchingEnabled: true,
+        defaultTheme: 'dark',
+      })
+      expect(store.theme.get()).toBe('Light')
+    } finally {
+      releaseTheme()
+      setHilosThemePick(null)
+      vi.unstubAllGlobals()
+    }
   })
 })

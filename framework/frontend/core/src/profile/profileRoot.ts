@@ -1,8 +1,8 @@
 // The profile root (HIL-1169): the page every project mounts at /profile. The
-// framework draws it — the person's own line, the Account rows, a row per
-// section of the catalog with its live summary, the danger zone — and the
-// project hands it only what the framework cannot know: the person's name, its
-// own rename if it has one, and its session and device summary lists. The
+// framework draws it — the person's own line, the Account rows (Name, Email,
+// Theme), a row per section of the catalog with its live summary, the danger zone —
+// and the project hands it only what the framework cannot know: the person's name,
+// its own rename if it has one, and its session and device summary lists. The
 // framework's identities list supplies the account's ways in.
 //
 // The summaries of the framework's own sections come from the answer of the
@@ -28,6 +28,8 @@ import {
 } from '../session/sessionScope.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
+import { THEME_COPY, THEME_POSITIONS } from '../theme/themeChoice.js'
+import { hilosThemeChoice } from '../theme/themeState.js'
 import {
   createHilosDataExportStore,
   describeHilosDataExport,
@@ -69,6 +71,7 @@ export const HILOS_PROFILE_ROOT_COPY = {
   account: 'Account',
   name: 'Name',
   email: 'Email',
+  theme: 'Theme',
   verified: '{address} · verified',
   change: 'Change',
   sections: 'Sections',
@@ -136,6 +139,11 @@ export interface HilosProfileRootStore {
    * line under the sign-in row; false while the list is empty.
    */
   readonly passkeyOnly: ReadonlySignal<boolean>
+  /**
+   * The Theme row's line — the person's position, or the default's marked as
+   * the default; null while switching is off, and there is no row.
+   */
+  readonly theme: ReadonlySignal<string | null>
   /** Start taking the sections from the page's answer and their frames. */
   start(): void
   /** Stop taking them. */
@@ -205,6 +213,17 @@ export function createHilosProfileRootStore(
       () => hilosProfilePasswordState(methods.get()).verifiedEmail,
     ),
     passkeyOnly: computedSignal(() => isHilosProfilePasskeyOnly(methods.get())),
+    theme: computedSignal(() => {
+      const choice = hilosThemeChoice.get()
+      if (choice === null) {
+        return null
+      }
+      const label =
+        THEME_POSITIONS.find((item) => item.value === choice.position)?.label ??
+        choice.position
+
+      return choice.isDefault ? `${label} · ${THEME_COPY.default}` : label
+    }),
     start() {
       stopPreferences ??= startHilosNotificationPreferences(context)
       secondFactor.start()

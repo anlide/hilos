@@ -328,6 +328,7 @@ export {
   type ThemePick,
 } from './theme/themeRule.js'
 export {
+  bindThemeState,
   hilosThemeChoice,
   hilosThemeMode,
   hilosThemePick,

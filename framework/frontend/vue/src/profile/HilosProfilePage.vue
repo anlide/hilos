@@ -1,4 +1,4 @@
-<!-- The profile root (HIL-1169): the person's own line, the Account rows, a row per catalog section with its live summary, and the danger zone. -->
+<!-- The profile root (HIL-1169): the person's own line, the Account rows (Name, Email, Theme), a row per catalog section with its live summary, and the danger zone. -->
 <script setup lang="ts">
 import {
   computedSignal,
@@ -50,6 +50,7 @@ const photo = useSignal(root.photo)
 const summaries = useSignal(root.summaries)
 const verifiedEmail = useSignal(root.verifiedEmail)
 const passkeyOnly = useSignal(root.passkeyOnly)
+const theme = useSignal(root.theme)
 const name = useSignal(props.binding.name)
 const rename =
   props.binding.rename === null
@@ -154,6 +155,21 @@ onUnmounted(() => {
           @click="email.open(verifiedEmail)"
           >{{ COPY.change }}</LoadingButton
         >
+      </div>
+      <div
+        v-if="theme !== null"
+        class="d-flex align-items-center gap-3 py-3 border-bottom"
+      >
+        <i
+          class="bi bi-circle-half fs-5 text-body-secondary"
+          aria-hidden="true"
+        ></i>
+        <div class="flex-grow-1 text-break">
+          <div class="fw-semibold small">{{ COPY.theme }}</div>
+          <div class="small text-body-secondary" data-id="profile-theme">
+            {{ theme }}
+          </div>
+        </div>
       </div>
     </div>
     <p v-else class="text-body-secondary" data-id="profile-loading">

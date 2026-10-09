@@ -1,13 +1,16 @@
 // Covers the profile root's view (HIL-1169): Name with Change only when the
 // project handed its rename, Email only with a verified address, a row per
-// catalog section in the catalog's order with its summary, and the placeholder
-// while the name is not known yet.
+// catalog section in the catalog's order with its summary, the placeholder
+// while the name is not known yet, and the Theme row (HIL-1434).
 import {
+  bindSessionScope,
+  bindThemeState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
   HilosPages,
   resolveHilosProfileSignInMethods,
   ScopeManager,
+  setHilosThemePick,
   type ActionLifecycle,
   type HilosConnection,
   type HilosPageIdentity,
@@ -16,18 +19,75 @@ import {
   type HilosProfileSignInMethod,
   type HilosRouter,
   type PageRouteMatch,
+  type ProjectSignal,
 } from '@hilos/core'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfilePage from './HilosProfilePage.vue'
 
+let releaseTheme: (() => void) | undefined
+
 afterEach(() => {
   document.body.innerHTML = ''
+  releaseTheme?.()
+  releaseTheme = undefined
+  setHilosThemePick(null)
+  vi.unstubAllGlobals()
+  const restore = bindThemeState(
+    { on: () => () => {} } as unknown as HilosConnection,
+    new ScopeManager(),
+  )
+  restore()
 })
 enableAutoUnmount(afterEach)
+
+function fakeConnection() {
+  const listeners: ((signal: ProjectSignal) => void)[] = []
+
+  return {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        listeners.push(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => {
+        const idx = listeners.indexOf(
+          listener as (signal: ProjectSignal) => void,
+        )
+        if (idx !== -1) {
+          listeners.splice(idx, 1)
+        }
+      }
+    },
+    emit(type: string, data: unknown): void {
+      const signal = { type, data } as ProjectSignal
+      for (const listener of [...listeners]) {
+        listener(signal)
+      }
+    },
+  }
+}
+
+function bindTheme(
+  settings: {
+    switchingEnabled: boolean
+    defaultTheme: 'light' | 'dark' | 'system'
+  } = { switchingEnabled: true, defaultTheme: 'system' },
+  pick: 'light' | 'dark' | 'system' | null = null,
+) {
+  releaseTheme?.()
+  const conn = fakeConnection()
+  const scopes = new ScopeManager()
+  bindSessionScope(conn as unknown as HilosConnection, scopes)
+  releaseTheme = bindThemeState(conn as unknown as HilosConnection, scopes)
+  setHilosThemePick(pick)
+  conn.emit('hilos_theme_settings', settings)
+
+  return conn
+}
 
 /** The root's identity: the profile's sections in catalog order. */
 const IDENTITY: HilosPageIdentity = {
@@ -294,5 +354,122 @@ describe('HilosProfilePage', () => {
     expect(
       wrapper.find('[data-id="profile-sign-in-passkey-only-line"]').exists(),
     ).toBe(false)
+  })
+
+  it('places the Theme row after Email, or after Name without an address', () => {
+    bindTheme({ switchingEnabled: true, defaultTheme: 'system' })
+
+    const scopesWithEmail = signedInScopes()
+    setMethods(
+      scopesWithEmail,
+      resolveHilosProfileSignInMethods(
+        [
+          {
+            id: 1,
+            type: 'password',
+            provider: null,
+            identifier: 'ann@example.test',
+            verified: true,
+          },
+        ],
+        [],
+      ),
+    )
+    const wrapperWithEmail = mountPage(nameOnly(), scopesWithEmail)
+    const rowsWithEmail = wrapperWithEmail
+      .find('[data-id="profile-detail"]')
+      .findAll('.border-bottom')
+    expect(rowsWithEmail).toHaveLength(3)
+    expect(rowsWithEmail[0].find('[data-id="profile-name"]').exists()).toBe(
+      true,
+    )
+    expect(rowsWithEmail[1].find('[data-id="profile-email"]').exists()).toBe(
+      true,
+    )
+    expect(rowsWithEmail[2].find('[data-id="profile-theme"]').exists()).toBe(
+      true,
+    )
+    expect(rowsWithEmail[2].find('i').classes()).toContain('bi-circle-half')
+
+    const wrapperNoEmail = mountPage(nameOnly())
+    const rowsNoEmail = wrapperNoEmail
+      .find('[data-id="profile-detail"]')
+      .findAll('.border-bottom')
+    expect(rowsNoEmail).toHaveLength(2)
+    expect(rowsNoEmail[0].find('[data-id="profile-name"]').exists()).toBe(true)
+    expect(rowsNoEmail[1].find('[data-id="profile-theme"]').exists()).toBe(true)
+    expect(wrapperNoEmail.find('[data-id="profile-email"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('renders four theme texts according to picks and defaults', () => {
+    bindTheme({ switchingEnabled: true, defaultTheme: 'system' }, null)
+    let wrapper = mountPage(nameOnly())
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe(
+      'System · default',
+    )
+
+    bindTheme({ switchingEnabled: true, defaultTheme: 'system' }, 'dark')
+    wrapper = mountPage(nameOnly())
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe('Dark')
+
+    bindTheme({ switchingEnabled: true, defaultTheme: 'system' }, 'system')
+    wrapper = mountPage(nameOnly())
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe('System')
+
+    bindTheme({ switchingEnabled: true, defaultTheme: 'dark' }, null)
+    wrapper = mountPage(nameOnly())
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe(
+      'Dark · default',
+    )
+  })
+
+  it('draws no Theme row when switching is off', () => {
+    bindTheme({ switchingEnabled: false, defaultTheme: 'light' }, 'dark')
+    const wrapper = mountPage(nameOnly())
+    expect(wrapper.find('[data-id="profile-theme"]').exists()).toBe(false)
+  })
+
+  it('updates pick, default, and switching live without remounting', async () => {
+    const conn = bindTheme(
+      { switchingEnabled: true, defaultTheme: 'system' },
+      null,
+    )
+    const wrapper = mountPage(nameOnly())
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe(
+      'System · default',
+    )
+
+    setHilosThemePick('dark')
+    await nextTick()
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe('Dark')
+
+    conn.emit('hilos_theme_settings', {
+      switchingEnabled: true,
+      defaultTheme: 'light',
+    })
+    setHilosThemePick(null)
+    await nextTick()
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe(
+      'Light · default',
+    )
+
+    conn.emit('hilos_theme_settings', {
+      switchingEnabled: false,
+      defaultTheme: 'light',
+    })
+    await nextTick()
+    expect(wrapper.find('[data-id="profile-theme"]').exists()).toBe(false)
+
+    conn.emit('hilos_theme_settings', {
+      switchingEnabled: true,
+      defaultTheme: 'light',
+    })
+    await nextTick()
+    expect(wrapper.find('[data-id="profile-theme"]').exists()).toBe(true)
+    expect(wrapper.find('[data-id="profile-theme"]').text()).toBe(
+      'Light · default',
+    )
   })
 })
