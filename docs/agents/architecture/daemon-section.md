@@ -174,8 +174,8 @@ Use the whole-copy chain in [logs.md](logs.md), *The Circulation*:
 
 Keep the collector and page agent separate: the source of the cluster picture
 and the surface that shows it are different owners. On a standalone installation
-`standing.clustered` is false and carries no consensus on a standalone
-installation, so the picture has no state word.
+`standing.clustered` is false and carries no consensus, so the picture has no
+state word.
 
 ## The Node's State
 
@@ -201,11 +201,11 @@ The environment catalog declares `sensitive`; do not guess it from the key's nam
 No orphan `.env` key exposes its value: nothing declares that it may be shown.
 
 The environment page of node X is served by node X's agent. It answers the
-subscription with one whole `page_response`, directly to the asking socket.
-The collector's picture contains counts and value-free labels. For a silent
-node the section agent answers “node silent” with no values. A directory watch and periodic
-rescan make the node agent re-answer open environment pages after `.env` or
-`.env.example` changes.
+subscription with one whole `page_response`, directly to the asking socket. The
+collector's picture contains counts and value-free labels. For a silent node the
+section agent answers “node silent” with no values. A directory watch and
+periodic rescan make the node agent re-answer open environment pages after
+`.env` or `.env.example` changes.
 
 The environment catalog opens a value to an admin view-mode viewer only with
 `admin_view_visible => true`; no current key is open, and `sensitive` forbids
@@ -217,19 +217,19 @@ is hidden for a viewer and length-only for an administrator. See
 
 A fingerprint — type, source and a 16-hex SHA-256 hash of the catalog key and
 its value in the catalog type — travels only from node to collector. Boolean
-`0`/`false`/`no`/`off` have one canonical value. The collector replaces each hash
-on receipt with a 16-hex HMAC label using a salt minted for its lifetime; it
-does not retain the node hash. The mirror receives a whole snapshot after a
+`0`/`false`/`no`/`off` have one canonical value. The collector replaces each
+hash on receipt with a 16-hex HMAC label using a salt minted for its lifetime;
+it does not retain the node hash. The mirror receives a whole snapshot after a
 collector restart, so labels from two collector lifetimes do not mix. Equal
 labels mean equal values within one picture. An unsalted short hash of a small
-set of candidates (`prod`/`staging`, `true`/`false`, a short password) can be matched
-by trying those candidates. The comparison must reveal what differs without
-revealing the value; the short label in the cell still serves that comparison.
-`ClusterDaemonPicture::environmentComparison()` compares the labels, types and
-sources of answering nodes. It separates divergent keys, equal values from
-different sources, and `per_node` keys, which differ by design. Each key has a
-`known`, `unknown` or `undeclared` cell for every node; a silent node is unknown,
-while a missing declaration on an answering node is a discrepancy.
+set of candidates (`prod`/`staging`, `true`/`false`, a short password) can be
+matched by trying those candidates. The comparison must reveal what differs
+without revealing the value; the short label in the cell still serves that
+comparison. `ClusterDaemonPicture::environmentComparison()` compares the labels,
+types and sources of answering nodes. It separates divergent keys, equal values
+from different sources, and `per_node` keys, which differ by design. Each key
+has a `known`, `unknown` or `undeclared` cell for every node; a silent node is
+unknown, while a missing declaration on an answering node is a discrepancy.
 
 The September 16 decision carried fingerprints in synchronized RT; the October 4
 decomposition moved them to the node frame, preserving the boundary on values.
