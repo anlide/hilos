@@ -58,10 +58,11 @@ a target that had none is left without one — the marker is the database's name
 - **Taken for migrations or startup completion.** Without an `afterRollout` hook,
   `Migration::migrateUp()` takes no claim when the database is already at the code's level.
   With the hook it always takes the claim, runs pending migrations and then the hook before
-  release. A journal-enabled watchdog uses this for partition preparation, Hilos initialization
-  and trigger installation. The level is read again under the claim — another holder may
-  have rolled the schema out meanwhile — and the claim is given up on success or failure. `db:migration:up`, `:down`, `:retry`, a restore and
-  `test:db:reset` take the same claim; `recordAppliedLevel()` does not.
+  release. A journal-enabled watchdog uses this for partition preparation, Hilos
+  initialization and trigger installation. The level is read again under the claim — another
+  holder may have rolled the schema out meanwhile — and the claim is given up on success or
+  failure. `db:migration:up`, `:down`, `:retry`, a restore and `test:db:reset` take the same
+  claim; `recordAppliedLevel()` does not.
 - **Waiting has no deadline.** A waiting process reads the row once a second and names the
   holder in its log on the first poll and every 30th after it: `Waiting for the schema rollout
   claim held by <holder> since <claimed_at>`. Only the row being gone lets it go on.
