@@ -333,6 +333,8 @@ final class MainPageLoginTest extends IntegrationTestCase
             HilosSignalConstants::HILOS_LOGIN,
             new LoginActionDTO($email, $password),
         );
+        // An outdated hash is rewritten by the person's agent before the sign-in goes on (HIL-1405).
+        $this->deliverPersonAgentFrames();
         $this->deliverLibraryFrames($agent);
     }
 

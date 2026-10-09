@@ -122,7 +122,7 @@ class Identities extends Objects
      * Creates a `password`-type identity for a user with a freshly hashed secret.
      *
      * Register write path of the identity layer (HIL-164): a thin wrapper that hashes
-     * the plaintext with {@see PASSWORD_DEFAULT} and delegates to
+     * the plaintext through {@see ObjectIdentity::hashPassword()} and delegates to
      * {@see createPasswordIdentityWithHash()}, which owns the write. Existing callers
      * (registration, etc.) keep their contract — secret in, hashed and stored inside
      * the layer. A caller must lowercase the email before calling.
@@ -130,6 +130,7 @@ class Identities extends Objects
      * @param int $userId Owning user id
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $plainSecret Plaintext password to hash and store
+     * @param bool $verified Whether the address is already proven, written with the row (HIL-1405)
      * @return ObjectIdentity The created identity object
      * @throws EmptyValueException When identifier or secret is empty
      * @throws DuplicateValueException When the address is taken, or the account already has a password
@@ -138,17 +139,13 @@ class Identities extends Objects
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): ObjectIdentity
+    public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret, bool $verified = false): ObjectIdentity
     {
-        if ($plainSecret === '') {
-            throw new EmptyValueException('Identity identifier and secret are required');
-        }
-
-        return $this->createPasswordIdentityWithHash($userId, $identifier, password_hash($plainSecret, PASSWORD_DEFAULT));
+        return $this->createPasswordIdentityWithHash($userId, $identifier, ObjectIdentity::hashPassword($plainSecret), $verified);
     }
 
     /**
-     * Creates an unverified `password`-type identity from a precomputed hash.
+     * Creates a `password`-type identity from a precomputed hash.
      *
      * Bulk-seed write path ({@see UserTestSeedCommand}):
      * identical to {@see createPasswordIdentity()} except the caller supplies the
@@ -156,11 +153,13 @@ class Identities extends Objects
      * the bcrypt cost once and reuses the hash for all of them. Symmetric with the
      * verify/rehash primitives on {@see ObjectIdentity}: the row is first inserted
      * through the ORM (which carries the non-secret columns and assigns the id) and the
-     * hash is then written with a follow-up parameterized UPDATE, the same split the
-     * rehash primitive uses, so the secret never reaches the ORM columns, the
-     * object/view surface, or the cross-worker sync bus. `verified` stays false, exactly
-     * as after a real password registration. Uniqueness is per (type, identifier); a
-     * caller must lowercase the email before calling.
+     * hash is then written with a follow-up parameterized UPDATE, the same split
+     * {@see ObjectIdentity::setPasswordHash()} uses, so the secret never reaches the ORM
+     * columns, the object/view surface, or the cross-worker sync bus. `verified` is the
+     * caller's to name and rides in the insert: a registration or an add that has just
+     * proven the address passes true, and the row is born whole rather than corrected a
+     * moment later (HIL-1405). Uniqueness is per (type, identifier); a caller must
+     * lowercase the email before calling.
      *
      * THE place where "an account holds at most one password" is held (HIL-692). It is
      * one guard rather than three because every road that mints a password comes through
@@ -173,6 +172,7 @@ class Identities extends Objects
      * @param int $userId Owning user id
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $passwordHash Precomputed `password_hash()` value to store as the secret
+     * @param bool $verified Whether the address is already proven, written with the row (HIL-1405)
      * @return ObjectIdentity The created identity object
      * @throws EmptyValueException When identifier is empty
      * @throws DuplicateValueException When the address is taken, or the account already has a password
@@ -181,8 +181,12 @@ class Identities extends Objects
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): ObjectIdentity
-    {
+    public function createPasswordIdentityWithHash(
+        int $userId,
+        string $identifier,
+        string $passwordHash,
+        bool $verified = false,
+    ): ObjectIdentity {
         if ($identifier === '') {
             throw new EmptyValueException('Identity identifier is required');
         }
@@ -199,7 +203,7 @@ class Identities extends Objects
         $identity->userId = $userId;
         $identity->type = IdentityType::PASSWORD;
         $identity->identifier = $identifier;
-        $identity->verified = false;
+        $identity->verified = $verified;
         $identity->sync();
 
         $id = $identity->id;
@@ -207,7 +211,10 @@ class Identities extends Objects
             throw new DatabaseException('Identity insert did not assign an id');
         }
 
-        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, $identity->touchedSetKeys(...), TruthSourceOperation::Update);
+        // The secret of a row this call has just inserted is part of its birth, not an edit of
+        // it: the column is not ORM-mapped, so the insert cannot carry it. Judged as the creation
+        // it completes, so a writer that may only create passwords can still create one.
+        DbWriteGuard::guardItemWrite(static::COLLECTION_KEY, (string)$id, $identity->touchedSetKeys(...), TruthSourceOperation::Add);
 
         $params = SqlParamCollection::empty();
         $params->add(SqlParam::string($passwordHash));

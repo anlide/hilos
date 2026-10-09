@@ -41,12 +41,26 @@ use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
+use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use PHPUnit\Framework\TestCase;
@@ -450,7 +464,7 @@ abstract class IntegrationTestCase extends TestCase
 
     /**
      * Carries every edit of one person to that person's agent, and its answer back to the library
-     * that asked (HIL-1404).
+     * that asked (HIL-1404) - the edits of their ways in and passkeys included (HIL-1405).
      *
      * A library judges an edit and asks the person's agent to write it; the agent answers and the
      * library finishes - tells the tabs, ends the sessions, writes the feed line, answers whoever
@@ -476,10 +490,26 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserAdminWriteSignalData
                 || $frame instanceof UserAdminCommandSignalData
                 || $frame instanceof UserBlockWriteSignalData
+                || $frame instanceof UserPasswordRehashSignalData
+                || $frame instanceof UserAddressVerifySignalData
+                || $frame instanceof UserPasskeyUseSignalData
+                || $frame instanceof UserPasswordResetSignalData
+                || $frame instanceof UserPasswordChangeSignalData
+                || $frame instanceof UserEmailChangeSignalData
+                || $frame instanceof UserIdentityUnlinkSignalData
             ) {
                 $agent = $this->personAgent($frame->userId);
                 $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
-            } elseif ($frame instanceof UserRenameDoneSignalData) {
+            } elseif (
+                $frame instanceof UserRenameDoneSignalData
+                || $frame instanceof UserPasswordRehashDoneSignalData
+                || $frame instanceof UserAddressVerifyDoneSignalData
+                || $frame instanceof UserPasskeyUseDoneSignalData
+                || $frame instanceof UserPasswordResetDoneSignalData
+                || $frame instanceof UserPasswordChangeDoneSignalData
+                || $frame instanceof UserEmailChangeDoneSignalData
+                || $frame instanceof UserIdentityUnlinkDoneSignalData
+            ) {
                 $library = $this->usersLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
             } elseif (

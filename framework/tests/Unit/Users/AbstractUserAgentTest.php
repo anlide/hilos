@@ -25,9 +25,16 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
+use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -169,6 +176,13 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE => UserBlockWriteSignalData::class,
+            HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => UserPasswordRehashSignalData::class,
+            HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => UserAddressVerifySignalData::class,
+            HilosSignalConstants::HILOS_USER_PASSKEY_USE => UserPasskeyUseSignalData::class,
+            HilosSignalConstants::HILOS_USER_PASSWORD_RESET => UserPasswordResetSignalData::class,
+            HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE => UserPasswordChangeSignalData::class,
+            HilosSignalConstants::HILOS_USER_EMAIL_CHANGE => UserEmailChangeSignalData::class,
+            HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK => UserIdentityUnlinkSignalData::class,
         ], array_map(
             static fn (array $config): string => $config[AgentSignalConfigKey::DTO],
             TestUserAgent::AGENT_SIGNALS,

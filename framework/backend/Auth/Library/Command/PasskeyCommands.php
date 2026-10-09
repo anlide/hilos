@@ -46,6 +46,7 @@ use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\PasskeyCredential;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Random\RandomException;
 
 /**
@@ -482,12 +483,13 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * Verifies a WebAuthn assertion and signs the resolved user in (HIL-284).
      *
      * The login-confirm arm, public: it re-derives the challenge from the signed
-     * token, resolves the asserted credential by its id, verifies the assertion
-     * against the credential's stored key and advances the clone-detection counter
-     * ({@see PasskeyCredential::verifyAssertion()}), then asks the session holder to
-     * raise the live anonymous session to the credential's owner. Every failure —
-     * bad token, unknown credential, malformed payload, failed assertion — collapses
-     * to one generic message.
+     * token, resolves the asserted credential by its id and checks the assertion
+     * against the credential's stored key and counter ({@see PasskeyCredential::checkAssertion()}).
+     * The counter and the last use are the key owner's agent's to write (HIL-1405), and it
+     * holds the counter rule once more as it writes; on its answer the session holder is
+     * asked to raise the live anonymous session to the credential's owner
+     * ({@see finishLogin()}). Every failure — bad token, unknown credential, malformed
+     * payload, failed assertion, a refusal of the agent — collapses to one generic message.
      *
      * A discoverable-login assertion (HIL-400) additionally carries the WebAuthn
      * user handle; when present it is cross-checked against the credential owner as
@@ -503,9 +505,10 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * @param PasskeyLoginConfirmActionDTO $dto Parsed confirm payload (signed challenge, credential id,
      *     authenticator data, client data, signature, optional user handle)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid
-     * @throws InvalidArgumentException When the grant frame cannot be named or queued
-     * @throws HilosException When WebAuthn env config, credential or identity lookup, or counter persistence fails
+     * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid, or the owner
+     *     cannot be addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When WebAuthn env config, or the credential or identity lookup fails
      */
     public function loginConfirm(string $acceptKey, PasskeyLoginConfirmActionDTO $dto): void
     {
@@ -559,7 +562,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
         }
 
         try {
-            $credential->verifyAssertion(
+            $signCount = $credential->checkAssertion(
                 new AssertionVerifier($config),
                 $claims->challenge,
                 $clientDataJson,
@@ -570,7 +573,22 @@ final class PasskeyCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
 
-        $this->library->grantSession($acting, $credential->userId, provenBy: StepUpMethod::PASSKEY);
+        $this->askUse($acting, $credential, $signCount, null);
+    }
+
+    /**
+     * Signs the session in once the key owner's agent has recorded the use (HIL-1405).
+     *
+     * The continuation of {@see loginConfirm()} on the agent's answer; the session is read again
+     * off the connection, which may have gone in between.
+     *
+     * @param UserPasskeyUseSignalData $ask The ask the agent answered
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws InvalidArgumentException When the grant frame cannot be named or queued
+     */
+    public function finishLogin(UserPasskeyUseSignalData $ask): void
+    {
+        $this->library->grantSession($this->acting($ask->acceptKey), $ask->userId, provenBy: StepUpMethod::PASSKEY);
     }
 
     /**
@@ -607,14 +625,24 @@ final class PasskeyCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Verifies a device-key assertion for the acting person and advances its counter.
+     * Checks a device-key assertion for the confirming person and asks their agent to record the use.
      *
-     * @param ActingSession $acting Signed-in browser completing the proof
+     * The step-up half of a key's use (HIL-1405): everything up to the signature and the counter is
+     * checked here, as for a sign-in, and the counter and the last use are written by the agent of
+     * the person confirming - the acting person, or the administrator behind a takeover. The
+     * confirmation of the operation is recorded on the agent's answer
+     * ({@see StepUpCommands::finishPasskeyProof()}), so a key whose counter the agent refuses opens
+     * nothing.
+     *
+     * @param ActingSession $acting Browser completing the proof, and the person confirming
      * @param StepUpPasskeyAnswer $answer Browser assertion
-     * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid
-     * @throws HilosException When WebAuthn configuration, credential lookup, or counter persistence fails
+     * @param string $operation Protected operation the key confirms
+     * @throws ValidationException When the challenge, credential, user handle, payload, or assertion is invalid, or the person
+     *     cannot be addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When WebAuthn configuration or the credential lookup fails
      */
-    public function assertStepUp(ActingSession $acting, StepUpPasskeyAnswer $answer): void
+    public function askStepUpUse(ActingSession $acting, StepUpPasskeyAnswer $answer, string $operation): void
     {
         $config = WebAuthnConfig::fromEnv();
         try {
@@ -651,7 +679,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
         }
 
         try {
-            $credential->verifyAssertion(
+            $signCount = $credential->checkAssertion(
                 new AssertionVerifier($config),
                 $claims->challenge,
                 $clientDataJson,
@@ -661,6 +689,34 @@ final class PasskeyCommands extends AbstractLibraryCommands
         } catch (WebAuthnVerificationException) {
             throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
         }
+
+        $this->askUse($acting, $credential, $signCount, $operation);
+    }
+
+    /**
+     * Asks the key owner's agent to record a use of the key the library has just checked.
+     *
+     * @param ActingSession $acting Browser that used the key
+     * @param PasskeyCredential $credential Key whose assertion passed
+     * @param int $signCount Signature counter the authenticator reported
+     * @param ?string $operation Protected operation the key confirms, or null for a sign-in
+     * @throws ValidationException When the key's owner cannot be addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When the person or the merges cannot be read
+     */
+    private function askUse(ActingSession $acting, PasskeyCredential $credential, int $signCount, ?string $operation): void
+    {
+        $this->library->askPersonAgent($credential->userId, HilosSignalConstants::HILOS_USER_PASSKEY_USE, new UserPasskeyUseSignalData(
+            userId: $credential->userId,
+            passkeyId: (int)$credential->id,
+            signCount: $signCount,
+            operation: $operation,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
+            acceptKey: $acting->acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**

@@ -22,12 +22,12 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * PasskeyCredential object - wraps PasskeyCredential entity.
  *
- * Exposes the credential's fields and the two post-assertion write primitives:
- * {@see updateSignCount()} advances the stored signature counter after a
- * successful login (clone-detection), and {@see touchLastUsed()} stamps last use
- * for passkey management (HIL-404). {@see verifyAssertion()} drives the WebAuthn
- * assertion check against this credential's stored key/counter and, on success,
- * persists the advanced counter and last-used stamp.
+ * Exposes the credential's fields and a use of the key cut in two (HIL-1405):
+ * {@see checkAssertion()} runs the WebAuthn assertion check against the stored
+ * key and counter and writes nothing, and {@see recordUse()} - the write of the
+ * person's agent - holds the counter rule once more against the stored counter,
+ * then advances it ({@see updateSignCount()}, clone-detection) and stamps last
+ * use ({@see touchLastUsed()}, passkey management, HIL-404).
  *
  * @extends Object_<EntityPasskeyCredential>
  *
@@ -93,17 +93,21 @@ class PasskeyCredential extends Object_
     /**
      * Magic setter for entity properties.
      *
-     * `signCount` and `lastUsedAt` have no setter here; they are advanced only
-     * through {@see updateSignCount()} / {@see touchLastUsed()}, which write with a
-     * targeted UPDATE and mirror the value on the loaded entity.
+     * `signCount` is set only on a row not yet stored - the counter the insert carries
+     * (HIL-1405) - and `lastUsedAt` not at all: on a stored row both are advanced only
+     * through {@see recordUse()}, which writes with a targeted UPDATE and mirrors the
+     * value on the loaded entity.
      *
      * @param string $property Name of a settable property (see the class @property list)
      * @param mixed $value Value to set
-     * @throws DatabaseException When the property cannot be set on a PasskeyCredential
+     * @throws DatabaseException When the property cannot be set on a PasskeyCredential, or the counter of a stored row is set
      */
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
+            self::signCount => $this->entity->id === null
+                ? $this->entity->sign_count = (int)$value
+                : throw new DatabaseException('A stored passkey counter advances only through recordUse()'),
             self::identityId => $this->entity->identity_id = (int)$value,
             self::userId => $this->entity->user_id = (int)$value,
             self::credentialId => $this->entity->credential_id = (string)$value,
@@ -197,33 +201,32 @@ class PasskeyCredential extends Object_
     }
 
     /**
-     * Verifies a login assertion against this credential and records the successful use.
+     * Checks an assertion against this credential and answers the counter it reported.
      *
-     * Runs the WebAuthn assertion check with this credential's stored public key,
-     * enrolled algorithm and signature counter; on success it advances the stored
-     * counter to the value the authenticator reported (clone-detection baseline)
-     * and stamps last use. Any verification failure throws before either write,
-     * leaving the credential untouched.
+     * The library's half of a use of the key (HIL-1405): the WebAuthn assertion check runs
+     * with this credential's stored public key, enrolled algorithm and signature counter, and
+     * nothing is written - the counter and the last-used stamp are the person's agent's to write,
+     * through {@see recordUse()}, which holds the counter rule again because the hop between the
+     * two lets a second assertion pass this check before the first is written.
      *
      * @param AssertionVerifier $verifier Configured assertion verifier
      * @param string $expectedChallenge base64url challenge recovered from the signed token
      * @param string $clientDataJson Raw clientDataJSON bytes returned by the client
      * @param string $authenticatorData Raw authenticatorData bytes returned by the client
      * @param string $signature Raw signature bytes returned by the client
+     * @return int The authenticator's new signature counter
      * @throws WebAuthnVerificationException When the assertion fails any client-data, signature or counter check
-     * @throws DatabaseException When persisting the advanced counter or last-used stamp fails
-     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function verifyAssertion(
+    public function checkAssertion(
         AssertionVerifier $verifier,
         string $expectedChallenge,
         string $clientDataJson,
         string $authenticatorData,
         string $signature,
-    ): void {
+    ): int {
         // The column is written only from a PasskeyAlgorithm case, so `from()` cannot
         // miss on a row this framework wrote; a miss would be a corrupted table.
-        $newSignCount = $verifier->verify(
+        return $verifier->verify(
             $this->entity->public_key,
             PasskeyAlgorithm::from($this->entity->algorithm),
             $this->entity->sign_count,
@@ -232,8 +235,32 @@ class PasskeyCredential extends Object_
             $authenticatorData,
             $signature,
         );
+    }
 
-        $this->updateSignCount($newSignCount);
+    /**
+     * Records a use of the key: the counter it reported, and the time (HIL-1405).
+     *
+     * The write of the person's agent, after the library's {@see checkAssertion()}. The counter
+     * rule is asked once more, against the counter stored now rather than the one the library
+     * read: two assertions of a cloned key could both pass that check before either is written,
+     * and the agent, as the one writer of the person's keys taking its frames one at a time,
+     * is where the second one is caught. The stored counter is read with a targeted query, since
+     * a counter written by another process never reaches a copy of the row loaded here. An
+     * unchanged counter - the 0/0 pair of a key that never counts - is not written again.
+     *
+     * @param int $signCount Signature counter the authenticator reported
+     * @throws WebAuthnVerificationException When the counter did not advance past the stored one (possible clone)
+     * @throws DatabaseException When the counter lookup, the counter update or the last-used update fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     */
+    public function recordUse(int $signCount): void
+    {
+        $storedSignCount = $this->storedSignCount();
+        AssertionVerifier::assertCounterAdvances($storedSignCount, $signCount);
+        if ($signCount !== $storedSignCount) {
+            $this->updateSignCount($signCount);
+        }
+
         $this->touchLastUsed();
     }
 
@@ -256,5 +283,29 @@ class PasskeyCredential extends Object_
             self::label => $this->entity->label,
             self::lastUsedAt => $this->entity->last_used_at,
         ];
+    }
+
+    /**
+     * @return int Signature counter stored for this credential now, or the loaded one for an unpersisted row
+     * @throws DatabaseException When the counter lookup query fails
+     */
+    private function storedSignCount(): int
+    {
+        if ($this->entity->id === null) {
+            return $this->entity->sign_count;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        $stored = Database::sql(
+            'SELECT `' . EntityPasskeyCredential::sign_count . '` FROM `' . EntityPasskeyCredential::_table
+                . '` WHERE `' . EntityPasskeyCredential::id . '` = ?',
+            $params,
+        )->first()?->first()[EntityPasskeyCredential::sign_count] ?? null;
+        if ($stored === null) {
+            throw new DatabaseException("Passkey credential {$this->entity->id} is not stored");
+        }
+
+        return (int)$stored;
     }
 }

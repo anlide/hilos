@@ -449,7 +449,7 @@ final class RegistrationReservationService
      * @throws DuplicateValueException When the identifier gained an identity of that type meanwhile
      * @throws EmptyValueException When the reservation holds an empty identifier
      * @throws DatabaseException When an identity or reservation query fails
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the identity's store or update announcement raises
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the identity's store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write the identity row
      * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
      */
@@ -461,7 +461,7 @@ final class RegistrationReservationService
     ): void {
         $identifier = $reservation->identifier;
         if ($plainPassword !== null) {
-            $this->identities()->createPasswordIdentity($userId, $identifier, $plainPassword)->markVerified();
+            $this->identities()->createPasswordIdentity($userId, $identifier, $plainPassword, verified: true);
 
             return;
         }

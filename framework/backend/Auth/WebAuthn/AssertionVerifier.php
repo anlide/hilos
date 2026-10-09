@@ -36,6 +36,28 @@ final class AssertionVerifier
     }
 
     /**
+     * Enforces the WebAuthn signature-counter rule to detect a cloned authenticator.
+     *
+     * When either the stored or the presented counter is non-zero, the presented
+     * counter must be strictly greater than the stored one; a 0/0 pair is accepted
+     * (authenticators that never increment, e.g. synced passkeys).
+     *
+     * Public and static so the one rule serves both halves of a use that a hop cuts in two
+     * (HIL-1405): the check of {@see verify()}, and the write of the person's agent, which asks
+     * it again against the counter it is about to replace.
+     *
+     * @param int $storedSignCount Last persisted signature counter
+     * @param int $presentedSignCount Counter reported in this assertion
+     * @throws WebAuthnVerificationException When the counter did not advance (possible clone)
+     */
+    public static function assertCounterAdvances(int $storedSignCount, int $presentedSignCount): void
+    {
+        if (($storedSignCount !== 0 || $presentedSignCount !== 0) && $presentedSignCount <= $storedSignCount) {
+            throw new WebAuthnVerificationException('Signature counter did not advance (possible cloned authenticator)');
+        }
+    }
+
+    /**
      * Verifies an assertion and returns the new signature counter to persist.
      *
      * @param string $publicKeyPem Stored PEM credential public key
@@ -74,7 +96,7 @@ final class AssertionVerifier
         }
 
         $this->verifySignature($publicKeyPem, $algorithm, $authenticatorData, $clientDataJson, $signature);
-        $this->assertCounterAdvances($storedSignCount, $authData->signCount);
+        self::assertCounterAdvances($storedSignCount, $authData->signCount);
 
         return $authData->signCount;
     }
@@ -120,24 +142,6 @@ final class AssertionVerifier
         $result = openssl_verify($signedData, $signature, $publicKey, OPENSSL_ALGO_SHA256);
         if ($result !== self::OPENSSL_VERIFY_SUCCESS) {
             throw new WebAuthnVerificationException('Assertion signature is invalid');
-        }
-    }
-
-    /**
-     * Enforces the WebAuthn signature-counter rule to detect a cloned authenticator.
-     *
-     * When either the stored or the presented counter is non-zero, the presented
-     * counter must be strictly greater than the stored one; a 0/0 pair is accepted
-     * (authenticators that never increment, e.g. synced passkeys).
-     *
-     * @param int $storedSignCount Last persisted signature counter
-     * @param int $presentedSignCount Counter reported in this assertion
-     * @throws WebAuthnVerificationException When the counter did not advance (possible clone)
-     */
-    private function assertCounterAdvances(int $storedSignCount, int $presentedSignCount): void
-    {
-        if (($storedSignCount !== 0 || $presentedSignCount !== 0) && $presentedSignCount <= $storedSignCount) {
-            throw new WebAuthnVerificationException('Signature counter did not advance (possible cloned authenticator)');
         }
     }
 }

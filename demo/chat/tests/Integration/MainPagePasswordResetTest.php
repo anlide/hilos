@@ -951,7 +951,7 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
     }
 
     /**
-     * Runs one sign-in action the way two workers run it: the library, then the holder.
+     * Runs one sign-in action the way the workers run it: the library, the person's agent, then the holder.
      *
      * The current agent id is what the truth-source registry judges a write by, and in a
      * node it is set per callback by the worker ({@see WorkerManager}). Setting it here
@@ -987,6 +987,9 @@ final class MainPagePasswordResetTest extends IntegrationTestCase
         }
 
         try {
+            // A new password is written by the person's agent, and the library hands its ending
+            // to the holder only on that agent's answer (HIL-1405).
+            $this->deliverPersonAgentFrames();
             $handedOver = $this->deliverLibraryFrames($agent);
         } finally {
             ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);

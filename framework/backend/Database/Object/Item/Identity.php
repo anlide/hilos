@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
@@ -75,7 +76,8 @@ class Identity extends Object_
      * Magic setter for entity properties.
      *
      * The `secret` hash has no setter here; it is written only through the
-     * identity layer's write path in the consuming leaves (register / rehash).
+     * identity layer's write paths - the creation, {@see setPasswordHash()} and
+     * {@see clearPassword()}.
      *
      * @param string $property Property name (userId, type, identifier, provider, verified)
      * @param mixed $value Value to set
@@ -107,101 +109,51 @@ class Identity extends Object_
      */
     public function verifyPassword(string $plainPassword): bool
     {
-        if ($this->entity->id === null || $plainPassword === '') {
+        if ($plainPassword === '') {
             return false;
         }
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($this->entity->id));
-        $resultSet = Database::sql(
-            'SELECT `' . EntityIdentity::secret . '` FROM `' . EntityIdentity::_table . '` WHERE `' . EntityIdentity::id . '` = ?',
-            $params,
-        )->first();
-        if ($resultSet === null) {
-            return false;
-        }
+        $secret = $this->storedSecret();
 
-        $row = $resultSet->first();
-        if ($row === null) {
-            return false;
-        }
-        $secret = $row[EntityIdentity::secret] ?? null;
-
-        return is_string($secret) && $secret !== '' && password_verify($plainPassword, $secret);
+        return $secret !== null && password_verify($plainPassword, $secret);
     }
 
     /**
-     * Re-hashes the stored password when the current hash is outdated.
+     * Tells whether the stored hash was written under parameters that are no longer current.
      *
-     * Rehash-on-login primitive of the identity layer (HIL-162): after the
-     * plaintext has verified, the hash is read and, when
-     * {@see password_needs_rehash()} reports an algorithm/cost drift, rewritten
-     * with a targeted query so the hash never leaves the layer. A no-op for an
-     * unpersisted identity, one with no secret, or a hash already at the current
-     * parameters.
+     * The read half of rehash-on-login (HIL-162): after the password has verified, the sign-in
+     * asks this, and only a yes sends the fresh hash to the agent of the person, who writes it
+     * through {@see setPasswordHash()} (HIL-1405). The hash is read with the targeted query
+     * {@see verifyPassword()} uses and never leaves the layer. False for an unpersisted identity
+     * and for one with no secret.
      *
-     * @param string $plainPassword Plaintext secret that just verified against the stored hash
-     * @throws DatabaseException When the secret lookup or update query fails
-     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @return bool True when {@see password_needs_rehash()} reports an algorithm or cost drift
+     * @throws DatabaseException When the secret lookup query fails
      */
-    public function rehashPasswordIfNeeded(string $plainPassword): void
+    public function passwordNeedsRehash(): bool
     {
-        if ($this->entity->id === null || $plainPassword === '') {
-            return;
-        }
+        $secret = $this->storedSecret();
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($this->entity->id));
-        $resultSet = Database::sql(
-            'SELECT `' . EntityIdentity::secret . '` FROM `' . EntityIdentity::_table . '` WHERE `' . EntityIdentity::id . '` = ?',
-            $params,
-        )->first();
-        if ($resultSet === null) {
-            return;
-        }
-
-        $row = $resultSet->first();
-        if ($row === null) {
-            return;
-        }
-        $secret = $row[EntityIdentity::secret] ?? null;
-        if (!is_string($secret) || $secret === '' || !password_needs_rehash($secret, PASSWORD_DEFAULT)) {
-            return;
-        }
-
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
-        );
-
-        $updateParams = SqlParamCollection::empty();
-        $updateParams->add(SqlParam::string(password_hash($plainPassword, PASSWORD_DEFAULT)));
-        $updateParams->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
-            $updateParams,
-        );
+        return $secret !== null && password_needs_rehash($secret, PASSWORD_DEFAULT);
     }
 
     /**
-     * Sets a new password on this identity, hashing the plaintext at rest.
+     * Stores a password hash minted elsewhere as this identity's secret (HIL-1405).
      *
-     * Secret-update write path of the identity layer, opened by the password-reset
-     * leaf (HIL-365): the new plaintext is hashed here and written with a targeted
-     * UPDATE, the same split {@see rehashPasswordIfNeeded()} uses, so the hash is
-     * minted and stored entirely inside the layer and never reaches the ORM
-     * columns, the object/view surface, or the cross-worker sync bus. A no-op for
-     * an unpersisted identity or an empty plaintext.
+     * Secret-update write path of the identity layer, the write the person's agent runs for a
+     * rehash on sign-in, a recovery and a change in the profile. The hash is minted by
+     * {@see hashPassword()} where the password arrived, so the password itself never travels to
+     * the writer; the hash is written with a targeted UPDATE and so stays out of the ORM columns,
+     * the object/view surface and the cross-worker sync bus. A no-op for an unpersisted identity
+     * or an empty hash.
      *
-     * @param string $plainPassword New plaintext password to hash and store
+     * @param string $passwordHash `password_hash()` value to store as the secret
      * @throws DatabaseException When the secret update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function setPassword(string $plainPassword): void
+    public function setPasswordHash(string $passwordHash): void
     {
-        if ($this->entity->id === null || $plainPassword === '') {
+        if ($this->entity->id === null || $passwordHash === '') {
             return;
         }
 
@@ -213,7 +165,7 @@ class Identity extends Object_
         );
 
         $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string(password_hash($plainPassword, PASSWORD_DEFAULT)));
+        $params->add(SqlParam::string($passwordHash));
         $params->add(SqlParam::int($this->entity->id));
         Database::sql(
             'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
@@ -227,7 +179,7 @@ class Identity extends Object_
      * The demotion half of an account merge: a password that did not survive stops being
      * a credential, while the address it carries stays the person's. Deleting the row
      * instead would take away their way in through that address altogether. Written with
-     * the same targeted UPDATE {@see setPassword()} uses, so the secret column stays out
+     * the same targeted UPDATE {@see setPasswordHash()} uses, so the secret column stays out
      * of the ORM columns, the object/view surface, and the cross-worker sync bus - here
      * the split matters in the other direction, since the erase must reach the column
      * that no sync carries. A no-op for an unpersisted identity.
@@ -298,6 +250,26 @@ class Identity extends Object_
     }
 
     /**
+     * Hashes a password for storage, with the parameters the layer stores every password under.
+     *
+     * The one place a password becomes its hash (HIL-1405): the creation paths and the process
+     * that received a new password from a browser call it, and only the hash travels on - to the
+     * insert, or in a frame to the person's agent, which writes it with {@see setPasswordHash()}.
+     *
+     * @param string $plainPassword Plaintext password
+     * @return string `password_hash()` value of the password
+     * @throws EmptyValueException When the password is empty
+     */
+    public static function hashPassword(string $plainPassword): string
+    {
+        if ($plainPassword === '') {
+            throw new EmptyValueException('Password is required');
+        }
+
+        return password_hash($plainPassword, PASSWORD_DEFAULT);
+    }
+
+    /**
      * Converts identity to associative array (never includes the secret).
      *
      * @return array<string, mixed> Identity data (id, userId, type, identifier, provider, verified)
@@ -312,5 +284,27 @@ class Identity extends Object_
             self::provider => $this->entity->provider,
             self::verified => $this->entity->verified,
         ];
+    }
+
+    /**
+     * Reads the stored hash with a targeted query; it is not ORM-mapped.
+     *
+     * @return ?string The hash, or null for an unpersisted identity or one with no secret
+     * @throws DatabaseException When the secret lookup query fails
+     */
+    private function storedSecret(): ?string
+    {
+        if ($this->entity->id === null) {
+            return null;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        $secret = Database::sql(
+            'SELECT `' . EntityIdentity::secret . '` FROM `' . EntityIdentity::_table . '` WHERE `' . EntityIdentity::id . '` = ?',
+            $params,
+        )->first()?->first()[EntityIdentity::secret] ?? null;
+
+        return is_string($secret) && $secret !== '' ? $secret : null;
     }
 }

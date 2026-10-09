@@ -20,6 +20,7 @@ use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationConsent;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -32,6 +33,7 @@ use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Random\RandomException;
 
 /**
@@ -66,16 +68,19 @@ final class PasswordCommands extends AbstractLibraryCommands
      * The three sentences are unchanged; what moved is what each is computed from.
      *
      * The hash is re-computed when the cost parameters have moved on, which is the one
-     * write a successful login does here. Everything else about becoming that user - the
-     * rotated token, the re-pointed sockets, the answer to this action - belongs to the
-     * session holder and leaves in the grant frame.
+     * write a successful login asks for - and it is not written here: the person's agent
+     * writes it (HIL-1405), handed the new hash rather than the password, and the sign-in
+     * goes on when it answers ({@see finishLogin()}). A hash already current - nearly every
+     * login - wakes no agent. Everything else about becoming that user - the rotated token,
+     * the re-pointed sockets, the answer to this action - belongs to the session holder and
+     * leaves in the grant frame.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param LoginActionDTO $dto Parsed login payload (email, password)
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the address, the account or the password refuses
-     * @throws InvalidArgumentException When the grant frame cannot be named or queued
-     * @throws HilosException When the identity lookup or the rehash fails
+     * @throws ValidationException When the address, the account or the password refuses, or the person cannot be addressed
+     * @throws InvalidArgumentException When the grant or the ask frame cannot be named or queued
+     * @throws HilosException When the identity lookup fails
      */
     public function login(string $acceptKey, LoginActionDTO $dto): void
     {
@@ -99,9 +104,37 @@ final class PasswordCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::WRONG_PASSWORD);
         }
 
-        $identity->rehashPasswordIfNeeded($dto->password);
+        if ($identity->passwordNeedsRehash()) {
+            $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_PASSWORD_REHASH, new UserPasswordRehashSignalData(
+                userId: $userId,
+                identityId: (int)$identity->id,
+                passwordHash: Hilos::$db->identities->hashPassword($dto->password),
+                replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ));
+
+            return;
+        }
 
         $this->library->grantSession($acting, $userId, provenBy: StepUpMethod::PASSWORD);
+    }
+
+    /**
+     * Signs the session in once the person's agent has stored the fresh hash (HIL-1405).
+     *
+     * The continuation of {@see login()} on the agent's answer; the session is read again off
+     * the connection, which may have gone in between.
+     *
+     * @param UserPasswordRehashSignalData $ask The ask the agent answered
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws InvalidArgumentException When the grant frame cannot be named or queued
+     */
+    public function finishLogin(UserPasswordRehashSignalData $ask): void
+    {
+        $this->library->grantSession($this->acting($ask->acceptKey), $ask->userId, provenBy: StepUpMethod::PASSWORD);
     }
 
     /**

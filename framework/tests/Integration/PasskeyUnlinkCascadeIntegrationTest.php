@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
-use Hilos\Auth\Library\Command\IdentityCommands;
+use Hilos\Auth\Library\DTO\ProfileUnlinkIdentityActionDTO;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -21,6 +23,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -43,9 +46,15 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTestCase
 {
-    /** @var list<string> Framework tables this case needs, each after the table its foreign key names */
+    use PersonAgentFrames;
+
+    /**
+     * @var list<string> Framework tables this case needs, each after the table its foreign key names;
+     *     the merges are what the person's agent asks before it writes
+     */
     private const array TABLES = [
         'hilos_user',
+        'hilos_user_merge',
         'hilos_identity',
         'hilos_passkey_credential',
     ];
@@ -96,6 +105,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = $this->previousSignalRouter;
         Hilos::$db = $this->previousDb;
@@ -186,7 +196,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
         $identityId = $this->seedPasskey($userId);
         $this->connect($userId);
 
-        $this->unlinkCommands()->unlink(self::ACCEPT_KEY, $identityId);
+        $this->unlink($identityId);
 
         self::assertNull($this->storedCredentialId($identityId));
         self::assertCount(1, $this->identities()->listByUser($userId));
@@ -205,7 +215,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
         $passkeyId = $this->seedPasskey($userId);
         $this->connect($userId);
 
-        $this->unlinkCommands()->unlink(self::ACCEPT_KEY, $passwordId);
+        $this->unlink($passwordId);
 
         self::assertNotNull($this->storedCredentialId($passkeyId));
         self::assertCount(1, $this->identities()->listByUser($userId));
@@ -223,7 +233,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
         $this->connect($userId);
 
         try {
-            $this->unlinkCommands()->unlink(self::ACCEPT_KEY, $identityId);
+            $this->unlink($identityId);
             self::fail('unlinking the only sign-in method should have been refused');
         } catch (ValidationException) {
             self::assertNotNull($this->storedCredentialId($identityId));
@@ -234,9 +244,10 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
     /**
      * Naming somebody else's passkey costs that account nothing.
      *
-     * The refusal belongs to the primitive and arrives after the cascade would have run,
-     * so the cascade asks whose identity this is first; without that, an id anyone can
-     * guess would delete a stranger's credential and refuse afterwards.
+     * The library refuses it before anything is asked of the person's agent (HIL-1405); the
+     * primitive refuses it again, but only after the cascade would have run, so the question
+     * whose identity this is comes first - without it, an id anyone can guess would delete a
+     * stranger's credential and refuse afterwards.
      *
      * @throws HilosException When an identity or credential query or write fails
      */
@@ -251,7 +262,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
         $this->connect($userId);
 
         try {
-            $this->unlinkCommands()->unlink(self::ACCEPT_KEY, $strangerPasskey);
+            $this->unlink($strangerPasskey);
             self::fail('unlinking a foreign identity should have been refused');
         } catch (ValidationException) {
             self::assertNotNull($this->storedCredentialId($strangerPasskey));
@@ -317,11 +328,33 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
     }
 
     /**
-     * @return IdentityCommands The unlink door, on a library that answers for nothing else
+     * Submits the profile's unlink as the acting browser, and carries the person's agent's frames.
+     *
+     * The library judges the unlink and asks the person's agent to remove the rows (HIL-1405); the
+     * ask is handed to that agent, raised under its own claims, and its answer back to the library.
+     *
+     * @param int $identityId Identity id to unlink
+     * @throws HilosException When the library refuses the unlink, or a frame handler fails
      */
-    private function unlinkCommands(): IdentityCommands
+    private function unlink(int $identityId): void
     {
-        return new IdentityCommands(new PasskeyUnlinkTestLibrary());
+        $library = new PasskeyUnlinkTestLibrary();
+        $library->onAgentAction(
+            self::ACCEPT_KEY,
+            HilosSignalConstants::PROFILE_UNLINK_IDENTITY,
+            new ProfileUnlinkIdentityActionDTO($identityId),
+        );
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if ($name === HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK) {
+                $this->deliverToPerson($signal);
+            } elseif ($name === HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertInstanceOf(UserIdentityUnlinkDoneSignalData::class, $signal->data->data);
+                self::assertNull($signal->data->data->error, 'The person\'s agent removes the rows');
+                $library->onSignalAgent($signal->data, '', $name);
+            }
+        }
     }
 
     /**

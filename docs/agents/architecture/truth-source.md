@@ -345,9 +345,9 @@ the path is better and walking is allowed by default; forbidding the walk for a
 direct column to the root was weighed and not chosen.
 
 **A claim over a set may be borrowed.** The rows of a set are often brought into
-being by somebody else: the agent of one person would edit that person's sign-in
-methods while the users library goes on adding them, as it does today
-(`AbstractUsersLibraryAgent::OWNS_DB` holds `identities` with every operation).
+being by somebody else: the agent of one person edits that person's sign-in
+methods while the users library goes on adding them
+(`AbstractUsersLibraryAgent::OWNS_DB` holds `identities` with `Add` alone, HIL-1405).
 Such a claim carries no `Add`, and the test that exists already calls it
 borrowed — `OwnershipDeclaration::isBorrowedClaim()` reads the absence of `Add`
 off the folded operations and asks nothing about the width — so its holder waits

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
@@ -141,6 +142,34 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Remove));
         $this->assertTrue($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Update));
         $this->assertFalse($claims[HilosDbContext::userRenames]->allows(TruthSourceOperation::Add));
+    }
+
+    /**
+     * The library only creates a way in or a passkey: every later edit is the person's agent's (HIL-1405).
+     *
+     * Read off the class the way a start reads it. The codes and the holds of a registration stay
+     * the library's whole until HIL-1411 moves them.
+     */
+    public function testLibraryAgentOnlyCreatesWaysInAndPasskeys(): void
+    {
+        $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestLibrary::class);
+
+        foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials] as $collection) {
+            $this->assertTrue($claims[$collection]->allows(TruthSourceOperation::Add), $collection);
+            $this->assertFalse($claims[$collection]->allows(TruthSourceOperation::Update), $collection);
+            $this->assertFalse($claims[$collection]->allows(TruthSourceOperation::Remove), $collection);
+        }
+        $this->assertTrue($claims[HilosDbContext::verifications]->allows(TruthSourceOperation::Update));
+    }
+
+    /** The OAuth agent links a provider account and edits none it linked before (HIL-1405). */
+    public function testOAuthAgentOnlyCreatesALink(): void
+    {
+        $claims = OwnershipDeclaration::dbCollectionsOf(AbstractOAuthAgent::class);
+
+        $this->assertTrue($claims[HilosDbContext::identities]->allows(TruthSourceOperation::Add));
+        $this->assertFalse($claims[HilosDbContext::identities]->allows(TruthSourceOperation::Update));
+        $this->assertFalse($claims[HilosDbContext::identities]->allows(TruthSourceOperation::Remove));
     }
 
     /**

@@ -6,6 +6,8 @@ namespace Hilos\Users\Agent;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\AuthMessages;
+use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
@@ -16,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
@@ -29,17 +32,34 @@ use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\User;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
+use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\WiringRefusal;
@@ -48,12 +68,16 @@ use Throwable;
 /**
  * Agent for one person. Its claims name the person's row and child sets; it keeps no copy of them.
  *
- * It writes the ordinary edits of the person's row - the name, the admin flag, the block (HIL-1404).
- * Each comes as a frame from the coordinator that judged it: the name from
+ * It writes the ordinary edits of the person's row - the name, the admin flag, the block (HIL-1404) -
+ * and every edit of the person's ways of signing in and passkeys, sign-in included (HIL-1405): a
+ * fresh password hash, a password verified by a letter, a passkey's counter and last use, a new
+ * password from recovery or from the profile, an address moved, a method unlinked. Each comes as a
+ * frame from the coordinator that judged it: the name and the ways in from
  * {@see AbstractUsersLibraryAgent}, the two flags from {@see AbstractSessionsLibraryAgent}. The
  * agent writes and always answers - a refusal included, because the coordinator continues only on
  * the answer and something is waiting on it - and the coordinator does what follows the write.
- * When the person is erased, or folded into someone else, the agent stops itself.
+ * Creating a way in stays with the libraries that create it. When the person is erased, or folded
+ * into someone else, the agent stops itself.
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -80,6 +104,34 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserBlockWriteSignalData::userId,
             AgentSignalConfigKey::DTO => UserBlockWriteSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPasswordRehashSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPasswordRehashSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => [
+            AgentSignalConfigKey::INDEX_FIELD => UserAddressVerifySignalData::userId,
+            AgentSignalConfigKey::DTO => UserAddressVerifySignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PASSKEY_USE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPasskeyUseSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPasskeyUseSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PASSWORD_RESET => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPasswordResetSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPasswordResetSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPasswordChangeSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPasswordChangeSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_EMAIL_CHANGE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserEmailChangeSignalData::userId,
+            AgentSignalConfigKey::DTO => UserEmailChangeSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK => [
+            AgentSignalConfigKey::INDEX_FIELD => UserIdentityUnlinkSignalData::userId,
+            AgentSignalConfigKey::DTO => UserIdentityUnlinkSignalData::class,
+        ],
     ];
 
     /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
@@ -90,6 +142,8 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * @var array<string, list<TruthSourceOperation>> The person's borrowed child sets, and the rename
      *     journal of the person, which the agent adds a row to in the transaction that writes the name.
+     *     The ways of signing in and the passkeys are written here since HIL-1405; their creation is
+     *     the libraries'.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -242,6 +296,104 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_PASSWORD_REHASH:
+                $rehash = $data->data;
+                if (!$rehash instanceof UserPasswordRehashSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPasswordRehashSignalData::class, $rehash);
+                }
+
+                $this->refuseAnotherPerson($rehash->userId, $name);
+                $this->sendToAgent($rehash->replySignal, UserPasswordRehashDoneSignalData::to(
+                    $rehash,
+                    $this->flagRefusal(fn () => $this->writePasswordHash($rehash->identityId, $rehash->passwordHash), 'Password rehash'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY:
+                $addressVerify = $data->data;
+                if (!$addressVerify instanceof UserAddressVerifySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAddressVerifySignalData::class, $addressVerify);
+                }
+
+                $this->refuseAnotherPerson($addressVerify->userId, $name);
+                $this->sendToAgent($addressVerify->replySignal, UserAddressVerifyDoneSignalData::to(
+                    $addressVerify,
+                    $this->flagRefusal(fn () => $this->markAddressVerified($addressVerify->identityId), 'Address verification'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSKEY_USE:
+                $passkeyUse = $data->data;
+                if (!$passkeyUse instanceof UserPasskeyUseSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPasskeyUseSignalData::class, $passkeyUse);
+                }
+
+                $this->refuseAnotherPerson($passkeyUse->userId, $name);
+                $this->sendToAgent($passkeyUse->replySignal, UserPasskeyUseDoneSignalData::to(
+                    $passkeyUse,
+                    $this->flagRefusal(fn () => $this->recordPasskeyUse($passkeyUse->passkeyId, $passkeyUse->signCount), 'Passkey use'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSWORD_RESET:
+                $reset = $data->data;
+                if (!$reset instanceof UserPasswordResetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPasswordResetSignalData::class, $reset);
+                }
+
+                $this->refuseAnotherPerson($reset->userId, $name);
+                $this->sendToAgent($reset->replySignal, UserPasswordResetDoneSignalData::to(
+                    $reset,
+                    $this->flagRefusal(fn () => $this->writePasswordHash($reset->identityId, $reset->passwordHash), 'Password recovery'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE:
+                $change = $data->data;
+                if (!$change instanceof UserPasswordChangeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPasswordChangeSignalData::class, $change);
+                }
+
+                $this->refuseAnotherPerson($change->userId, $name);
+                $this->sendToAgent($change->replySignal, UserPasswordChangeDoneSignalData::to(
+                    $change,
+                    $this->flagRefusal(fn () => $this->writePasswordHash($change->identityId, $change->passwordHash), 'Password change'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_EMAIL_CHANGE:
+                $emailChange = $data->data;
+                if (!$emailChange instanceof UserEmailChangeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserEmailChangeSignalData::class, $emailChange);
+                }
+
+                $this->refuseAnotherPerson($emailChange->userId, $name);
+                $this->sendToAgent($emailChange->replySignal, UserEmailChangeDoneSignalData::to(
+                    $emailChange,
+                    $this->flagRefusal(fn () => $this->moveEmail($emailChange->from, $emailChange->to), 'Email change'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK:
+                $unlink = $data->data;
+                if (!$unlink instanceof UserIdentityUnlinkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserIdentityUnlinkSignalData::class, $unlink);
+                }
+
+                $this->refuseAnotherPerson($unlink->userId, $name);
+                $this->sendToAgent($unlink->replySignal, UserIdentityUnlinkDoneSignalData::to(
+                    $unlink,
+                    $this->flagRefusal(fn () => $this->unlinkIdentity($unlink->identityId), 'Sign-in method unlink'),
+                ));
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -373,6 +525,157 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Stores a password hash on the person's password row (HIL-1405).
+     *
+     * One write for three asks - a rehash on sign-in, a recovery, a change in the profile - because
+     * the write is the same and only what the users library does after it differs. The hash was
+     * minted where the password arrived; the password itself never reaches this agent. The row is
+     * the one the library checked, named by id: one that is gone, is not a password, or is not this
+     * person's is refused rather than written somewhere else. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param int $identityId Password row to write
+     * @param string $passwordHash `password_hash()` value to store
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one, or the row is not this person's password
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the row cannot be loaded, or the secret cannot be written
+     * @throws HilosException On database or truth-source failure while reading or writing the row
+     */
+    protected function writePasswordHash(int $identityId, string $passwordHash): void
+    {
+        $this->personToWrite();
+        $password = Hilos::$db->identities[$identityId];
+        if ($password === null || $password->userId !== $this->userId || $password->type !== IdentityType::PASSWORD) {
+            throw new ValidationException(AuthMessages::NO_PASSWORD);
+        }
+
+        $password->setPasswordHash($passwordHash);
+    }
+
+    /**
+     * Marks the person's password on an address a letter just proved as verified (HIL-1405).
+     *
+     * A row that is gone writes nothing and is not a refusal: the sign-in by letter goes on all the
+     * same, and there is no password left to mark. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param int $identityId Password row on the proven address
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the sync signal cannot be named
+     * @throws DatabaseException When the person, the merges or the row cannot be loaded, or the flag cannot be written
+     * @throws HilosException On database or truth-source failure while reading or writing the row
+     */
+    protected function markAddressVerified(int $identityId): void
+    {
+        $this->personToWrite();
+        Hilos::$db->identities[$identityId]?->markVerified();
+    }
+
+    /**
+     * Records a use of one of the person's passkeys - its counter and the time (HIL-1405).
+     *
+     * The library checked the signature and the counter before the hop; the counter rule is held
+     * again here, against the counter stored now, because this agent is the one writer of the
+     * person's keys and takes its frames one at a time - a second assertion of a cloned key that
+     * passed the library's check alongside the first is refused here. A key that is gone or is not
+     * this person's is refused in the words every failed passkey sign-in reads. Not final, for the
+     * reason {@see self::renamePerson()} gives.
+     *
+     * @param int $passkeyId Row of the key
+     * @param int $signCount Signature counter the authenticator reported
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one, or the key is not this person's
+     * @throws WebAuthnVerificationException When the counter did not advance past the stored one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the key cannot be loaded, or the use cannot be written
+     * @throws HilosException On database or truth-source failure while reading or writing the key
+     */
+    protected function recordPasskeyUse(int $passkeyId, int $signCount): void
+    {
+        $this->personToWrite();
+        foreach (Hilos::$db->passkeyCredentials->listByUser($this->userId) as $credential) {
+            if ($credential->id === $passkeyId) {
+                $credential->recordUse($signCount);
+
+                return;
+            }
+        }
+
+        throw new ValidationException(AuthMessages::INVALID_PASSKEY);
+    }
+
+    /**
+     * Moves every password and sign-in-link row of the person from one address to another (HIL-1405).
+     *
+     * One transaction, so a move refused halfway leaves every row where it was. An address another
+     * account took between the library's check and this write lands on the unique key, and is
+     * refused in the words the profile has always shown. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param string $from Lowercased address the account holds now
+     * @param string $to Lowercased address it moves to
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one, or another account holds the address
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the rows cannot be loaded
+     * @throws HilosException When the rows or the transaction cannot be written
+     */
+    protected function moveEmail(string $from, string $to): void
+    {
+        $this->personToWrite();
+        Database::transactionStart();
+        try {
+            Hilos::$db->identities->changeEmail($this->userId, $from, $to);
+            Database::transactionCommit();
+        } catch (DuplicateValueException | DuplicateEntryException) {
+            $this->rollBack();
+
+            throw new ValidationException(AuthMessages::EMAIL_IN_USE);
+        } catch (HilosException $failure) {
+            $this->rollBack();
+
+            throw $failure;
+        }
+    }
+
+    /**
+     * Removes one of the person's sign-in methods, the passkey's credential first (HIL-1405).
+     *
+     * The users library refused a last method and someone else's before the hop; the primitive
+     * asks both again ({@see Identities::deleteIdentity()}), and
+     * a method already gone is removed without a word, as it always was. The order is the
+     * contract: the credential goes FIRST and the anchor SECOND, because an interruption between
+     * them has to leave the state that closes the account - an anchor without a credential is a
+     * row the profile still lists and can be unlinked again, while a credential without an anchor
+     * is a key that signs the person in on a passkey they were told they had removed. Not final,
+     * for the reason {@see self::renamePerson()} gives.
+     *
+     * @param int $identityId Sign-in method to remove
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one, or the method is not this person's or their last
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the rows cannot be loaded or deleted
+     * @throws HilosException On database or truth-source failure while reading or deleting the rows
+     */
+    protected function unlinkIdentity(int $identityId): void
+    {
+        $this->personToWrite();
+        $identity = Hilos::$db->identities[$identityId];
+        if ($identity !== null && $identity->userId === $this->userId && $identity->type === IdentityType::PASSKEY) {
+            Hilos::$db->passkeyCredentials->deleteByIdentity($identityId);
+        }
+
+        Hilos::$db->identities->deleteIdentity($this->userId, $identityId);
+    }
+
+    /**
      * Writes a rename and answers the users library with its row or its refusal.
      *
      * The refusals keep the sentences the administrator always read: a missing person and a name
@@ -409,13 +712,13 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Runs one flag write and says why it was refused, if it was.
+     * Runs one write and says why it was refused, if it was.
      *
-     * Every failure is an answer, the wiring refusal included: the sessions library continues only
-     * on the answer, and a card or a parked command is waiting on it.
+     * Every failure is an answer, the wiring refusal included: the coordinator continues only on
+     * the answer, and a card, a parked command or a browser action is waiting on it.
      *
-     * @param callable(): void $write The flag write
-     * @param string $what Which flag, for the log line
+     * @param callable(): void $write The write - a flag, or one of the person's ways of signing in
+     * @param string $what Which write, for the log line
      * @return ?ActionRefusal Why the flag was not written, or null when it was
      */
     private function flagRefusal(callable $write, string $what): ?ActionRefusal
@@ -480,7 +783,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Rolls back a failed rename without letting the cleanup replace the failure.
+     * Rolls back a failed rename or address move without letting the cleanup replace the failure.
      *
      * The connection under the transaction belongs to the worker and outlives the frame, so a
      * transaction left open would take in every later write that worker makes.

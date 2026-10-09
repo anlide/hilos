@@ -15,10 +15,12 @@ use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Random\RandomException;
 
@@ -113,6 +115,11 @@ final class StepUpCommands extends AbstractLibraryCommands
      * An operation this browser has already confirmed returns at once and tells nobody: the tabs
      * heard of it when it was written, and a tab that connected since was told on its handshake.
      *
+     * A device key is the one proof that writes: its counter and last use are the confirming
+     * person's agent's (HIL-1405). Its signature is checked here and the confirmation is recorded
+     * on the agent's answer ({@see finishPasskeyProof()}), so the key opens the operation only once
+     * its counter has advanced.
+     *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpConfirmActionDTO $dto Protected operation and proof returned by its opening
      * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
@@ -167,14 +174,38 @@ final class StepUpCommands extends AbstractLibraryCommands
                 if ($dto->passkey === null) {
                     throw new ValidationException(StepUpMessages::PASSKEY_NOT_CONFIRMED);
                 }
-                $this->passkeys->assertStepUp($acting, $dto->passkey);
-                break;
+                $this->passkeys->askStepUpUse($acting, $dto->passkey, $dto->operation);
+
+                return;
 
             default:
                 throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
         StepUpConfirmations::record($this->library, $acting->sessionToken, $acting->userId, $dto->operation);
+    }
+
+    /**
+     * Records the confirmation a device key gave, once the confirming person's agent has recorded
+     * the key's use (HIL-1405).
+     *
+     * The continuation of {@see confirm()} on the agent's answer. The confirmation is written on the
+     * person who confirmed - the one the ask was addressed to - in the browser that asked, read
+     * again off the connection, which may have gone in between.
+     *
+     * @param UserPasskeyUseSignalData $ask The ask the agent answered, naming the operation
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws LogicException When the ask names no operation, which only a sign-in's ask does
+     * @throws HilosException When the confirmation cannot be stored, or the frame cannot be queued
+     */
+    public function finishPasskeyProof(UserPasskeyUseSignalData $ask): void
+    {
+        StepUpConfirmations::record(
+            $this->library,
+            $this->acting($ask->acceptKey)->sessionToken,
+            $ask->userId,
+            $ask->operation ?? throw new LogicException('A step-up proof by device key names no operation'),
+        );
     }
 
     /**

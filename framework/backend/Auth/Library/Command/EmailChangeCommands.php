@@ -12,13 +12,11 @@ use Hilos\Auth\Library\DTO\ProfileEmailChangeNewRequestActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\VerificationService;
-use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Database\Database;
-use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -27,6 +25,7 @@ use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\EmailChangedMailTemplate;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 
@@ -205,22 +204,18 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      * received. The address checks of step 3 run again - the address may have gone to somebody
      * else in between - spending nothing. The new address's code is spent next, so a typo in it
      * leaves the proof alive to try again. The proof is spent after it, and losing that race to
-     * another tab of the same account is the start-over answer. Then one transaction moves every
-     * password and sign-in-link row of the old address, and a unique-key clash there rolls it back.
-     *
-     * After the commit a notice goes to BOTH addresses, straight to each rather than through
-     * the notification system, which resolves an address at delivery and would reach only the
-     * new one. The change has happened by then, so a notice that cannot be queued is logged
-     * rather than turned into a refusal the surface would show for a change it did make. The
-     * flow is over last, and the session's record goes with it.
+     * another tab of the same account is the start-over answer. Then the person's agent moves every
+     * password and sign-in-link row of the old address in one transaction (HIL-1405), and a
+     * unique-key clash there rolls it back and is refused in the words the profile has always shown.
+     * What follows the move waits for the agent's answer ({@see finishChange()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileEmailChangeNewConfirmActionDTO $dto The code the new address received
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws ValidationException When the confirmation is missing, the address is refused, a code does not match,
-     *     or the proof is gone
-     * @throws InvalidArgumentException When the step frame cannot be named or queued
-     * @throws HilosException When a confirmation, verification, identity, or transaction query fails
+     *     the proof is gone, or the person cannot be addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When a confirmation, verification or identity query fails
      */
     public function confirmNewCode(string $acceptKey, ProfileEmailChangeNewConfirmActionDTO $dto): void
     {
@@ -246,30 +241,48 @@ final class EmailChangeCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
-        Database::transactionStart();
-        try {
-            Hilos::$db->identities->changeEmail($userId, $current, $email);
-            Database::transactionCommit();
-        } catch (DuplicateValueException | DuplicateEntryException) {
-            $this->rollBack();
-            throw new ValidationException(AuthMessages::EMAIL_IN_USE);
-        } catch (HilosException $failure) {
-            $this->rollBack();
-            throw $failure;
-        }
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_EMAIL_CHANGE, new UserEmailChangeSignalData(
+            userId: $userId,
+            from: $current,
+            to: $email,
+            replySignal: HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
+    }
 
-        foreach ([$current, $email] as $address) {
+    /**
+     * Tells both addresses the account moved, once the person's agent has moved it, and closes the
+     * step (HIL-1405).
+     *
+     * A notice goes to BOTH addresses, straight to each rather than through the notification
+     * system, which resolves an address at delivery and would reach only the new one. The change
+     * has happened by then, so a notice that cannot be queued is logged rather than turned into a
+     * refusal the surface would show for a change it did make. The flow is over last, and the
+     * session's record goes with it; the session is read again off the connection, which may have
+     * gone in between.
+     *
+     * @param UserEmailChangeSignalData $ask The ask the agent answered, carrying both addresses
+     * @throws ItemNotFoundForUpdateException When the asking connection has no signed-in session any more
+     * @throws InvalidArgumentException When the step frame cannot be named or queued
+     */
+    public function finishChange(UserEmailChangeSignalData $ask): void
+    {
+        $acting = $this->actingUser($ask->acceptKey);
+        foreach ([$ask->from, $ask->to] as $address) {
             try {
                 Hilos::$mail?->send(new MailSendSignalData(
                     to: $address,
                     shardKey: HilosMailer::shardKeyForAddress($address),
                     templateKey: MailTemplateCatalogConstants::ACCOUNT_EMAIL_CHANGED,
-                    params: [EmailChangedMailTemplate::PARAM_WAS => $current, EmailChangedMailTemplate::PARAM_NOW => $email],
+                    params: [EmailChangedMailTemplate::PARAM_WAS => $ask->from, EmailChangedMailTemplate::PARAM_NOW => $ask->to],
                 ));
             } catch (HilosException $failure) {
                 Logger::logAgentError(
                     $this->library->getId(),
-                    "Email change notice for user {$userId} could not be queued: {$failure->getMessage()}",
+                    "Email change notice for user {$ask->userId} could not be queued: {$failure->getMessage()}",
                 );
             }
         }
@@ -322,20 +335,5 @@ final class EmailChangeCommands extends AbstractLibraryCommands
         }
 
         return $email;
-    }
-
-    /**
-     * Rolls back a failed email change without letting the cleanup replace the failure.
-     *
-     * The connection under the transaction belongs to the worker and outlives the action, so
-     * a transaction left open would take in every later write that worker makes.
-     */
-    private function rollBack(): void
-    {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // Reporting the cleanup would replace the failure the caller is owed
-        }
     }
 }

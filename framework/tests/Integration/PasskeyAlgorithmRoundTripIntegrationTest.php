@@ -114,13 +114,16 @@ final class PasskeyAlgorithmRoundTripIntegrationTest extends FrameworkIntegratio
             self::INITIAL_SIGN_COUNT + 1,
         );
         $clientDataJson = $vectors->clientDataJson(self::ASSERTION_CHALLENGE, self::ORIGIN, ClientData::TYPE_GET);
-        $row->verifyAssertion(
+        // The library checks the assertion and writes nothing; the person's agent records the use
+        // under its set claim (HIL-1405).
+        $signCount = $row->checkAssertion(
             new AssertionVerifier($config),
             self::ASSERTION_CHALLENGE,
             $clientDataJson,
             $authData,
             $vectors->sign($authData, $clientDataJson),
         );
+        $row->recordUse($signCount);
 
         $this->passkeyCredentials()->clearInMemory();
         $afterSignIn = $this->passkeyCredentials()->listByUser(self::USER_ID);

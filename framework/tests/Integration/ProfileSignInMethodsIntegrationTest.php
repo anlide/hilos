@@ -681,7 +681,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::seedIdentity(self::USER_ID, IdentityType::SMS, self::PHONE);
         $phoneId = (int)Hilos::$db->identities->findByIdentity(IdentityType::SMS, self::PHONE)?->id;
 
-        $this->submit(HilosSignalConstants::PROFILE_UNLINK_IDENTITY, new ProfileUnlinkIdentityActionDTO($phoneId));
+        $this->submitStep(HilosSignalConstants::PROFILE_UNLINK_IDENTITY, new ProfileUnlinkIdentityActionDTO($phoneId));
 
         self::assertSame([[IdentityType::MAGIC_LINK, self::EMAIL, true]], self::rowsOf(self::USER_ID));
     }

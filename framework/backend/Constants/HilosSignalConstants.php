@@ -115,12 +115,26 @@ use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
+use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 
@@ -500,6 +514,114 @@ final class HilosSignalConstants
      * reads the written flag. Carried by {@see UserBlockWriteDoneSignalData}.
      */
     public const string HILOS_USER_BLOCK_WRITE_DONE = 'hilos_user_block_write_done';
+
+    /**
+     * Users library → the person's agent: store a fresh hash of the password that just signed in (HIL-1405).
+     *
+     * Sent only when the stored hash was written under parameters that are no longer current; the
+     * sign-in goes on once the agent answers. The frame carries the hash, never the password.
+     * Carried by {@see UserPasswordRehashSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_PASSWORD_REHASH = 'hilos_user_password_rehash';
+
+    /**
+     * The person's agent → users library: the fresh password hash is written, or why not (HIL-1405).
+     *
+     * The library signs the person in. Carried by {@see UserPasswordRehashDoneSignalData}.
+     */
+    public const string HILOS_USER_PASSWORD_REHASH_DONE = 'hilos_user_password_rehash_done';
+
+    /**
+     * Users library → the person's agent: mark the password on an address a letter just proved (HIL-1405).
+     *
+     * Sent only when the proven address carries a password not yet verified. Carried by
+     * {@see UserAddressVerifySignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_ADDRESS_VERIFY = 'hilos_user_address_verify';
+
+    /**
+     * The person's agent → users library: the password on the address is verified, or why not (HIL-1405).
+     *
+     * The library signs the person in. Carried by {@see UserAddressVerifyDoneSignalData}.
+     */
+    public const string HILOS_USER_ADDRESS_VERIFY_DONE = 'hilos_user_address_verify_done';
+
+    /**
+     * Users library → the person's agent: a passkey signed, record its counter and its use (HIL-1405).
+     *
+     * One frame for a sign-in by passkey and for a protected step confirmed with one; the agent
+     * checks the counter again before it writes. Carried by {@see UserPasskeyUseSignalData}, an
+     * ask of the handover form.
+     */
+    public const string HILOS_USER_PASSKEY_USE = 'hilos_user_passkey_use';
+
+    /**
+     * The person's agent → users library: the passkey's use is recorded, or why not (HIL-1405).
+     *
+     * The library signs the person in or records the confirmed step; any refusal reads as the
+     * generic passkey failure. Carried by {@see UserPasskeyUseDoneSignalData}.
+     */
+    public const string HILOS_USER_PASSKEY_USE_DONE = 'hilos_user_passkey_use_done';
+
+    /**
+     * Users library → the person's agent: store the password set through recovery (HIL-1405).
+     *
+     * Carried by {@see UserPasswordResetSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_PASSWORD_RESET = 'hilos_user_password_reset';
+
+    /**
+     * The person's agent → users library: the recovered password is written, or why not (HIL-1405).
+     *
+     * The library tells the sessions holder the password changed. Carried by
+     * {@see UserPasswordResetDoneSignalData}.
+     */
+    public const string HILOS_USER_PASSWORD_RESET_DONE = 'hilos_user_password_reset_done';
+
+    /**
+     * Users library → the person's agent: store the password changed in the profile (HIL-1405).
+     *
+     * Carried by {@see UserPasswordChangeSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_PASSWORD_CHANGE = 'hilos_user_password_change';
+
+    /**
+     * The person's agent → users library: the changed password is written, or why not (HIL-1405).
+     *
+     * The library clears the reset codes, tells the tabs, ends the other sessions or their trust,
+     * and closes the step. Carried by {@see UserPasswordChangeDoneSignalData}.
+     */
+    public const string HILOS_USER_PASSWORD_CHANGE_DONE = 'hilos_user_password_change_done';
+
+    /**
+     * Users library → the person's agent: move the account's sign-in rows to a new address (HIL-1405).
+     *
+     * Carried by {@see UserEmailChangeSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_EMAIL_CHANGE = 'hilos_user_email_change';
+
+    /**
+     * The person's agent → users library: the address is moved, or why not (HIL-1405).
+     *
+     * The library mails both addresses and closes the step. Carried by
+     * {@see UserEmailChangeDoneSignalData}.
+     */
+    public const string HILOS_USER_EMAIL_CHANGE_DONE = 'hilos_user_email_change_done';
+
+    /**
+     * Users library → the person's agent: remove one of the person's sign-in methods (HIL-1405).
+     *
+     * A passkey method goes with its key, the key first. Carried by
+     * {@see UserIdentityUnlinkSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_IDENTITY_UNLINK = 'hilos_user_identity_unlink';
+
+    /**
+     * The person's agent → users library: the sign-in method is removed, or why not (HIL-1405).
+     *
+     * The library answers the profile. Carried by {@see UserIdentityUnlinkDoneSignalData}.
+     */
+    public const string HILOS_USER_IDENTITY_UNLINK_DONE = 'hilos_user_identity_unlink_done';
 
     // ── Hilos settings admin: table mutation actions (client → server) ──
     /** Client → server: add a setting override on the HILOS_SETTINGS page. */

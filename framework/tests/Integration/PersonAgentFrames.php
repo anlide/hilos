@@ -13,15 +13,22 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use PHPUnit\Framework\Assert;
 
 /**
  * The person's agent beside a library under test: raised on the first frame to a person, claimed
- * the way its worker claims it, and run in its own frame (HIL-1404).
+ * the way its worker claims it, and run in its own frame (HIL-1404, HIL-1405).
  *
  * A case that drives a coordinator hands each frame the coordinator queued for a person to
  * {@see deliverToPerson()}, then hands the agent's answer back to the coordinator. A case that
@@ -87,7 +94,14 @@ trait PersonAgentFrames
             $ask instanceof UserRenameSignalData,
             $ask instanceof UserAdminWriteSignalData,
             $ask instanceof UserAdminCommandSignalData,
-            $ask instanceof UserBlockWriteSignalData => $ask->userId,
+            $ask instanceof UserBlockWriteSignalData,
+            $ask instanceof UserPasswordRehashSignalData,
+            $ask instanceof UserAddressVerifySignalData,
+            $ask instanceof UserPasskeyUseSignalData,
+            $ask instanceof UserPasswordResetSignalData,
+            $ask instanceof UserPasswordChangeSignalData,
+            $ask instanceof UserEmailChangeSignalData,
+            $ask instanceof UserIdentityUnlinkSignalData => $ask->userId,
             default => Assert::fail('Not a frame to a person\'s agent: ' . get_debug_type($ask)),
         };
 

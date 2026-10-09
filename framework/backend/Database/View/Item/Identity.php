@@ -65,31 +65,31 @@ class Identity extends DbItem
     }
 
     /**
-     * Re-hashes the stored password when the current hash is outdated.
+     * Tells whether the stored hash was written under parameters that are no longer current.
      *
-     * Delegates to the object layer's rehash-on-login primitive; the hash never
-     * crosses the view boundary.
+     * Delegates to the object layer's rehash check; the hash never crosses the view boundary.
      *
-     * @param string $plainPassword Plaintext secret that just verified against the stored hash
-     * @throws DatabaseException When the secret lookup or update query fails
+     * @return bool True when the stored hash should be minted again
+     * @throws DatabaseException When the secret lookup query fails
      */
-    public function rehashPasswordIfNeeded(string $plainPassword): void
+    public function passwordNeedsRehash(): bool
     {
-        $this->_object->rehashPasswordIfNeeded($plainPassword);
+        return $this->_object->passwordNeedsRehash();
     }
 
     /**
-     * Sets a new password on this identity (password-reset write path).
+     * Stores a password hash minted elsewhere as this identity's secret (HIL-1405).
      *
-     * Delegates to the object layer's secret-update primitive; the hash is minted
-     * and stored inside the layer and never crosses the view boundary.
+     * Delegates to the object layer's secret-update primitive; the person's agent writes through
+     * it, and the hash it is given never crosses back.
      *
-     * @param string $plainPassword New plaintext password to hash and store
+     * @param string $passwordHash `password_hash()` value to store as the secret
      * @throws DatabaseException When the secret update query fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function setPassword(string $plainPassword): void
+    public function setPasswordHash(string $passwordHash): void
     {
-        $this->_object->setPassword($plainPassword);
+        $this->_object->setPasswordHash($passwordHash);
     }
 
     /**

@@ -285,6 +285,7 @@ class Identities extends DbCollection
      * @param int $userId Owning user id
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $plainSecret Plaintext password to hash and store
+     * @param bool $verified Whether the address is already proven, written with the row (HIL-1405)
      * @return Identity The created identity's read-facing Db item
      * @throws EmptyValueException When identifier or secret is empty
      * @throws DuplicateValueException When an identity already exists for (password, identifier)
@@ -294,9 +295,9 @@ class Identities extends DbCollection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret): Identity
+    public function createPasswordIdentity(int $userId, string $identifier, string $plainSecret, bool $verified = false): Identity
     {
-        $objectIdentity = $this->objectCollection->createPasswordIdentity($userId, $identifier, $plainSecret);
+        $objectIdentity = $this->objectCollection->createPasswordIdentity($userId, $identifier, $plainSecret, $verified);
 
         $id = $objectIdentity->id;
         if ($id === null) {
@@ -313,7 +314,7 @@ class Identities extends DbCollection
     }
 
     /**
-     * Creates an unverified `password`-type identity from a precomputed hash (HIL-327).
+     * Creates a `password`-type identity from a precomputed hash (HIL-327).
      *
      * Bulk-seed write path of {@see UserTestSeedCommand}: the
      * read-facing sibling of {@see createPasswordIdentity()} that lets a fixture seeding
@@ -327,6 +328,7 @@ class Identities extends DbCollection
      * @param int $userId Owning user id
      * @param string $identifier Normalized identifier (lowercased email)
      * @param string $passwordHash Precomputed `password_hash()` value to store as the secret
+     * @param bool $verified Whether the address is already proven, written with the row (HIL-1405)
      * @return Identity The created identity's read-facing Db item
      * @throws EmptyValueException When identifier is empty
      * @throws DuplicateValueException When an identity already exists for (password, identifier)
@@ -336,9 +338,13 @@ class Identities extends DbCollection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws WriteNotAllowedException When no truth source in this process may write that row
      */
-    public function createPasswordIdentityWithHash(int $userId, string $identifier, string $passwordHash): Identity
-    {
-        $objectIdentity = $this->objectCollection->createPasswordIdentityWithHash($userId, $identifier, $passwordHash);
+    public function createPasswordIdentityWithHash(
+        int $userId,
+        string $identifier,
+        string $passwordHash,
+        bool $verified = false,
+    ): Identity {
+        $objectIdentity = $this->objectCollection->createPasswordIdentityWithHash($userId, $identifier, $passwordHash, $verified);
 
         $id = $objectIdentity->id;
         if ($id === null) {
@@ -635,5 +641,20 @@ class Identities extends DbCollection
     public function verifyDummyPassword(string $plainPassword): void
     {
         ObjectIdentity::verifyDummyPassword($plainPassword);
+    }
+
+    /**
+     * Hashes a password for storage (HIL-1405).
+     *
+     * Delegates to {@see ObjectIdentity::hashPassword()}: the process that received a new password
+     * from a browser hashes it here, and only the hash travels on to the person's agent.
+     *
+     * @param string $plainPassword Plaintext password
+     * @return string `password_hash()` value of the password
+     * @throws EmptyValueException When the password is empty
+     */
+    public function hashPassword(string $plainPassword): string
+    {
+        return ObjectIdentity::hashPassword($plainPassword);
     }
 }

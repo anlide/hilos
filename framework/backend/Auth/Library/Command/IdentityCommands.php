@@ -17,6 +17,7 @@ use Hilos\Auth\PasswordPolicy;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -31,6 +32,8 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Random\RandomException;
 
 /**
@@ -49,9 +52,11 @@ use Random\RandomException;
  * came here for the same reason from the other side (HIL-1137): they were written in one
  * demo, and every other project declaring the sign-in feature had none of them.
  *
- * The order inside {@see unlink()} is the whole of what it promises. It is the one place a
- * passkey stops existing, so a project reaches it the way it reaches the register and login
- * ceremonies: through the library agent that owns it.
+ * The order of an unlink is the whole of what it promises, and it lives with the writer: the
+ * person's agent removes the credential first and the anchor second (HIL-1405,
+ * {@see AbstractUserAgent::unlinkIdentity()}). {@see unlink()} judges the unlink and asks for it,
+ * and a project reaches it the way it reaches the register and login ceremonies: through the
+ * library agent that owns the door.
  *
  * Every add here is the operation 'add_sign_in_method' (HIL-1138): a browser left open must not
  * be enough for a stranger to give themselves a way in, so each step of an add takes the person
@@ -92,7 +97,7 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::CONFIRM_EMAIL_FIRST);
         }
         PasswordPolicy::assertValid($dto->newPassword, false);
-        Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword)->markVerified();
+        Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword, verified: true);
         $this->library->announcePasswordUpdated($userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
     }
 
@@ -285,7 +290,7 @@ final class IdentityCommands extends AbstractLibraryCommands
         }
 
         try {
-            Hilos::$db->identities->createPasswordIdentity($acting->userId, $email, $dto->newPassword)->markVerified();
+            Hilos::$db->identities->createPasswordIdentity($acting->userId, $email, $dto->newPassword, verified: true);
         } catch (DuplicateValueException) {
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         } catch (EmptyValueException) {
@@ -325,29 +330,24 @@ final class IdentityCommands extends AbstractLibraryCommands
      * exactly as the ceremonies resolve theirs, so a project's handler is left with
      * nothing to get wrong about whose identity this is.
      *
-     * Three steps, in this order and for this reason. The refusal to remove a last
-     * sign-in method comes FIRST, before anything is written: a refusal has to leave
-     * every row where it found it, and the primitive's own copy of the guard would fire
-     * only after the credential was already gone. The credential goes SECOND and the
-     * anchor THIRD, because an interruption between them has to leave the state that
-     * closes the account rather than the one that opens it — an anchor without a
-     * credential is a row the profile still lists and can be unlinked again, while a
-     * credential without an anchor is a key that signs somebody in on a passkey they
-     * were told they had removed.
-     *
-     * The primitive checks ownership and the last-method count again
-     * ({@see Identities::deleteIdentity()}). That is not a duplicate to be cleaned up:
-     * it is public, and a public write defends itself whoever calls it (HIL-377).
-     * Ownership is why the cascade asks whose identity this is before it removes
-     * anything: the primitive is what refuses a foreign identity, and it speaks after
-     * the credential would already be gone — so an id belonging to somebody else is
-     * left to it untouched, and the refusal costs that account nothing.
+     * Everything that refuses comes before the hop, in the words it always had, so a refusal
+     * leaves every row where it found it and wakes no agent: the last sign-in method, and a
+     * method of somebody else - the person's agent has nothing of a stranger's to remove, and
+     * would refuse it with the mechanism's words rather than these. A method already gone is
+     * done, as it always was. The removal itself is the person's agent's (HIL-1405): the
+     * credential first and the anchor second, an order that closes the account if it is cut
+     * between the two ({@see AbstractUserAgent::unlinkIdentity()}). The primitive asks
+     * ownership and the last-method count once more as it deletes
+     * ({@see Identities::deleteIdentity()}): it is public, and a public write defends itself
+     * whoever calls it (HIL-377).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param int $identityId Identity id to unlink
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the identity is not the acting user's, or is their last one
-     * @throws HilosException When an identity or credential lookup or delete fails
+     * @throws ValidationException When the identity is not the acting user's, is their last one, or the person cannot be
+     *     addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When an identity lookup fails
      */
     public function unlink(string $acceptKey, int $identityId): void
     {
@@ -357,13 +357,34 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException('cannot remove your only sign-in method');
         }
 
-        if (
-            Hilos::$db->identities[$identityId]?->userId === $acting->userId
-            && Hilos::$db->identities[$identityId]?->type === IdentityType::PASSKEY
-        ) {
-            Hilos::$db->passkeyCredentials->deleteByIdentity($identityId);
+        $identity = Hilos::$db->identities[$identityId];
+        if ($identity === null) {
+            return;
+        }
+        if ($identity->userId !== $acting->userId) {
+            throw new ValidationException('cannot unlink an identity you do not own');
         }
 
-        Hilos::$db->identities->deleteIdentity($acting->userId, $identityId);
+        $this->library->askPersonAgent($acting->userId, HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK, new UserIdentityUnlinkSignalData(
+            userId: $acting->userId,
+            identityId: $identityId,
+            replySignal: HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
+    }
+
+    /**
+     * Nothing follows an unlink the person's agent has done (HIL-1405).
+     *
+     * The continuation of {@see unlink()} on the agent's answer: the removed rows take themselves
+     * off every tab of the person, and the action is answered by the library that resumes it.
+     *
+     * @param UserIdentityUnlinkSignalData $ask The ask the agent answered (unused)
+     */
+    public function finishUnlink(UserIdentityUnlinkSignalData $ask): void
+    {
     }
 }

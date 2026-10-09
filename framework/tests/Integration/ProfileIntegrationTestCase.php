@@ -69,9 +69,37 @@ use Hilos\Users\AdminAudience;
  * (HIL-1182): a library step reports it by frame. A case that walks those steps hands the
  * frames to a holder of the fixture ({@see self::submitStep()}), so the next step reads the
  * record the last one wrote - the two processes of a stand, folded into one.
+ *
+ * An edit of a way in is written by the person's agent (HIL-1405): the library asks it by frame
+ * and resumes the action on its answer. The same carrying hands each ask to the person's agent,
+ * raised under its own claims, and each answer back to the library.
  */
 abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
+    /** Frames the library sends the person's agent, each answered under its own name. */
+    private const array PERSON_ASKS = [
+        HilosSignalConstants::HILOS_USER_PASSWORD_REHASH,
+        HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY,
+        HilosSignalConstants::HILOS_USER_PASSKEY_USE,
+        HilosSignalConstants::HILOS_USER_PASSWORD_RESET,
+        HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE,
+        HilosSignalConstants::HILOS_USER_EMAIL_CHANGE,
+        HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK,
+    ];
+
+    /** The person's agent's answers, each resuming the action that asked. */
+    private const array PERSON_ANSWERS = [
+        HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE,
+        HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE,
+        HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
+        HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
+        HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
+        HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE,
+        HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE,
+    ];
+
     public const string SESSION_TOKEN = 'aa0000000000000000000000000001137';
     public const string OTHER_SESSION_TOKEN = 'bb0000000000000000000000000001137';
     public const string ANONYMOUS_SESSION_TOKEN = 'cc0000000000000000000000000001137';
@@ -173,6 +201,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosProfileFlow::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosCodeSendAttempt::RT_COLLECTION);
         SourceChangeBus::reset();
@@ -233,31 +262,34 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
     }
 
     /**
-     * Hands every queued profile step to the holder, keeping every signal taken off the queue.
+     * Hands every queued profile step to the holder, every ask to the person's agent and every
+     * answer of that agent back to the library, keeping every signal taken off the queue.
      *
-     * @throws HilosException When the holder fails to write a step
+     * @throws HilosException When the holder, the agent or the library fails on a frame
      */
     protected function settleProfileFlows(): void
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $this->drained[] = $signal;
-            if (!in_array($signal->signalName->getName(), [
-                HilosSignalConstants::HILOS_PROFILE_FLOW_STEP,
-                HilosSignalConstants::HILOS_CODE_SEND_STEP,
-            ], true)) {
-                continue;
+            $name = $signal->signalName->getName();
+            if (in_array($name, self::PERSON_ASKS, true)) {
+                $this->deliverToPerson($signal);
+            } elseif (in_array($name, self::PERSON_ANSWERS, true)) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                $this->library->onSignalAgent($signal->data, 'test', $name);
+            } elseif (in_array($name, [HilosSignalConstants::HILOS_PROFILE_FLOW_STEP, HilosSignalConstants::HILOS_CODE_SEND_STEP], true)) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                $this->holder->onSignalAgent($signal->data, 'test', $name);
             }
-
-            self::assertInstanceOf(AgentSignalData::class, $signal->data);
-            $this->holder->onSignalAgent($signal->data, 'test', $signal->signalName->getName());
         }
     }
 
     /**
-     * Takes every signal off the queue, profile steps handed to the holder on the way.
+     * Takes every signal off the queue, profile steps handed to the holder and the person's agent's
+     * frames carried both ways on the way.
      *
      * @return list<SignalDTO> Every signal queued since the last drain, in order
-     * @throws HilosException When the holder fails to write a step
+     * @throws HilosException When the holder, the agent or the library fails on a frame
      */
     protected function drainSignals(): array
     {

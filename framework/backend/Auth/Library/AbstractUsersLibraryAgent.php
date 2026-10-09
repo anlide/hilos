@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Closure;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
@@ -127,6 +128,7 @@ use Hilos\Auth\SecondFactor\SecondFactorUnlockCommandConstants;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
+use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Throttle\DTO\ThrottleVerdictSignalData;
 use Hilos\Auth\Verification\VerificationSweepCommandConstants;
@@ -134,6 +136,7 @@ use Hilos\Auth\Verification\VerificationEndPauseCommandConstants;
 use Hilos\Auth\Verification\VerificationSweepSettings;
 use Hilos\Auth\Verification\VerificationSweeper;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -142,6 +145,8 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\Cron\CronRule;
+use Hilos\Core\Execution\Exception\FramePopOrderException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -172,8 +177,10 @@ use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
+use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountStandingResolver;
@@ -183,9 +190,17 @@ use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
+use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
+use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
+use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -227,14 +242,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The account set, and the proofs an account is reached by: its ways in, the codes that check
      * them, the holds a registration takes, the credentials a passkey enrols.
      *
-     * The four proofs are claimed OUTRIGHT and with every operation. They used to be described as
-     * needing no claim of their own, and that sentence held on nothing but the guard's silence:
-     * the right was asked only of the four eagerly loaded collections, and these four are lazy
-     * (HIL-716). Every write to them goes through a command of this library - a code is issued and
-     * spent, a password secret is rewritten, a hold is taken and released - so the operation set
-     * is spelled out per entry rather than left to {@see self::defaultTruthSourceOperations()}:
-     * that default is what a library does to a row it SHARES, and the rows carrying an account's
-     * proofs are edited in place.
+     * The codes and the holds a registration takes are claimed OUTRIGHT and with every operation.
+     * They used to be described as needing no claim of their own, and that sentence held on nothing
+     * but the guard's silence: the right was asked only of the eagerly loaded collections, and these
+     * are lazy (HIL-716). Every write to them goes through a command of this library - a code is
+     * issued and spent, a hold is taken and released - so the operation set is spelled out per entry
+     * rather than left to {@see self::defaultTruthSourceOperations()}: that default is what a
+     * library does to a row it SHARES, and these rows are edited in place (their move to the
+     * person's agent is HIL-1411).
+     *
+     * The ways in and the passkey credentials are claimed for creation alone (HIL-1405). A
+     * registration, an added password, phone or key is born here, and born whole - the secret and
+     * the verified mark of a password, the first counter of a key ride with the insert. Every later
+     * edit of one - a fresh hash, a password verified by a letter, a key's counter, a new password,
+     * an address moved, a method unlinked - is written by the person's agent
+     * ({@see AbstractUserAgent}) on a frame this library sends ({@see askPersonAgent()}), the
+     * library having judged it first and doing what follows on the answer.
      *
      * The account set is claimed for creation alone (HIL-1404). The table and its key are the
      * framework's (`hilos_user`, HIL-1192), so the claim does not wait for a project to name the
@@ -268,10 +291,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     public const array OWNS_DB = [
         HilosDbContext::users => [TruthSourceOperation::Add],
-        HilosDbContext::identities => TruthSourceOperation::ALL,
+        HilosDbContext::identities => [TruthSourceOperation::Add],
         HilosDbContext::verifications => TruthSourceOperation::ALL,
         HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
-        HilosDbContext::passkeyCredentials => TruthSourceOperation::ALL,
+        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Add],
         HilosDbContext::secondFactors => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorBackupCodes => TruthSourceOperation::ALL,
         HilosDbContext::secondFactorResets => TruthSourceOperation::ALL,
@@ -305,7 +328,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * and publishes the account's state after scheduling or canceling them (HIL-304). It hands
      * a rename here too (HIL-771): this library asks the person's agent to write it, and tells
      * the news once the agent answers on {@see HilosSignalConstants::HILOS_USER_RENAME_DONE}
-     * (HIL-1404).
+     * (HIL-1404). The person's agent answers here too for every edit of a way in this library asks
+     * of it (HIL-1405): the browser action waiting on the edit is resumed on the answer
+     * ({@see resumeAction()}).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -313,6 +338,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
         HilosSignalConstants::HILOS_USER_RENAME_DONE => UserRenameDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE => UserPasswordRehashDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE => UserAddressVerifyDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE => UserPasskeyUseDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE => UserPasswordResetDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE => UserPasswordChangeDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE => UserEmailChangeDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE => UserIdentityUnlinkDoneSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
     ];
@@ -766,12 +798,18 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * rename is told, and the card is answered on the frame it named, a refusal included: a modal
      * is waiting on it.
      *
+     * The person's agent answers here for the edits of a way in this library asked of it, too
+     * (HIL-1405), and each answer resumes the browser action that asked ({@see resumeAction()}):
+     * a refusal fails it, and a write goes on to the command's own continuation. A passkey refusal
+     * is the generic word of the ceremony whatever the agent said, as every passkey failure is.
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
      * @throws ValidationException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the failure frame cannot be named or queued
+     * @throws FramePopOrderException When a resumed action leaves the execution frame stack imbalanced
      * @throws HilosException Whatever a project library that takes frames of its own raises on them
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -802,6 +840,106 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     );
                 }
                 $this->finishRename($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE:
+                $rehashed = $data->data;
+                if (!$rehashed instanceof UserPasswordRehashDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserPasswordRehashDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $rehashed->ask,
+                    $rehashed->error,
+                    fn () => $this->passwordCommands()->finishLogin($rehashed->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE:
+                $verified = $data->data;
+                if (!$verified instanceof UserAddressVerifyDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserAddressVerifyDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $verified->ask,
+                    $verified->error,
+                    fn () => $this->magicLinkCommands()->finishSignIn($verified->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE:
+                $used = $data->data;
+                if (!$used instanceof UserPasskeyUseDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserPasskeyUseDoneSignalData::class);
+                }
+                if ($used->ask->operation === null) {
+                    $this->resumeAction(
+                        $used->ask,
+                        $used->error === null ? null : AuthMessages::INVALID_PASSKEY,
+                        fn () => $this->passkeyCommands()->finishLogin($used->ask),
+                    );
+
+                    return;
+                }
+                $this->resumeAction(
+                    $used->ask,
+                    $used->error === null ? null : StepUpMessages::PASSKEY_NOT_CONFIRMED,
+                    fn () => $this->stepUpCommands()->finishPasskeyProof($used->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE:
+                $reset = $data->data;
+                if (!$reset instanceof UserPasswordResetDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserPasswordResetDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $reset->ask,
+                    $reset->error,
+                    fn () => $this->recoveryCommands()->finishReset($reset->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE:
+                $changed = $data->data;
+                if (!$changed instanceof UserPasswordChangeDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserPasswordChangeDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $changed->ask,
+                    $changed->error,
+                    fn () => $this->passwordChangeCommands()->finishChange($changed->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE:
+                $moved = $data->data;
+                if (!$moved instanceof UserEmailChangeDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserEmailChangeDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $moved->ask,
+                    $moved->error,
+                    fn () => $this->emailChangeCommands()->finishChange($moved->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE:
+                $unlinked = $data->data;
+                if (!$unlinked instanceof UserIdentityUnlinkDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserIdentityUnlinkDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $unlinked->ask,
+                    $unlinked->error,
+                    fn () => $this->identityCommands()->finishUnlink($unlinked->ask),
+                );
 
                 return;
 
@@ -1661,6 +1799,45 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Asks the person's agent to write an edit of one of their ways in, and stops owing the
+     * browser an answer (HIL-1405).
+     *
+     * The command judged the edit - the password, the code, the signature - and the write is the
+     * agent's: this library may only create a way in. The answer comes back here under the ask's
+     * reply name, and the action is resumed on it ({@see resumeAction()}), so nothing is held
+     * between the hops. A person who cannot be addressed - erased, or folded into someone else -
+     * is refused here in the words of {@see AddressablePerson::require()}, and their agent is not
+     * woken.
+     *
+     * @param int $userId Person whose agent writes, the index of the frame
+     * @param string $signalName Frame name the person's agent declared
+     * @param HandoverAskInterface $ask The ask, carrying the connection, the request id and the action to resume
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     */
+    public function askPersonAgent(int $userId, string $signalName, HandoverAskInterface $ask): void
+    {
+        AddressablePerson::require($userId);
+        $this->handOff($signalName, $ask);
+    }
+
+    /**
+     * Names the browser action this library is answering right now.
+     *
+     * What a command writes into an ask to the person's agent, so the answer resumes that very
+     * action: the request id is {@see currentActionRequestId()}, and this is the other half.
+     *
+     * @return string Action name of the running dispatch
+     * @throws LogicException When no action is being dispatched
+     */
+    public function runningAction(): string
+    {
+        return $this->currentAction ?? throw new LogicException('No action is being dispatched');
+    }
+
+    /**
      * Runs whatever else the project does when a person is renamed.
      *
      * Called after the rename committed, with its journal row. Default does nothing: the chat
@@ -2468,6 +2645,88 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     {
         $this->sendToAgent($signalName, $data);
         $this->deferActionReply();
+    }
+
+    /**
+     * Resumes a browser action on the answer of the person's agent, and answers it as the
+     * dispatcher would have (HIL-1405).
+     *
+     * The action left the dispatcher deferred ({@see askPersonAgent()}), and the ask comes back
+     * whole: its action name and request id make this dispatch the one that left, and the
+     * connection that asked is put back on the execution frame, so every write and every frame of
+     * the continuation reads as that press of that button - {@see grantSession()} and its
+     * siblings name the action and the request they hand over. A refusal fails the action. A
+     * write goes on to the continuation, and then the action is answered as the dispatcher answers
+     * one: nothing when the continuation handed the answer to the session holder, the success ack
+     * otherwise. A continuation that breaks fails the action and leaves an error line, as a handler
+     * that breaks does. An untracked action is told only of a failure, the way the dispatcher tells
+     * it.
+     *
+     * @param HandoverAskInterface $ask The ask the agent answered, untouched
+     * @param ?string $refusal Words the action is refused in, or null when the agent wrote
+     * @param Closure(): void $finish The command's continuation after the write
+     * @throws InvalidArgumentException When an answer frame cannot be named or queued
+     * @throws FramePopOrderException When the continuation leaves the execution frame stack imbalanced
+     */
+    private function resumeAction(HandoverAskInterface $ask, ?string $refusal, Closure $finish): void
+    {
+        $this->currentAction = $ask->action;
+        $this->beginActionDispatch($ask->requestId);
+        try {
+            ExecutionContext::withOrigin($ask->acceptKey, $ask->requestId, function () use ($ask, $refusal, $finish): void {
+                if ($refusal !== null) {
+                    $this->refuseResumedAction($ask, $refusal);
+
+                    return;
+                }
+
+                try {
+                    $finish();
+                } catch (Throwable $e) {
+                    Logger::error(
+                        "Action failed: host={$this->actionHostName()}, action={$ask->action}, "
+                            . 'exception=' . $e::class . ', message=' . $e->getMessage(),
+                        [
+                            ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+                            ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+                            ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+                        ],
+                    );
+                    if ($ask->requestId === null) {
+                        $this->refuseResumedAction($ask, ActionFailureReason::forClient($e));
+                    } else {
+                        $this->sendActionFailure($ask->acceptKey, $ask->action, $ask->requestId, $e, detailAllowed: false);
+                    }
+
+                    return;
+                }
+
+                if (!$this->actionReplyDeferred() && $ask->requestId !== null) {
+                    $this->sendActionSuccess($ask->acceptKey, $ask->action, $ask->requestId);
+                }
+            });
+        } finally {
+            $this->endActionDispatch();
+            $this->currentAction = null;
+        }
+    }
+
+    /**
+     * Fails a resumed action in the words given: the fail ack of a tracked one, the error frame of an untracked one.
+     *
+     * @param HandoverAskInterface $ask The ask of the action that failed
+     * @param string $reason Words the client reads
+     * @throws InvalidArgumentException When the failure frame cannot be named or queued
+     */
+    private function refuseResumedAction(HandoverAskInterface $ask, string $reason): void
+    {
+        if ($ask->requestId !== null) {
+            $this->sendActionFail($ask->acceptKey, $ask->action, $ask->requestId, $reason);
+
+            return;
+        }
+
+        $this->sendToUser(SignalConstants::ACTION_ERROR, $ask->acceptKey, new PageActionErrorSignalData($ask->action, $reason));
     }
 
     /**

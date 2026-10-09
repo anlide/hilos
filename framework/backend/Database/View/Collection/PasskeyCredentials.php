@@ -28,10 +28,11 @@ use Hilos\Hilos;
  * delegates to the object-layer collection ({@see ObjectPasskeyCredentials}).
  *
  * Unlike {@see Identities}, these bridges return the object-layer items rather
- * than read-facing view items: the ceremony write/verify paths need the
- * credential's post-assertion primitives ({@see ObjectPasskeyCredential::verifyAssertion()},
- * {@see ObjectPasskeyCredential::updateSignCount()}) that only the object item
- * carries. The manage surface (list/remove) built on the view item is HIL-404.
+ * than read-facing view items: a use of the key needs the credential's primitives
+ * ({@see ObjectPasskeyCredential::checkAssertion()} in the library,
+ * {@see ObjectPasskeyCredential::recordUse()} in the person's agent, HIL-1405) that only
+ * the object item carries. The manage surface (list/remove) built on the view item is
+ * HIL-404.
  *
  * @extends DbCollection<PasskeyCredential, ObjectPasskeyCredentials>
  */
@@ -94,7 +95,7 @@ class PasskeyCredentials extends DbCollection
      *
      * Assertion read path bridged to {@see ObjectPasskeyCredentials::findByCredentialId()}:
      * returns the object item so the login handler can drive
-     * {@see ObjectPasskeyCredential::verifyAssertion()} on it. A miss returns null.
+     * {@see ObjectPasskeyCredential::checkAssertion()} on it. A miss returns null.
      *
      * @param string $credentialId Base64url credential id from the assertion
      * @return ?ObjectPasskeyCredential Credential object or null if not found

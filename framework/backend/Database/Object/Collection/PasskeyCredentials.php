@@ -98,6 +98,9 @@ class PasskeyCredentials extends Objects
         $credential->credentialId = $credentialId;
         $credential->publicKey = $publicKeyPem;
         $credential->algorithm = $algorithm->value;
+        // The starting counter rides in the insert: the row is born whole, and a writer that may
+        // only create keys has no edit left to make (HIL-1405).
+        $credential->signCount = $signCount;
         $credential->transports = $transports;
         $credential->aaguid = $aaguid;
         $credential->userHandle = $userHandle;
@@ -110,10 +113,6 @@ class PasskeyCredentials extends Objects
         $id = $credential->id;
         if ($id === null) {
             throw new DatabaseException('Passkey credential insert did not assign an id');
-        }
-
-        if ($signCount > 0) {
-            $credential->updateSignCount($signCount);
         }
 
         $this[$id] = $credential;

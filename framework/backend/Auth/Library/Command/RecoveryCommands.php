@@ -14,6 +14,7 @@ use Hilos\Auth\Library\DTO\ConfirmPasswordResetActionDTO;
 use Hilos\Auth\Library\DTO\RequestPasswordResetActionDTO;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
@@ -23,6 +24,7 @@ use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Random\RandomException;
 
 /**
@@ -161,9 +163,12 @@ final class RecoveryCommands extends AbstractLibraryCommands
      *
      * The address comes off the grant and never off the payload - a password screen that
      * could name an account would be a way to reset somebody else's - then the code is
-     * spent and the secret is written. Everything after that is the session holder's:
-     * signing this browser in, telling the tabs that were waiting on the address, and
-     * logging the account's OTHER sessions out.
+     * spent and the secret is written by the person's agent (HIL-1405), handed the hash of
+     * the new password rather than the password. Everything after that waits for its answer
+     * ({@see finishReset()}) and is the session holder's: signing this browser in, telling
+     * the tabs that were waiting on the address, and logging the account's OTHER sessions
+     * out. An agent that refuses - the account erased or merged in the meantime, a database
+     * fault - fails the action with the code already spent, and the person starts over.
      *
      * Two ways it does not go through, both answered by a move rather than an error: no
      * grant on this session - the code expired, or the browser came back to a screen whose
@@ -191,12 +196,13 @@ final class RecoveryCommands extends AbstractLibraryCommands
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param CompletePasswordResetActionDTO $dto Parsed complete payload (password)
-     * @return ?AuthFlowOutcome The rollback the losing session gets, or null when the session holder answers
+     * @return ?AuthFlowOutcome The rollback the losing session gets, or null when the person's agent answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValueTooShortException When the new password is too short
      * @throws FsException When the framework password list cannot be read
-     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
-     * @throws HilosException When the secret write or the runtime read fails
+     * @throws ValidationException When the account's person cannot be addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When the code spend, the identity lookup or the runtime read fails
      */
     public function completePasswordReset(string $acceptKey, CompletePasswordResetActionDTO $dto): ?AuthFlowOutcome
     {
@@ -213,14 +219,14 @@ final class RecoveryCommands extends AbstractLibraryCommands
         }
 
         try {
-            $userId = new PasswordRecoveryService()->complete($email, $dto->password);
+            $password = new PasswordRecoveryService()->complete($email, $dto->password);
         } catch (PasswordUnchangedException $exception) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_PASSWORD_UNCHANGED, $exception->getMessage());
         } catch (PasswordTooCommonException $exception) {
             return AuthFlowOutcome::refuse(AuthFlowOutcome::CODE_PASSWORD_TOO_COMMON, $exception->getMessage());
         }
 
-        if ($userId === null) {
+        if ($password === null) {
             return AuthFlowOutcome::rejectTo(
                 AuthFlowOutcome::CODE_PASSWORD_ALREADY_CHANGED,
                 AuthFlowStep::IDENTIFIER,
@@ -229,17 +235,43 @@ final class RecoveryCommands extends AbstractLibraryCommands
             );
         }
 
+        $userId = (int)$password->userId;
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_PASSWORD_RESET, new UserPasswordResetSignalData(
+            userId: $userId,
+            identityId: (int)$password->id,
+            passwordHash: Hilos::$db->identities->hashPassword($dto->password),
+            email: $email,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
+
+        return null;
+    }
+
+    /**
+     * Tells the session holder the password changed, once the person's agent has written it (HIL-1405).
+     *
+     * The continuation of {@see completePasswordReset()} on the agent's answer; the session is read
+     * again off the connection, which may have gone in between.
+     *
+     * @param UserPasswordResetSignalData $ask The ask the agent answered, carrying the granted address
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
+     */
+    public function finishReset(UserPasswordResetSignalData $ask): void
+    {
         // The ack goes on the sockets BEFORE the sign-in, and the sign-in rotates the token
         // the force-logout must keep - both of which are the holder's to order (HIL-422,
         // HIL-582). It is told what happened, not what to do in which order.
         $this->library->announcePasswordChanged(
-            $acting,
-            $userId,
-            $email,
+            $this->acting($ask->acceptKey),
+            $ask->userId,
+            $ask->email,
             AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::RECOVERY),
         );
-
-        return null;
     }
 
     /**

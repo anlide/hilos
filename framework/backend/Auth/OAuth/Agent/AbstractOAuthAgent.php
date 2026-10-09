@@ -71,17 +71,15 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     /**
      * The identity table, which a completed exchange writes a linked provider account into.
      *
-     * A borrowed claim, and the TODO on the entry says whose it is: the users library owns the
-     * identity table, and a linked provider account is one of its rows. The write is here only
-     * because the exchange that proves the account ends in this agent's tick, so it is this
-     * process that finds out what to write. HIL-1405 narrows this agent's claim to creation;
-     * existing identities move to their person's agent, as declared in docs/agents/architecture/instance-owners.md.
+     * A borrowed claim, for creation alone (HIL-1405): a linked provider account is born here,
+     * because the exchange that proves the account ends in this agent's tick, so it is this process
+     * that finds out what to write. Every row that exists - this agent's links included - is its
+     * person's agent's to edit and remove, as docs/agents/architecture/instance-owners.md declares.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // TODO(HIL-1405): the identity claim is narrowed to creation; existing rows move to their person's agent.
-        HilosDbContext::identities => TruthSourceOperation::BY_KIND,
+        HilosDbContext::identities => [TruthSourceOperation::Add],
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_OAUTH;

@@ -19,6 +19,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
@@ -37,10 +38,11 @@ use Random\RandomException;
  *
  * Hence the shape of the three calls, which is the shape of the flow:
  * {@see requestCode()} sends, {@see acceptCode()} proves WITHOUT spending, and
- * {@see complete()} spends and writes the new secret. The split of the middle from the
- * last is the whole reason this service exists rather than one more call on
- * {@see VerificationService}: the code screen and the password screen are two round
- * trips, and a code spent on the first would leave the second holding nothing.
+ * {@see complete()} spends and names the row the new secret goes to - the person's
+ * agent writes it (HIL-1405). The split of the middle from the last is the whole
+ * reason this service exists rather than one more call on {@see VerificationService}:
+ * the code screen and the password screen are two round trips, and a code spent on
+ * the first would leave the second holding nothing.
  *
  * What guards the gap between them is not here but around it: the grant lives on the
  * session (the recovery waiters collection), and its lifetime is the unspent code's,
@@ -140,14 +142,16 @@ final class PasswordRecoveryService
     }
 
     /**
-     * Spends the code and writes the new secret, answering whose account it was.
+     * Spends the code and answers which password the new secret goes to.
      *
      * The one operation that ends a recovery, and the order inside it is the mechanism:
      * the identity is resolved first (so a code is never spent on an account that
      * cannot receive the password), the password is judged, then the code is spent, and
-     * only then is the secret written. Spending it is what settles the address for
-     * everyone else waiting on it - the challenge is the recovery's single-use ticket,
-     * and there is exactly one.
+     * only the winner of the spend learns which row to write. Spending it is what settles
+     * the address for everyone else waiting on it - the challenge is the recovery's
+     * single-use ticket, and there is exactly one. The secret itself is the person's
+     * agent's to write (HIL-1405): the caller hands it the hash of the new password, never
+     * the password.
      *
      * The rule sits BEFORE the spend and inside this method on purpose (HIL-654). A
      * refused password must not cost the person their code: they are on the new-password
@@ -158,12 +162,11 @@ final class PasswordRecoveryService
      * A null answer means this session is too late: another one already finished the
      * reset, or the code expired while the password screen sat open. The caller owes
      * that session the same thing it owes the ones it is about to converge - the
-     * identifier step, and the news that the password is already changed. The
-     * plaintext is hashed inside the identity layer and never reaches this one.
+     * identifier step, and the news that the password is already changed.
      *
      * @param string $email Normalized address being recovered (lowercased)
-     * @param string $newPassword New plaintext password to store
-     * @return ?int User the password now belongs to, or null when the reset can no longer be completed
+     * @param string $newPassword New plaintext password, judged against the rule and the current one
+     * @return ?ObjectIdentity The account's password row, its code spent, or null when the reset can no longer be completed
      * @throws ValueTooShortException When the new password is shorter than the policy minimum
      * @throws PasswordTooCommonException When the new password is in the common-password list
      * @throws FsException When the framework password list cannot be read
@@ -174,7 +177,7 @@ final class PasswordRecoveryService
      *   or not an int
      * @throws DbCollectionNotReadableException When nothing here reads the identities or verifications collection, or its readiness is on its way
      */
-    public function complete(string $email, string $newPassword): ?int
+    public function complete(string $email, string $newPassword): ?ObjectIdentity
     {
         $userId = $this->identities()->findAccountIdByEmail($email);
         $identity = $userId === null ? null : $this->identities()->findPasswordByUser($userId);
@@ -188,9 +191,7 @@ final class PasswordRecoveryService
             return null;
         }
 
-        $identity->setPassword($newPassword);
-
-        return $userId;
+        return $identity;
     }
 
     /**

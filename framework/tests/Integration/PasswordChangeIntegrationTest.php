@@ -317,7 +317,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->seedCode(VerificationType::PASSWORD_RESET, self::SECOND_EMAIL, self::USER_ID, self::CODE);
         $this->seedCode(VerificationType::PASSWORD_RESET, self::FOREIGN_EMAIL, self::OTHER_USER_ID, self::CODE);
         $this->seedCode(VerificationType::EMAIL_CHANGE_CURRENT, self::EMAIL, self::USER_ID, self::CODE);
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
             new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, true),
         );

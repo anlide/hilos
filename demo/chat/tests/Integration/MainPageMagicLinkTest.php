@@ -1089,6 +1089,8 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK,
             new ConfirmMagicLinkActionDTO($email, $token),
         );
+        // A password waiting on this address is marked by the person's agent first (HIL-1405).
+        $this->deliverPersonAgentFrames();
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;
         $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);
@@ -1177,6 +1179,8 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
             HilosSignalConstants::HILOS_CONFIRM_MAGIC_LINK_CODE,
             new ConfirmMagicLinkCodeActionDTO($email, $code),
         );
+        // A password waiting on this address is marked by the person's agent first (HIL-1405).
+        $this->deliverPersonAgentFrames();
         $handedOver = $this->deliverLibraryFrames($agent);
         $outcome = $reply ?? $handedOver;
         $this->assertInstanceOf(AuthFlowOutcome::class, $outcome);

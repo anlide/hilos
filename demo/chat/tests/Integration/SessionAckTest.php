@@ -905,6 +905,8 @@ final class SessionAckTest extends IntegrationTestCase
             HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
             new CompletePasswordResetActionDTO($password),
         );
+        // The ack waits for the person's agent to write the new password (HIL-1405).
+        $this->deliverPersonAgentFrames();
         $this->deliverLibraryFrames($agent);
     }
 

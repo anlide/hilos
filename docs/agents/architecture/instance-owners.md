@@ -18,9 +18,10 @@ instance. That agent is the sole writer of ordinary content edits made by the
 person or an administrator: its own row and every row whose set tree ends at
 that instance. For a person, the indexed agent, its row and set claims, and
 its idle lifetime are built (HIL-630). The name, the administrator flag and the
-block are written by it (HIL-1404). The other edits move to it in the leaves named in
-[Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+block are written by it (HIL-1404), and so are the edits of the person's sign-in
+methods and passkey credentials, sign-in included (HIL-1405). The other edits move
+to it in the leaves named in [Where The Pieces Land](#where-the-pieces-land)
+(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -55,8 +56,9 @@ can find the two Entity constants, but cannot decide the second question.
 
 The owner writes ordinary edits of one instance's content, whether the person
 or an administrator requested them. For the person the name, the administrator
-flag and the block have moved (HIL-1404); the rest are still ahead
-(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+flag and the block have moved (HIL-1404), and so have the sign-in methods and
+passkey credentials (HIL-1405); the rest are still ahead
+(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
 rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
@@ -92,7 +94,7 @@ ordinary content edits go to the person's own agent, with erasure and merge
 remaining the declared set operations below (owner's decision, 2026-10-04). It
 judges the administrator flag and the block and the person's agent writes them
 (HIL-1404); the other edits are still ahead
-(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 Whether a session itself needs an instance owner is open in HIL-1403. Until
 that answer, this rule neither puts the session in the person's set nor rules
 it out as a future decision; it does not change the current Entity declaration.
@@ -123,9 +125,10 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
-starting an agent (owner's decision, 2026-10-04). The remaining content write
-paths still move
-(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+starting an agent (owner's decision, 2026-10-04): a sign-in after an idle spell
+waits for the person's agent to rise when it has something to write (HIL-1405).
+The remaining content write paths still move
+(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 
 An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
 
@@ -140,10 +143,26 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   row, so it can only come after the answer.
 - **The frame carries everything the coordinator needs to finish**, and the
   agent sends it back untouched inside its answer, so the coordinator holds no
-  state between the hops and a restart in between loses no addressee. The four
+  state between the hops and a restart in between loses no addressee. The
   frames to the agent are `hilos_user_rename`, `hilos_user_admin_write`,
-  `hilos_user_admin_command` and `hilos_user_block_write`, each indexed by
-  `userId`; each has a `_done` answer declared on its coordinator.
+  `hilos_user_admin_command` and `hilos_user_block_write` (HIL-1404), and for the
+  sign-in methods and passkeys `hilos_user_password_rehash`,
+  `hilos_user_address_verify`, `hilos_user_passkey_use`,
+  `hilos_user_password_reset`, `hilos_user_password_change`,
+  `hilos_user_email_change` and `hilos_user_identity_unlink` (HIL-1405), each
+  indexed by `userId`; each has a `_done` answer declared on its coordinator.
+- **A browser action that ends after the agent's answer is resumed by the
+  coordinator** (HIL-1405). The coordinator defers the action's answer when it
+  sends the ask; on the answer it takes the action name and the request id back
+  out of the ask, puts the asking connection back on the execution frame, runs
+  its continuation, and answers the browser as the dispatcher would — nothing
+  when the continuation handed the answer on (a sign-in hands it to the
+  sessions holder), the success ack otherwise, a failure for a refusal. The
+  continuation reads the session again off the connection; no token rides in
+  the ask.
+- **A secret travels as its hash.** A new password is hashed in the process the
+  browser sent it to, and the frame carries the hash; the password itself never
+  crosses a process (HIL-1405).
 - **A frame born of a press in a browser is a handover ask**
   (`HandoverAskInterface`), so the agent's write is stamped with whoever pressed
   the button. An operator's command has no connection to stamp, and its frame is
@@ -160,7 +179,15 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   agent has not yet answered as done, so two removals crossing each other cannot
   both pass "the last active administrator". The mark lives in the holder's
   memory and is conservative when lost: it can only refuse a removal that would
-  have left one.
+  have left one. A passkey's counter is the same case (HIL-1405): the users
+  library checks the assertion and the counter, and the agent checks the counter
+  again against the stored one as it writes, so of two assertions a cloned key
+  sends with one counter only the first is recorded.
+- **Creation writes the row whole.** A library that may only create writes a new
+  row with everything it is born with — a password's secret and its verified
+  mark, a passkey's first counter — and edits nothing afterwards: the secret,
+  which no insert can carry, is written right after the insert and judged as the
+  creation it completes (HIL-1405).
 
 ## Memory
 
@@ -212,9 +239,10 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 
 - **A library writes ordinary content edits of one owned instance.** Send the
   edit to the instance owner. For the name, the administrator flag and the block
-  this is done (HIL-1404); for the person's other content it is the current
-  arrangement the moves replace, not evidence that the rule is already implemented
-  (not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+  this is done (HIL-1404), and for the sign-in methods and passkey credentials
+  (HIL-1405); for the person's other content it is the current arrangement the
+  moves replace, not evidence that the rule is already implemented
+  (not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
@@ -237,7 +265,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 |---|---|
 | HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (built). |
 | HIL-1404 | Name, administrator flag and block edits (built). |
-| HIL-1405 | Sign-in methods and passkey credentials, including sign-in (not in the code yet — HIL-1405). |
+| HIL-1405 | Sign-in methods and passkey credentials, including sign-in (built). |
 | HIL-1406 | Second factor, including a reset whose delay elapsed (not in the code yet — HIL-1406). |
 | HIL-1407 | Step-up confirmations and browser trust (not in the code yet — HIL-1407). |
 | HIL-1408 | Notification marks, channel preferences and push unsubscribe (not in the code yet — HIL-1408). |

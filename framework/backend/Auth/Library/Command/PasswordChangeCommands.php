@@ -17,13 +17,16 @@ use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpTarget;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Random\RandomException;
 
 /**
@@ -149,15 +152,16 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      * Proof precedes password policy: "already your password" must not answer an unproven guess
      * (HIL-654). The proof is the session's record of a matched code, standing only while that code
      * is alive ({@see AbstractLibraryCommands::requireProfileFlow()}). A weak password spends no code,
-     * and only the winner of the atomic spend writes. Reset challenges are deleted by person, because
-     * any account address can have received one. The flow is over last, and the record goes with it;
-     * an account no code can reach has neither proof nor record.
+     * and only the winner of the atomic spend writes - through the person's agent (HIL-1405), handed
+     * the hash of the new password rather than the password. What follows the write waits for its
+     * answer ({@see finishChange()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileChangePasswordActionDTO $dto New password and the person's session choice
-     * @throws ValidationException When confirmation, password or proof is missing, or password policy refuses the secret
-     * @throws InvalidArgumentException When the step frame cannot be named or queued
-     * @throws HilosException When a session, confirmation, identity, verification, password-list or announcement operation fails
+     * @throws ValidationException When confirmation, password or proof is missing, password policy refuses the secret, or
+     *     the person cannot be addressed
+     * @throws InvalidArgumentException When the ask frame cannot be named or queued
+     * @throws HilosException When a session, confirmation, identity, verification or password-list operation fails
      */
     public function change(string $acceptKey, ProfileChangePasswordActionDTO $dto): void
     {
@@ -180,15 +184,45 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
-        $password->setPassword($dto->newPassword);
-        Hilos::$db->verifications->deleteForUserOfType($acting->userId, VerificationType::PASSWORD_RESET);
-        $this->library->announcePasswordUpdated($acting->userId, ProfilePasswordUpdatedSignalData::MODE_CHANGED);
-        if ($dto->signOutOthers) {
+        $this->library->askPersonAgent($acting->userId, HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE, new UserPasswordChangeSignalData(
+            userId: $acting->userId,
+            identityId: (int)$password->id,
+            passwordHash: Hilos::$db->identities->hashPassword($dto->newPassword),
+            signOutOthers: $dto->signOutOthers,
+            flowOpen: $target !== null,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
+    }
+
+    /**
+     * Does what follows a changed password, once the person's agent has written it (HIL-1405).
+     *
+     * Reset challenges are deleted by person, because any account address can have received one.
+     * Every tab of the person hears the password changed; the person's other sessions are ended, or
+     * only their browsers' trust is taken back, as the person chose. The flow is over last, and the
+     * record goes with it; an account no code can reach has neither proof nor record. The session is
+     * read again off the connection, which may have gone in between.
+     *
+     * @param UserPasswordChangeSignalData $ask The ask the agent answered, carrying the person's choices
+     * @throws ItemNotFoundForUpdateException When the asking connection has no signed-in session any more
+     * @throws InvalidArgumentException When a frame cannot be named or queued
+     * @throws HilosException When the reset challenges cannot be deleted
+     */
+    public function finishChange(UserPasswordChangeSignalData $ask): void
+    {
+        $acting = $this->actingUser($ask->acceptKey);
+        Hilos::$db->verifications->deleteForUserOfType($ask->userId, VerificationType::PASSWORD_RESET);
+        $this->library->announcePasswordUpdated($ask->userId, ProfilePasswordUpdatedSignalData::MODE_CHANGED);
+        if ($ask->signOutOthers) {
             $this->library->announceOtherSessionsEnd($acting);
         } else {
             $this->library->announceOtherTrustsRevoke($acting);
         }
-        if ($target !== null) {
+        if ($ask->flowOpen) {
             $this->library->announceProfileFlowStep($acting, StepUpOperationKey::CHANGE_PASSWORD, null);
         }
     }
