@@ -41,6 +41,7 @@ use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Database\Database;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Hilos;
 use Hilos\Mail\HilosMailer;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -407,6 +408,13 @@ class SignalRouter
         SignalNameInterface $signalName,
         SignalDataInterface $signalData,
     ): void {
+        if ($signalType->getType() === SignalTypeConstants::AGENT_SIGNAL && $signalData instanceof AgentSignalData) {
+            $receiptId = JournalReceiptScope::stampHandover();
+            if ($receiptId !== null) {
+                $signalData = new AgentSignalData($signalData->data, $receiptId);
+            }
+        }
+
         // Create SignalDTO and queue it
         $signal = new SignalDTO(
             $signalSource,
@@ -1981,7 +1989,7 @@ class SignalRouter
             throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload, $e);
         }
 
-        return new AgentSignalData($parsed);
+        return new AgentSignalData($parsed, $signalData->receiptId);
     }
 
     /**

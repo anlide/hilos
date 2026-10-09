@@ -42,6 +42,9 @@ final class SignalPayloadConstants
     /** @var string Payload field key for inner payload class name (deserialization hint) */
     public const string FIELD_DATA_TYPE = 'dataType';
 
+    /** @var string Payload field key for the journal receipt carried by an agent signal */
+    public const string FIELD_RECEIPT = 'receipt';
+
     /** @var string Payload field key for WebSocket accept key */
     public const string FIELD_ACCEPT_KEY = 'acceptKey';
 

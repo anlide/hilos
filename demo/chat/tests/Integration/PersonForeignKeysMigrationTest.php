@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Migration;
 use Hilos\Database\Schema\Schema;
 use Hilos\HilosException;
@@ -49,6 +50,11 @@ final class PersonForeignKeysMigrationTest extends IntegrationTestCase
         Migration::setMigrationName('Schema');
         $this->latestMigrationIndex = Migration::getCurrentIndex();
         self::assertGreaterThanOrEqual(self::MIGRATION_INDEX, $this->latestMigrationIndex);
+        // Earlier integration actions may deliberately leave an undelivered handover receipt.
+        // This migration test rewinds past the journal database, so remove only empty receipts.
+        $database = ChangeLogDatabase::identifier(ChangeLogDatabase::configuredName());
+        Database::sqlRun("DELETE r FROM {$database}.`hilos_change_log_receipt` r "
+            . "WHERE NOT EXISTS (SELECT 1 FROM {$database}.`hilos_change_log` l WHERE l.`receipt_id` = r.`id`)");
         self::assertSame(
             $this->latestMigrationIndex - self::BEFORE_KEYS,
             Migration::migrateDown(self::BEFORE_KEYS),

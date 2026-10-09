@@ -21,6 +21,7 @@ use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\ConnectionRosterReconciler;
@@ -2006,34 +2007,41 @@ abstract class WorkerManager extends BaseManager implements PageResender
                         Hilos::$ac?->logApiAgentAction($apiRequestKey, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $this->onAgentSignalHandled($name, $signalData);
-                    $parsedAgentSignalData = $signalData;
-                    try {
-                        $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
-                        $ask = $parsedAgentSignalData->data;
-                        if ($ask instanceof HandoverAskInterface) {
-                            // The receipt of an ask is where the write it asks for gets its author:
-                            // the handler runs where no connection is served, and the asker travels
-                            // in the frame (HIL-1001). Only the agent's handler - the page dispatch
-                            // below answers a client and writes on nobody's behalf.
-                            ExecutionContext::withOrigin(
-                                $ask->acceptKey,
-                                $ask->requestId,
-                                static fn () => $agent->onSignalAgent($parsedAgentSignalData, $sender, $name),
-                            );
-                        } else {
-                            $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
+                    $dispatch = function () use ($signalData, $name, $agent, $sender, $agentId): void {
+                        $parsedAgentSignalData = $signalData;
+                        try {
+                            $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
+                            $ask = $parsedAgentSignalData->data;
+                            if ($ask instanceof HandoverAskInterface) {
+                                // The receipt of an ask is where the write it asks for gets its author:
+                                // the handler runs where no connection is served, and the asker travels
+                                // in the frame (HIL-1001). Only the agent's handler - the page dispatch
+                                // below answers a client and writes on nobody's behalf.
+                                ExecutionContext::withOrigin(
+                                    $ask->acceptKey,
+                                    $ask->requestId,
+                                    static fn () => $agent->onSignalAgent($parsedAgentSignalData, $sender, $name),
+                                );
+                            } else {
+                                $agent->onSignalAgent($parsedAgentSignalData, $sender, $name);
+                            }
+                        } catch (InvalidAgentSignalPayloadException $e) {
+                            Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
+                        } catch (AgentException $e) {
+                            Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
                         }
-                    } catch (InvalidAgentSignalPayloadException $e) {
-                        Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
-                    } catch (AgentException $e) {
-                        Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
-                    }
-                    try {
-                        $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($parsedAgentSignalData, $sender, $name);
-                    } catch (ValidationException $e) {
-                        Logger::logAgentError($agent->getId(), "Page signal validation failed: {$e->getMessage()}");
-                    } catch (AgentException $e) {
-                        Logger::logAgentError($agent->getId(), "Page signal handler failed: {$e->getMessage()}");
+                        try {
+                            $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($parsedAgentSignalData, $sender, $name);
+                        } catch (ValidationException $e) {
+                            Logger::logAgentError($agent->getId(), "Page signal validation failed: {$e->getMessage()}");
+                        } catch (AgentException $e) {
+                            Logger::logAgentError($agent->getId(), "Page signal handler failed: {$e->getMessage()}");
+                        }
+                    };
+                    if ($signalData->receiptId !== null) {
+                        JournalReceiptScope::join($signalData->receiptId, $agent->getId(), $dispatch);
+                    } else {
+                        $dispatch();
                     }
                 } else {
                     Logger::error("onSignalAgent - invalid signal data type: " . get_class($signalData));

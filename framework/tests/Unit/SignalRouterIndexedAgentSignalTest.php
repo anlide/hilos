@@ -118,11 +118,12 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         $router = new IndexedAgentSignalDtoTestRouter();
         $parsed = $router->createAgentSignalPayloadDTO(
             IndexedAgentSignalDtoTestAgent::TYPED_SIGNAL,
-            new AgentSignalData(new SignalData(['message' => 'hello'])),
+            new AgentSignalData(new SignalData(['message' => 'hello']), 42),
         );
 
         $this->assertInstanceOf(IndexedAgentSignalDtoTestPayload::class, $parsed->data);
         $this->assertSame('hello', $parsed->data->message);
+        $this->assertSame(42, $parsed->receiptId);
     }
 
     public function testTypedAgentSignalPayloadPassesThroughUnchanged(): void

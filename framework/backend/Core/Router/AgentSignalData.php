@@ -20,9 +20,11 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
      * Creates agent signal data with inner payload.
      *
      * @param SignalDataInterface $data Inner signal payload (e.g. ModerationRequestSignalData)
+     * @param ?int $receiptId Journal receipt of the action that sent this signal
      */
     public function __construct(
         public readonly SignalDataInterface $data,
+        public readonly ?int $receiptId = null,
     ) {
     }
 
@@ -39,17 +41,22 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
     /**
      * Converts DTO to array for transport.
      *
-     * @return array<string, mixed> DTO data with data and dataType keys
+     * @return array<string, mixed> DTO data with data, dataType, and optional receipt keys
      */
     public function toArray(): array
     {
-        return SignalDataEnvelope::encode($this->data);
+        $envelope = SignalDataEnvelope::encode($this->data);
+        if ($this->receiptId !== null) {
+            $envelope[SignalPayloadConstants::FIELD_RECEIPT] = $this->receiptId;
+        }
+
+        return $envelope;
     }
 
     /**
      * Creates DTO from array.
      *
-     * @param array<string, mixed> $data Source data (data, dataType keys)
+     * @param array<string, mixed> $data Source data (data, dataType, optional receipt keys)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static
@@ -59,6 +66,10 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketA
                 $data[SignalPayloadConstants::FIELD_DATA] ?? [],
                 $data[SignalPayloadConstants::FIELD_DATA_TYPE] ?? null,
             ),
+            receiptId: is_int($data[SignalPayloadConstants::FIELD_RECEIPT] ?? null)
+                && $data[SignalPayloadConstants::FIELD_RECEIPT] > 0
+                    ? $data[SignalPayloadConstants::FIELD_RECEIPT]
+                    : null,
         );
     }
 }

@@ -110,7 +110,7 @@ answer: `Session::userAtKeyboard()` in
 
 | Channel value | Who | Agent | Source | Implementation |
 |---|---|---|---|---|
-| `web` | The person; both people under impersonation | The page's agent | The session | `PageSignalRouter` around the accepted synchronous handler |
+| `web` | The person; both people under impersonation | The page's agent; the agent that wrote, when the page handed the write over | The session | `PageSignalRouter` around the accepted synchronous handler |
 | `migration` | Empty | None — the migration runner | The migration file | `Migration` around one SQL file |
 | `agent` | Empty, shown as “System” | That agent | The agent itself | (not in the code yet — HIL-1450) |
 | `cli` | Empty | The executing agent | The command, without the values it was given | (not in the code yet — HIL-1455) |
@@ -139,10 +139,11 @@ statement; it never sets it on the journal connection. A failed clear closes
 the primary link, so the next handler cannot inherit its value.
 
 A receipt under which nothing journaled was written is deleted after the scope,
-including a no-op or a handler error. Cleanup checks for journal rows by receipt
-id and is safe to repeat. A process that dies before cleanup can leave an empty
-row; the feed requires a journal row. Physical orphan cleanup must wait for the
-handover lifetime in HIL-1454, so a recipient agent can still write.
+including a no-op or a handler error, unless the action handed work to an agent.
+Each outgoing agent frame increments `open_handovers`; each recipient decrements
+it after handling the frame and deletes an empty receipt when the count reaches
+zero. A lost frame or failed conclusion can leave an empty receipt hidden from
+the feed until its partition expires; the feed requires a journal row.
 
 A web scope starts after the action guards and ends before the success or deferred
 ack. It stores the acting administrator and impersonated person separately, and
@@ -153,12 +154,14 @@ partially applied creation: it cannot create a receipt in a table it is building
 or removing. The migration's failed marker stays outside the scope.
 
 A page action whose write is handed to another agent keeps one receipt with the
-person and the writing agent, including when the recipient is on another node:
-the journal database is shared and the number means the same thing there
-(not in the code yet — HIL-1454).
+person and the writing agent. Its number travels in `AgentSignalData` as `receipt`;
+the recipient handles the frame inside `JournalReceiptScope::join()` and the
+last agent to write is recorded on the receipt. The journal database is shared,
+so the same number applies when the recipient is on another node. Only a write
+during the handed-over frame belongs to the person's receipt.
 
 An agent that writes later on its own, on a timer, uses its own receipt with the
-`agent` channel (not in the code yet — HIL-1454).
+`agent` channel (not in the code yet — HIL-1450).
 
 When a person has been erased, the soft reference keeps their number. The
 section reader returns the current name when the row still exists and

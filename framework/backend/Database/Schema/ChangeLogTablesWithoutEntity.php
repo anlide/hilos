@@ -57,7 +57,7 @@ final class ChangeLogTablesWithoutEntity implements TablesWithoutEntityProvider
         return [
             'hilos_change_log_table' => ['id', 'name'],
             'hilos_change_log_field' => ['id', 'table_id', 'name'],
-            'hilos_change_log_receipt' => ['id', 'created_at', 'channel', 'action'],
+            'hilos_change_log_receipt' => ['id', 'created_at', 'channel', 'action', 'open_handovers'],
             'hilos_change_log' => ['id', 'created_at', 'receipt_id', 'table_id', 'mutation_type'],
             'hilos_change_log_change' => [
                 'id',

@@ -7,7 +7,7 @@ Every signal carries a payload object implementing `SignalDataInterface`.
 | Class | Use |
 |---|---|
 | `WebSocketSignalData` | Wraps WS-bound data with `targetAcceptKey` or `targetGroup` |
-| `AgentSignalData` | Wraps agent-to-agent data with inner `$data` |
+| `AgentSignalData` | Wraps agent-to-agent data with inner `$data` and the receipt number of the action that sent it (`receipt`) |
 
 ## Creating a signal DTO
 

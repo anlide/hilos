@@ -248,7 +248,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         );
 
         $router->dispatchAgentSignal(
-            new AgentSignalData(new SignalData(['message' => 'ok'])),
+            new AgentSignalData(new SignalData(['message' => 'ok']), 42),
             'agent',
             'moderation_result',
         );
@@ -257,6 +257,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
         $this->assertInstanceOf(PageSignalRouterTestPageWithDto::class, $page);
         $this->assertInstanceOf(PageSignalRouterTestSignalData::class, $page->agentSignalData?->data);
         $this->assertSame('ok', $page->agentSignalData?->data->message);
+        $this->assertSame(42, $page->agentSignalData?->receiptId);
     }
 
     public function testTypedAgentSignalPayloadPassesThroughUnchanged(): void

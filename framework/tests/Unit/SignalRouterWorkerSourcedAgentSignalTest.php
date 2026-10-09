@@ -12,6 +12,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -49,6 +50,19 @@ use PHPUnit\Framework\TestCase;
  */
 final class SignalRouterWorkerSourcedAgentSignalTest extends TestCase
 {
+    public function testQueuedAgentSignalKeepsReceiptWhenNoScopeIsOpen(): void
+    {
+        $router = new WorkerSourcedAgentSignalTestRouter();
+        $router->queueSignal(
+            new SignalSource(SignalSource::WORKER),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(HilosSignalConstants::HILOS_MAIL_SEND),
+            new AgentSignalData(new SignalData(), 42),
+        );
+
+        $this->assertSame(42, $router->getNextQueuedSignal()?->data->receiptId);
+    }
+
     public function testRawMailSendFromAWorkerReachesTheMailPool(): void
     {
         $destinations = new WorkerSourcedAgentSignalTestRouter()->getDestinations(new SignalDTO(

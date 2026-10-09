@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS {{change_log_database}}.`hilos_change_log_receipt` (
     `action` VARCHAR(255) NOT NULL,
     `agent` VARCHAR(255) NULL,
     `source` VARCHAR(512) NULL,
+    `open_handovers` INT NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`, `created_at`),
     KEY `idx_hcl_receipt_created` (`created_at`, `id`),
     KEY `idx_hcl_receipt_actor` (`actor_user_id`, `created_at`, `id`),

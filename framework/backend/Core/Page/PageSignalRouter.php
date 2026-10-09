@@ -2392,7 +2392,7 @@ class PageSignalRouter
             $name,
             $data->data,
         );
-        $signalData = $innerPayload === $data->data ? $data : new AgentSignalData($innerPayload);
+        $signalData = $innerPayload === $data->data ? $data : new AgentSignalData($innerPayload, $data->receiptId);
 
         try {
             $pageInstance->onSignalAgent($signalData, $sender, $name);

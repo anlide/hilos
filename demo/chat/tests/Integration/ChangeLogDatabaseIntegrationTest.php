@@ -27,7 +27,7 @@ final class ChangeLogDatabaseIntegrationTest extends IntegrationTestCase
         'hilos_change_log_field' => ['id', 'table_id', 'name'],
         'hilos_change_log_receipt' => [
             'id', 'created_at', 'actor_user_id', 'subject_user_id', 'session_id',
-            'channel', 'action', 'agent', 'source',
+            'channel', 'action', 'agent', 'source', 'open_handovers',
         ],
         'hilos_change_log' => [
             'id', 'created_at', 'receipt_id', 'table_id', 'record_key', 'record_key_hash', 'mutation_type',
