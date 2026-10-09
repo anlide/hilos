@@ -29,16 +29,18 @@ final class ThemeSettingsSignalData extends BaseDTO implements SignalDataInterfa
     }
 
     /**
+     * Reads both settings, each on its default when the project's catalog lacks it.
+     *
+     * Every handshake sends this frame, so a project on the stub catalog, or with a catalog of its
+     * own without the theme fragment, lives on the defaults rather than refusing every connection.
+     *
      * @return self Settings in force
      * @throws DatabaseException When a stored setting cannot be read
      * @throws SettingException When the setting catalog or a value is invalid
      */
     public static function current(): self
     {
-        return new self(
-            Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool(),
-            Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string(),
-        );
+        return new self(self::switchingEnabledInForce(), self::defaultThemeInForce());
     }
 
     /**
@@ -65,5 +67,33 @@ final class ThemeSettingsSignalData extends BaseDTO implements SignalDataInterfa
         }
 
         return new static(self::requireBool($data, self::switchingEnabled), $defaultTheme);
+    }
+
+    /**
+     * @return bool Whether switching is on, the catalog default when the catalog lacks the key
+     * @throws DatabaseException When the stored setting cannot be read
+     * @throws SettingException When the setting catalog or value is invalid
+     */
+    private static function switchingEnabledInForce(): bool
+    {
+        if (Hilos::$setting === null || !isset(Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY])) {
+            return ThemeSettingsCatalog::DEFAULT_SWITCHING_ENABLED;
+        }
+
+        return Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool();
+    }
+
+    /**
+     * @return string Default theme, the catalog default when the catalog lacks the key
+     * @throws DatabaseException When the stored setting cannot be read
+     * @throws SettingException When the setting catalog or value is invalid
+     */
+    private static function defaultThemeInForce(): string
+    {
+        if (Hilos::$setting === null || !isset(Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY])) {
+            return ThemeSettingsCatalog::DEFAULT_THEME;
+        }
+
+        return Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string();
     }
 }

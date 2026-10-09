@@ -127,9 +127,10 @@ Declare two keys in the framework's settings catalog:
 - `theme.default`: the default theme, a string accepting exactly `light`,
   `dark` or `system`, **system** by default.
 
-These keys and defaults live in `ThemeSettingsCatalog`. As settings, they take
-effect at once on every node, with nothing restarted; see
-"Settings and catalogs" in [framework-development.md](../framework-development.md).
+These keys and defaults live in `ThemeSettingsCatalog`. A project whose catalog
+carries no theme fragment lives on these defaults. As settings, they take effect
+at once on every node, with nothing restarted; see "Settings and catalogs" in
+[framework-development.md](../framework-development.md).
 
 Every connected tab, a guest's too, receives both in the handshake and again as a
 frame right after a write that moved either. Follow the path of

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Theme;
 
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogStub;
+use Hilos\Hilos;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Theme\ThemeSettingsCatalog;
 use PHPUnit\Framework\TestCase;
@@ -12,6 +15,40 @@ use PHPUnit\Framework\TestCase;
 /** Theme settings use one complete, typed wire pair (HIL-1428). */
 final class ThemeSettingsSignalDataTest extends TestCase
 {
+    private ?SettingsAccessor $previousSetting;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->previousSetting = Hilos::$setting;
+    }
+
+    protected function tearDown(): void
+    {
+        Hilos::$setting = $this->previousSetting;
+        parent::tearDown();
+    }
+
+    public function testAProjectWithoutTheThemeFragmentGetsTheDefaults(): void
+    {
+        Hilos::$setting = new SettingsAccessor(SettingsCatalogStub::class);
+
+        self::assertSame(
+            ['switchingEnabled' => true, 'defaultTheme' => 'system'],
+            ThemeSettingsSignalData::current()->toArray(),
+        );
+    }
+
+    public function testAProcessWithoutSettingsGetsTheDefaults(): void
+    {
+        Hilos::$setting = null;
+
+        self::assertSame(
+            ['switchingEnabled' => true, 'defaultTheme' => 'system'],
+            ThemeSettingsSignalData::current()->toArray(),
+        );
+    }
+
     public function testRoundtripKeepsBothSettings(): void
     {
         $data = new ThemeSettingsSignalData(false, ThemeSettingsCatalog::DARK);
