@@ -90,6 +90,7 @@ use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -584,6 +585,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosLogRotations => HilosLogRotationsTable::class,
             OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             OnlineTestingTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
+            OnlineTestingTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
             OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ], Hilos::TABLES);
@@ -598,6 +600,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             LogsRotationsPage::PAGE,
             LogsWorkersPage::PAGE,
             DaemonCronPage::PAGE,
+            DaemonWorkersPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
             LanguageNamesPage::PAGE,
@@ -714,6 +717,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([OnlineTestingTableContext::hilosLogRotations => []], Hilos::PAGE_TABLES[LogsRotationsPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosLogWorkers => []], Hilos::PAGE_TABLES[LogsWorkersPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
+        $this->assertSame([OnlineTestingTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
     }
 
     public function testNotificationCenterIsActivatedWithoutDelivery(): void

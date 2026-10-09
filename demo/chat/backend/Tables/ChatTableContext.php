@@ -24,6 +24,7 @@ use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -55,6 +56,7 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosLogRotationsTable $hilosLogRotations
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
+ * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
  * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
  * @property-read HilosSecurityOAuthRedirectTable $hilosSecurityOauthRedirect
@@ -87,6 +89,7 @@ final class ChatTableContext extends TableContext
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
+    public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
     public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;
     public const string hilosSecurityOauthRedirect = HilosSecurityOAuthRedirectTable::TABLE;

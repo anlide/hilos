@@ -65,6 +65,7 @@ use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpenActionDTO;
@@ -337,7 +338,9 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($collector));
         self::assertFalse((new DaemonCollectorAgentDaemon())->requiresMonopolisticProcess());
         self::assertSame(HilosDaemonCronTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonCron]);
+        self::assertSame(HilosDaemonWorkersTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonWorkers]);
         self::assertSame([ChatTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
     }
 
     /** Appearance reuses the index agent and the framework's self-snapshot table. */

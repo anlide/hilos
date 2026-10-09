@@ -104,6 +104,7 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
@@ -599,9 +600,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(HilosLogRotationsTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogRotations]);
         $this->assertSame(HilosLogWorkersTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogWorkers]);
         $this->assertSame(HilosDaemonCronTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonCron]);
+        $this->assertSame(HilosDaemonWorkersTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonWorkers]);
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosDaemonCron => []],
             Hilos::PAGE_TABLES[DaemonCronPage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosDaemonWorkers => []],
+            Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE],
         );
     }
 
