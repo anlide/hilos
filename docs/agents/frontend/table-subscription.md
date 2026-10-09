@@ -134,14 +134,14 @@ The subscription remembers **two** things and needs both:
 
 What of a row is rendered, the client says: a descriptor may carry `rendered`, the
 fields inside the row's slots the table draws. The core builds the list from the
-currently resolved columns (`hilosTableRenderedKeys`, `tableRendered.ts`) — every column's
-key, plus the fields each cell names in `reads` because it draws from more than its
-own key. The actions column has no key to count, so its `reads` is required, and an
-empty list is how it says it reads nothing. Every table sends the list; the server
-compares the whole row while it has no list, as on a cold window before
-`table_rendered`. The server keeps a digest of each
-delivered row whole and a second one of its drawn part (`TableViewportSubscription`),
-and the two answer different questions — see the next section.
+currently resolved columns (`hilosTableRenderedKeys`, `tableRendered.ts`) — every
+column's key, plus the fields each cell names in `reads` because it draws from more
+than its own key. The actions column has no key to count, so its `reads` is required,
+and an empty list is how it says it reads nothing. Every table sends the list; the
+server compares the whole row while it has no list, as on a cold window before
+`table_rendered`. The server keeps a digest of each delivered row whole and a second
+one of its drawn part (`TableViewportSubscription`), and the two answer different
+questions — see the next section.
 
 The list rides every `table_viewport` frame and the report of a held window at
 `page_subscribe`. One window can carry it in neither: the cold entry, which the server
@@ -1196,20 +1196,20 @@ generic wording, because a table whose columns named nothing would otherwise sho
 yesterday's number in silence.
 
 What is stale is **marked in the three places the framework owns**: a bar above
-the table saying in words what froze, why, and that the rest is live; a snowflake
-in the header of every column built from a quiet source, carried inside its sort
-control alongside a hidden warning (or beside the label when unsortable); and a
-snowflake in the narrow row-state cell at the end of every row whose own values
-are behind. The framework puts no mark inside the cells of the lagging column:
-their content belongs to the page (`#cell-<key>`), and the framework writes the
-cell around that content and nothing into it. The mark stays in the three places
-it owns completely (`D-051`).
-Showing yesterday's number silently beside today's is the worst of the
-options, because it looks fresh. A lagging source does not block the rest — rows
-page, filter, and sort by live or stale columns alike — and **a column of a stale
-source still sorts**: the header button and the Order menu item remain live and
-carry a snowflake with a hidden warning saying what the order is worth
-(`sortWarning`). The other orders a table refuses, and what it answers, are in
+the table saying in words what froze, why, and that the rest is live; a
+snowflake in the header of every column built from a quiet source, carried
+inside its sort control alongside a hidden warning (or beside the label when
+unsortable); and a snowflake in the narrow row-state cell at the end of every
+row whose own values are behind. The framework puts no mark inside the cells of
+the lagging column: their content belongs to the page (`#cell-<key>`), and the
+framework writes the cell around that content and nothing into it. The mark
+stays in the three places it owns completely (`D-051`). Showing yesterday's
+number silently beside today's is the worst of the options, because it looks
+fresh. A lagging source does not block the rest — rows page, filter, and sort by
+live or stale columns alike — and **a column of a stale source still sorts**:
+the header button and the Order menu item remain live and carry a snowflake with
+a hidden warning saying what the order is worth (`sortWarning`). The other
+orders a table refuses, and what it answers, are in
 [table-sort-orders.md](table-sort-orders.md).
 
 ## Headless table state machine

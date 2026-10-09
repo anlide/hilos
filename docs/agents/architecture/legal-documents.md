@@ -539,10 +539,11 @@ returns `hilos_legal_setting_write_done`. The page refuses unrelated keys.
 Every view uses `createHilosLegalSettingEdit` — the Legal factory over the core
 row-edit session ([conflict-resolution.md](../frontend/conflict-resolution.md),
 "The row-edit session") — on the focused setting row. A save stays unavailable
-while unchanged, in flight, conflicting or deleted. Incoming changes update a pristine draft, and a refused
-write keeps the modal and draft with its inline error. Closing follows the
-tracked settings-owner reply; the table value follows the DB source. Preview
-controls are disabled illustrations, not a second registration flow.
+while unchanged, in flight, conflicting or deleted. Incoming changes update a
+pristine draft, and a refused write keeps the modal and draft with its inline
+error. Closing follows the tracked settings-owner reply; the table value
+follows the DB source. Preview controls are disabled illustrations, not a
+second registration flow.
 
 The consent-form value is consumed by registration. The refusal policy is
 consumed by access enforcement, which freezes a person past a deadline under
