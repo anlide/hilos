@@ -948,9 +948,9 @@ class Database
      *
      * Silent with no transaction open, like ROLLBACK in MySQL: after a commit made outside any
      * handler whose released announcement failed, the caller's catch rolls back a transaction
-     * that already stands, and loses nothing by it. A level whose commit failed is already rolled back, its memory
-     * included, and is only closed here. The level leaves the stack and drops what it held
-     * before the SQL is sent, so a failing ROLLBACK still closes it.
+     * that already stands, and loses nothing by it. A level whose commit failed is already
+     * rolled back, its memory included, and is only closed here. The level leaves the stack
+     * and drops what it held before the SQL is sent, so a failing ROLLBACK still closes it.
      *
      * The memory the level's writes changed goes back first, step by step in the reverse order of
      * the writes, and then the SQL is sent - none when the level never reached the server. A step

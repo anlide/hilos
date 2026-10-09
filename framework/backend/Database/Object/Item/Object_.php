@@ -350,7 +350,8 @@ abstract class Object_
     /**
      * Collection key for DB sync, read from the row's declared object collection.
      *
-     * Return empty string to skip broadcast.
+     * Empty when the row declares no collection (OBJECT_COLLECTION_CLASS is ''): such a row is not
+     * broadcast.
      *
      * @return string Collection key or empty string
      */
