@@ -498,14 +498,16 @@ read and takes the ordinary road of a failing connection: the rate-limited WARNI
 `ClientReadFailureLog`, the contained-failure card to the project, the link dropped. The
 dialing side retries on its usual five seconds. In TLS 1.3 a refusal of the **dialer's**
 certificate is known only to the accepting side: the dialer finishes its own handshake and
-then finds the connection closed. So the accepting node always names it, the dialer names
-it when the reason is its own (it does not trust the acceptor), and a dialer whose link the
-peer closed after TLS and before any welcome writes one line per series to that target —
-`Peer <host>:<port> closed the link before welcoming this node; that node's log names the
-refusal` — and the next only after a handshake with that target has been taken to its end.
-A link the dialer dropped itself before the welcome — a silence timeout, a frame it refused,
-the welcome included — says so in its own line and is not blamed on the peer.
-A refusal on the peer port means a misconfigured node or a stranger; the operator must see
+then finds the connection closed. So the accepting node always names it, and the dialer
+names it when the reason is its own (it does not trust the acceptor). A dialer whose link
+the peer closed after TLS and before any welcome writes one line per series to that target
+— `Peer <host>:<port> closed before welcome; check the peer log` — and the next only after
+a handshake with that target has been taken to its end. Such a close is not always a
+refusal: the peer may have refused the certificate, replaced a duplicate link (HIL-1286),
+or lost the transport, so the line sends the reader to the peer's log rather than naming a
+refusal. A link the dialer dropped itself before the welcome — a silence timeout, a frame
+it refused, the welcome included — says so in its own line and is not blamed on the peer. A
+refusal on the peer port means a misconfigured node or a stranger; the operator must see
 either. A public port (a TLS server with no trust file, such as the stand gateway) asks no
 client for a certificate and closes a refused handshake without a word, as before.
 
