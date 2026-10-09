@@ -13,6 +13,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
@@ -687,6 +688,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
         ChatTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         ChatTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
+        ChatTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -901,6 +903,9 @@ final class Hilos extends HilosFacade
         ],
         LanguageNamesPage::PAGE => [
             ChatTableContext::hilosI18nLanguageNames => [],
+        ],
+        LanguageLocalesPage::PAGE => [
+            ChatTableContext::hilosI18nLanguageLocales => [],
         ],
         CountryNamesPage::PAGE => [
             ChatTableContext::hilosI18nCountryNames => [],

@@ -8,6 +8,7 @@ use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
@@ -52,6 +53,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
+ * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  */
 final class BinanceBtcTrackerTableContext extends TableContext
 {
@@ -71,6 +73,7 @@ final class BinanceBtcTrackerTableContext extends TableContext
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
+    public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
 
     /**
      * Registers binance-btc-tracker table definitions from the project topology registry.

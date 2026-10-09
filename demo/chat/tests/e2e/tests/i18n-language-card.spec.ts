@@ -33,8 +33,8 @@ test('opens the default language card directly with read-only details and staged
   await expect(tabs).toContainText('Main')
   await expect(tabs).toContainText('Names')
   await expect(tabs).toContainText('Locales')
-  // The names page is built in Vue (HIL-1477); the locales tab stays a label.
-  await expect(tabs.locator('a')).toHaveCount(2)
+  // The names (HIL-1477) and locales (HIL-1476) pages are built in Vue: every tab is a link.
+  await expect(tabs.locator('a')).toHaveCount(3)
   await expect(tabs.locator('a').first()).toHaveAttribute(
     'href',
     '/hilos/i18n/languages/en',
@@ -46,6 +46,9 @@ test('opens the default language card directly with read-only details and staged
   await expect(
     page.getByTestId('language-card-tab-hilos_i18n_language_names'),
   ).toHaveAttribute('href', '/hilos/i18n/languages/en/names')
+  await expect(
+    page.getByTestId('language-card-tab-hilos_i18n_language_locales'),
+  ).toHaveAttribute('href', '/hilos/i18n/languages/en/locales')
   await expect(
     page.getByTestId('language-card-main').locator('button, input'),
   ).toHaveCount(0)

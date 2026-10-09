@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Collection;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Collection\Locales as ObjectLocales;
+use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
 use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\Language;
@@ -61,7 +62,7 @@ class LocalesActions extends DbActions
 
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $locale = $objectClass::create();
-        $locale->code = $country === null ? $language->code : $language->code . '-' . strtoupper($country->code);
+        $locale->code = ObjectLocale::codeFor($language->code, $country?->code);
         $locale->languageId = $language->id;
         $locale->countryId = $country?->id;
         $locale->dateFormat = $dateFormat;

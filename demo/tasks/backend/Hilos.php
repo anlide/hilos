@@ -13,6 +13,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
@@ -463,6 +464,7 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
         TasksTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         TasksTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
+        TasksTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -569,6 +571,9 @@ final class Hilos extends HilosFacade
         ],
         LanguageNamesPage::PAGE => [
             TasksTableContext::hilosI18nLanguageNames => [],
+        ],
+        LanguageLocalesPage::PAGE => [
+            TasksTableContext::hilosI18nLanguageLocales => [],
         ],
         CountryNamesPage::PAGE => [
             TasksTableContext::hilosI18nCountryNames => [],

@@ -100,6 +100,7 @@ use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
@@ -310,6 +311,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
         }
 
+        $this->assertSame(HilosI18nLanguageLocalesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosI18nLanguageLocales]);
+        $this->assertSame([OnlineTestingTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
@@ -622,6 +625,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
             OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
+            OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
         ], Hilos::TABLES);
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
@@ -639,6 +643,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             UsersPage::PAGE,
             UserPage::PAGE,
             LanguageNamesPage::PAGE,
+            LanguageLocalesPage::PAGE,
             CountryNamesPage::PAGE,
         ], array_keys(Hilos::PAGE_TABLES));
         $this->assertSame([OnlineTestingTableContext::settings => []], Hilos::PAGE_TABLES[SettingsPage::PAGE]);

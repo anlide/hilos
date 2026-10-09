@@ -63,6 +63,17 @@ export {
   type HilosI18nNamesTarget,
 } from './admin/i18n/hilosI18nNames.js'
 export {
+  HILOS_I18N_LANGUAGE_LOCALES_COLUMNS,
+  HILOS_I18N_LANGUAGE_LOCALES_FILTER,
+  HILOS_I18N_LANGUAGE_LOCALES_FRAME,
+  HILOS_I18N_LANGUAGE_LOCALES_TABLE,
+  HilosI18nLocaleRowKey,
+  createHilosI18nLanguageLocalesTable,
+  resolveHilosI18nLocaleRow,
+  type HilosI18nLanguageLocalesTable,
+  type HilosI18nLocaleRow,
+} from './admin/i18n/hilosI18nLocales.js'
+export {
   COUNTRY_CARD_DATA,
   countryCardSchema,
   createHilosI18nCountryCard,

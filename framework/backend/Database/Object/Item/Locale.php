@@ -43,6 +43,21 @@ class Locale extends Object_
     public const string enabled = 'enabled';
 
     /**
+     * Writes the code of the locale of one language and one country, or of the language alone.
+     *
+     * The one place of the rule: the creation of a locale stores its code by it, and the locales
+     * table of a language keys the row of a pair by it, whether the pair has a locale or not (HIL-1476).
+     *
+     * @param string $languageCode Code of the language, as stored
+     * @param ?string $countryCode Code of the country, as stored, or null for the language's own edition
+     * @return string The language code, or the language code and the upper-cased country code joined by a hyphen
+     */
+    public static function codeFor(string $languageCode, ?string $countryCode): string
+    {
+        return $countryCode === null ? $languageCode : $languageCode . '-' . strtoupper($countryCode);
+    }
+
+    /**
      * @param string $property Scalar property name
      * @return mixed Stored field value
      * @throws DatabaseException When the property is unknown

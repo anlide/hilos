@@ -110,6 +110,7 @@ use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
 use Hilos\Mail\Delivery\MailDeliveryChannelAgentDaemon;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
@@ -362,6 +363,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
         OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
+        OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -415,6 +417,9 @@ final class Hilos extends HilosFacade
         ],
         LanguageNamesPage::PAGE => [
             OnlineTestingTableContext::hilosI18nLanguageNames => [],
+        ],
+        LanguageLocalesPage::PAGE => [
+            OnlineTestingTableContext::hilosI18nLanguageLocales => [],
         ],
         CountryNamesPage::PAGE => [
             OnlineTestingTableContext::hilosI18nCountryNames => [],

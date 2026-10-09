@@ -134,6 +134,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
 
@@ -342,6 +343,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
         }
 
+        $this->assertSame(HilosI18nLanguageLocalesTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosI18nLanguageLocales]);
+        $this->assertSame([BinanceBtcTrackerTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],

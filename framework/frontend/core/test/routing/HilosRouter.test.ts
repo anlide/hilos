@@ -130,7 +130,7 @@ function fakePages() {
 }
 
 describe('unbuilt pages', () => {
-  it('serves the cold Vue language card, its names and the country card by direct URL while parents and other details stay closed', () => {
+  it('serves the cold Vue language card, its names and locales and the country card by direct URL while parents and other details stay closed', () => {
     const i18nRouter = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
       fallback: HilosPages.DASHBOARD,
     })
@@ -185,6 +185,7 @@ describe('unbuilt pages', () => {
           layer === 'vue' &&
           (page === HilosPages.I18N_LANGUAGE ||
             page === HilosPages.I18N_LANGUAGE_NAMES ||
+            page === HilosPages.I18N_LANGUAGE_LOCALES ||
             page === HilosPages.I18N_COUNTRY)
         ) {
           expect(refused).toEqual([])

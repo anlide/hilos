@@ -79,6 +79,7 @@ import HilosLegalAcceptances from './views/Hilos/Legal/LegalAcceptances.vue'
 import HilosLegalSettings from './views/Hilos/Legal/LegalSettings.vue'
 import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
 import HilosI18nLanguageNames from './views/Hilos/I18n/LanguageNames/LanguageNames.vue'
+import HilosI18nLanguageLocales from './views/Hilos/I18n/LanguageLocales/LanguageLocales.vue'
 import HilosI18nCountry from './views/Hilos/I18n/Country/Country.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
 import HilosLogsKeys from './views/Hilos/Logs/Keys.vue'
@@ -139,6 +140,7 @@ const pages: Record<string, Component> = {
   [HilosPages.LEGAL_SETTINGS]: HilosLegalSettings,
   [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
   [HilosPages.I18N_LANGUAGE_NAMES]: HilosI18nLanguageNames,
+  [HilosPages.I18N_LANGUAGE_LOCALES]: HilosI18nLanguageLocales,
   [HilosPages.I18N_COUNTRY]: HilosI18nCountry,
   [HilosPages.LOGS]: HilosLogsOverview,
   [HilosPages.LOGS_KEYS]: HilosLogsKeys,

@@ -26,6 +26,7 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
+use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
@@ -292,6 +293,8 @@ final class TasksTopologyRegistryTest extends TestCase
             $this->assertSame(HilosAgentType::HILOS_I18N_LIBRARY, Hilos::getPageRoutes()[$page::PAGE]);
         }
 
+        $this->assertSame(HilosI18nLanguageLocalesTable::class, Hilos::TABLES[TasksTableContext::hilosI18nLanguageLocales]);
+        $this->assertSame([TasksTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
@@ -661,6 +664,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosSecurityStepUp => HilosSecurityStepUpTable::class,
             TasksTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             TasksTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
+            TasksTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -693,6 +697,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 UsersPage::PAGE,
                 UserPage::PAGE,
                 LanguageNamesPage::PAGE,
+                LanguageLocalesPage::PAGE,
                 CountryNamesPage::PAGE,
             ],
             array_keys(Hilos::PAGE_TABLES),
