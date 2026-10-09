@@ -36,9 +36,9 @@ require_once __DIR__ . '/framework-pieces.php';
  *   database  the database inside the stand this step works in, when it is not
  *            the one the stand's database container names as MYSQL_DATABASE;
  *            the step's snapshot reads this one.
- *   seconds  the last measured duration (HIL-1227, 2026-09-29; the e2e of chat and
- *            binance-btc-tracker re-measured by HIL-1221 the same day, after the
- *            protected-mode spec moved between them, again by HIL-1220, after
+ *   seconds  the last measured duration (HIL-1227, 2026-09-29; the e2e of chat
+ *            and binance-btc-tracker re-measured by HIL-1221 the same day, after
+ *            the protected-mode spec moved between them, again by HIL-1220, after
  *            the backup specs did, and again by HIL-1219, after the settings,
  *            people and admin specs did; polls and online-testing e2e re-measured
  *            by HIL-1226 in isolated green test:e2e-full cycles on 2026-10-02
@@ -47,17 +47,17 @@ require_once __DIR__ . '/framework-pieces.php';
  *            GREEN runs on nova-de. The framework-php group, chat-php, chat-e2e
  *            and the three fleets were re-measured alone on nova-de by HIL-1327
  *            on 2026-10-04 after the test databases moved into memory; chat and
- *            tasks e2e re-measured by HIL-1324 on 2026-10-09 after sign-in, step-up,
- *            session and passkey suites moved between them; chat and polls e2e
- *            re-measured by HIL-1325 on 2026-10-09 after profile, legal, second-factor,
- *            data export and privacy suites moved between them. A step
- *            beside its neighbours takes what it takes alone (chat-e2e 19m47s
- *            alone against 19m21s–21m30s beside two,
- *            28.09). A scheduling HINT only, and a narrow one
- *            (`scripts/launch-order.php`): of the steps ready to go, the group
- *            whose longest member is longest goes first, its shortest step
- *            ahead of the rest, and nothing here looks at the work waiting
- *            behind a step. A stale number costs wall clock, never correctness.
+ *            tasks e2e re-measured by HIL-1324 on 2026-10-09 after sign-in,
+ *            step-up, session and passkey suites moved between them; chat and
+ *            polls e2e re-measured by HIL-1325 on 2026-10-09 after profile,
+ *            legal, second-factor, data export and privacy suites moved between
+ *            them. A step beside its neighbours takes what it takes alone
+ *            (chat-e2e 19m47s alone against 19m21s–21m30s beside two, 28.09). A
+ *            scheduling HINT only, and a narrow one (`scripts/launch-order.php`):
+ *            of the steps ready to go, the group whose longest member is longest
+ *            goes first, its shortest step ahead of the rest, and nothing here
+ *            looks at the work waiting behind a step. A stale number costs wall
+ *            clock, never correctness.
  *
  * WHAT BOUNDS A FULL RUN, and why neither the order nor the lanes are the lever.
  * Measured 2026-09-29 (HIL-1227) on nova-de, run 0659, the first green run at

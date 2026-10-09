@@ -1,18 +1,17 @@
 """
 control.py - the host-side controller of a cluster stand (HIL-185), for any stand the harness
 reads (stand.py). Preview-style: a thin orchestrator over `docker compose` plus the six fault
-switches the scenarios need - `docker kill -9` (node-down / failover), `docker network
-disconnect` (partition / split-brain), a SIGKILL of the daemon or one worker inside a live
-container (crash recovery / partial failure), a SIGSTOP of one worker (a hung orphan, scenario 9),
-and a blackhole route between an island of nodes
-and the rest of the stand (a partition that keeps the island linked within itself, scenario 36,
-HIL-1287) - and one lever on the stand's database, `db-sql`
-(a node reading another database marker, HIL-1206; each member of a clustered database asked,
-HIL-1230). It also recreates a node with an empty copy of the stand's cluster directory of its
-own: the directory guard refuses it (HIL-1242/HIL-1243). Assertions live in the scenario
-matrix (scenarios.py), which reads each node's `test:cluster:inspect` reply and compares it
-against the expected invariants.
-It can also recreate a node with one environment variable of its own (scenario 32, HIL-1274).
+switches the scenarios need - `docker kill -9` (node-down / failover),
+`docker network disconnect` (partition / split-brain), a SIGKILL of the daemon or one worker
+inside a live container (crash recovery / partial failure), a SIGSTOP of one worker (a hung
+orphan, scenario 9), and a blackhole route between an island of nodes and the rest of the stand
+(a partition that keeps the island linked within itself, scenario 36, HIL-1287) - and one lever
+on the stand's database, `db-sql` (a node reading another database marker, HIL-1206; each
+member of a clustered database asked, HIL-1230). It also recreates a node with an empty copy of
+the stand's cluster directory of its own: the directory guard refuses it (HIL-1242/HIL-1243).
+Assertions live in the scenario matrix (scenarios.py), which reads each node's
+`test:cluster:inspect` reply and compares it against the expected invariants. It can also
+recreate a node with one environment variable of its own (scenario 32, HIL-1274).
 
 A command that the scenarios drive answers with an Outcome - its exit code, what it would print,
 and what it would complain - and prints nothing itself: the matrix reads the answer, and

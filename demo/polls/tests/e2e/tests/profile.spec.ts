@@ -1,9 +1,10 @@
 // The profile root (HIL-1169): the avatar in the header leads to /profile over
 // the live socket. The person's own line carries the session name; Name has no
 // Change, because this demo hands the page no rename of its own. The framework
-// list supplies the confirmed Email row. The rows are the sections of
-// the catalog this demo serves, in catalog order — Ways to sign in, Active sign-ins, Security, Agreements, then Your data —
-// and each opens its page, whose "Profile" crumb now leads back.
+// list supplies the confirmed Email row. The rows are the sections of the
+// catalog this demo serves, in catalog order — Ways to sign in, Active
+// sign-ins, Security, Agreements, then Your data — and each opens its page,
+// whose "Profile" crumb now leads back.
 import { expect, test, type Page } from '@playwright/test'
 
 import { waitForMailCode, waitForMailTo } from '../helpers/mail.js'

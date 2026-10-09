@@ -6,10 +6,9 @@ It assumes the stand is already up (cluster.py raises it fresh before the matrix
 it: for each scenario it perturbs the cluster through the controller (control.py: docker kill
 -9 for node-down, docker network disconnect for partition, a SIGKILL of the daemon or one
 worker inside a live container, and a SIGSTOP of one worker), polls each node's
-`test:cluster:inspect` reply until the
-topology converges (bounded by a hard cap), and asserts the expected invariants against the
-machine-readable reply. Destructive scenarios restore the cluster and re-converge before the
-next.
+`test:cluster:inspect` reply until the topology converges (bounded by a hard cap), and
+asserts the expected invariants against the machine-readable reply. Destructive scenarios
+restore the cluster and re-converge before the next.
 
 The stand is not written down here. bind() takes it once, before the matrix, and the nodes a
 scenario perturbs are named by their role on it - the first master, the second slave - never

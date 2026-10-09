@@ -1,8 +1,8 @@
 // The profile root (HilosPages.PROFILE, /profile, HIL-1169): a thin project
 // binding of the framework HilosProfilePage to this app's connection, scopes and
 // action lifecycle. The page, its rows and its windows are the framework's; this
-// app hands it the session's name and session count — the framework list supplies ways in;
-// this app keeps no devices summary list.
+// app hands it the session's name and session count — the framework list
+// supplies ways in; this app keeps no devices summary list.
 import { ChangeDetectionStrategy, Component } from '@angular/core'
 import {
   type HilosProfileBinding,

@@ -18,10 +18,10 @@ use Hilos\Log\LogAggregatorAgent;
  *
  * A portion of the cluster picture: whole node slots, never a line-level difference. Which slots
  * are in it is the aggregator's decision - everything on each positive claim from a subscriber,
- * and between claims only what changed since that subscriber was last written to - and {@see $snapshot}
- * is how the receiver tells the two apart: a snapshot REPLACES the mirror, a portion is laid over
- * it slot by slot. Without that flag a picture could never lose a node, because a portion missing
- * a slot and a snapshot missing one look the same on the wire.
+ * and between claims only what changed since that subscriber was last written to - and
+ * {@see $snapshot} is how the receiver tells the two apart: a snapshot REPLACES the mirror, a
+ * portion is laid over it slot by slot. Without that flag a picture could never lose a node,
+ * because a portion missing a slot and a snapshot missing one look the same on the wire.
  *
  * The index inside each slot is laid out by {@see NodeLogIndexSignalData} and not by this class:
  * the fields of a node's index already have exactly one wire form, and a second one here would be

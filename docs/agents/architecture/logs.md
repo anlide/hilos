@@ -289,24 +289,25 @@ to "which nodes are there" here would be a second truth beside the master's
 register.
 
 **Aggregator to section.** The subscription is a claim of interest
-(`logs_index_watch`) carrying one number — how many connections are watching
-any page of the section — repeated on the page agent's own tick. A non-zero
-count opens the subscription and renews its lease. Until the mirror receives its
-first full snapshot, the page agent repeats that claim every second, even if an
-early portion already supplied a partial picture. A full snapshot, including an
-empty one, switches the interval to thirty seconds. The lease expires after ninety seconds.
-A change in viewer count bypasses either interval; zero cancels at once, because a subscriber
-whose last viewer just closed the tab must stop costing frames immediately.
-There is no subscribe/unsubscribe pair to keep in step and no farewell to lose:
-a subscriber whose process died is forgotten when the lease runs out, and an
-aggregator restarted or moved is repaired by the next claim. Every positive
-claim is answered on the spot with the whole picture, even from an already
-registered source: a lost first answer must be recoverable by repeating the
-claim. A lost claim is recovered the same way. These snapshots bypass the
-coalescing window, including the ordinary thirty-second keepalive's snapshot.
-Between claims only slots that changed travel, coalesced over half a second.
-**Nothing goes up while nobody is watching:** a cluster with no administrator
-looking at it costs one frame per node per interval and not a byte more.
+(`logs_index_watch`) carrying one number — how many connections are watching any
+page of the section — repeated on the page agent's own tick. A non-zero count
+opens the subscription and renews its lease. Until the mirror receives its first
+full snapshot, the page agent repeats that claim every second, even if an early
+portion already supplied a partial picture. A full snapshot, including an empty
+one, switches the interval to thirty seconds. The lease expires after ninety
+seconds. A change in viewer count bypasses either interval; zero cancels at
+once, because a subscriber whose last viewer just closed the tab must stop
+costing frames immediately. There is no subscribe/unsubscribe pair to keep in
+step and no farewell to lose: a subscriber whose process died is forgotten when
+the lease runs out, and an aggregator restarted or moved is repaired by the next
+claim. Every positive claim is answered on the spot with the whole picture, even
+from an already registered source: a lost first answer must be recoverable by
+repeating the claim. A lost claim is recovered the same way. These snapshots
+bypass the coalescing window, including the ordinary thirty-second keepalive's
+snapshot. Between claims only slots that changed travel, coalesced over half a
+second. **Nothing goes up while nobody is watching:** a cluster with no
+administrator looking at it costs one frame per node per interval and not a byte
+more.
 
 **The mirror.** `ClusterLogIndexMirror` is static in the page worker: the
 picture belongs to the process and outlives any one page dispatch, and every

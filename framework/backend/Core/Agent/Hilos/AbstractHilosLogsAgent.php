@@ -211,11 +211,11 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
     /**
      * Tells the aggregator how many people are watching, when there is a reason to say it.
      *
-     * A count that CHANGED goes out at once, zero included and zero especially: a claim of zero is what
-     * cancels the subscription, and holding it back would let frames outlive the last viewer by a
-     * whole lease. Until the first full snapshot arrives, a positive count repeats every second;
-     * an early portion does not end that wait. After the full snapshot, an unchanged positive count
-     * goes out once per keepalive to renew the lease. Zero stays silent.
+     * A count that CHANGED goes out at once, zero included and zero especially: a claim of zero is
+     * what cancels the subscription, and holding it back would let frames outlive the last viewer
+     * by a whole lease. Until the first full snapshot arrives, a positive count repeats every
+     * second; an early portion does not end that wait. After the full snapshot, an unchanged
+     * positive count goes out once per keepalive to renew the lease. Zero stays silent.
      *
      * The clock is a parameter rather than a reading, the way {@see LogStoreAgent::pushIndexIfDue()}
      * takes its own: the tick is only this method's throttle, and when a claim is due should not
@@ -270,8 +270,8 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      *
      * Once and not per tick: the aggregator being unplaced or moving is a state that lasts, and a
      * line a tick would bury the journal of the very node an administrator came to read. Both the
-     * clock and the flag are cleared as soon as a full snapshot arrives or the last viewer leaves, so a
-     * later blackout is timed afresh and heard about again.
+     * clock and the flag are cleared as soon as a full snapshot arrives or the last viewer leaves,
+     * so a later blackout is timed afresh and heard about again.
      *
      * @param int $viewers Viewers watching the section right now
      * @param float $now Wall clock of this tick
