@@ -2500,7 +2500,7 @@ def scenario_23_verifier_circle_on_every_master():
         if moved:
             print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
                   f"(term {now[moved[0]].get('term')}) under the freeze; "
-                  f"the drive commands still go to {leader} (HIL-1232, P-459)")
+                  "these assertions describe one leadership term (P-459)")
         replies = {n: protected_mode(n) for n in MASTERS}
         if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
             client(leader, "test:protected-mode:open")
@@ -2572,7 +2572,7 @@ def scenario_25_freeze_settles_on_every_master():
         if moved:
             print(f"  leadership moved from {leader} (term {term}) to {moved[0]} "
                   f"(term {now[moved[0]].get('term')}) under the freeze; "
-                  f"the drive commands still go to {leader} (HIL-1232, P-459)")
+                  "these assertions describe one leadership term (P-459)")
         replies = {n: protected_mode(n) for n in MASTERS}
         if any(r is None or r.get("phase") != "inactive" for r in replies.values()):
             client(leader, "test:protected-mode:open")
