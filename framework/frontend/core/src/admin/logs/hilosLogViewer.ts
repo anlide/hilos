@@ -1228,9 +1228,9 @@ export function createHilosLogViewer(
 
   // What can be chosen without guessing, once there is a catalog to choose from.
   // The node only on a standalone installation; in a cluster, picking one for
-  // the operator would open some machine's log because it reported first.
-  // The stream is never preselected at
-  // all: the wrong file open looks exactly like an answer.
+  // the operator would open some machine's log because it reported first. The
+  // stream is never preselected at all: the wrong file open looks exactly like
+  // an answer.
   const preselect = (
     next: HilosLogViewerCatalog,
     previous: HilosLogViewerCatalog | null,

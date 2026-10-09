@@ -67,5 +67,4 @@ currently holds from `cronRules()`. The framework checks that set after each
 tick and reports changes to the node's Daemon picture. A rule left out still
 runs, but is absent from the picture. Do not register or forget rules by hand:
 rebuild or null the property as before, and let `cronRules()` read the current
-set. See
-[The Schedule](../architecture/daemon-section.md#the-schedule).
+set. See [The Schedule](../architecture/daemon-section.md#the-schedule).

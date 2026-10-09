@@ -37,10 +37,10 @@ use Hilos\Runtime\State\Item\HilosClusterNode;
  *
  * This is the single seam through which the rest of the framework asks "are we
  * clustered, and who am I". It is always present on the facade; when cluster
- * mode is off it reports disabled and has a stable local id without starting
- * the cluster mesh. Later cluster slices
- * (the live node registry, the peer channel, the coordinator) hang off this same
- * context rather than adding further facade globals.
+ * mode is off it reports disabled and has a stable local id without starting the
+ * cluster mesh. Later cluster slices (the live node registry, the peer channel,
+ * the coordinator) hang off this same context rather than adding further facade
+ * globals.
  *
  * Configuration is read lazily from Hilos::$env, not captured at construction:
  * the daemon overlays a test env after the facade is bootstrapped, so eager

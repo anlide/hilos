@@ -198,10 +198,10 @@ in multi-row inserts of up to 500, then the mark in `hilos_analytics_journal_fil
 (`node_id` — the effective node ID on every installation — and `file_name`, unique),
 then the commit. An older standalone ready file may still have `node: ''` in its
 header; the loader reads it without rewriting it and also checks an old empty-ID
-receipt before loading it again. A file
-already marked is only confirmed again: a lost confirmation or a writer that moved
-writes nothing twice. Journal loading and writing SQL lives in `AnalyticsStore`;
-section SELECTs live in `AnalyticsSectionReader`, and personal-export reads in
+receipt before loading it again. A file already marked is only confirmed again: a
+lost confirmation or a writer that moved writes nothing twice. Journal loading and
+writing SQL lives in `AnalyticsStore`; section SELECTs live in
+`AnalyticsSectionReader`, and personal-export reads in
 `AnalyticsPersonExportReader`.
 
 - A session description is an upsert on its key — a repeat costs nothing; a stop

@@ -275,8 +275,8 @@ final class NodeLogIndexSignalData extends BaseDTO implements SignalDataInterfac
      * refused rather than filled in: an index that repaired itself here would put figures in the
      * cluster picture that no node ever measured. The due-batch field may be absent because a node
      * predating that key still reports an index worth drawing. The three free-space fields may be
-     * absent from older nodes (HIL-869); a node that has them can also say nothing
-     * about a filesystem that did not answer.
+     * absent from older nodes (HIL-869); a node that has them can also say nothing about a
+     * filesystem that did not answer.
      *
      * @param array<string, mixed> $data Wire form of one node's index
      * @return static Restored payload

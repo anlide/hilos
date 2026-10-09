@@ -359,8 +359,8 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         $clusterEnabled = Hilos::$cluster?->isEnabled() === true;
         foreach ($index->nodes() as $slot) {
             $due = self::batchesDueOf($slot->index);
-            // Summed over every slot: a single-node installation draws
-            // no table, and the banner above it still has to say the batches are waiting.
+            // Summed over every slot: a single-node installation draws no table, and the banner
+            // above it still has to say the batches are waiting.
             $batchesDueForTakeout += $due;
             if (!$clusterEnabled) {
                 self::fillFreeSpaceHeader($slot->index);

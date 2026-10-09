@@ -211,9 +211,8 @@ answer and the lookup does not.
 
 Off a cluster the single node publishes itself under the `standalone` id
 (`HilosClusterNode::STANDALONE_NODE_ID`). This is where the key parts ways with
-`INDEX_FIELD`, which
-logs and drops the signal on an empty value: an absent index is a sender that
-forgot, an absent node id is a sender that means "here".
+`INDEX_FIELD`, which logs and drops the signal on an empty value: an absent
+index is a sender that forgot, an absent node id is a sender that means "here".
 
 The declarations compose — a signal may name both a node and an agent index,
 and the index travels with it to the node that hosts the instance.
@@ -240,12 +239,11 @@ final class ChatRoomPage extends AbstractPage
 }
 ```
 
-For an indexed agent, `PARAM` — the address of
-the page names it, and the index travels as a subscription param. `SESSION_USER` — the
-page is "mine", and the instance is the person behind the connection, whom the master
-reads through the same identity seam the access guards are judged with
-(`BrowserContext::connectionIdentity()`). It reads one row of one connection and never
-the database.
+For an indexed agent, `PARAM` — the address of the page names it, and the index
+travels as a subscription param. `SESSION_USER` — the page is "mine", and the instance
+is the person behind the connection, whom the master reads through the same identity
+seam the access guards are judged with (`BrowserContext::connectionIdentity()`). It
+reads one row of one connection and never the database.
 
 `NODE_PARAM` names a node instead of an indexed instance. The page's
 `SUBSCRIPTION_AGENT_TYPE` must be a `NODE`-scoped agent, with a registered
