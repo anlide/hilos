@@ -4,7 +4,10 @@ Migrations are versioned SQL files applied in order. No PHP migration classes �
 
 ## File location
 
-`backend/Database/migrations/` (project-level, configured in Bootstrap)
+`backend/Database/Migration/Schema/` (project-level; a project has this one track, set by
+`framework/backend/Core/Bootstrap/EntrypointPrelude.php` —
+`Migration::setMigrationListPath($projectRoot . '/backend/Database/Migration')` and
+`Migration::setMigrationName('Schema')`)
 
 ## File naming
 
@@ -151,6 +154,61 @@ and write it down, so similar cases do the same.*
 Examples: `demo/chat/backend/Database/Migration/Schema/051_add_passkey_credential_identity_foreign_key.sql`
 (HIL-1111) and the person keys of HIL-1202 (`NNN_add_person_foreign_keys.sql`
 in each demo).
+
+## Framework Tables In A Project (HIL-1326)
+
+**Today.** A framework table reaches a project as a copy in the project's own track. The
+stub `framework/backend/Database/Migration/Stub/create_<table>.sql` (and its `_down`) holds
+the table's current form and is edited in place: the framework keeps no history of its own
+changes. A change to a framework table is therefore also written into every project that
+carries the table, as a numbered migration of that project (and its `_down`) holding the
+framework's DDL only — never mixed with the project's own DDL in one file. The copies of one
+change differ only by the set of framework tables each project carries (commit `a7b849b53`,
+`NNN_add_person_foreign_keys.sql` in six demos). What the project adds to a framework table —
+a column ([inheritance.md](inheritance.md), *the project's columns arrive by a project
+migration*), an index, its own rows moved into it — is a separate project migration. Reaching
+a framework table the project does not carry raises `TableNotActivatedException`
+(`framework/backend/Database/Exception/TableNotActivatedException.php`), which names the stub
+to copy.
+
+**Decided (2026-10-08).** The framework keeps, beside the stubs, a catalog of changes: a
+change to a framework table is written in the framework once. A framework command brings a
+project the catalog changes it lacks — only for the tables of the features it declares
+(`Hilos::FEATURES`, through a feature → tables map the framework keeps) — each file marked
+with its origin, so that running the command again copies nothing twice; and a node does not
+start while the code expects a catalog change that is not in the project's track — it names
+the command instead (not in the code yet — HIL-1518). A new project receives its framework
+tables as one composite baseline in their current form, marked with the catalog version it
+was built from (not in the code yet — HIL-1519). Existing projects stay as they are: their
+history is the catalog's starting point, and the next changes reach them by the same command.
+The model is Rails engines: `rails <engine>:install:migrations` copies the engine's
+migrations into the application, marks each with its source, and skips the ones already
+copied. The names of the command, of the catalog and of the origin mark are not chosen here:
+the interviews of HIL-1518 and HIL-1519 decide them and write them into this section as they
+clear their markers. This section describes the behavior.
+
+**Why not a migration track of the framework's own.** Considered, and set aside by the owner
+on 2026-10-08. A track of its own needs a track in the `migration` journal, two levels in
+every reader of the level — the archive sidecar, the dump marker, the restore gate, the
+migrate step after an import, `--migration-index`, the stamp of the journal trigger files,
+the migration receipt — and a move of every project. The owner's frame, in the owner's words
+rendered in English: *such a switch could only be done once the first version of the
+framework is finished — earlier it is inconvenient, later it is problematic.* So the
+`migration` journal, the level, the archives, the restore gate, the journal triggers and the
+receipts keep one track per database; the copies stay, and the command brings them.
+
+**Which tables.** Those of the project's declared features. A table smaller than its feature
+(`hilos_oauth_provider`, `hilos_legal_acceptance_export`) comes with the feature whole and
+stays empty in a project that does not use it; a change that touches tables of several
+features is written in parts, one per feature. The checks that read "the table exists" as
+"the feature is on" — `Schema::getTable(...) !== null` in
+`framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php`,
+`framework/backend/DataExport/FrameworkDataExportSections.php`,
+`framework/backend/Database/Object/Collection/NotificationPreferences.php`,
+`framework/backend/Database/Object/Collection/PushSubscriptions.php` and
+`framework/backend/Notification/Delivery/AbstractDeliveryChannelAgent.php` — stay true:
+a project carries a table exactly when it declares the table's feature
+(not in the code yet — HIL-1518).
 
 ## Seeds
 
