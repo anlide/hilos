@@ -188,9 +188,9 @@ primary database's `hilos_migration_claim`. It runs no DDL when the window is
 already complete. A node that runs past it keeps writing to `p_future`; its next
 bootstrap reorganizes that partition and moves those rows into their months.
 
-A receipt refers to a person softly, without a foreign key. MariaDB 11.4 does not allow foreign keys on
-partitioned tables, and a partition brought back from an archive could name a
-person who has been erased. See
+A receipt refers to a person softly, without a foreign key. MariaDB 11.4 does
+not allow foreign keys on partitioned tables, and a partition brought back from
+an archive could name a person who has been erased. See
 [Foreign Keys Onto The Person](people-table.md#foreign-keys-onto-the-person).
 
 The six tables are two stable dictionaries (`hilos_change_log_table`,
