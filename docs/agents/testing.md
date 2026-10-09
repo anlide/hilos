@@ -166,8 +166,9 @@ looks suspiciously cheap, the guards' own log lines are the first place to check
 
 It is **not** part of the inner loop. The two-window coverage lives in chat's
 bots and profile specs (Vue; and so do binance-btc-tracker's `settings.spec.ts`
-and `users.spec.ts`) and the `users.spec.ts` of ecommerce-shop (React) and
-online-testing (Angular) — one representative path per view layer. The **a11y** coverage is the same kind of
+and `users.spec.ts`), the `users.spec.ts` of ecommerce-shop (React), polls's
+`profile.spec.ts` (Angular — edits in another tab of the same session) and
+online-testing's `users.spec.ts` (Angular) — representative paths per view layer. The **a11y** coverage is the same kind of
 separate, rarely-run category — an `a11y.spec.ts` per demo asserting the
 accessibility tree over the live socket: table accessible names and `aria-sort`,
 keyboard sort operability, the skip link and `aria-current`, the document title

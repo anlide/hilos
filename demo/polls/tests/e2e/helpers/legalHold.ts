@@ -5,7 +5,7 @@ import { createCommandChannel } from '../../../../../framework/frontend/scripts/
 // on a revision over the wire directly; the master parks the request for the
 // users library, which rewrites the person's acceptance records and publishes
 // their agreements state.
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'polls-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // Unlike the admin view mode, the reply waits for an agent: the users library

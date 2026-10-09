@@ -1,0 +1,3 @@
+This is a demo: its data may be wiped at any time.
+
+The standard promises only that the service is run with care. This installation is a demonstration of the framework, and it is reset without notice: accounts and everything kept in them may disappear at any moment and are not restored. Do not keep anything here that you would miss.

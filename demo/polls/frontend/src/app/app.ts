@@ -57,7 +57,11 @@ import { LegalRevision } from './views/hilos/legal/legal-revision.js'
 import { LegalAcceptances } from './views/hilos/legal/legal-acceptances.js'
 import { LegalSettings } from './views/hilos/legal/legal-settings.js'
 import { Profile } from './views/profile/profile.js'
-import { ProfileSecurity } from './views/profile/profile-security'
+import { ProfileSignIn } from './views/profile/profile-sign-in.js'
+import { ProfileSessions } from './views/profile/profile-sessions.js'
+import { ProfileSecurity } from './views/profile/profile-security.js'
+import { ProfileAgreements } from './views/profile/profile-agreements.js'
+import { ProfileAgreementsHistory } from './views/profile/profile-agreements-history.js'
 import { ProfileData } from './views/profile/profile-data.js'
 import { Settings } from './views/hilos/settings/settings'
 import { Terms } from './views/terms/terms'
@@ -206,7 +210,11 @@ export class App {
     [HilosPages.LEGAL_ACCEPTANCES]: LegalAcceptances,
     [HilosPages.LEGAL_SETTINGS]: LegalSettings,
     [HilosPages.PROFILE]: Profile,
+    [HilosPages.PROFILE_SIGN_IN]: ProfileSignIn,
+    [HilosPages.PROFILE_SESSIONS]: ProfileSessions,
     [HilosPages.PROFILE_SECURITY]: ProfileSecurity,
+    [HilosPages.PROFILE_AGREEMENTS]: ProfileAgreements,
+    [HilosPages.PROFILE_AGREEMENTS_HISTORY]: ProfileAgreementsHistory,
     [HilosPages.PROFILE_DATA]: ProfileData,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its

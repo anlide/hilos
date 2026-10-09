@@ -88,6 +88,17 @@ use Demo\Polls\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Polls\Pages\Hilos\Users\UserPage;
 use Demo\Polls\Pages\Hilos\Users\UsersPage;
+use Demo\Polls\Browser\Data\SelfConnectionBrowserData;
+use Demo\Polls\Browser\List\ProfileSessionsBrowserList;
+use Demo\Polls\Browser\PollsBrowserRef;
+use Demo\Polls\Pages\Hilos\ProfileAgreementsHistoryPage;
+use Demo\Polls\Pages\Hilos\ProfileAgreementsPage;
+use Demo\Polls\Pages\Hilos\ProfilePage;
+use Demo\Polls\Pages\Hilos\ProfileSessionsPage;
+use Demo\Polls\Pages\Hilos\ProfileSignInPage;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserRuntimeParam;
+use Hilos\Pages\Profile\HilosProfileIdentitiesBrowserList;
 use Demo\Polls\Pages\MainPage;
 use Demo\Polls\Runtime\View\Context\PollsRtContext;
 use Demo\Polls\Tables\HilosUser\HilosUsersTable;
@@ -730,6 +741,82 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
+        );
+    }
+
+    /** Profile sections are bound to the polls agent with their browser lists and data. */
+    public function testProfileSectionsAreActivated(): void
+    {
+        foreach ([
+            ProfileSignInPage::class,
+            ProfileSessionsPage::class,
+            ProfileAgreementsPage::class,
+            ProfileAgreementsHistoryPage::class,
+        ] as $page) {
+            $this->assertSame($page, Hilos::PAGES[$page::PAGE]);
+            $this->assertSame(AgentType::POLLS, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+
+        $this->assertSame(
+            [
+                HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+                ProfileSessionsBrowserList::LIST => [
+                    BrowserParamKey::PARAMS => [
+                        BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                    ],
+                ],
+            ],
+            Hilos::PAGE_LISTS[ProfilePage::PAGE],
+        );
+        $this->assertSame(
+            [
+                HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+            ],
+            Hilos::PAGE_LISTS[ProfileSignInPage::PAGE],
+        );
+        $this->assertSame(
+            [
+                ProfileSessionsBrowserList::LIST => [
+                    BrowserParamKey::PARAMS => [
+                        BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                    ],
+                ],
+            ],
+            Hilos::PAGE_LISTS[ProfileSessionsPage::PAGE],
+        );
+
+        $this->assertSame(
+            [
+                SelfConnectionBrowserData::DATA => [
+                    BrowserParamKey::PARAMS => [
+                        BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                    ],
+                ],
+            ],
+            Hilos::PAGE_DATA[ProfilePage::PAGE],
+        );
+        $this->assertSame(
+            [
+                SelfConnectionBrowserData::DATA => [
+                    BrowserParamKey::PARAMS => [
+                        BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                    ],
+                ],
+            ],
+            Hilos::PAGE_DATA[ProfileSessionsPage::PAGE],
+        );
+
+        $this->assertSame(
+            ProfileSignInPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_LINK_OAUTH_START],
+        );
+        $this->assertSame(
+            ProfileAgreementsHistoryPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT],
+        );
+        $this->assertSame(
+            ProfileAgreementsHistoryPage::PAGE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES],
         );
     }
 

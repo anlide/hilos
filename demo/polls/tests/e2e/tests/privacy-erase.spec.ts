@@ -1,7 +1,7 @@
 import { test, expect, type BrowserContext } from '@playwright/test'
 
 import { isSessionCookie } from '../../../../../framework/frontend/e2e/index.js'
-import { gotoPage } from '../helpers/page'
+import { gotoPage } from '../helpers/page.js'
 
 // The erase on /privacy (HIL-839), and the three things only a real browser can
 // answer for it.

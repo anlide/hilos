@@ -1,21 +1,22 @@
 import { expect, test } from '@playwright/test'
+
 import { holdLegalRevision } from '../helpers/legalHold.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 import { clickSubmit, logout, signUp } from '../helpers/session.js'
 import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
 
 // The public Terms page (HIL-501): its body is the text of the Terms revision in
-// force, read from chat's legal catalog, with the reader's standing above it and
-// the revision history under it. Chat's third Terms revision is substantial and
+// force, read from polls's legal catalog, with the reader's standing above it and
+// the revision history under it. Polls's second Terms revision is substantial and
 // took effect the day it was published, so a person test:legal:hold puts back on
-// the second is past the deadline at once, and frozen under the default setting.
+// the first is past the deadline at once, and frozen under the default setting.
 
-/** The revision in force: chat's third, the reset clause. */
-const CURRENT_TERMS = '2026-10-01'
-/** The revision before it, which the hold puts the person back on. */
-const HELD_TERMS = '2026-09-27'
-/** The first revision. */
-const FIRST_TERMS = '2026-09-17'
+/** The revision in force: polls's third, the wording revision of the reset clause. */
+const CURRENT_TERMS = '2026-10-07'
+/** The older revision with the reset clause. */
+const OLDER_TERMS = '2026-10-01'
+/** The first revision, which the hold puts the person back on. */
+const HELD_TERMS = '2026-09-17'
 
 test('a guest reads the revision in force and opens an older one from the history', async ({
   page,
@@ -23,12 +24,12 @@ test('a guest reads the revision in force and opens an older one from the histor
   await gotoPage(page, '/terms', PAGE_READY)
   const reader = page.getByTestId('terms-reader')
   await expect(reader).toHaveAttribute('data-state', 'guest')
-  await expect(reader).toContainText('in force since 1 October 2026')
+  await expect(reader).toContainText('in force since 7 October 2026')
 
   const text = page.getByTestId('terms-text')
   await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(text.getByTestId('legal-revision-clause-deviation')).toHaveCount(
-    4,
+    1,
   )
 
   const revisions = page.getByTestId('terms-history-revision')
@@ -47,7 +48,7 @@ test('a guest reads the revision in force and opens an older one from the histor
   await clickSubmit(
     page
       .locator(
-        `[data-id="terms-history-revision"][data-revision="${FIRST_TERMS}"]`,
+        `[data-id="terms-history-revision"][data-revision="${OLDER_TERMS}"]`,
       )
       .getByTestId('terms-history-open'),
   )
@@ -57,7 +58,7 @@ test('a guest reads the revision in force and opens an older one from the histor
   await expect(opened.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(
     opened.getByTestId('legal-revision-clause-deviation'),
-  ).toHaveCount(3)
+  ).toHaveCount(1)
   await clickSubmit(page.getByTestId('terms-revision-close'))
   await expect(opened).toBeHidden()
 })
@@ -70,7 +71,7 @@ test('a person who accepted at sign-up sees the revision in force as theirs', as
   const reader = page.getByTestId('terms-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect(reader).toContainText(
-    'You accepted the revision of 1 October 2026',
+    'You accepted the revision of 7 October 2026',
   )
   await expect(
     page
@@ -124,6 +125,6 @@ test('the page follows a revision moved under it, and accepting there lifts the 
 
   // The acceptance reset the verdict: the product opens again.
   await page.getByTestId('nav-brand').click()
-  await expect(page.getByTestId('message-input')).toBeVisible()
+  await expect(page.getByTestId('self-user')).toBeVisible()
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
 })

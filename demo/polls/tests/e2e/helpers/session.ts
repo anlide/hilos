@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
-import { readRegisterCode } from './mail'
+import { readRegisterCode, waitForMailCode } from './mail'
+import { gotoPage } from './page'
 
 // Sign-in helpers for the polls demo (HIL-634). A fresh browser context is
 // a guest: it reads the app and carries a guest name, but has no account until it
@@ -297,4 +298,74 @@ export async function openSignIn(page: Page): Promise<void> {
 export async function logout(page: Page): Promise<void> {
   await page.getByTestId('nav-logout').click()
   await expect(page.getByTestId('nav-profile-name')).toHaveCount(0)
+}
+
+export interface SignedInUser {
+  email: string
+  name: string
+  userId: number
+}
+
+/**
+ * Register a fresh account from the anonymous main page and return its identity.
+ *
+ * @param page Page starting from any location (it navigates to '/')
+ * @returns The registered account's email, display name, and durable user id
+ */
+export async function signUp(page: Page): Promise<SignedInUser> {
+  const email = uniqueEmail()
+
+  await gotoPage(page, '/')
+  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(page)
+  await register(page, email)
+
+  const name = nameFromEmail(email)
+  await expect(page.getByTestId('self-user')).toHaveText(name)
+  const userId = Number(await page.getByTestId('self-user-id').textContent())
+
+  return { email, name, userId }
+}
+
+/**
+ * Change an existing password through operation confirmation and a code from Mailpit.
+ *
+ * @param page The signed-in browser.
+ * @param options The account address, current and new passwords, and session choice.
+ */
+export async function changePassword(
+  page: Page,
+  {
+    email,
+    currentPassword,
+    newPassword,
+    signOutOthers = true,
+  }: {
+    email: string
+    currentPassword: string
+    newPassword: string
+    signOutOthers?: boolean
+  },
+): Promise<void> {
+  await gotoPage(page, '/profile/sign-in')
+  await clickSubmit(page.getByTestId('profile-password-change'))
+  await expect(page.getByTestId('profile-password-modal')).toBeVisible()
+  if (await page.getByTestId('step-up-password').count()) {
+    await typeInto(page.getByTestId('step-up-password'), currentPassword)
+    await clickSubmit(page.getByTestId('profile-password-step-up-confirm'))
+  }
+  await clickSubmit(page.getByTestId('profile-password-send-code'))
+  await expect(page.getByTestId('profile-password-code')).toBeVisible()
+  await typeInto(
+    page.getByTestId('profile-password-code'),
+    await waitForMailCode(email, 'Confirm changing your password'),
+  )
+  await clickSubmit(page.getByTestId('profile-password-confirm-code'))
+  await expect(page.getByTestId('profile-password-new')).toBeVisible()
+  await typeInto(page.getByTestId('profile-password-new'), newPassword)
+  await page
+    .getByTestId('profile-password-sign-out-others')
+    .setChecked(signOutOthers)
+  await clickSubmit(page.getByTestId('profile-password-save'))
+  await expect(page.getByTestId('profile-password-outcome')).toBeVisible()
 }

@@ -48,7 +48,9 @@ require_once __DIR__ . '/framework-pieces.php';
  *            and the three fleets were re-measured alone on nova-de by HIL-1327
  *            on 2026-10-04 after the test databases moved into memory; chat and
  *            tasks e2e re-measured by HIL-1324 on 2026-10-09 after sign-in, step-up,
- *            session and passkey suites moved between them. A step
+ *            session and passkey suites moved between them; chat and polls e2e
+ *            re-measured by HIL-1325 on 2026-10-09 after profile, legal, second-factor,
+ *            data export and privacy suites moved between them. A step
  *            beside its neighbours takes what it takes alone (chat-e2e 19m47s
  *            alone against 19m21s–21m30s beside two,
  *            28.09). A scheduling HINT only, and a narrow one
@@ -107,9 +109,9 @@ require_once __DIR__ . '/framework-pieces.php';
 
 /** Demos carrying a tests/e2e suite, with their measured per-step durations. */
 $demos = [
-    'chat' => ['check' => 11, 'php' => 79, 'e2e' => 827],
+    'chat' => ['check' => 11, 'php' => 79, 'e2e' => 570],
     'tasks' => ['check' => 9, 'php' => 17, 'e2e' => 360],
-    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 142],
+    'polls' => ['check' => 15, 'php' => 17, 'e2e' => 389],
     'binance-btc-tracker' => ['check' => 10, 'php' => 15, 'e2e' => 394],
     'ecommerce-shop' => ['check' => 9, 'php' => 15, 'e2e' => 102],
     'online-testing' => ['check' => 15, 'php' => 15, 'e2e' => 111],

@@ -1,30 +1,29 @@
 import { expect, test, type Page } from '@playwright/test'
-import { setAdmin } from '../helpers/adminGrant.js'
+
+import { grantAdminToSelf } from '../helpers/adminGrant.js'
 import { holdLegalRevision } from '../helpers/legalHold.js'
-import { dictateModerationVerdict } from '../helpers/moderation.js'
 import { gotoPage, PAGE_READY } from '../helpers/page.js'
 import {
   clickSubmit,
   login,
   logout,
+  openSignIn,
   signUp,
-  typeInto,
 } from '../helpers/session.js'
 import {
   shownByTestId,
   sidewaysOverflow,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { modelKey } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
-// "The terms have changed" (HIL-500). Chat's third terms revision is substantial
+// "The terms have changed" (HIL-500). Polls's second terms revision is substantial
 // and took effect the day it was published, so a person the test:legal:hold
-// command puts back on the second is past the deadline at once: frozen under
+// command puts back on the first is past the deadline at once: frozen under
 // the default setting, reminded under "remind". The count of days left inside a
 // window has no browser case - there is no shared clock to move - and is held by
 // the SDK unit tests and the framework integration test.
 
 /** The revision the person is put back on: the one before the demo's reset clause. */
-const HELD_TERMS = '2026-09-27'
+const HELD_TERMS = '2026-09-17'
 
 /**
  * Edits the refusal setting through its admin page, in a tab of its own.
@@ -82,23 +81,14 @@ test('a person past the deadline is frozen until they accept, and keeps their da
 
   // Accepting opens the product at once, without a reload.
   await expect(screen).toHaveCount(0)
-  const key = modelKey()
-  const text = `accepted the new terms ${key}`
-  await dictateModerationVerdict(key, true, 'ok')
-  await typeInto(page.getByTestId('message-input'), text)
-  await clickSubmit(page.getByTestId('message-send'))
-  await expect(
-    page.getByTestId('event-text').filter({ hasText: text }),
-  ).toBeVisible()
+  await expect(page.getByTestId('self-user')).toBeVisible()
 })
 
 test('under "remind" the window rises on sign-in and the header icon keeps the reminder', async ({
   page,
 }) => {
-  // The setting is the whole node's, which is safe only because the chat suite
-  // runs in a single worker; it goes back to "freeze" whatever happens below.
   const admin = await signUp(page)
-  await setAdmin(admin.userId, true)
+  await grantAdminToSelf(page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
     'full',
@@ -124,7 +114,7 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
 
     // A sign-in in this tab raises the window by itself.
     await logout(page)
-    await page.getByTestId('message-signin').click()
+    await openSignIn(page)
     await login(page, person.email)
     const window = page.getByTestId('legal-reconsent-modal')
     await expect(window).toBeVisible()
@@ -170,7 +160,7 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
       if ((await cleanup.getByTestId('nav-logout').count()) > 0) {
         await logout(cleanup)
       }
-      await cleanup.getByTestId('message-signin').click()
+      await openSignIn(cleanup)
       await login(cleanup, admin.email)
       await setRefusal(cleanup, 'freeze')
     } finally {
@@ -188,7 +178,7 @@ test('a person frozen elsewhere sees the screen on every page but the open ones'
 
   await gotoPage(page, '/profile/agreements', PAGE_READY)
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
-  await page.getByTestId('nav-profile').click()
+  await page.getByTestId('nav-profile-name').click()
   await expect(page).toHaveURL(/\/profile$/)
   await expect(page.getByTestId('legal-frozen-screen')).toBeVisible()
 

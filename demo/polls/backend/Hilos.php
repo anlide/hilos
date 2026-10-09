@@ -86,7 +86,11 @@ use Demo\Polls\Pages\Hilos\Security\SecurityImpersonationPage;
 use Demo\Polls\Pages\Hilos\Security\SecuritySignInMethodsPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityPage;
 use Demo\Polls\Pages\Hilos\ProfilePage;
+use Demo\Polls\Pages\Hilos\ProfileSignInPage;
+use Demo\Polls\Pages\Hilos\ProfileSessionsPage;
 use Demo\Polls\Pages\Hilos\ProfileSecurityPage;
+use Demo\Polls\Pages\Hilos\ProfileAgreementsPage;
+use Demo\Polls\Pages\Hilos\ProfileAgreementsHistoryPage;
 use Demo\Polls\Pages\Hilos\ProfileDataPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityStepUpPage;
 use Demo\Polls\Pages\Hilos\Security\SecurityTwoFactorPage;
@@ -108,6 +112,11 @@ use Hilos\Core\Agent\Daemon\DaemonCollectorAgentDaemon;
 use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
 use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
+use Demo\Polls\Browser\Data\SelfConnectionBrowserData;
+use Demo\Polls\Browser\List\ProfileSessionsBrowserList;
+use Demo\Polls\Browser\PollsBrowserRef;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
@@ -251,7 +260,11 @@ final class Hilos extends HilosFacade
         LegalAcceptancesPage::PAGE => LegalAcceptancesPage::class,
         LegalSettingsPage::PAGE => LegalSettingsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
+        ProfileSignInPage::PAGE => ProfileSignInPage::class,
+        ProfileSessionsPage::PAGE => ProfileSessionsPage::class,
         ProfileSecurityPage::PAGE => ProfileSecurityPage::class,
+        ProfileAgreementsPage::PAGE => ProfileAgreementsPage::class,
+        ProfileAgreementsHistoryPage::PAGE => ProfileAgreementsHistoryPage::class,
         ProfileDataPage::PAGE => ProfileDataPage::class,
         SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
         SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
@@ -450,11 +463,13 @@ final class Hilos extends HilosFacade
 
     public const array BROWSER_LISTS = [
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
+        ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
     ];
 
     public const array BROWSER_DATA = [
         LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
         CountryCardBrowserData::DATA => CountryCardBrowserData::class,
+        SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -464,10 +479,39 @@ final class Hilos extends HilosFacade
     public const array PAGE_LISTS = [
         ProfilePage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+            ProfileSessionsBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfileSignInPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileSessionsPage::PAGE => [
+            ProfileSessionsBrowserList::LIST => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                ],
+            ],
         ],
     ];
 
     public const array PAGE_DATA = [
+        ProfilePage::PAGE => [
+            SelfConnectionBrowserData::DATA => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfileSessionsPage::PAGE => [
+            SelfConnectionBrowserData::DATA => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => PollsBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
         LanguageDetailPage::PAGE => [
             LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING,
         ],

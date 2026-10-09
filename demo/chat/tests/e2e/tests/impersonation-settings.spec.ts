@@ -1,12 +1,5 @@
-// The administrator's impersonation settings (HIL-1170), end to end on the chat:
-// switching impersonation off takes the takeover off the person's card and
-// switching it back on returns it; and a takeover where the administrator may
-// only look says so in the strip, has the server refuse what it would write —
-// a chat message here — and still lets the administrator out with Stop.
-//
-// The settings are the installation's own, so each test puts back what it moved
-// whatever happens; the chat suite runs in a single worker, so no other test
-// meets the moved value meanwhile.
+// The administrator's impersonation settings (HIL-1170): the first case moved to
+// polls; this view-only takeover test waits for HIL-1290 and writes a chat message.
 import { expect, test, type Page } from '@playwright/test'
 
 import {
@@ -19,9 +12,6 @@ import { clickSubmit, signUp, typeInto } from '../helpers/session'
 
 /** The settings page this spec drives. */
 const SETTINGS_PATH = '/hilos/security/impersonation'
-
-/** The switch that decides whether impersonation exists in the product. */
-const ALLOWED_SWITCH = 'hilos-impersonation-switch-auth.impersonation.allowed'
 
 /** The refusal the screen shows for a write inside a takeover that only looks. */
 const VIEW_ONLY_REFUSAL =
@@ -46,75 +36,6 @@ async function setScope(page: Page, scope: 'view' | 'act'): Promise<void> {
     shownByTestId(page, 'hilos-impersonation-scope-value'),
   ).toHaveText(scope === 'view' ? 'View only' : 'View and act')
 }
-
-/**
- * Flip the "Impersonation is allowed" switch and wait for the row to move.
- *
- * @param page The administrator's page.
- * @param on The position the switch is to reach.
- */
-async function setAllowed(page: Page, on: boolean): Promise<void> {
-  await gotoPage(page, SETTINGS_PATH)
-  const allowed = shownByTestId(page, ALLOWED_SWITCH)
-  if (on) {
-    await expect(allowed).not.toBeChecked()
-  } else {
-    await expect(allowed).toBeChecked()
-  }
-  await allowed.click()
-  if (on) {
-    await expect(allowed).toBeChecked()
-  } else {
-    await expect(allowed).not.toBeChecked()
-  }
-}
-
-test('switching impersonation off takes the takeover off the card, and on brings it back', async ({
-  browser,
-  page,
-}) => {
-  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  const personContext = await browser.newContext({ baseURL, ignoreHTTPSErrors })
-  const personPage = await personContext.newPage()
-  let settingsPage: Page | null = null
-  let switchedOff = false
-  let cardLoads = 0
-  page.on('load', () => {
-    cardLoads += 1
-  })
-  try {
-    await signUpAdmin(page)
-    const person = await signUp(personPage)
-    const card = `/hilos/user/${person.userId}`
-    const open = page.getByTestId('hilos-user-impersonate-open')
-
-    await gotoPage(page, card)
-    await expect(open).toBeVisible()
-    const loadsBeforeSettings = cardLoads
-
-    settingsPage = await page.context().newPage()
-    await setAllowed(settingsPage, false)
-    switchedOff = true
-    await expect(open).toHaveCount(0)
-    expect(new URL(page.url()).pathname).toBe(card)
-    expect(cardLoads).toBe(loadsBeforeSettings)
-
-    await setAllowed(settingsPage, true)
-    switchedOff = false
-    await expect(open).toBeVisible()
-    await expect(open).toBeEnabled()
-    expect(new URL(page.url()).pathname).toBe(card)
-    expect(cardLoads).toBe(loadsBeforeSettings)
-  } finally {
-    if (switchedOff && settingsPage) {
-      await setAllowed(settingsPage, true)
-    }
-    if (settingsPage) {
-      await settingsPage.close()
-    }
-    await personContext.close()
-  }
-})
 
 // Red in runs 0749 (HIL-1237) and 0770 (HIL-1179) of the 32 full runs since it
 // came, green alone in one lane on the same HEAD. The first attempt passes every

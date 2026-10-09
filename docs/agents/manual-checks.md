@@ -101,7 +101,7 @@ Keep these numbers stable: hand-overs refer to them.
 
 ## TOTP
 
-Automation covers the code calculation and enrolment flow (`demo/chat/tests/e2e/helpers/totp.ts`).
+Automation covers the code calculation and enrolment flow (`framework/frontend/scripts/totp.mjs`).
 A real authenticator app scanning the enrollment QR, displaying the installation name, and keeping the
 entry in its list cannot be automated.
 

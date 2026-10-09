@@ -52,7 +52,7 @@ final class PollsLegalCatalogSnapshotTest extends TestCase
 
         self::assertSame(
             [
-                LegalDocument::TERMS->value => ['2026-09-17' => 1],
+                LegalDocument::TERMS->value => ['2026-09-17' => 1, '2026-10-01' => 1, '2026-10-07' => 1],
                 LegalDocument::PRIVACY->value => ['2026-09-17' => 1, '2026-10-09' => 1],
             ],
             $published,
@@ -60,13 +60,22 @@ final class PollsLegalCatalogSnapshotTest extends TestCase
         );
     }
 
-    /** Terms stays standard; the current Privacy revision declares one stricter deletion clause. */
+    /** First Terms has no deviations; latest Terms has availability; current Privacy declares deletion. */
     public function testTheCurrentDocumentsDeclareTheAnalyticsException(): void
     {
-        $terms = LegalCatalogResolver::latestRevision(LegalDocument::TERMS);
-        foreach (LegalCatalogResolver::compose(LegalDocument::TERMS, $terms->id)->clauses as $clause) {
+        $firstTerms = LegalCatalogResolver::compose(LegalDocument::TERMS, '2026-09-17');
+        foreach ($firstTerms->clauses as $clause) {
             self::assertNull($clause->deviation, $clause->standard->key);
         }
+
+        $latestTerms = LegalCatalogResolver::latestRevision(LegalDocument::TERMS);
+        $termsDeviations = [];
+        foreach (LegalCatalogResolver::compose(LegalDocument::TERMS, $latestTerms->id)->clauses as $clause) {
+            if ($clause->deviation !== null) {
+                $termsDeviations[$clause->standard->key] = $clause->deviation->direction;
+            }
+        }
+        self::assertSame([StandardSetCatalog::CLAUSE_AVAILABILITY => DeviationDirection::STRICTER], $termsDeviations);
 
         $privacy = LegalCatalogResolver::latestRevision(LegalDocument::PRIVACY);
         $deviations = [];

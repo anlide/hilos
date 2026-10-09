@@ -95,6 +95,21 @@ export async function gotoPage(
   )
 }
 
+/** The live connection indicator the shell keeps at every state, freeze included. */
+const CONNECTION_STATE = 'conn-state'
+
+/**
+ * Open a url on a browser the freeze lets through, and wait for the socket to
+ * have answered.
+ *
+ * @param page The Playwright page.
+ * @param path Path to open, as the address bar would hold it.
+ */
+export async function gotoAdmitted(page: Page, path: string): Promise<void> {
+  await page.goto(path)
+  await expect(page.getByTestId(CONNECTION_STATE)).toHaveText('connected')
+}
+
 /**
  * Open an auth return route and wait for its relay screen to be on screen.
  *

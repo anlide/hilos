@@ -624,11 +624,11 @@ carries its own copy of the lever in `tests/e2e/helpers/adminViewMode.ts`.
 
 | Demo | Kit | Side | Looks (mode on) | Refused (mode off) |
 |---|---|---|---|---|
-| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `second-factor`, `legal-admin` (the Legal setting window), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
+| chat | Vue | account and showcase | `admin-view-mode` (a guest's gear; the strip on `/hilos`, `/hilos/legal/acceptances` and `/hilos/users`, the personal data as hidden; a signed-in non-admin granted the full section and taken back to the view, live), `bots`, `moderator`, `account-merge` (the merge window) | `admin-view-mode`, its first test (no gear while the mode is off) |
 | binance-btc-tracker | Vue | operations | `settings`, `backup`, `protected-mode` (the maintenance circle), `communications`, `users` (the windows of a person's card), `logs` (a guest follows a live log: time and level shown, text hidden and absent from every socket frame) | `auth` (the surface in place of an admin page), `admin-gating` (the people page), `backup` (the backup page) |
 | tasks | React | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window, the sign-in methods viewer case), `step-up` | `auth`, `a11y` (no gear) |
 | ecommerce-shop | React | operations | `admin-view-mode` (the strip on the operations screens: settings, users, backup, maintenance) | `auth`, `users` |
-| polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window) | `auth`, `a11y` (no gear) |
+| polls | Angular | account | `admin-view-mode` (a guest's gear, the strip on the account screens, the acceptances as hidden, the Legal setting window), `second-factor` (the two-factor setting window), `legal-admin` (the export of acceptances switched off) | `auth`, `a11y` (no gear) |
 | online-testing | Angular | operations | `admin-view-mode` (the strip on the operations screens: settings, users, maintenance and the six log screens) | `auth`, `users` (the refusal and the revoked grant) |
 
 The React and Angular kits carry the viewer cases of their primitives and of
@@ -694,7 +694,7 @@ The security section carries its viewer cases as units of six pages
 `framework/frontend/vue/src/admin/security/HilosSecurityOauthProviderPage.test.ts`)
 and in the e2e suites (`demo/tasks/tests/e2e/tests/admin-view-mode.spec.ts`,
 `demo/tasks/tests/e2e/tests/step-up.spec.ts`,
-`demo/chat/tests/e2e/tests/second-factor.spec.ts`); what a viewer is shown in
+`demo/polls/tests/e2e/tests/second-factor.spec.ts`); what a viewer is shown in
 security fields follow the catalog verdict for settings and the entity verdict
 for provider fields (HIL-1255, HIL-1298).
 

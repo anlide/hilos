@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
-import { setAdmin, signUpAdmin } from '../helpers/adminGrant.js'
+
+import { grantAdminToSelf, signUpAdmin } from '../helpers/adminGrant.js'
 import { setAdminViewMode } from '../helpers/adminViewMode.js'
 import {
   expectPageReady,
@@ -59,12 +60,11 @@ test('reads the legal catalog, deviations and revision comparison at desktop and
   await expect(page.getByTestId('legal-set')).toContainText(
     'Hilos standard set 1',
   )
-  // The third terms revision adds the demo's availability clause (HIL-500).
-  await expect(page.getByTestId('legal-deviation-row')).toHaveCount(4)
+  await expect(page.getByTestId('legal-deviation-row')).toHaveCount(1)
   await expect(shownByTestId(page, 'legal-revision-row')).toHaveCount(3)
   await clickSubmit(
     shownByTestId(page, 'legal-revision-open').and(
-      page.locator('[data-revision="2026-10-01"]'),
+      page.locator('[data-revision="2026-10-07"]'),
     ),
   )
   await expect(page.getByTestId('legal-revision-text')).toBeVisible()
@@ -73,7 +73,7 @@ test('reads the legal catalog, deviations and revision comparison at desktop and
     page.getByTestId('legal-changes-wide').getByTestId('legal-change-row'),
   ).toHaveCount(1)
   await expect(page.getByTestId('legal-revision-accepted')).toHaveText(
-    /^[1-9]\d* acceptances$/,
+    /^\s*[1-9]\d* acceptances\s*$/,
   )
 
   await page.setViewportSize({ width: 375, height: 812 })
@@ -132,7 +132,7 @@ test('offers complete acceptance filters and merges legal setting changes across
   await clickSubmit(revisionFilter.getByTestId('hilos-dropdown-toggle'))
   await expect(
     revisionFilter.getByTestId('hilos-dropdown-option-0'),
-  ).toContainText('2026-10-01')
+  ).toContainText('2026-10-07')
   await clickSubmit(revisionFilter.getByTestId('hilos-dropdown-toggle'))
 
   const other = await page.context().newPage()
@@ -189,9 +189,8 @@ test("previews the re-consent screen through the previous revision's holder", as
   await clickSubmit(page.getByTestId('legal-preview-reconsent'))
   const preview = page.getByTestId('legal-reconsent-preview')
   await expect(preview).toBeVisible()
-  // The third terms revision took effect the day it was published: no window (HIL-500).
   await expect(preview.getByTestId('legal-reconsent-badge')).toHaveText(
-    /No window · in force since 1 October 2026/,
+    'Editorial · nobody is asked to accept it',
   )
   const change = preview.getByTestId('legal-reconsent-change')
   await expect(change).toHaveCount(1)
@@ -211,32 +210,26 @@ test("previews the re-consent screen through the previous revision's holder", as
   await clickSubmit(page.getByTestId('legal-preview-reconsent'))
   const privacyPreview = page.getByTestId('legal-reconsent-preview')
   await expect(privacyPreview.getByTestId('legal-reconsent-badge')).toHaveText(
-    'No window · in force since 5 October 2026',
+    'No window · in force since 9 October 2026',
   )
   await expect(
     privacyPreview.getByTestId('legal-reconsent-change'),
-  ).toHaveCount(2)
+  ).toHaveCount(1)
   await expect(
     privacyPreview.locator(
       '[data-id="legal-reconsent-change"][data-clause="standard.deletion"]',
     ),
-  ).toContainText('Account deletion leaves numbered analytics events')
-  await expect(
-    privacyPreview.locator(
-      '[data-id="legal-reconsent-change"][data-clause="standard.access_log"]',
-    ),
-  ).toContainText('The separate access log is disabled')
+  ).toContainText(
+    'Account deletion leaves numbered analytics events and network addresses',
+  )
   await clickSubmit(page.getByTestId('legal-reconsent-preview-close'))
 })
 
-// An administrator takes the records the table shows away as a file (HIL-1234): a new
-// administrator has two records of their own - the registration accepted Terms and the
-// privacy policy - and the second export, under the Terms filter, keeps one of them.
 test('exports the acceptance records the table shows, confirming once', async ({
   page,
 }) => {
   const admin = await signUp(page)
-  await setAdmin(admin.userId, true)
+  await grantAdminToSelf(page)
   await expect(page.getByTestId('nav-admin')).toHaveAttribute(
     'data-access',
     'full',
@@ -293,36 +286,6 @@ test('unknown legal documents and revisions are not-found subscription refusals'
 
 test.describe('in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
-
-  // The fixed legal key is explicitly open to a viewer (HIL-1298); editing remains locked.
-  test('a guest opens a legal setting, reads its value and cannot save it', async ({
-    page,
-  }) => {
-    await setAdminViewMode(true)
-    await gotoPage(page, '/hilos/legal/settings', PAGE_READY)
-    await expect(
-      shownByTestId(page, 'legal-setting-value-legal.consent_form'),
-    ).toContainText('Checkbox')
-    await expect(
-      shownByTestId(page, 'legal-setting-value-legal.consent_form').getByTestId(
-        'hilos-hidden',
-      ),
-    ).toHaveCount(0)
-    await clickSubmit(
-      shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
-    )
-    const dialog = page.getByTestId('modal')
-    await expect(dialog.getByTestId('hilos-hidden')).toHaveCount(0)
-    await expect(page.getByTestId('legal-setting-input')).toBeVisible()
-    const save = page.getByTestId('legal-setting-save')
-    await expect(save).toBeDisabled()
-    await expect(save).toHaveAttribute(
-      'aria-describedby',
-      /(^| )hilos-view-mode-strip-text( |$)/,
-    )
-    await clickSubmit(page.getByTestId('legal-setting-cancel'))
-    await expect(dialog).toBeHidden()
-  })
 
   // A viewer has no export of their own, and the order is an action like any other (HIL-1234).
   test('a guest sees the export of acceptances switched off', async ({

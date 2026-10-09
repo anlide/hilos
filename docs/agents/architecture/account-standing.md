@@ -276,12 +276,12 @@ The core binds the session's standing once, in `bootHilos`
   after a real merge, the chain and the survivor's rename:
   `demo/chat/tests/Integration/AccountMergeTest.php`; the chain itself:
   `framework/tests/Integration/UserMergesActionsIntegrationTest.php`.
-- Chat's third terms revision is substantial and in force the day it was
-  published, so a person the `test:legal:hold` command puts on the second is
-  frozen at once: `legal-reconsent.spec.ts` covers the freeze screen and the
-  window with its icon under `remind`. Chat's e2e also covers the deletion strip
-  and the mark (`account-deletion.spec.ts`) and the lapsed count without a link
-  (`legal-admin.spec.ts`); the card's badge and the takeover tone are covered by
+- Polls's 2026-10-01 terms revision is substantial and in force the day it was
+  published, so a person the `test:legal:hold` command puts on the first is
+  frozen at once: polls's `legal-reconsent.spec.ts` covers the freeze screen and the
+  window with its icon under `remind`. Polls's `legal-admin.spec.ts` covers the
+  lapsed count without a link; chat's e2e covers the deletion strip and the mark
+  (`account-deletion.spec.ts`); the card's badge and the takeover tone are covered by
   binance-btc-tracker's `users.spec.ts`. The count of days left has no browser
   case — there is no shared clock to move — and is held by the SDK unit tests and
   `LegalReconsentIntegrationTest`.

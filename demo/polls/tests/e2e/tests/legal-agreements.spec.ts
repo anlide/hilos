@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+
 import { clickSubmit, signUp } from '../helpers/session.js'
 import { gotoPage } from '../helpers/page.js'
 import { sidewaysOverflow } from '../../../../../framework/frontend/e2e/index.js'
@@ -18,14 +19,14 @@ test('reads personal agreements and compares published revisions on wide and nar
     '[data-id="legal-agreement-row"][data-document="terms"]',
   )
   await expect(terms.getByTestId('legal-agreement-state')).toHaveText(
-    /^Revision of 1 October 2026 · accepted /,
+    /^\s*Revision of 7 October 2026 · accepted /,
   )
   await clickSubmit(terms.getByTestId('legal-agreement-open'))
   const text = page.getByTestId('legal-revision-text-modal')
   await expect(text).toBeVisible()
   await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
   await expect(text.getByTestId('legal-revision-clause-deviation')).toHaveCount(
-    4,
+    1,
   )
   await clickSubmit(page.getByTestId('legal-text-close'))
   await expect(text).toBeHidden()
@@ -46,13 +47,12 @@ test('reads personal agreements and compares published revisions on wide and nar
   const history = page.locator(
     '[data-id="legal-history-document"][data-document="terms"]',
   )
-  // The third terms revision says the demo's data may be wiped (HIL-500).
   await expect(history.getByTestId('legal-history-revision')).toHaveCount(3)
   const current = history.locator(
-    '[data-id="legal-history-revision"][data-revision="2026-10-01"]',
+    '[data-id="legal-history-revision"][data-revision="2026-10-07"]',
   )
-  const wording = history.locator(
-    '[data-id="legal-history-revision"][data-revision="2026-09-27"]',
+  const substantial = history.locator(
+    '[data-id="legal-history-revision"][data-revision="2026-10-01"]',
   )
   const first = history.locator(
     '[data-id="legal-history-revision"][data-revision="2026-09-17"]',
@@ -60,12 +60,12 @@ test('reads personal agreements and compares published revisions on wide and nar
   await expect(current.getByTestId('legal-history-current')).toHaveText(
     'current',
   )
-  await expect(current).toContainText('1 October 2026')
+  await expect(current).toContainText('7 October 2026')
   await expect(current).toContainText(
-    'Substantial change · took effect 1 October 2026 · changed by the project',
-  )
-  await expect(wording).toContainText(
     'Editorial change · changed by the project',
+  )
+  await expect(substantial).toContainText(
+    'Substantial change · took effect 1 October 2026 · changed by the project',
   )
   await expect(first).toContainText('First revision · Hilos standard 1')
   await expect(first.getByTestId('legal-history-compare')).toHaveCount(0)
@@ -76,13 +76,13 @@ test('reads personal agreements and compares published revisions on wide and nar
     privacyHistory.getByTestId('legal-history-revision'),
   ).toHaveCount(2)
   const privacyCurrent = privacyHistory.locator(
-    '[data-id="legal-history-revision"][data-revision="2026-10-05"]',
+    '[data-id="legal-history-revision"][data-revision="2026-10-09"]',
   )
   await expect(privacyCurrent.getByTestId('legal-history-current')).toHaveText(
     'current',
   )
 
-  await clickSubmit(current.getByTestId('legal-history-compare'))
+  await clickSubmit(substantial.getByTestId('legal-history-compare'))
   const comparison = page.getByTestId('legal-changes-modal')
   await expect(comparison).toBeVisible()
   await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
@@ -101,7 +101,7 @@ test('reads personal agreements and compares published revisions on wide and nar
   await expect(narrow).toBeVisible()
   await expect(wide).toBeHidden()
   await expect(narrow.getByTestId('legal-change-row')).toHaveCount(1)
-  await expect(narrow).toContainText('Before — revision 27 September 2026')
+  await expect(narrow).toContainText('Before — revision 17 September 2026')
   await expect(narrow).toContainText('After — revision 1 October 2026')
   expect(await sidewaysOverflow(page)).toEqual([0, 0])
   await clickSubmit(page.getByTestId('legal-history-close'))
@@ -112,9 +112,7 @@ test('reads personal agreements and compares published revisions on wide and nar
   await expect(text).toBeVisible()
   await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
   await expect(text.getByTestId('legal-revision-clause')).toHaveCount(6)
-  await expect(text).toContainText(
-    'a message is not deleted by the passage of time',
-  )
+  await expect(text).toContainText('kept for 12 months and then deleted')
   await clickSubmit(page.getByTestId('legal-history-close'))
   await expect(text).toBeHidden()
 })

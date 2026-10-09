@@ -7,7 +7,10 @@
 // slots — here, the `users` slot of the Hilos users/user admin pages.
 import { USER_ENTITY_TYPE } from '@hilos/core'
 
+import { SESSION_TYPE } from '../types/session.js'
+
 /** Per-slot canonical entity types for the polls demo's page payloads. */
 export const pageEntityTypes: Record<string, string> = {
   users: USER_ENTITY_TYPE,
+  sessions: SESSION_TYPE,
 }

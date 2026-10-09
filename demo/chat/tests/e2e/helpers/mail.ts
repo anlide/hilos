@@ -60,21 +60,19 @@ interface MailboxEntry {
  *
  * @param address Recipient address, as the product addressed it.
  * @param subject Exact subject line the awaited message carries.
- * @param minimumCount How many matching letters must have arrived.
  * @returns The matched message's subject and plain-text body.
  * @throws Error When the message vanishes between the poll and the read.
  */
 export async function waitForMailTo(
   address: string,
   subject: string,
-  minimumCount = 1,
 ): Promise<InterceptedMail> {
   await expect
     .poll(async () => (await matchingIds(address, subject)).length, {
       message: `no mail to ${address} subject "${subject}" reached the interceptor`,
       timeout: MAIL_WAIT_TIMEOUT,
     })
-    .toBeGreaterThanOrEqual(minimumCount)
+    .toBeGreaterThan(0)
 
   const [id] = await matchingIds(address, subject)
   if (id === undefined) {
@@ -93,16 +91,14 @@ export async function waitForMailTo(
  *
  * @param address Recipient address the code was issued for.
  * @param subject Exact subject line of the mail carrying it.
- * @param minimumCount How many matching letters must have arrived; the newest is read.
  * @returns The plaintext verification code.
  * @throws Error When the awaited mail carries no code.
  */
 export async function waitForMailCode(
   address: string,
   subject: string,
-  minimumCount = 1,
 ): Promise<string> {
-  const mail = await waitForMailTo(address, subject, minimumCount)
+  const mail = await waitForMailTo(address, subject)
   const code = /(\d{4,})/.exec(mail.text)?.[1]
   if (code === undefined) {
     throw new Error(`mail "${subject}" to ${address} carried no code`)

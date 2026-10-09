@@ -3,7 +3,13 @@ import { expect, test } from '@playwright/test'
 
 import { signUpAdmin } from '../helpers/adminGrant.js'
 import { gotoAdmitted, gotoPage } from '../helpers/page.js'
-import { clickSubmit, login, PASSWORD, signUp } from '../helpers/session.js'
+import {
+  clickSubmit,
+  login,
+  openSignIn,
+  PASSWORD,
+  signUp,
+} from '../helpers/session.js'
 
 test('a blocked account prepares and downloads its data after a credited password sign-in', async ({
   browser,
@@ -28,7 +34,7 @@ test('a blocked account prepares and downloads its data after a credited passwor
     // This sign-in supplies the fresh proof; a card raised by session loss alone must ask again.
     await clickSubmit(personPage.getByTestId('account-blocked-sign-out'))
     await expect(personPage.getByTestId('account-blocked')).toHaveCount(0)
-    await clickSubmit(personPage.getByTestId('message-signin'))
+    await openSignIn(personPage)
     await login(personPage, person.email, PASSWORD)
     await expect(personPage.getByTestId('account-blocked')).toBeVisible()
     await personPage.setViewportSize({ width: 375, height: 900 })

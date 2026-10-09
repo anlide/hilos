@@ -165,12 +165,14 @@ polls (Angular) → online-testing (Angular).
 | The operations half of polls | online-testing: users, settings, notifications, protected-mode, maintenance, logs | online-testing | HIL-1226 |
 | Sign-in on the server — third-party providers and their failures, codes over Telegram, SMS and phone, sign-in by a code and by a link, sign-up in several tabs of one browser | tasks: auth, oauth, phone-codes, admin-view-mode (the sign-in methods viewer case) | tasks | HIL-1324 |
 | Step-up, session rotation, passkey | tasks: step-up, session-rotation, passkey | tasks | HIL-1324 |
-| Profile on the server — password, address, other browsers' sessions, the GitHub link, devices | chat: profile, all but what stays | polls | HIL-1325 |
-| Second factor | chat: second-factor | polls | HIL-1325 |
-| Legal | chat: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
-| Data and privacy | chat: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
+| Profile on the server — password, address, other browsers' sessions, the GitHub link | polls: profile | polls | HIL-1325 |
+| Second factor | polls: second-factor | polls | HIL-1325 |
+| Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
+| Data and privacy | polls: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
 
-tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324).
+tasks switched on Ways to sign in (`/profile/sign-in`) to carry them (HIL-1324);
+polls switched on Ways to sign in, Sessions and Agreements of the profile, and its
+Terms gained a substantial and an editorial revision, to carry them (HIL-1325).
 
 **What stays in chat:** its product (the specs marked `demo`), the stand's own
 specs (marked `stand`), the shell (`a11y`, `about`, `navigation`, `layout`,
@@ -180,8 +182,12 @@ switched on only in chat), and `account-deletion` and `profile-data` (tasks and
 polls carry their own copies of those screens). From `auth`, chat keeps the
 narrow-screen layout and the still button, sign-up with a return, a wrong
 password, and the re-check of an open admin and profile on sign-out. From
-`profile`, it keeps the header link, the rename, the tab conflict and the
-narrow screen. Everything else of `auth` and `profile` moves.
+`profile`, it keeps the header link, the rename, the tab conflict, the push
+devices page and the narrow screen. The push devices page and the second-factor
+removal notice by mail (second-factor-mail) ride notification delivery, which
+is on only in chat and binance-btc-tracker; the view-only takeover test parked by
+the owner stays in chat's impersonation-settings — the write it is refused is a
+chat message. Everything else of `auth` and `profile` moves.
 
 `admin-gating` and `account-lifecycle` are the screens of an administrator
 over people, and they go with settings, people and admin: framework-level

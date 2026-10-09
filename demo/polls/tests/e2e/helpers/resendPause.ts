@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test'
 
-import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 import { isSessionCookie } from '../../../../../framework/frontend/e2e/index.js'
+import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 
-const COMMAND_HOST = process.env.COMMAND_HOST ?? 'chat-test'
+const COMMAND_HOST = process.env.COMMAND_HOST ?? 'polls-daemon-test'
 const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 const REPLY_TIMEOUT_MS = 15_000
 const END_PAUSE_COMMAND = 'test:verification:end-pause'
