@@ -87,9 +87,7 @@ final class DaemonApplication
                 throw MissingRequiredEnvironmentException::forNames($hilosClass, $missing);
             }
 
-            if ($hilosClass::hasFeature(HilosFeature::I18N)) {
-                DefaultLanguage::definition();
-            }
+            DefaultLanguage::assertConfiguredFor($hilosClass);
 
             // A refusal that the log directory belongs to another daemon cannot be written into
             // that daemon's journal. Logger without a file writes to stdout/stderr — a terminal, or

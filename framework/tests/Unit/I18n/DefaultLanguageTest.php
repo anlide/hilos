@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\I18n;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Environment\Exception\EnvInvalidValueException;
@@ -67,4 +68,40 @@ final class DefaultLanguageTest extends TestCase
         $this->expectExceptionMessage("'{$code}'");
         DefaultLanguage::definition();
     }
+
+    public function testAFacadeWithI18nIsRefusedAnUnknownCode(): void
+    {
+        putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=ez');
+
+        $this->expectException(EnvInvalidValueException::class);
+        $this->expectExceptionMessage('HILOS_DEFAULT_LANGUAGE');
+        $this->expectExceptionMessage("'ez'");
+        DefaultLanguage::assertConfiguredFor(DefaultLanguageI18nHilos::class);
+    }
+
+    public function testAFacadeWithoutI18nIsNotAskedForTheVariable(): void
+    {
+        putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=');
+
+        $this->expectNotToPerformAssertions();
+        DefaultLanguage::assertConfiguredFor(DefaultLanguageWithoutI18nHilos::class);
+    }
+}
+
+/**
+ * Facade standing in for a project that switches i18n on.
+ *
+ * Abstract because it carries a declaration and nothing else: the preflight reads the feature list
+ * off the class and builds no layer from it.
+ */
+abstract class DefaultLanguageI18nHilos extends Hilos
+{
+    protected const array FEATURES = [HilosFeature::I18N];
+}
+
+/**
+ * Facade standing in for a project without i18n; abstract for the same reason.
+ */
+abstract class DefaultLanguageWithoutI18nHilos extends Hilos
+{
 }
