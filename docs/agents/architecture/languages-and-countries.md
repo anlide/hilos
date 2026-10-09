@@ -70,12 +70,12 @@ language; the actions check both conditions before inserting it.
 A language's own name is `native_name`; its names table is for names in other
 languages.
 
-Every column of `hilos_language`, `hilos_country` and `hilos_locale` is declared
-nonpersonal in `_piiNotPersonal`.
-Every column of the two names tables, including generated `locale_slot`, has the same verdict.
-Under [backup anonymization](backup-anonymization.md), a restore leaves such
-columns unchanged; under [admin view mode](admin-view-mode.md), the viewer can
-see them all.
+Every column of `hilos_language`, `hilos_country` and `hilos_locale` is
+declared nonpersonal in `_piiNotPersonal`. Every column of the two names
+tables, including generated `locale_slot`, has the same verdict. Under
+[backup anonymization](backup-anonymization.md), a restore leaves such columns
+unchanged; under [admin view mode](admin-view-mode.md), the viewer can see
+them all.
 
 Locales have neither `first_week_day` nor `timezone` in this phase. HIL-1424
 decides them (owner's decision, 2026-10-04).
@@ -231,7 +231,7 @@ that design rejected it: the lock here protects a person's edit from reflow.
 The catalog is five private array constants in
 [`BuiltInI18nCatalog`](../../../framework/backend/I18n/Catalog/BuiltInI18nCatalog.php),
 shipped with the framework version so changes are visible in the upgrade diff.
-The expected size is about 152 KB, below the 1 MiB heavy-file guard in
+The catalog is about 171 KB, below the 1 MiB heavy-file guard in
 [framework development](../framework-development.md).
 
 | Contents | Size and values |
