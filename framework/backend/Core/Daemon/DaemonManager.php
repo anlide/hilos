@@ -21,6 +21,7 @@ use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterRegistry;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LeadershipObserver;
@@ -75,6 +76,7 @@ use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Group\DTO\GroupSubscriptionErrorSignalData;
 use Hilos\Core\Group\GroupErrorCode;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Hilos\Core\Http\RootInfoHandler;
@@ -126,8 +128,11 @@ use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateRound;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRuleReport;
+use Hilos\DaemonSection\DaemonConsensusPicture;
+use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
 use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
@@ -334,6 +339,8 @@ abstract class DaemonManager extends BaseManager implements
     private const int PROCESS_ROSTER_ROWS_PER_PASS = 100;
 
     private const float CRON_FRAME_REANNOUNCE_SECONDS = 60.0;
+    private const float STANDING_SAMPLE_SECONDS = 1.0;
+    private const float STANDING_REANNOUNCE_SECONDS = 60.0;
 
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
@@ -506,6 +513,12 @@ abstract class DaemonManager extends BaseManager implements
     private bool $cronFrameForce = false;
     private float $cronFrameLastSentAt = 0.0;
     private ?bool $cronFrameWasLeader = null;
+
+    private ?DaemonNodeStanding $standingLastSent = null;
+    private float $standingSampledAt = 0.0;
+    private float $standingLastSentAt = 0.0;
+    private float $standingRetryAt = 0.0;
+    private bool $standingForce = false;
 
     /**
      * Initializes daemon manager.
@@ -913,6 +926,7 @@ abstract class DaemonManager extends BaseManager implements
             // minute-long whole-frame repair is due. The fast path reads four scalars.
             $this->tickProcessRoster($loopStartTime);
             $this->tickCronFrame($loopStartTime);
+            $this->tickStanding($loopStartTime);
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
@@ -1177,6 +1191,94 @@ abstract class DaemonManager extends BaseManager implements
             $this->cronFrameDirty = false;
             $this->cronFrameForce = false;
         }
+    }
+
+    /**
+     * Samples this master's browser sockets once per second and repairs its standing frame each minute.
+     *
+     * @param float $now Start time of this main-loop pass
+     */
+    private function tickStanding(float $now): void
+    {
+        if ($this->shouldExit) {
+            return;
+        }
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze !== null && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->standingForce = true;
+            return;
+        }
+        if (!$this->agentManagerDaemon->isAgentStarted(HilosAgentType::HILOS_DAEMON_NODE)) {
+            return;
+        }
+        if (!$this->standingForce && $now - $this->standingSampledAt < self::STANDING_SAMPLE_SECONDS) {
+            return;
+        }
+        if (!$this->standingForce && $now < $this->standingRetryAt) {
+            return;
+        }
+
+        $this->standingSampledAt = $now;
+        try {
+            $standing = $this->sampleStanding();
+            if (!$this->standingForce && $standing == $this->standingLastSent
+                && $now - $this->standingLastSentAt < self::STANDING_REANNOUNCE_SECONDS) {
+                return;
+            }
+            $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+            $this->sendToAgent(
+                HilosAgentType::HILOS_DAEMON_NODE,
+                null,
+                HilosSignalConstants::DAEMON_MASTER_STANDING,
+                new DaemonMasterStandingSignalData($nodeId, $standing),
+            );
+            $this->standingLastSent = $standing;
+            $this->standingLastSentAt = $now;
+            $this->standingRetryAt = 0.0;
+            $this->standingForce = false;
+        } catch (Throwable $failure) {
+            $this->reportMasterSignalDropped(
+                HilosSignalConstants::DAEMON_MASTER_STANDING,
+                'agent ' . HilosAgentType::HILOS_DAEMON_NODE,
+                get_class($failure) . ': ' . $failure->getMessage(),
+            );
+            $this->standingLastSentAt = $now;
+            $this->standingRetryAt = $now + self::STANDING_REANNOUNCE_SECONDS;
+            $this->standingForce = false;
+        }
+    }
+
+    /**
+     * @return DaemonNodeStanding Current browser sockets and this master's consensus view
+     * @throws EnvException When cluster configuration cannot be read
+     * @throws InvalidFormatException When the measured state violates the picture contract
+     */
+    private function sampleStanding(): DaemonNodeStanding
+    {
+        $connections = 0;
+        $sessions = [];
+        foreach ($this->findWebSocketServer()?->getClients() ?? [] as $client) {
+            if (!$client instanceof WebSocketClient || $client->acceptKey === '') {
+                continue;
+            }
+            $connections++;
+            if ($client->sessionTokenHash !== null) {
+                $sessions[$client->sessionTokenHash] = true;
+            }
+        }
+
+        $clustered = Hilos::$cluster?->isEnabled() === true;
+        $leadership = $clustered ? Hilos::$cluster->leadership() : null;
+        $consensus = $leadership instanceof ConsensusInspection ? new DaemonConsensusPicture(
+            $leadership->consensusRole(),
+            $leadership->term(),
+            $leadership->leaderId(),
+            $leadership->onlineMasterCount(),
+            $leadership->masterSetSize(),
+            $leadership->quorumSize(),
+        ) : null;
+
+        return new DaemonNodeStanding(count($sessions), $connections, $clustered, $consensus);
     }
 
     /**
@@ -1495,6 +1597,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
             $this->processRosterForce = true;
             $this->cronFrameForce = true;
+            $this->standingForce = true;
         }
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
@@ -1877,6 +1980,7 @@ abstract class DaemonManager extends BaseManager implements
                     if (in_array($signalName, [
                         HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
                         HilosSignalConstants::DAEMON_MASTER_CRON,
+                        HilosSignalConstants::DAEMON_MASTER_STANDING,
                     ], true)) {
                         unset($this->masterFrameDeliveryProblems[$signalName]);
                     }
@@ -5304,6 +5408,7 @@ abstract class DaemonManager extends BaseManager implements
         if (in_array($signalName, [
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER,
             HilosSignalConstants::DAEMON_MASTER_CRON,
+            HilosSignalConstants::DAEMON_MASTER_STANDING,
         ], true)) {
             if ($reason === ($this->masterFrameDeliveryProblems[$signalName] ?? null)) {
                 return;

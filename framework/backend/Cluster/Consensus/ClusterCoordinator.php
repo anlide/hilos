@@ -75,6 +75,9 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
     /** @var bool Last computed quorum state, used to fire quorum transitions on the edge */
     private bool $lastQuorum = false;
 
+    /** @var int Masters visible on the last tick, including this node */
+    private int $lastOnlineMasterCount = 0;
+
     /** @var bool Whether the election timer should be refreshed on the next tick */
     private bool $deferElectionReset = true;
 
@@ -149,6 +152,24 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         return $this->role;
     }
 
+    /** @return int Masters visible on the last tick, or zero before the first tick */
+    public function onlineMasterCount(): int
+    {
+        return $this->lastOnlineMasterCount;
+    }
+
+    /** @return int Masters in the static set */
+    public function masterSetSize(): int
+    {
+        return count($this->config->masterSet);
+    }
+
+    /** @return int Majority required by the static set */
+    public function quorumSize(): int
+    {
+        return $this->config->quorumSize;
+    }
+
     /**
      * Advances the consensus state machine by one master-loop iteration.
      *
@@ -170,6 +191,7 @@ final class ClusterCoordinator implements Leadership, ConsensusInspection
         }
 
         $onlineCount = count(array_intersect($this->mesh->onlineMasterIds(), $this->config->masterSet));
+        $this->lastOnlineMasterCount = $onlineCount;
         $hasQuorum = $onlineCount >= $this->config->quorumSize;
         $this->applyQuorumTransition($hasQuorum, $onlineCount);
 

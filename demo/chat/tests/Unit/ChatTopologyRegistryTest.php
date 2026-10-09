@@ -235,6 +235,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
@@ -913,6 +914,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_INDEX_WATCH => HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => HilosAgentType::HILOS_DAEMON_NODE,
             HilosSignalConstants::DAEMON_MASTER_CRON => HilosAgentType::HILOS_DAEMON_NODE,
+            HilosSignalConstants::DAEMON_MASTER_STANDING => HilosAgentType::HILOS_DAEMON_NODE,
             HilosSignalConstants::DAEMON_AGENT_CRON => HilosAgentType::HILOS_DAEMON_NODE,
             HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosSignalConstants::DAEMON_PICTURE_WATCH => HilosAgentType::HILOS_DAEMON_COLLECTOR,
@@ -1111,6 +1113,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_INDEX_WATCH => LogsIndexWatchSignalData::class,
             HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => DaemonMasterProcessRosterSignalData::class,
             HilosSignalConstants::DAEMON_MASTER_CRON => DaemonMasterCronSignalData::class,
+            HilosSignalConstants::DAEMON_MASTER_STANDING => DaemonMasterStandingSignalData::class,
             HilosSignalConstants::DAEMON_AGENT_CRON => DaemonAgentCronSignalData::class,
             HilosSignalConstants::DAEMON_NODE_PICTURE_REPORT => DaemonNodePictureSignalData::class,
             HilosSignalConstants::DAEMON_PICTURE_WATCH => DaemonPictureWatchSignalData::class,

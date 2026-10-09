@@ -28,6 +28,22 @@ final class ClusterCoordinatorTest extends TestCase
     /** @var list<string> The three-master expected set: quorum is 2. */
     private const array MASTER_SET = ['a', 'b', 'c'];
 
+    public function testQuorumViewFollowsTheLastTickAndKeepsTheStaticDenominator(): void
+    {
+        $mesh = $this->mesh(['a', 'b', 'unknown']);
+        $coordinator = new ClusterCoordinator($this->config(), $mesh, new RecordingLeadershipObserver());
+        self::assertSame(0, $coordinator->onlineMasterCount());
+        self::assertSame(3, $coordinator->masterSetSize());
+        self::assertSame(2, $coordinator->quorumSize());
+
+        $coordinator->tick(0.0);
+        self::assertSame(2, $coordinator->onlineMasterCount());
+        $mesh->online = ['a'];
+        self::assertSame(2, $coordinator->onlineMasterCount());
+        $coordinator->tick(0.1);
+        self::assertSame(1, $coordinator->onlineMasterCount());
+    }
+
     public function testFollowerWithQuorumWinsElectionOnMajority(): void
     {
         $mesh = $this->mesh(self::MASTER_SET);

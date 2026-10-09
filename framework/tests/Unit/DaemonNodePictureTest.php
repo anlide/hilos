@@ -13,7 +13,9 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
@@ -103,6 +105,53 @@ final class DaemonNodePictureTest extends TestCase
         $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
         self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
         self::assertEquals($roster, $reported->picture->processes);
+    }
+
+    public function testMasterStandingReplacesTheSectionAndChangesTheNextWholeReport(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $standing = new DaemonNodeStanding(1, 2, false, null);
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterStandingSignalData('standalone', $standing)),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_STANDING,
+        );
+        $agent->reportIfDue(microtime(true) + 6.0);
+        $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
+        self::assertEquals($standing, $reported->picture->standing);
+
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterStandingSignalData('standalone', new DaemonNodeStanding(0, 0, false, null))),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_STANDING,
+        );
+        $agent->reportIfDue(microtime(true) + 12.0);
+        $changed = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $changed);
+        self::assertSame(0, $changed->picture->standing?->sessions);
+    }
+
+    public function testForeignMasterStandingIsRefused(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        foreach ([[SignalSource::AGENT, 'standalone'], [SignalSource::DAEMON, 'other-node']] as [$sender, $nodeId]) {
+            try {
+                $agent->onSignalAgent(
+                    new AgentSignalData(data: new DaemonMasterStandingSignalData($nodeId, new DaemonNodeStanding(0, 0, false, null))),
+                    $sender,
+                    HilosSignalConstants::DAEMON_MASTER_STANDING,
+                );
+                self::fail('Foreign master standing was accepted');
+            } catch (AgentException) {
+            }
+        }
+        $agent->reportIfDue(microtime(true) + 6.0);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testForeignSenderOrNodeIsRefused(): void

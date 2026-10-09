@@ -2300,6 +2300,9 @@ final class HilosSignalConstants
     /** Whole cron rule set from an agent to its node's Daemon agent (HIL-1375). */
     public const string DAEMON_AGENT_CRON = 'daemon_agent_cron';
 
+    /** Browser sessions, connections, and consensus from a master to its own Daemon node agent (HIL-1374). */
+    public const string DAEMON_MASTER_STANDING = 'daemon_master_standing';
+
     /** Legal administration subscription signals. */
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL = 'subscription_page_hilos_legal';
     public const string SUBSCRIPTION_PAGE_HILOS_LEGAL_DOCUMENT = 'subscription_page_hilos_legal_document';

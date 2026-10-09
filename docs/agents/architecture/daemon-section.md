@@ -60,8 +60,8 @@ An unfinished delivery names the leaf that will add it.
 | Cron rules and last firing | [CronRule](../../../framework/backend/Core/Daemon/Cron/CronRule.php) and its `lastFiredAt`: daemon rules belong to the master and run only on the leader; agent schedules belong to the agents and run wherever those agents live | Master cron part on change and once a minute; agent schedules from the agents themselves |
 | HTTP server, including agent addresses | One [HttpServer](../../../framework/backend/Socket/Server/HttpServer.php) per daemon; no request counters there yet | HTTP counters (not in the code yet — HIL-1376) |
 | Process measurements | [DaemonStatusSource](../../../framework/backend/Core/Daemon/DaemonStatusSource.php), implemented by `DaemonManager::daemonStatusSnapshot()` | Process samples (not in the code yet — HIL-1373) |
-| Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | Cluster state (not in the code yet — HIL-1374) |
-| Node sessions and connections | [LiveConnectionRoster](../../../framework/backend/Core/Daemon/LiveConnectionRoster.php) | Connection picture (not in the code yet — HIL-1374) |
+| Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | `standing.consensus`: role, term, recognised leader, and quorum view (live masters of the static set, set size, majority) |
+| Node sessions and connections | The master's own handshaked WebSocket clients | `standing.sessions` / `standing.connections`; sessions are distinct session tokens among those clients |
 
 The master does not read the on-disk `.env` for the section. The node agent reads
 the environment and that file itself.
@@ -156,7 +156,23 @@ Use the whole-copy chain in [logs.md](logs.md), *The Circulation*:
 
 Keep the collector and page agent separate: the source of the cluster picture
 and the surface that shows it are different owners. On a standalone installation
-the picture carries no cluster concepts (not in the code yet — HIL-1374).
+`standing.clustered` is false and carries no consensus on a standalone
+installation, so the picture has no state word.
+
+## The Node's State
+
+`ClusterDaemonPicture::stateOf()` derives one of four words from a current
+picture: a silent node is `silent`; a live slave is `data`; the picture's leader
+is `leader`; every other live clustered master with standing is `standby`.
+An unknown node, a live node without a report or master standing, and a
+standalone node have no word yet. The page reads this verdict rather than
+deriving its own.
+
+`ClusterDaemonPicture::leader()` considers live masters with consensus. A
+master claiming leadership wins only if its term is at least the term of every
+other live master. If several claim leadership in the highest term, the lowest
+node id wins. A newer candidate means there is no leader in the picture until
+the election resolves.
 
 ## What Never Leaves A Node
 

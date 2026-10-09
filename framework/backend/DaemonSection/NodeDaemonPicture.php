@@ -16,6 +16,7 @@ final class NodeDaemonPicture
      * @param ?DaemonProcessRoster $processes Master's last roster, if received
      * @param ?DaemonCronPicture $cron Cron section, if the master has reported its rules
      * @param ?NodeEnvironmentSummary $environment Environment counts, null before the first read
+     * @param ?DaemonNodeStanding $standing Master's standing, null before the first frame
      */
     public function __construct(
         public readonly string $nodeId,
@@ -24,6 +25,7 @@ final class NodeDaemonPicture
         public readonly ?DaemonProcessRoster $processes = null,
         public readonly ?DaemonCronPicture $cron = null,
         public readonly ?NodeEnvironmentSummary $environment = null,
+        public readonly ?DaemonNodeStanding $standing = null,
     ) {
     }
 
@@ -33,7 +35,7 @@ final class NodeDaemonPicture
      */
     public function sampledAt(int $sampledAt): self
     {
-        return new self($this->nodeId, $this->role, $sampledAt, $this->processes, $this->cron, $this->environment);
+        return new self($this->nodeId, $this->role, $sampledAt, $this->processes, $this->cron, $this->environment, $this->standing);
     }
 
     /**
@@ -46,7 +48,8 @@ final class NodeDaemonPicture
             && $this->role === $other->role
             && $this->processes == $other->processes
             && $this->cron == $other->cron
-            && $this->environment == $other->environment;
+            && $this->environment == $other->environment
+            && $this->standing == $other->standing;
     }
 
     /**
@@ -55,7 +58,7 @@ final class NodeDaemonPicture
      */
     public function withProcesses(?DaemonProcessRoster $processes): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $processes, $this->cron, $this->environment);
+        return new self($this->nodeId, $this->role, $this->sampledAt, $processes, $this->cron, $this->environment, $this->standing);
     }
 
     /**
@@ -64,7 +67,7 @@ final class NodeDaemonPicture
      */
     public function withCron(?DaemonCronPicture $cron): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $cron, $this->environment);
+        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $cron, $this->environment, $this->standing);
     }
 
     /**
@@ -73,6 +76,15 @@ final class NodeDaemonPicture
      */
     public function withEnvironment(?NodeEnvironmentSummary $environment): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $environment);
+        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $environment, $this->standing);
+    }
+
+    /**
+     * @param ?DaemonNodeStanding $standing New master standing
+     * @return self Picture preserving every other section
+     */
+    public function withStanding(?DaemonNodeStanding $standing): self
+    {
+        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $this->environment, $standing);
     }
 }

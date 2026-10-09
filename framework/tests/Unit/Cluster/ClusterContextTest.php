@@ -406,6 +406,21 @@ final class ClusterContextTest extends TestCase
             {
                 return ConsensusRole::Leader;
             }
+
+            public function onlineMasterCount(): int
+            {
+                return 1;
+            }
+
+            public function masterSetSize(): int
+            {
+                return 1;
+            }
+
+            public function quorumSize(): int
+            {
+                return 1;
+            }
         };
 
         $context = new ClusterContext();

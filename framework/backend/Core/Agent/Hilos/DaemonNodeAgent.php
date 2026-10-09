@@ -25,6 +25,7 @@ use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentReader;
@@ -45,6 +46,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::DAEMON_MASTER_PROCESS_ROSTER => DaemonMasterProcessRosterSignalData::class,
         HilosSignalConstants::DAEMON_MASTER_CRON => DaemonMasterCronSignalData::class,
+        HilosSignalConstants::DAEMON_MASTER_STANDING => DaemonMasterStandingSignalData::class,
         HilosSignalConstants::DAEMON_AGENT_CRON => DaemonAgentCronSignalData::class,
     ];
 
@@ -126,6 +128,17 @@ final class DaemonNodeAgent extends AbstractHilosAgent
                 }
                 $this->masterCron = $cron;
                 $this->rebuildCron(time());
+                return;
+
+            case HilosSignalConstants::DAEMON_MASTER_STANDING:
+                $standing = $data->data;
+                if (!$standing instanceof DaemonMasterStandingSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonMasterStandingSignalData::class, $standing);
+                }
+                if ($sender !== SignalSource::DAEMON || $standing->nodeId !== $this->picture->nodeId) {
+                    throw new AgentException('Daemon standing frame must come from this node\'s master');
+                }
+                $this->updatePicture($this->picture->withStanding($standing->standing));
                 return;
 
             case HilosSignalConstants::DAEMON_AGENT_CRON:
