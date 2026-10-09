@@ -141,8 +141,8 @@ the primary link, so the next handler cannot inherit its value.
 A receipt under which nothing journaled was written is deleted after the scope,
 including a no-op or a handler error. Cleanup checks for journal rows by receipt
 id and is safe to repeat. A process that dies before cleanup can leave an empty
-row; the feed requires a journal row. Physical orphan cleanup must
-wait for the handover lifetime in HIL-1454, so a recipient agent can still write.
+row; the feed requires a journal row. Physical orphan cleanup must wait for the
+handover lifetime in HIL-1454, so a recipient agent can still write.
 
 A web scope starts after the action guards and ends before the success or deferred
 ack. It stores the acting administrator and impersonated person separately, and

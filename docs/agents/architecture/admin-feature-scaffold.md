@@ -1,11 +1,11 @@
 # Architecture: Admin Feature Scaffold
 
 Read this before generating the activation of a framework-owned admin feature —
-settings, hilos-users, Analytics and future ones like roles — in a project. This is a
-generation recipe for an AI agent: given a framework admin feature, produce the
-project-side code that activates it. The normative boundary and the two modes
-live in [admin-features.md](admin-features.md); this file is the per-feature
-generation order.
+settings, hilos-users, Analytics and future ones like roles — in a project. This
+is a generation recipe for an AI agent: given a framework admin feature, produce
+the project-side code that activates it. The normative boundary and the two
+modes live in [admin-features.md](admin-features.md); this file is the
+per-feature generation order.
 
 **Scope: framework-owned features only.** A project's own divergent admin table
 (the chat demo's bots table, Mode 2) is not scaffolded here — that is authoring

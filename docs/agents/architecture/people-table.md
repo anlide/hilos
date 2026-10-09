@@ -265,10 +265,11 @@ A soft reference is kept only with its own reason. The
 `hilos_account_deletion.user_id` row deliberately survives the person as the
 trace of their request, and the export builder reads it to discard an in-flight
 copy. A delivery points softly at its notification because the two are pruned
-independently; the verifier circle points softly at a way in because the pair
-is named before it has to exist. `hilos_change_log` is an unwritten placeholder
+independently; the verifier circle points softly at a way in because the pair is
+named before it has to exist. `hilos_change_log` is an unwritten placeholder
 without an Entity or writer; HIL-351 replaces it with partitioned receipts in a
-separate database, where MariaDB cannot install these keys ([change-log.md](change-log.md)).
+separate database, where MariaDB cannot install these keys
+([change-log.md](change-log.md)).
 
 The rule "framework stubs never FK across the framework/project boundary" was
 revoked by the owner on 2026-09-24 — decision E, in the owner's words:
