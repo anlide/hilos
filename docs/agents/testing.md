@@ -531,15 +531,14 @@ ticket for the entries that are genuinely foreign.
 
 - **PHPUnit unit tests** (`tests/Unit/`): pure, no DB, no Hilos runtime.
   Use PHPUnit's `TestCase` directly. See
-  `demo/chat/tests/Unit/MessageActionDTOTest.php` and
-  `demo/chat/tests/Unit/ActionFailSignalDataTest.php` for reference.
+  `demo/chat/tests/Unit/MessageActionDTOTest.php` for reference.
 - **PHPUnit integration tests** (`tests/Integration/`): extend
   `IntegrationTestCase` for a prepared test DB and Hilos bootstrap.
 - For signal-layer DTOs that cross the worker → daemon IPC boundary,
   always cover the `fromArray(toArray())` roundtrip — a missing or
   broken `fromArray` silently falls back to generic `SignalData` and
   drops any `WebSocketEnvelopeAware` metadata. See
-  `ActionSuccessSignalDataTest::testRoundtripPreservesConcreteTypeAndEnvelopeMarker`.
+  `framework/tests/Unit/PageActionSuccessSignalDataTest.php::testRoundtripPreservesSuccessMarkerAndRequestId`.
   A **new field on an existing sync DTO** needs this exactly as much as a new DTO does:
   left out of `toArray()`, it arrives as `null`, whatever guard reads it takes its
   safe-default branch from then on, and every suite stays green while the feature the

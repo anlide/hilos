@@ -50,11 +50,11 @@ validation.
 public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
 {
     switch ($action) {
-        case ChatSignalConstants::USER_UPDATE:
-            if (!$dto instanceof UserUpdateActionDTO) {
+        case HilosSignalConstants::HILOS_USER_UPDATE:
+            if (!$dto instanceof HilosUserUpdateActionDTO) {
                 throw new InvalidActionPayloadException(
                     $action,
-                    UserUpdateActionDTO::class,
+                    HilosUserUpdateActionDTO::class,
                     $dto,
                 );
             }
@@ -71,11 +71,11 @@ public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dt
 public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
 {
     switch ($action) {
-        case ChatSignalConstants::USER_UPDATE:
+        case HilosSignalConstants::HILOS_USER_UPDATE:
             $this->sendToUser(
-                ChatSignalConstants::USER_UPDATE_FAIL,
+                HilosSignalConstants::HILOS_USER_UPDATE_FAIL,
                 $acceptKey,
-                new ActionFailSignalData($e->getMessage()),
+                new HilosUserUpdateFailSignalData($e->getMessage()),
             );
 
             break;
