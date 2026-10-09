@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
+use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -32,7 +34,8 @@ use PHPUnit\Framework\TestCase;
  * daemon: entering asks for the roster to stop and tells the initiator to go once it has, a repeat
  * request never re-enters so the stopped-agent roster is not re-rolled - though the initiator of a
  * freeze that already stands is told ready again rather than refused - only the recorded initiator
- * may release, and a project that mounts no runtime row never gets a ready.
+ * may release, a project that mounts no runtime row never gets a ready, and a switch built over a
+ * freeze restored from disk adopts it, so the initiator the row records drives it again.
  */
 final class StandaloneProtectedModeTest extends TestCase
 {
@@ -656,6 +659,129 @@ final class StandaloneProtectedModeTest extends TestCase
         ], $this->relay->refusedCalls);
     }
 
+    public function testARestoredFreezeIsReleasedByItsRecordedInitiator(): void
+    {
+        // The live failure (HIL-1510): the switch that held the freeze died with the master, and its
+        // successor dropped the release of the very agent the row names - nothing but a hand on the
+        // freeze file could open the node.
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_ACTIVE);
+
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame(['enterDeactivating', 'enterInactive'], $this->executor->calls);
+    }
+
+    public function testARestoredFreezeStillRefusesAnotherAgent(): void
+    {
+        // The adoption rebuilds the identity from the row, it does not waive it: a stranger cannot
+        // open, close or mint into a freeze it did not start, restart or no restart.
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_ACTIVE);
+
+        $this->mode->requestDisable($this->disableData('chat', null));
+        $this->mode->requestVerify(new ProtectedModeVerifySignalData('chat', null));
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->withDaemonTruthSource(fn() => $this->mode->requestPass(new ProtectedModePassSignalData('chat', null, 'hash-a')));
+
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+    }
+
+    public function testTheRecordedInitiatorOpensAndMintsIntoARestoredFreeze(): void
+    {
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_ACTIVE);
+
+        $this->mode->requestVerify(new ProtectedModeVerifySignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+        $this->assertSame(['enterVerifying'], $this->executor->calls);
+
+        $this->enterVerifyingOnTheRuntimeRow();
+        $this->executor->calls = [];
+        $this->withDaemonTruthSource(fn() => $this->mode->requestPass(
+            new ProtectedModePassSignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX, 'hash-a'),
+        ));
+
+        $this->assertSame(['hash-a'], Hilos::$rt?->hilosProtectedModeRuntime?->passHashes);
+        $this->assertSame(['announcePassIssued'], $this->executor->calls);
+    }
+
+    public function testAnEnableOverARestoredFreezeIsAnsweredAsOverAStandingOne(): void
+    {
+        // The row is not overwritten by a fresh entry: its initiator is told ready, as over any
+        // freeze that stands on active, and anyone else is refused with the reason that names it.
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_ACTIVE);
+
+        $this->mode->requestEnable($this->enableData());
+        $this->mode->requestEnable($this->enableData('chat', null));
+
+        $this->assertSame(['notifyInitiatorReady'], $this->executor->calls);
+        $this->assertSame([
+            [
+                'agentType' => 'chat',
+                'agentIndex' => null,
+                'reason' => ProtectedModeRefusalCopy::FOREIGN_FREEZE,
+            ],
+        ], $this->relay->refusedCalls);
+    }
+
+    public function testARestoredDirectWindowTakesNoSecondCircleAndLiftsAtOnce(): void
+    {
+        // The restart burned the circle the window admitted, and its one photograph counts as taken:
+        // a late one would admit nobody new and re-send window frames to browsers that read the
+        // state on their handshake anyway.
+        $this->restartUnder(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
+
+        $this->withDaemonTruthSource(fn() => $this->mode->requestCircle($this->circleData(1, ['late-hash'])));
+        $this->assertSame([], $this->executor->calls);
+        $this->assertSame([], Hilos::$rt?->hilosProtectedModeRuntime?->circleSessionTokenHashes);
+
+        $this->mode->requestEnable($this->enableData(entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW));
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame(['notifyInitiatorReady', 'enterInactive', 'finishLift'], $this->executor->calls);
+    }
+
+    public function testARestoredUnfinishedEntryOwesNobodyAReady(): void
+    {
+        // The operation that waited for this ready did not survive the restart, so a roster stop
+        // reaching the row marks it active and tells nobody to run. Verify still refuses by phase,
+        // and the release is the way out.
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_ACTIVATING);
+
+        $this->mode->requestVerify(new ProtectedModeVerifySignalData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+        $this->mode->onRosterStopped();
+        $this->assertSame(['enterActive'], $this->executor->calls);
+
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame(['enterActive', 'enterDeactivating', 'enterInactive'], $this->executor->calls);
+    }
+
+    public function testAnIdleRowAdoptsNothing(): void
+    {
+        // The ordinary start, which the adoption must not disturb: a stray release is still dropped,
+        // and the next entry is an entry.
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_INACTIVE);
+
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+        $this->assertSame([], $this->executor->calls);
+
+        $this->mode->requestEnable($this->enableData());
+        $this->assertSame(['enterActivating'], $this->executor->calls);
+    }
+
+    public function testARowNamingNoInitiatorIsNotAdopted(): void
+    {
+        // Nobody to authorize a request against, so nobody may drive it; the watchdog reports the
+        // freeze as stuck and the operator ends it.
+        $this->restartUnder(StateProtectedModeRuntime::PHASE_ACTIVE, initiatorAgentType: null);
+
+        $this->mode->requestDisable($this->disableData(self::INITIATOR_TYPE, self::INITIATOR_INDEX));
+
+        $this->assertSame([], $this->executor->calls);
+    }
+
     /**
      * Mounts the framework-owned protected mode runtime row, as a real project boot does.
      */
@@ -702,6 +828,50 @@ final class StandaloneProtectedModeTest extends TestCase
                 $view->actions->enterActive();
             }
         });
+    }
+
+    /**
+     * Restarts the node on a freeze row: the memory goes, the row comes back from disk, and a new
+     * switch is built over it and adopts it, in the order {@see DaemonManager} runs them.
+     *
+     * A new switch rather than the old one told something, because the freeze the old one held in
+     * memory is exactly what a restarted master no longer has. The row is put back through the same
+     * restore the daemon runs at boot, so the adoption reads what that rule keeps, and an inactive
+     * row is not put back at all, as at boot.
+     *
+     * @param string $phase Phase the node went down on
+     * @param string $entryMode How the freeze was entered
+     * @param ?string $initiatorAgentType Initiator agent the row records, the test's initiator by default
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     */
+    private function restartUnder(
+        string $phase,
+        string $entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+        ?string $initiatorAgentType = self::INITIATOR_TYPE,
+    ): void {
+        $this->mount();
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($view === null) {
+            $this->fail('The protected mode runtime row is not mounted.');
+        }
+
+        if ($phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $row = StateProtectedModeRuntime::fromRow([
+                StateProtectedModeRuntime::phase => $phase,
+                StateProtectedModeRuntime::entryMode => $entryMode,
+                StateProtectedModeRuntime::operation => 'restore',
+                StateProtectedModeRuntime::initiatorAgentType => $initiatorAgentType,
+                StateProtectedModeRuntime::initiatorAgentIndex => self::INITIATOR_INDEX,
+                StateProtectedModeRuntime::passHashes => [],
+                StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+                StateProtectedModeRuntime::circleSessionTokenHashes => [],
+                StateProtectedModeRuntime::circleNamedCount => 0,
+            ]);
+            $this->withDaemonTruthSource(static fn() => $view->actions->restoreFromDisk($row));
+        }
+
+        $this->mode = new StandaloneProtectedMode($this->executor);
+        $this->mode->adoptStandingFreeze();
     }
 
     /**

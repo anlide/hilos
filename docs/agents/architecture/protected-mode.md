@@ -464,6 +464,14 @@ automatically, the human path out has to actually work.
   verification window.
   Manual maintenance alone clears that hash too, by operation rather than phase, returning an empty window; restore keeps its behavior (not in the code yet — HIL-1359).
   Its restart mail follows the settings key; see *Manual Maintenance* (not in the code yet — HIL-1359).
+  On a single node `StandaloneProtectedMode::adoptStandingFreeze()`, called from
+  `DaemonManager::run()` right after the switch is built, takes the restored row
+  over as the freeze it holds, as *Leader change* below does on a cluster: the
+  recorded initiator drives it with the ordinary ladder and any other agent is
+  refused. Nobody is owed a ready, the operation behind the row having died with
+  the daemon; a direct window comes back with its one circle photograph spent, so
+  a repeat enable is answered ready without a new circle. A row naming no
+  operation or initiator is not adopted.
 - **Leader change.** `ClusterProtectedMode::onBecameLeader()` rebuilds the
   leader-side freeze from the row this node carries. Without it `onDisable()`
   from a live and healthy initiator is dropped (`leadsFreezeFor()` on

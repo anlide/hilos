@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -17,6 +18,7 @@ use Hilos\ProtectedMode\ProtectedModeRefusalCopy;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Actions\Item\ProtectedModeRuntimeActions;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Utils\Logger;
 
@@ -55,6 +57,12 @@ use Hilos\Utils\Logger;
  * initiator waits for ready before it starts destroying anything, so a refusal - delivered to it
  * with its reason since HIL-909 - ends that wait with nothing destroyed, while a silent no-op that
  * still reported ready would run a restore over a live system.
+ *
+ * A switch built over a freeze that is already standing takes it over ({@see adoptStandingFreeze()}).
+ * The freeze held in memory dies with the master, while the row comes back from disk, so a node
+ * restarted under a freeze would otherwise drop every request of the initiator the row records and
+ * open to nothing but a hand on the freeze file. It is this node's counterpart of a cluster leader
+ * change, where the successor takes over the freeze its node is under (HIL-1510).
  */
 final class StandaloneProtectedMode implements ProtectedModeSwitch
 {
@@ -79,6 +87,66 @@ final class StandaloneProtectedMode implements ProtectedModeSwitch
     public function __construct(ProtectedModeExecutor $executor)
     {
         $this->executor = $executor;
+    }
+
+    /**
+     * Takes over the freeze this node came up under, so the initiator the row records can drive it.
+     *
+     * Called once, right where the switch is built: the row is already back by then, put there by
+     * the restore at the end of {@see DaemonManager::boot()}, and from that moment this node answers
+     * for the freeze. Adopting lazily on the first request would spread the state over every entry
+     * point and still miss the progress mark, which is dropped silently under no freeze.
+     *
+     * Read off the runtime row rather than the file, because the row is what the restore decided to
+     * keep ({@see ProtectedModeRuntimeActions::restoreFromDisk()}): anything that rule burns at a
+     * restart is burned here too, without a line of this method knowing about it. A row that names
+     * no operation or no initiator agent cannot be driven - there is nobody to authorize a request
+     * against - so it is reported and left alone, and the watchdog reports the freeze as stuck.
+     *
+     * Nobody is owed a ready, whatever the phase. A ready answers an operation waiting to start, and
+     * the operation behind this freeze did not survive the restart; neither did any walk of the
+     * roster, which lived in the memory of the process that is gone. A row left on activating is
+     * therefore not an entry to finish: its way out is the release, which passes from any phase. This
+     * is where the node parts with the cluster on purpose: a promoted leader collects the round again
+     * because its followers are still alive, and a restarted node has nobody to collect it from.
+     *
+     * The direct window's one photograph of the circle counts as taken. The restore burned the circle
+     * it admitted, so the window comes back empty, and a second photograph would re-send window frames
+     * to browsers that read the state anew on their handshake anyway. A repeat enable from the same
+     * initiator is answered ready, and a code is the way in again.
+     */
+    public function adoptStandingFreeze(): void
+    {
+        $view = $this->runtimeView();
+        if ($view === null || $view->phase === StateProtectedModeRuntime::PHASE_INACTIVE) {
+            return;
+        }
+
+        $operation = $view->operation;
+        $initiatorAgentType = $view->initiatorAgentType;
+        if ($operation === null || $initiatorAgentType === null) {
+            Logger::error(
+                "Protected mode: this node came up under a freeze on phase '{$view->phase}' that names "
+                . 'no operation or initiator, and cannot drive it'
+            );
+            return;
+        }
+
+        $this->activeFreeze = new ProtectedModeQuiesceData(
+            $operation,
+            $initiatorAgentType,
+            $view->initiatorAgentIndex,
+            $view->initiatorNodeId,
+            $view->initiatorSessionTokenHash,
+        );
+        $this->readyOwed = false;
+        $this->directCircleReceived = $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+
+        Logger::warning(
+            "Protected mode: this node holds the '{$operation}' freeze it came up under on phase "
+            . "'{$view->phase}'; agent '{$initiatorAgentType}' (index " . ($view->initiatorAgentIndex ?? 'none')
+            . ') drives it'
+        );
     }
 
     /**

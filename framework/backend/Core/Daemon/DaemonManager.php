@@ -838,7 +838,12 @@ abstract class DaemonManager extends BaseManager implements
         // start-up path both topologies run, so the single-node freeze is built here. The clustered
         // one is built by PeerServer::onStart(); the two are mutually exclusive by construction.
         if (Hilos::$cluster !== null && !Hilos::$cluster->isEnabled()) {
-            Hilos::$cluster->registerProtectedMode(new StandaloneProtectedMode(new DaemonProtectedModeExecutor()));
+            $protectedMode = new StandaloneProtectedMode(new DaemonProtectedModeExecutor());
+            // The row of a freeze this node went down under is already back, put there by
+            // restoreProtectedModeFreeze() in boot(); without the adoption the initiator it records
+            // could neither open it nor drive it, and only a hand on the freeze file would (HIL-1510).
+            $protectedMode->adoptStandingFreeze();
+            Hilos::$cluster->registerProtectedMode($protectedMode);
         }
 
         Logger::info("Daemon started with epoll");
@@ -7655,7 +7660,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * The node comes back frozen with nothing running behind it, which is exactly what
      * {@see ProtectedModeWatchdog} reports on its first tick - so the operator hears about it
-     * through the one channel that already exists, and the way out stays the operator ladder.
+     * through the one channel that already exists, and the way out stays the operator ladder. On a
+     * single node the ladder is taken by the switch {@see run()} builds, which adopts this row as the
+     * freeze it holds ({@see StandaloneProtectedMode::adoptStandingFreeze()}).
      *
      * A file that cannot be read refuses the startup rather than degrading to "no freeze": it is
      * there because this node was frozen, and guessing the other way opens it.
