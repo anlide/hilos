@@ -120,6 +120,7 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -645,6 +646,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             TasksTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
             TasksTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+            TasksTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
             TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -676,6 +678,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 LogsWorkersPage::PAGE,
                 DaemonCronPage::PAGE,
                 DaemonWorkersPage::PAGE,
+                DaemonAgentsPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
@@ -871,6 +874,10 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [TasksTableContext::hilosDaemonWorkers => []],
             Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosDaemonAgents => []],
+            Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE],
         );
 
         // The logging modes screen writes framework keys, and a key the project catalog does

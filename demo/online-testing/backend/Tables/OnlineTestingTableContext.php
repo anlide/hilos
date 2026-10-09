@@ -13,6 +13,7 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -28,6 +29,7 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
+ * @property-read HilosDaemonAgentsTable $hilosDaemonAgents
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  */
@@ -41,6 +43,7 @@ final class OnlineTestingTableContext extends TableContext
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
+    public const string hilosDaemonAgents = HilosDaemonAgentsTable::TABLE;
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
 

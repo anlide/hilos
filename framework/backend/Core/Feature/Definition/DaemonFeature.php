@@ -16,10 +16,11 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 
-/** The Daemon section's eight pages, three agents, and cron and workers tables form one feature. */
+/** The Daemon section's eight pages, three agents, and three tables form one feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -47,10 +48,11 @@ final class DaemonFeature extends FeatureDefinition
                 HilosAgentType::HILOS_DAEMON_NODE,
                 HilosAgentType::HILOS_DAEMON_COLLECTOR,
             ],
-            requiredTables: [HilosDaemonCronTable::class, HilosDaemonWorkersTable::class],
+            requiredTables: [HilosDaemonCronTable::class, HilosDaemonWorkersTable::class, HilosDaemonAgentsTable::class],
             requiredPageTables: [
                 AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
                 AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
+                AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
             ],
         );
     }

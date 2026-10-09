@@ -154,6 +154,7 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -445,6 +446,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         PollsTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         PollsTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+        PollsTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
         PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -541,6 +543,9 @@ final class Hilos extends HilosFacade
         ],
         DaemonWorkersPage::PAGE => [
             PollsTableContext::hilosDaemonWorkers => [],
+        ],
+        DaemonAgentsPage::PAGE => [
+            PollsTableContext::hilosDaemonAgents => [],
         ],
         SecurityOAuthPage::PAGE => [
             PollsTableContext::hilosSecurityOauthRedirect => [],

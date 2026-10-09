@@ -239,6 +239,7 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -671,6 +672,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         ChatTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         ChatTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+        ChatTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
         ChatTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         ChatTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         ChatTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -875,6 +877,9 @@ final class Hilos extends HilosFacade
         ],
         DaemonWorkersPage::PAGE => [
             ChatTableContext::hilosDaemonWorkers => [],
+        ],
+        DaemonAgentsPage::PAGE => [
+            ChatTableContext::hilosDaemonAgents => [],
         ],
         GuardianPage::PAGE => [
             GuardianAgentStatusesBrowserTable::TABLE => [],

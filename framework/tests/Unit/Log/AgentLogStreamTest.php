@@ -133,6 +133,14 @@ final class AgentLogStreamTest extends TestCase
         $this->assertSame($expectedError, $errorPath);
     }
 
+    public function testStreamNameUsesTheSameSanitizedNameAsTheWriterPath(): void
+    {
+        $this->assertSame('agent-bot_1.log', AgentLogStream::streamName('bot:1', false));
+        $this->assertSame('agent-bot_1.error.log', AgentLogStream::streamName('bot:1', true));
+        $this->assertSame('/var/log/hilos/' . AgentLogStream::streamName('bot:1', false),
+            AgentLogStream::pathFor('/var/log/hilos', 'bot:1', false));
+    }
+
     private function removeTree(string $dir): void
     {
         if (!is_dir($dir)) {

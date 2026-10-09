@@ -102,7 +102,7 @@ their schedules on the master loop. Apply
 Do not await a reply or retry a frame: the next whole frame repairs a lost one.
 A restarted node agent gets a new full frame after it starts; until then its
 `processes` field is null, distinct from a known `workers: []`. The future screen
-says “no picture yet” for an absent node picture (not in the code yet — HIL-1383).
+says “no picture yet” for an absent node picture (not in the code yet — HIL-1392).
 
 While the node's freeze row holds, the master sends no frames: the freeze has
 stopped the node agent.

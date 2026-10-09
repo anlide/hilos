@@ -34,10 +34,20 @@ final class AgentLogStream
      */
     public static function pathFor(string $logDirectory, string $agentId, bool $errorStream): string
     {
+        return $logDirectory . '/' . self::streamName($agentId, $errorStream);
+    }
+
+    /**
+     * @param string $agentId Agent identifier, sanitized into the stream filename
+     * @param bool $errorStream Whether to name the error twin
+     * @return string Live agent stream filename
+     */
+    public static function streamName(string $agentId, bool $errorStream): string
+    {
         $safeAgentId = preg_replace(self::AGENT_ID_SANITIZE_PATTERN, self::AGENT_ID_SANITIZE_REPLACEMENT, $agentId);
         $extension = $errorStream ? LogStreamConstants::ERROR_STREAM_SUFFIX : LogStreamConstants::STREAM_SUFFIX;
 
-        return $logDirectory . '/' . LogStreamConstants::AGENT_STREAM_PREFIX . $safeAgentId . $extension;
+        return LogStreamConstants::AGENT_STREAM_PREFIX . $safeAgentId . $extension;
     }
 
     /**

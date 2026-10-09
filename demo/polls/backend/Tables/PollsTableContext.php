@@ -19,6 +19,7 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -42,6 +43,7 @@ use Hilos\Tables\Security\HilosSecurityImpersonationTable;
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
+ * @property-read HilosDaemonAgentsTable $hilosDaemonAgents
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
@@ -67,6 +69,7 @@ final class PollsTableContext extends TableContext
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
+    public const string hilosDaemonAgents = HilosDaemonAgentsTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;

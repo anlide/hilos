@@ -14,6 +14,7 @@ use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
@@ -50,6 +51,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
     public function onStop(): void
     {
         ClusterDaemonPictureMirror::forgetPicture();
+        AbstractHilosDaemonAgentsPage::onPictureForgotten();
         AbstractHilosDaemonCronPage::onPictureForgotten();
         AbstractHilosDaemonWorkersPage::onPictureForgotten();
         $this->rosteredViewers = [];
@@ -70,6 +72,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
             case HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION:
                 if ($data->data instanceof DaemonClusterPicturePortionSignalData) {
                     ClusterDaemonPictureMirror::applyPortion($data->data);
+                    AbstractHilosDaemonAgentsPage::onPictureChanged();
                     AbstractHilosDaemonCronPage::onPictureChanged();
                     AbstractHilosDaemonWorkersPage::onPictureChanged();
                 }
