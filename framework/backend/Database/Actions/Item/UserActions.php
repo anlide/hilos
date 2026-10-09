@@ -11,6 +11,8 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -119,7 +121,12 @@ class UserActions extends DbActions
     /**
      * Deletes this person's row after the caller has removed its dependent rows.
      *
+     * The row leaves this process's collection with it, as a second factor's does: a process that
+     * erased a person must not go on answering the row a later frame asks it for (HIL-1410).
+     *
      * @throws ItemNotFoundForUpdateException When the user is not persisted (id is null)
+     * @throws ObjectCollectionNullException When the action is detached from its object collection
+     * @throws ObjectGetIdStringNotImplementedException When the user cannot expose its id string
      * @throws HilosException On database error or other failure
      */
     public function delete(): void
@@ -130,6 +137,11 @@ class UserActions extends DbActions
             throw new ItemNotFoundForUpdateException('User not found for delete (id is null)');
         }
 
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Object collection is null');
+
+        $idString = $this->object->getIdString();
         $this->object->delete();
+        unset($objectCollection[$idString]);
     }
 }
