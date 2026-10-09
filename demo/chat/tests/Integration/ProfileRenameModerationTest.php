@@ -14,7 +14,9 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\SignalConstants;
+use Hilos\Database\Database;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
@@ -122,6 +124,57 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
             ExecutionContext::setCurrentAcceptKey(null);
             Hilos::$rt->connections->actions->clear();
             Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
+    public function testApprovedRenameOfAMergedAccountIsRefusedWithoutAHop(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+
+        try {
+            $survivor = Hilos::$db->users->actions->createWithName('Survivor');
+            $loser = Hilos::$db->users->actions->createWithName('Loser');
+            Database::sqlRun(
+                'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+                [(int)$loser->id, (int)$survivor->id, '2026-10-08 12:00:00'],
+            );
+            Hilos::$rt->connections->actions->register('merged-rename-ak', $loser->id);
+            Hilos::$rt->connections['merged-rename-ak']?->actions->startRenameModeration('Alice');
+            Hilos::initSignalRouter(new ChatSignalRouter());
+
+            $agentSignalData = new AgentSignalData(new RenameModerationResultSignalData(
+                acceptKey: 'merged-rename-ak',
+                userId: (int)$loser->id,
+                newName: 'Alice',
+                allow: true,
+                reason: 'ok',
+            ));
+            ExecutionContext::setCurrentAcceptKey('merged-rename-ak');
+            try {
+                $this->usersLibrary()->onSignalAgent(
+                    $agentSignalData,
+                    '',
+                    ChatSignalConstants::RENAME_MODERATION_RESULT,
+                );
+                $carried = $this->deliverPersonAgentFrames();
+            } finally {
+                ExecutionContext::setCurrentAcceptKey(null);
+            }
+
+            $this->assertSame(0, $carried);
+            $this->assertSame('Loser', Hilos::$db->users[$loser->id]?->name);
+            $errorSignal = $this->takeQueuedWebSocketSignal(SignalConstants::ACTION_ERROR);
+            $this->assertNotNull($errorSignal);
+            $this->assertInstanceOf(PageActionErrorSignalData::class, $errorSignal->data);
+            $this->assertSame(ChatSignalConstants::RENAME, $errorSignal->data->action);
+            $this->assertSame(
+                'Failed to update user: ' . AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+                $errorSignal->data->reason,
+            );
+        } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
+            Hilos::$rt->connections->actions->clear();
         }
     }
 

@@ -18,17 +18,22 @@ use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Item\User;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
@@ -48,6 +53,7 @@ use Throwable;
  * {@see AbstractUsersLibraryAgent}, the two flags from {@see AbstractSessionsLibraryAgent}. The
  * agent writes and always answers - a refusal included, because the coordinator continues only on
  * the answer and something is waiting on it - and the coordinator does what follows the write.
+ * When the person is erased, or folded into someone else, the agent stops itself.
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -126,6 +132,26 @@ abstract class AbstractUserAgent extends AbstractAgent
 
         $this->userId = $userId;
         $this->agentIndex = $agentIndex;
+    }
+
+    /**
+     * The words a refused rename has always used, shared by this agent and the library that
+     * answers before the hop.
+     *
+     * A missing person is named by id. Anything else the row refuses - a folded account, a name
+     * the row will not hold - keeps the sentence the card already shows.
+     *
+     * @param int $userId Person the rename was about
+     * @param ValidationException $failure What the check or the row refused
+     * @return string Sentence the waiting card or window reads
+     */
+    public static function renameRefusalWords(int $userId, ValidationException $failure): string
+    {
+        if ($failure instanceof ItemNotFoundForUpdateException) {
+            return "User #{$userId} not found";
+        }
+
+        return 'Failed to update user: ' . $failure->getMessage();
     }
 
     /**
@@ -221,6 +247,42 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Stops when this person's own row is deleted, which is what an erasure commits.
+     *
+     * A project subclass that overrides this calls parent, so the stop still happens. Another
+     * person's row, a child row, a merge row and an update of this row are ignored: one fact
+     * per person is enough, and the survivor of a merge is not this agent.
+     *
+     * @param DbSyncDeletedSignalData $data Deleted row
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     */
+    public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
+    {
+        if ($data->collectionKey === HilosDbContext::users && $this->isThisPerson($data->idString)) {
+            $this->selfStop();
+        }
+    }
+
+    /**
+     * Stops when a merge row appears for this person, which is what folding them in commits.
+     *
+     * A project subclass that overrides this calls parent, so the stop still happens. The merge
+     * row is keyed by the folded account, so a row naming this person as the survivor does not
+     * stop this agent. Every other collection is ignored.
+     *
+     * @param DbSyncCreatedSignalData $data Created row
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name (unused)
+     */
+    public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        if ($data->collectionKey === HilosDbContext::userMerges && $this->isThisPerson($data->idString)) {
+            $this->selfStop();
+        }
+    }
+
     /** WorkerManager releases the claims after this hook returns; the agent holds no other state. */
     public function onStop(): void
     {
@@ -243,6 +305,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @return ?UserRename Journal row of this rename, or null when the name was already the person's
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one, or the name is empty, too short or too long
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
      * @throws HilosException When the name, the journal row or the transaction cannot be written
      */
     protected function renamePerson(string $name, ?int $renamedByUserId): ?UserRename
@@ -277,6 +342,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @param bool $admin New admin flag
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
      * @throws HilosException On database failure while reading or writing the flag
      */
     protected function writeAdminFlag(bool $admin): void
@@ -294,6 +362,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @param bool $block New block flag
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
      * @throws HilosException On database or truth-source failure while reading or writing the flag
      */
     protected function writeBlockFlag(bool $block): void
@@ -317,10 +388,8 @@ abstract class AbstractUserAgent extends AbstractAgent
         $refusal = null;
         try {
             $rename = $this->renamePerson($ask->name, $ask->renamedByUserId);
-        } catch (ItemNotFoundForUpdateException) {
-            $refusal = ActionRefusal::said("User #{$this->userId} not found");
         } catch (ValidationException $e) {
-            $refusal = ActionRefusal::said('Failed to update user: ' . $e->getMessage());
+            $refusal = ActionRefusal::said(self::renameRefusalWords($this->userId, $e));
         } catch (WiringRefusal $wiring) {
             // Answered like the storage failure below rather than raised (HIL-575): the library
             // continues only on the answer, and a modal or a chat window is waiting on it. Its own
@@ -369,19 +438,33 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @return User The person's row, open to an edit
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one
-     * @throws HilosException When the person or the merges cannot be read
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
      */
     private function personToWrite(): User
     {
-        $user = Hilos::$db->users[$this->userId] ?? null;
-        if ($user === null) {
-            throw new ItemNotFoundForUpdateException("No such user: {$this->userId}");
-        }
-        if (Hilos::$db->userMerges[$this->userId] !== null) {
-            throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
+        AddressablePerson::require($this->userId);
+        $user = Hilos::$db->users[$this->userId];
+        if (!$user instanceof User) {
+            // The check above is the refusal. Asked again so a row gone on this read
+            // keeps that same refusal instead of a second copy of its words.
+            AddressablePerson::require($this->userId);
+
+            throw new LogicException("Person #{$this->userId} is not a user row");
         }
 
         return $user;
+    }
+
+    /**
+     * @param string $idString Row id as the sync frame spells it
+     * @return bool True when the row is this person's
+     */
+    private function isThisPerson(string $idString): bool
+    {
+        // The frame spells the id as text. A strict compare with the int would never match.
+        return $idString === (string)$this->userId;
     }
 
     /**

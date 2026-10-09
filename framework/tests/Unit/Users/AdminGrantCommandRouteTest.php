@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Users;
 
+use ArrayAccess;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -12,6 +13,7 @@ use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
@@ -62,8 +64,15 @@ final class AdminGrantCommandRouteTest extends TestCase
     /** @var int User the fixture connection is signed in as */
     private const int LIVE_USER_ID = 7;
 
+    /** @var int Id no people row carries, so the grant is refused before any hop */
+    public const int MISSING_USER_ID = 404;
+
+    private ?HilosDbContext $previousDb = null;
+
     protected function setUp(): void
     {
+        $this->previousDb = Hilos::$db;
+        Hilos::$db = new AdminGrantRouteTestDb();
         AdminGrantRouteTestHilos::initBrowser();
         AdminGrantRouteTestAudience::$ids = [self::LIVE_USER_ID, 8];
         Hilos::$sr = new SignalRouter();
@@ -73,6 +82,7 @@ final class AdminGrantCommandRouteTest extends TestCase
 
     protected function tearDown(): void
     {
+        Hilos::$db = $this->previousDb;
         Hilos::$sr = null;
         Hilos::$rt = null;
         Hilos::initBrowser();
@@ -172,18 +182,15 @@ final class AdminGrantCommandRouteTest extends TestCase
     public function testAnUnknownUserAnswersAsAnErrorReply(): void
     {
         $agent = new AdminGrantRouteTestAgent();
-        $person = new AdminGrantRouteTestUserAgent('404');
-        $person->refuseWith = new ItemNotFoundForUpdateException('No such user: 404');
 
         $this->sendCommand($agent, CliCommands::ADMIN_GRANT, [
-            AdminCommandConstants::FIELD_USER_ID => 404,
+            AdminCommandConstants::FIELD_USER_ID => self::MISSING_USER_ID,
             AdminCommandConstants::FIELD_ADMIN => true,
         ]);
-        $this->carryThroughThePersonsAgent($agent, $person);
 
         $reply = $this->consumeReply();
         self::assertFalse($reply->isOk());
-        self::assertStringContainsString('No such user', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame('No such user: ' . self::MISSING_USER_ID, $reply->payload[CommandConstants::FIELD_MESSAGE]);
     }
 
     public function testANonPositiveUserIdIsRefusedBeforeTheSeamIsCalled(): void
@@ -475,4 +482,69 @@ final class AdminGrantRouteTestAudience extends AdminAudience
 abstract class AdminGrantRouteTestHilos extends Hilos
 {
     protected const string ADMIN_AUDIENCE = AdminGrantRouteTestAudience::class;
+}
+
+/**
+ * People and merges for the grant route, with no database behind them.
+ *
+ * The route refuses a missing person before the hop. Everyone but
+ * {@see AdminGrantCommandRouteTest::MISSING_USER_ID} is present, and nobody is folded. Every
+ * other collection answers the reads the announcement makes on the way to its frame, with nothing.
+ */
+final class AdminGrantRouteTestDb extends HilosDbContext
+{
+    /**
+     * @param string $name Collection name
+     * @return AdminGrantRouteRows Rows of that collection
+     */
+    public function __get(string $name)
+    {
+        return new AdminGrantRouteRows($name);
+    }
+}
+
+/** The few reads the address check and the grant's announcement make. */
+final class AdminGrantRouteRows implements ArrayAccess
+{
+    public function __construct(private string $name)
+    {
+    }
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return $this->offsetGet($offset) !== null;
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        if ($this->name !== HilosDbContext::users || $offset === AdminGrantCommandRouteTest::MISSING_USER_ID) {
+            return null;
+        }
+
+        return new AdminGrantRouteUser();
+    }
+
+    public function liveOf(int $userId): mixed
+    {
+        return null;
+    }
+
+    public function findByToken(string $token): mixed
+    {
+        return null;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+    }
+}
+
+/** A person row the standing reads the block off, and nothing more. */
+final class AdminGrantRouteUser
+{
+    public bool $block = false;
 }

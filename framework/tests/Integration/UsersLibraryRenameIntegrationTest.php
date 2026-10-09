@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -56,6 +57,9 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
 
     /** @var list<SignalDTO> Frames the library and the agents sent anywhere but to each other */
     private array $outbox = [];
+
+    /** How many rename asks this case carried to a person's agent. */
+    private int $hopsToThePerson = 0;
 
     /**
      * @throws HilosException When the schema reset or the context build fails
@@ -197,6 +201,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         $userId = self::seedPerson('Ada', admin: false);
 
         $missing = $this->askRename(self::MISSING_USER_ID, 'Grace', $adminId);
+        self::assertSame(0, $this->hopsToThePerson, 'A missing person is refused before the agent is asked');
         $overlong = $this->askRename($userId, str_repeat('a', 65), $adminId);
 
         self::assertSame('User #' . self::MISSING_USER_ID . ' not found', $missing->error);
@@ -204,6 +209,32 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         self::assertSame('Ada', self::nameOf($userId));
         self::assertSame([], self::journal());
         self::assertSame([], $this->library->renamed);
+    }
+
+    /**
+     * A folded account is refused in the card's own words, and the person's agent is not asked.
+     *
+     * @throws HilosException When a fixture row cannot be written or the frame fails
+     */
+    public function testRefusesAMergedPersonBeforeAskingTheAgent(): void
+    {
+        $adminId = self::seedPerson('Root', admin: true);
+        $survivorId = self::seedPerson('Survivor', admin: false);
+        $userId = self::seedPerson('Ada', admin: false);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [$userId, $survivorId, '2026-10-08 12:00:00'],
+        );
+
+        $answer = $this->askRename($userId, 'Grace', $adminId);
+
+        self::assertSame(0, $this->hopsToThePerson);
+        self::assertSame(
+            'Failed to update user: ' . AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE,
+            $answer->error,
+        );
+        self::assertSame('Ada', self::nameOf($userId));
+        self::assertSame([], self::journal());
     }
 
     /**
@@ -324,6 +355,7 @@ final class UsersLibraryRenameIntegrationTest extends HilosSessionIntegrationTes
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $name = $signal->signalName->getName();
             if ($name === HilosSignalConstants::HILOS_USER_RENAME) {
+                $this->hopsToThePerson++;
                 $this->deliverToPerson($signal);
                 continue;
             }

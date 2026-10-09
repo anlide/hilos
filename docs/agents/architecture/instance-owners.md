@@ -20,7 +20,7 @@ that instance. For a person, the indexed agent, its row and set claims, and
 its idle lifetime are built (HIL-630). The name, the administrator flag and the
 block are written by it (HIL-1404). The other edits move to it in the leaves named in
 [Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409, HIL-1410).
+(not in the code yet — HIL-1405, HIL-1406, HIL-1407, HIL-1408, HIL-1409).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -151,6 +151,10 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
 - **The agent always answers**, a refusal and a wiring refusal included: the
   coordinator continues only on the answer, and a card or a parked command is
   waiting on it.
+- **Before the hop, `AddressablePerson::require`.** A missing person and a
+  folded account are refused in the words they were refused in before, and the
+  agent is not raised. The agent repeats the same check for the race in which
+  the hop left before the erasure or the merge arrived.
 - **A check the hop splits is held across it.** The sessions holder counts a
   removal of rights, or a block of an administrator, that it has sent and the
   agent has not yet answered as done, so two removals crossing each other cannot
@@ -184,6 +188,11 @@ These are declared shapes, not debts waiting for an instance owner:
   decision at the split, 2026-10-04).
 - **Unlinking the rename journal while clearing chat history** is a sweep. The
   chat agent has the borrowed write needed to clear the room reference.
+
+After an erasure or a merge commits, on any node, the agent of each erased
+person and the agent of the folded account stop themselves: the people row is
+gone, or a merge row has appeared under that account's id. An agent that was
+not up does not rise. The survivor's agent is not touched.
 
 Creating the first administrator is creation, so it remains a library operation;
 deleting the erased person's row is part of the erasure transaction, and
@@ -233,7 +242,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-1407 | Step-up confirmations and browser trust (not in the code yet — HIL-1407). |
 | HIL-1408 | Notification marks, channel preferences and push unsubscribe (not in the code yet — HIL-1408). |
 | HIL-1409 | Account-deletion requests and profile photos (not in the code yet — HIL-1409). |
-| HIL-1410 | Erasure and merge stop the affected instance agents (not in the code yet — HIL-1410). |
+| HIL-1410 | Erasure and merge stop the affected instance agents (built). |
 | HIL-1411 | The code agent and sessions holder stop writing the people library's sign-in tables (not in the code yet — HIL-1411). Verification codes are outside the person's set and belong to that library (P-163, 2026-08-30). |
 | HIL-1412 | Cluster behavior of the person's agent (not in the code yet — HIL-1412). |
 | HIL-1403 | Decide whether a session has an instance owner; the answer remains open. |

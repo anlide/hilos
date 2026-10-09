@@ -45,6 +45,8 @@ use Hilos\Database\View\Item\UserRename;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Users\AddressablePerson;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Random\RandomException;
 
@@ -352,6 +354,23 @@ final class UsersLibraryAgent extends AbstractUsersLibraryAgent
                 'user_not_found',
             );
             $this->refuseRename($result->acceptKey, 'User not found for rename');
+
+            return;
+        }
+
+        try {
+            AddressablePerson::require($result->userId);
+        } catch (ItemNotFoundForUpdateException) {
+            $connection->actions->failRenameModeration(
+                ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE,
+                'user_not_found',
+            );
+            $this->refuseRename($result->acceptKey, 'User not found for rename');
+
+            return;
+        } catch (ValidationException $e) {
+            $connection->actions->clearRenameModeration();
+            $this->refuseRename($result->acceptKey, AbstractUserAgent::renameRefusalWords($result->userId, $e));
 
             return;
         }

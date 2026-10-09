@@ -6,18 +6,23 @@ namespace Hilos\Tests\Unit\Users;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
@@ -171,6 +176,103 @@ final class AbstractUserAgentTest extends TestCase
         foreach (TestUserAgent::AGENT_SIGNALS as $config) {
             self::assertSame('userId', $config[AgentSignalConfigKey::INDEX_FIELD]);
         }
+    }
+
+    public function testDeletingThePersonsOwnRowAsksTheAgentToStop(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncDeleted(
+            new DbSyncDeletedSignalData(HilosDbContext::users, '42'),
+            'db',
+            SignalConstants::DB_SYNC_DELETED,
+        );
+
+        self::assertTrue($agent->shouldStop());
+    }
+
+    public function testAMergeRowForThePersonAsksTheAgentToStop(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncCreated(
+            new DbSyncCreatedSignalData(HilosDbContext::userMerges, '42', [
+                UserMerge::user_id => 42,
+                UserMerge::survivor_user_id => 7,
+            ]),
+            'db',
+            SignalConstants::DB_SYNC_CREATED,
+        );
+
+        self::assertTrue($agent->shouldStop());
+    }
+
+    public function testAnotherPersonsDeletionDoesNotStopTheAgent(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncDeleted(
+            new DbSyncDeletedSignalData(HilosDbContext::users, '43'),
+            'db',
+            SignalConstants::DB_SYNC_DELETED,
+        );
+
+        self::assertFalse($agent->shouldStop());
+    }
+
+    public function testTheSurvivorOfAMergeDoesNotStop(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncCreated(
+            new DbSyncCreatedSignalData(HilosDbContext::userMerges, '43', [
+                UserMerge::user_id => 43,
+                UserMerge::survivor_user_id => 42,
+            ]),
+            'db',
+            SignalConstants::DB_SYNC_CREATED,
+        );
+
+        self::assertFalse($agent->shouldStop());
+    }
+
+    public function testUpdatingThePersonsRowDoesNotStopTheAgent(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncUpdated(
+            new DbSyncUpdatedSignalData(HilosDbContext::users, '42', []),
+            'db',
+            SignalConstants::DB_SYNC_UPDATED,
+        );
+
+        self::assertFalse($agent->shouldStop());
+    }
+
+    public function testDeletingThePersonsMergeRowDoesNotStopTheAgent(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncDeleted(
+            new DbSyncDeletedSignalData(HilosDbContext::userMerges, '42'),
+            'db',
+            SignalConstants::DB_SYNC_DELETED,
+        );
+
+        self::assertFalse($agent->shouldStop());
+    }
+
+    public function testDeletingAChildRowDoesNotStopTheAgent(): void
+    {
+        $agent = new TestUserAgent('42');
+
+        $agent->onSignalDbSyncDeleted(
+            new DbSyncDeletedSignalData(HilosDbContext::identities, '42'),
+            'db',
+            SignalConstants::DB_SYNC_DELETED,
+        );
+
+        self::assertFalse($agent->shouldStop());
     }
 
     /**

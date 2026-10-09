@@ -114,6 +114,9 @@ session holder moves its moment to now and erases it through this path,
 returning the sum of the project's tallies for the circle. A failed erasure
 leaves the request due for the next sweep.
 
+After the commit, the agent of every account in the circle stops itself, on
+whichever node it was up. One that was not up does not rise.
+
 After the commit, outside the transaction: the registry files the project and
 the framework photo row named go to the files library in one
 `Hilos::$files->remove()` when the project declares `FILES`

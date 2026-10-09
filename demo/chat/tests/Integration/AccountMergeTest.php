@@ -495,8 +495,8 @@ final class AccountMergeTest extends IntegrationTestCase
             '',
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME,
         );
-        // The person's agent refuses the write and the library answers the card (HIL-1404).
-        $this->deliverPersonAgentFrames();
+        // The library refuses before the hop, so the card is answered and the agent is not asked.
+        $this->assertSame(0, $this->deliverPersonAgentFrames());
         $answer = null;
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {

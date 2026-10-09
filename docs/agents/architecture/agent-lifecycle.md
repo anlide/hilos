@@ -64,6 +64,13 @@ $this->emitChangeRt($eventKey, $data);                    // RT change → mappe
 Agent can request its own removal: `$this->selfStop()`.
 `onStop()` will be called at the start of the next tick.
 
+An instance agent also stops when its own instance disappears. It hears the
+sync frame of its own row: the chat bot stops when its bot row is deleted or
+switched off, and a person's agent stops when their people row is deleted or a
+merge row appears under their id. A frame the worker reads after that stop is
+lost, with the log line `handleAgentMessage - agent not found`
+(`WorkerManager.php`). That window is one tick and belongs to every stop.
+
 ## Idle stop: an agent that lives as long as it is spoken to
 
 An instance agent — one per user, per document, per room — must not live

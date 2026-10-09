@@ -174,7 +174,10 @@ it.*
 The table is `hilos_user_merge`, mounted as `userMerges`: which account was
 folded (`user_id`, the key of the row), into which (`survivor_user_id`), when
 (`merged_at`). Keyed by the folded account, so an account is folded at most once
-and "is this account merged" is `Hilos::$db->userMerges[$userId] !== null`. Two
+and "is this account merged" is `Hilos::$db->userMerges[$userId] !== null`. The
+folded account's agent stops when that row appears. A frame addressed to the
+folded account afterwards is refused before the hop, in the words a folded
+account was already refused in, and is not sent on to the survivor. Two
 columns are null by design: `merged_at` on the rows carried over from the chat
 demo's former column, which never recorded the moment, and `survivor_user_id`
 only on older rows left when the survivor was erased before HIL-1200 began

@@ -179,6 +179,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\AddressablePerson;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
@@ -2534,11 +2535,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * waiting on it.
      *
      * @param AdminRenameSignalData $rename Whom to rename, to what, and on whose word
-     * @throws InvalidArgumentException When the ask or the refusal cannot be named or queued
+     * @throws InvalidArgumentException When the ask or the refusal cannot be named or queued, or a stored row is not the collection's object type
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws DatabaseException When the person or the merges cannot be loaded
      */
     private function handleAdminRename(AdminRenameSignalData $rename): void
     {
         try {
+            AddressablePerson::require($rename->userId);
             $ask = new UserRenameSignalData(
                 userId: $rename->userId,
                 name: $rename->name,
@@ -2550,6 +2554,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 successMessage: $rename->successMessage,
                 answerSignal: $rename->replySignal,
             );
+        } catch (ValidationException $e) {
+            $this->sendToAgent(
+                $rename->replySignal,
+                HandoverAnswerSignalData::to(
+                    $rename,
+                    ActionRefusal::said(AbstractUserAgent::renameRefusalWords($rename->userId, $e)),
+                ),
+            );
+
+            return;
         } catch (InvalidFormatException) {
             $this->sendToAgent(
                 $rename->replySignal,

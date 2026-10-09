@@ -19,6 +19,7 @@ use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Feature\Definition\AuthFeature;
@@ -27,12 +28,18 @@ use Hilos\Runtime\State\Item\HilosSessionToastStack;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
@@ -52,6 +59,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Users\SecondFactorOutcome;
 use Hilos\Users\AccountMergeSummary;
@@ -271,6 +279,76 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         self::assertTrue(self::isBlocked(self::LOSER_USER_ID));
         self::assertFalse(self::isBlocked(self::SURVIVOR_USER_ID));
         self::assertNull(self::survivorOf(self::SURVIVOR_USER_ID), 'The survivor is not folded');
+    }
+
+    /**
+     * A merge stops the folded account's agent and leaves the survivor's, which can still write
+     * the way in that moved. A fresh agent of the folded account cannot.
+     *
+     * @throws HilosException When a seed, the merge, or a read-back fails
+     */
+    public function testAMergeStopsTheLoserAndLeavesTheSurvivorWritingWhatMoved(): void
+    {
+        $loserEmail = $this->seedMagicLink(self::LOSER_USER_ID);
+        $loser = new AccountMergeStopTestAgent((string)self::LOSER_USER_ID);
+        $survivor = new AccountMergeStopTestAgent((string)self::SURVIVOR_USER_ID);
+        $this->claimPerson($loser);
+        $this->claimPerson($survivor);
+        try {
+            $this->consumeQueuedSeedFrames();
+            $this->sendCommand(new AccountMergeRouteTestAgent(), self::SURVIVOR_USER_ID, self::LOSER_USER_ID);
+
+            $sync = [];
+            $replies = [];
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof CommandReplyDTO) {
+                    $replies[] = $signal->data;
+                }
+                if ($signal->data instanceof DbSyncSignalDataInterface) {
+                    $sync[] = $signal->data;
+                }
+            }
+            self::assertCount(1, $replies);
+            self::assertTrue($replies[0]->isOk(), 'A wired merge answers ok');
+            $this->dispatchMergeSync([$loser, $survivor], $sync);
+
+            self::assertTrue($loser->shouldStop());
+            self::assertFalse($survivor->shouldStop());
+
+            $identity = $this->identities()->findByIdentity(IdentityType::MAGIC_LINK, $loserEmail);
+            self::assertNotNull($identity);
+            $rowId = (string)$identity->id;
+            $set = static fn (): array => [(string)self::SURVIVOR_USER_ID];
+            ExecutionContext::setCurrentAgentId($survivor->getId());
+            TruthSourceRegistry::checkCanWriteItem(
+                HilosDbContext::identities,
+                $rowId,
+                $set,
+                TruthSourceOperation::Update,
+            );
+
+            $this->releasePerson($loser);
+            $fresh = new AccountMergeStopTestAgent((string)self::LOSER_USER_ID);
+            $this->claimPerson($fresh);
+            ExecutionContext::setCurrentAgentId($fresh->getId());
+            try {
+                TruthSourceRegistry::checkCanWriteItem(
+                    HilosDbContext::identities,
+                    $rowId,
+                    $set,
+                    TruthSourceOperation::Update,
+                );
+                self::fail('The folded account wrote a row that now belongs to the survivor');
+            } catch (WriteNotAllowedException) {
+                $this->addToAssertionCount(1);
+            } finally {
+                $this->releasePerson($fresh);
+            }
+        } finally {
+            ExecutionContext::setCurrentAgentId(null);
+            $this->releasePerson($survivor);
+            $this->releasePerson($loser);
+        }
     }
 
     /**
@@ -1174,6 +1252,43 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     }
 
     /**
+     * @param AbstractUserAgent $agent Person whose claims the case holds for the write check
+     */
+    private function claimPerson(AbstractUserAgent $agent): void
+    {
+        OwnershipDeclaration::claimDbRows($agent);
+        OwnershipDeclaration::claimDbSet($agent);
+    }
+
+    /**
+     * @param AbstractUserAgent $agent Person whose claims the case is done with
+     */
+    private function releasePerson(AbstractUserAgent $agent): void
+    {
+        TruthSourceRegistry::unregisterAgent($agent->getId());
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
+    }
+
+    /**
+     * @param list<AbstractUserAgent> $agents Agents hosted for the merge
+     * @param list<DbSyncSignalDataInterface> $sync Frames the merge committed
+     */
+    private function dispatchMergeSync(array $agents, array $sync): void
+    {
+        foreach ($sync as $data) {
+            foreach ($agents as $agent) {
+                if ($data instanceof DbSyncCreatedSignalData) {
+                    $agent->onSignalDbSyncCreated($data, SignalSource::DB, SignalConstants::DB_SYNC_CREATED);
+                } elseif ($data instanceof DbSyncUpdatedSignalData) {
+                    $agent->onSignalDbSyncUpdated($data, SignalSource::DB, SignalConstants::DB_SYNC_UPDATED);
+                } elseif ($data instanceof DbSyncDeletedSignalData) {
+                    $agent->onSignalDbSyncDeleted($data, SignalSource::DB, SignalConstants::DB_SYNC_DELETED);
+                }
+            }
+        }
+    }
+
+    /**
      * Reads the sentence an error reply carried.
      *
      * @return string The refusal, as it reaches the command line
@@ -1718,5 +1833,10 @@ final class AccountMergeRouteTestMergeOffCatalog implements CatalogProviderInter
 
 /** The production users-library ownership declaration, without starting an agent. */
 final class AccountMergeUsersClaimTestAgent extends AbstractUsersLibraryAgent
+{
+}
+
+/** The framework's agent of one person, so a merge's sync frame can ask it to stop. */
+final class AccountMergeStopTestAgent extends AbstractUserAgent
 {
 }

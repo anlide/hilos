@@ -13,6 +13,7 @@ use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
@@ -20,6 +21,10 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
@@ -53,6 +58,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountErasure;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
@@ -380,6 +386,56 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         }
         self::assertNotNull(self::requestRow((int)$foldedRequest->id)['completed_at']);
         self::assertTrue(self::personExists(self::NEIGHBOUR_ID));
+    }
+
+    /**
+     * After the erasure commits, the agent of every erased person asks to stop and a neighbour's does not.
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testErasureStopsTheAgentsOfEveryoneItErases(): void
+    {
+        self::seedPersonRows();
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Folded'), (?, 'Deepest')", [self::FOLDED_ID, self::DEEPEST_ID]);
+        $this->seedPerson(self::FOLDED_ID, self::FOLDED_TOKEN);
+        $this->seedPerson(self::DEEPEST_ID, self::DEEPEST_TOKEN);
+        self::seedMerge(self::FOLDED_ID, self::USER_ID);
+        self::seedMerge(self::DEEPEST_ID, self::FOLDED_ID);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        $agents = [];
+        foreach ([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID, self::NEIGHBOUR_ID] as $userId) {
+            $agents[$userId] = new AccountErasureStopTestAgent((string)$userId);
+        }
+        $this->drainQueue();
+
+        $this->runSweep();
+        $this->dispatchDbSyncTo(array_values($agents), $this->drainQueue());
+
+        foreach ([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID] as $erasedId) {
+            self::assertTrue($agents[$erasedId]->shouldStop(), "The agent of {$erasedId} did not stop");
+        }
+        self::assertFalse($agents[self::NEIGHBOUR_ID]->shouldStop());
+    }
+
+    /**
+     * A rolled-back erasure announces nothing, so nobody's agent asks to stop.
+     *
+     * @throws HilosException When seeding or the sweep fails
+     */
+    public function testARolledBackErasureStopsNobody(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        $person = new AccountErasureStopTestAgent((string)self::USER_ID);
+        $neighbour = new AccountErasureStopTestAgent((string)self::NEIGHBOUR_ID);
+        $this->drainQueue();
+
+        $this->runSweep(failingFor: self::USER_ID);
+        $this->dispatchDbSyncTo([$person, $neighbour], $this->drainQueue());
+
+        self::assertFalse($person->shouldStop());
+        self::assertFalse($neighbour->shouldStop());
     }
 
     /**
@@ -783,6 +839,31 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     }
 
     /**
+     * Hands the commit's sync frames to the agents the way the worker hands them to everyone it hosts.
+     *
+     * @param list<AbstractUserAgent> $agents Agents hosted, as a worker would host them
+     * @param list<SignalDTO> $signals Frames the commit queued
+     */
+    private function dispatchDbSyncTo(array $agents, array $signals): void
+    {
+        foreach ($signals as $signal) {
+            $data = $signal->data;
+            if (!$data instanceof DbSyncSignalDataInterface) {
+                continue;
+            }
+            foreach ($agents as $agent) {
+                if ($data instanceof DbSyncCreatedSignalData) {
+                    $agent->onSignalDbSyncCreated($data, SignalSource::DB, SignalConstants::DB_SYNC_CREATED);
+                } elseif ($data instanceof DbSyncUpdatedSignalData) {
+                    $agent->onSignalDbSyncUpdated($data, SignalSource::DB, SignalConstants::DB_SYNC_UPDATED);
+                } elseif ($data instanceof DbSyncDeletedSignalData) {
+                    $agent->onSignalDbSyncDeleted($data, SignalSource::DB, SignalConstants::DB_SYNC_DELETED);
+                }
+            }
+        }
+    }
+
+    /**
      * @param list<SignalDTO> $signals Drained queue
      * @return list<string> Signal type of each DB-sync frame - the announcements to the other processes - in order
      */
@@ -1176,4 +1257,9 @@ final class AccountErasureTestConnection extends HilosSessionConnection
     protected function applyOwnDiff(array $diff): void
     {
     }
+}
+
+/** The framework's agent of one person, with nothing overridden, so a sync frame can ask it to stop. */
+final class AccountErasureStopTestAgent extends AbstractUserAgent
+{
 }

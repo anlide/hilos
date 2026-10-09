@@ -178,6 +178,7 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
+use Hilos\Users\AddressablePerson;
 use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
@@ -1935,6 +1936,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             // around it name it without repeating the TTL comparison that lives inside.
             $expired = $userIdBeforeDoor !== null && $session->userId === null;
             if ($session->userId !== null) {
+                AddressablePerson::require($session->userId);
                 $request = new UserAdminCommandSignalData(
                     userId: $session->userId,
                     admin: true,
@@ -2060,6 +2062,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if (!$admin) {
                 $this->refuseLastAdministrator($userId);
             }
+            AddressablePerson::require($userId);
             $request = new UserAdminCommandSignalData(
                 userId: $userId,
                 admin: $admin,
@@ -8075,6 +8078,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
                 $this->refuseLastAdministrator($request->userId);
             }
+            AddressablePerson::require($request->userId);
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
@@ -8161,6 +8165,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 throw new ValidationException('You cannot block yourself');
             }
             $blocksAdministrator = $request->block && in_array($request->userId, Hilos::adminAudienceClass()::all(), true);
+            AddressablePerson::require($request->userId);
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
