@@ -25,16 +25,19 @@ import { useTrackedAction } from '../../useTrackedAction.js'
 const props = defineProps<{ context: HilosLegalContext }>()
 const table = createHilosLegalSettingsTable(props.context)
 const actions = createHilosLegalSettingsActions(props.context)
-const editor = createHilosLegalSettingEdit(table.controller)
+const editor = createHilosLegalSettingEdit(table.controller, actions)
+const opened = useSignal(editor.opened)
 const row = useSignal(editor.row)
-const value = useSignal(editor.value)
+const form = useSignal(editor.form)
 const state = useSignal(editor.state)
 const noticeText = useSignal(editor.noticeText)
+const canSave = useSignal(editor.canSave)
+const saveLabel = useSignal(editor.saveLabel)
 const action = useTrackedAction({ toast: false })
 const { busy, loading, clearError, run } = action
 const inputId = useId()
-const opened = computed({
-  get: () => row.value !== null,
+const modalOpen = computed({
+  get: () => opened.value,
   set: (next) => {
     if (!next) editor.close()
   },
@@ -42,8 +45,8 @@ const opened = computed({
 // The list edits the draft only while it is a value: a value hidden from a viewer
 // of the admin view mode has no list, and the modal shows the mark instead.
 const draft = computed({
-  get: () => (isHiddenValue(value.value) ? '' : value.value),
-  set: (next: string) => editor.setValue(next),
+  get: () => (isHiddenValue(form.value.value) ? '' : form.value.value),
+  set: (next: string) => editor.setForm({ value: next }),
 })
 onMounted(() => {
   table.start()
@@ -58,22 +61,10 @@ function open(key: string): void {
   clearError()
   editor.open(key)
 }
-async function save(): Promise<void> {
-  const chosen = value.value
-  if (
-    row.value === null ||
-    isHiddenValue(chosen) ||
-    busy.value ||
-    state.value.gone ||
-    state.value.conflict
-  )
-    return
-  if (!state.value.dirty) {
-    editor.close()
-    return
-  }
-  if (await run(actions.sendSettingSet(row.value.rowKey, chosen)))
-    editor.close()
+// Save and Enter go through the session's one door: it refuses, closes an
+// unchanged choice, or sends through the tracked action and closes on success.
+function save(): void {
+  void editor.save(run)
 }
 </script>
 <template>
@@ -174,7 +165,7 @@ async function save(): Promise<void> {
       </p>
     </section>
     <HilosModal
-      v-model="opened"
+      v-model="modalOpen"
       :title="
         row
           ? (HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey)
@@ -187,7 +178,7 @@ async function save(): Promise<void> {
         details-title="Couldn't save the legal setting"
       />
       <form v-if="row" @submit.prevent="save">
-        <template v-if="isHiddenValue(value)">
+        <template v-if="isHiddenValue(form.value)">
           <div class="form-label">
             {{ HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey }}
           </div>
@@ -224,8 +215,8 @@ async function save(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="state.conflict"
-          :disable-save="!state.dirty || busy || state.gone"
-          :save-label="state.gone ? 'Deleted' : 'Save'"
+          :disable-save="!canSave"
+          :save-label="saveLabel"
           @save="save"
           @accept-mine="editor.keepMine"
           @accept-theirs="editor.takeTheirs"
@@ -248,7 +239,7 @@ async function save(): Promise<void> {
               :disabled="disabled"
               data-id="legal-setting-save"
               @click="onSave"
-              >{{ state.gone ? 'Deleted' : 'Save' }}</LoadingButton
+              >{{ saveLabel }}</LoadingButton
             ></template
           >
         </ConflictActions>

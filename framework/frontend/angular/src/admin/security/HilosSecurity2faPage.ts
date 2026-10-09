@@ -18,33 +18,24 @@ import {
   effect,
   input,
   signal,
-  untracked,
 } from '@angular/core'
 import {
-  HIDDEN_VALUE,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
   describeHilosSecondFactorSetting,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  subscribeSignal,
-  takeTheirsRowEdit,
+  createHilosTwoFactorSettingEdit,
+  hilosRowEditIdle,
 } from '@hilos/core'
 import type {
-  Hideable,
+  HilosTwoFactorSettingEditFields,
+  HilosTwoFactorSettingEditForm,
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
-  RowEditBaseline,
-  RowEditNoticeKind,
-  RowEditStep,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -58,35 +49,8 @@ import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
-
-/** The one field the edit modal edits. */
-interface SettingEditFields {
-  value: Hideable<string>
-}
-
-/**
- * The one line the modal says about the other side, for what the helper found;
- * a value in words, the way its cell says it.
- */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosTwoFactorSettingRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (!liveRow) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? HILOS_VIEW_MODE_COPY.hidden : describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
 
 /** The framework two-step verification page: six settings, each edited in a modal. */
 @Component({
@@ -137,7 +101,7 @@ function noticeText(
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="live().dirty"
         [aria-label]="editTitle()"
       >
@@ -204,9 +168,7 @@ function noticeText(
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="
-              !live().dirty || edit.busy() || live().gone || editHidden()
-            "
+            [disableSave]="!canSave()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -260,47 +222,33 @@ export class HilosSecurity2faPage {
     createHilosSecurityTwoFactorActions(this.context()),
   )
 
-  // The edit modal: one setting at a time, its value as typed until Save.
+  // The edit modal: one setting at a time, as the core window has it; this view
+  // binds the list or the number input through mirrors of the session's signals.
+  protected readonly editor = computed(() =>
+    createHilosTwoFactorSettingEdit(this.settings().controller, this.actions()),
+  )
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosTwoFactorSettingRow | null>(null)
-  protected readonly editValue = signal('')
+  protected readonly editForm = signal<HilosTwoFactorSettingEditForm>({
+    hidden: false,
+    text: '',
+  })
+  protected readonly live = signal(
+    hilosRowEditIdle<HilosTwoFactorSettingEditFields>({ value: '' }),
+  )
+  protected readonly editNoticeText = signal('')
+  protected readonly editSaveLabel = signal('Save')
+  protected readonly canSave = signal(false)
   protected readonly edit = createHilosTrackedAction()
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
 
     return row ? this.labelOf(row) : 'Edit setting'
   })
-  protected readonly editBaseline = signal<RowEditBaseline<SettingEditFields>>(
-    openRowEdit<SettingEditFields>({ value: '' }),
-  )
-  protected readonly editHidden = computed(() =>
-    isHiddenValue(this.editBaseline().values.value),
-  )
-  // The live row the open modal is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone. Mirrored
-  // from the controller: the handle arrives through a computed, so hilosSignal
-  // cannot take it at field init.
-  protected readonly liveRow = signal<HilosTwoFactorSettingRow | undefined>(
-    undefined,
-  )
-  protected readonly live = computed(() => {
-    const row = this.liveRow()
-    const editHidden = this.editHidden()
-
-    return resolveRowEdit(
-      row ? { value: row.value } : undefined,
-      this.editBaseline(),
-      { value: editHidden ? HIDDEN_VALUE : this.editValue().trim() },
-    )
-  })
+  protected readonly editHidden = computed(() => this.editForm().hidden)
+  protected readonly editValue = computed(() => this.editForm().text)
   protected readonly editNotice = computed(
     () => this.live().notice?.kind ?? null,
-  )
-  protected readonly editNoticeText = computed(() =>
-    noticeText(this.editNotice(), this.liveRow()),
-  )
-  protected readonly editSaveLabel = computed(() =>
-    this.live().gone ? 'Deleted' : 'Save',
   )
 
   constructor() {
@@ -308,27 +256,22 @@ export class HilosSecurity2faPage {
     // mirror the row in focus; unbind on destroy / swap.
     effect((onCleanup) => {
       const settings = this.settings()
+      const editor = this.editor()
       settings.start()
-      this.liveRow.set(settings.controller.focusedRow.get())
-      const unsubscribe = subscribeSignal(
-        settings.controller.focusedRow,
-        (row) => this.liveRow.set(row),
-      )
+      editor.start()
+      const off = [
+        mirrorHilosSignal(editor.opened, this.editOpen),
+        mirrorHilosSignal(editor.row, this.editRow),
+        mirrorHilosSignal(editor.form, this.editForm),
+        mirrorHilosSignal(editor.state, this.live),
+        mirrorHilosSignal(editor.noticeText, this.editNoticeText),
+        mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
+        mirrorHilosSignal(editor.canSave, this.canSave),
+      ]
       onCleanup(() => {
-        unsubscribe()
+        for (const stop of off) stop()
+        editor.dispose()
         settings.dispose()
-      })
-    })
-    // The helper hands a step whenever the other side moved the value while the
-    // person left it alone, or both arrived at the same one; the modal applies
-    // it at once.
-    effect(() => {
-      const settle = this.live().settle
-      const open = this.editOpen()
-      untracked(() => {
-        if (open && settle) {
-          this.applyStep(settle)
-        }
       })
     })
   }
@@ -362,70 +305,33 @@ export class HilosSecurity2faPage {
   }
 
   protected openEdit(row: HilosTwoFactorSettingRow): void {
-    // Flush pending and take the row into focus, so the modal edits the latest
+    // The window takes the row into focus, so the dialog edits the latest
     // committed row and follows it from here; a row that is gone declines to open.
-    const fresh = this.settings().controller.focusRow(row.rowKey)
-    if (!fresh) {
-      return
-    }
     this.edit.clearError()
-    this.editRow.set(fresh)
-    this.editValue.set(isHiddenValue(fresh.value) ? '' : fresh.value)
-    this.editBaseline.set(
-      openRowEdit<SettingEditFields>({ value: fresh.value }),
-    )
-    this.editOpen.set(true)
+    this.editor().open(row.rowKey)
   }
 
   protected closeEdit(): void {
-    this.editOpen.set(false)
-    this.settings().controller.releaseFocus()
-  }
-
-  // Put a step of the helper into the modal: the snapshot moves, and a value the
-  // step takes lands in the input.
-  private applyStep(step: RowEditStep<SettingEditFields>): void {
-    this.editBaseline.set(step.baseline)
-    if (step.take.value !== undefined && !isHiddenValue(step.take.value)) {
-      this.editValue.set(step.take.value)
-    }
+    this.editor().close()
   }
 
   protected acceptMine(): void {
-    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+    this.editor().keepMine()
   }
 
   protected acceptTheirs(): void {
-    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
+    this.editor().takeTheirs()
   }
 
-  protected async submitEdit(event?: Event): Promise<void> {
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  protected submitEdit(event?: Event): void {
     event?.preventDefault()
-    const row = this.editRow()
-    if (
-      !row ||
-      this.edit.busy() ||
-      this.live().gone ||
-      this.live().conflict ||
-      this.editHidden()
-    ) {
-      return
-    }
-    if (!this.live().dirty || this.editHidden()) {
-      this.closeEdit()
-
-      return
-    }
-    if (
-      await this.edit.run(
-        this.actions().sendSettingSet(row.rowKey, this.editValue().trim()),
-      )
-    ) {
-      this.closeEdit()
-    }
+    void this.editor().save(this.edit.run)
   }
 
   protected onValueInput(event: Event): void {
-    this.editValue.set((event.target as HTMLInputElement).value)
+    this.editor().patchForm({ text: (event.target as HTMLInputElement).value })
   }
 }

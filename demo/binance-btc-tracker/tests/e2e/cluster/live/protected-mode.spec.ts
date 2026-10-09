@@ -123,7 +123,17 @@ test.fixme('every master shows the stub while the mode is on, and a person signe
   }
 })
 
-test("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
+// TODO(P-518) 2026-10-09 · the circle member's sign-up on the follower is answered
+// "Too many attempts. Please wait a moment and try again." in the "Choose a
+// password" dialog — the cluster-wide auth throttle trips on the run of sign-ups
+// the live phase makes, and `auth-continue` never shows (three attempts alike).
+// A FOREIGN test: red with the same refusal on 2026-10-09 in runs 0983 (HIL-1374),
+// 0986 (HIL-1326), 0989 and 0991 (HIL-1294), 0992 (HIL-1404), 0997 and 0998
+// (HIL-1279) — none of those leaves touches auth, and this one is frontend edit
+// windows only. Verify attempt 1 of HIL-1279; parked by the owner's decision of
+// 2026-10-09. Lift the fixme together with the fix of the throttle on the stand
+// (P-518).
+test.fixme("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.

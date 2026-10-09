@@ -23,30 +23,21 @@ import {
   effect,
   input,
   signal,
-  untracked,
 } from '@angular/core'
 import {
-  HIDDEN_VALUE,
   HilosPages,
   createHilosSettingsActions,
+  createHilosSettingEdit,
+  hilosRowEditIdle,
   createHilosSettingsTable,
   hasCustomValue,
-  hiddenAsWord,
-  isHiddenValue,
   isOrphanSetting,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  subscribeSignal,
-  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
-  Hideable,
+  HilosSettingEditFields,
+  HilosSettingEditForm,
   HilosSettingRow,
   HilosSettingsContext,
-  RowEditBaseline,
-  RowEditState,
-  RowEditStep,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -58,6 +49,7 @@ import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 import { HilosSettingValueCell } from './HilosSettingValueCell.js'
 
@@ -75,28 +67,6 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
 
 function inputStep(type: string | undefined): 'any' | undefined {
   return type === 'float' ? 'any' : undefined
-}
-
-/** The one field the dialog edits: the row's own value, null for the catalog default. */
-interface SettingEditFields {
-  overrideValue: Hideable<string | null>
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(live: RowEditState<SettingEditFields>): string {
-  switch (live.notice?.kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (live.fields.overrideValue.incoming === null) {
-        return 'Reset elsewhere to the catalog default.'
-      }
-      return `Changed elsewhere to "${hiddenAsWord(live.fields.overrideValue.incoming)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
 }
 
 /** The framework settings admin page: the cataloged table with edit / reset / delete dialogs. */
@@ -183,7 +153,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="editDirty()"
       >
         <h5
@@ -282,9 +252,7 @@ function noticeText(live: RowEditState<SettingEditFields>): string {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="
-              !editDirty() || edit.busy() || live().gone || editHidden()
-            "
+            [disableSave]="!canSave()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -455,18 +423,29 @@ export class HilosSettingsPage {
     createHilosSettingsActions(this.context()),
   )
 
-  // Edit dialog: one row's custom value (or a reset back to the catalog default).
+  // Edit dialog: one row's custom value (or a reset back to the catalog
+  // default), as the core window has it; this view binds the switch and the text
+  // through mirrors of the session's signals.
+  protected readonly editor = computed(() =>
+    createHilosSettingEdit(this.settings().controller, this.actions()),
+  )
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosSettingRow | null>(null)
-  protected readonly editBaseline = signal<RowEditBaseline<SettingEditFields>>(
-    openRowEdit<SettingEditFields>({ overrideValue: null }),
+  protected readonly editForm = signal<HilosSettingEditForm>({
+    hidden: false,
+    useCustom: false,
+    text: '',
+  })
+  protected readonly live = signal(
+    hilosRowEditIdle<HilosSettingEditFields>({ overrideValue: null }),
   )
-  protected readonly editValue = signal('')
-  protected readonly editUseCustom = signal(false)
+  protected readonly editNoticeText = signal('')
+  protected readonly editSaveLabel = signal('Save')
+  protected readonly canSave = signal(false)
   protected readonly edit = createHilosTrackedAction()
-  // The live row the open dialog is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone. Mirrored
-  // the way the viewport table mirrors its rows.
+  // The live row the open delete or reset dialog is about: the row the table
+  // holds in focus, which the server follows wherever it goes; undefined once the
+  // row is gone. Mirrored the way the viewport table mirrors its rows.
   protected readonly liveRow = signal<HilosSettingRow | undefined>(undefined)
 
   // Delete dialog: orphan keys only (not in the catalog).
@@ -484,28 +463,9 @@ export class HilosSettingsPage {
     inputType(this.editRow()?.type),
   )
   protected readonly editStep = computed(() => inputStep(this.editRow()?.type))
-  protected readonly editHidden = computed(() =>
-    isHiddenValue(this.editBaseline().values.overrideValue),
-  )
-  // The custom value the dialog would persist, normalized to a string: a number
-  // input yields a number, while the row override and the wire are strings, so an
-  // un-normalized value would never match the echoed row. Null leaves the default.
-  protected readonly editOverride = computed<Hideable<string | null>>(() => {
-    if (this.editHidden()) {
-      return HIDDEN_VALUE
-    }
-
-    return this.editUseCustom() ? String(this.editValue()) : null
-  })
-  protected readonly live = computed(() => {
-    const row = this.liveRow()
-
-    return resolveRowEdit(
-      row ? { overrideValue: row.overrideValue } : undefined,
-      this.editBaseline(),
-      { overrideValue: this.editOverride() },
-    )
-  })
+  protected readonly editHidden = computed(() => this.editForm().hidden)
+  protected readonly editUseCustom = computed(() => this.editForm().useCustom)
+  protected readonly editValue = computed(() => this.editForm().text)
   protected readonly deleteGone = computed(() => this.liveRow() === undefined)
   protected readonly resetShown = computed(
     () => this.liveRow() ?? this.resetRow(),
@@ -516,13 +476,9 @@ export class HilosSettingsPage {
     return row === undefined || !hasCustomValue(row)
   })
   protected readonly editDirty = computed(() => this.live().dirty)
-  protected readonly editSaveLabel = computed(() =>
-    this.live().gone ? 'Deleted' : 'Save',
-  )
   protected readonly editNotice = computed(
     () => this.live().notice?.kind ?? null,
   )
-  protected readonly editNoticeText = computed(() => noticeText(this.live()))
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
 
@@ -547,133 +503,52 @@ export class HilosSettingsPage {
     // field init.
     effect((onCleanup) => {
       const settings = this.settings()
+      const editor = this.editor()
       settings.start()
-      this.liveRow.set(settings.controller.focusedRow.get())
-      const unsubscribe = subscribeSignal(
-        settings.controller.focusedRow,
-        (row) => this.liveRow.set(row),
-      )
+      editor.start()
+      const off = [
+        mirrorHilosSignal(settings.controller.focusedRow, this.liveRow),
+        mirrorHilosSignal(editor.opened, this.editOpen),
+        mirrorHilosSignal(editor.row, this.editRow),
+        mirrorHilosSignal(editor.form, this.editForm),
+        mirrorHilosSignal(editor.state, this.live),
+        mirrorHilosSignal(editor.noticeText, this.editNoticeText),
+        mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
+        mirrorHilosSignal(editor.canSave, this.canSave),
+      ]
       onCleanup(() => {
-        unsubscribe()
+        for (const stop of off) stop()
+        editor.dispose()
         settings.dispose()
-      })
-    })
-    // The helper hands a step whenever the other side moved a field the person
-    // left alone, or both arrived at the same value; the dialog applies it at
-    // once.
-    effect(() => {
-      const settle = this.live().settle
-      const open = this.editOpen()
-      untracked(() => {
-        if (open && settle) {
-          this.applyStep(settle)
-        }
       })
     })
   }
 
   protected openEdit(row: HilosSettingRow): void {
-    // Flush pending and take the row into focus, so the dialog edits the latest
-    // committed row and follows it from here; a row removed by someone else (now
-    // a placeholder) declines to open.
-    const fresh = this.settings().controller.focusRow(row.key)
-    if (!fresh) {
-      return
-    }
+    // The window takes the row into focus, so the dialog edits the latest
+    // committed row and follows it from here; a row that is gone declines to open.
     this.edit.clearError()
-    this.editRow.set(fresh)
-    // An orphan has no catalog default behind it and no switch in the dialog, so its
-    // value is always its own; a cataloged key opens with the switch on only when it
-    // carries a value of its own.
-    const hidden = isHiddenValue(fresh.overrideValue)
-    this.editUseCustom.set(
-      !hidden && (isOrphanSetting(fresh) || hasCustomValue(fresh)),
-    )
-    this.editValue.set(
-      hidden
-        ? ''
-        : String(
-            fresh.overrideValue ??
-              (!isHiddenValue(fresh.value) ? fresh.value : '') ??
-              '',
-          ),
-    )
-    this.editBaseline.set(openRowEdit({ overrideValue: fresh.overrideValue }))
-    this.editOpen.set(true)
+    this.editor().open(row.key)
   }
 
-  // Put a step of the helper into the dialog: the snapshot moves, and a value
-  // the step takes lands in the switch and the text the way the dialog opened
-  // with it. A reset taken from the other side leaves the text on the value now
-  // in effect — the live row's, not the one the dialog opened on, which is the
-  // override the other side just removed.
-  private applyStep(step: RowEditStep<SettingEditFields>): void {
-    const row = this.editRow()
-    if (!row) {
-      return
-    }
-    this.editBaseline.set(step.baseline)
-    const taken = step.take.overrideValue
-    if (taken !== undefined && !isHiddenValue(taken)) {
-      this.editUseCustom.set(taken !== null || isOrphanSetting(row))
-      const liveValue = this.liveRow()?.value
-      const fallback =
-        liveValue !== undefined && !isHiddenValue(liveValue)
-          ? liveValue
-          : !isHiddenValue(row.value)
-            ? row.value
-            : ''
-      this.editValue.set(taken ?? fallback ?? '')
-    }
+  protected closeEdit(): void {
+    this.editor().close()
   }
 
   protected acceptMine(): void {
-    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+    this.editor().keepMine()
   }
 
   protected acceptTheirs(): void {
-    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
+    this.editor().takeTheirs()
   }
 
-  // Authoritative-backend: dispatch the tracked action, close on its `::success`
-  // reply; a failure toasts and stays open so the entered value survives.
-  protected async submitEdit(event?: Event): Promise<void> {
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  protected submitEdit(event?: Event): void {
     event?.preventDefault()
-    const row = this.editRow()
-    if (
-      !row ||
-      this.edit.busy() ||
-      this.live().gone ||
-      this.live().conflict ||
-      this.editHidden()
-    ) {
-      return
-    }
-    if (!this.live().dirty) {
-      this.closeEdit()
-
-      return
-    }
-    const next = this.editOverride()
-    if (isHiddenValue(next)) {
-      this.closeEdit()
-
-      return
-    }
-    // The switch turned off means "back to the catalog default", which resets the key
-    // by dropping its row. With a value, an orphan updates in place and a cataloged
-    // key adds by key (the add is idempotent, so the row need not exist yet).
-    let handle
-    if (next === null) {
-      handle = this.actions().sendSettingReset(row.key)
-    } else {
-      handle = isOrphanSetting(row)
-        ? this.actions().sendSettingUpdate(row.key, next)
-        : this.actions().sendSettingAdd(row.key, next)
-    }
-    if (await this.edit.run(handle)) {
-      this.closeEdit()
-    }
+    void this.editor().save(this.edit.run)
   }
 
   protected openDelete(row: HilosSettingRow): void {
@@ -686,11 +561,6 @@ export class HilosSettingsPage {
     this.del.clearError()
     this.deleteRow.set(fresh)
     this.deleteOpen.set(true)
-  }
-
-  protected closeEdit(): void {
-    this.editOpen.set(false)
-    this.settings().controller.releaseFocus()
   }
 
   protected closeDelete(): void {
@@ -736,14 +606,18 @@ export class HilosSettingsPage {
   }
 
   protected onUseCustom(event: Event): void {
-    this.editUseCustom.set((event.target as HTMLInputElement).checked)
+    this.editor().patchForm({
+      useCustom: (event.target as HTMLInputElement).checked,
+    })
   }
 
   protected onValueCheckbox(event: Event): void {
-    this.editValue.set((event.target as HTMLInputElement).checked ? '1' : '0')
+    this.editor().patchForm({
+      text: (event.target as HTMLInputElement).checked ? '1' : '0',
+    })
   }
 
   protected onValueInput(event: Event): void {
-    this.editValue.set((event.target as HTMLInputElement).value)
+    this.editor().patchForm({ text: (event.target as HTMLInputElement).value })
   }
 }

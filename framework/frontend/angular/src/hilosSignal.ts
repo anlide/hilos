@@ -11,7 +11,7 @@ import {
 } from '@angular/core'
 import type { Signal } from '@angular/core'
 import { subscribeSignal } from '@hilos/core'
-import type { ReadonlySignal } from '@hilos/core'
+import type { ReadonlySignal, Unsubscribe } from '@hilos/core'
 
 /** Options for {@link hilosSignal} and the selector wrappers built on it. */
 export interface HilosSignalOptions {
@@ -47,4 +47,21 @@ export function hilosSignal<T>(
   injector.get(DestroyRef).onDestroy(unsubscribe)
 
   return value.asReadonly()
+}
+
+/**
+ * Put a core signal's value into an Angular signal now and on every change —
+ * for a component whose controller is a computed over an input, where the
+ * mirror lives in an effect and is torn down with it, not with the injector.
+ *
+ * @param source The core signal.
+ * @param target The Angular signal that mirrors it.
+ */
+export function mirrorHilosSignal<T>(
+  source: ReadonlySignal<T>,
+  target: { set(value: T): void },
+): Unsubscribe {
+  target.set(source.get())
+
+  return subscribeSignal(source, (value) => target.set(value))
 }

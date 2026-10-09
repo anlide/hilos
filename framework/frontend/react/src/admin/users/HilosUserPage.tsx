@@ -51,6 +51,8 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   hiddenAsWord,
+  HILOS_USER_NAME_MAX,
+  HILOS_USER_NAME_MIN,
   isHiddenValue,
   USER_IDENTITIES_FIELD,
   createHilosAccountMerge,
@@ -58,26 +60,19 @@ import {
   createHilosUserDetail,
   createHilosUserPhoto,
   createHilosUserRename,
+  createHilosUserRenameEdit,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY,
   hilosSecondFactorFateChoices,
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
   sessionUserId,
-  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
-  Hideable,
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosPasswordFate,
   HilosUsersContext,
-  RowEditBaseline,
-  RowEditState,
-  RowEditStep,
 } from '@hilos/core'
 
 import { HilosStepUpStep } from '../../auth/HilosStepUpStep.js'
@@ -103,31 +98,6 @@ export interface HilosUserPageProps {
   context: HilosUsersContext
 }
 
-const NAME_MIN = 2
-const NAME_MAX = 64
-
-/**
- * The one field the modal edits: the display name — hidden for a viewer of the
- * admin view mode, and then the modal says so in place of the input.
- */
-interface UserEditFields {
-  name: Hideable<string>
-}
-
-/** The one line the modal says about the other side, for what the helper found. */
-function noticeText(live: RowEditState<UserEditFields>): string {
-  switch (live.notice?.kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
 /**
  * Move the focus into a window whose step changed under it; the modal itself
  * places focus only when it opens.
@@ -150,6 +120,13 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const userDetail = useMemo(() => createHilosUserDetail(context), [context])
   const userPhoto = useMemo(() => createHilosUserPhoto(context), [context])
   const rename = useMemo(() => createHilosUserRename(context), [context])
+  // The name window, as the core has it over the card's own row — there is no
+  // table to take it into focus from (createHilosUserRenameEdit,
+  // rowEditSession.ts); this view binds the input and draws the refusal.
+  const editor = useMemo(
+    () => createHilosUserRenameEdit(userDetail, rename),
+    [userDetail, rename],
+  )
 
   const detail = useSignal(userDetail)
   const detailRef = useRef(detail)
@@ -171,9 +148,13 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const standing = useSignal(userStanding.standing)
   useEffect(() => {
     userStanding.start()
+    editor.start()
 
-    return () => userStanding.dispose()
-  }, [userStanding])
+    return () => {
+      editor.dispose()
+      userStanding.dispose()
+    }
+  }, [userStanding, editor])
   const standingBadge =
     standing === null ? null : hilosStandingBadge(standing.shown)
   const frozenRow = hilosUserFrozenRow(standing)
@@ -506,36 +487,23 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     }
   }, [candidateRows, mergeStep, selectedCandidateId, selectedCandidate])
 
-  const [editing, setEditing] = useState(false)
-  // A hidden name stays the one hidden value, so the row-edit helper sees it
-  // unchanged and the modal is never dirty.
-  const [draft, setDraft] = useState<Hideable<string>>('')
-  const [loading, setLoading] = useState(false)
-  // The name the rename in flight sent — what the success effect waits for;
-  // null while nothing is in flight.
-  const [sentName, setSentName] = useState<string | null>(null)
-  const [editBaseline, setEditBaseline] = useState<
-    RowEditBaseline<UserEditFields>
-  >(() => openRowEdit<UserEditFields>({ name: '' }))
-
+  const editing = useSignal(editor.opened)
+  const editForm = useSignal(editor.form)
+  // A hidden name stays the one hidden value, so the session sees it unchanged
+  // and the modal is never dirty.
+  const draft = editForm.name
   const draftHidden = isHiddenValue(draft)
-  const trimmed = draftHidden ? '' : draft.trim()
-  const valid =
-    !draftHidden && trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
-  // The live row is the card's own detail row, projected onto the name; gone
-  // once the card has no row any more.
-  const live = resolveRowEdit(
-    detail ? { name: detail.name } : undefined,
-    editBaseline,
-    { name: draftHidden ? draft : trimmed },
-  )
+  const setDraft = (name: string) => editor.setForm({ name })
+  const loading = useSignal(editor.saving)
+  const live = useSignal(editor.state)
+  const canSave = useSignal(editor.canSave)
   const dirty = live.dirty
   const editTitle = detail
     ? `Rename · ${hiddenAsWord(detail.name)}`
     : 'Rename user'
   const editNotice = live.notice?.kind ?? null
-  const editNoticeText = noticeText(live)
-  const saveLabel = live.gone ? 'Deleted' : 'Save'
+  const editNoticeText = useSignal(editor.noticeText)
+  const saveLabel = useSignal(editor.saveLabel)
 
   function identityTitle(identity: HilosMergeCandidateIdentity): string {
     return identity.provider ?? identity.type
@@ -644,48 +612,20 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   }
 
   function openEdit(): void {
-    rename.clearRenameError()
-    const name = detail?.name ?? ''
-    setDraft(name)
-    setEditBaseline(openRowEdit<UserEditFields>({ name }))
-    setLoading(false)
-    setSentName(null)
-    setEditing(true)
+    editor.open()
   }
-
-  // Put a step of the helper into the modal: the snapshot moves, and a name
-  // the step takes lands in the input.
-  function applyStep(step: RowEditStep<UserEditFields>): void {
-    setEditBaseline(step.baseline)
-    if (step.take.name !== undefined) {
-      setDraft(step.take.name)
-    }
-  }
-
-  // The helper hands a step whenever the other side moved the name while the
-  // person left it alone, or both arrived at the same one; the modal applies
-  // it at once.
-  const settle = live.settle
-  useEffect(() => {
-    if (editing && settle) {
-      applyStep(settle)
-    }
-  }, [editing, settle])
 
   function acceptMine(): void {
-    setEditBaseline(keepMineRowEdit(live, editBaseline))
+    editor.keepMine()
   }
 
   function acceptTheirs(): void {
-    applyStep(takeTheirsRowEdit(live, editBaseline))
+    editor.takeTheirs()
   }
 
   // The modal's close path (Cancel / Esc / backdrop, through the discard guard).
   function closeEdit(): void {
-    setEditing(false)
-    setLoading(false)
-    setSentName(null)
-    rename.clearRenameError()
+    editor.close()
   }
 
   // A merge that lands under an open window closes it (HIL-1292): there is
@@ -704,44 +644,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     // ones the windows themselves move, so they are not what this effect follows.
   }, [merged])
 
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged name without a round-trip, or sends the trimmed name and waits for
+  // the live name to reach it; a refusal releases the button with the modal open.
   function submit(): void {
-    if (!detail || !valid || loading || live.gone || live.conflict) {
-      return
-    }
-    // No change: close without a round-trip (also keeps the state-driven success
-    // watch from waiting on a name that will never change).
-    if (!live.dirty) {
-      closeEdit()
-
-      return
-    }
-
-    const sent = rename.submitRename(detail.id, trimmed)
-    setLoading(sent)
-    setSentName(sent ? trimmed : null)
+    editor.save()
   }
-
-  // Success is state-driven: the rename has landed once the committed name (over
-  // the live table) reaches the name it sent; that closes the modal. The draft
-  // is not part of it: Take theirs while the rename flies rewrites the draft,
-  // and the modal still waits for its own name.
-  const committedName = detail?.name
-  useEffect(() => {
-    if (loading && committedName === sentName) {
-      setLoading(false)
-      setSentName(null)
-      setEditing(false)
-    }
-  }, [committedName, loading, sentName])
-
-  // A rejected rename releases the button, forgets the name it sent, and keeps
-  // the modal open to retry.
-  useEffect(() => {
-    if (error !== null) {
-      setLoading(false)
-      setSentName(null)
-    }
-  }, [error])
 
   return (
     <HilosAdminPage page={HilosPages.USER}>
@@ -1166,7 +1074,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!valid || !dirty || loading || live.gone}
+            disableSave={!canSave}
             saveLabel={saveLabel}
             onSave={submit}
             onAcceptMine={acceptMine}
@@ -1230,15 +1138,16 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                 id="hilos-user-name-field"
                 type="text"
                 className="form-control"
-                minLength={NAME_MIN}
-                maxLength={NAME_MAX}
+                minLength={HILOS_USER_NAME_MIN}
+                maxLength={HILOS_USER_NAME_MAX}
                 data-id="hilos-user-name-input"
                 data-autofocus
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
               />
               <div className="form-text">
-                Between {NAME_MIN} and {NAME_MAX} characters.
+                Between {HILOS_USER_NAME_MIN} and {HILOS_USER_NAME_MAX}{' '}
+                characters.
               </div>
             </>
           )}

@@ -745,7 +745,7 @@ describe('HilosCommunicationsChannelPage in the admin view mode', () => {
     editButton().click()
     await nextTick()
 
-    expect(modalEl('hilos-channel-field-input')).toBeNull()
+    expect(modalEl('hilos-channel-edit-value')).toBeNull()
     expect(modalEl('hilos-hidden')).not.toBeNull()
 
     expect(saveButton().disabled).toBe(true)

@@ -1,20 +1,16 @@
-// The shared row-edit helper: the headless core of every modal that edits one
-// row against its live copy (docs/agents/frontend/conflict-resolution.md, "The
-// shared row-edit helper"). threeWayMerge classifies one field; this holds the
-// whole edit — the snapshot the person last saw as saved, which of its fields
-// arrived from the other side, and the verdict over every field at once: what
-// the form takes silently, whether a conflict stands, whether Save has anything
-// to send, and which one message the modal shows. Pure data in, pure data out
-// — no Vue, no DOM — so the three view layers and every project modal share one
-// merge instead of a copy each: resolveSettingEdit was the copy this replaced,
-// and the two windows that held no merge at all took this instead of a third.
-//
-// The view keeps two things: its own form and one RowEditBaseline. It projects
-// the form into a draft of the edited fields, and the live row into the same
-// shape, and reads everything else off the state this returns. A field is a
-// primitive — string, number, boolean, null — compared with Object.is; a form
-// richer than its fields projects them itself (a setting's switch and text fold
-// into one `overrideValue`).
+// The pure merge under the row-edit session (rowEditSession.ts;
+// docs/agents/frontend/conflict-resolution.md, "The row-edit session").
+// threeWayMerge classifies one field; this holds the whole edit — the snapshot
+// the person last saw as saved, which of its fields arrived from the other
+// side, and the verdict over every field at once: what the form takes
+// silently, whether a conflict stands, whether Save has anything to send, and
+// which one message the modal shows. Pure data in, pure data out — no Vue, no
+// DOM. A window never calls these four functions itself: it takes the session,
+// which drives them once for every view layer and every project (the linter
+// refuses their value import outside the core). A field is a primitive —
+// string, number, boolean, null — compared with Object.is; a form richer than
+// its fields projects them through the session's options (a setting's switch
+// and text fold into one `overrideValue`).
 
 import { threeWayMerge, type ThreeWayMergeResult } from './threeWayMerge.js'
 

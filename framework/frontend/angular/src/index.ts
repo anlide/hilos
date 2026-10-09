@@ -11,7 +11,11 @@ export {
   connectionStateSignal,
   type ConnectionStateSignalOptions,
 } from './connectionStateSignal.js'
-export { hilosSignal, type HilosSignalOptions } from './hilosSignal.js'
+export {
+  hilosSignal,
+  mirrorHilosSignal,
+  type HilosSignalOptions,
+} from './hilosSignal.js'
 export { entitySignal } from './entitySignal.js'
 export {
   createHilosTrackedAction,

@@ -13,15 +13,11 @@ import {
   focusInitial,
   HILOS_PROFILE_RENAME_COPY,
   HILOS_STEP_UP_COPY,
-  openRowEdit,
-  resolveRowEdit,
-  subscribeSignal,
+  hilosRowEditIdle,
   type HilosProfileRenameFields,
   type HilosProfileRenameFlow,
   type HilosProfileRenameStep,
   type HilosStepUpOpening,
-  type ReadonlySignal,
-  type Unsubscribe,
 } from '@hilos/core'
 import { ConflictActions } from '../ConflictActions.js'
 import { ConflictHeader } from '../ConflictHeader.js'
@@ -30,20 +26,7 @@ import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
 import { LoadingButton } from '../LoadingButton.js'
 import { HilosStepUpStep } from '../auth/HilosStepUpStep.js'
-
-/**
- * Put a core signal's value into an Angular one now and on every change.
- *
- * @param source The core signal.
- * @param target The Angular signal that mirrors it.
- */
-function mirror<T>(
-  source: ReadonlySignal<T>,
-  target: { set(value: T): void },
-): Unsubscribe {
-  target.set(source.get())
-  return subscribeSignal(source, (value) => target.set(value))
-}
+import { mirrorHilosSignal as mirror } from '../hilosSignal.js'
 
 /** Draw the profile root's name window over the project's rename (HIL-1169). */
 @Component({
@@ -192,11 +175,7 @@ export class HilosProfileRename {
   protected readonly step = signal<HilosProfileRenameStep>('closed')
   protected readonly draft = signal('')
   protected readonly edit = signal(
-    resolveRowEdit<HilosProfileRenameFields>(
-      undefined,
-      openRowEdit({ name: '' }),
-      { name: '' },
-    ),
+    hilosRowEditIdle<HilosProfileRenameFields>({ name: '' }),
   )
   protected readonly notice = signal('')
   protected readonly valid = signal(false)

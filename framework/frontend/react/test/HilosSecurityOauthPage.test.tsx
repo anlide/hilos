@@ -416,6 +416,15 @@ describe('HilosSecurityOauthPage return-address modal', () => {
     expect(focus).toEqual([ROW_KEY, ''])
   })
 
+  it('sends the address trimmed of the spaces at its edges', () => {
+    const { context, sent } = seededContext('https://a.example/cb')
+    openModal(context)
+    typeDraft('  https://mine.example/cb  ')
+    fireEvent.click(saveButton())
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.payload).toMatchObject({ value: 'https://mine.example/cb' })
+  })
+
   it('closes a pristine edit on Save without a request', () => {
     const { context, sent } = seededContext('https://a.example/cb')
     openModal(context)

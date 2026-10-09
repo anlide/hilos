@@ -7,11 +7,12 @@ shows live agent presence (online/offline) from the runtime status slot. The tab
 controller and the row view-model live with the page (adminBotsPage.ts), the
 create/update/delete submits in adminBotsActions.ts. Authoritative-backend: a
 submit dispatches a tracked action and the dialog closes on its `::success` reply
-(useTrackedAction, step 7.4); a failure surfaces in the dialog. The edit and the
-delete dialogs merge against the live row through the shared row-edit helper
-(rowEdit.ts, conflict-resolution.md) and say what happened elsewhere on one line
-of room held in advance (HilosEditNotice); Save stays locked while nothing
-changed. Bootstrap classes only (styling-rules.md). -->
+(useTrackedAction, step 7.4); a failure surfaces in the dialog. The edit dialog
+is the core row-edit session over the focused row (createHilosRowEdit,
+rowEditSession.ts, conflict-resolution.md) and says what happened elsewhere on
+one line of room held in advance (HilosEditNotice); Save stays locked while
+nothing changed. The create shares its form and has no snapshot to merge
+against; the delete dialog reads the same focused row. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   ConflictActions,
@@ -26,15 +27,11 @@ import {
   useTrackedAction,
 } from '@hilos/vue'
 import {
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
-  type RowEditBaseline,
-  type RowEditState,
-  type RowEditStep,
+  createHilosRowEdit,
+  createSignal,
+  hilosTableRowEditSource,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {
   sendBotCreate,
@@ -79,29 +76,6 @@ function cellText(value: BotInput[keyof BotInput]): string {
   return value === null || value === '' ? '—' : value
 }
 
-/**
- * The one line the edit dialog says about the other side, naming the fields
- * it is about in the order of the form.
- */
-function noticeText(live: RowEditState<BotInput>): string {
-  const notice = live.notice
-  switch (notice?.kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return notice.fields
-        .map(
-          (field) =>
-            `${FIELD_LABELS[field]} changed elsewhere to "${cellText(live.fields[field].incoming)}".`,
-        )
-        .join(' ')
-    case 'updated':
-      return `Updated just now: ${notice.fields.map((field) => FIELD_LABELS[field]).join(', ')}`
-    default:
-      return ''
-  }
-}
-
 /** The edited fields of a row, in the order of the form — the helper names them in this order. */
 function editFields(row: BotRow): BotInput {
   return {
@@ -114,26 +88,122 @@ function editFields(row: BotRow): BotInput {
   }
 }
 
-// Create/edit dialog: one shared form, distinguished by mode.
-const formOpen = ref(false)
-const formMode = ref<'create' | 'edit'>('create')
-const formId = ref<number | null>(null)
-const fName = ref('')
-const fDescription = ref('')
-const fStyle = ref('')
-const fTopics = ref('')
-const fPersonality = ref('')
-const fActive = ref(true)
-const editBaseline = ref<RowEditBaseline<BotInput>>(
-  openRowEdit<BotInput>({
-    name: '',
-    description: null,
-    style: null,
-    topics: null,
-    personality: null,
-    active: true,
-  }),
+/** The form of the create and edit dialog: every field as text, and the switch. */
+interface BotForm {
+  name: string
+  description: string
+  style: string
+  topics: string
+  personality: string
+  active: boolean
+}
+
+const EMPTY_FORM: BotForm = {
+  name: '',
+  description: '',
+  style: '',
+  topics: '',
+  personality: '',
+  active: true,
+}
+
+/** The form as a bot input, trimmed and null-normalized. */
+function inputOf(form: BotForm): BotInput {
+  return {
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    style: form.style.trim() || null,
+    topics: form.topics.trim() || null,
+    personality: form.personality.trim() || null,
+    active: form.active,
+  }
+}
+
+/** The form as the edit dialog opens it on a row. */
+function formOf(row: BotRow): BotForm {
+  return {
+    name: row.name,
+    description: row.description ?? '',
+    style: row.style ?? '',
+    topics: row.topics ?? '',
+    personality: row.personality ?? '',
+    active: row.active,
+  }
+}
+
+// Create/edit dialog: one shared form, distinguished by mode. The edit is the
+// core row-edit session over the focused row; the create shares its form and
+// has no snapshot to merge against (conflict-resolution.md, "Ask in a modal").
+// resolveBotRow already normalizes an empty optional to null, the way inputOf()
+// does, so an untouched field never reads as changed.
+const botForm = createSignal<BotForm>(EMPTY_FORM)
+const editor = createHilosRowEdit<BotRow, BotInput, BotForm>(
+  hilosTableRowEditSource(bots.controller, (row) => String(row.id)),
+  {
+    formSignal: botForm,
+    fields: editFields,
+    form: formOf,
+    draft: inputOf,
+    // A value taken from the other side lands in its field the way the form
+    // opened with it.
+    take: (form, taken) => ({
+      ...form,
+      ...(taken.name !== undefined ? { name: taken.name } : {}),
+      ...(taken.description !== undefined
+        ? { description: taken.description ?? '' }
+        : {}),
+      ...(taken.style !== undefined ? { style: taken.style ?? '' } : {}),
+      ...(taken.topics !== undefined ? { topics: taken.topics ?? '' } : {}),
+      ...(taken.personality !== undefined
+        ? { personality: taken.personality ?? '' }
+        : {}),
+      ...(taken.active !== undefined ? { active: taken.active } : {}),
+    }),
+    valid: (form) => form.name.trim() !== '',
+    // The one line about the other side names the fields it is about in the
+    // order of the form.
+    notice: {
+      conflict: (state) =>
+        (state.notice?.fields ?? [])
+          .map(
+            (field) =>
+              `${FIELD_LABELS[field]} changed elsewhere to "${cellText(state.fields[field].incoming)}".`,
+          )
+          .join(' '),
+      updated: (state) =>
+        `Updated just now: ${(state.notice?.fields ?? []).map((field) => FIELD_LABELS[field]).join(', ')}`,
+    },
+  },
 )
+onMounted(editor.start)
+onUnmounted(editor.dispose)
+const form = useSignal(botForm)
+const editing = useSignal(editor.opened)
+const creating = ref(false)
+const formOpen = computed({
+  get: () => creating.value || editing.value,
+  set: (next: boolean) => {
+    if (!next) closeForm()
+  },
+})
+const formMode = computed(() => (editing.value ? 'edit' : 'create'))
+/** One field of the shared form as a model the inputs write through. */
+function field<K extends keyof BotForm>(key: K) {
+  return computed({
+    get: () => form.value[key],
+    set: (next: BotForm[K]) => botForm.set({ ...botForm.get(), [key]: next }),
+  })
+}
+const fName = field('name')
+const fDescription = field('description')
+const fStyle = field('style')
+const fTopics = field('topics')
+const fPersonality = field('personality')
+const fActive = field('active')
+const live = useSignal(editor.state)
+const canSave = useSignal(editor.canSave)
+const saveLabel = useSignal(editor.saveLabel)
+const formNoticeText = useSignal(editor.noticeText)
 const formAction = useTrackedAction()
 const {
   loading: formLoading,
@@ -153,53 +223,23 @@ const {
   clearError: clearDeleteError,
 } = deleteAction
 
-/** The form's current fields as a bot input, trimmed and null-normalized. */
-function currentInput(): BotInput {
-  return {
-    name: fName.value.trim(),
-    description: fDescription.value.trim() || null,
-    style: fStyle.value.trim() || null,
-    topics: fTopics.value.trim() || null,
-    personality: fPersonality.value.trim() || null,
-    active: fActive.value,
-  }
-}
-
-const editing = computed(() => formMode.value === 'edit')
 // What the form's refusal details are headed with: adding and saving fail
 // differently, and the panel names which one did.
 const formRefusalTitle = computed(() =>
   editing.value ? "Couldn't save" : "Couldn't add the bot",
 )
-// The live row the edit dialog is about, projected onto the edited fields; gone
-// once the row is. resolveBotRow already normalizes an empty optional to null,
-// the way currentInput() does, so an untouched field never reads as changed. An
-// add has no row to follow.
-const liveRow = computed(() => (editing.value ? focusedRow.value : undefined))
-const live = computed(() =>
-  resolveRowEdit(
-    liveRow.value ? editFields(liveRow.value) : undefined,
-    editBaseline.value,
-    currentInput(),
-  ),
-)
-// Everything the helper says holds for an edit only: an add compares against
+// Everything the session says holds for an edit only: an add compares against
 // nothing and keeps its own rules below.
 const formConflict = computed(() => editing.value && live.value.conflict)
-const formGone = computed(() => editing.value && live.value.gone)
 const formNotice = computed(() =>
   editing.value ? (live.value.notice?.kind ?? null) : null,
 )
-const formNoticeText = computed(() =>
-  editing.value ? noticeText(live.value) : '',
-)
-const saveLabel = computed(() => (formGone.value ? 'Deleted' : 'Save'))
 
 // A create is dirty once any field is filled; an edit once the draft differs
 // from the live row. confirm-on-close only guards a dirty form.
 const formDirty = computed(() => {
   if (!editing.value) {
-    const input = currentInput()
+    const input = inputOf(form.value)
 
     return !!(
       input.name ||
@@ -213,125 +253,61 @@ const formDirty = computed(() => {
   return live.value.dirty
 })
 
-// Save is locked while there is nothing to save: an empty name, a save in
-// flight, an edit that changed nothing, a row that is gone
-// (rules-and-violations.md, section E).
-const saveDisabled = computed(
-  () =>
-    !fName.value.trim() ||
-    formBusy.value ||
-    (editing.value && (!live.value.dirty || live.value.gone)),
+// Save is locked while there is nothing to save: for an add an empty name or a
+// save in flight; for an edit whatever the session says — nothing changed, a
+// row that is gone, a conflict, a save in flight (rules-and-violations.md,
+// section E).
+const saveDisabled = computed(() =>
+  editing.value ? !canSave.value : !form.value.name.trim() || formBusy.value,
 )
 
 function openCreate(): void {
   clearFormError()
-  formMode.value = 'create'
-  formId.value = null
-  fName.value = ''
-  fDescription.value = ''
-  fStyle.value = ''
-  fTopics.value = ''
-  fPersonality.value = ''
-  fActive.value = true
-  formOpen.value = true
+  botForm.set(EMPTY_FORM)
+  creating.value = true
 }
 
 function openEdit(row: BotRow): void {
-  // Flush pending and take the row into focus, so the form edits the latest
+  // The session takes the row into focus, so the form edits the latest
   // committed row and follows it from here; a row removed by someone else (now a
   // placeholder) declines to open.
-  const fresh = bots.controller.focusRow(String(row.id))
-  if (!fresh) {
-    return
-  }
   clearFormError()
-  formMode.value = 'edit'
-  formId.value = fresh.id
-  fName.value = fresh.name
-  fDescription.value = fresh.description ?? ''
-  fStyle.value = fresh.style ?? ''
-  fTopics.value = fresh.topics ?? ''
-  fPersonality.value = fresh.personality ?? ''
-  fActive.value = fresh.active
-  editBaseline.value = openRowEdit<BotInput>(editFields(fresh))
-  formOpen.value = true
+  if (editor.open(String(row.id))) {
+    creating.value = false
+  }
 }
 
 function closeForm(): void {
-  formOpen.value = false
-  bots.controller.releaseFocus()
+  creating.value = false
+  editor.close()
 }
-
-// Put a step of the helper into the form: the snapshot moves, and every value
-// the step takes lands in its field the way the form opened with it.
-function applyStep(step: RowEditStep<BotInput>): void {
-  editBaseline.value = step.baseline
-  const take = step.take
-  if (take.name !== undefined) {
-    fName.value = take.name
-  }
-  if (take.description !== undefined) {
-    fDescription.value = take.description ?? ''
-  }
-  if (take.style !== undefined) {
-    fStyle.value = take.style ?? ''
-  }
-  if (take.topics !== undefined) {
-    fTopics.value = take.topics ?? ''
-  }
-  if (take.personality !== undefined) {
-    fPersonality.value = take.personality ?? ''
-  }
-  if (take.active !== undefined) {
-    fActive.value = take.active
-  }
-}
-
-// The helper hands a step whenever the other side moved a field the person
-// left alone, or both arrived at the same value; the dialog applies it at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (formOpen.value && editing.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
-// Authoritative-backend: dispatch the tracked action, close only when its
-// `::success` reply resolves; a failure stays open with the reason shown. An
-// edit that changed nothing closes without a round trip — there is nothing to
-// save (rules-and-violations.md, section E).
+// Authoritative-backend: the create dispatches the tracked action and closes
+// only when its `::success` reply resolves; a failure stays open with the reason
+// shown. The edit goes through the session's one door — it refuses, closes an
+// unchanged draft without a round trip (rules-and-violations.md, section E), or
+// sends the same way and closes on success.
 async function submitForm(): Promise<void> {
-  const input = currentInput()
+  if (editing.value) {
+    await editor.save((draft, row) =>
+      runFormAction(sendBotUpdate(row.id, draft)),
+    )
+
+    return
+  }
+  const input = inputOf(form.value)
   if (!input.name || formBusy.value) {
     return
   }
-  if (!editing.value) {
-    if (await runFormAction(sendBotCreate(input))) {
-      closeForm()
-    }
-
-    return
-  }
-  // A conflict stands until Keep mine / Take theirs: Enter does not save past it.
-  if (formId.value === null || live.value.gone || live.value.conflict) {
-    return
-  }
-  if (!live.value.dirty) {
-    closeForm()
-
-    return
-  }
-  if (await runFormAction(sendBotUpdate(formId.value, input))) {
+  if (await runFormAction(sendBotCreate(input))) {
     closeForm()
   }
 }

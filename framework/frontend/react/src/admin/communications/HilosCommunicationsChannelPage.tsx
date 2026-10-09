@@ -14,32 +14,24 @@
 // the value redraws from the reactive table's snapshot signal after the backend
 // echo, never optimistically, and a validation failure surfaces as a toast with the
 // backend's domain phrase. Editing happens in a modal — inline forms are forbidden
-// (rules-and-violations.md section E) — and the modal merges against the live row
-// through the shared row-edit helper (rowEdit.ts, conflict-resolution.md), saying
-// what happened elsewhere on one line of room held in advance (HilosEditNotice).
+// (rules-and-violations.md section E) — and the modal is the core row-edit
+// session over the focused row (createHilosChannelFieldEdit, rowEditSession.ts,
+// conflict-resolution.md), saying what happened elsewhere on one line of room
+// held in advance (HilosEditNotice); this view binds the input.
 // Bootstrap classes only (styling-rules.md).
 import { useContext, useEffect, useMemo, useState } from 'react'
 import {
-  HIDDEN_VALUE,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
+  createHilosChannelFieldEdit,
   createHilosChannelFields,
   createHilosCommunicationsActions,
-  hiddenAsWord,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
+  hilosChannelDisplayValue,
 } from '@hilos/core'
 import type {
-  Hideable,
   HilosChannelFieldRow,
   HilosCommunicationsContext,
-  RowEditBaseline,
-  RowEditNoticeKind,
-  RowEditStep,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -74,82 +66,11 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
   return 'text'
 }
 
-/** Human-readable effective value of a non-secret field. */
-function displayValue(value: boolean | number | string | null): string {
-  if (typeof value === 'boolean') {
-    return value ? 'On' : 'Off'
-  }
-
-  return value === null || value === '' ? '—' : String(value)
-}
-
 /** The source badge label: where the effective value comes from. */
 const SOURCE_LABEL: Record<string, string> = {
   settings: 'Override',
   env: 'From env',
   default: 'Default',
-}
-
-/** Coerce the edited string to the field's typed value for the set action. */
-/** Coerce the edited string to the field's typed value for the set action. */
-function editedValue(
-  row: HilosChannelFieldRow,
-  raw: string,
-): boolean | number | string {
-  if (row.type === 'boolean') {
-    return raw === '1'
-  }
-  if (row.type === 'integer' || row.type === 'float') {
-    return Number(raw)
-  }
-
-  return raw
-}
-
-/** The one field the dialog edits: the field's typed value. */
-interface ChannelEditFields {
-  value: Hideable<boolean | number | string | null>
-}
-
-/**
- * The text the dialog's input shows for a typed value: a switch reads '1' /
- * '0', an empty value reads as nothing, anything else as itself.
- */
-function formText(
-  type: string,
-  value: Hideable<boolean | number | string | null>,
-): string {
-  if (isHiddenValue(value)) {
-    return ''
-  }
-  if (type === 'boolean') {
-    return value === true ? '1' : '0'
-  }
-
-  return value === null ? '' : String(value)
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosChannelFieldRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return liveRow
-        ? `Changed elsewhere to "${
-            isHiddenValue(liveRow.value)
-              ? hiddenAsWord(liveRow.value)
-              : displayValue(liveRow.value)
-          }".`
-        : ''
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
 }
 
 /**
@@ -190,11 +111,22 @@ export function HilosCommunicationsChannelPage({
     [context],
   )
 
+  // Edit dialog: one field's override value, as the core window has it; this
+  // view binds the input.
+  const editor = useMemo(
+    () => createHilosChannelFieldEdit(fields.controller, actions),
+    [fields, actions],
+  )
+
   useEffect(() => {
     fields.start()
+    editor.start()
 
-    return () => fields.dispose()
-  }, [fields])
+    return () => {
+      editor.dispose()
+      fields.dispose()
+    }
+  }, [fields, editor])
 
   // Showing the backend's own phrase on a rejected write is the driver's default
   // since HIL-779; this page used to be the one screen that asked for it.
@@ -206,36 +138,25 @@ export function HilosCommunicationsChannelPage({
     void test.run(actions.sendChannelTest(channel))
   }
 
-  // Edit dialog: one field's override value.
-  const [editOpen, setEditOpen] = useState(false)
-  const [editRow, setEditRow] = useState<HilosChannelFieldRow | null>(null)
-  const [editBaseline, setEditBaseline] = useState<
-    RowEditBaseline<ChannelEditFields>
-  >(() => openRowEdit<ChannelEditFields>({ value: null }))
-  const [editValue, setEditValue] = useState('')
+  const editOpen = useSignal(editor.opened)
+  const editRow = useSignal(editor.row)
+  const editForm = useSignal(editor.form)
+  const live = useSignal(editor.state)
+  const editNoticeText = useSignal(editor.noticeText)
+  const editSaveLabel = useSignal(editor.saveLabel)
+  const canSave = useSignal(editor.canSave)
   const editInputType = inputType(editRow?.type)
   const editStep = editRow?.type === 'float' ? 'any' : undefined
   const editTitle = editRow ? `Edit · ${editRow.label}` : 'Edit field'
-
-  const editHidden = isHiddenValue(editBaseline.values.value)
-
-  // The live row the open dialog is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone.
-  const liveRow = useSignal(fields.controller.focusedRow)
-  const live = resolveRowEdit(
-    liveRow ? { value: liveRow.value } : undefined,
-    editBaseline,
-    {
-      value: editHidden
-        ? HIDDEN_VALUE
-        : editRow
-          ? editedValue(editRow, editValue)
-          : null,
-    },
-  )
+  const editHidden = editForm.hidden
+  const editValue = editForm.text
+  const setEditValue = (text: string) => editor.patchForm({ text })
   const editNotice = live.notice?.kind ?? null
-  const editNoticeText = noticeText(editNotice, liveRow)
-  const editSaveLabel = live.gone ? 'Deleted' : 'Save'
+
+  // The live row the open reset dialog is about: the row the table holds in
+  // focus, which the server follows wherever it goes; undefined once the row is
+  // gone.
+  const liveRow = useSignal(fields.controller.focusedRow)
 
   // Reset dialog: back to env/default, only on confirm. It reads the same live
   // row the edit dialog does — one dialog is open at a time, and the focus is one.
@@ -244,80 +165,31 @@ export function HilosCommunicationsChannelPage({
   const resetShown = liveRow ?? resetRow
   const resetGone = liveRow === undefined || liveRow.valueSource !== 'settings'
 
-  // Put a step of the helper into the dialog: the snapshot moves, and a value
-  // the step takes lands in the input the way the dialog opened with it.
-  function applyStep(
-    row: HilosChannelFieldRow,
-    step: RowEditStep<ChannelEditFields>,
-  ): void {
-    setEditBaseline(step.baseline)
-    const taken = step.take.value
-    if (taken !== undefined) {
-      setEditValue(formText(row.type, taken))
-    }
-  }
-
-  // The helper hands a step whenever the other side moved a field the person
-  // left alone, or both arrived at the same value; the dialog applies it at once.
-  const settle = live.settle
-  useEffect(() => {
-    if (editOpen && editRow && settle) {
-      applyStep(editRow, settle)
-    }
-  }, [editOpen, editRow, settle])
-
   function openEdit(row: HilosChannelFieldRow): void {
-    // Flush pending and take the row into focus, so the dialog edits the latest
+    // The window takes the row into focus, so the dialog edits the latest
     // committed row and follows it from here; a row removed by someone else (now
     // a placeholder) declines to open.
-    const fresh = fields.controller.focusRow(row.key)
-    if (!fresh) {
-      return
-    }
     edit.clearError()
-    setEditRow(fresh)
-    setEditValue(
-      isHiddenValue(fresh.value) ? '' : formText(fresh.type, fresh.value),
-    )
-    setEditBaseline(openRowEdit<ChannelEditFields>({ value: fresh.value }))
-    setEditOpen(true)
+    editor.open(row.key)
   }
 
   function closeEdit(): void {
-    setEditOpen(false)
-    fields.controller.releaseFocus()
+    editor.close()
   }
 
   function acceptMine(): void {
-    setEditBaseline(keepMineRowEdit(live, editBaseline))
+    editor.keepMine()
   }
 
   function acceptTheirs(): void {
-    if (editRow) {
-      applyStep(editRow, takeTheirsRowEdit(live, editBaseline))
-    }
+    editor.takeTheirs()
   }
 
-  async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone || live.conflict || editHidden) {
-      return
-    }
-    if (!live.dirty) {
-      closeEdit()
-
-      return
-    }
-    if (
-      await edit.run(
-        actions.sendChannelSet(
-          editRow.channel,
-          editRow.field,
-          editedValue(editRow, editValue),
-        ),
-      )
-    ) {
-      closeEdit()
-    }
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  function submitEdit(): void {
+    void editor.save(edit.run)
   }
 
   function openReset(row: HilosChannelFieldRow): void {
@@ -383,7 +255,7 @@ export function HilosCommunicationsChannelPage({
               </span>
             ) : (
               <HilosHideable value={row.value}>
-                {(value) => <span>{displayValue(value)}</span>}
+                {(value) => <span>{hilosChannelDisplayValue(value)}</span>}
               </HilosHideable>
             ),
           valueSource: (row) => (
@@ -431,7 +303,7 @@ export function HilosCommunicationsChannelPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!live.dirty || edit.busy || live.gone || editHidden}
+            disableSave={!canSave}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}
@@ -561,7 +433,7 @@ export function HilosCommunicationsChannelPage({
             <dt className="col-4">Now</dt>
             <dd className="col-8" data-id="hilos-channel-reset-now">
               <HilosHideable value={resetShown.value}>
-                {(value) => displayValue(value)}
+                {(value) => hilosChannelDisplayValue(value)}
               </HilosHideable>
             </dd>
             <dt className="col-4">Back to</dt>

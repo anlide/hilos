@@ -13,30 +13,22 @@ exercises the real delivery path (HIL-201). Writes are tracked actions
 snapshot signal after the backend echo, never optimistically, and a validation
 failure surfaces as a toast with the backend's domain phrase. Editing happens in a
 modal — inline forms are forbidden (rules-and-violations.md section E) — and the
-modal merges against the live row through the shared row-edit helper (rowEdit.ts,
-conflict-resolution.md), saying what happened elsewhere on one line of room held
-in advance (HilosEditNotice). Bootstrap classes only (styling-rules.md). -->
+modal is the core row-edit session over the focused row
+(createHilosChannelFieldEdit, rowEditSession.ts, conflict-resolution.md), saying
+what happened elsewhere on one line of room held in advance (HilosEditNotice);
+this view binds the input. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computedSignal,
+  createHilosChannelFieldEdit,
   createHilosChannelFields,
   createHilosCommunicationsActions,
-  HIDDEN_VALUE,
-  hiddenAsWord,
+  hilosChannelDisplayValue,
   HilosPages,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
-  type Hideable,
   type HilosChannelFieldRow,
   type HilosCommunicationsContext,
-  type RowEditBaseline,
-  type RowEditNoticeKind,
-  type RowEditStep,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
@@ -74,11 +66,17 @@ const channelSignal = computedSignal(
 const channel = useSignal(channelSignal)
 
 const fields = createHilosChannelFields(props.context, channelSignal)
-const { sendChannelSet, sendChannelReset, sendChannelTest } =
-  createHilosCommunicationsActions(props.context)
+const actions = createHilosCommunicationsActions(props.context)
+const { sendChannelReset, sendChannelTest } = actions
 
-onMounted(() => fields.start())
-onUnmounted(() => fields.dispose())
+onMounted(() => {
+  fields.start()
+  editor.start()
+})
+onUnmounted(() => {
+  editor.dispose()
+  fields.dispose()
+})
 
 // Showing the backend's own phrase on a rejected write is the driver's default
 // since HIL-779; this page used to be the one screen that asked for it.
@@ -100,15 +98,6 @@ function inputType(type: string | undefined): 'text' | 'number' | 'checkbox' {
   return 'text'
 }
 
-/** Human-readable effective value of a non-secret field. */
-function displayValue(value: boolean | number | string | null): string {
-  if (typeof value === 'boolean') {
-    return value ? 'On' : 'Off'
-  }
-
-  return value === null || value === '' ? '—' : String(value)
-}
-
 /** The source badge label: where the effective value comes from. */
 const SOURCE_LABEL: Record<string, string> = {
   settings: 'Override',
@@ -116,53 +105,22 @@ const SOURCE_LABEL: Record<string, string> = {
   default: 'Default',
 }
 
-/** The one field the dialog edits: the field's typed value. */
-interface ChannelEditFields {
-  value: Hideable<boolean | number | string | null>
-}
-
-/**
- * The text the dialog's input shows for a typed value: a switch reads '1' /
- * '0', an empty value reads as nothing, anything else as itself.
- */
-function formText(
-  type: string,
-  value: boolean | number | string | null,
-): string {
-  if (type === 'boolean') {
-    return value === true ? '1' : '0'
-  }
-
-  return value === null ? '' : String(value)
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosChannelFieldRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (!liveRow) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : displayValue(liveRow.value)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
-// Edit dialog: one field's override value.
-const editOpen = ref(false)
-const editRow = ref<HilosChannelFieldRow | null>(null)
-const editBaseline = ref<RowEditBaseline<ChannelEditFields>>(
-  openRowEdit<ChannelEditFields>({ value: null }),
-)
-const editValue = ref('')
+// Edit dialog: one field's override value, as the core window has it; this
+// view binds the input.
+const editor = createHilosChannelFieldEdit(fields.controller, actions)
+const opened = useSignal(editor.opened)
+const editOpen = computed({
+  get: () => opened.value,
+  set: (next: boolean) => {
+    if (!next) editor.close()
+  },
+})
+const editRow = useSignal(editor.row)
+const editForm = useSignal(editor.form)
+const live = useSignal(editor.state)
+const editNoticeText = useSignal(editor.noticeText)
+const editSaveLabel = useSignal(editor.saveLabel)
+const canSave = useSignal(editor.canSave)
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -174,52 +132,24 @@ const editInputType = computed(() => inputType(editRow.value?.type))
 const editStep = computed(() =>
   editRow.value?.type === 'float' ? 'any' : undefined,
 )
-const editValueBool = computed({
-  get: () => editValue.value === '1',
-  set: (on: boolean) => {
-    editValue.value = on ? '1' : '0'
-  },
+const editHidden = computed(() => editForm.value.hidden)
+// A number input hands back a number, while the form and the wire hold text.
+const editValue = computed({
+  get: () => editForm.value.text,
+  set: (typed: string | number) => editor.patchForm({ text: String(typed) }),
 })
-const editHidden = computed(() =>
-  isHiddenValue(editBaseline.value.values.value),
-)
+const editValueBool = computed({
+  get: () => editForm.value.text === '1',
+  set: (on: boolean) => editor.patchForm({ text: on ? '1' : '0' }),
+})
 const editTitle = computed(() =>
   editRow.value ? `Edit · ${editRow.value.label}` : 'Edit field',
 )
-
-/** Coerce the edited string to the field's typed value for the set action. */
-function editedValue(row: HilosChannelFieldRow): boolean | number | string {
-  if (row.type === 'boolean') {
-    return editValue.value === '1'
-  }
-  if (row.type === 'integer' || row.type === 'float') {
-    return Number(editValue.value)
-  }
-
-  return editValue.value
-}
-
-// The live row the open dialog is about: the row the table holds in focus, which
-// the server follows wherever it goes; undefined once the row is gone.
-const liveRow = useSignal(fields.controller.focusedRow)
-const live = computed(() =>
-  resolveRowEdit(
-    liveRow.value ? { value: liveRow.value.value } : undefined,
-    editBaseline.value,
-    {
-      value: editHidden.value
-        ? HIDDEN_VALUE
-        : editRow.value
-          ? editedValue(editRow.value)
-          : null,
-    },
-  ),
-)
 const editNotice = computed(() => live.value.notice?.kind ?? null)
-const editNoticeText = computed(() =>
-  noticeText(editNotice.value, liveRow.value),
-)
-const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
+// The live row the open reset dialog is about: the row the table holds in
+// focus, which the server follows wherever it goes; undefined once the row is
+// gone.
+const liveRow = useSignal(fields.controller.focusedRow)
 
 // Reset dialog: back to env/default, only on confirm. It reads the same live row
 // the edit dialog does — one dialog is open at a time, and the focus is one.
@@ -238,77 +168,30 @@ const resetGone = computed(
 )
 
 function openEdit(row: HilosChannelFieldRow): void {
-  // Flush pending and take the row into focus, so the dialog edits the latest
-  // committed row and follows it from here; a row removed by someone else (now a
-  // placeholder) declines to open.
-  const fresh = fields.controller.focusRow(row.key)
-  if (!fresh) {
-    return
-  }
+  // The window takes the row into focus, so the dialog edits the latest
+  // committed row and follows it from here; a row removed by someone else (now
+  // a placeholder) declines to open.
   clearEditError()
-  editRow.value = fresh
-  if (!isHiddenValue(fresh.value)) {
-    editValue.value = formText(fresh.type, fresh.value)
-  }
-  editBaseline.value = openRowEdit<ChannelEditFields>({ value: fresh.value })
-  editOpen.value = true
+  editor.open(row.key)
 }
 
 function closeEdit(): void {
-  editOpen.value = false
-  fields.controller.releaseFocus()
+  editor.close()
 }
-
-// Put a step of the helper into the dialog: the snapshot moves, and a value the
-// step takes lands in the input the way the dialog opened with it.
-function applyStep(step: RowEditStep<ChannelEditFields>): void {
-  const row = editRow.value
-  if (!row) {
-    return
-  }
-  editBaseline.value = step.baseline
-  const taken = step.take.value
-  if (taken !== undefined && !isHiddenValue(taken)) {
-    editValue.value = formText(row.type, taken)
-  }
-}
-
-// The helper hands a step whenever the other side moved a field the person
-// left alone, or both arrived at the same value; the dialog applies it at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (editOpen.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
-async function submitEdit(): Promise<void> {
-  const row = editRow.value
-  if (!row || editBusy.value || live.value.gone || live.value.conflict) {
-    return
-  }
-  if (editHidden.value || !live.value.dirty) {
-    closeEdit()
-
-    return
-  }
-  if (
-    await runEditAction(
-      sendChannelSet(row.channel, row.field, editedValue(row)),
-    )
-  ) {
-    closeEdit()
-  }
+// Save and Enter go through the window's one door: it refuses, closes an
+// unchanged draft, or dispatches the tracked action and closes on its
+// `::success` reply; a failure stays open with the entered value.
+function submitEdit(): void {
+  void editor.save(runEditAction)
 }
 
 function openReset(row: HilosChannelFieldRow): void {
@@ -367,7 +250,7 @@ async function submitReset(): Promise<void> {
         </span>
         <HilosHideable v-else :value="row.value">
           <template #default="{ value }">
-            <span>{{ displayValue(value) }}</span>
+            <span>{{ hilosChannelDisplayValue(value) }}</span>
           </template>
         </HilosHideable>
       </template>
@@ -459,7 +342,7 @@ async function submitReset(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!live.dirty || editBusy || live.gone"
+          :disable-save="!canSave"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"
@@ -507,7 +390,7 @@ async function submitReset(): Promise<void> {
         <dd class="col-8" data-id="hilos-channel-reset-now">
           <HilosHideable :value="resetShown.value">
             <template #default="{ value }">
-              {{ displayValue(value) }}
+              {{ hilosChannelDisplayValue(value) }}
             </template>
           </HilosHideable>
         </dd>

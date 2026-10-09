@@ -18,7 +18,10 @@ the canonical rules below. Every edit surface is a modal — never an inline for
   `docs/agents/frontend/table-subscription.md`
 - Mutations and modals (rule catalog, section E): `docs/agents/frontend/rules-and-violations.md`
 - The modal edit session and three-way merge (canonical): `docs/agents/frontend/conflict-resolution.md`
-- The shared row-edit helper every edit modal is built on: `framework/frontend/core/src/conflict/rowEdit.ts` (`conflict-resolution.md`, "The shared row-edit helper")
+- The row-edit session every edit modal takes, and the window factories beside
+  the framework modules: `framework/frontend/core/src/conflict/rowEditSession.ts`
+  (`conflict-resolution.md`, "The row-edit session"); the merge under it,
+  `rowEdit.ts`, is never assembled by a view
 - The `HilosModal` primitive and per-framework view adapters: `docs/agents/frontend/multiframework-core.md` (component: `framework/frontend/{vue,react,angular}/src/HilosModal.*`)
 - Where the edit view and its files live: `docs/agents/frontend/page-module-structure.md`
 - Row-payload key ownership — the constant a field is read and rendered by:
@@ -36,17 +39,21 @@ the canonical rules below. Every edit surface is a modal — never an inline for
    creation or of a run with an option is asked in the same kind of dialog —
    the page keeps no strip of its own for it.
 2. For an edit of an entity (a creation has no baseline, and steps 2, 3 and 5
-   do not apply to it): the modal owns the session — freeze a `baseline`
-   snapshot on open, clone it into an editable `draft`, and keep the edited
-   entity live-subscribed so `incoming` committed changes arrive while the
-   modal is open.
-3. For an edit of an entity: merge per field against the baseline: take
-   user-only and server-only changes automatically; surface a conflict only
-   when the same field changed to different values, presenting both for the
-   user to pick.
-4. Save is `submit → loading → backend echo`, not the tables' Apply. Validation
-   is backend-only; field errors return on the action's `::fail`. Close on the
-   committed echo.
+   do not apply to it): take the core row-edit session — the window's factory
+   in `@hilos/core` for a framework window, `createHilosRowEdit` for a project
+   window — and never assemble one from `openRowEdit` / `resolveRowEdit` in a
+   view (the linter refuses the import). The session freezes the `baseline`
+   on open, holds the form, keeps the edited row live through its source, and
+   applies the merge's steps from `start()` to `dispose()`.
+3. For an edit of an entity: the session merges per field against the
+   baseline: user-only and server-only changes are taken automatically; a
+   conflict surfaces only when the same field changed to different values, and
+   the view offers Keep mine / Take theirs through `ConflictActions`.
+4. Save is `submit → loading → backend echo`, not the tables' Apply. The view
+   binds `canSave` to the Save button and hands both Save and the form's
+   submit to the session's `save(run)` with the kit's tracked runner; the
+   session closes on success. Validation is backend-only; field errors return
+   on the action's `::fail`.
 5. For an edit of an entity: if the entity is deleted while the modal is open,
    keep the modal open, block save, set the primary button to "Deleted", and
    keep the draft extractable — never discard it silently.
@@ -65,8 +72,9 @@ the canonical rules below. Every edit surface is a modal — never an inline for
   too — a creation, a run with an option; inline forms are forbidden. Use
   `HilosModal` or a descendant — the parent owns the form. A mutation that
   takes no parameter — a per-row toggle — needs no dialog of its own.
-- The modal owns the baseline / draft / incoming three-way merge; deviating from
-  it is a gross violation.
+- The modal owns the baseline / draft / incoming three-way merge, through the
+  core row-edit session; a view that assembles the merge itself is a gross
+  violation, and the linter refuses the import.
 - Save commits only on the backend echo — never optimistic, never the tables'
   Apply path.
 - Save is unavailable while there is nothing to save — an untouched edit, an

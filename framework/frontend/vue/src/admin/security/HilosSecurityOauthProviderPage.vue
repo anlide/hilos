@@ -22,21 +22,15 @@ gone. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   computedSignal,
+  createHilosOauthProviderFieldEdit,
   createHilosOAuthProviderFields,
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
   HilosPages,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
   type HilosOAuthFieldRow,
   type HilosSecurityOauthContext,
-  type RowEditBaseline,
-  type RowEditNoticeKind,
-  type RowEditStep,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
@@ -72,15 +66,16 @@ const providerKey = useSignal(providerSignal)
 
 const summary = createHilosOAuthProviderSummary(props.context, providerSignal)
 const fields = createHilosOAuthProviderFields(props.context, providerSignal)
-const { sendProviderSet, sendProviderReset } = createHilosSecurityOauthActions(
-  props.context,
-)
+const actions = createHilosSecurityOauthActions(props.context)
+const { sendProviderReset } = actions
 
 onMounted(() => {
   summary.start()
   fields.start()
+  editor.start()
 })
 onUnmounted(() => {
+  editor.dispose()
   summary.dispose()
   fields.dispose()
 })
@@ -106,35 +101,27 @@ function displayValue(row: HilosOAuthFieldRow): string {
   return row.value === null || row.value === '' ? '—' : row.value
 }
 
-/** The one field the dialog edits; the secret reads as empty. */
-interface FieldEditFields {
-  value: string
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosOAuthFieldRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
-// Edit dialog: one field of the provider. The secret's dialog always opens empty.
-const editOpen = ref(false)
-const editRow = ref<HilosOAuthFieldRow | null>(null)
-const editValue = ref('')
-const editBaseline = ref<RowEditBaseline<FieldEditFields>>(
-  openRowEdit<FieldEditFields>({ value: '' }),
-)
+// Edit dialog: one field of the provider, as the core window has it; this view
+// binds the input. The secret's dialog always opens empty and forgets what was
+// typed when it closes.
+const editor = createHilosOauthProviderFieldEdit(fields.controller, actions)
+const opened = useSignal(editor.opened)
+const editOpen = computed({
+  get: () => opened.value,
+  set: (next: boolean) => {
+    if (!next) editor.close()
+  },
+})
+const editRow = useSignal(editor.row)
+const editForm = useSignal(editor.form)
+const live = useSignal(editor.state)
+const editNoticeText = useSignal(editor.noticeText)
+const editSaveLabel = useSignal(editor.saveLabel)
+const canSave = useSignal(editor.canSave)
+const editValue = computed({
+  get: () => editForm.value.value,
+  set: (typed: string) => editor.setForm({ value: typed }),
+})
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -142,28 +129,16 @@ const {
   run: runEditAction,
   clearError: clearEditError,
 } = editAction
-
-// The live row the open dialog is about: the row the table holds in focus, which
-// the server follows wherever it goes; undefined once the row is gone. An empty
-// value reads as '' the way the input shows it.
-const liveRow = useSignal(fields.controller.focusedRow)
-const live = computed(() =>
-  resolveRowEdit(
-    liveRow.value ? { value: liveRow.value.value ?? '' } : undefined,
-    editBaseline.value,
-    { value: editValue.value },
-  ),
-)
 const editNotice = computed(() => live.value.notice?.kind ?? null)
-const editNoticeText = computed(() =>
-  noticeText(editNotice.value, liveRow.value),
-)
-const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 const editTitle = computed(() =>
   editRow.value
     ? `${editRow.value.secret ? 'Replace' : 'Edit'} · ${editRow.value.label}`
     : 'Edit field',
 )
+// The live row the open reset dialog is about: the row the table holds in
+// focus, which the server follows wherever it goes; undefined once the row is
+// gone.
+const liveRow = useSignal(fields.controller.focusedRow)
 
 // Reset dialog: one field back to env / the recipe, only on confirm. It reads the
 // same live row the edit dialog does — one dialog is open at a time, and the
@@ -199,74 +174,29 @@ function resetNowText(row: HilosOAuthFieldRow): string {
 }
 
 function openEdit(row: HilosOAuthFieldRow): void {
-  // Flush pending and take the row into focus, so the dialog edits the latest
+  // The window takes the row into focus, so the dialog edits the latest
   // committed row and follows it from here; a row that is gone declines to open.
-  const fresh = fields.controller.focusRow(row.key)
-  if (!fresh) {
-    return
-  }
   clearEditError()
-  editRow.value = fresh
-  // The secret never reads back: its value is null and its dialog opens empty.
-  editValue.value = fresh.value ?? ''
-  editBaseline.value = openRowEdit<FieldEditFields>({ value: editValue.value })
-  editOpen.value = true
+  editor.open(row.key)
 }
 
 function closeEdit(): void {
-  editOpen.value = false
-  // The secret typed into the dialog is not kept once it is closed.
-  editValue.value = ''
-  fields.controller.releaseFocus()
+  editor.close()
 }
-
-// Put a step of the helper into the dialog: the snapshot moves, and a value the
-// step takes lands in the input.
-function applyStep(step: RowEditStep<FieldEditFields>): void {
-  editBaseline.value = step.baseline
-  if (step.take.value !== undefined) {
-    editValue.value = step.take.value
-  }
-}
-
-// The helper hands a step whenever the other side moved the value while the
-// person left it alone, or both arrived at the same one; the dialog applies it
-// at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (editOpen.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
-async function submitEdit(): Promise<void> {
-  const row = editRow.value
-  if (!row || editBusy.value || live.value.gone || live.value.conflict) {
-    return
-  }
-  // Nothing to save (for the secret: nothing typed) closes without a request.
-  if (!live.value.dirty) {
-    closeEdit()
-
-    return
-  }
-  if (
-    await runEditAction(
-      sendProviderSet(row.providerKey, row.field, editValue.value),
-    )
-  ) {
-    closeEdit()
-  }
+// Save and Enter go through the window's one door: it refuses, closes an
+// unchanged draft (for the secret: nothing typed), or dispatches the tracked
+// action and closes on its `::success` reply; a refusal stays in the dialog.
+function submitEdit(): void {
+  void editor.save(runEditAction)
 }
 
 function openReset(row: HilosOAuthFieldRow): void {
@@ -445,7 +375,7 @@ async function submitReset(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!live.dirty || editBusy || live.gone"
+          :disable-save="!canSave"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"

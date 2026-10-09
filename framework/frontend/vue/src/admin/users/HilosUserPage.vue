@@ -68,21 +68,16 @@ import {
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
   HilosPages,
+  createHilosUserRenameEdit,
   hiddenAsWord,
+  HILOS_USER_NAME_MAX,
+  HILOS_USER_NAME_MIN,
   isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
   sessionUserId,
-  takeTheirsRowEdit,
-  type Hideable,
   type HilosMergeCandidateIdentity,
   type HilosMergeCandidateRow,
   type HilosPasswordFate,
   type HilosUsersContext,
-  type RowEditBaseline,
-  type RowEditState,
-  type RowEditStep,
 } from '@hilos/core'
 
 import HilosStepUpStep from '../../auth/HilosStepUpStep.vue'
@@ -106,31 +101,6 @@ const props = defineProps<{
   /** The project context: scope stores, connection, and the user collection. */
   context: HilosUsersContext
 }>()
-
-const NAME_MIN = 2
-const NAME_MAX = 64
-
-/**
- * The one field the modal edits: the display name — hidden for a viewer of the
- * admin view mode, and then the modal shows the mark in place of the input (F1).
- */
-interface UserEditFields {
-  name: Hideable<string>
-}
-
-/** The one line the modal says about the other side, for what the helper found. */
-function noticeText(live: RowEditState<UserEditFields>): string {
-  switch (live.notice?.kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
 
 const userDetail = createHilosUserDetail(props.context)
 const userPhoto = createHilosUserPhoto(props.context)
@@ -205,11 +175,13 @@ const lifecycleOpen = computed({
 let lifecycleTick: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   userStanding.start()
+  editor.start()
   lifecycleTick = setInterval(() => {
     lifecycleNow.value = Date.now()
   }, ACCOUNT_DELETION_TICK_MS)
 })
 onUnmounted(() => {
+  editor.dispose()
   userStanding.dispose()
   clearInterval(lifecycleTick)
 })
@@ -545,95 +517,52 @@ async function submitMerge(): Promise<void> {
   }
 }
 
-const editing = ref(false)
+// The name window, as the core has it over the card's own row — there is no
+// table to take it into focus from (createHilosUserRenameEdit,
+// rowEditSession.ts); this view binds the input and draws the refusal.
+const editor = createHilosUserRenameEdit(userDetail, rename)
+const renameOpened = useSignal(editor.opened)
+const editing = computed({
+  get: () => renameOpened.value,
+  set: (next: boolean) => {
+    if (!next) editor.close()
+  },
+})
+const renameForm = useSignal(editor.form)
 // The draft holds the name as the card has it: a hidden one stays the one hidden
-// value, so the row-edit helper sees it unchanged and the modal is never dirty.
-const draft = ref<Hideable<string>>('')
+// value, so the session sees it unchanged and the modal is never dirty.
+const draft = computed(() => renameForm.value.name)
 // The input edits the draft only while it is a name; a hidden one has no input.
 const draftText = computed({
   get: () => (isHiddenValue(draft.value) ? '' : draft.value),
-  set: (next: string) => {
-    draft.value = next
-  },
+  set: (next: string) => editor.setForm({ name: next }),
 })
-const loading = ref(false)
-// The name the rename in flight sent — what the success watch waits for; null
-// while nothing is in flight.
-const sentName = ref<string | null>(null)
-const editBaseline = ref<RowEditBaseline<UserEditFields>>(
-  openRowEdit<UserEditFields>({ name: '' }),
-)
-
-const valid = computed(() => {
-  if (isHiddenValue(draft.value)) {
-    return false
-  }
-  const trimmed = draft.value.trim()
-
-  return trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX
-})
-// The live row is the card's own detail row, projected onto the name; gone
-// once the card has no row any more.
-const live = computed(() =>
-  resolveRowEdit(
-    detail.value ? { name: detail.value.name } : undefined,
-    editBaseline.value,
-    { name: isHiddenValue(draft.value) ? draft.value : draft.value.trim() },
-  ),
-)
+const loading = useSignal(editor.saving)
+const live = useSignal(editor.state)
 const dirty = computed(() => live.value.dirty)
+const canSave = useSignal(editor.canSave)
 const editTitle = computed(() =>
   detail.value ? `Rename · ${hiddenAsWord(detail.value.name)}` : 'Rename user',
 )
 const editNotice = computed(() => live.value.notice?.kind ?? null)
-const editNoticeText = computed(() => noticeText(live.value))
-const saveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
+const editNoticeText = useSignal(editor.noticeText)
+const saveLabel = useSignal(editor.saveLabel)
 
 function openEdit(): void {
-  rename.clearRenameError()
-  const name = detail.value?.name ?? ''
-  draft.value = name
-  editBaseline.value = openRowEdit<UserEditFields>({ name })
-  loading.value = false
-  sentName.value = null
-  editing.value = true
+  editor.open()
 }
-
-// Put a step of the helper into the modal: the snapshot moves, and a name the
-// step takes lands in the input.
-function applyStep(step: RowEditStep<UserEditFields>): void {
-  editBaseline.value = step.baseline
-  if (step.take.name !== undefined) {
-    draft.value = step.take.name
-  }
-}
-
-// The helper hands a step whenever the other side moved the name while the
-// person left it alone, or both arrived at the same one; the modal applies it
-// at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (editing.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
 // The modal's close path (Cancel / Esc / backdrop, through the discard guard).
 function closeEdit(): void {
-  editing.value = false
-  loading.value = false
-  sentName.value = null
-  rename.clearRenameError()
+  editor.close()
 }
 
 // A merge that lands under an open window closes it (HIL-1292): there is nothing
@@ -649,55 +578,12 @@ watch(mergedNotice, (notice) => {
   closeImpersonate()
 })
 
+// Save and Enter go through the window's one door: it refuses, closes an
+// unchanged name without a round-trip, or sends the trimmed name and waits for
+// the live name to reach it; a refusal releases the button with the modal open.
 function submit(): void {
-  const current = detail.value
-  const typed = draft.value
-  if (
-    !current ||
-    isHiddenValue(typed) ||
-    !valid.value ||
-    loading.value ||
-    live.value.gone ||
-    live.value.conflict
-  ) {
-    return
-  }
-  // No change: close without a round-trip (also keeps the state-driven success
-  // watch from waiting on a name that will never change).
-  if (!live.value.dirty) {
-    closeEdit()
-
-    return
-  }
-
-  const name = typed.trim()
-  loading.value = rename.submitRename(current.id, name)
-  sentName.value = loading.value ? name : null
+  editor.save()
 }
-
-// Success is state-driven: the rename has landed once the committed name (over
-// the live table) reaches the name it sent, which closes the modal. The draft
-// is not part of it: Take theirs while the rename flies rewrites the draft, and
-// the modal still waits for its own name.
-watch(
-  () => detail.value?.name,
-  (name) => {
-    if (loading.value && name === sentName.value) {
-      loading.value = false
-      sentName.value = null
-      editing.value = false
-    }
-  },
-)
-
-// A rejected rename releases the button, forgets the name it sent, and keeps
-// the modal open to retry.
-watch(error, (reason) => {
-  if (reason !== null) {
-    loading.value = false
-    sentName.value = null
-  }
-})
 </script>
 
 <template>
@@ -1107,13 +993,14 @@ watch(error, (reason) => {
             v-model="draftText"
             type="text"
             class="form-control"
-            :minlength="NAME_MIN"
-            :maxlength="NAME_MAX"
+            :minlength="HILOS_USER_NAME_MIN"
+            :maxlength="HILOS_USER_NAME_MAX"
             data-id="hilos-user-name-input"
             data-autofocus
           />
           <div class="form-text">
-            Between {{ NAME_MIN }} and {{ NAME_MAX }} characters.
+            Between {{ HILOS_USER_NAME_MIN }} and
+            {{ HILOS_USER_NAME_MAX }} characters.
           </div>
         </template>
         <HilosEditNotice
@@ -1125,7 +1012,7 @@ watch(error, (reason) => {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!valid || !dirty || loading || live.gone"
+          :disable-save="!canSave"
           :save-label="saveLabel"
           @save="submit"
           @accept-mine="acceptMine"

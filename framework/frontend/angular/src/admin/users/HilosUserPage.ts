@@ -69,21 +69,23 @@ import {
   createHilosUserDetail,
   createHilosUserPhoto,
   createHilosUserRename,
+  createHilosUserRenameEdit,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY,
   hilosSecondFactorFateChoices,
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
   hiddenAsWord,
+  HILOS_USER_NAME_MAX,
+  HILOS_USER_NAME_MIN,
+  hilosRowEditIdle,
   isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
   sessionUserId,
   subscribeSignal,
-  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
+  HilosUserRenameEdit,
+  HilosUserRenameEditFields,
   Hideable,
   HilosAccountMerge,
   HilosAccountStanding,
@@ -98,9 +100,6 @@ import type {
   HilosUserImpersonationSettings,
   HilosUserRename,
   HilosUsersContext,
-  RowEditBaseline,
-  RowEditState,
-  RowEditStep,
   TableViewportController,
   TableViewportRow,
 } from '@hilos/core'
@@ -120,6 +119,7 @@ import { HilosModal } from '../../HilosModal.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 /**
@@ -135,29 +135,6 @@ function focusWindow(body: HTMLElement | undefined): void {
   }
 }
 
-/**
- * The one field the modal edits: the display name — hidden for a viewer of the
- * admin view mode, and then the modal shows the mark in place of the input (F1).
- */
-interface UserEditFields {
-  name: Hideable<string>
-}
-
-/** The one line the modal says about the other side, for what the helper found. */
-function noticeText(live: RowEditState<UserEditFields>): string {
-  switch (live.notice?.kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return `Changed elsewhere to "${hiddenAsWord(live.fields.name.incoming)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
-/** The framework user-detail admin page: profile, presence, and a modal rename. */
 @Component({
   selector: 'hilos-user-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -470,7 +447,7 @@ function noticeText(live: RowEditState<UserEditFields>): string {
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!valid() || !dirty() || loading() || live().gone"
+            [disableSave]="!canSave()"
             [saveLabel]="saveLabel()"
             (save)="submit()"
             (acceptMine)="acceptMine()"
@@ -987,8 +964,8 @@ export class HilosUserPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USER
-  protected readonly nameMin = 2
-  protected readonly nameMax = 64
+  protected readonly nameMin = HILOS_USER_NAME_MIN
+  protected readonly nameMax = HILOS_USER_NAME_MAX
   protected readonly passwordCopy = HILOS_ACCOUNT_MERGE_PASSWORD_COPY
   protected readonly secondFactorCopy = HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY
   protected readonly hiddenAsWord = hiddenAsWord
@@ -1160,10 +1137,18 @@ export class HilosUserPage {
         this.secondFactorFate() === null),
   )
 
+  // The name window, as the core has it over the card's own row — there is no
+  // table to take it into focus from (createHilosUserRenameEdit,
+  // rowEditSession.ts); this view binds the input and draws the refusal through
+  // mirrors of the session's signals.
+  private editor: HilosUserRenameEdit | null = null
   protected readonly editing = signal(false)
-  // A hidden name stays the one hidden value, so the row-edit helper sees it
-  // unchanged and the modal is never dirty; the input edits only a name.
-  protected readonly draft = signal<Hideable<string>>('')
+  // A hidden name stays the one hidden value, so the session sees it unchanged
+  // and the modal is never dirty; the input edits only a name.
+  protected readonly renameForm = signal<HilosUserRenameEditFields>({
+    name: '',
+  })
+  protected readonly draft = computed(() => this.renameForm().name)
   protected readonly draftHidden = computed(() => isHiddenValue(this.draft()))
   protected readonly draftText = computed(() => {
     const draft = this.draft()
@@ -1177,33 +1162,12 @@ export class HilosUserPage {
     return isHiddenValue(name) ? '' : name
   })
   protected readonly loading = signal(false)
-  // The name the rename in flight sent — what the success effect waits for;
-  // null while nothing is in flight.
-  private readonly sentName = signal<string | null>(null)
-  protected readonly editBaseline = signal<RowEditBaseline<UserEditFields>>(
-    openRowEdit<UserEditFields>({ name: '' }),
+  protected readonly live = signal(
+    hilosRowEditIdle<HilosUserRenameEditFields>({ name: '' }),
   )
-  protected readonly valid = computed(() => {
-    const draft = this.draft()
-    if (isHiddenValue(draft)) {
-      return false
-    }
-    const trimmed = draft.trim()
-
-    return trimmed.length >= this.nameMin && trimmed.length <= this.nameMax
-  })
-  // The live row is the card's own detail row, projected onto the name; gone
-  // once the card has no row any more.
-  protected readonly live = computed(() => {
-    const current = this.detail()
-    const draft = this.draft()
-
-    return resolveRowEdit(
-      current ? { name: current.name } : undefined,
-      this.editBaseline(),
-      { name: isHiddenValue(draft) ? draft : draft.trim() },
-    )
-  })
+  protected readonly canSave = signal(false)
+  protected readonly editNoticeText = signal('')
+  protected readonly saveLabel = signal('Save')
   protected readonly dirty = computed(() => this.live().dirty)
   protected readonly editTitle = computed(() => {
     const current = this.detail()
@@ -1212,10 +1176,6 @@ export class HilosUserPage {
   })
   protected readonly editNotice = computed(
     () => this.live().notice?.kind ?? null,
-  )
-  protected readonly editNoticeText = computed(() => noticeText(this.live()))
-  protected readonly saveLabel = computed(() =>
-    this.live().gone ? 'Deleted' : 'Save',
   )
 
   protected async openLifecycle(
@@ -1280,6 +1240,18 @@ export class HilosUserPage {
       const mergeCandidates = createHilosMergeCandidates(context)
       const currentUserId = sessionUserId(context.scopes)
       this.rename = rename
+      const editor = createHilosUserRenameEdit(detailSignal, rename)
+      this.editor = editor
+      editor.start()
+      const editorOff = [
+        mirrorHilosSignal(editor.opened, this.editing),
+        mirrorHilosSignal(editor.form, this.renameForm),
+        mirrorHilosSignal(editor.saving, this.loading),
+        mirrorHilosSignal(editor.state, this.live),
+        mirrorHilosSignal(editor.noticeText, this.editNoticeText),
+        mirrorHilosSignal(editor.saveLabel, this.saveLabel),
+        mirrorHilosSignal(editor.canSave, this.canSave),
+      ]
       this.mergeCandidates = mergeCandidates
       this.accountMerge = createHilosAccountMerge(context)
       const lifecycle = createHilosUserLifecycle(context)
@@ -1331,6 +1303,9 @@ export class HilosUserPage {
         ACCOUNT_DELETION_TICK_MS,
       )
       onCleanup(() => {
+        for (const stop of editorOff) stop()
+        editor.dispose()
+        this.editor = null
         clearInterval(tick)
         mergeCandidates.dispose()
         for (const unsubscribe of subscriptions) {
@@ -1411,44 +1386,6 @@ export class HilosUserPage {
           )
         ) {
           this.selectedCandidateId.set(null)
-        }
-      })
-    })
-
-    // Success is state-driven: the rename has landed once the committed name (over
-    // the live table) reaches the name it sent, which closes the modal. The draft
-    // is not part of it: Take theirs while the rename flies rewrites the draft,
-    // and the modal still waits for its own name. Track only the name; read the
-    // form state untracked so the effect mirrors the Vue watch-on-name.
-    effect(() => {
-      const name = this.detail()?.name
-      untracked(() => {
-        if (this.loading() && name === this.sentName()) {
-          this.loading.set(false)
-          this.sentName.set(null)
-          this.editing.set(false)
-        }
-      })
-    })
-
-    // A rejected rename releases the button, forgets the name it sent, and keeps
-    // the modal open to retry.
-    effect(() => {
-      if (this.renameError() !== null) {
-        this.loading.set(false)
-        this.sentName.set(null)
-      }
-    })
-
-    // The helper hands a step whenever the other side moved the name while the
-    // person left it alone, or both arrived at the same one; the modal applies
-    // it at once.
-    effect(() => {
-      const settle = this.live().settle
-      const editing = this.editing()
-      untracked(() => {
-        if (editing && settle) {
-          this.applyStep(settle)
         }
       })
     })
@@ -1547,30 +1484,15 @@ export class HilosUserPage {
   }
 
   protected openEdit(): void {
-    this.rename?.clearRenameError()
-    const name = this.detail()?.name ?? ''
-    this.draft.set(name)
-    this.editBaseline.set(openRowEdit<UserEditFields>({ name }))
-    this.loading.set(false)
-    this.sentName.set(null)
-    this.editing.set(true)
-  }
-
-  // Put a step of the helper into the modal: the snapshot moves, and a name
-  // the step takes lands in the input.
-  private applyStep(step: RowEditStep<UserEditFields>): void {
-    this.editBaseline.set(step.baseline)
-    if (step.take.name !== undefined) {
-      this.draft.set(step.take.name)
-    }
+    this.editor?.open()
   }
 
   protected acceptMine(): void {
-    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+    this.editor?.keepMine()
   }
 
   protected acceptTheirs(): void {
-    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
+    this.editor?.takeTheirs()
   }
 
   // The modal's close path (Cancel / Esc / backdrop, through the discard guard).
@@ -1578,42 +1500,19 @@ export class HilosUserPage {
     if (open) {
       return
     }
-    this.editing.set(false)
-    this.loading.set(false)
-    this.sentName.set(null)
-    this.rename?.clearRenameError()
+    this.editor?.close()
   }
 
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged name without a round-trip, or sends the trimmed name and waits for
+  // the live name to reach it; a refusal releases the button with the modal open.
   protected submit(event?: Event): void {
     event?.preventDefault()
-    const current = this.detail()
-    const draft = this.draft()
-    if (
-      !current ||
-      isHiddenValue(draft) ||
-      !this.valid() ||
-      this.loading() ||
-      this.live().gone ||
-      this.live().conflict
-    ) {
-      return
-    }
-    // No change: close without a round-trip (also keeps the state-driven success
-    // watch from waiting on a name that will never change).
-    if (!this.live().dirty) {
-      this.onEditOpenChange(false)
-
-      return
-    }
-
-    const name = draft.trim()
-    const sent = this.rename?.submitRename(current.id, name) ?? false
-    this.loading.set(sent)
-    this.sentName.set(sent ? name : null)
+    this.editor?.save()
   }
 
   protected onDraftInput(event: Event): void {
-    this.draft.set((event.target as HTMLInputElement).value)
+    this.editor?.setForm({ name: (event.target as HTMLInputElement).value })
   }
 
   protected identityTitle(identity: HilosMergeCandidateIdentity): string {

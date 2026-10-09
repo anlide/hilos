@@ -28,35 +28,26 @@ import {
   effect,
   input,
   signal,
-  untracked,
 } from '@angular/core'
 import {
-  HIDDEN_VALUE,
   HILOS_IMPERSONATION_SCOPE_COPY,
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   createHilosSecurityImpersonationActions,
   createHilosSecurityImpersonationTable,
   hilosImpersonationScopeOf,
   isHilosImpersonationSwitch,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  subscribeSignal,
-  takeTheirsRowEdit,
+  createHilosImpersonationScopeEdit,
+  hilosRowEditIdle,
 } from '@hilos/core'
 import type {
-  Hideable,
+  HilosImpersonationScopeEditFields,
+  HilosImpersonationScopeEditForm,
   HilosImpersonationContext,
   HilosImpersonationScope,
   HilosImpersonationSettingRow,
-  RowEditBaseline,
-  RowEditNoticeKind,
-  RowEditStep,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -71,38 +62,8 @@ import { HilosSwitch } from '../../HilosSwitch.js'
 import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
-
-/** The one field the scope's modal edits. */
-interface ScopeEditFields {
-  scope: Hideable<HilosImpersonationScope>
-}
-
-/**
- * The one line the modal says about the other side, for what the helper found;
- * the value in words, the way its cell says it.
- *
- * @param kind What the helper found, or null.
- * @param liveRow The scope's row as the server holds it now.
- */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosImpersonationSettingRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your choice stays on screen.'
-    case 'conflict':
-      if (!liveRow) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? HILOS_VIEW_MODE_COPY.hidden : HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
 
 /** The framework impersonation settings page: six switches and the scope in a modal. */
 @Component({
@@ -175,7 +136,7 @@ function noticeText(
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="live().dirty"
         [aria-label]="editTitle()"
       >
@@ -205,7 +166,7 @@ function noticeText(
                       [checked]="editScope() === value"
                       [attr.data-id]="'hilos-impersonation-scope-' + value"
                       data-autofocus
-                      (change)="editScope.set(value)"
+                      (change)="setScope(value)"
                     />
                     <label
                       class="form-check-label"
@@ -230,9 +191,7 @@ function noticeText(
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="
-              !live().dirty || edit.busy() || live().gone || editHidden()
-            "
+            [disableSave]="!canSave()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -293,53 +252,36 @@ export class HilosSecurityImpersonationPage {
   protected readonly toggle = createHilosTrackedAction()
   protected readonly pendingSwitchKey = signal<string | null>(null)
 
-  // The scope's modal: the choice as made until Save.
+  // The scope's modal: the choice as made until Save, as the core window has it;
+  // this view binds the radio group through mirrors of the session's signals.
+  protected readonly editor = computed(() =>
+    createHilosImpersonationScopeEdit(
+      this.settings().controller,
+      this.actions(),
+    ),
+  )
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosImpersonationSettingRow | null>(null)
-  protected readonly editScope = signal<HilosImpersonationScope>('act')
+  protected readonly editForm = signal<HilosImpersonationScopeEditForm>({
+    hidden: false,
+    scope: 'act',
+  })
+  protected readonly live = signal(
+    hilosRowEditIdle<HilosImpersonationScopeEditFields>({ scope: 'act' }),
+  )
+  protected readonly editNoticeText = signal('')
+  protected readonly editSaveLabel = signal('Save')
+  protected readonly canSave = signal(false)
   protected readonly edit = createHilosTrackedAction()
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
 
     return row ? this.labelOf(row) : 'Edit setting'
   })
-  protected readonly editBaseline = signal<RowEditBaseline<ScopeEditFields>>(
-    openRowEdit<ScopeEditFields>({ scope: 'act' }),
-  )
-  protected readonly editHidden = computed(() =>
-    isHiddenValue(this.editBaseline().values.scope),
-  )
-  // The live row the open modal is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone. Mirrored
-  // from the controller: the handle arrives through a computed, so hilosSignal
-  // cannot take it at field init.
-  protected readonly liveRow = signal<HilosImpersonationSettingRow | undefined>(
-    undefined,
-  )
-  protected readonly live = computed(() => {
-    const row = this.liveRow()
-    const editHidden = this.editHidden()
-
-    return resolveRowEdit(
-      row
-        ? {
-            scope: isHiddenValue(row.value)
-              ? HIDDEN_VALUE
-              : hilosImpersonationScopeOf(row),
-          }
-        : undefined,
-      this.editBaseline(),
-      { scope: editHidden ? HIDDEN_VALUE : this.editScope() },
-    )
-  })
+  protected readonly editHidden = computed(() => this.editForm().hidden)
+  protected readonly editScope = computed(() => this.editForm().scope)
   protected readonly editNotice = computed(
     () => this.live().notice?.kind ?? null,
-  )
-  protected readonly editNoticeText = computed(() =>
-    noticeText(this.editNotice(), this.liveRow()),
-  )
-  protected readonly editSaveLabel = computed(() =>
-    this.live().gone ? 'Deleted' : 'Save',
   )
 
   constructor() {
@@ -347,27 +289,22 @@ export class HilosSecurityImpersonationPage {
     // mirror the row in focus; unbind on destroy / swap.
     effect((onCleanup) => {
       const settings = this.settings()
+      const editor = this.editor()
       settings.start()
-      this.liveRow.set(settings.controller.focusedRow.get())
-      const unsubscribe = subscribeSignal(
-        settings.controller.focusedRow,
-        (row) => this.liveRow.set(row),
-      )
+      editor.start()
+      const off = [
+        mirrorHilosSignal(editor.opened, this.editOpen),
+        mirrorHilosSignal(editor.row, this.editRow),
+        mirrorHilosSignal(editor.form, this.editForm),
+        mirrorHilosSignal(editor.state, this.live),
+        mirrorHilosSignal(editor.noticeText, this.editNoticeText),
+        mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
+        mirrorHilosSignal(editor.canSave, this.canSave),
+      ]
       onCleanup(() => {
-        unsubscribe()
+        for (const stop of off) stop()
+        editor.dispose()
         settings.dispose()
-      })
-    })
-    // The helper hands a step whenever the other side moved the value while the
-    // person left it alone, or both arrived at the same one; the modal applies
-    // it at once.
-    effect(() => {
-      const settle = this.live().settle
-      const open = this.editOpen()
-      untracked(() => {
-        if (open && settle) {
-          this.applyStep(settle)
-        }
       })
     })
   }
@@ -405,67 +342,33 @@ export class HilosSecurityImpersonationPage {
   }
 
   protected openEdit(row: HilosImpersonationSettingRow): void {
-    // Flush pending and take the row into focus, so the modal edits the latest
+    // The window takes the row into focus, so the dialog edits the latest
     // committed row and follows it from here; a row that is gone declines to open.
-    const fresh = this.settings().controller.focusRow(row.rowKey)
-    if (!fresh) {
-      return
-    }
-    const freshHidden = isHiddenValue(fresh.value)
-    const scope = hilosImpersonationScopeOf(fresh)
     this.edit.clearError()
-    this.editRow.set(fresh)
-    if (!freshHidden) {
-      this.editScope.set(scope)
-    }
-    this.editBaseline.set(
-      openRowEdit<ScopeEditFields>({
-        scope: freshHidden ? HIDDEN_VALUE : scope,
-      }),
-    )
-    this.editOpen.set(true)
+    this.editor().open(row.rowKey)
   }
 
   protected closeEdit(): void {
-    this.editOpen.set(false)
-    this.settings().controller.releaseFocus()
-  }
-
-  // Put a step of the helper into the modal: the snapshot moves, and a value the
-  // step takes lands in the choice.
-  private applyStep(step: RowEditStep<ScopeEditFields>): void {
-    this.editBaseline.set(step.baseline)
-    if (step.take.scope !== undefined && !isHiddenValue(step.take.scope)) {
-      this.editScope.set(step.take.scope)
-    }
+    this.editor().close()
   }
 
   protected acceptMine(): void {
-    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+    this.editor().keepMine()
   }
 
   protected acceptTheirs(): void {
-    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
+    this.editor().takeTheirs()
   }
 
-  protected async submitEdit(event?: Event): Promise<void> {
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  protected submitEdit(event?: Event): void {
     event?.preventDefault()
-    if (
-      this.editRow() === null ||
-      this.edit.busy() ||
-      this.live().gone ||
-      this.live().conflict ||
-      this.editHidden()
-    ) {
-      return
-    }
-    if (!this.live().dirty || this.editHidden()) {
-      this.closeEdit()
+    void this.editor().save(this.edit.run)
+  }
 
-      return
-    }
-    if (await this.edit.run(this.actions().sendScopeSet(this.editScope()))) {
-      this.closeEdit()
-    }
+  protected setScope(scope: HilosImpersonationScope): void {
+    this.editor().patchForm({ scope })
   }
 }

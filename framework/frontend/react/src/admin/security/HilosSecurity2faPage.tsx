@@ -11,31 +11,21 @@
 // saying what happened elsewhere on one line of room held in advance
 // (HilosEditNotice). The screen is built from text: the mockup's node is a debt
 // (D-115). Bootstrap classes only (styling-rules.md).
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
-  HIDDEN_VALUE,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
-  HILOS_VIEW_MODE_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
+  createHilosTwoFactorSettingEdit,
   describeHilosSecondFactorSetting,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
-  Hideable,
   HilosTwoFactorContext,
   HilosTwoFactorSettingRow,
-  RowEditBaseline,
-  RowEditNoticeKind,
-  RowEditStep,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -66,34 +56,6 @@ function labelOf(row: HilosTwoFactorSettingRow): string {
   return HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.label ?? row.rowKey
 }
 
-/** The one field the edit modal edits. */
-interface SettingEditFields {
-  value: Hideable<string>
-}
-
-/**
- * The one line the modal says about the other side, for what the helper found;
- * a value in words, the way its cell says it.
- */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosTwoFactorSettingRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (!liveRow) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? HILOS_VIEW_MODE_COPY.hidden : describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
 /**
  * The two-step verification admin page.
  *
@@ -109,96 +71,61 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
     [context],
   )
 
+  // The edit modal: one setting at a time, as the core window has it; this view
+  // binds the list or the number input.
+  const editor = useMemo(
+    () => createHilosTwoFactorSettingEdit(settings.controller, actions),
+    [settings, actions],
+  )
+
   useEffect(() => {
     settings.start()
+    editor.start()
 
-    return () => settings.dispose()
-  }, [settings])
+    return () => {
+      editor.dispose()
+      settings.dispose()
+    }
+  }, [settings, editor])
 
-  // The edit modal: one setting at a time, its value as typed until Save.
-  const [editOpen, setEditOpen] = useState(false)
-  const [editRow, setEditRow] = useState<HilosTwoFactorSettingRow | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [editBaseline, setEditBaseline] = useState<
-    RowEditBaseline<SettingEditFields>
-  >(() => openRowEdit<SettingEditFields>({ value: '' }))
+  const editOpen = useSignal(editor.opened)
+  const editRow = useSignal(editor.row)
+  const editForm = useSignal(editor.form)
+  const live = useSignal(editor.state)
+  const editNoticeText = useSignal(editor.noticeText)
+  const editSaveLabel = useSignal(editor.saveLabel)
+  const canSave = useSignal(editor.canSave)
   const edit = useTrackedAction()
-
-  const editHidden = isHiddenValue(editBaseline.values.value)
-
-  // The live row the open modal is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone.
-  const liveRow = useSignal(settings.controller.focusedRow)
-  const live = resolveRowEdit(
-    liveRow ? { value: liveRow.value } : undefined,
-    editBaseline,
-    { value: editHidden ? HIDDEN_VALUE : editValue.trim() },
-  )
+  const editHidden = editForm.hidden
+  const editValue = editForm.text
+  const setEditValue = (text: string) => editor.patchForm({ text })
   const editNotice = live.notice?.kind ?? null
-  const editNoticeText = noticeText(editNotice, liveRow)
-  const editSaveLabel = live.gone ? 'Deleted' : 'Save'
   const editTitle = editRow ? labelOf(editRow) : 'Edit setting'
 
-  // Put a step of the helper into the modal: the snapshot moves, and a value the
-  // step takes lands in the input.
-  function applyStep(step: RowEditStep<SettingEditFields>): void {
-    setEditBaseline(step.baseline)
-    if (step.take.value !== undefined && !isHiddenValue(step.take.value)) {
-      setEditValue(step.take.value)
-    }
-  }
-
-  // The helper hands a step whenever the other side moved the value while the
-  // person left it alone, or both arrived at the same one; the modal applies it
-  // at once.
-  const settle = live.settle
-  useEffect(() => {
-    if (editOpen && settle) {
-      applyStep(settle)
-    }
-  }, [editOpen, settle])
-
   function openEdit(row: HilosTwoFactorSettingRow): void {
-    // Flush pending and take the row into focus, so the modal edits the latest
+    // The window takes the row into focus, so the modal edits the latest
     // committed row and follows it from here; a row that is gone declines to open.
-    const fresh = settings.controller.focusRow(row.rowKey)
-    if (!fresh) {
-      return
-    }
     edit.clearError()
-    setEditRow(fresh)
-    setEditValue(isHiddenValue(fresh.value) ? '' : fresh.value)
-    setEditBaseline(openRowEdit<SettingEditFields>({ value: fresh.value }))
-    setEditOpen(true)
+    editor.open(row.rowKey)
   }
 
   function closeEdit(): void {
-    setEditOpen(false)
-    settings.controller.releaseFocus()
+    editor.close()
   }
 
   function acceptMine(): void {
-    setEditBaseline(keepMineRowEdit(live, editBaseline))
+    editor.keepMine()
   }
 
   function acceptTheirs(): void {
-    applyStep(takeTheirsRowEdit(live, editBaseline))
+    editor.takeTheirs()
   }
 
-  async function submitEdit(): Promise<void> {
-    if (!editRow || edit.busy || live.gone || live.conflict || editHidden) {
-      return
-    }
-    if (!live.dirty || editHidden) {
-      closeEdit()
-
-      return
-    }
-    if (
-      await edit.run(actions.sendSettingSet(editRow.rowKey, editValue.trim()))
-    ) {
-      closeEdit()
-    }
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  function submitEdit(): void {
+    void editor.save(edit.run)
   }
 
   return (
@@ -245,7 +172,7 @@ export function HilosSecurity2faPage({ context }: HilosSecurity2faPageProps) {
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!live.dirty || edit.busy || live.gone || editHidden}
+            disableSave={!canSave}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}

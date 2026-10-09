@@ -6,30 +6,27 @@
 //
 // Server-confirmed, never optimistic: the window closes once the live name has
 // reached the name it SENT, and a refusal releases the button with the window
-// open. The form edits against a snapshot taken when it shows (HIL-1134): a name
-// changed elsewhere while the window is open arrives by the row-edit helper as
-// "Updated just now", or as a conflict to resolve by Keep mine or Take theirs.
+// open. The form is the core row-edit session over the live name
+// (conflict/rowEditSession.ts): a snapshot taken when the form shows (HIL-1134),
+// a name changed elsewhere while the window is open arriving as "Updated just
+// now" or as a conflict to resolve by Keep mine or Take theirs, and the one
+// door for Save and Enter.
 import {
   createHilosStepUpActions,
   createHilosStepUpStep,
   type HilosStepUpStep,
 } from '../auth/stepUp.js'
+import { type RowEditState } from '../conflict/rowEdit.js'
 import {
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
-  type RowEditBaseline,
-  type RowEditState,
-  type RowEditStep,
-} from '../conflict/rowEdit.js'
+  createHilosRowEdit,
+  hilosSignalRowEditSource,
+} from '../conflict/rowEditSession.js'
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import {
   computedSignal,
   createSignal,
   subscribeSignal,
   type ReadonlySignal,
-  type Unsubscribe,
   type WritableSignal,
 } from '../state/signal.js'
 
@@ -111,27 +108,6 @@ export const HILOS_PROFILE_RENAME_COPY = {
 } as const
 
 /**
- * The line the form says about the other side, for what the helper found.
- *
- * @param live The merged edit.
- */
-function noticeText(live: RowEditState<HilosProfileRenameFields>): string {
-  switch (live.notice?.kind) {
-    case 'deleted':
-      return HILOS_PROFILE_RENAME_COPY.noticeDeleted
-    case 'conflict':
-      return HILOS_PROFILE_RENAME_COPY.noticeConflict.replace(
-        '{name}',
-        live.fields.name.incoming,
-      )
-    case 'updated':
-      return HILOS_PROFILE_RENAME_COPY.noticeUpdated
-    default:
-      return ''
-  }
-}
-
-/**
  * Create one name window over the project's rename; the page owns its lifetime.
  *
  * @param context The action lifecycle the confirmation dispatches over.
@@ -151,96 +127,83 @@ export function createHilosProfileRenameFlow(
   )
   const step = createSignal<HilosProfileRenameStep>('closed')
   const draft = createSignal('')
-  const baseline = createSignal<RowEditBaseline<HilosProfileRenameFields>>(
-    openRowEdit({ name: '' }),
-  )
-  const busy = createSignal(false)
-  // The name the rename in flight sent — what success waits for; null while
-  // nothing is in flight. Take theirs rewrites the draft, not this.
-  let sentName: string | null = null
-  let round = 0
-  const edit = computedSignal(() => {
-    const live = name.get()
-    return resolveRowEdit(
-      live === '' ? undefined : { name: live },
-      baseline.get(),
-      {
-        name: draft.get().trim(),
-      },
-    )
-  })
-  const valid = computedSignal(() => {
-    const trimmed = draft.get().trim()
+  const fits = (text: string): boolean => {
+    const trimmed = text.trim()
+
     return (
       trimmed.length >= rename.minLength && trimmed.length <= rename.maxLength
     )
-  })
+  }
+  // The live row is the name itself; '' says the session is not known yet, and
+  // there is no row to rename.
+  const edit = createHilosRowEdit<string, HilosProfileRenameFields, string>(
+    hilosSignalRowEditSource(
+      computedSignal(() => {
+        const live = name.get()
 
-  function apply(next: RowEditStep<HilosProfileRenameFields>): void {
-    baseline.set(next.baseline)
-    if (next.take.name !== undefined) draft.set(next.take.name)
-  }
-  // The form shows: the draft and the snapshot are the live name now, not at
-  // the Change click.
+        return live === '' ? undefined : live
+      }),
+    ),
+    {
+      formSignal: draft,
+      fields: (live) => ({ name: live }),
+      form: (live) => live,
+      draft: (form) => ({ name: form.trim() }),
+      take: (form, taken) => taken.name ?? form,
+      valid: fits,
+      notice: {
+        deleted: HILOS_PROFILE_RENAME_COPY.noticeDeleted,
+        conflict: (state) =>
+          HILOS_PROFILE_RENAME_COPY.noticeConflict.replace(
+            '{name}',
+            state.fields.name.incoming,
+          ),
+        updated: () => HILOS_PROFILE_RENAME_COPY.noticeUpdated,
+      },
+    },
+  )
+  let round = 0
+
+  // The form shows on the name as it is now, not as it was at the Change click;
+  // with no name known there is nothing to rename, and the window shuts.
   function showForm(): void {
-    draft.set(name.get())
-    baseline.set(openRowEdit({ name: name.get() }))
-    step.set('form')
-  }
-  function settle(): void {
-    busy.set(false)
-    sentName = null
-  }
-  // The window listens only while it is open, so a view that disposes and
-  // mounts it again (React's strict effects) gets a live window back.
-  let stops: Unsubscribe[] = []
-  function listen(): void {
-    if (stops.length > 0) return
-    stops = [
-      // The helper hands a step whenever only the other side moved the name,
-      // or both arrived at the same one; the form applies it at once.
-      subscribeSignal(edit, (next) => {
-        if (step.get() === 'form' && next.settle !== null) apply(next.settle)
-      }),
-      // Success is state-driven: the live name reached the one sent.
-      subscribeSignal(name, (live) => {
-        if (busy.get() && live === sentName) close()
-      }),
-      // A refusal releases the button and keeps the window open for a retry.
-      subscribeSignal(rename.refusal, (reason) => {
-        if (reason !== null) settle()
-      }),
-    ]
+    if (edit.open()) step.set('form')
+    else close()
   }
   function close(): void {
     round += 1
     step.set('closed')
-    settle()
+    // Closing the session stops its listening too: a view that disposes and
+    // mounts the window again (React's strict effects) gets a live one back on
+    // the next open.
+    edit.dispose()
     stepUp.password.set('')
     stepUp.code.set('')
-    for (const stop of stops) stop()
-    stops = []
   }
+  // The session closes itself on the landing of the name it sent, and on a save
+  // of an unchanged draft: the window follows it shut.
+  subscribeSignal(edit.opened, (open) => {
+    if (!open && step.get() === 'form') close()
+  })
 
   return {
     step,
     stepUp,
     draft,
-    edit,
-    notice: computedSignal(() => noticeText(edit.get())),
-    valid,
-    busy,
+    edit: edit.state,
+    notice: edit.noticeText,
+    valid: computedSignal(() => fits(draft.get())),
+    busy: edit.saving,
     refusal: rename.refusal,
     asksBeforeClosing: computedSignal(
-      () => step.get() === 'form' && edit.get().dirty,
+      () => step.get() === 'form' && edit.state.get().dirty,
     ),
     minLength: rename.minLength,
     maxLength: rename.maxLength,
     async open() {
       if (stepUp.busy.get() || step.get() !== 'closed') return
       rename.clearRefusal()
-      settle()
-      listen()
+      edit.start()
       const started = ++round
       const verdict = await stepUp.open(rename.stepUpOperation)
       if (round !== started) return
@@ -253,31 +216,14 @@ export function createHilosProfileRenameFlow(
       if ((await stepUp.confirm()) && round === started) showForm()
     },
     save() {
-      const live = edit.get()
-      if (
-        step.get() !== 'form' ||
-        !valid.get() ||
-        busy.get() ||
-        live.gone ||
-        live.conflict
-      )
-        return
-      if (!live.dirty) {
-        close()
-        return
-      }
-      const next = draft.get().trim()
-      rename.clearRefusal()
-      const sent = rename.send(next)
-      busy.set(sent)
-      sentName = sent ? next : null
+      edit.saveLanded((sent) => {
+        rename.clearRefusal()
+
+        return rename.send(sent.name)
+      }, rename.refusal)
     },
-    keepMine() {
-      baseline.set(keepMineRowEdit(edit.get(), baseline.get()))
-    },
-    takeTheirs() {
-      apply(takeTheirsRowEdit(edit.get(), baseline.get()))
-    },
+    keepMine: edit.keepMine,
+    takeTheirs: edit.takeTheirs,
     close,
     dispose: close,
   }

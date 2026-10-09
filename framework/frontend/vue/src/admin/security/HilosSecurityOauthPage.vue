@@ -11,34 +11,25 @@ mounts it by passing its HilosSecurityOauthContext. The address is edited in a
 modal — inline forms are forbidden (rules-and-violations.md section E) — as a
 tracked action: it redraws from the reactive table after the backend echo, never
 optimistically, and a refusal surfaces with the backend's domain phrase. The
-modal holds the address row in focus and merges against it through the shared
-row-edit helper (rowEdit.ts, conflict-resolution.md), saying what happened
-elsewhere on one line of room held in advance (HilosEditNotice). The ↺ resets
+modal is the core row-edit session over the focused address row
+(createHilosOauthRedirectEdit, rowEditSession.ts, conflict-resolution.md),
+saying what happened elsewhere on one line of room held in advance
+(HilosEditNotice); this view binds the input. The ↺ resets
 the address to env only through a confirm dialog built like the settings orphan
 delete, holding the same row in focus. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosOauthRedirectEdit,
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
   createHilosSecurityOauthActions,
-  HIDDEN_VALUE,
-  hiddenAsWord,
   HilosPages,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
   resolveHilosPath,
-  resolveRowEdit,
-  takeTheirsRowEdit,
-  type Hideable,
   type HilosOAuthProviderRow,
   type HilosOAuthRedirectRow,
   type HilosSecurityOauthContext,
-  type RowEditBaseline,
-  type RowEditNoticeKind,
-  type RowEditStep,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
@@ -61,15 +52,16 @@ const props = defineProps<{
 
 const providers = createHilosOAuthProvidersTable(props.context)
 const redirect = createHilosOAuthRedirect(props.context)
-const { sendRedirectSet, sendRedirectReset } = createHilosSecurityOauthActions(
-  props.context,
-)
+const actions = createHilosSecurityOauthActions(props.context)
+const { sendRedirectReset } = actions
 
 onMounted(() => {
   providers.start()
   redirect.start()
+  editor.start()
 })
 onUnmounted(() => {
+  editor.dispose()
   providers.dispose()
   redirect.dispose()
 })
@@ -92,40 +84,26 @@ function providerPath(row: HilosOAuthProviderRow): string {
   })
 }
 
-/** The one field the return-address dialog edits. */
-interface RedirectEditFields {
-  value: Hideable<string>
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveValue: Hideable<string> | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (liveValue === undefined) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveValue) ? hiddenAsWord(liveValue) : liveValue === '' ? '—' : liveValue}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
-// Edit dialog: the return address.
-const editOpen = ref(false)
-const editValue = ref('')
-const editBaseline = ref<RowEditBaseline<RedirectEditFields>>(
-  openRowEdit<RedirectEditFields>({ value: '' }),
-)
-const editHidden = computed(() =>
-  isHiddenValue(editBaseline.value.values.value),
-)
+// Edit dialog: the return address, as the core window has it; this view binds
+// the input.
+const editor = createHilosOauthRedirectEdit(redirect.controller, actions)
+const opened = useSignal(editor.opened)
+const editOpen = computed({
+  get: () => opened.value,
+  set: (next: boolean) => {
+    if (!next) editor.close()
+  },
+})
+const editForm = useSignal(editor.form)
+const live = useSignal(editor.state)
+const editNoticeText = useSignal(editor.noticeText)
+const editSaveLabel = useSignal(editor.saveLabel)
+const canSave = useSignal(editor.canSave)
+const editHidden = computed(() => editForm.value.hidden)
+const editValue = computed({
+  get: () => editForm.value.text,
+  set: (typed: string) => editor.patchForm({ text: typed }),
+})
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -133,22 +111,11 @@ const {
   run: runEditAction,
   clearError: clearEditError,
 } = editAction
-
-// The live row the open dialog is about: the row the table holds in focus, which
-// the server follows wherever it goes; undefined once the row is gone.
-const liveRow = useSignal(redirect.controller.focusedRow)
-const live = computed(() =>
-  resolveRowEdit(
-    liveRow.value ? { value: liveRow.value.value } : undefined,
-    editBaseline.value,
-    { value: editHidden.value ? HIDDEN_VALUE : editValue.value },
-  ),
-)
 const editNotice = computed(() => live.value.notice?.kind ?? null)
-const editNoticeText = computed(() =>
-  noticeText(editNotice.value, liveRow.value?.value),
-)
-const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
+// The live row the open reset dialog is about: the row the table holds in
+// focus, which the server follows wherever it goes; undefined once the row is
+// gone.
+const liveRow = useSignal(redirect.controller.focusedRow)
 
 // Reset dialog: the address back to env, only on confirm. It reads the same live
 // row the edit dialog does — one dialog is open at a time, and the focus is one.
@@ -171,67 +138,29 @@ function openEdit(): void {
   if (!row) {
     return
   }
-  // Flush pending and take the row into focus, so the dialog edits the latest
+  // The window takes the row into focus, so the dialog edits the latest
   // committed row and follows it from here; a row that is gone declines to open.
-  const fresh = redirect.controller.focusRow(row.key)
-  if (!fresh) {
-    return
-  }
   clearEditError()
-  if (!isHiddenValue(fresh.value)) {
-    editValue.value = fresh.value
-  }
-  editBaseline.value = openRowEdit<RedirectEditFields>({ value: fresh.value })
-  editOpen.value = true
+  editor.open(row.key)
 }
 
 function closeEdit(): void {
-  editOpen.value = false
-  redirect.controller.releaseFocus()
+  editor.close()
 }
-
-// Put a step of the helper into the dialog: the snapshot moves, and a value the
-// step takes lands in the input.
-function applyStep(step: RowEditStep<RedirectEditFields>): void {
-  editBaseline.value = step.baseline
-  const taken = step.take.value
-  if (taken !== undefined && !isHiddenValue(taken)) {
-    editValue.value = taken
-  }
-}
-
-// The helper hands a step whenever the other side moved the address while the
-// person left it alone, or both arrived at the same one; the dialog applies it
-// at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (editOpen.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
-async function submitEdit(): Promise<void> {
-  if (editBusy.value || live.value.gone || live.value.conflict) {
-    return
-  }
-  if (!live.value.dirty || editHidden.value) {
-    closeEdit()
-
-    return
-  }
-  if (await runEditAction(sendRedirectSet(editValue.value.trim()))) {
-    closeEdit()
-  }
+// Save and Enter go through the window's one door: it refuses, closes an
+// unchanged draft, or dispatches the tracked action with the address trimmed
+// and closes on its `::success` reply; a refusal stays in the dialog.
+function submitEdit(): void {
+  void editor.save(runEditAction)
 }
 
 function openReset(): void {
@@ -408,7 +337,7 @@ async function submitReset(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!live.dirty || editBusy || live.gone"
+          :disable-save="!canSave"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"

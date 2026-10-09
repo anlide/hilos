@@ -531,9 +531,10 @@ catalog default otherwise. `legal_setting_set` stays on the admin page and
 hands the write to the settings library; the library validates the value and
 returns `hilos_legal_setting_write_done`. The page refuses unrelated keys.
 
-Every view uses `createHilosLegalSettingEdit` over the focused setting row and
-the shared `rowEdit` merge. A save stays unavailable while unchanged, in flight,
-conflicting or deleted. Incoming changes update a pristine draft, and a refused
+Every view uses `createHilosLegalSettingEdit` — the Legal factory over the core
+row-edit session ([conflict-resolution.md](../frontend/conflict-resolution.md),
+"The row-edit session") — on the focused setting row. A save stays unavailable
+while unchanged, in flight, conflicting or deleted. Incoming changes update a pristine draft, and a refused
 write keeps the modal and draft with its inline error. Closing follows the
 tracked settings-owner reply; the table value follows the DB source. Preview
 controls are disabled illustrations, not a second registration flow.

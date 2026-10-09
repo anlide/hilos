@@ -29,7 +29,6 @@ import {
   inject,
   input,
   signal,
-  untracked,
 } from '@angular/core'
 import {
   HilosPages,
@@ -37,20 +36,15 @@ import {
   createHilosOAuthProviderFields,
   createHilosOAuthProviderSummary,
   createHilosSecurityOauthActions,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  subscribeSignal,
-  takeTheirsRowEdit,
+  createHilosOauthProviderFieldEdit,
+  hilosRowEditIdle,
 } from '@hilos/core'
 import type {
+  HilosOauthProviderFieldEditFields,
   HilosOAuthFieldRow,
   HilosOAuthProviderRow,
   HilosSecurityOauthContext,
   OAuthValueSource,
-  RowEditBaseline,
-  RowEditNoticeKind,
-  RowEditStep,
   TableViewportRow,
 } from '@hilos/core'
 
@@ -64,7 +58,7 @@ import { HilosTableCell } from '../../HilosTableCell.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { LoadingButton } from '../../LoadingButton.js'
 import { HILOS_ROUTER } from '../../hilosRouterToken.js'
-import { hilosSignal } from '../../hilosSignal.js'
+import { hilosSignal, mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 /** The source badge label: where a value comes from. */
@@ -86,28 +80,6 @@ function resetNowText(row: HilosOAuthFieldRow): string {
   }
 
   return displayValue(row)
-}
-
-/** The one field the dialog edits; the secret reads as empty. */
-interface FieldEditFields {
-  value: string
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosOAuthFieldRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      return liveRow ? `Changed elsewhere to "${displayValue(liveRow)}".` : ''
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
 }
 
 /** The framework OAuth provider page: one provider's fields table and its recipe. */
@@ -247,7 +219,7 @@ function noticeText(
 
       <hilos-modal
         [open]="editOpen()"
-        (openChange)="$event ? editOpen.set(true) : closeEdit()"
+        (openChange)="$event ? undefined : closeEdit()"
         [confirmOnClose]="live().dirty"
         [aria-label]="editTitle()"
       >
@@ -289,7 +261,7 @@ function noticeText(
           <div
             hilosConflictActions
             [conflict]="live().conflict"
-            [disableSave]="!live().dirty || edit.busy() || live().gone"
+            [disableSave]="!canSave()"
             [saveLabel]="editSaveLabel()"
             (save)="submitEdit()"
             (acceptMine)="acceptMine()"
@@ -443,14 +415,25 @@ export class HilosSecurityOauthProviderPage {
     () => this.summaryLoaded() && this.summaryRows().length === 0,
   )
 
-  // Edit dialog: one field of the provider. The secret's dialog always opens empty.
+  // Edit dialog: one field of the provider, as the core window has it; this view
+  // binds the input through mirrors of the session's signals. The secret's dialog
+  // always opens empty and forgets what was typed when it closes.
+  protected readonly editor = computed(() =>
+    createHilosOauthProviderFieldEdit(this.fields().controller, this.actions()),
+  )
   protected readonly editOpen = signal(false)
   protected readonly editRow = signal<HilosOAuthFieldRow | null>(null)
-  protected readonly editValue = signal('')
-  protected readonly editBaseline = signal<RowEditBaseline<FieldEditFields>>(
-    openRowEdit<FieldEditFields>({ value: '' }),
+  protected readonly editForm = signal<HilosOauthProviderFieldEditFields>({
+    value: '',
+  })
+  protected readonly live = signal(
+    hilosRowEditIdle<HilosOauthProviderFieldEditFields>({ value: '' }),
   )
+  protected readonly editNoticeText = signal('')
+  protected readonly editSaveLabel = signal('Save')
+  protected readonly canSave = signal(false)
   protected readonly edit = createHilosTrackedAction()
+  protected readonly editValue = computed(() => this.editForm().value)
   protected readonly editTitle = computed(() => {
     const row = this.editRow()
 
@@ -458,29 +441,13 @@ export class HilosSecurityOauthProviderPage {
       ? `${row.secret ? 'Replace' : 'Edit'} · ${row.label}`
       : 'Edit field'
   })
-  // The live row the open dialog is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone. Mirrored
-  // the way the summary rows are.
-  protected readonly liveRow = signal<HilosOAuthFieldRow | undefined>(undefined)
-  protected readonly live = computed(() => {
-    const row = this.liveRow()
-
-    // An empty value reads as '' the way the input shows it.
-    return resolveRowEdit(
-      row ? { value: row.value ?? '' } : undefined,
-      this.editBaseline(),
-      { value: this.editValue() },
-    )
-  })
   protected readonly editNotice = computed(
     () => this.live().notice?.kind ?? null,
   )
-  protected readonly editNoticeText = computed(() =>
-    noticeText(this.editNotice(), this.liveRow()),
-  )
-  protected readonly editSaveLabel = computed(() =>
-    this.live().gone ? 'Deleted' : 'Save',
-  )
+  // The live row the open reset dialog is about: the row the table holds in
+  // focus, which the server follows wherever it goes; undefined once the row is
+  // gone. Mirrored the way the summary rows are.
+  protected readonly liveRow = signal<HilosOAuthFieldRow | undefined>(undefined)
 
   // Reset dialog: one field back to env / the recipe, only on confirm. It reads
   // the same live row the edit dialog does — one dialog is open at a time, and the
@@ -515,40 +482,27 @@ export class HilosSecurityOauthProviderPage {
     effect((onCleanup) => {
       const summary = this.summary()
       const fields = this.fields()
+      const editor = this.editor()
       summary.start()
       fields.start()
-      this.summaryRows.set(summary.controller.rows.get())
-      this.summaryLoaded.set(summary.controller.loaded.get())
-      this.liveRow.set(fields.controller.focusedRow.get())
-      const unsubscribes = [
-        subscribeSignal(fields.controller.focusedRow, (row) => {
-          this.liveRow.set(row)
-        }),
-        subscribeSignal(summary.controller.rows, (next) => {
-          this.summaryRows.set(next)
-        }),
-        subscribeSignal(summary.controller.loaded, (next) => {
-          this.summaryLoaded.set(next)
-        }),
+      editor.start()
+      const off = [
+        mirrorHilosSignal(summary.controller.rows, this.summaryRows),
+        mirrorHilosSignal(summary.controller.loaded, this.summaryLoaded),
+        mirrorHilosSignal(fields.controller.focusedRow, this.liveRow),
+        mirrorHilosSignal(editor.opened, this.editOpen),
+        mirrorHilosSignal(editor.row, this.editRow),
+        mirrorHilosSignal(editor.form, this.editForm),
+        mirrorHilosSignal(editor.state, this.live),
+        mirrorHilosSignal(editor.noticeText, this.editNoticeText),
+        mirrorHilosSignal(editor.saveLabel, this.editSaveLabel),
+        mirrorHilosSignal(editor.canSave, this.canSave),
       ]
       onCleanup(() => {
-        for (const unsubscribe of unsubscribes) {
-          unsubscribe()
-        }
+        for (const stop of off) stop()
+        editor.dispose()
         summary.dispose()
         fields.dispose()
-      })
-    })
-    // The helper hands a step whenever the other side moved the value while the
-    // person left it alone, or both arrived at the same one; the dialog applies
-    // it at once.
-    effect(() => {
-      const settle = this.live().settle
-      const open = this.editOpen()
-      untracked(() => {
-        if (open && settle) {
-          this.applyStep(settle)
-        }
       })
     })
   }
@@ -605,71 +559,33 @@ export class HilosSecurityOauthProviderPage {
   }
 
   protected openEdit(row: HilosOAuthFieldRow): void {
-    // Flush pending and take the row into focus, so the dialog edits the latest
+    // The window takes the row into focus, so the dialog edits the latest
     // committed row and follows it from here; a row that is gone declines to open.
-    const fresh = this.fields().controller.focusRow(row.key)
-    if (!fresh) {
-      return
-    }
     this.edit.clearError()
-    this.editRow.set(fresh)
-    // The secret never reads back: its value is null and its dialog opens empty.
-    const value = fresh.value ?? ''
-    this.editValue.set(value)
-    this.editBaseline.set(openRowEdit<FieldEditFields>({ value }))
-    this.editOpen.set(true)
+    this.editor().open(row.key)
   }
 
   protected closeEdit(): void {
-    this.editOpen.set(false)
-    // The secret typed into the dialog is not kept once it is closed.
-    this.editValue.set('')
-    this.fields().controller.releaseFocus()
-  }
-
-  // Put a step of the helper into the dialog: the snapshot moves, and a value
-  // the step takes lands in the input.
-  private applyStep(step: RowEditStep<FieldEditFields>): void {
-    this.editBaseline.set(step.baseline)
-    if (step.take.value !== undefined) {
-      this.editValue.set(step.take.value)
-    }
+    this.editor().close()
   }
 
   protected acceptMine(): void {
-    this.editBaseline.set(keepMineRowEdit(this.live(), this.editBaseline()))
+    this.editor().keepMine()
   }
 
   protected acceptTheirs(): void {
-    this.applyStep(takeTheirsRowEdit(this.live(), this.editBaseline()))
+    this.editor().takeTheirs()
   }
 
-  protected async submitEdit(event?: Event): Promise<void> {
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  protected submitEdit(event?: Event): void {
     event?.preventDefault()
-    const row = this.editRow()
-    if (!row || this.edit.busy() || this.live().gone || this.live().conflict) {
-      return
-    }
-    // Nothing to save (for the secret: nothing typed) closes without a request.
-    if (!this.live().dirty) {
-      this.closeEdit()
-
-      return
-    }
-    if (
-      await this.edit.run(
-        this.actions().sendProviderSet(
-          row.providerKey,
-          row.field,
-          this.editValue(),
-        ),
-      )
-    ) {
-      this.closeEdit()
-    }
+    void this.editor().save(this.edit.run)
   }
 
   protected onValueInput(event: Event): void {
-    this.editValue.set((event.target as HTMLInputElement).value)
+    this.editor().setForm({ value: (event.target as HTMLInputElement).value })
   }
 }

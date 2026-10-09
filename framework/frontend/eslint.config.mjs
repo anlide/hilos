@@ -61,5 +61,37 @@ export default tseslint.config(
       ],
     },
   },
+  // An edit window is the core row-edit session, not a copy of its merge: the
+  // snapshot, the live row, the step, the one verdict "can save" and the one
+  // door of the send live once in core/src/conflict/rowEditSession.ts, and a
+  // view layer takes a window's factory or createHilosRowEdit. A value import
+  // of the four merge functions in a view layer is the old shape coming back
+  // (docs/agents/frontend/conflict-resolution.md, "The row-edit session");
+  // `import type` of their types stays allowed. The core — the session and its
+  // tests — is not under this block.
+  {
+    files: ['vue/**', 'react/**', 'angular/**'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@hilos/core',
+              importNames: [
+                'openRowEdit',
+                'resolveRowEdit',
+                'keepMineRowEdit',
+                'takeTheirsRowEdit',
+              ],
+              allowTypeImports: true,
+              message:
+                'An edit window takes the core row-edit session (createHilosRowEdit or its window factory) and never assembles one from the merge helper: the rules of an edit window live in one place (docs/agents/frontend/conflict-resolution.md, "The row-edit session").',
+            },
+          ],
+        },
+      ],
+    },
+  },
   configPrettier,
 )

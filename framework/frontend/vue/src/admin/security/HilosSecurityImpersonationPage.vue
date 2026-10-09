@@ -12,41 +12,31 @@ project mounts it by passing its HilosImpersonationContext.
 A switch is a tracked action, as on the sign-in methods page: a spinner on its
 own row while it flies, the other switches disabled, no toast on success, and
 the switch moves only when the table's row does; a refusal is the action's
-toast. The scope's modal is the two-factor page's: it holds its row in focus
-and merges against it through the shared row-edit helper (rowEdit.ts,
-conflict-resolution.md), saying what happened elsewhere on one line of room
-held in advance (HilosEditNotice); Save closes it on the server's answer, whose
+toast. The scope's modal is the core row-edit session over the focused row
+(createHilosImpersonationScopeEdit, rowEditSession.ts, conflict-resolution.md),
+saying what happened elsewhere on one line of room held in advance
+(HilosEditNotice), and this view binds the choice; Save closes it on the server's answer, whose
 sentence is the toast, and a refusal stays in it. A viewer of the admin view
 mode finds the switches and Save disabled by the SDK's own controls (HIL-1261).
 The screen is built from text: the mockup still draws these rows on the
 two-factor page (D-143). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosImpersonationScopeEdit,
   createHilosSecurityImpersonationActions,
   createHilosSecurityImpersonationTable,
-  HIDDEN_VALUE,
   HILOS_IMPERSONATION_SCOPE_COPY,
   HILOS_IMPERSONATION_SCOPE_HINT,
   HILOS_IMPERSONATION_SCOPE_VALUES,
   HILOS_IMPERSONATION_SETTING_COPY,
-  hiddenAsWord,
   hilosImpersonationScopeOf,
   HilosPages,
   isHilosImpersonationSwitch,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
-  type Hideable,
   type HilosImpersonationContext,
   type HilosImpersonationScope,
   type HilosImpersonationSettingRow,
-  type RowEditBaseline,
-  type RowEditNoticeKind,
-  type RowEditStep,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
@@ -68,12 +58,17 @@ const props = defineProps<{
 }>()
 
 const settings = createHilosSecurityImpersonationTable(props.context)
-const { sendSwitchSet, sendScopeSet } = createHilosSecurityImpersonationActions(
-  props.context,
-)
+const actions = createHilosSecurityImpersonationActions(props.context)
+const { sendSwitchSet } = actions
 
-onMounted(() => settings.start())
-onUnmounted(() => settings.dispose())
+onMounted(() => {
+  settings.start()
+  editor.start()
+})
+onUnmounted(() => {
+  editor.dispose()
+  settings.dispose()
+})
 
 /**
  * The name of a setting on the screen.
@@ -103,47 +98,27 @@ async function toggle(
   }
 }
 
-/** The one field the scope's modal edits. */
-interface ScopeEditFields {
-  scope: Hideable<HilosImpersonationScope>
-}
-
-/**
- * The one line the modal says about the other side, for what the helper found;
- * the value in words, the way its cell says it.
- *
- * @param kind What the helper found, or null.
- * @param liveRow The scope's row as the server holds it now.
- */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosImpersonationSettingRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your choice stays on screen.'
-    case 'conflict':
-      if (!liveRow) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : HILOS_IMPERSONATION_SCOPE_COPY[hilosImpersonationScopeOf(liveRow)]}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
-// The scope's modal: the choice as made until Save.
-const editOpen = ref(false)
-const editRow = ref<HilosImpersonationSettingRow | null>(null)
-const editScope = ref<HilosImpersonationScope>('act')
-const editBaseline = ref<RowEditBaseline<ScopeEditFields>>(
-  openRowEdit<ScopeEditFields>({ scope: 'act' }),
-)
-const editHidden = computed(() =>
-  isHiddenValue(editBaseline.value.values.scope),
-)
+// The scope's modal: the choice as made until Save, as the core window has it;
+// this view binds the radio group.
+const editor = createHilosImpersonationScopeEdit(settings.controller, actions)
+const opened = useSignal(editor.opened)
+const editOpen = computed({
+  get: () => opened.value,
+  set: (next: boolean) => {
+    if (!next) editor.close()
+  },
+})
+const editRow = useSignal(editor.row)
+const editForm = useSignal(editor.form)
+const live = useSignal(editor.state)
+const editNoticeText = useSignal(editor.noticeText)
+const editSaveLabel = useSignal(editor.saveLabel)
+const canSave = useSignal(editor.canSave)
+const editHidden = computed(() => editForm.value.hidden)
+const editScope = computed({
+  get: () => editForm.value.scope,
+  set: (scope: HilosImpersonationScope) => editor.patchForm({ scope }),
+})
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -151,104 +126,35 @@ const {
   run: runEdit,
   clearError: clearEditError,
 } = editAction
-
-// The live row the open modal is about: the row the table holds in focus, which
-// the server follows wherever it goes; undefined once the row is gone.
-const liveRow = useSignal(settings.controller.focusedRow)
-const live = computed(() =>
-  resolveRowEdit(
-    liveRow.value
-      ? {
-          scope: isHiddenValue(liveRow.value.value)
-            ? HIDDEN_VALUE
-            : hilosImpersonationScopeOf(liveRow.value),
-        }
-      : undefined,
-    editBaseline.value,
-    { scope: editHidden.value ? HIDDEN_VALUE : editScope.value },
-  ),
-)
 const editNotice = computed(() => live.value.notice?.kind ?? null)
-const editNoticeText = computed(() =>
-  noticeText(editNotice.value, liveRow.value),
-)
-const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 const editTitle = computed(() =>
   editRow.value ? labelOf(editRow.value) : 'Edit setting',
 )
 
 function openEdit(row: HilosImpersonationSettingRow): void {
-  // Flush pending and take the row into focus, so the modal edits the latest
+  // The window takes the row into focus, so the modal edits the latest
   // committed row and follows it from here; a row that is gone declines to open.
-  const fresh = settings.controller.focusRow(row.rowKey)
-  if (!fresh) {
-    return
-  }
   clearEditError()
-  const freshHidden = isHiddenValue(fresh.value)
-  const scope = hilosImpersonationScopeOf(fresh)
-  editRow.value = fresh
-  if (!freshHidden) {
-    editScope.value = scope
-  }
-  editBaseline.value = openRowEdit<ScopeEditFields>({
-    scope: freshHidden ? HIDDEN_VALUE : scope,
-  })
-  editOpen.value = true
+  editor.open(row.rowKey)
 }
 
 function closeEdit(): void {
-  editOpen.value = false
-  settings.controller.releaseFocus()
+  editor.close()
 }
-
-// Put a step of the helper into the modal: the snapshot moves, and a value the
-// step takes lands in the choice.
-function applyStep(step: RowEditStep<ScopeEditFields>): void {
-  editBaseline.value = step.baseline
-  const taken = step.take.scope
-  if (taken !== undefined && !isHiddenValue(taken)) {
-    editScope.value = taken
-  }
-}
-
-// The helper hands a step whenever the other side moved the value while the
-// person left it alone, or both arrived at the same one; the modal applies it
-// at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (editOpen.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
-async function submitEdit(): Promise<void> {
-  if (
-    editRow.value === null ||
-    editBusy.value ||
-    live.value.gone ||
-    live.value.conflict
-  ) {
-    return
-  }
-  if (!live.value.dirty || editHidden.value) {
-    closeEdit()
-
-    return
-  }
-  if (await runEdit(sendScopeSet(editScope.value))) {
-    closeEdit()
-  }
+// Save and Enter go through the window's one door: it refuses, closes an
+// unchanged choice, or dispatches the tracked action and closes on its
+// `::success` reply; a refusal stays in the modal.
+function submitEdit(): void {
+  void editor.save(runEdit)
 }
 </script>
 
@@ -359,7 +265,7 @@ async function submitEdit(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!live.dirty || editBusy || live.gone"
+          :disable-save="!canSave"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"

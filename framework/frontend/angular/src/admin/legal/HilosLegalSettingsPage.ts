@@ -16,13 +16,10 @@ import {
   HILOS_LEGAL_SETTING_PREVIEWS,
   HilosLegalRowKey,
   HILOS_TABLE_ACTIONS_KEY,
+  hilosRowEditIdle,
   isHiddenValue,
-  openRowEdit,
-  resolveRowEdit,
-  subscribeSignal,
-  type Hideable,
-  type RowEditState,
   type HilosLegalContext,
+  type HilosLegalSettingEditFields,
   type HilosLegalSettingRow,
 } from '@hilos/core'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -35,6 +32,7 @@ import { HilosActionError } from '../../HilosActionError.js'
 import { HilosEditNotice } from '../../HilosEditNotice.js'
 import { ConflictActions } from '../../ConflictActions.js'
 import { LoadingButton } from '../../LoadingButton.js'
+import { mirrorHilosSignal } from '../../hilosSignal.js'
 import { createHilosTrackedAction } from '../../hilosTrackedAction.js'
 
 let inputSequence = 0
@@ -152,7 +150,7 @@ let inputSequence = 0
         </p>
       </section>
       <hilos-modal
-        [open]="row() !== null"
+        [open]="opened()"
         (openChange)="$event ? undefined : editor().close()"
         [title]="title()"
         (cancel)="editor().close()"
@@ -202,8 +200,8 @@ let inputSequence = 0
           <div
             hilosConflictActions
             [conflict]="state().conflict"
-            [disableSave]="!state().dirty || action.busy() || state().gone"
-            [saveLabel]="state().gone ? 'Deleted' : 'Save'"
+            [disableSave]="!canSave()"
+            [saveLabel]="saveLabel()"
             (save)="save()"
             (acceptMine)="editor().keepMine()"
             (acceptTheirs)="editor().takeTheirs()"
@@ -228,7 +226,7 @@ let inputSequence = 0
                 data-id="legal-setting-save"
                 (click)="onSave()"
               >
-                {{ state().gone ? 'Deleted' : 'Save' }}
+                {{ saveLabel() }}
               </button></ng-template
             >
           </div>
@@ -249,27 +247,27 @@ export class HilosLegalSettingsPage {
   protected readonly table = computed(() =>
     createHilosLegalSettingsTable(this.context()),
   )
-  protected readonly editor = computed(() =>
-    createHilosLegalSettingEdit(this.table().controller),
-  )
   private readonly actions = computed(() =>
     createHilosLegalSettingsActions(this.context()),
   )
+  protected readonly editor = computed(() =>
+    createHilosLegalSettingEdit(this.table().controller, this.actions()),
+  )
   protected readonly action = createHilosTrackedAction({ toast: false })
+  protected readonly opened = signal(false)
   protected readonly row = signal<HilosLegalSettingRow | null>(null)
   // A value hidden from a viewer of the admin view mode stays the one hidden
   // value: the draft is never dirty, and the modal shows the mark in place of
   // the list.
-  protected readonly value = signal<Hideable<string>>('')
+  protected readonly form = signal<HilosLegalSettingEditFields>({ value: '' })
+  protected readonly value = computed(() => this.form().value)
   protected readonly valueHidden = computed(() => isHiddenValue(this.value()))
-  protected readonly state = signal<RowEditState<{ value: Hideable<string> }>>(
-    resolveRowEdit(
-      undefined,
-      openRowEdit<{ value: Hideable<string> }>({ value: '' }),
-      { value: '' },
-    ),
+  protected readonly state = signal(
+    hilosRowEditIdle<HilosLegalSettingEditFields>({ value: '' }),
   )
   protected readonly noticeText = signal('')
+  protected readonly canSave = signal(false)
+  protected readonly saveLabel = signal('Save')
   protected readonly title = computed(() => {
     const row = this.row()
     return row ? (this.copy[row.rowKey]?.label ?? row.rowKey) : 'Edit setting'
@@ -279,18 +277,14 @@ export class HilosLegalSettingsPage {
     effect((onCleanup) => {
       const table = this.table(),
         editor = this.editor()
-      const update = () => {
-        this.row.set(editor.row.get())
-        this.value.set(editor.value.get())
-        this.state.set(editor.state.get())
-        this.noticeText.set(editor.noticeText.get())
-      }
-      update()
       const off = [
-        subscribeSignal(editor.row, update),
-        subscribeSignal(editor.value, update),
-        subscribeSignal(editor.state, update),
-        subscribeSignal(editor.noticeText, update),
+        mirrorHilosSignal(editor.opened, this.opened),
+        mirrorHilosSignal(editor.row, this.row),
+        mirrorHilosSignal(editor.form, this.form),
+        mirrorHilosSignal(editor.state, this.state),
+        mirrorHilosSignal(editor.noticeText, this.noticeText),
+        mirrorHilosSignal(editor.canSave, this.canSave),
+        mirrorHilosSignal(editor.saveLabel, this.saveLabel),
       ]
       table.start()
       editor.start()
@@ -316,26 +310,12 @@ export class HilosLegalSettingsPage {
   }
 
   protected setValue(event: Event): void {
-    this.editor().setValue((event.target as HTMLSelectElement).value)
+    this.editor().setForm({ value: (event.target as HTMLSelectElement).value })
   }
-  protected async save(event?: Event): Promise<void> {
+  // Save and Enter go through the session's one door: it refuses, closes an
+  // unchanged choice, or sends through the tracked action and closes on success.
+  protected save(event?: Event): void {
     event?.preventDefault()
-    const row = this.row(),
-      state = this.state(),
-      value = this.value()
-    if (
-      row === null ||
-      isHiddenValue(value) ||
-      this.action.busy() ||
-      state.gone ||
-      state.conflict
-    )
-      return
-    if (!state.dirty) {
-      this.editor().close()
-      return
-    }
-    if (await this.action.run(this.actions().sendSettingSet(row.rowKey, value)))
-      this.editor().close()
+    void this.editor().save(this.action.run)
   }
 }

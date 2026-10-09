@@ -45,13 +45,16 @@ export function HilosLegalSettingsPage({
     [context],
   )
   const editor = useMemo(
-    () => createHilosLegalSettingEdit(table.controller),
-    [table],
+    () => createHilosLegalSettingEdit(table.controller, actions),
+    [table, actions],
   )
-  const row = useSignal(editor.row),
-    value = useSignal(editor.value),
+  const opened = useSignal(editor.opened),
+    row = useSignal(editor.row),
+    form = useSignal(editor.form),
     state = useSignal(editor.state),
-    noticeText = useSignal(editor.noticeText)
+    noticeText = useSignal(editor.noticeText),
+    canSave = useSignal(editor.canSave),
+    saveLabel = useSignal(editor.saveLabel)
   const action = useTrackedAction({ toast: false })
   const inputId = useId()
   useEffect(() => {
@@ -67,21 +70,10 @@ export function HilosLegalSettingsPage({
     action.clearError()
     editor.open(key)
   }
-  async function save(): Promise<void> {
-    if (
-      row === null ||
-      isHiddenValue(value) ||
-      action.busy ||
-      state.gone ||
-      state.conflict
-    )
-      return
-    if (!state.dirty) {
-      editor.close()
-      return
-    }
-    if (await action.run(actions.sendSettingSet(row.rowKey, value)))
-      editor.close()
+  // Save and Enter go through the session's one door: it refuses, closes an
+  // unchanged choice, or sends through the tracked action and closes on success.
+  function save(): void {
+    void editor.save(action.run)
   }
   return (
     <HilosAdminPage page={HilosPages.LEGAL_SETTINGS}>
@@ -181,7 +173,7 @@ export function HilosLegalSettingsPage({
         </p>
       </section>
       <HilosModal
-        open={row !== null}
+        open={opened}
         title={
           row
             ? (HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey)
@@ -191,9 +183,9 @@ export function HilosLegalSettingsPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={state.conflict}
-            disableSave={!state.dirty || action.busy || state.gone}
-            saveLabel={state.gone ? 'Deleted' : 'Save'}
-            onSave={() => void save()}
+            disableSave={!canSave}
+            saveLabel={saveLabel}
+            onSave={save}
             onAcceptMine={editor.keepMine}
             onAcceptTheirs={editor.takeTheirs}
             cancelButton={
@@ -215,7 +207,7 @@ export function HilosLegalSettingsPage({
                 data-id="legal-setting-save"
                 onClick={onSave}
               >
-                {state.gone ? 'Deleted' : 'Save'}
+                {saveLabel}
               </LoadingButton>
             )}
           />
@@ -229,10 +221,10 @@ export function HilosLegalSettingsPage({
           <form
             onSubmit={(event) => {
               event.preventDefault()
-              void save()
+              save()
             }}
           >
-            {isHiddenValue(value) ? (
+            {isHiddenValue(form.value) ? (
               <>
                 <div className="form-label">
                   {HILOS_LEGAL_SETTING_COPY[row.rowKey]?.label ?? row.rowKey}
@@ -246,8 +238,10 @@ export function HilosLegalSettingsPage({
                 </label>
                 <select
                   id={inputId}
-                  value={value}
-                  onChange={(event) => editor.setValue(event.target.value)}
+                  value={form.value}
+                  onChange={(event) =>
+                    editor.setForm({ value: event.target.value })
+                  }
                   className="form-select"
                   data-id="legal-setting-input"
                   data-autofocus

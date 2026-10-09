@@ -18,29 +18,19 @@
 // delete, holding the same row in focus. Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
 import {
-  HIDDEN_VALUE,
   HILOS_TABLE_ACTIONS_KEY,
-  HILOS_VIEW_MODE_COPY,
   HilosOAuthProviderRowKey,
   HilosPages,
   createHilosOAuthProvidersTable,
   createHilosOAuthRedirect,
+  createHilosOauthRedirectEdit,
   createHilosSecurityOauthActions,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
   resolveHilosPath,
-  resolveRowEdit,
-  takeTheirsRowEdit,
 } from '@hilos/core'
 import type {
-  Hideable,
   HilosOAuthProviderRow,
   HilosOAuthRedirectRow,
   HilosSecurityOauthContext,
-  RowEditBaseline,
-  RowEditNoticeKind,
-  RowEditStep,
 } from '@hilos/core'
 
 import { ConflictActions } from '../../ConflictActions.js'
@@ -77,31 +67,6 @@ function providerPath(row: HilosOAuthProviderRow): string {
   })
 }
 
-/** The one field the return-address dialog edits. */
-interface RedirectEditFields {
-  value: Hideable<string>
-}
-
-/** The one line the dialog says about the other side, for what the helper found. */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveValue: Hideable<string> | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (liveValue === undefined) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveValue) ? HILOS_VIEW_MODE_COPY.hidden : liveValue === '' ? '—' : liveValue}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
 /**
  * The framework OAuth providers page: the shared return address with its edit
  * modal and reset, above the providers table with a link to each provider's page.
@@ -123,41 +88,45 @@ export function HilosSecurityOauthPage({
 
   // Bind both server-windowed tables to the connection on mount, request their
   // first windows, and unbind on unmount.
+  // Edit dialog: the return address, as the core window has it; this view
+  // binds the input.
+  const editor = useMemo(
+    () => createHilosOauthRedirectEdit(redirect.controller, actions),
+    [redirect, actions],
+  )
+
   useEffect(() => {
     providers.start()
     redirect.start()
+    editor.start()
 
     return () => {
+      editor.dispose()
       providers.dispose()
       redirect.dispose()
     }
-  }, [providers, redirect])
+  }, [providers, redirect, editor])
 
   const redirectRows = useSignal(redirect.controller.rows)
   // The one return-address row, once its window has arrived.
   const redirectRow = redirectRows[0]?.row ?? null
 
-  // Edit dialog: the return address.
-  const [editOpen, setEditOpen] = useState(false)
-  const [editValue, setEditValue] = useState('')
-  const [editBaseline, setEditBaseline] = useState<
-    RowEditBaseline<RedirectEditFields>
-  >(() => openRowEdit<RedirectEditFields>({ value: '' }))
+  const editOpen = useSignal(editor.opened)
+  const editForm = useSignal(editor.form)
+  const live = useSignal(editor.state)
+  const editNoticeText = useSignal(editor.noticeText)
+  const editSaveLabel = useSignal(editor.saveLabel)
+  const canSave = useSignal(editor.canSave)
   const edit = useTrackedAction()
-
-  const editHidden = isHiddenValue(editBaseline.values.value)
-
-  // The live row the open dialog is about: the row the table holds in focus, which
-  // the server follows wherever it goes; undefined once the row is gone.
-  const liveRow = useSignal(redirect.controller.focusedRow)
-  const live = resolveRowEdit(
-    liveRow ? { value: liveRow.value } : undefined,
-    editBaseline,
-    { value: editHidden ? HIDDEN_VALUE : editValue },
-  )
+  const editHidden = editForm.hidden
+  const editValue = editForm.text
+  const setEditValue = (text: string) => editor.patchForm({ text })
   const editNotice = live.notice?.kind ?? null
-  const editNoticeText = noticeText(editNotice, liveRow?.value)
-  const editSaveLabel = live.gone ? 'Deleted' : 'Save'
+
+  // The live row the open reset dialog is about: the row the table holds in
+  // focus, which the server follows wherever it goes; undefined once the row is
+  // gone.
+  const liveRow = useSignal(redirect.controller.focusedRow)
 
   // Reset dialog: the address back to env, only on confirm. It reads the same live
   // row the edit dialog does — one dialog is open at a time, and the focus is one.
@@ -167,66 +136,33 @@ export function HilosSecurityOauthPage({
   const resetShown = liveRow ?? resetRow
   const resetGone = liveRow === undefined || liveRow.source !== 'db'
 
-  // Put a step of the helper into the dialog: the snapshot moves, and a value
-  // the step takes lands in the input.
-  function applyStep(step: RowEditStep<RedirectEditFields>): void {
-    setEditBaseline(step.baseline)
-    if (step.take.value !== undefined && !isHiddenValue(step.take.value)) {
-      setEditValue(step.take.value)
-    }
-  }
-
-  // The helper hands a step whenever the other side moved the address while the
-  // person left it alone, or both arrived at the same one; the dialog applies it
-  // at once.
-  const settle = live.settle
-  useEffect(() => {
-    if (editOpen && settle) {
-      applyStep(settle)
-    }
-  }, [editOpen, settle])
-
   function openEdit(): void {
     if (!redirectRow) {
       return
     }
-    // Flush pending and take the row into focus, so the dialog edits the latest
+    // The window takes the row into focus, so the dialog edits the latest
     // committed row and follows it from here; a row that is gone declines to open.
-    const fresh = redirect.controller.focusRow(redirectRow.key)
-    if (!fresh) {
-      return
-    }
     edit.clearError()
-    setEditValue(isHiddenValue(fresh.value) ? '' : fresh.value)
-    setEditBaseline(openRowEdit<RedirectEditFields>({ value: fresh.value }))
-    setEditOpen(true)
+    editor.open(redirectRow.key)
   }
 
   function closeEdit(): void {
-    setEditOpen(false)
-    redirect.controller.releaseFocus()
+    editor.close()
   }
 
   function acceptMine(): void {
-    setEditBaseline(keepMineRowEdit(live, editBaseline))
+    editor.keepMine()
   }
 
   function acceptTheirs(): void {
-    applyStep(takeTheirsRowEdit(live, editBaseline))
+    editor.takeTheirs()
   }
 
-  async function submitEdit(): Promise<void> {
-    if (edit.busy || live.gone || live.conflict || editHidden) {
-      return
-    }
-    if (!live.dirty || editHidden) {
-      closeEdit()
-
-      return
-    }
-    if (await edit.run(actions.sendRedirectSet(editValue))) {
-      closeEdit()
-    }
+  // Save and Enter go through the window's one door: it refuses, closes an
+  // unchanged draft, or dispatches the tracked action and closes on its
+  // `::success` reply; a failure stays open with the entered value.
+  function submitEdit(): void {
+    void editor.save(edit.run)
   }
 
   function openReset(): void {
@@ -383,7 +319,7 @@ export function HilosSecurityOauthPage({
         actions={({ requestClose }) => (
           <ConflictActions
             conflict={live.conflict}
-            disableSave={!live.dirty || edit.busy || live.gone || editHidden}
+            disableSave={!canSave}
             saveLabel={editSaveLabel}
             onSave={() => void submitEdit()}
             onAcceptMine={acceptMine}

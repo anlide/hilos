@@ -7,36 +7,26 @@ a value a setting's rule refuses stays in the modal with the refusal above it.
 The table, the row view-model and the edit round-trip are the core headless's
 (createHilosSecurityTwoFactorTable / createHilosSecurityTwoFactorActions), and
 so are the words; this view owns only the markup, so a project mounts it by
-passing its HilosTwoFactorContext. The modal holds its row in focus and merges
-against it through the shared row-edit helper (rowEdit.ts,
+passing its HilosTwoFactorContext. The modal is the core row-edit session over
+the focused row (createHilosTwoFactorSettingEdit, rowEditSession.ts,
 conflict-resolution.md), saying what happened elsewhere on one line of room held
-in advance (HilosEditNotice). The screen is built from text: the mockup's node
+in advance (HilosEditNotice); this view binds the input. The screen is built from text: the mockup's node
 is a debt (D-115). Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosSecurityTwoFactorActions,
   createHilosSecurityTwoFactorTable,
+  createHilosTwoFactorSettingEdit,
   describeHilosSecondFactorSetting,
-  HIDDEN_VALUE,
-  hiddenAsWord,
   HILOS_SECOND_FACTOR_REQUIRED_COPY,
   HILOS_SECOND_FACTOR_REQUIRED_VALUES,
   HILOS_SECOND_FACTOR_SETTING_COPY,
   HilosPages,
   HilosSecondFactorSettingKey,
-  isHiddenValue,
-  keepMineRowEdit,
-  openRowEdit,
-  resolveRowEdit,
-  takeTheirsRowEdit,
-  type Hideable,
   type HilosTwoFactorContext,
   type HilosTwoFactorSettingRow,
-  type RowEditBaseline,
-  type RowEditNoticeKind,
-  type RowEditStep,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 
 import ConflictActions from '../../ConflictActions.vue'
 import ConflictHeader from '../../ConflictHeader.vue'
@@ -57,10 +47,16 @@ const props = defineProps<{
 }>()
 
 const settings = createHilosSecurityTwoFactorTable(props.context)
-const { sendSettingSet } = createHilosSecurityTwoFactorActions(props.context)
+const actions = createHilosSecurityTwoFactorActions(props.context)
 
-onMounted(() => settings.start())
-onUnmounted(() => settings.dispose())
+onMounted(() => {
+  settings.start()
+  editor.start()
+})
+onUnmounted(() => {
+  editor.dispose()
+  settings.dispose()
+})
 
 /**
  * The name of a setting on the screen.
@@ -71,52 +67,30 @@ function labelOf(row: HilosTwoFactorSettingRow): string {
   return HILOS_SECOND_FACTOR_SETTING_COPY[row.rowKey]?.label ?? row.rowKey
 }
 
-/** The one field the edit modal edits. */
-interface SettingEditFields {
-  value: Hideable<string>
-}
-
-/**
- * The one line the modal says about the other side, for what the helper found;
- * a value in words, the way its cell says it.
- */
-function noticeText(
-  kind: RowEditNoticeKind | null,
-  liveRow: HilosTwoFactorSettingRow | undefined,
-): string {
-  switch (kind) {
-    case 'deleted':
-      return 'Deleted elsewhere — your text stays to copy.'
-    case 'conflict':
-      if (!liveRow) {
-        return ''
-      }
-      return `Changed elsewhere to "${isHiddenValue(liveRow.value) ? hiddenAsWord(liveRow.value) : describeHilosSecondFactorSetting(liveRow.rowKey, liveRow.value)}".`
-    case 'updated':
-      return 'Updated just now'
-    default:
-      return ''
-  }
-}
-
-// The edit modal: one setting at a time, its value as typed until Save.
-const editOpen = ref(false)
-const editRow = ref<HilosTwoFactorSettingRow | null>(null)
-const editValue = ref('')
-const editBaseline = ref<RowEditBaseline<SettingEditFields>>(
-  openRowEdit<SettingEditFields>({ value: '' }),
-)
-// The number input's model: v-model on a number input hands back a number, and
-// the value is text everywhere else (the row, the helper, the wire).
-const editValueText = computed({
-  get: () => editValue.value,
-  set: (typed: string | number) => {
-    editValue.value = String(typed)
+// The edit modal: one setting at a time, as the core window has it; this view
+// binds the list or the number input.
+const editor = createHilosTwoFactorSettingEdit(settings.controller, actions)
+const opened = useSignal(editor.opened)
+const editOpen = computed({
+  get: () => opened.value,
+  set: (next: boolean) => {
+    if (!next) editor.close()
   },
 })
-const editHidden = computed(() =>
-  isHiddenValue(editBaseline.value.values.value),
-)
+const editRow = useSignal(editor.row)
+const editForm = useSignal(editor.form)
+const live = useSignal(editor.state)
+const editNoticeText = useSignal(editor.noticeText)
+const editSaveLabel = useSignal(editor.saveLabel)
+const canSave = useSignal(editor.canSave)
+const editHidden = computed(() => editForm.value.hidden)
+// The number input's model: v-model on a number input hands back a number, and
+// the value is text everywhere else (the form, the session, the wire).
+const editValue = computed({
+  get: () => editForm.value.text,
+  set: (typed: string | number) => editor.patchForm({ text: String(typed) }),
+})
+const editValueText = editValue
 const editAction = useTrackedAction()
 const {
   loading: editLoading,
@@ -124,95 +98,35 @@ const {
   run: runEdit,
   clearError: clearEditError,
 } = editAction
-
-// The live row the open modal is about: the row the table holds in focus, which
-// the server follows wherever it goes; undefined once the row is gone.
-const liveRow = useSignal(settings.controller.focusedRow)
-const live = computed(() =>
-  resolveRowEdit(
-    liveRow.value ? { value: liveRow.value.value } : undefined,
-    editBaseline.value,
-    { value: editHidden.value ? HIDDEN_VALUE : editValue.value.trim() },
-  ),
-)
 const editNotice = computed(() => live.value.notice?.kind ?? null)
-const editNoticeText = computed(() =>
-  noticeText(editNotice.value, liveRow.value),
-)
-const editSaveLabel = computed(() => (live.value.gone ? 'Deleted' : 'Save'))
 const editTitle = computed(() =>
   editRow.value ? labelOf(editRow.value) : 'Edit setting',
 )
 
 function openEdit(row: HilosTwoFactorSettingRow): void {
-  // Flush pending and take the row into focus, so the modal edits the latest
+  // The window takes the row into focus, so the modal edits the latest
   // committed row and follows it from here; a row that is gone declines to open.
-  const fresh = settings.controller.focusRow(row.rowKey)
-  if (!fresh) {
-    return
-  }
   clearEditError()
-  editRow.value = fresh
-  if (!isHiddenValue(fresh.value)) {
-    editValue.value = fresh.value
-  }
-  editBaseline.value = openRowEdit<SettingEditFields>({ value: fresh.value })
-  editOpen.value = true
+  editor.open(row.rowKey)
 }
 
 function closeEdit(): void {
-  editOpen.value = false
-  settings.controller.releaseFocus()
+  editor.close()
 }
-
-// Put a step of the helper into the modal: the snapshot moves, and a value the
-// step takes lands in the input.
-function applyStep(step: RowEditStep<SettingEditFields>): void {
-  editBaseline.value = step.baseline
-  const taken = step.take.value
-  if (taken !== undefined && !isHiddenValue(taken)) {
-    editValue.value = taken
-  }
-}
-
-// The helper hands a step whenever the other side moved the value while the
-// person left it alone, or both arrived at the same one; the modal applies it
-// at once.
-watch(
-  () => live.value.settle,
-  (settle) => {
-    if (editOpen.value && settle) {
-      applyStep(settle)
-    }
-  },
-)
 
 function acceptMine(): void {
-  editBaseline.value = keepMineRowEdit(live.value, editBaseline.value)
+  editor.keepMine()
 }
 
 function acceptTheirs(): void {
-  applyStep(takeTheirsRowEdit(live.value, editBaseline.value))
+  editor.takeTheirs()
 }
 
-async function submitEdit(): Promise<void> {
-  const row = editRow.value
-  if (
-    row === null ||
-    editBusy.value ||
-    live.value.gone ||
-    live.value.conflict
-  ) {
-    return
-  }
-  if (!live.value.dirty || editHidden.value) {
-    closeEdit()
-
-    return
-  }
-  if (await runEdit(sendSettingSet(row.rowKey, editValue.value.trim()))) {
-    closeEdit()
-  }
+// Save and Enter go through the window's one door: it refuses, closes an
+// unchanged draft, or dispatches the tracked action and closes on its
+// `::success` reply; a refusal stays in the modal.
+function submitEdit(): void {
+  void editor.save(runEdit)
 }
 </script>
 
@@ -312,7 +226,7 @@ async function submitEdit(): Promise<void> {
       <template #actions="{ requestClose }">
         <ConflictActions
           :conflict="live.conflict"
-          :disable-save="!live.dirty || editBusy || live.gone"
+          :disable-save="!canSave"
           :save-label="editSaveLabel"
           @save="submitEdit"
           @accept-mine="acceptMine"

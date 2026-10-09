@@ -1145,6 +1145,21 @@ export {
   type RowEditStep,
 } from './conflict/rowEdit.js'
 export {
+  createHilosRowEdit,
+  hilosRowEditIdle,
+  hilosSignalRowEditSource,
+  hilosTableRowEditSource,
+  HILOS_ROW_EDIT_COPY,
+  type HilosActionRun,
+  type HilosRowEdit,
+  type HilosRowEditFormHolder,
+  type HilosRowEditNotice,
+  type HilosRowEditOptions,
+  type HilosRowEditProjection,
+  type HilosRowEditSource,
+  type HilosTrackedRowEdit,
+} from './conflict/rowEditSession.js'
+export {
   toHilosPresence,
   resolveHilosUserRow,
   createHilosUsersTable,
@@ -1222,6 +1237,13 @@ export {
   type HilosImpersonate,
 } from './admin/users/hilosUsers.js'
 export {
+  createHilosUserRenameEdit,
+  HILOS_USER_NAME_MAX,
+  HILOS_USER_NAME_MIN,
+  type HilosUserRenameEdit,
+  type HilosUserRenameEditFields,
+} from './admin/users/hilosUserRenameEdit.js'
+export {
   resolveHilosSettingRow,
   isOrphanSetting,
   hasCustomValue,
@@ -1235,6 +1257,11 @@ export {
   type HilosSettingsTable,
   type HilosSettingsActions,
 } from './admin/settings/hilosSettings.js'
+export {
+  createHilosSettingEdit,
+  type HilosSettingEditFields,
+  type HilosSettingEditForm,
+} from './admin/settings/hilosSettingEdit.js'
 export {
   APPEARANCE_ROW_KEY_FIELD,
   APPEARANCE_VALUE_FIELD,
@@ -1381,6 +1408,15 @@ export {
   type HilosChannelFields,
 } from './admin/communications/hilosCommunications.js'
 export {
+  createHilosChannelFieldEdit,
+  hilosChannelDisplayValue,
+  hilosChannelEditedValue,
+  hilosChannelFormText,
+  type HilosChannelFieldEditFields,
+  type HilosChannelFieldEditForm,
+  type HilosChannelFieldValue,
+} from './admin/communications/hilosCommunicationsChannelEdit.js'
+export {
   resolveHilosDeliveryRow,
   createHilosDeliveriesTable,
   createHilosDeliveriesActions,
@@ -1423,6 +1459,13 @@ export {
   type HilosSecurityOauthActions,
 } from './admin/security/hilosSecurityOauth.js'
 export {
+  createHilosOauthProviderFieldEdit,
+  createHilosOauthRedirectEdit,
+  type HilosOauthProviderFieldEditFields,
+  type HilosOauthRedirectEditFields,
+  type HilosOauthRedirectEditForm,
+} from './admin/security/hilosSecurityOauthEdit.js'
+export {
   resolveHilosSignInMethodRow,
   isSignInMethodOn,
   createHilosSignInMethodsTable,
@@ -1449,6 +1492,11 @@ export {
   type HilosTwoFactorActions,
   type HilosTwoFactorTable,
 } from './admin/security/hilosSecurityTwoFactor.js'
+export {
+  createHilosTwoFactorSettingEdit,
+  type HilosTwoFactorSettingEditFields,
+  type HilosTwoFactorSettingEditForm,
+} from './admin/security/hilosSecurityTwoFactorEdit.js'
 export {
   resolveHilosStepUpOperationRow,
   createHilosSecurityStepUpTable,
@@ -1478,6 +1526,11 @@ export {
   type HilosImpersonationActions,
   type HilosImpersonationTable,
 } from './admin/security/hilosSecurityImpersonation.js'
+export {
+  createHilosImpersonationScopeEdit,
+  type HilosImpersonationScopeEditFields,
+  type HilosImpersonationScopeEditForm,
+} from './admin/security/hilosSecurityImpersonationEdit.js'
 export {
   resolveHilosLogKeyRow,
   createHilosLogKeysTable,
@@ -1813,7 +1866,10 @@ export {
   type HilosLegalTable,
 } from './admin/legal/hilosLegal.js'
 
-export { createHilosLegalSettingEdit } from './admin/legal/hilosLegalSettingsEdit.js'
+export {
+  createHilosLegalSettingEdit,
+  type HilosLegalSettingEditFields,
+} from './admin/legal/hilosLegalSettingsEdit.js'
 
 export {
   LEGAL_ACCEPTANCES_EXPORT_ACTION,
