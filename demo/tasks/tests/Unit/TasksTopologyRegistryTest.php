@@ -316,6 +316,10 @@ final class TasksTopologyRegistryTest extends TestCase
             [CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING],
             Hilos::PAGE_DATA[CountryDetailPage::PAGE],
         );
+        $this->assertSame(
+            [CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING],
+            Hilos::PAGE_DATA[CountryNamesPage::PAGE],
+        );
 
         $entry = Hilos::AGENTS[HilosAgentType::HILOS_I18N_LIBRARY];
         $this->assertSame(I18nLibraryAgent::class, AgentRegistry::workerClass($entry));

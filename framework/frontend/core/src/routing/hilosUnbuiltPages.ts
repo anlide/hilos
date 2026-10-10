@@ -31,7 +31,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.I18N_LANGUAGE_NAMES]: ['react', 'angular'],
   [HilosPages.I18N_LANGUAGE_LOCALES]: ['react', 'angular'],
   [HilosPages.I18N_COUNTRY]: ['react', 'angular'],
-  [HilosPages.I18N_COUNTRY_NAMES]: ['vue', 'react', 'angular'],
+  [HilosPages.I18N_COUNTRY_NAMES]: ['react', 'angular'],
   [HilosPages.I18N_UI_PAGE]: ['vue', 'react', 'angular'],
   [HilosPages.I18N_GROUP]: ['vue', 'react', 'angular'],
   [HilosPages.I18N_ACTION]: ['vue', 'react', 'angular'],

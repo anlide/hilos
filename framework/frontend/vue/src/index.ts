@@ -124,6 +124,7 @@ export { default as HilosI18nLanguagesPage } from './admin/i18n/lists/HilosI18nL
 export { default as HilosI18nLanguageNamesPage } from './admin/i18n/details/HilosI18nLanguageNamesPage.vue'
 export { default as HilosI18nLanguageLocalesPage } from './admin/i18n/details/HilosI18nLanguageLocalesPage.vue'
 export { default as HilosI18nCountryPage } from './admin/i18n/details/HilosI18nCountryPage.vue'
+export { default as HilosI18nCountryNamesPage } from './admin/i18n/details/HilosI18nCountryNamesPage.vue'
 
 export { default as HilosProfilePasswordChange } from './profile/HilosProfilePasswordChange.vue'
 

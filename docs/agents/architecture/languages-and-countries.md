@@ -377,8 +377,9 @@ alone and one for every country, keyed by the pair written as its locale's code,
 whether the pair has a locale or not, standing under the card's shared header and
 tabs fed by the same `languageCard` datum. The Vue section root and the languages list are built
 (HIL-1474): the root shows the Languages card, and the list is the languages
-table, kept live by the table's own fan-out. The country list and the names
-page of a country remain unbuilt — the country's in Vue until HIL-1483; React
+table, kept live by the table's own fan-out. The Vue names page of a country is built too
+(HIL-1483): the names table opened on that country, standing under the card's shared header and
+tabs fed by the same `countryCard` datum. The country list remains unbuilt; React
 and Angular remain unbuilt until their own leaves.
 
 | Page key | Route |
@@ -414,17 +415,18 @@ HIL-1476). The languages table (`hilosI18nLanguages`) is registered and bound
 to the languages list in all six (HIL-1474); the countries table follows in
 HIL-1475. All six demos
 bind `languageCard` to the names and locales pages as well as to the main
-language page (HIL-1479). Vue serves
+language page (HIL-1479), and `countryCard` to both country card pages (HIL-1483). Vue serves
 the section root at `/hilos/i18n` and the languages list at `/hilos/i18n/languages`
 (HIL-1474), the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
 names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales
 at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The country list
-still returns `not_served`/404, and the names of a country in Vue until HIL-1483. The card shows the code,
+still returns `not_served`/404. The card shows the code,
 native name, direction, enabled state, locale/name counts, and read-only delete
 verdict. The main card has a Switch off control (HIL-1486); its other action
 controls belong to HIL-1485/1487/1488.
 Vue serves the main country card at `/hilos/i18n/countries/{countryCode}`
-(HIL-1482); the country list and its names tab still return `not_served`/404.
+(HIL-1482) and its names at `/hilos/i18n/countries/{countryCode}/names`
+(HIL-1483); the country list still returns `not_served`/404.
 The card shows the name, code, currency, default locale, enabled state and
 read-only delete verdict: a known country never, else locales, else any name
 row, block deletion. Its future action controls belong to

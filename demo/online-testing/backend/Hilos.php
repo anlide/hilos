@@ -390,6 +390,9 @@ final class Hilos extends HilosFacade
         CountryDetailPage::PAGE => [
             CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING,
         ],
+        CountryNamesPage::PAGE => [
+            CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING,
+        ],
     ];
 
     public const array PAGE_TABLES = [

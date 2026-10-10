@@ -1,11 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant.js'
-import {
-  expectPageReady,
-  gotoPage,
-  PAGE_READY,
-  PAGE_REFUSED,
-} from '../helpers/page.js'
+import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('opens the names of the default language directly as a table that says no other language is added', async ({
   page,
@@ -59,7 +54,4 @@ test('opens the names of the default language directly as a table that says no o
   await expect(table.getByTestId('hilos-table-empty-title')).toHaveText(
     'No other languages yet',
   )
-
-  // The names of a country are not built in Vue yet (HIL-1483).
-  await gotoPage(page, '/hilos/i18n/countries/gb/names', PAGE_REFUSED)
 })

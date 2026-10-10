@@ -188,7 +188,8 @@ describe('unbuilt pages', () => {
             page === HilosPages.I18N_LANGUAGE ||
             page === HilosPages.I18N_LANGUAGE_NAMES ||
             page === HilosPages.I18N_LANGUAGE_LOCALES ||
-            page === HilosPages.I18N_COUNTRY)
+            page === HilosPages.I18N_COUNTRY ||
+            page === HilosPages.I18N_COUNTRY_NAMES)
         ) {
           expect(refused).toEqual([])
           expect(calls).toEqual([{ page, params }])

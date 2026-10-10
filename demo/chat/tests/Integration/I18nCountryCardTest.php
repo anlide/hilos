@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
@@ -324,19 +325,96 @@ final class I18nCountryCardTest extends IntegrationTestCase
         }
     }
 
+    public function testNamesPageCarriesTheSameCardAndItsLiveUpdates(): void
+    {
+        $admin = Hilos::$db->users->actions->createWithName('Country names card admin');
+        $admin->actions->setAdmin(true);
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__), 0, 32));
+        $session->actions->bindUser((int)$admin->id);
+        Hilos::$rt->connections->actions->register('card-detail', (int)$admin->id, $session->token, (int)$session->id);
+        Hilos::$rt->connections->actions->register('card-names', (int)$admin->id, $session->token, (int)$session->id);
+
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->languages->actions->create('en', 'English', false);
+            Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
+        });
+
+        $this->subscribe('card-detail', 'qx', CountryDetailPage::class);
+        $detailResponses = $this->drainCardResponses();
+        self::assertCount(1, $detailResponses);
+        $detailCard = $this->cardOf($detailResponses[0]);
+
+        $this->subscribe('card-names', 'qx', CountryNamesPage::class);
+        $namesResponses = $this->drainCardResponses();
+        self::assertCount(1, $namesResponses);
+        $namesCard = $this->cardOf($namesResponses[0]);
+
+        self::assertSame($detailCard, $namesCard);
+        self::assertSame('XQX', $namesCard['currencyCode']);
+
+        $country = Hilos::$db->countries['qx'];
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->countries['qx']->actions->update('Q', 'QXQ', null);
+        });
+        Hilos::$browser->record(SourceChange::dbUpdated(
+            HilosDbContext::countries,
+            (string)$country->id,
+            [EntityCountry::currency_symbol => 'Q', EntityCountry::currency_code => 'QXQ'],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertCardsForBoth(['currencySymbol' => 'Q', 'currencyCode' => 'QXQ']);
+
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->countryNames->actions->createManual(
+                Hilos::$db->countries['qx'],
+                Hilos::$db->languages['en'],
+                null,
+                'Qxland',
+            );
+        });
+        $name = Hilos::$db->countryNames->findBase($country->id, Hilos::$db->languages['en']->id);
+        Hilos::$browser->record(SourceChange::dbCreated(
+            HilosDbContext::countryNames,
+            (string)$name->id,
+            [EntityCountryName::country_id => $country->id, EntityCountryName::language_id => Hilos::$db->languages['en']->id],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertCardsForBoth(['summary' => ['name' => 'Qxland']]);
+
+        $this->underAgent($this->agent, static function () use ($country, $name): void {
+            $name->actions->delete();
+            $country->actions->delete();
+        });
+        Hilos::$browser->record(SourceChange::dbDeleted(
+            HilosDbContext::countries,
+            (string)$country->id,
+            [EntityCountry::id => $country->id, EntityCountry::code => 'qx'],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $responses = $this->drainCardResponses();
+        self::assertCount(2, $responses);
+        foreach ($responses as $response) {
+            self::assertSame([], $this->cardOf($response));
+        }
+    }
+
     /**
      * @param string $acceptKey One open browser window
      * @param string $code Route code
+     * @param class-string<CountryDetailPage|CountryNamesPage> $pageClass Page class to subscribe to
      */
-    private function subscribe(string $acceptKey, string $code): void
-    {
+    private function subscribe(
+        string $acceptKey,
+        string $code,
+        string $pageClass = CountryDetailPage::class,
+    ): void {
         $params = ['countryCode' => $code];
         Hilos::$sr->subscribeToPage(
-            CountryDetailPage::PAGE,
-            new WebSocketPageSubscribeSignalDTO($acceptKey, CountryDetailPage::PAGE, $params),
+            $pageClass::PAGE,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, $pageClass::PAGE, $params),
         );
-        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), function () use ($acceptKey, $params): void {
-            new CountryDetailPage($this->agent)->onSubscribe($acceptKey, new PageRouteParams($params));
+        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), function () use ($acceptKey, $params, $pageClass): void {
+            new $pageClass($this->agent)->onSubscribe($acceptKey, new PageRouteParams($params));
         });
     }
 

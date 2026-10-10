@@ -30,12 +30,16 @@ test('opens a reflowed country card directly with read-only details and staged t
   const tabs = page.getByTestId('country-card-tabs')
   await expect(tabs).toContainText('Main')
   await expect(tabs).toContainText('Names')
-  await expect(tabs.locator('a')).toHaveCount(1)
-  await expect(tabs.locator('a')).toHaveAttribute(
-    'href',
-    '/hilos/i18n/countries/us',
-  )
-  await expect(tabs.locator('a')).toHaveAttribute('aria-current', 'page')
+  await expect(tabs.locator('a')).toHaveCount(2)
+  await expect(
+    page.getByTestId('country-card-tab-hilos_i18n_country'),
+  ).toHaveAttribute('href', '/hilos/i18n/countries/us')
+  await expect(
+    page.getByTestId('country-card-tab-hilos_i18n_country'),
+  ).toHaveAttribute('aria-current', 'page')
+  await expect(
+    page.getByTestId('country-card-tab-hilos_i18n_country_names'),
+  ).toHaveAttribute('href', '/hilos/i18n/countries/us/names')
   await expect(
     page.getByTestId('country-card-main').locator('button, input'),
   ).toHaveCount(0)
