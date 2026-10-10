@@ -123,6 +123,10 @@ class SecondFactorReset extends Object_
      * Written with a targeted UPDATE right after the row is inserted, so the token stays
      * out of the ORM columns and the cross-worker sync payload. A no-op for an unpersisted row.
      *
+     * The first write of a column of a row the caller has just inserted is part of the row's
+     * birth, not an edit of it, so it is judged as the creation it completes (HIL-1406): the
+     * writer that may only create these rows can still create one whole.
+     *
      * @param string $token Token the cancel link carries
      * @throws DatabaseException When the token update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -137,7 +141,7 @@ class SecondFactorReset extends Object_
             static::getCollectionKey(),
             (string)$this->entity->id,
             $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
+            TruthSourceOperation::Add,
         );
 
         $params = SqlParamCollection::empty();
@@ -193,6 +197,59 @@ class SecondFactorReset extends Object_
     public function complete(): bool
     {
         return $this->end(EntitySecondFactorReset::completed_at);
+    }
+
+    /**
+     * Marks the request reminded now, if it still stands and was last announced no later than a bound (HIL-1406).
+     *
+     * The daily sweep asks for the mark and mails the reminder only when this answers true, so of
+     * two marks of the same day - the sweep's frame sent again before the first was answered -
+     * exactly one changes the row and one reminder goes out. The winner's row is re-announced
+     * through {@see sync()}, as {@see end()} does. An unpersisted request answers false.
+     *
+     * @param string $notifiedBefore An announcement at or before this moment is stale (SQL datetime)
+     * @return bool True when this call marked the request
+     * @throws DatabaseException When the update, the row count or the re-announcement fails
+     * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
+     */
+    public function remind(string $notifiedBefore): bool
+    {
+        if ($this->entity->id === null) {
+            return false;
+        }
+
+        DbWriteGuard::guardItemWrite(
+            static::getCollectionKey(),
+            (string)$this->entity->id,
+            $this->touchedSetKeys(...),
+            TruthSourceOperation::Update,
+        );
+
+        $now = TimeHelper::getSqlDateTime();
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::string($now));
+        $params->add(SqlParam::int($this->entity->id));
+        $params->add(SqlParam::string($notifiedBefore));
+        Database::sql(
+            'UPDATE `' . EntitySecondFactorReset::_table . '` SET `' . EntitySecondFactorReset::notified_at . '` = ? WHERE `'
+                . EntitySecondFactorReset::id . '` = ?'
+                . ' AND `' . EntitySecondFactorReset::notified_at . '` <= ?'
+                . ' AND `' . EntitySecondFactorReset::canceled_at . '` IS NULL'
+                . ' AND `' . EntitySecondFactorReset::completed_at . '` IS NULL',
+            $params,
+        );
+        if (Database::affectedRows() !== 1) {
+            return false;
+        }
+
+        $this->entity->notified_at = $now;
+        $this->sync();
+
+        return true;
     }
 
     /**

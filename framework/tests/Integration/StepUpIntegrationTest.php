@@ -54,6 +54,8 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const string CREATED_AT = '2026-09-25 10:00:00';
     public const string SESSION_TOKEN = 'aa00000000000000000000000000495';
     public const string OTHER_SESSION_TOKEN = 'bb00000000000000000000000000495';
@@ -119,6 +121,7 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         SourceChangeBus::reset();
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
         Hilos::$setting = $this->previousSetting;
@@ -730,6 +733,7 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
      * @param bool $backupCode Whether the submitted second-factor code is a backup code
      * @param string $password Submitted password, or empty for another method
      * @param string $acceptKey Browser submitting the proof
+     * @throws ValidationException When the proof is refused, by the library or by the confirming person's agent
      * @throws HilosException When confirmation fails
      */
     private function confirm(
@@ -740,7 +744,10 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
         string $password = '',
         string $acceptKey = self::ACCEPT_KEY,
     ): void {
-        $this->library->onAgentAction(
+        // A second-factor code is checked by the confirming person's agent (HIL-1406), so the
+        // proof runs the way the dispatcher runs it and its frames are carried both ways.
+        $this->runTracked(
+            $this->library,
             $acceptKey,
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
             new StepUpConfirmActionDTO($operation, $method, $code, $backupCode, $password, null),

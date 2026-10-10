@@ -137,6 +137,22 @@ use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 
 /**
  * Signal names used by framework-level Hilos admin pages.
@@ -622,6 +638,129 @@ final class HilosSignalConstants
      * The library answers the profile. Carried by {@see UserIdentityUnlinkDoneSignalData}.
      */
     public const string HILOS_USER_IDENTITY_UNLINK_DONE = 'hilos_user_identity_unlink_done';
+
+    /**
+     * Users library → the person's agent: check a second-factor code, the check being the write (HIL-1406).
+     *
+     * One frame for every place a code proves the person - the code step of a sign-in, starting
+     * another app, showing and renewing the backup codes, the confirmation of an operation: an app
+     * code takes its step, a backup code burns, a wrong app code is counted and may lock. Carried
+     * by {@see UserSecondFactorProveSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_PROVE = 'hilos_user_second_factor_prove';
+
+    /**
+     * The person's agent → users library: the code proved the person, or why not (HIL-1406).
+     *
+     * Says whether a code was checked and missed, whether that miss put the lock, and whether a
+     * standing removal was canceled, so the library tells the holder, mails and continues the
+     * action the ask names. Carried by {@see UserSecondFactorProveDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_PROVE_DONE = 'hilos_user_second_factor_prove_done';
+
+    /**
+     * Users library → the person's agent: confirm the unfinished enrolment with its first code (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorEnrollConfirmSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM = 'hilos_user_second_factor_enroll_confirm';
+
+    /**
+     * The person's agent → users library: the app is connected, or why not (HIL-1406).
+     *
+     * The library issues the backup codes when the app is the person's first. Carried by
+     * {@see UserSecondFactorEnrollConfirmDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM_DONE = 'hilos_user_second_factor_enroll_confirm_done';
+
+    /**
+     * Users library → the person's agent: disconnect an app, the last one taking the factor with it (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorRemoveSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_REMOVE = 'hilos_user_second_factor_remove';
+
+    /**
+     * The person's agent → users library: the app is disconnected, or why not (HIL-1406).
+     *
+     * The library tells the session holder when the factor went whole. Carried by
+     * {@see UserSecondFactorRemoveDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_REMOVE_DONE = 'hilos_user_second_factor_remove_done';
+
+    /**
+     * Users library → the person's agent: cancel a standing removal of the factor (HIL-1406).
+     *
+     * From the profile or from the "it was not me" link. Carried by
+     * {@see UserSecondFactorResetCancelSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_CANCEL = 'hilos_user_second_factor_reset_cancel';
+
+    /**
+     * The person's agent → users library: the removal is canceled, or was not standing (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorResetCancelDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE = 'hilos_user_second_factor_reset_cancel_done';
+
+    /**
+     * Users library → the person's agent: store the removal wait the person chose (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorWaitWriteSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_WAIT_WRITE = 'hilos_user_second_factor_wait_write';
+
+    /**
+     * The person's agent → users library: the removal wait is stored, or why not (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorWaitWriteDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE = 'hilos_user_second_factor_wait_write_done';
+
+    /**
+     * Users library → the person's agent: a removal's moment came, carry it out (HIL-1406).
+     *
+     * Sent by the library's sweep; a frame repeated before the answer does nothing. Carried by
+     * {@see UserSecondFactorResetDueSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_DUE = 'hilos_user_second_factor_reset_due';
+
+    /**
+     * The person's agent → users library: the removal is carried out, or no longer stood (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorResetDueDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE = 'hilos_user_second_factor_reset_due_done';
+
+    /**
+     * Users library → the person's agent: mark a waiting removal reminded (HIL-1406).
+     *
+     * Sent by the library's sweep; the mark is conditional, so a repeated frame marks nothing.
+     * Carried by {@see UserSecondFactorResetRemindSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_REMIND = 'hilos_user_second_factor_reset_remind';
+
+    /**
+     * The person's agent → users library: the removal is marked reminded, or was not owed one (HIL-1406).
+     *
+     * The library mails the reminder only on a mark. Carried by
+     * {@see UserSecondFactorResetRemindDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE = 'hilos_user_second_factor_reset_remind_done';
+
+    /**
+     * Users library → the person's agent: lift the app-code lock an operator's command asked to lift (HIL-1406).
+     *
+     * Carried by {@see UserSecondFactorUnlockSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_UNLOCK = 'hilos_user_second_factor_unlock';
+
+    /**
+     * The person's agent → users library: the lock is lifted, or why not (HIL-1406).
+     *
+     * The library answers the parked command. Carried by {@see UserSecondFactorUnlockDoneSignalData}.
+     */
+    public const string HILOS_USER_SECOND_FACTOR_UNLOCK_DONE = 'hilos_user_second_factor_unlock_done';
 
     // ── Hilos settings admin: table mutation actions (client → server) ──
     /** Client → server: add a setting override on the HILOS_SETTINGS page. */

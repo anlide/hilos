@@ -58,8 +58,8 @@ allowed is the framework's own judgement over the people table and the impersona
 (HIL-1197, HIL-1170); what a project is asked is the merge's seam — whether these two accounts
 may be merged at all plus what this project keeps for a person. A project that wires no merge
 refuses it rather than falling silent. The seventh, `second-factor:unlock` (HIL-1285), is answered
-by the users library instead: it checks the second-factor codes and keeps their miss count and
-lock on the person's row ([../architecture/second-factor.md](../architecture/second-factor.md)).
+by the users library instead: it coordinates the second factor, and the person's agent lifts the
+lock on the person's row on its frame (HIL-1406) ([../architecture/second-factor.md](../architecture/second-factor.md)).
 
 | Command | Site | Description |
 |---|---|---|

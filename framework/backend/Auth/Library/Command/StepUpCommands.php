@@ -14,6 +14,7 @@ use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\Verification\VerificationService;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -21,6 +22,7 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Random\RandomException;
 
@@ -36,12 +38,10 @@ final class StepUpCommands extends AbstractLibraryCommands
 {
     /**
      * @param AbstractUsersLibraryAgent $library Users library executing the operation
-     * @param SecondFactorCommands $secondFactor Second-factor proof commands
      * @param PasskeyCommands $passkeys Device-key proof commands
      */
     public function __construct(
         AbstractUsersLibraryAgent $library,
-        private readonly SecondFactorCommands $secondFactor,
         private readonly PasskeyCommands $passkeys,
     ) {
         parent::__construct($library);
@@ -115,10 +115,12 @@ final class StepUpCommands extends AbstractLibraryCommands
      * An operation this browser has already confirmed returns at once and tells nobody: the tabs
      * heard of it when it was written, and a tab that connected since was told on its handshake.
      *
-     * A device key is the one proof that writes: its counter and last use are the confirming
-     * person's agent's (HIL-1405). Its signature is checked here and the confirmation is recorded
-     * on the agent's answer ({@see finishPasskeyProof()}), so the key opens the operation only once
-     * its counter has advanced.
+     * A device key and a second-factor code are the two proofs that write, and the writes are the
+     * confirming person's agent's: a key's counter and last use (HIL-1405), a code's step, a burned
+     * backup code, a wrong code counted against the ceiling (HIL-1406). A key's signature is checked
+     * here, a code by the agent; the confirmation is recorded on the agent's answer
+     * ({@see finishPasskeyProof()}, {@see finishSecondFactorProof()}), so the proof opens the
+     * operation only once it is written.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpConfirmActionDTO $dto Protected operation and proof returned by its opening
@@ -150,8 +152,26 @@ final class StepUpCommands extends AbstractLibraryCommands
 
         switch ($target->method) {
             case StepUpMethod::SECOND_FACTOR:
-                $this->secondFactor->assertProof($acting->userId, $dto->code, $dto->backupCode);
-                break;
+                $confirmerId = (int)$acting->userId;
+                $this->library->askPersonAgent(
+                    $confirmerId,
+                    HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE,
+                    new UserSecondFactorProveSignalData(
+                        userId: $confirmerId,
+                        code: $dto->code,
+                        backupCode: $dto->backupCode,
+                        cancelReset: false,
+                        trustDevice: false,
+                        operation: $dto->operation,
+                        replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
+                        acceptKey: $acceptKey,
+                        requestId: $this->library->currentActionRequestId(),
+                        action: $this->library->runningAction(),
+                        successMessage: null,
+                    ),
+                );
+
+                return;
 
             case StepUpMethod::PASSWORD:
                 $password = Hilos::$db->identities->findPasswordByUser($acting->userId);
@@ -205,6 +225,29 @@ final class StepUpCommands extends AbstractLibraryCommands
             $this->acting($ask->acceptKey)->sessionToken,
             $ask->userId,
             $ask->operation ?? throw new LogicException('A step-up proof by device key names no operation'),
+        );
+    }
+
+    /**
+     * Records the confirmation a second-factor code gave, once the confirming person's agent has
+     * checked it (HIL-1406).
+     *
+     * The continuation of {@see confirm()} on the agent's answer, in the form of
+     * {@see finishPasskeyProof()}: the confirmation is written on the person who confirmed, in the
+     * browser that asked, read again off the connection.
+     *
+     * @param UserSecondFactorProveSignalData $ask The ask the agent answered, naming the operation
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws LogicException When the ask names no operation, which only the sign-in step and the profile's asks do
+     * @throws HilosException When the confirmation cannot be stored, or the frame cannot be queued
+     */
+    public function finishSecondFactorProof(UserSecondFactorProveSignalData $ask): void
+    {
+        StepUpConfirmations::record(
+            $this->library,
+            $this->acting($ask->acceptKey)->sessionToken,
+            $ask->userId,
+            $ask->operation ?? throw new LogicException('A step-up proof by second-factor code names no operation'),
         );
     }
 

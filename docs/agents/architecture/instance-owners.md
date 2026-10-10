@@ -19,9 +19,10 @@ person or an administrator: its own row and every row whose set tree ends at
 that instance. For a person, the indexed agent, its row and set claims, and
 its idle lifetime are built (HIL-630). The name, the administrator flag and the
 block are written by it (HIL-1404), and so are the edits of the person's sign-in
-methods and passkey credentials, sign-in included (HIL-1405). The other edits move
-to it in the leaves named in [Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+methods and passkey credentials, sign-in included (HIL-1405), and of the person's
+second factor, a removal whose delay elapsed included (HIL-1406). The other edits
+move to it in the leaves named in [Where The Pieces Land](#where-the-pieces-land)
+(not in the code yet — HIL-1407, HIL-1408, HIL-1409).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -57,8 +58,8 @@ can find the two Entity constants, but cannot decide the second question.
 The owner writes ordinary edits of one instance's content, whether the person
 or an administrator requested them. For the person the name, the administrator
 flag and the block have moved (HIL-1404), and so have the sign-in methods and
-passkey credentials (HIL-1405); the rest are still ahead
-(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+passkey credentials (HIL-1405) and the second factor (HIL-1406); the rest are still
+ahead (not in the code yet — HIL-1407, HIL-1408, HIL-1409).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
 rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
@@ -85,16 +86,19 @@ Erasing that data with the account is a separate set operation, described below.
 
 A sweeper may find what is due itself; an ordinary content edit still goes to
 the instance owner. In particular, the second-factor reset sweeper
-(`framework/backend/Auth/SecondFactor/SecondFactorResetSweeper.php`) hands a reset
-whose delay has elapsed to the person's agent
-(not in the code yet — HIL-1406).
+(`framework/backend/Auth/SecondFactor/SecondFactorResetSweeper.php`) only finds:
+it hands a reset whose delay has elapsed, and one owing its daily reminder, to the
+person's agent as a frame (HIL-1406). The agent writes both by conditional writes
+- the reset marked carried out and the factor taken out in one transaction, the
+reminder marked only once a day - so a frame sent again by the next tick does
+nothing, and the library mails on the agent's answer.
 
 The sessions holder's responsibility is authorization. The person's other
 ordinary content edits go to the person's own agent, with erasure and merge
 remaining the declared set operations below (owner's decision, 2026-10-04). It
 judges the administrator flag and the block and the person's agent writes them
 (HIL-1404); the other edits are still ahead
-(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+(not in the code yet — HIL-1407, HIL-1408, HIL-1409).
 Whether a session itself needs an instance owner is open in HIL-1403. Until
 that answer, this rule neither puts the session in the person's set nor rules
 it out as a future decision; it does not change the current Entity declaration.
@@ -122,13 +126,19 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   The one exception is a row the owner writes in the same transaction as its
   own row: the person's rename journal row is added with the name, so the agent
   claims that set **with `Add`** and nothing else (HIL-1404).
+  The person's one row of second-factor settings (`hilos_second_factor_setting`,
+  keyed by the person) is born by the owner's first edit of it — a wait chosen, a
+  wrong code counted — so the agent claims that set with `Add` and `Update`
+  (owner's decision, 2026-10-09, HIL-1406). It is a one-to-one extension of the
+  person's own row, not a new member of the set; where a set holds many rows, the
+  library still creates them.
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
 starting an agent (owner's decision, 2026-10-04): a sign-in after an idle spell
 waits for the person's agent to rise when it has something to write (HIL-1405).
 The remaining content write paths still move
-(not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+(not in the code yet — HIL-1407, HIL-1408, HIL-1409).
 
 An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
 
@@ -136,7 +146,9 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   coordinator is whoever judged the edit before it moved — the users library
   for the name, the sessions holder for the administrator flag and the block. It
   checks exactly what it checked before and refuses at once, without raising the
-  agent. What passes becomes a frame to the agent; the agent writes and answers;
+  agent. A check that reads what the hop writes is the owner's, made in the turn
+  that writes: proving a second-factor code takes a step, burns a code or counts
+  a miss, and "is this the last app" is asked where the app is deleted (HIL-1406). What passes becomes a frame to the agent; the agent writes and answers;
   the coordinator does what follows the write — tells the tabs, ends the
   sessions, tells the renamed person, runs the project's hook, binds the session
   of `admin:create` — and answers whoever waits. What follows reads the written
@@ -149,17 +161,23 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   sign-in methods and passkeys `hilos_user_password_rehash`,
   `hilos_user_address_verify`, `hilos_user_passkey_use`,
   `hilos_user_password_reset`, `hilos_user_password_change`,
-  `hilos_user_email_change` and `hilos_user_identity_unlink` (HIL-1405), each
-  indexed by `userId`; each has a `_done` answer declared on its coordinator.
+  `hilos_user_email_change` and `hilos_user_identity_unlink` (HIL-1405), and for
+  the second factor `hilos_user_second_factor_prove`,
+  `hilos_user_second_factor_enroll_confirm`, `hilos_user_second_factor_remove`,
+  `hilos_user_second_factor_reset_cancel`, `hilos_user_second_factor_wait_write`,
+  `hilos_user_second_factor_reset_due`, `hilos_user_second_factor_reset_remind`
+  and `hilos_user_second_factor_unlock` (HIL-1406), each indexed by `userId`; each
+  has a `_done` answer declared on its coordinator.
 - **A browser action that ends after the agent's answer is resumed by the
   coordinator** (HIL-1405). The coordinator defers the action's answer when it
   sends the ask; on the answer it takes the action name and the request id back
   out of the ask, puts the asking connection back on the execution frame, runs
   its continuation, and answers the browser as the dispatcher would — nothing
   when the continuation handed the answer on (a sign-in hands it to the
-  sessions holder), the success ack otherwise, a failure for a refusal. The
-  continuation reads the session again off the connection; no token rides in
-  the ask.
+  sessions holder), the success ack otherwise - carrying the reply the
+  continuation returned, such as new backup codes (HIL-1406) - a failure for a
+  refusal. The continuation reads the session again off the connection; no token
+  rides in the ask.
 - **A secret travels as its hash.** A new password is hashed in the process the
   browser sent it to, and the frame carries the hash; the password itself never
   crosses a process (HIL-1405).
@@ -239,10 +257,10 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 
 - **A library writes ordinary content edits of one owned instance.** Send the
   edit to the instance owner. For the name, the administrator flag and the block
-  this is done (HIL-1404), and for the sign-in methods and passkey credentials
-  (HIL-1405); for the person's other content it is the current arrangement the
-  moves replace, not evidence that the rule is already implemented
-  (not in the code yet — HIL-1406, HIL-1407, HIL-1408, HIL-1409).
+  this is done (HIL-1404), for the sign-in methods and passkey credentials
+  (HIL-1405) and for the second factor (HIL-1406); for the person's other content
+  it is the current arrangement the moves replace, not evidence that the rule is
+  already implemented (not in the code yet — HIL-1407, HIL-1408, HIL-1409).
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
@@ -266,7 +284,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (built). |
 | HIL-1404 | Name, administrator flag and block edits (built). |
 | HIL-1405 | Sign-in methods and passkey credentials, including sign-in (built). |
-| HIL-1406 | Second factor, including a reset whose delay elapsed (not in the code yet — HIL-1406). |
+| HIL-1406 | Second factor, including a reset whose delay elapsed (built). |
 | HIL-1407 | Step-up confirmations and browser trust (not in the code yet — HIL-1407). |
 | HIL-1408 | Notification marks, channel preferences and push unsubscribe (not in the code yet — HIL-1408). |
 | HIL-1409 | Account-deletion requests and profile photos (not in the code yet — HIL-1409). |

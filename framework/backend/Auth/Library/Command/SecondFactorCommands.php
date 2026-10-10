@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Closure;
 use Hilos\Auth\AuthenticatorName;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -24,9 +25,9 @@ use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\OtpAuthUri;
 use Hilos\Auth\SecondFactor\SecondFactorLockNotifier;
-use Hilos\Auth\SecondFactor\SecondFactorLockPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
+use Hilos\Auth\SecondFactor\SecondFactorPersonEdits;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorResetNotifier;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
@@ -34,23 +35,38 @@ use Hilos\Auth\SecondFactor\SecondFactorResetWait;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\StepUpOperationKey;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Database\Database;
-use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Database\View\Item\SecondFactorReset;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Logger;
 use Random\RandomException;
+use Throwable;
 
 /**
- * The second factor's commands: the code step of a sign-in, enrolment on the way in, and the
- * delayed removal (HIL-494).
+ * The second factor's commands: the code step of a sign-in, enrolment on the way in, the profile,
+ * and the delayed removal (HIL-494).
  *
  * A sign-in reaches these already proven and held: the session holder
  * ({@see AbstractSessionsLibraryAgent}) wrote the wait on the session row, naming the person
@@ -59,73 +75,55 @@ use Random\RandomException;
  * back to start. A wait that ran out is answered with the address field and its reason, and
  * the holder lets it go.
  *
- * The codes are checked here, where the authenticators are owned; the wait itself is written
- * only by the holder, which this group asks by frame: a wrong code counted, an enrolment
- * confirmed, a wait to let go, a sign-in to let through.
+ * Here are the checks, the creation and what follows; the writes of one person's factor are that
+ * person's agent's (HIL-1406). A command judges what lies outside the person's set - the wait on
+ * the browser, the confirmation of an operation, the administrator's bounds, whether the person
+ * can be addressed - and refuses at once. What passes becomes a frame to the person's agent
+ * ({@see AbstractUserAgent}, {@see SecondFactorPersonEdits}): a code checked, which is its own
+ * write - a step taken, a backup code burned, a wrong app code counted against the person's
+ * ceiling (HIL-1285) and the lock it puts - an app confirmed or disconnected, a removal canceled,
+ * the wait chosen. The browser action is resumed on the agent's answer: the after... methods do
+ * what follows any answer - a wrong code told to the holder, a lock or a canceled removal mailed -
+ * and the finish... methods continue the action that asked. What is created stays here, in one
+ * operation with what it replaces: an enrolment started, a set of backup codes issued, a removal
+ * asked for.
  *
  * The profile half works on a signed-in person, whose id comes off the session: every action
  * but the first enrolment, the wait and the removal starts with a code, because a stolen live
  * session must not strip or copy the factor. After every write the person's section is fanned
  * to their group, whichever tab or browser made it.
  *
- * Every app code but the first one of a new app is held to one ceiling per person (HIL-1285),
- * wherever it is typed - the sign-in step, the profile, the confirmation of an operation:
- * wrong ones are counted on the person's row, and too many in a day lock app codes for a
- * step of a ladder, refused before they are checked. Backup codes stay outside the lock and
- * the count - they cannot be guessed, and they are the person's own way out of a lock a
- * guesser put. The operator lifts a lock by command ({@see unlockAppCodes()}).
+ * The removals are found by the users library's sweep, which hands each due one and each one
+ * owing a reminder to the person's agent; the answers come back here ({@see finishResetDue()},
+ * {@see finishResetRemind()}).
  */
 final class SecondFactorCommands extends AbstractLibraryCommands
 {
     /** Bytes of a cancel link's token. */
     private const int TOKEN_BYTES = 32;
 
-    /** Longest name an authenticator may have, as the column holds it. */
-    private const int LABEL_MAX = 64;
-
     /**
-     * Checks the code of a sign-in held on its second factor and lets the sign-in through.
+     * Checks the code of a sign-in held on its second factor; the person's agent checks it.
      *
-     * A code from any confirmed authenticator of the person passes, once: the step it matched
-     * is taken by a conditional write, so the same code does not pass twice. A backup code is
-     * burned the same way. A right code also ends a removal of the factor that stands - whoever
-     * shows the factor has not lost it. A wrong code is counted on the session by the holder,
-     * and a wrong app code against the person's ceiling as well. An app code under the lock is
-     * refused unchecked and counted nowhere: the wait goes on, and a backup code or a removal
-     * asked from this step still gets the person through.
+     * The wait on this browser is read here. The code goes to the person's agent, which takes a
+     * matched step or burns a backup code, counts a wrong app code against the ceiling and ends
+     * a removal that stands - whoever shows the factor has not lost it. The sign-in is let through
+     * on its answer ({@see finishProof()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ConfirmSecondFactorActionDTO $dto Code, its kind, and whether to trust the browser
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When no wait stands on the code step, the code matches nothing, or app codes are locked
-     * @throws HilosException When a lookup, a write, the lock notice or a frame fails
+     * @throws ValidationException When no wait stands on the code step, or the person can no longer be addressed
+     * @throws HilosException When a lookup or a frame fails
      */
     public function confirm(string $acceptKey, ConfirmSecondFactorActionDTO $dto): void
     {
-        $acting = $this->acting($acceptKey);
-        $userId = $this->waitingUser($acting, [SecondFactorPendingMode::VERIFY, SecondFactorPendingMode::SETUP_DONE]);
+        $userId = $this->waitingUser($this->acting($acceptKey), [SecondFactorPendingMode::VERIFY, SecondFactorPendingMode::SETUP_DONE]);
         if ($userId === null) {
             return;
         }
 
-        if ($dto->backupCode) {
-            $proven = $this->spendBackupCode($userId, $dto->code);
-        } else {
-            $this->assertAppCodesOpen($userId);
-            $proven = $this->acceptAppCode(Hilos::$db->secondFactors->confirmedOf($userId), $dto->code);
-        }
-        if (!$proven) {
-            $this->library->announceSecondFactorMissed($acting);
-            if (!$dto->backupCode) {
-                $this->countAppCodeMiss($userId);
-            }
-
-            throw new ValidationException(SecondFactorMessages::INVALID_CODE);
-        }
-
-        $this->cancelReset(Hilos::$db->secondFactorResets->liveOf($userId));
-        $this->publishState($userId);
-        $this->library->grantSession($acting, $userId, secondFactorProven: true, trustDevice: $dto->trustDevice);
+        $this->askProof($userId, $acceptKey, $dto->code, $dto->backupCode, cancelReset: true, trustDevice: $dto->trustDevice);
     }
 
     /**
@@ -166,36 +164,26 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Confirms the enrolment on the way in with its first code, and issues the backup codes.
+     * Confirms the enrolment on the way in with its first code; the person's agent confirms it.
      *
-     * The codes are answered once, here, and the surface moves to the screen that shows them;
-     * the person is let in by the Continue under them ({@see setupFinish()}).
+     * The codes are answered on the agent's answer ({@see finishEnrollConfirm()}), and the surface
+     * moves to the screen that shows them; the person is let in by the Continue under them
+     * ({@see setupFinish()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param SecondFactorSetupConfirmActionDTO $dto First code and the name of the app
-     * @return ?AuthFlowOutcome The codes screen, or null when the holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When no wait stands on the enrolment, no enrolment was started, or the code is wrong
-     * @throws RandomException When the backup codes cannot be drawn
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws ValidationException When no wait stands on the enrolment, or the person can no longer be addressed
+     * @throws HilosException When a lookup or a frame fails
      */
-    public function setupConfirm(string $acceptKey, SecondFactorSetupConfirmActionDTO $dto): ?AuthFlowOutcome
+    public function setupConfirm(string $acceptKey, SecondFactorSetupConfirmActionDTO $dto): void
     {
-        $acting = $this->acting($acceptKey);
-        $userId = $this->waitingUser($acting, [SecondFactorPendingMode::SETUP]);
+        $userId = $this->waitingUser($this->acting($acceptKey), [SecondFactorPendingMode::SETUP]);
         if ($userId === null) {
-            return null;
+            return;
         }
 
-        $codes = $this->confirmEnrolment($userId, $dto->code, $dto->label, $acting);
-        $this->library->announceSecondFactorSetupProven($acting);
-        $this->publishState($userId);
-
-        return AuthFlowOutcome::moveToSecondFactor(
-            AuthFlowStep::SECOND_FACTOR_CODES,
-            new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, backupCodes: $codes),
-            null,
-        );
+        $this->askEnrollConfirm($userId, $acceptKey, null, $dto->code, $dto->label);
     }
 
     /**
@@ -255,22 +243,31 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     /**
      * Cancels a removal by the "it was not me" link, without signing in.
      *
+     * The link names the removal by its token, which is found here; the person's agent cancels it
+     * by a conditional write, and the relay screen is answered on its answer
+     * ({@see finishResetCancel()}). A link naming nothing standing, or a person who can no longer
+     * be addressed, is the one dead-link sentence.
+     *
+     * @param string $acceptKey Accept key the action arrived on
      * @param SecondFactorResetCancelLinkActionDTO $dto Token the link carried
-     * @return AuthFlowOutcome Success; the relay screen shows it in place
-     * @throws ValidationException When the link names no standing removal
-     * @throws HilosException When a lookup, a write or the announcement fails
+     * @throws ValidationException When the link names no standing removal of a person that can be addressed
+     * @throws HilosException When the lookup or the frame fails
      */
-    public function resetCancelLink(SecondFactorResetCancelLinkActionDTO $dto): AuthFlowOutcome
+    public function resetCancelLink(string $acceptKey, SecondFactorResetCancelLinkActionDTO $dto): void
     {
         $reset = $dto->token === ''
             ? null
             : Hilos::$db->secondFactorResets->findLiveByToken($dto->token);
-        if ($reset === null || !$this->cancelReset($reset)) {
+        if ($reset === null) {
             throw new ValidationException(SecondFactorMessages::LINK_DEAD);
         }
-        $this->publishState($reset->userId);
 
-        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN);
+        try {
+            AddressablePerson::require($reset->userId);
+        } catch (ValidationException) {
+            throw new ValidationException(SecondFactorMessages::LINK_DEAD);
+        }
+        $this->askResetCancel($reset->userId, $acceptKey, (int)$reset->id);
     }
 
     /**
@@ -315,24 +312,6 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Cancels a standing removal and announces it, if it still stands.
-     *
-     * @param ?SecondFactorReset $reset Removal to cancel, or null when none stands
-     * @return bool True when this call canceled it
-     * @throws HilosException When the write or the announcement fails
-     */
-    public function cancelReset(?SecondFactorReset $reset): bool
-    {
-        if ($reset === null || !$reset->actions->cancel()) {
-            return false;
-        }
-
-        SecondFactorResetNotifier::canceled($reset->userId);
-
-        return true;
-    }
-
-    /**
      * Opens an enrolment for a person: a fresh secret on an unconfirmed authenticator.
      *
      * @param int $userId Person enrolling
@@ -356,47 +335,6 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Confirms a person's unfinished enrolment with its first code.
-     *
-     * The first authenticator of a person comes with a set of backup codes; a further one does
-     * not - the set the person has stays theirs.
-     *
-     * @param int $userId Person enrolling
-     * @param string $code First code from the app
-     * @param string $label Name the person gave the app, or empty for the default
-     * @param ?ActingSession $acting Browser whose wrong code the holder counts, or null when no sign-in waits
-     * @return ?list<string> Backup codes in display form when a set was issued, or null
-     * @throws ValidationException When no enrolment was started in time, or the code is wrong
-     * @throws RandomException When the backup codes cannot be drawn
-     * @throws HilosException When a lookup, a write or a frame fails
-     */
-    public function confirmEnrolment(int $userId, string $code, string $label, ?ActingSession $acting): ?array
-    {
-        $pending = Hilos::$db->secondFactors->unconfirmedOf($userId);
-        $ttl = Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int();
-        if ($pending === null || strtotime($pending->createdAt) < time() - $ttl) {
-            throw new ValidationException(SecondFactorMessages::SETUP_EXPIRED);
-        }
-
-        if (!$this->acceptAppCode([$pending], $code)) {
-            if ($acting !== null) {
-                $this->library->announceSecondFactorMissed($acting);
-            }
-
-            throw new ValidationException(SecondFactorMessages::INVALID_CODE);
-        }
-
-        $first = Hilos::$db->secondFactors->confirmedOf($userId) === [];
-        $name = mb_substr(trim($label), 0, self::LABEL_MAX);
-        $pending->actions->confirm($name === '' ? SecondFactorMessages::DEFAULT_LABEL : $name);
-        if (!$first) {
-            return null;
-        }
-
-        return $this->issueBackupCodes($userId);
-    }
-
-    /**
      * Issues a person a new set of backup codes, the old set dying with it.
      *
      * @param int $userId Person
@@ -413,63 +351,29 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Checks a code from an app against authenticators, taking its step on the one it matched.
-     *
-     * @param list<SecondFactor> $factors Authenticators to check against
-     * @param string $code Code as typed
-     * @return bool True when the code matched one and its step was not taken before
-     * @throws HilosException When a lookup or the write fails
-     */
-    public function acceptAppCode(array $factors, string $code): bool
-    {
-        $now = time();
-        foreach ($factors as $factor) {
-            $secret = $factor->readSecret();
-            $step = $secret === null ? null : Totp::verify($secret, $code, $now);
-            if ($step !== null && $factor->actions->acceptStep($step)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Burns a backup code of a person, if the typed code names an unused one.
-     *
-     * @param int $userId Person
-     * @param string $code Code as typed
-     * @return bool True when this call burned it
-     * @throws HilosException When a lookup or the write fails
-     */
-    public function spendBackupCode(int $userId, string $code): bool
-    {
-        $row = Hilos::$db->secondFactorBackupCodes->findUnused($userId, BackupCodeGenerator::normalize($code));
-
-        return $row !== null && $row->actions->spend();
-    }
-
-    /**
      * Starts connecting an authenticator app from the profile, answering the secret once.
      *
      * Connecting an app is the operation 'add_authenticator_app' (HIL-1138): the first app needs
      * a live confirmation, while a second one proves itself with a code from a connected app,
      * which the gate takes for the confirmation. That code is asked here whether or not an
-     * administrator switched the operation off.
+     * administrator switched the operation off, and checked by the person's agent; the enrolment
+     * is started on its answer ({@see finishProof()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollStartActionDTO $dto Proof, when an app is already connected
-     * @return SecondFactorProfileReplyDTO The enrolment, its secret and otpauth address
+     * @return ?SecondFactorProfileReplyDTO The enrolment, its secret and otpauth address, or null when the code went to the agent
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the first app is not confirmed, or the proof for another is missing or wrong
+     * @throws ValidationException When the first app is not confirmed, or the person can no longer be addressed
      * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup or a write fails
+     * @throws HilosException When a lookup, a write or a frame fails
      */
-    public function profileEnrollStart(string $acceptKey, ProfileSecondFactorEnrollStartActionDTO $dto): SecondFactorProfileReplyDTO
+    public function profileEnrollStart(string $acceptKey, ProfileSecondFactorEnrollStartActionDTO $dto): ?SecondFactorProfileReplyDTO
     {
         $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
         if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
-            $this->assertProof($userId, (string)$dto->proofCode, $dto->proofBackup);
+            $this->askProof($userId, $acceptKey, (string)$dto->proofCode, $dto->proofBackup);
+
+            return null;
         }
 
         [$id, $secret, $uri] = $this->startEnrolment($userId);
@@ -481,118 +385,89 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * Confirms an app being connected from the profile with its first code.
      *
      * The second step of the same operation (HIL-1138): the confirmation is asked again, since
-     * it may have run out while the person was scanning the code.
+     * it may have run out while the person was scanning the code. Whether the enrolment the form
+     * names still stands, and the code, are the person's agent's to check
+     * ({@see finishEnrollConfirm()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollConfirmActionDTO $dto Enrolment, first code and name
-     * @return SecondFactorProfileReplyDTO The backup codes when this is the first app, else nothing
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the add is not confirmed, the enrolment ran out or the code is wrong
-     * @throws RandomException When the backup codes cannot be drawn
-     * @throws HilosException When a lookup or a write fails
+     * @throws ValidationException When the add is not confirmed, or the person can no longer be addressed
+     * @throws HilosException When a lookup or the frame fails
      */
-    public function profileEnrollConfirm(
-        string $acceptKey,
-        ProfileSecondFactorEnrollConfirmActionDTO $dto,
-    ): SecondFactorProfileReplyDTO {
+    public function profileEnrollConfirm(string $acceptKey, ProfileSecondFactorEnrollConfirmActionDTO $dto): void
+    {
         $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
-        if (Hilos::$db->secondFactors->unconfirmedOf($userId)?->id !== $dto->authenticatorId) {
-            throw new ValidationException(SecondFactorMessages::SETUP_EXPIRED);
-        }
-
-        $codes = $this->confirmEnrolment($userId, $dto->code, $dto->label, null);
-        $this->publishState($userId);
-
-        return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+        $this->askEnrollConfirm($userId, $acceptKey, $dto->authenticatorId, $dto->code, $dto->label);
     }
 
     /**
      * Disconnects an app from the profile; the last one takes the whole second factor with it.
      *
+     * Whether the app is the person's, whether it is the last, whether an administrator requires
+     * the factor and the proof are all asked by the person's agent in the turn that deletes
+     * ({@see finishRemove()}).
+     *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorRemoveActionDTO $dto App and the proof
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the app is not the person's, the administrator requires the last one, or the proof is wrong
-     * @throws HilosException When a lookup, a write or a frame fails
+     * @throws ValidationException When the person can no longer be addressed
+     * @throws HilosException When a lookup or the frame fails
      */
     public function profileRemove(string $acceptKey, ProfileSecondFactorRemoveActionDTO $dto): void
     {
         $userId = (int)$this->actingUser($acceptKey)->userId;
-        $factors = Hilos::$db->secondFactors->confirmedOf($userId);
-        $target = null;
-        foreach ($factors as $factor) {
-            if ($factor->id === $dto->authenticatorId) {
-                $target = $factor;
-            }
-        }
-        if ($target === null) {
-            throw new ValidationException(SecondFactorMessages::NOT_CONNECTED);
-        }
-
-        $last = count($factors) === 1;
-        if ($last && SecondFactorPolicy::current()->requiresFor($userId)) {
-            throw new ValidationException(SecondFactorMessages::REQUIRED);
-        }
-        $this->assertProof($userId, $dto->proofCode, $dto->proofBackup);
-
-        if ($last) {
-            $reset = Hilos::$db->secondFactorResets->liveOf($userId);
-            $reset?->actions->cancel();
-            $this->switchOff($userId);
-        } else {
-            $target->actions->delete();
-        }
-        $this->publishState($userId);
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE, new UserSecondFactorRemoveSignalData(
+            userId: $userId,
+            authenticatorId: $dto->authenticatorId,
+            proofCode: $dto->proofCode,
+            proofBackup: $dto->proofBackup,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**
-     * Shows the backup codes, used ones included, after a code.
+     * Shows the backup codes, used ones included, after a code the person's agent checks.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorCodesShowActionDTO $dto The proof
-     * @return SecondFactorProfileReplyDTO The set as the screen lists it
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the proof is wrong
-     * @throws HilosException When a lookup or a write fails
+     * @throws ValidationException When the person can no longer be addressed
+     * @throws HilosException When a lookup or the frame fails
      */
-    public function profileCodesShow(string $acceptKey, ProfileSecondFactorCodesShowActionDTO $dto): SecondFactorProfileReplyDTO
+    public function profileCodesShow(string $acceptKey, ProfileSecondFactorCodesShowActionDTO $dto): void
     {
-        $userId = (int)$this->actingUser($acceptKey)->userId;
-        $this->assertProof($userId, $dto->proofCode, $dto->proofBackup);
-        $this->publishState($userId);
-
-        return new SecondFactorProfileReplyDTO(codes: Hilos::$db->secondFactorBackupCodes->entriesOf($userId));
+        $this->askProof((int)$this->actingUser($acceptKey)->userId, $acceptKey, $dto->proofCode, $dto->proofBackup);
     }
 
     /**
-     * Issues a new set of backup codes after a code; the old set dies.
+     * Issues a new set of backup codes after a code the person's agent checks; the old set dies.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorCodesRenewActionDTO $dto The proof
-     * @return SecondFactorProfileReplyDTO The new codes
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the proof is wrong
-     * @throws RandomException When the codes cannot be drawn
-     * @throws HilosException When a lookup or a write fails
+     * @throws ValidationException When the person can no longer be addressed
+     * @throws HilosException When a lookup or the frame fails
      */
-    public function profileCodesRenew(string $acceptKey, ProfileSecondFactorCodesRenewActionDTO $dto): SecondFactorProfileReplyDTO
+    public function profileCodesRenew(string $acceptKey, ProfileSecondFactorCodesRenewActionDTO $dto): void
     {
-        $userId = (int)$this->actingUser($acceptKey)->userId;
-        $this->assertProof($userId, $dto->proofCode, $dto->proofBackup);
-        $codes = $this->issueBackupCodes($userId);
-        $this->publishState($userId);
-
-        return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+        $this->askProof((int)$this->actingUser($acceptKey)->userId, $acceptKey, $dto->proofCode, $dto->proofBackup);
     }
 
     /**
-     * Chooses the person's removal wait: longer at once, shorter after the wait in force.
+     * Chooses the person's removal wait inside the administrator's bounds; the person's agent stores it.
+     *
+     * The agent measures it against the wait in force - longer at once, shorter after it.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorResetWaitSetActionDTO $dto Wait asked for
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws ValidationException When the wait is outside the administrator's bounds
-     * @throws HilosException When a lookup or the write fails
+     * @throws ValidationException When the wait is outside the administrator's bounds, or the person can no longer be addressed
+     * @throws HilosException When a lookup, the settings read or the frame fails
      */
     public function profileResetWaitSet(string $acceptKey, ProfileSecondFactorResetWaitSetActionDTO $dto): void
     {
@@ -603,14 +478,15 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             throw new ValidationException(sprintf(SecondFactorMessages::WAIT_OUT_OF_BOUNDS, $min, $policy->resetWaitMaxDays));
         }
 
-        $wait = SecondFactorResetWait::of($userId)->withRequested($dto->days, $policy, time());
-        Hilos::$db->secondFactorSettings->actions->setResetWait(
-            $userId,
-            $wait->days,
-            $wait->pendingDays,
-            $wait->pendingFromSec === null ? null : date('Y-m-d H:i:s', $wait->pendingFromSec),
-        );
-        $this->publishState($userId);
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE, new UserSecondFactorWaitWriteSignalData(
+            userId: $userId,
+            days: $dto->days,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**
@@ -634,33 +510,267 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Cancels the removal that stands, from the profile.
+     * Cancels the removal that stands, from the profile; the person's agent cancels it.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
-     * @throws HilosException When a lookup, the write or the announcement fails
+     * @throws ValidationException When the person can no longer be addressed
+     * @throws HilosException When a lookup or the frame fails
      */
     public function profileResetCancel(string $acceptKey): void
     {
-        $userId = (int)$this->actingUser($acceptKey)->userId;
-        $this->cancelReset(Hilos::$db->secondFactorResets->liveOf($userId));
-        $this->publishState($userId);
+        $this->askResetCancel((int)$this->actingUser($acceptKey)->userId, $acceptKey, null);
     }
 
     /**
-     * Takes a person's second factor out whole: apps, backup codes, and what the holder keeps for it.
+     * Does what follows a code the person's agent checked, whatever came of it (HIL-1406).
      *
-     * Shared by the last app disconnected and the removal carried out. The person's own wait
-     * stays - it is a choice about the next factor as much as this one.
+     * A code checked and missed on the sign-in step is told to the session holder, which counts
+     * it on this browser; the miss that put the lock mails the person - of two that reached the
+     * ceiling at once only one says so; a removal this proof canceled mails the person too. A
+     * failure of any of them is a log line: the agent's write stands, and the action is answered
+     * all the same.
      *
-     * @param int $userId Person
-     * @throws HilosException When a delete or the frame fails
+     * @param UserSecondFactorProveDoneSignalData $done The agent's answer
      */
-    public function switchOff(int $userId): void
+    public function afterProof(UserSecondFactorProveDoneSignalData $done): void
     {
-        Hilos::$db->secondFactors->actions->deleteForUser($userId);
-        Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId);
-        $this->library->announceSecondFactorOff($userId);
+        $ask = $done->ask;
+        if ($done->missed && $ask->action === HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR) {
+            $this->followUp(fn () => $this->library->announceSecondFactorMissed($this->acting($ask->acceptKey)), 'wrong code', $ask->userId);
+        }
+        $this->mailLock($ask->userId, $done->lockMisses, $done->lockUntil);
+        if ($done->resetCanceled) {
+            $this->followUp(fn () => SecondFactorResetNotifier::canceled($ask->userId), 'removal cancel letter', $ask->userId);
+        }
+    }
+
+    /**
+     * Continues the action whose code the person's agent accepted (HIL-1406).
+     *
+     * The sign-in step lets the sign-in through, and the session holder answers it; starting
+     * another app starts its enrolment; showing the backup codes lists them; renewing them issues
+     * a new set, the old one dying with it.
+     *
+     * @param UserSecondFactorProveSignalData $ask The ask the agent answered
+     * @return ?ActionReplyDTO What the profile is told, or null when the holder answers
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws LogicException When the ask names an action no proof continues
+     * @throws RandomException When a secret or the backup codes cannot be drawn
+     * @throws HilosException When a lookup, a write or a frame fails
+     */
+    public function finishProof(UserSecondFactorProveSignalData $ask): ?ActionReplyDTO
+    {
+        switch ($ask->action) {
+            case HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR:
+                $this->publishState($ask->userId);
+                $this->library->grantSession(
+                    $this->acting($ask->acceptKey),
+                    $ask->userId,
+                    secondFactorProven: true,
+                    trustDevice: $ask->trustDevice,
+                );
+
+                return null;
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
+                [$id, $secret, $uri] = $this->startEnrolment($ask->userId);
+
+                return new SecondFactorProfileReplyDTO(authenticatorId: $id, secret: $secret, otpauthUri: $uri);
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW:
+                $this->publishState($ask->userId);
+
+                return new SecondFactorProfileReplyDTO(codes: Hilos::$db->secondFactorBackupCodes->entriesOf($ask->userId));
+
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
+                $codes = $this->issueBackupCodes($ask->userId);
+                $this->publishState($ask->userId);
+
+                return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+
+            default:
+                throw new LogicException("A second-factor proof continues no action {$ask->action}");
+        }
+    }
+
+    /**
+     * Tells the session holder of a first code that missed on the way in, whatever else came of it (HIL-1406).
+     *
+     * The first code of a new app is outside the ceiling, so there is no lock to mail. A failure is
+     * a log line, as in {@see afterProof()}.
+     *
+     * @param UserSecondFactorEnrollConfirmDoneSignalData $done The agent's answer
+     */
+    public function afterEnrollConfirm(UserSecondFactorEnrollConfirmDoneSignalData $done): void
+    {
+        $ask = $done->ask;
+        if ($done->missed && $ask->action === HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM) {
+            $this->followUp(fn () => $this->library->announceSecondFactorMissed($this->acting($ask->acceptKey)), 'wrong code', $ask->userId);
+        }
+    }
+
+    /**
+     * Continues an enrolment the person's agent confirmed, issuing the backup codes of a first app (HIL-1406).
+     *
+     * A first app of the person comes with a set of backup codes; a further one does not - the set
+     * the person has stays theirs. On the way in the session holder is told the enrolment is
+     * proven and the surface moves to the screen of the codes; in the profile the codes are the
+     * answer.
+     *
+     * @param UserSecondFactorEnrollConfirmDoneSignalData $done The agent's answer
+     * @return ActionReplyDTO The codes screen on the way in, or the profile's answer
+     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
+     * @throws RandomException When the backup codes cannot be drawn
+     * @throws HilosException When a lookup, a write or a frame fails
+     */
+    public function finishEnrollConfirm(UserSecondFactorEnrollConfirmDoneSignalData $done): ActionReplyDTO
+    {
+        $ask = $done->ask;
+        $codes = $done->first ? $this->issueBackupCodes($ask->userId) : null;
+        if ($ask->action !== HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM) {
+            $this->publishState($ask->userId);
+
+            return new SecondFactorProfileReplyDTO(backupCodes: $codes);
+        }
+
+        $this->library->announceSecondFactorSetupProven($this->acting($ask->acceptKey));
+        $this->publishState($ask->userId);
+
+        return AuthFlowOutcome::moveToSecondFactor(
+            AuthFlowStep::SECOND_FACTOR_CODES,
+            new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, backupCodes: $codes),
+            null,
+        );
+    }
+
+    /**
+     * Mails the lock a wrong proof of a removal put, whatever else came of it (HIL-1406).
+     *
+     * @param UserSecondFactorRemoveDoneSignalData $done The agent's answer
+     */
+    public function afterRemove(UserSecondFactorRemoveDoneSignalData $done): void
+    {
+        $this->mailLock($done->ask->userId, $done->lockMisses, $done->lockUntil);
+    }
+
+    /**
+     * Continues an app disconnect the person's agent did (HIL-1406).
+     *
+     * A factor switched off whole is told to the session holder, which revokes the trust every
+     * browser of the person held for it.
+     *
+     * @param UserSecondFactorRemoveDoneSignalData $done The agent's answer
+     * @throws HilosException When the section cannot be built, or a frame or the signal cannot be queued
+     */
+    public function finishRemove(UserSecondFactorRemoveDoneSignalData $done): void
+    {
+        if ($done->switchedOff) {
+            $this->library->announceSecondFactorOff($done->ask->userId);
+        }
+        $this->publishState($done->ask->userId);
+    }
+
+    /**
+     * Continues a removal cancel the person's agent looked at (HIL-1406).
+     *
+     * A cancel is mailed. The profile is answered alike whether there was a removal to cancel; the
+     * relay screen of the link shows its success in place - a link that canceled nothing was
+     * refused before this.
+     *
+     * @param UserSecondFactorResetCancelDoneSignalData $done The agent's answer
+     * @return ?AuthFlowOutcome Success of the link, or null for the profile
+     * @throws HilosException When the announcement, the section or its signal fails
+     */
+    public function finishResetCancel(UserSecondFactorResetCancelDoneSignalData $done): ?AuthFlowOutcome
+    {
+        $ask = $done->ask;
+        if ($done->canceled) {
+            SecondFactorResetNotifier::canceled($ask->userId);
+        }
+        $this->publishState($ask->userId);
+        if ($ask->action !== HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK) {
+            return null;
+        }
+
+        return AuthFlowOutcome::moveTo(AuthFlowStep::DONE, AuthFlowIntent::LOGIN);
+    }
+
+    /**
+     * Continues a wait the person's agent stored: the section shows it (HIL-1406).
+     *
+     * @param UserSecondFactorWaitWriteSignalData $ask The ask the agent answered
+     * @throws HilosException When the section cannot be built or the signal queued
+     */
+    public function finishWaitWrite(UserSecondFactorWaitWriteSignalData $ask): void
+    {
+        $this->publishState($ask->userId);
+    }
+
+    /**
+     * Does what follows a removal the person's agent carried out (HIL-1406).
+     *
+     * The session holder is told the factor is gone, the person is mailed and the section is
+     * fanned - only when this answer carried it out: a removal a cancel won, or the sweep's frame
+     * sent twice, carries nothing out. A refusal is a log line; the next tick finds the removal
+     * still standing and asks again.
+     *
+     * @param UserSecondFactorResetDueDoneSignalData $done The agent's answer
+     * @throws HilosException When a frame, the announcement or the section fails
+     */
+    public function finishResetDue(UserSecondFactorResetDueDoneSignalData $done): void
+    {
+        $request = $done->request;
+        if ($done->error !== null) {
+            Logger::error(
+                "Second-factor removal {$request->resetId} of #{$request->userId} was not carried out: "
+                    . ($done->errorDetail ?? $done->error),
+            );
+
+            return;
+        }
+
+        if (!$done->carriedOut) {
+            return;
+        }
+
+        $this->library->announceSecondFactorOff($request->userId);
+        SecondFactorResetNotifier::completed($request->userId);
+        $this->publishState($request->userId);
+    }
+
+    /**
+     * Mails the reminder of a removal the person's agent marked reminded (HIL-1406).
+     *
+     * Only the answer that put the mark mails, so the reminder goes once a day however often the
+     * sweep's frame went. A refusal is a log line.
+     *
+     * @param UserSecondFactorResetRemindDoneSignalData $done The agent's answer
+     * @throws LogicException When the removal has no cancel token any more
+     * @throws HilosException When the lookup or the announcement fails
+     */
+    public function finishResetRemind(UserSecondFactorResetRemindDoneSignalData $done): void
+    {
+        $request = $done->request;
+        if ($done->error !== null) {
+            Logger::error(
+                "Second-factor removal {$request->resetId} of #{$request->userId} was not marked reminded: "
+                    . ($done->errorDetail ?? $done->error),
+            );
+
+            return;
+        }
+
+        if (!$done->marked) {
+            return;
+        }
+
+        $reset = Hilos::$db->secondFactorResets[$request->resetId];
+        $token = $reset?->readCancelToken();
+        if ($reset === null || $token === null) {
+            throw new LogicException('A standing second-factor removal ' . $request->resetId . ' has no cancel token');
+        }
+        SecondFactorResetNotifier::reminder($request->userId, $token, (int)strtotime($reset->effectiveAt));
     }
 
     /**
@@ -679,99 +789,127 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Refuses a profile or operation action whose second-factor code proves nothing.
+     * Asks the person's agent to check a code that proves them, and stops owing the browser an answer.
      *
-     * The door of every profile action with a code and of the confirmation of an operation, so
-     * the ceiling on app codes reaches them all here: an app code under the lock is refused
-     * unchecked, and a wrong one is counted against the person.
-     *
-     * @param int $userId Person
+     * @param int $userId Person whose code it is
+     * @param string $acceptKey Accept key the action arrived on
      * @param string $code Code as typed
      * @param bool $backupCode Whether it is a backup code
-     * @throws ValidationException When the code matches nothing, or app codes are locked
-     * @throws HilosException When a lookup, the write or the lock notice fails
+     * @param bool $cancelReset Whether a right code ends the removal that stands - the sign-in step alone
+     * @param bool $trustDevice Whether the person asked not to be asked again on this browser
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
      */
-    public function assertProof(int $userId, string $code, bool $backupCode): void
+    private function askProof(
+        int $userId,
+        string $acceptKey,
+        string $code,
+        bool $backupCode,
+        bool $cancelReset = false,
+        bool $trustDevice = false,
+    ): void {
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE, new UserSecondFactorProveSignalData(
+            userId: $userId,
+            code: $code,
+            backupCode: $backupCode,
+            cancelReset: $cancelReset,
+            trustDevice: $trustDevice,
+            operation: null,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
+    }
+
+    /**
+     * Asks the person's agent to confirm their unfinished enrolment, and stops owing the browser an answer.
+     *
+     * @param int $userId Person enrolling
+     * @param string $acceptKey Accept key the action arrived on
+     * @param ?int $authenticatorId Enrolment the profile form names, or null on the way in
+     * @param string $code First code from the app
+     * @param string $label Name the person gave the app
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
+     */
+    private function askEnrollConfirm(int $userId, string $acceptKey, ?int $authenticatorId, string $code, string $label): void
     {
-        if ($backupCode) {
-            if (!$this->spendBackupCode($userId, $code)) {
-                throw new ValidationException(SecondFactorMessages::INVALID_CODE);
-            }
+        $this->library->askPersonAgent(
+            $userId,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM,
+            new UserSecondFactorEnrollConfirmSignalData(
+                userId: $userId,
+                authenticatorId: $authenticatorId,
+                code: $code,
+                label: $label,
+                replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
+        );
+    }
 
-            return;
-        }
+    /**
+     * Asks the person's agent to cancel a removal, and stops owing the browser an answer.
+     *
+     * @param int $userId Person whose removal it is
+     * @param string $acceptKey Accept key the action arrived on
+     * @param ?int $resetId Removal the link names, or null for the one that stands
+     * @throws ValidationException When the person was erased or merged into another account
+     * @throws LogicException When no action is being dispatched
+     * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
+     */
+    private function askResetCancel(int $userId, string $acceptKey, ?int $resetId): void
+    {
+        $this->library->askPersonAgent(
+            $userId,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL,
+            new UserSecondFactorResetCancelSignalData(
+                userId: $userId,
+                resetId: $resetId,
+                replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
+        );
+    }
 
-        $this->assertAppCodesOpen($userId);
-        if (!$this->acceptAppCode(Hilos::$db->secondFactors->confirmedOf($userId), $code)) {
-            $this->countAppCodeMiss($userId);
-
-            throw new ValidationException(SecondFactorMessages::INVALID_CODE);
+    /**
+     * Mails the lock a wrong app code put, when the answer says this miss put it.
+     *
+     * @param int $userId Person whose app codes are locked
+     * @param ?int $misses Wrong app codes the lock was put on, or null when this miss put none
+     * @param ?int $untilSec End of the lock (unix seconds), or null when this miss put none
+     */
+    private function mailLock(int $userId, ?int $misses, ?int $untilSec): void
+    {
+        if ($misses !== null && $untilSec !== null) {
+            $this->followUp(fn () => SecondFactorLockNotifier::locked($userId, $misses, $untilSec), 'lock letter', $userId);
         }
     }
 
     /**
-     * Lifts a person's app-code lock with its step, the miss count and its window (HIL-1285).
+     * Runs one thing that follows an answer of the person's agent, logging its failure instead of raising it.
      *
-     * The operator's way out for a person a guesser locked out; the person is not notified.
-     *
-     * @param int $userId Person
-     * @return ?string End of the lifted lock (SQL datetime) when it was still in force, or null when none was
-     * @throws HilosException When the lookup or the write fails
+     * @param Closure(): void $step What follows - a frame to the holder, a letter
+     * @param string $what Which follow-up, for the log line
+     * @param int $userId Person it was for, for the log line
      */
-    public function unlockAppCodes(int $userId): ?string
+    private function followUp(Closure $step, string $what, int $userId): void
     {
-        return Hilos::$db->secondFactorSettings->actions->unlockAppCodes($userId);
-    }
-
-    /**
-     * Refuses an app code while the person's app codes are locked, naming the time left.
-     *
-     * The refusal comes before the code is checked, so a right code is refused as a wrong one
-     * is and the lock tells a guesser nothing; it is not counted either.
-     *
-     * @param int $userId Person
-     * @throws ValidationException When app codes are locked
-     * @throws HilosException When the lookup or the env read fails
-     */
-    private function assertAppCodesOpen(int $userId): void
-    {
-        $until = Hilos::$db->secondFactorSettings[$userId]?->appCodeLockedUntil;
-        $left = $until === null ? 0 : (int)strtotime($until) - time();
-        if ($left > 0) {
-            throw new ValidationException(sprintf(SecondFactorMessages::APP_CODES_LOCKED, SecondFactorLockPolicy::fromEnv()->waitText($left)));
+        try {
+            $step();
+        } catch (Throwable $e) {
+            Logger::error("Second factor of #{$userId}: the {$what} failed: {$e->getMessage()}");
         }
-    }
-
-    /**
-     * Counts a wrong app code against the person, locking app codes when it reaches the ceiling.
-     *
-     * Below the ceiling it only counts, and the caller refuses the code as wrong. At the ceiling
-     * the lock takes the next step of the ladder, the count starts again, and the person is
-     * told - by the miss that put the lock: of two that reached the ceiling at once only one
-     * does. Either of them is refused with the lock, which stands by then.
-     *
-     * @param int $userId Person
-     * @throws ValidationException When this miss reached the ceiling and app codes are locked
-     * @throws HilosException When a lookup, a write, the env read or the notice fails
-     */
-    private function countAppCodeMiss(int $userId): void
-    {
-        $policy = SecondFactorLockPolicy::fromEnv();
-        $misses = Hilos::$db->secondFactorSettings->actions->countAppCodeMiss($userId, $policy->windowSeconds());
-        if ($misses < $policy->misses()) {
-            return;
-        }
-
-        $now = time();
-        $setting = Hilos::$db->secondFactorSettings[$userId];
-        $lastUntil = $setting?->appCodeLockedUntil;
-        $step = $policy->nextStep((int)$setting?->appCodeLockStep, $lastUntil === null ? null : (int)strtotime($lastUntil), $now);
-        $untilSec = $now + $policy->lockSecondsFor($step);
-        if (Hilos::$db->secondFactorSettings->actions->lockAppCodes($userId, $policy->misses(), $step, date('Y-m-d H:i:s', $untilSec))) {
-            SecondFactorLockNotifier::locked($userId, $misses, $untilSec);
-        }
-
-        throw new ValidationException(sprintf(SecondFactorMessages::APP_CODES_LOCKED, $policy->waitText($untilSec - $now)));
     }
 
     /**

@@ -6,12 +6,12 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
-use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
+use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorNotificationType;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -66,10 +66,14 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  * row of the person answers: that misses on all three add up, that the lock closes all three
  * and refuses even a right code, that a new sign-in neither lifts the lock nor clears the
  * count, that backup codes stay open and uncounted, that the ladder climbs and forgets, that
- * each lock is told to the person once, and that the operator's command lifts it.
+ * each lock is told to the person once, and that the operator's command lifts it. The code is
+ * checked, counted and locked by the person's agent, and its frames are carried both ways
+ * (HIL-1406).
  */
 final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const string CREATED_AT = '2026-10-08 09:00:00';
 
     /** Browser on the code step of a sign-in. */
@@ -155,6 +159,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosOAuthTrip::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
@@ -260,13 +265,17 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
      */
     public function testTheFirstCodeOfANewAppIsNotCounted(): void
     {
-        Hilos::$db->secondFactors->actions->startEnrolment(self::USER_ID, 'Tablet', Base32::encode('09876543210987654321'));
-        $commands = new SecondFactorCommands($this->library);
+        $tablet = Hilos::$db->secondFactors->actions->startEnrolment(self::USER_ID, 'Tablet', Base32::encode('09876543210987654321'));
 
         for ($miss = 0; $miss < self::CEILING; $miss++) {
             $this->assertRefused(
                 SecondFactorMessages::INVALID_CODE,
-                fn () => $commands->confirmEnrolment(self::USER_ID, $this->wrongCode('09876543210987654321'), 'Tablet', null),
+                fn () => $this->runTracked(
+                    $this->library,
+                    self::SIGNED_KEY,
+                    HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
+                    new ProfileSecondFactorEnrollConfirmActionDTO((int)$tablet->id, $this->wrongCode('09876543210987654321'), 'Tablet'),
+                ),
             );
         }
 
@@ -457,6 +466,7 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
             '',
             '',
         );
+        $this->carryPersonFrames($this->library);
 
         $replies = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
@@ -556,7 +566,8 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
      */
     private function signInCode(string $code, bool $backupCode = false): void
     {
-        $this->library->onAgentAction(
+        $this->runTracked(
+            $this->library,
             self::SIGN_IN_KEY,
             HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR,
             new ConfirmSecondFactorActionDTO($code, $backupCode, false),
@@ -572,7 +583,8 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
      */
     private function profileCode(string $code, bool $backupCode = false): void
     {
-        $this->library->onAgentAction(
+        $this->runTracked(
+            $this->library,
             self::SIGNED_KEY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW,
             new ProfileSecondFactorCodesShowActionDTO($code, $backupCode),
@@ -587,7 +599,8 @@ final class SecondFactorAppCodeCeilingIntegrationTest extends HilosSessionIntegr
      */
     private function operationCode(string $code): void
     {
-        $this->library->onAgentAction(
+        $this->runTracked(
+            $this->library,
             self::SIGNED_KEY,
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
             new StepUpConfirmActionDTO(StepUpOperationKey::CHANGE_PASSWORD, StepUpMethod::SECOND_FACTOR, $code, false, '', null),

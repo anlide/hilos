@@ -39,11 +39,24 @@ has a submit of its own in flight.
 
 | Table | Owner | What |
 |---|---|---|
-| `hilos_second_factor` | users library | apps: base32 secret, last accepted step, confirmed or not |
-| `hilos_second_factor_backup_code` | users library | one row per code, spent by a conditional write |
-| `hilos_second_factor_reset` | users library | removals: when asked, when due, the cancel token, last notice |
-| `hilos_second_factor_setting` | session holder; users library has Add/Update | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end — written by the users library |
+| `hilos_second_factor` | person's agent edits; users library creates (Add/Remove) | apps: base32 secret, last accepted step, confirmed or not |
+| `hilos_second_factor_backup_code` | person's agent edits; users library creates (Add/Remove) | one row per code, spent by a conditional write |
+| `hilos_second_factor_reset` | person's agent edits; users library creates (Add) | removals: when asked, when due, the cancel token, last notice |
+| `hilos_second_factor_setting` | person's agent creates and edits; session holder whole | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
 | `hilos_second_factor_trust` | session holder | a browser (session row) trusted for a person until a moment |
+
+Every edit of one person's factor is written by that person's agent
+(`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
+users library, which judges what lies outside the person's set first and does
+what follows the agent's answer (HIL-1406). The library only brings rows into
+being, each with what it replaces: an enrolment started (an unfinished one goes
+in the same operation), a set of backup codes issued (the old set goes in the
+same operation), a removal asked for. The secret, the code and the token are
+written right after their row is inserted, and that write is judged as the
+creation it completes. The person's settings row is the agent's to create, born
+of its first edit - a wait chosen, a wrong code counted (owner's decision,
+2026-10-09); the library only reads it. Merge and erasure are the session
+holder's, below.
 
 Every race is judged by the database: a code step is taken with
 `last_used_step < ?`, a backup code with `used_at IS NULL`, a removal is canceled
@@ -78,8 +91,9 @@ a busy set refuses the operation. Browser requests also carry the two presence
 flags shown in the summary, and a mismatch refuses without writing.
 
 The holder needs full ownership of settings to upsert that wait and erase a
-person atomically. The users library keeps only Add/Update for personal wait
-changes; no shared-full-owner exception is needed. These set operations remain
+person atomically. The person's own wait changes are the person's agent's, which
+creates and edits that row (HIL-1406); no shared-full-owner exception is needed.
+These set operations remain
 at the holder when ordinary personal edits move to instance owners; see
 [instance-owners.md](instance-owners.md#operations-over-many-instances).
 
@@ -122,13 +136,22 @@ the trust until its expiry or an explicit revocation.
 With neither an app nor a backup code, a person asks a removal — from the code
 step or from the profile. It takes effect after the person's wait (a shorter
 wait they chose waits out the wait in force first; the administrator bounds it,
-floor 1 day). The users library sweeps once a minute: a due removal is marked
-carried out first, then the factor, its codes and its trusts go; a waiting one
-is announced again daily, and that reminder carries the same "it was not me"
-link as the first notice (`HILOS_SECOND_FACTOR_CANCEL_URL`, route
+floor 1 day). The users library sweeps once a minute, and the sweep only finds:
+each due removal and each one owing its daily reminder goes to the person's agent
+as a frame (HIL-1406). The agent carries a due removal out in one transaction - a
+conditional mark that it is done, then the apps and the codes go - so a cancel
+that won the same minute leaves the factor, and the frame sent again by the next
+tick does nothing; on its answer the library tells the session holder, which
+drops the trusts, and mails the person. A reminder is marked first, by a
+conditional write the same day cannot repeat, and mailed on the answer: a letter
+that fails after the mark loses that day's reminder, rather than a failed mark
+sending one every minute. The reminder carries the same "it was not me" link as
+the first notice (`HILOS_SECOND_FACTOR_CANCEL_URL`, route
 `/auth/second-factor/cancel`). Every notice is a mandatory notification type on
-every channel, and the link cancels the removal without signing in. Any accepted
-code cancels a standing removal too — whoever shows the factor has not lost it.
+every channel, and the link cancels the removal without signing in - the library
+finds the removal by its token, the person's agent cancels it. Any accepted code
+on the code step cancels a standing removal too — whoever shows the factor has
+not lost it.
 
 ## The app-code ceiling
 
@@ -136,10 +159,12 @@ Wrong app codes are counted per person, on their row of
 `hilos_second_factor_setting`, wherever the code is typed (HIL-1285): the code
 step of a sign-in, showing and renewing the backup codes, disconnecting an app,
 proving a connected app before adding another, and confirming an operation by
-the second factor. All of them pass `SecondFactorCommands`, in the users
-library — `confirm()` for the sign-in, `assertProof()` for the rest — so one
-library on the cluster writes the count. The first code of a new app is not
-counted: its secret was just shown to the person.
+the second factor. All of them are one check, made by the person's agent in the
+turn that writes (`SecondFactorPersonEdits`, HIL-1406): the code is the write - a
+step taken, a backup code burned, a miss counted, the lock put - so one writer of
+the person's set writes the count. The confirmation of an operation asks the agent
+of whoever confirms it, an administrator behind a takeover included. The first
+code of a new app is not counted: its secret was just shown to the person.
 
 - **The window and the ceiling.** The first miss opens a window of a day; a miss
   after it opens a new one. `HILOS_SECOND_FACTOR_LOCK_MISSES` misses in a window
@@ -168,9 +193,10 @@ counted: its secret was just shown to the person.
   codes, until when, that backup codes work, and to change the password and
   end the other sessions if it was not them. The session is not signed out.
 - **The way out.** `second-factor:unlock <userId>` — the operator's command,
-  answered by the users library — clears the lock, its step, the count and its
-  window, and says whether a lock was in force and until when. The person is not
-  notified ([../cli/commands.md](../cli/commands.md)).
+  answered by the users library on the person's agent's answer, the agent lifting
+  the lock (HIL-1406) — clears the lock, its step, the count and its window, and
+  says whether a lock was in force and until when. The person is not notified
+  ([../cli/commands.md](../cli/commands.md)).
 - **Merge and erasure.** A merged account keeps the survivor's own lock; the
   folded account's row goes as before. Erasure deletes the row.
 

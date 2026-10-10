@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Item;
 
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -14,13 +13,12 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactorReset as ObjectSecondFactorReset;
 use Hilos\Database\View\Item\SecondFactorReset;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * SecondFactorResetActions - write operations for one delayed removal (HIL-494).
  *
  * A request ends by exactly one of {@see cancel()} and {@see complete()}; both answer
- * whether this call was the one that ended it.
+ * whether this call was the one that ended it, and {@see remind()} answers the same of its mark.
  *
  * @extends DbActions<SecondFactorReset, ObjectSecondFactorReset>
  * @property-read ObjectSecondFactorReset $object
@@ -66,26 +64,25 @@ class SecondFactorResetActions extends DbActions
     }
 
     /**
-     * Stamps the moment the request was last announced.
+     * Marks the request reminded now, if it still stands and was last announced no later than a bound (HIL-1406).
      *
-     * @throws ItemNotFoundForUpdateException When the request is not persisted (id is null)
+     * Conditional, like {@see cancel()} and {@see complete()}: of two marks of the same day exactly
+     * one answers true, and only that one is followed by the reminder.
+     *
+     * @param string $notifiedBefore An announcement at or before this moment is stale (SQL datetime)
+     * @return bool True when this call marked the request, false when it no longer stands or was reminded since
      * @throws ObjectCollectionNullException When the action is detached from its object collection
      * @throws ObjectGetIdStringNotImplementedException When the request cannot expose its id string
      * @throws WriteNotAllowedException When the truth source rejects the update
-     * @throws CreateNotAllowedException Never for a persisted row; declared by the sync
-     * @throws DatabaseException When the update fails
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
+     * @throws DatabaseException When the update, the row count or the re-announcement fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
-    public function markNotified(): void
+    public function remind(string $notifiedBefore): bool
     {
         $this->ensureCanWrite();
 
-        if ($this->object->id === null) {
-            throw new ItemNotFoundForUpdateException('Second factor reset not found for markNotified (id is null)');
-        }
-
-        $this->object->notifiedAt = TimeHelper::getSqlDateTime();
-        $this->object->sync();
+        return $this->object->remind($notifiedBefore);
     }
 }

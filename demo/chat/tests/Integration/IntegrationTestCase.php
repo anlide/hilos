@@ -63,6 +63,22 @@ use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
 use Throwable;
@@ -464,7 +480,8 @@ abstract class IntegrationTestCase extends TestCase
 
     /**
      * Carries every edit of one person to that person's agent, and its answer back to the library
-     * that asked (HIL-1404) - the edits of their ways in and passkeys included (HIL-1405).
+     * that asked (HIL-1404) - the edits of their ways in and passkeys (HIL-1405) and of their second
+     * factor (HIL-1406) included.
      *
      * A library judges an edit and asks the person's agent to write it; the agent answers and the
      * library finishes - tells the tabs, ends the sessions, writes the feed line, answers whoever
@@ -497,6 +514,14 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserPasswordChangeSignalData
                 || $frame instanceof UserEmailChangeSignalData
                 || $frame instanceof UserIdentityUnlinkSignalData
+                || $frame instanceof UserSecondFactorProveSignalData
+                || $frame instanceof UserSecondFactorEnrollConfirmSignalData
+                || $frame instanceof UserSecondFactorRemoveSignalData
+                || $frame instanceof UserSecondFactorResetCancelSignalData
+                || $frame instanceof UserSecondFactorWaitWriteSignalData
+                || $frame instanceof UserSecondFactorResetDueSignalData
+                || $frame instanceof UserSecondFactorResetRemindSignalData
+                || $frame instanceof UserSecondFactorUnlockSignalData
             ) {
                 $agent = $this->personAgent($frame->userId);
                 $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
@@ -509,6 +534,14 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserPasswordChangeDoneSignalData
                 || $frame instanceof UserEmailChangeDoneSignalData
                 || $frame instanceof UserIdentityUnlinkDoneSignalData
+                || $frame instanceof UserSecondFactorProveDoneSignalData
+                || $frame instanceof UserSecondFactorEnrollConfirmDoneSignalData
+                || $frame instanceof UserSecondFactorRemoveDoneSignalData
+                || $frame instanceof UserSecondFactorResetCancelDoneSignalData
+                || $frame instanceof UserSecondFactorWaitWriteDoneSignalData
+                || $frame instanceof UserSecondFactorResetDueDoneSignalData
+                || $frame instanceof UserSecondFactorResetRemindDoneSignalData
+                || $frame instanceof UserSecondFactorUnlockDoneSignalData
             ) {
                 $library = $this->usersLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));

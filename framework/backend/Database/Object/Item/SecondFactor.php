@@ -127,6 +127,10 @@ class SecondFactor extends Object_
      * Written with a targeted UPDATE right after the row is inserted, so the secret stays
      * out of the ORM columns and the cross-worker sync payload. A no-op for an unpersisted row.
      *
+     * The first write of a column of a row the caller has just inserted is part of the row's
+     * birth, not an edit of it, so it is judged as the creation it completes (HIL-1406): the
+     * writer that may only create these rows can still create one whole.
+     *
      * @param string $secret Base32 shared secret
      * @throws DatabaseException When the secret update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
@@ -141,7 +145,7 @@ class SecondFactor extends Object_
             static::getCollectionKey(),
             (string)$this->entity->id,
             $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
+            TruthSourceOperation::Add,
         );
 
         $params = SqlParamCollection::empty();

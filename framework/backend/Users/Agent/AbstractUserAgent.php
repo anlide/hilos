@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Users\Agent;
 
+use Closure;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
+use Hilos\Auth\SecondFactor\SecondFactorPersonEdits;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -24,6 +26,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
@@ -62,6 +65,22 @@ use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\WiringRefusal;
 use Throwable;
 
@@ -71,12 +90,17 @@ use Throwable;
  * It writes the ordinary edits of the person's row - the name, the admin flag, the block (HIL-1404) -
  * and every edit of the person's ways of signing in and passkeys, sign-in included (HIL-1405): a
  * fresh password hash, a password verified by a letter, a passkey's counter and last use, a new
- * password from recovery or from the profile, an address moved, a method unlinked. Each comes as a
- * frame from the coordinator that judged it: the name and the ways in from
- * {@see AbstractUsersLibraryAgent}, the two flags from {@see AbstractSessionsLibraryAgent}. The
+ * password from recovery or from the profile, an address moved, a method unlinked. It writes the
+ * person's second factor too (HIL-1406): an app confirmed or disconnected, a code that proves the
+ * person - a step taken, a backup code burned, a wrong code counted and the lock it puts or an
+ * operator lifts - the removal wait, and a removal canceled, carried out or marked reminded
+ * ({@see SecondFactorPersonEdits}). Each comes as a frame from the coordinator that judged it: the
+ * name, the ways in and the second factor from {@see AbstractUsersLibraryAgent}, the two flags from
+ * {@see AbstractSessionsLibraryAgent}. The
  * agent writes and always answers - a refusal included, because the coordinator continues only on
  * the answer and something is waiting on it - and the coordinator does what follows the write.
- * Creating a way in stays with the libraries that create it. When the person is erased, or folded
+ * Creating a way in, an enrolment, a set of backup codes or a removal stays with the libraries that
+ * create it. When the person is erased, or folded
  * into someone else, the agent stops itself.
  */
 abstract class AbstractUserAgent extends AbstractAgent
@@ -132,6 +156,38 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserIdentityUnlinkSignalData::userId,
             AgentSignalConfigKey::DTO => UserIdentityUnlinkSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorProveSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorProveSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorEnrollConfirmSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorEnrollConfirmSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorRemoveSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorRemoveSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorResetCancelSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorResetCancelSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorWaitWriteSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorWaitWriteSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorResetDueSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorResetDueSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorResetRemindSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorResetRemindSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorUnlockSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorUnlockSignalData::class,
+        ],
     ];
 
     /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
@@ -142,8 +198,12 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * @var array<string, list<TruthSourceOperation>> The person's borrowed child sets, and the rename
      *     journal of the person, which the agent adds a row to in the transaction that writes the name.
-     *     The ways of signing in and the passkeys are written here since HIL-1405; their creation is
-     *     the libraries'.
+     *     The ways of signing in and the passkeys are written here since HIL-1405, and the second factor
+     *     since HIL-1406; their creation is the libraries'. One row is born here too: the person's
+     *     second-factor settings (`hilos_second_factor_setting`, keyed by the person), which the
+     *     owner's first edit of it brings into being - a wait chosen, a wrong code counted - so the
+     *     agent claims that set with adding and editing (owner's decision, 2026-10-09). It is a
+     *     one-to-one extension of the person's own row, not a new member of a set.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -151,7 +211,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::secondFactors => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::stepUps => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -163,6 +223,9 @@ abstract class AbstractUserAgent extends AbstractAgent
     ];
 
     private int $userId;
+
+    /** The writes of the person's second factor, built on first use. */
+    private ?SecondFactorPersonEdits $secondFactorEdits = null;
 
     /**
      * @param string $agentIndex Person id from the agent address
@@ -231,6 +294,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * A frame naming another person never reached the right agent, and is refused as such rather
      * than written: the claims of this agent cover its own person alone.
+     *
+     * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
+     * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -390,6 +456,118 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->sendToAgent($unlink->replySignal, UserIdentityUnlinkDoneSignalData::to(
                     $unlink,
                     $this->flagRefusal(fn () => $this->unlinkIdentity($unlink->identityId), 'Sign-in method unlink'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE:
+                $prove = $data->data;
+                if (!$prove instanceof UserSecondFactorProveSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorProveSignalData::class, $prove);
+                }
+
+                $this->refuseAnotherPerson($prove->userId, $name);
+                $this->sendToAgent($prove->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->prove($prove),
+                    fn (ActionRefusal $refusal) => UserSecondFactorProveDoneSignalData::refused($prove, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM:
+                $enrollConfirm = $data->data;
+                if (!$enrollConfirm instanceof UserSecondFactorEnrollConfirmSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorEnrollConfirmSignalData::class, $enrollConfirm);
+                }
+
+                $this->refuseAnotherPerson($enrollConfirm->userId, $name);
+                $this->sendToAgent($enrollConfirm->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->enrollConfirm($enrollConfirm),
+                    fn (ActionRefusal $refusal) => UserSecondFactorEnrollConfirmDoneSignalData::refused($enrollConfirm, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE:
+                $removal = $data->data;
+                if (!$removal instanceof UserSecondFactorRemoveSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorRemoveSignalData::class, $removal);
+                }
+
+                $this->refuseAnotherPerson($removal->userId, $name);
+                $this->sendToAgent($removal->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->remove($removal),
+                    fn (ActionRefusal $refusal) => UserSecondFactorRemoveDoneSignalData::refused($removal, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL:
+                $resetCancel = $data->data;
+                if (!$resetCancel instanceof UserSecondFactorResetCancelSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetCancelSignalData::class, $resetCancel);
+                }
+
+                $this->refuseAnotherPerson($resetCancel->userId, $name);
+                $this->sendToAgent($resetCancel->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->cancelReset($resetCancel),
+                    fn (ActionRefusal $refusal) => UserSecondFactorResetCancelDoneSignalData::refused($resetCancel, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE:
+                $waitWrite = $data->data;
+                if (!$waitWrite instanceof UserSecondFactorWaitWriteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorWaitWriteSignalData::class, $waitWrite);
+                }
+
+                $this->refuseAnotherPerson($waitWrite->userId, $name);
+                $this->sendToAgent($waitWrite->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->writeWait($waitWrite),
+                    fn (ActionRefusal $refusal) => UserSecondFactorWaitWriteDoneSignalData::refused($waitWrite, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE:
+                $resetDue = $data->data;
+                if (!$resetDue instanceof UserSecondFactorResetDueSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetDueSignalData::class, $resetDue);
+                }
+
+                $this->refuseAnotherPerson($resetDue->userId, $name);
+                $this->sendToAgent($resetDue->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->carryOutReset($resetDue),
+                    fn (ActionRefusal $refusal) => UserSecondFactorResetDueDoneSignalData::refused($resetDue, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND:
+                $resetRemind = $data->data;
+                if (!$resetRemind instanceof UserSecondFactorResetRemindSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetRemindSignalData::class, $resetRemind);
+                }
+
+                $this->refuseAnotherPerson($resetRemind->userId, $name);
+                $this->sendToAgent($resetRemind->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->remind($resetRemind),
+                    fn (ActionRefusal $refusal) => UserSecondFactorResetRemindDoneSignalData::refused($resetRemind, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK:
+                $unlock = $data->data;
+                if (!$unlock instanceof UserSecondFactorUnlockSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorUnlockSignalData::class, $unlock);
+                }
+
+                $this->refuseAnotherPerson($unlock->userId, $name);
+                $this->sendToAgent($unlock->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->unlock($unlock),
+                    fn (ActionRefusal $refusal) => UserSecondFactorUnlockDoneSignalData::refused($unlock, $refusal),
                 ));
 
                 return;
@@ -676,6 +854,18 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * The writes of the person's second factor (HIL-1406).
+     *
+     * Not final: the framework's test stands replace it to make one of the writes fail.
+     *
+     * @return SecondFactorPersonEdits Built once per agent
+     */
+    protected function secondFactorEdits(): SecondFactorPersonEdits
+    {
+        return $this->secondFactorEdits ??= new SecondFactorPersonEdits($this->userId);
+    }
+
+    /**
      * Writes a rename and answers the users library with its row or its refusal.
      *
      * The refusals keep the sentences the administrator always read: a missing person and a name
@@ -735,6 +925,38 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         return null;
+    }
+
+    /**
+     * Runs one edit of the person's second factor and builds its answer, a refusal included (HIL-1406).
+     *
+     * An account that cannot be addressed - erased, or folded into someone else between the hop and
+     * this frame - is refused before anything is read, in the words of
+     * {@see AddressablePerson::require()}. A refusal a write raised for the person keeps its words;
+     * anything else becomes the placeholder with its detail beside it, written to this agent's log.
+     * The answer always goes: a browser action, the sweep or an operator's command is waiting on it.
+     *
+     * @template T of SignalDataInterface
+     * @param Closure(): T $edit The edit, answering on its own when it went through or was refused on the merits
+     * @param Closure(ActionRefusal): T $refused Builds the answer of a refused edit
+     * @return T The answer to send back
+     */
+    private function secondFactorAnswer(Closure $edit, Closure $refused): SignalDataInterface
+    {
+        try {
+            AddressablePerson::require($this->userId);
+
+            return $edit();
+        } catch (ValidationException $e) {
+            return $refused(ActionRefusal::said($e->getMessage()));
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Second factor of #{$this->userId} failed: {$e->getMessage()}");
+            }
+
+            return $refused($refusal);
+        }
     }
 
     /**

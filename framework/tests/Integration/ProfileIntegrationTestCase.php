@@ -87,6 +87,11 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE,
         HilosSignalConstants::HILOS_USER_EMAIL_CHANGE,
         HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE,
     ];
 
     /** The person's agent's answers, each resuming the action that asked. */
@@ -98,6 +103,11 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
         HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE,
         HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM_DONE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE,
     ];
 
     public const string SESSION_TOKEN = 'aa0000000000000000000000000001137';

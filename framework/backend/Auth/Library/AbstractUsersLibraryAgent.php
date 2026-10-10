@@ -123,6 +123,7 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorRemoveActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetCancelActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetRequestActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
+use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorResetSweeper;
 use Hilos\Auth\SecondFactor\SecondFactorUnlockCommandConstants;
 use Hilos\Auth\Session\SessionAck;
@@ -199,6 +200,15 @@ use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
+use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
@@ -273,11 +283,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * add to it - the chat demo ties the row to its feed line. An erased person's rows leave with
      * the erasure, which is the session holder's.
      *
-     * The second factor is a proof of the account too (HIL-494), so four of its tables are here
-     * the same way: the authenticators, the backup codes, the delayed removals and each person's
-     * own removal wait are written by this library's commands and by its reset sweep, and by
-     * nothing else. The fifth, the browsers trusted to skip the step, is keyed by a session row
-     * and belongs to the session holder.
+     * The second factor is a proof of the account too (HIL-494), and since HIL-1406 this library
+     * only brings it into being: it starts an enrolment (an unfinished one goes in the same
+     * operation), issues a set of backup codes (the old set goes in the same operation - adding and
+     * taking away what it made, never editing it) and opens a delayed removal. Every edit of one
+     * person's second factor - a code that proves them, an app confirmed or disconnected, a removal
+     * canceled, carried out or marked reminded, the person's own removal wait, the count and the
+     * lock of wrong app codes - is written by the person's agent on a frame of this library, and the
+     * row that wait and count live on is the agent's to create too. This library only reads that
+     * row ({@see self::READS_DB}). The browsers trusted to skip the step are keyed by a session row
+     * and belong to the session holder.
      *
      * A step-up confirmation is another proof owned here (HIL-495): this library derives,
      * checks and records it while executing the protected account command. Its browser key is
@@ -295,10 +310,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::verifications => TruthSourceOperation::ALL,
         HilosDbContext::registrationReservations => TruthSourceOperation::ALL,
         HilosDbContext::passkeyCredentials => [TruthSourceOperation::Add],
-        HilosDbContext::secondFactors => TruthSourceOperation::ALL,
-        HilosDbContext::secondFactorBackupCodes => TruthSourceOperation::ALL,
-        HilosDbContext::secondFactorResets => TruthSourceOperation::ALL,
-        HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::secondFactors => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorResets => [TruthSourceOperation::Add],
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
@@ -314,8 +328,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** @var list<string> */
     public const array READS_RT = [HilosUpload::RT_COLLECTION];
 
-    /** The files library owns the registry row whose owner decides a published photo's person. */
-    public const array READS_DB = [HilosDbContext::files];
+    /**
+     * The files library owns the registry row whose owner decides a published photo's person. The
+     * person's agent owns their second-factor settings (HIL-1406): the wait in force dates a new
+     * removal, and the section shows the wait and the lock.
+     */
+    public const array READS_DB = [HilosDbContext::files, HilosDbContext::secondFactorSettings];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
@@ -330,7 +348,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * the news once the agent answers on {@see HilosSignalConstants::HILOS_USER_RENAME_DONE}
      * (HIL-1404). The person's agent answers here too for every edit of a way in this library asks
      * of it (HIL-1405): the browser action waiting on the edit is resumed on the answer
-     * ({@see resumeAction()}).
+     * ({@see resumeAction()}). It answers here for every edit of the second factor as well
+     * (HIL-1406): a browser action is resumed the same way, the sweep mails on the answer, and the
+     * operator's unlock command is answered from it.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -345,6 +365,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE => UserPasswordChangeDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE => UserEmailChangeDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE => UserIdentityUnlinkDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE => UserSecondFactorProveDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM_DONE => UserSecondFactorEnrollConfirmDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE => UserSecondFactorRemoveDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE => UserSecondFactorResetCancelDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE => UserSecondFactorWaitWriteDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => UserSecondFactorResetDueDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
     ];
@@ -573,8 +601,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Three are test-only: the test: prefix enforces the production ban via NonProductionGate.
      * Routed here because this library owns both acceptance records and verification rows
      * ({@see self::OWNS_DB}). The operator's {@see CliCommands::SECOND_FACTOR_UNLOCK} runs on
-     * production (HIL-1285): it is answered here because this library checks the codes and
-     * writes the row their misses and lock are kept on.
+     * production (HIL-1285): it is answered here because this library coordinates the second
+     * factor, and the person's agent lifts the lock on its frame (HIL-1406).
      */
     public const array AGENT_COMMANDS = [
         CliCommands::LEGAL_TEST_HOLD,
@@ -701,14 +729,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Carries out due second-factor removals and a bounded verification-code sweep.
+     * Hands due second-factor removals and reminders to the people's agents, and runs a bounded
+     * verification-code sweep.
      *
      * @throws HilosException When a lookup, a write, a frame or an announcement fails
      */
     public function onTick(): void
     {
         if ($this->secondFactorResetSweepRule?->shouldRun() === true) {
-            new SecondFactorResetSweeper($this->secondFactorCommands())->sweep();
+            new SecondFactorResetSweeper($this)->sweep();
         }
 
         $this->sweepVerifications();
@@ -802,6 +831,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * (HIL-1405), and each answer resumes the browser action that asked ({@see resumeAction()}):
      * a refusal fails it, and a write goes on to the command's own continuation. A passkey refusal
      * is the generic word of the ceremony whatever the agent said, as every passkey failure is.
+     *
+     * The edits of the second factor are answered here the same way (HIL-1406). Before a browser
+     * action resumes, what follows the agent's answer whatever it was is done first - a wrong code
+     * told to the session holder, the letter of a lock this miss put or of a removal this proof
+     * canceled. The sweep's answers mail the person, and the operator's unlock command is answered.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
@@ -943,6 +977,106 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE:
+                $proven = $data->data;
+                if (!$proven instanceof UserSecondFactorProveDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorProveDoneSignalData::class);
+                }
+                $this->secondFactorCommands()->afterProof($proven);
+                $this->resumeAction(
+                    $proven->ask,
+                    $proven->error,
+                    fn () => $proven->ask->action === HilosSignalConstants::HILOS_STEP_UP_CONFIRM
+                        ? $this->stepUpCommands()->finishSecondFactorProof($proven->ask)
+                        : $this->secondFactorCommands()->finishProof($proven->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM_DONE:
+                $enrolled = $data->data;
+                if (!$enrolled instanceof UserSecondFactorEnrollConfirmDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorEnrollConfirmDoneSignalData::class);
+                }
+                $this->secondFactorCommands()->afterEnrollConfirm($enrolled);
+                $this->resumeAction(
+                    $enrolled->ask,
+                    $enrolled->error,
+                    fn () => $this->secondFactorCommands()->finishEnrollConfirm($enrolled),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE:
+                $removed = $data->data;
+                if (!$removed instanceof UserSecondFactorRemoveDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorRemoveDoneSignalData::class);
+                }
+                $this->secondFactorCommands()->afterRemove($removed);
+                $this->resumeAction(
+                    $removed->ask,
+                    $removed->error,
+                    fn () => $this->secondFactorCommands()->finishRemove($removed),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE:
+                $canceled = $data->data;
+                if (!$canceled instanceof UserSecondFactorResetCancelDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorResetCancelDoneSignalData::class);
+                }
+                // A link that canceled nothing named a removal no longer standing; the profile is
+                // answered the same either way, as it always was.
+                $linkDead = !$canceled->canceled && $canceled->ask->action === HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK;
+                $this->resumeAction(
+                    $canceled->ask,
+                    $canceled->error ?? ($linkDead ? SecondFactorMessages::LINK_DEAD : null),
+                    fn () => $this->secondFactorCommands()->finishResetCancel($canceled),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE:
+                $waitWritten = $data->data;
+                if (!$waitWritten instanceof UserSecondFactorWaitWriteDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorWaitWriteDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $waitWritten->ask,
+                    $waitWritten->error,
+                    fn () => $this->secondFactorCommands()->finishWaitWrite($waitWritten->ask),
+                );
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE:
+                $due = $data->data;
+                if (!$due instanceof UserSecondFactorResetDueDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorResetDueDoneSignalData::class);
+                }
+                $this->secondFactorCommands()->finishResetDue($due);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE:
+                $reminded = $data->data;
+                if (!$reminded instanceof UserSecondFactorResetRemindDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorResetRemindDoneSignalData::class);
+                }
+                $this->secondFactorCommands()->finishResetRemind($reminded);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE:
+                $unlocked = $data->data;
+                if (!$unlocked instanceof UserSecondFactorUnlockDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorUnlockDoneSignalData::class);
+                }
+                $this->finishSecondFactorUnlock($unlocked);
+
+                return;
+
             case HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT:
                 if (!$data->data instanceof ProfilePhotoVerdictSignalData) {
                     throw new ValidationException(
@@ -1060,11 +1194,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs {@see CliCommands::SECOND_FACTOR_UNLOCK} and answers the parked socket exactly once (HIL-1285).
+     * Runs {@see CliCommands::SECOND_FACTOR_UNLOCK} and has the person's agent lift the lock (HIL-1285, HIL-1406).
      *
-     * Lifts the person's app-code lock with its step, the miss count and its window, and says
-     * whether a lock was in force and until when. A person who does not exist is refused by
-     * name; one without a lock is not an error - the count is cleared all the same.
+     * The id is read here, and a person who does not exist is refused by name, as before; one who
+     * was erased or folded into someone else is refused in the words of
+     * {@see AddressablePerson::require()}. Then the person's agent lifts the lock with its step, the
+     * miss count and its window, and the parked socket is answered on its answer
+     * ({@see finishSecondFactorUnlock()}). One without a lock is not an error - the count is cleared
+     * all the same. Every way out answers the socket exactly once: the operator's terminal is
+     * parked on it.
      *
      * @param CommandRequestDTO $data Command request carrying the person id
      * @throws InvalidArgumentException When the reply carries an empty correlation id
@@ -1081,7 +1219,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
         try {
             $known = Hilos::$db->users[$userId] !== null;
-            $lockedUntil = $known ? $this->secondFactorCommands()->unlockAppCodes($userId) : null;
         } catch (WiringRefusal $refusal) {
             // Named apart, though answered the same way: the operator's terminal is parked on
             // the one reply, and a missing read of the people is a wiring fault, not their absence.
@@ -1100,10 +1237,42 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            SecondFactorUnlockCommandConstants::FIELD_USER_ID => $userId,
-            SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => $lockedUntil !== null,
-            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => $lockedUntil,
+        try {
+            AddressablePerson::require($userId);
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK,
+                new UserSecondFactorUnlockSignalData(
+                    $userId,
+                    HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE,
+                    $data->correlationId,
+                ),
+            );
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
+        }
+    }
+
+    /**
+     * Answers the parked unlock command from the person's agent's answer (HIL-1406).
+     *
+     * The fields are the ones the command always answered with; a refusal of the agent is the
+     * command's error, its detail when it held one back.
+     *
+     * @param UserSecondFactorUnlockDoneSignalData $done The agent's answer, carrying the command back
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    private function finishSecondFactorUnlock(UserSecondFactorUnlockDoneSignalData $done): void
+    {
+        if ($done->error !== null) {
+            $this->replyToCommand(CommandReplyDTO::error($done->request->correlationId, $done->errorDetail ?? $done->error));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($done->request->correlationId, [
+            SecondFactorUnlockCommandConstants::FIELD_USER_ID => $done->request->userId,
+            SecondFactorUnlockCommandConstants::FIELD_WAS_LOCKED => $done->lockedUntil !== null,
+            SecondFactorUnlockCommandConstants::FIELD_LOCKED_UNTIL => $done->lockedUntil,
         ]));
     }
 
@@ -2376,7 +2545,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Runs one of the second factor's sign-in commands (HIL-494).
      *
      * Split off {@see runOwnedAction()} only for its length: the routing is the same - a name,
-     * the group that owns it, the reply that group produced, or null when the holder answers.
+     * the group that owns it, the reply that group produced, or null when the holder or, after
+     * the person's agent answers, this library answers later (HIL-1406).
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -2418,8 +2588,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof SecondFactorSetupConfirmActionDTO) {
                     throw new InvalidActionPayloadException($action, SecondFactorSetupConfirmActionDTO::class, $dto);
                 }
+                $this->secondFactorCommands()->setupConfirm($acceptKey, $dto);
 
-                return $this->secondFactorCommands()->setupConfirm($acceptKey, $dto);
+                return null;
 
             case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_FINISH:
                 if (!$dto instanceof SecondFactorSetupFinishActionDTO) {
@@ -2441,8 +2612,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof SecondFactorResetCancelLinkActionDTO) {
                     throw new InvalidActionPayloadException($action, SecondFactorResetCancelLinkActionDTO::class, $dto);
                 }
+                $this->secondFactorCommands()->resetCancelLink($acceptKey, $dto);
 
-                return $this->secondFactorCommands()->resetCancelLink($dto);
+                return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
                 if (!$dto instanceof ProfileSecondFactorEnrollStartActionDTO) {
@@ -2455,8 +2627,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileSecondFactorEnrollConfirmActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileSecondFactorEnrollConfirmActionDTO::class, $dto);
                 }
+                $this->secondFactorCommands()->profileEnrollConfirm($acceptKey, $dto);
 
-                return $this->secondFactorCommands()->profileEnrollConfirm($acceptKey, $dto);
+                return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE:
                 if (!$dto instanceof ProfileSecondFactorRemoveActionDTO) {
@@ -2470,15 +2643,17 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if (!$dto instanceof ProfileSecondFactorCodesShowActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileSecondFactorCodesShowActionDTO::class, $dto);
                 }
+                $this->secondFactorCommands()->profileCodesShow($acceptKey, $dto);
 
-                return $this->secondFactorCommands()->profileCodesShow($acceptKey, $dto);
+                return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
                 if (!$dto instanceof ProfileSecondFactorCodesRenewActionDTO) {
                     throw new InvalidActionPayloadException($action, ProfileSecondFactorCodesRenewActionDTO::class, $dto);
                 }
+                $this->secondFactorCommands()->profileCodesRenew($acceptKey, $dto);
 
-                return $this->secondFactorCommands()->profileCodesRenew($acceptKey, $dto);
+                return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET:
                 if (!$dto instanceof ProfileSecondFactorResetWaitSetActionDTO) {
@@ -2522,11 +2697,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     protected function stepUpCommands(): StepUpCommands
     {
-        return $this->stepUpCommands ??= new StepUpCommands(
-            $this,
-            $this->secondFactorCommands(),
-            $this->passkeyCommands(),
-        );
+        return $this->stepUpCommands ??= new StepUpCommands($this, $this->passkeyCommands());
     }
 
     /**
@@ -2658,13 +2829,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * siblings name the action and the request they hand over. A refusal fails the action. A
      * write goes on to the continuation, and then the action is answered as the dispatcher answers
      * one: nothing when the continuation handed the answer to the session holder, the success ack
-     * otherwise. A continuation that breaks fails the action and leaves an error line, as a handler
+     * otherwise, carrying what the continuation returned - the codes, the secret or the next screen
+     * a handler would have returned (HIL-1406). A continuation that breaks fails the action and leaves an error line, as a handler
      * that breaks does. An untracked action is told only of a failure, the way the dispatcher tells
      * it.
      *
      * @param HandoverAskInterface $ask The ask the agent answered, untouched
      * @param ?string $refusal Words the action is refused in, or null when the agent wrote
-     * @param Closure(): void $finish The command's continuation after the write
+     * @param Closure(): ?ActionReplyDTO $finish The command's continuation after the write, returning what the surface is told
      * @throws InvalidArgumentException When an answer frame cannot be named or queued
      * @throws FramePopOrderException When the continuation leaves the execution frame stack imbalanced
      */
@@ -2681,7 +2853,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 try {
-                    $finish();
+                    $reply = $finish();
                 } catch (Throwable $e) {
                     Logger::error(
                         "Action failed: host={$this->actionHostName()}, action={$ask->action}, "
@@ -2702,7 +2874,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 }
 
                 if (!$this->actionReplyDeferred() && $ask->requestId !== null) {
-                    $this->sendActionSuccess($ask->acceptKey, $ask->action, $ask->requestId);
+                    $this->sendActionSuccess($ask->acceptKey, $ask->action, $ask->requestId, $reply);
                 }
             });
         } finally {

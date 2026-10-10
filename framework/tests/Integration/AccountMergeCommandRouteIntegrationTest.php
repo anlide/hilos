@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
-use Hilos\Auth\Library\AbstractUsersLibraryAgent;
-use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\Totp;
 use mysqli;
@@ -29,6 +27,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -66,6 +65,8 @@ use Hilos\Users\AccountMergeSummary;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Users\AdminAudience;
 use Hilos\Users\DTO\AccountMergeSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -1003,13 +1004,12 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
             self::boundUserId('a1000000000000000000000000001293a'),
         );
         self::assertNull(self::boundUserId('a2000000000000000000000000001293a'));
-        $proof = new SecondFactorCommands(new AccountMergeUsersClaimTestAgent());
         if ($survivorProtected) {
-            $proof->assertProof(self::SURVIVOR_USER_ID, Totp::codeAt(str_repeat((string)self::SURVIVOR_USER_ID, 10), intdiv(time(), 30)), false);
+            $this->assertSurvivorProves(Totp::codeAt(str_repeat((string)self::SURVIVOR_USER_ID, 10), intdiv(time(), 30)), false);
         }
         if ($fate === SecondFactorFate::BOTH) {
-            $proof->assertProof(self::SURVIVOR_USER_ID, Totp::codeAt(str_repeat((string)self::LOSER_USER_ID, 10), intdiv(time(), 30)), false);
-            $proof->assertProof(self::SURVIVOR_USER_ID, 'live12', true);
+            $this->assertSurvivorProves(Totp::codeAt(str_repeat((string)self::LOSER_USER_ID, 10), intdiv(time(), 30)), false);
+            $this->assertSurvivorProves('live12', true);
             self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::SURVIVOR_USER_ID, 'live12'));
         }
     }
@@ -1126,21 +1126,28 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         return (int)Database::sql('SELECT COUNT(*) AS n FROM `' . $table . '` WHERE user_id = ?', [$userId])->firstRow()['n'];
     }
 
-    /** @throws HilosException When configuring or writing the setting fails */
-    public function testTheUsersLibraryCanUpsertTheWaitButCannotRemoveIt(): void
+    /**
+     * The person's agent creates and edits the person's wait, and cannot remove it: that is the
+     * merge's and the erasure's, the session holder's (HIL-1406).
+     *
+     * @throws HilosException When configuring or writing the setting fails
+     */
+    public function testThePersonsAgentCanUpsertTheWaitButCannotRemoveIt(): void
     {
         TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, 'framework-test-agent');
         TruthSourceRegistry::unregister(HilosDbContext::secondFactorSettings, self::LIBRARY_ID);
-        OwnershipDeclaration::claimDb(AccountMergeUsersClaimTestAgent::class, 'merge-users-claim');
+        $agent = new AccountMergeStopTestAgent((string)self::SURVIVOR_USER_ID);
+        $this->claimPerson($agent);
         try {
-            Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 20, null, null);
-            Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 30, null, null);
-            self::assertSame(30, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->resetWaitDays);
-            $this->expectException(WriteNotAllowedException::class);
-            Hilos::$db->secondFactorSettings->actions->deleteForUser(self::SURVIVOR_USER_ID);
+            ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), function (): void {
+                Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 20, null, null);
+                Hilos::$db->secondFactorSettings->actions->setResetWait(self::SURVIVOR_USER_ID, 30, null, null);
+                self::assertSame(30, Hilos::$db->secondFactorSettings[self::SURVIVOR_USER_ID]?->resetWaitDays);
+                $this->expectException(WriteNotAllowedException::class);
+                Hilos::$db->secondFactorSettings->actions->deleteForUser(self::SURVIVOR_USER_ID);
+            });
         } finally {
-            TruthSourceRegistry::unregisterAgent('merge-users-claim');
-            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent('merge-users-claim'));
+            $this->releasePerson($agent);
         }
     }
 
@@ -1258,6 +1265,54 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
     {
         OwnershipDeclaration::claimDbRows($agent);
         OwnershipDeclaration::claimDbSet($agent);
+    }
+
+    /**
+     * Has the survivor's agent check a second-factor code the way the users library asks it, and
+     * asserts the code proved the survivor (HIL-1406).
+     *
+     * @param string $code Code as typed
+     * @param bool $backupCode Whether it is a backup code
+     * @throws HilosException When the agent cannot handle the frame
+     */
+    private function assertSurvivorProves(string $code, bool $backupCode): void
+    {
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            // what the merge announced is not this check's business
+        }
+        $agent = new AccountMergeStopTestAgent((string)self::SURVIVOR_USER_ID);
+        $this->claimPerson($agent);
+        try {
+            ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static fn () => $agent->onSignalAgent(
+                new AgentSignalData(new UserSecondFactorProveSignalData(
+                    self::SURVIVOR_USER_ID,
+                    $code,
+                    $backupCode,
+                    false,
+                    false,
+                    null,
+                    HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
+                    'accept-merge-proof',
+                    null,
+                    HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_SHOW,
+                    null,
+                )),
+                '',
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE,
+            ));
+        } finally {
+            $this->releasePerson($agent);
+        }
+
+        $answer = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE
+                && $signal->data instanceof AgentSignalData) {
+                $answer = $signal->data->data;
+            }
+        }
+        self::assertInstanceOf(UserSecondFactorProveDoneSignalData::class, $answer);
+        self::assertNull($answer->error, (string)$answer->error);
     }
 
     /**
@@ -1829,11 +1884,6 @@ final class AccountMergeRouteTestMergeOffCatalog implements CatalogProviderInter
 
         return $catalog;
     }
-}
-
-/** The production users-library ownership declaration, without starting an agent. */
-final class AccountMergeUsersClaimTestAgent extends AbstractUsersLibraryAgent
-{
 }
 
 /** The framework's agent of one person, so a merge's sync frame can ask it to stop. */

@@ -26,6 +26,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -59,9 +60,15 @@ use Hilos\Runtime\View\Context\RtContext;
  * holds no proof, so the gate passes them; the two cases that give the person a password pin what
  * the gate asks of the first app and lets a second one prove on its own. The device-key table is
  * raised beside the session tables because the gate's proof resolver reads it for every person.
+ *
+ * Every edit of the person's factor is written by the person's agent (HIL-1406): an action runs the
+ * way the dispatcher runs a tracked one, the sweep's frames go the same way, and the frames to the
+ * agent and its answers are carried across.
  */
 final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const string CREATED_AT = '2026-09-24 09:00:00';
 
     private const string SESSION_TOKEN = 'cc00000000000000000000000000cc94';
@@ -122,6 +129,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         SourceChangeBus::reset();
         Hilos::$notify = $this->previousNotify;
         Hilos::$setting = $this->previousSetting;
@@ -157,7 +165,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->connectFirstApp();
 
         $this->expectException(ValidationException::class);
-        $this->library->onAgentAction(
+        $this->act(
             self::ACCEPT_KEY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
             new ProfileSecondFactorEnrollStartActionDTO(null, false),
@@ -180,12 +188,10 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->assertNull(Hilos::$db->secondFactors->unconfirmedOf(self::USER_ID), 'A refused start opens no enrolment');
 
         $this->confirmAddingAnApp(self::CONFIRMED_FOR_SECONDS);
-        $start = $this->library->onAgentAction(
-            self::ACCEPT_KEY,
+        $start = $this->profileReply(
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
             new ProfileSecondFactorEnrollStartActionDTO(null, false),
         );
-        $this->assertInstanceOf(SecondFactorProfileReplyDTO::class, $start);
 
         // The confirmation ran out while the person was scanning the code.
         $this->confirmAddingAnApp(-1);
@@ -215,7 +221,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->confirmAddingAnApp(-1);
 
         try {
-            $this->library->onAgentAction(
+            $this->act(
                 self::ACCEPT_KEY,
                 HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
                 new ProfileSecondFactorEnrollStartActionDTO(null, false),
@@ -225,12 +231,10 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             $this->assertSame(SecondFactorMessages::INVALID_CODE, $exception->getMessage(), 'The gate passed; the app code is asked');
         }
 
-        $start = $this->library->onAgentAction(
-            self::ACCEPT_KEY,
+        $start = $this->profileReply(
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
             new ProfileSecondFactorEnrollStartActionDTO($this->nextCodeOf($secret), false),
         );
-        $this->assertInstanceOf(SecondFactorProfileReplyDTO::class, $start);
         $this->assertNotNull($start->secret);
     }
 
@@ -245,7 +249,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->drain();
         $factor = Hilos::$db->secondFactors->confirmedOf(self::USER_ID)[0];
 
-        $this->library->onAgentAction(
+        $this->act(
             self::ACCEPT_KEY,
             HilosSignalConstants::PROFILE_SECOND_FACTOR_REMOVE,
             new ProfileSecondFactorRemoveActionDTO((int)$factor->id, $this->nextCodeOf($secret), false),
@@ -266,11 +270,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->connectFirstApp();
         $this->drain();
 
-        $this->library->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
-            new ProfileSecondFactorResetRequestActionDTO(),
-        );
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
 
         $reset = Hilos::$db->secondFactorResets->liveOf(self::USER_ID);
         $this->assertNotNull($reset);
@@ -286,19 +286,11 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->assertStringContainsString($url, (string)$announcement?->body);
         $this->assertNotContains($token, $reset->toArray());
 
-        $this->library->onAgentAction(
-            'accept-anyone',
-            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
-            new SecondFactorResetCancelLinkActionDTO($token),
-        );
+        $this->act('accept-anyone', HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK, new SecondFactorResetCancelLinkActionDTO($token));
         $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID));
 
         $this->expectException(ValidationException::class);
-        $this->library->onAgentAction(
-            'accept-anyone',
-            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
-            new SecondFactorResetCancelLinkActionDTO($token),
-        );
+        $this->act('accept-anyone', HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK, new SecondFactorResetCancelLinkActionDTO($token));
     }
 
     /**
@@ -310,11 +302,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     public function testTheSweepCarriesOutAndReminds(): void
     {
         $this->connectFirstApp();
-        $this->library->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
-            new ProfileSecondFactorResetRequestActionDTO(),
-        );
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
         $firstToken = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `user_id` = ?',
@@ -324,8 +312,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         Hilos::$db->secondFactorResets->clearCache();
         $this->drain();
 
-        $this->library->onStart();
-        $this->library->onTick();
+        $this->tick();
         $reminder = $this->announcement(SecondFactorNotificationType::RESET_REMINDER);
         $this->assertNotNull($reminder);
         $this->assertSame($firstToken, $this->tokenOf($reminder));
@@ -340,8 +327,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
-        $this->library->onStart();
-        $this->library->onTick();
+        $this->tick();
 
         $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
         $this->assertNotNull($this->announcement(SecondFactorNotificationType::RESET_COMPLETED));
@@ -357,23 +343,14 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     {
         $this->connectFirstApp();
         $this->requestAndAgeTheNotice();
-        $this->library->onStart();
-        $this->library->onTick();
+        $this->tick();
         $token = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REMINDER));
 
-        $this->library->onAgentAction(
-            'accept-anyone',
-            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
-            new SecondFactorResetCancelLinkActionDTO($token),
-        );
+        $this->act('accept-anyone', HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK, new SecondFactorResetCancelLinkActionDTO($token));
         $this->assertNull(Hilos::$db->secondFactorResets->liveOf(self::USER_ID));
 
         $this->expectException(ValidationException::class);
-        $this->library->onAgentAction(
-            'accept-anyone',
-            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
-            new SecondFactorResetCancelLinkActionDTO($token),
-        );
+        $this->act('accept-anyone', HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK, new SecondFactorResetCancelLinkActionDTO($token));
     }
 
     /**
@@ -386,11 +363,10 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     {
         $this->connectFirstApp();
         $firstToken = $this->requestAndAgeTheNotice();
-        $this->library->onStart();
-        $this->library->onTick();
+        $this->tick();
         $this->assertSame($firstToken, $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REMINDER)));
 
-        $this->library->onAgentAction(
+        $this->act(
             'accept-anyone',
             HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
             new SecondFactorResetCancelLinkActionDTO($firstToken),
@@ -407,11 +383,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     public function testAReminderWithoutATokenFailsTheTick(): void
     {
         $this->connectFirstApp();
-        $this->library->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
-            new ProfileSecondFactorResetRequestActionDTO(),
-        );
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
         $stale = date('Y-m-d H:i:s', time() - 2 * 86400);
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `cancel_token` = NULL, `notified_at` = ? WHERE `user_id` = ?',
@@ -465,11 +437,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
      */
     private function requestAndAgeTheNotice(): string
     {
-        $this->library->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
-            new ProfileSecondFactorResetRequestActionDTO(),
-        );
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST, new ProfileSecondFactorResetRequestActionDTO());
         $token = $this->tokenOf($this->announcement(SecondFactorNotificationType::RESET_REQUESTED));
         Database::sqlRun(
             'UPDATE `hilos_second_factor_reset` SET `notified_at` = ? WHERE `user_id` = ?',
@@ -519,15 +487,12 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
      */
     private function connectFirstAppSecret(?array &$codes = null): string
     {
-        $start = $this->library->onAgentAction(
-            self::ACCEPT_KEY,
+        $start = $this->profileReply(
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
             new ProfileSecondFactorEnrollStartActionDTO(null, false),
         );
-        $this->assertInstanceOf(SecondFactorProfileReplyDTO::class, $start);
         $secret = (string)$start->secret;
-        $confirm = $this->library->onAgentAction(
-            self::ACCEPT_KEY,
+        $confirm = $this->profileReply(
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM,
             new ProfileSecondFactorEnrollConfirmActionDTO(
                 (int)$start->authenticatorId,
@@ -535,7 +500,6 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
                 'Phone',
             ),
         );
-        $this->assertInstanceOf(SecondFactorProfileReplyDTO::class, $confirm);
         $codes = $confirm->backupCodes ?? [];
 
         return $secret;
@@ -553,7 +517,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         ProfileSecondFactorEnrollStartActionDTO|ProfileSecondFactorEnrollConfirmActionDTO $dto,
     ): void {
         try {
-            $this->library->onAgentAction(self::ACCEPT_KEY, $action, $dto);
+            $this->act(self::ACCEPT_KEY, $action, $dto);
         } catch (ValidationException $exception) {
             $this->assertSame(StepUpMessages::EXPIRED, $exception->getMessage());
 
@@ -608,11 +572,52 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
      */
     private function setWait(int $days): void
     {
-        $this->library->onAgentAction(
-            self::ACCEPT_KEY,
-            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET,
-            new ProfileSecondFactorResetWaitSetActionDTO($days),
-        );
+        $this->act(self::ACCEPT_KEY, HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_WAIT_SET, new ProfileSecondFactorResetWaitSetActionDTO($days));
+    }
+
+    /**
+     * Runs one action of the profile or the link the way the dispatcher runs a tracked one, the
+     * person's agent writing what it asks.
+     *
+     * @param string $acceptKey Tab that submits
+     * @param string $action Action wire name
+     * @param ActionPayloadDTO $dto Action payload
+     * @return ?array<string, mixed> Reply the browser was answered with, or null when it was answered with nothing
+     * @throws ValidationException When the library or the person's agent refuses
+     * @throws HilosException When a command or a frame fails for another reason
+     */
+    private function act(string $acceptKey, string $action, ActionPayloadDTO $dto): ?array
+    {
+        return $this->runTracked($this->library, $acceptKey, $action, $dto);
+    }
+
+    /**
+     * Runs one action of the profile and reads its reply.
+     *
+     * @param string $action Action wire name
+     * @param ActionPayloadDTO $dto Action payload
+     * @return SecondFactorProfileReplyDTO What the profile was answered with
+     * @throws ValidationException When the library or the person's agent refuses
+     * @throws HilosException When a command or a frame fails for another reason
+     */
+    private function profileReply(string $action, ActionPayloadDTO $dto): SecondFactorProfileReplyDTO
+    {
+        $reply = $this->act(self::ACCEPT_KEY, $action, $dto);
+        $this->assertNotNull($reply, "{$action} answers the profile with a reply");
+
+        return SecondFactorProfileReplyDTO::fromArray($reply);
+    }
+
+    /**
+     * Runs the users library's tick from a fresh start and carries the sweep's frames to the person's agent and back.
+     *
+     * @throws HilosException When the sweep or a frame fails
+     */
+    private function tick(): void
+    {
+        $this->library->onStart();
+        $this->library->onTick();
+        $this->carryPersonFrames($this->library);
     }
 
     /**

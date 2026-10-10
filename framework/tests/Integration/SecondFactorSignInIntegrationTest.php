@@ -67,10 +67,13 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  * rather than signing in, that a code passes once and a backup code burns once, that the wait
  * gives up after its ceiling, that a trusted browser skips the step, that recovering a password
  * by mail does not sign in past the factor, and that an administrator's requirement enrols on
- * the way in.
+ * the way in. A code is checked by the person's agent, and its frames are carried both ways
+ * (HIL-1406).
  */
 final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const string CREATED_AT = '2026-09-24 09:00:00';
 
     private const string SESSION_TOKEN = 'bb00000000000000000000000000bb94';
@@ -132,6 +135,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosOAuthTrip::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
@@ -595,12 +599,12 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $secret = (string)$start->secondFactor?->secret;
         $code = Totp::codeAt((string)Base32::decode($secret), Totp::stepAt(time()));
 
-        $confirm = $this->library->onAgentAction(
+        $confirm = AuthFlowOutcome::fromArray((array)$this->runTracked(
+            $this->library,
             self::ACCEPT_KEY,
             HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM,
             new SecondFactorSetupConfirmActionDTO($code, 'Phone'),
-        );
-        $this->assertInstanceOf(AuthFlowOutcome::class, $confirm);
+        ));
         $this->assertSame(AuthFlowStep::SECOND_FACTOR_CODES, $confirm->step);
         $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, (array)$confirm->secondFactor?->backupCodes);
         $this->forwardToHolder();
@@ -672,16 +676,18 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     }
 
     /**
-     * Submits a code to the library.
+     * Submits a code to the library, which has the person's agent check it.
      *
      * @param string $code Code as typed
      * @param bool $backupCode Whether it is a backup code
      * @param bool $trustDevice Whether to trust the browser
-     * @throws HilosException When the command refuses or fails
+     * @throws ValidationException When the library or the person's agent refuses the code
+     * @throws HilosException When the command fails
      */
     private function confirm(string $code, bool $backupCode = false, bool $trustDevice = false): void
     {
-        $this->library->onAgentAction(
+        $this->runTracked(
+            $this->library,
             self::ACCEPT_KEY,
             HilosSignalConstants::HILOS_CONFIRM_SECOND_FACTOR,
             new ConfirmSecondFactorActionDTO($code, $backupCode, $trustDevice),

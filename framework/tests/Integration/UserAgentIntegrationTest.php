@@ -151,9 +151,20 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::users, '43', []);
-        // The rename journal is the one set the agent adds to, and only to its own person's set.
-        TruthSourceRegistry::checkCanCreate(HilosDbContext::userRenames, static fn (): array => [self::USER_ID]);
-        $this->assertCreateDenied(HilosDbContext::userRenames, ['43']);
+        // The rename journal and the second-factor settings row are the sets the agent adds to -
+        // the journal with the name, the settings row on its first edit (HIL-1406) - and only to its
+        // own person's set.
+        foreach ([HilosDbContext::userRenames, HilosDbContext::secondFactorSettings] as $collection) {
+            TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::USER_ID]);
+            $this->assertCreateDenied($collection, ['43']);
+        }
+        TruthSourceRegistry::checkCanWriteItem(
+            HilosDbContext::secondFactorSettings,
+            self::USER_ID,
+            static fn (): array => [self::USER_ID],
+            TruthSourceOperation::Update,
+        );
+        $this->assertWriteDenied(HilosDbContext::secondFactorSettings, '43', ['43']);
         foreach (self::borrowedSets() as $collection) {
             TruthSourceRegistry::checkCanWriteItem(
                 $collection,
@@ -177,6 +188,8 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
         $this->assertWriteDenied(HilosDbContext::users, self::USER_ID, []);
         $this->assertCreateDenied(HilosDbContext::userRenames, [self::USER_ID]);
+        $this->assertCreateDenied(HilosDbContext::secondFactorSettings, [self::USER_ID]);
+        $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
         foreach (self::borrowedSets() as $collection) {
             $this->assertWriteDenied($collection, '1', [self::USER_ID]);
         }
@@ -187,7 +200,10 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
      */
     private static function borrowedSets(): array
     {
-        return array_values(array_diff(array_keys(UserAgentIntegrationWorker::OWNS_DB_SET), [HilosDbContext::userRenames]));
+        return array_values(array_diff(
+            array_keys(UserAgentIntegrationWorker::OWNS_DB_SET),
+            [HilosDbContext::userRenames, HilosDbContext::secondFactorSettings],
+        ));
     }
 
     /**
