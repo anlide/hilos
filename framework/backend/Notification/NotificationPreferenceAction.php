@@ -4,18 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Notification;
 
-use Hilos\Database\Actions\Collection\NotificationPreferencesActions;
-
 /**
  * NotificationPreferenceAction - client → server action names of the profile notifications section.
  *
- * The per-user channel-preference action (HIL-485), mounted on the profile page
- * (an AUTHENTICATED surface). Toggling a channel dispatches to the
- * {@see NotificationPreferencesActions}
- * setChannel write, is tracked as a loading operation for the clicker, and fans
- * {@see NotificationSignalName::PREFERENCES_CHANGED} to the recipient's other
- * connections. The acting user is resolved server-side from the connection, never
- * the payload, so a client can only ever change its own preferences.
+ * The per-user channel-preference action (HIL-485). The notifications library judges the
+ * toggle and the person's agent writes the sparse muted row. The acting user is resolved
+ * server-side from the connection, never the payload, so a client can only ever change its
+ * own preferences.
  */
 final class NotificationPreferenceAction
 {

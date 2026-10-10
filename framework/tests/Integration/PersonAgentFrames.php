@@ -26,6 +26,10 @@ use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
+use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
@@ -137,7 +141,11 @@ trait PersonAgentFrames
             $ask instanceof UserSecondFactorUnlockSignalData,
             $ask instanceof UserStepUpRecordSignalData,
             $ask instanceof UserStepUpCreditSignalData,
-            $ask instanceof UserBrowserTrustRevokeSignalData => $ask->userId,
+            $ask instanceof UserBrowserTrustRevokeSignalData,
+            $ask instanceof UserNotificationReadSignalData,
+            $ask instanceof UserNotificationChannelSetSignalData,
+            $ask instanceof UserPushUnsubscribeSignalData,
+            $ask instanceof UserPushRemoveSignalData => $ask->userId,
             default => Assert::fail('Not a frame to a person\'s agent: ' . get_debug_type($ask)),
         };
 

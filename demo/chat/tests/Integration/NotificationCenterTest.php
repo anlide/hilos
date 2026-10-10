@@ -124,6 +124,7 @@ final class NotificationCenterTest extends IntegrationTestCase
         $view = Hilos::$db->notifications[$id] ?? null;
 
         self::assertNotNull($view);
+        $this->asRecipientSetOwner();
         $view->actions->markRead();
 
         $collection = $this->collection();
@@ -151,6 +152,7 @@ final class NotificationCenterTest extends IntegrationTestCase
         $collection = $this->collection();
 
         self::assertSame(3, $collection->countUnreadForUser(self::RECIPIENT_ID));
+        $this->asRecipientSetOwner();
         self::assertSame(3, $collection->markAllReadForUser(self::RECIPIENT_ID));
         self::assertSame(0, $collection->countUnreadForUser(self::RECIPIENT_ID));
         self::assertSame(1, $collection->countUnreadForUser(self::OTHER_RECIPIENT_ID));
@@ -293,6 +295,22 @@ final class NotificationCenterTest extends IntegrationTestCase
                 }
             }
         }
+    }
+
+    /**
+     * Marks the rest of the case as the owner of the recipient's notification set.
+     *
+     * The library may create a letter and may not edit one. Marking read is the person's,
+     * so it runs under the set that person's agent holds.
+     */
+    private function asRecipientSetOwner(): void
+    {
+        TruthSourceRegistry::register(
+            HilosDbContext::notifications,
+            TruthSourceKeys::set((string)self::RECIPIENT_ID),
+            self::SET_OWNER_AGENT,
+        );
+        ExecutionContext::setCurrentAgentId(self::SET_OWNER_AGENT);
     }
 
     /**

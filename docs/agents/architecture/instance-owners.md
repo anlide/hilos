@@ -20,11 +20,12 @@ that instance. For a person, the indexed agent, its row and set claims, and
 its idle lifetime are built (HIL-630). The name, the administrator flag and the
 block are written by it (HIL-1404), and so are the edits of the person's sign-in
 methods and passkey credentials, sign-in included (HIL-1405), of the person's
-second factor, a removal whose delay elapsed included (HIL-1406), and the
+second factor, a removal whose delay elapsed included (HIL-1406), the
 person's step-up confirmations and the trust taken from the person's browsers
-(HIL-1407). The other edits move to it in the leaves named in
+(HIL-1407), and the notification marks, channel preferences and push unsubscribe
+(HIL-1408). The other edits move to it in the leaves named in
 [Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1408, HIL-1409).
+(not in the code yet — HIL-1409).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -61,9 +62,10 @@ The owner writes ordinary edits of one instance's content, whether the person
 or an administrator requested them. For the person the name, the administrator
 flag and the block have moved (HIL-1404), and so have the sign-in methods and
 passkey credentials (HIL-1405), the second factor (HIL-1406), the step-up
-confirmations and the trust taken from the person's browsers (HIL-1407), and the
+confirmations and the trust taken from the person's browsers (HIL-1407), the
+notification marks, channel preferences and push unsubscribe (HIL-1408), and the
 theme choice (HIL-1427); the rest are still ahead (not in the code yet —
-HIL-1408, HIL-1409).
+HIL-1409).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
 rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
@@ -107,8 +109,9 @@ credit of a refused blocked sign-in and the trust of the sessions it ended to th
 agent by frame, and the agent takes the trust away itself with the second factor,
 a changed or recovered password and the block. The holder keeps creating the
 trust on the way in, applying the days an administrator sets to every person's
-trust at once, and the merge and the erasure. The other edits are still ahead
-(not in the code yet — HIL-1408, HIL-1409).
+trust at once, and the merge and the erasure. Notification marks, channel
+preferences and push unsubscribe are the person's agent's too (HIL-1408). The
+other edits are still ahead (not in the code yet — HIL-1409).
 Whether a session itself needs an instance owner is open in HIL-1403. Until
 that answer, this rule neither puts the session in the person's set nor rules
 it out as a future decision; it does not change the current Entity declaration.
@@ -141,17 +144,19 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   wrong code counted — so the agent claims that set with `Add` and `Update`
   (owner's decision, 2026-10-09, HIL-1406). It is a one-to-one extension of the
   person's own row, not a new member of the set; where a set holds many rows, the
-  library still creates them - with one exception. A step-up confirmation is the
+  library still creates them - with two exceptions. A step-up confirmation is the
   mark of the person's own proof in one browser: the owner inserts or extends it
   and clears the person's expired ones in one write, so it claims that set whole
-  (owner's decision, 2026-10-09, HIL-1407).
+  (owner's decision, 2026-10-09, HIL-1407). A row that says a channel is off is
+  born only by the person's own choice, so the notification preferences are
+  claimed whole, creation included (owner's decision, 2026-10-10, HIL-1408).
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
 starting an agent (owner's decision, 2026-10-04): a sign-in after an idle spell
 waits for the person's agent to rise when it has something to write (HIL-1405).
 The remaining content write paths still move
-(not in the code yet — HIL-1408, HIL-1409).
+(not in the code yet — HIL-1409).
 
 An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
 
@@ -285,9 +290,10 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
   edit to the instance owner. For the name, the administrator flag and the block
   this is done (HIL-1404), for the sign-in methods and passkey credentials
   (HIL-1405), for the second factor (HIL-1406) and for the step-up confirmations
-  and the browser trust (HIL-1407); for the person's other content it is the
-  current arrangement the moves replace, not evidence that the rule is already
-  implemented (not in the code yet — HIL-1408, HIL-1409).
+  and the browser trust (HIL-1407), and for the notification marks, channel
+  preferences and push unsubscribe (HIL-1408); for the person's other content it
+  is the current arrangement the moves replace, not evidence that the rule is
+  already implemented (not in the code yet — HIL-1409).
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
@@ -313,7 +319,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-1405 | Sign-in methods and passkey credentials, including sign-in (built). |
 | HIL-1406 | Second factor, including a reset whose delay elapsed (built). |
 | HIL-1407 | Step-up confirmations and browser trust taken away (built). |
-| HIL-1408 | Notification marks, channel preferences and push unsubscribe (not in the code yet — HIL-1408). |
+| HIL-1408 | Notification marks, channel preferences and push unsubscribe (built). |
 | HIL-1409 | Account-deletion requests and profile photos (not in the code yet — HIL-1409). |
 | HIL-1410 | Erasure and merge stop the affected instance agents (built). |
 | HIL-1411 | The code agent and sessions holder stop writing the people library's sign-in tables (not in the code yet — HIL-1411). Verification codes are outside the person's set and belong to that library (P-163, 2026-08-30). |

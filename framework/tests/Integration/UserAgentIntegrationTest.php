@@ -151,10 +151,10 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::users, '43', []);
-        // The rename journal, the second-factor settings row and the step-up confirmations are the
-        // sets the agent adds to - the journal with the name, the settings row on its first edit
-        // (HIL-1406), a confirmation of the person's own proof (HIL-1407) - and only to its own
-        // person's set.
+        // The rename journal, the second-factor settings row, the step-up confirmations and the
+        // muted-channel rows are the sets the agent adds to - the journal with the name, the settings
+        // row on its first edit (HIL-1406), a confirmation of the person's own proof (HIL-1407), a
+        // channel the person turned off (HIL-1408) - and only to its own person's set.
         foreach (self::addedSets() as $collection) {
             TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::USER_ID]);
             $this->assertCreateDenied($collection, ['43']);
@@ -210,7 +210,12 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
      */
     private static function addedSets(): array
     {
-        return [HilosDbContext::userRenames, HilosDbContext::secondFactorSettings, HilosDbContext::stepUps];
+        return [
+            HilosDbContext::userRenames,
+            HilosDbContext::secondFactorSettings,
+            HilosDbContext::stepUps,
+            HilosDbContext::notificationPreferences,
+        ];
     }
 
     /**

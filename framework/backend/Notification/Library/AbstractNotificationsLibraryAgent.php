@@ -25,10 +25,12 @@ use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -60,11 +62,8 @@ use Hilos\Notification\DTO\NotificationCreatedSignalData;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\DTO\NotificationMarkAllReadPayloadDTO;
 use Hilos\Notification\DTO\NotificationMarkReadPayloadDTO;
-use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
-use Hilos\Notification\DTO\NotificationReadSignalData;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationAction;
-use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Notification\NotificationCommandConstants;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationGroup;
@@ -78,19 +77,27 @@ use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
 use Hilos\Push\DTO\PushUnsubscribeActionDTO;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
+use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Throwable;
 
 /**
- * The notifications library: the one owner of the notification set and of everything written
- * about it (HIL-771).
+ * The notifications library: creation and the operations over the set live here, an edit of one
+ * person is that person's agent's, and the channel settings are only read (HIL-771, HIL-1408).
  *
  * An entity library in the sense of docs/agents/architecture/entity-libraries.md, and the
- * third one in code after users (HIL-622) and sessions (HIL-710). What it owns is a SET - the
- * notification rows, the per-user channel preferences, the delivery journal and the browsers'
- * push endpoints - together with the ceremony that fills it: write the row, tell the
- * recipient's open tabs, hand the row to the channels.
+ * third one in code after users (HIL-622) and sessions (HIL-710). What it writes is the
+ * notification rows it creates, the delivery journal and the browsers' push endpoints, together
+ * with the ceremony that fills a new letter: write the row, tell the recipient's open tabs, hand
+ * the row to the channels.
+ *
+ * Marking a letter read, choosing a channel and dropping a device are judged here and written by
+ * the person's agent. The channel settings are read at emit time and never claimed.
  *
  * Before it existed the notification tables had no owner at all. {@see HilosNotifier} was
  * declared a seam "any process calls", which held only while the process that called it also
@@ -112,28 +119,44 @@ use Throwable;
  */
 abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 {
+    use HandoverGatekeeperTrait;
+
     /**
-     * The notification set: the letters, the preferences behind them, the delivery journal and
-     * the browser endpoints a push is sent to.
+     * Creating a notification, the operations over the delivery journal, and a push subscription
+     * brought into being or marked gone.
      *
-     * All four are claimed OUTRIGHT and unconditionally. Nothing may write a framework
-     * collection until somebody says who owns it, so a project that never registers this agent
-     * simply has no notifications - rather than notifications written in whichever process
-     * happened to hold the owner of something else.
+     * Nothing may write a framework collection until somebody says who owns it, so a project that
+     * never registers this agent simply has no notifications - rather than notifications written
+     * in whichever process happened to hold the owner of something else.
+     *
+     * An edit of one person's own rows is not here. Marking read, choosing a channel and removing
+     * a device are that person's agent's. The channel settings are not claimed at all: this
+     * library only reads them ({@see self::READS_DB}).
      *
      * The journal is the one claim that is not exclusive: a channel agent holds an update-only
      * grant on the same collection ({@see AbstractDeliveryChannelAgent::OWNS_DB}), which the
      * registry allows because a grant is per agent and the two do not overlap in what they may
-     * do.
+     * do. A push row is created and updated here - a device subscribing, or a transport marking
+     * an endpoint gone - and removed by the person's agent.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        HilosDbContext::notifications => TruthSourceOperation::BY_KIND,
-        HilosDbContext::notificationPreferences => TruthSourceOperation::BY_KIND,
+        HilosDbContext::notifications => [TruthSourceOperation::Add],
         HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND,
-        HilosDbContext::pushSubscriptions => TruthSourceOperation::BY_KIND,
+        HilosDbContext::pushSubscriptions => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
+
+    /**
+     * Channel settings, read while a letter is sent and written by the person's agent (HIL-1408).
+     *
+     * A declared read of this library, not a process-wide one: the dispatcher asks whether a
+     * recipient muted a channel while this library is the one emitting
+     * ({@see NotificationDispatcher}).
+     *
+     * @var list<string>
+     */
+    public const array READS_DB = [HilosDbContext::notificationPreferences];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY;
 
@@ -156,12 +179,15 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * library sends back, and the backup agent declares it.
      * The fourth comes from a push delivery shard: it reports endpoints the transport found
      * gone, and this library marks the rows because it owns the subscription table.
+     * The fifth is the person's agent answering a write this library forwarded (HIL-1408):
+     * the browser action waiting on it is resumed here.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
         HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
         HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
         HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HandoverAnswerSignalData::class,
     ];
 
     /**
@@ -169,9 +195,10 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * Every one of them used to be a page action: the first two on the notification centre,
      * the last three on a project's profile page. What they have in common is what moved them
-     * - each writes a notification table, and none of them needs the page it was declared on:
-     * the recipient is resolved from the ACTING connection, never from the payload, so a
-     * client can only ever mark, mute or subscribe for itself.
+     * - they are judged here, and the five that edit one person's rows are written by that
+     * person's agent; subscribing a device is still written here. None of them needs the page
+     * it was declared on: the recipient is resolved from the ACTING connection, never from the
+     * payload, so a client can only ever mark, mute or subscribe for itself.
      *
      * The wire names are unchanged, which is what keeps the frontend out of this move
      * entirely: the router picks an action's destination by name, so a name declared here is
@@ -353,6 +380,18 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
                     );
                 }
                 Hilos::$db->pushSubscriptions->actions->markGone($data->data->endpoints);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE:
+                if (!$data->data instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        HandoverAnswerSignalData::class,
+                        $data->data,
+                    );
+                }
+                $this->answerHandover($data->data);
 
                 return;
 
@@ -549,10 +588,10 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     /**
      * Runs one of the six owned controls and answers the surface that submitted it.
      *
-     * None of them answers with a reply: each writes a row and either fans the change to the
-     * person's own devices or leaves the browser to read its own state back, exactly as it
-     * did while these were page actions. The refusals are the same objects thrown in the
-     * same order, so what a client sees on a bad payload has not moved either.
+     * Five of them judge the ask and hand the write to the person's agent; the ack waits on
+     * that agent's answer. Subscribing a device is still written here. The refusals of a bad
+     * payload are the same objects thrown in the same order, so what a client sees on one has
+     * not moved.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param string $action Owned action name from {@see AGENT_ACTIONS}
@@ -724,18 +763,32 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Marks one of the recipient's notifications read and fans the read to their devices.
+     * An agent has no page level, so a refusal never carries an administrator's detail.
+     *
+     * @param string $acceptKey Connection the answer goes to (unused: no page proves an admin here)
+     * @return bool Always false
+     */
+    private function detailAllowed(string $acceptKey): bool
+    {
+        return false;
+    }
+
+    /**
+     * Judges one mark-read and hands the write to the person's agent.
      *
      * The row is resolved and ownership-checked against the acting connection's own user, so
      * a client can never mark another user's notification read - the same two checks in the
-     * same order the notification centre ran them in before the move.
+     * same order the notification centre ran them in before the move. The write itself is the
+     * person's agent's.
      *
      * @param string $acceptKey Acting connection accept key
      * @param NotificationMarkReadPayloadDTO $dto Mark-read payload (notification id)
-     * @throws ItemNotFoundForUpdateException When the connection has no resolvable user
-     * @throws ValidationException When the notification is missing or owned by another user
-     * @throws HilosException When the mark-read query fails
-     * @throws InvalidArgumentException When the read signal cannot be named or queued
+     * @throws ItemNotFoundForUpdateException When the connection has no resolvable user, or there is no such person
+     * @throws ValidationException When the notification is missing or owned by another user, or the account was merged
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws InvalidFormatException When the person id is not positive
      */
     private function markRead(string $acceptKey, NotificationMarkReadPayloadDTO $dto): void
     {
@@ -746,46 +799,60 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
             throw new ValidationException('Notification not found');
         }
 
-        $notification->actions->markRead();
-
-        $this->fan($userId, NotificationSignalName::READ, new NotificationReadSignalData($dto->id));
+        AddressablePerson::require($userId);
+        $this->forward(HilosSignalConstants::HILOS_USER_NOTIFICATION_READ, new UserNotificationReadSignalData(
+            userId: $userId,
+            notificationId: $dto->id,
+            replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: NotificationAction::MARK_READ,
+            successMessage: null,
+        ));
     }
 
     /**
-     * Marks every unread notification of the recipient read and fans the mark-all.
+     * Judges a mark-all and hands the write to the person's agent.
      *
      * @param string $acceptKey Acting connection accept key
-     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
-     * @throws HilosException When the bulk mark-read query fails
-     * @throws InvalidArgumentException When the read signal cannot be named or queued
+     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user, or there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws InvalidFormatException When the person id is not positive
      */
     private function markAllRead(string $acceptKey): void
     {
         $userId = $this->requireUserId($acceptKey);
 
-        Hilos::$db->notifications->actions->markAllReadForUser($userId);
-
-        $this->fan(
-            $userId,
-            NotificationSignalName::READ,
-            new NotificationReadSignalData(NotificationReadSignalData::ALL),
-        );
+        AddressablePerson::require($userId);
+        $this->forward(HilosSignalConstants::HILOS_USER_NOTIFICATION_READ, new UserNotificationReadSignalData(
+            userId: $userId,
+            notificationId: null,
+            replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: NotificationAction::MARK_ALL_READ,
+            successMessage: null,
+        ));
     }
 
     /**
-     * Applies the signed-in user's opt in/out for one notification channel (HIL-485).
+     * Judges the signed-in user's opt in/out for one notification channel and hands the write on (HIL-485).
      *
      * Server-authoritative and self-only: the acting user is read from the connection, never
-     * from the payload. The write goes through the framework preferences action (enabling
-     * deletes the sparse muted row, muting upserts one); the new full channel -> allowed map
-     * is then fanned so all of the person's devices reflect the same state.
+     * from the payload. The person's agent writes the sparse muted row and tells the person's
+     * tabs the full channel map.
      *
      * @param string $acceptKey Acting connection accept key
      * @param NotificationChannelPreferenceActionDTO $dto Channel toggle DTO (channel, desired state)
-     * @throws ValidationException When the channel name is missing
-     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
-     * @throws DatabaseException When the preference write or channel-map read query fails
-     * @throws InvalidArgumentException When the preferences signal cannot be named or queued
+     * @throws ValidationException When the channel name is missing, or the account was merged into another one
+     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user, or there is no such person
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws InvalidFormatException When the person id is not positive
      */
     private function setChannelPreference(string $acceptKey, NotificationChannelPreferenceActionDTO $dto): void
     {
@@ -795,15 +862,17 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
 
         $userId = $this->requireUserId($acceptKey);
 
-        Hilos::$db->notificationPreferences->actions->setChannel($userId, $dto->channel, $dto->enabled);
-
-        $this->fan(
-            $userId,
-            NotificationSignalName::PREFERENCES_CHANGED,
-            new NotificationPreferencesChangedSignalData(
-                new NotificationChannelPreferenceProjector()->channelPreferenceMap($userId),
-            ),
-        );
+        AddressablePerson::require($userId);
+        $this->forward(HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET, new UserNotificationChannelSetSignalData(
+            userId: $userId,
+            channel: $dto->channel,
+            enabled: $dto->enabled,
+            replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: NotificationPreferenceAction::CHANNEL_SET,
+            successMessage: null,
+        ));
     }
 
     /**
@@ -841,18 +910,19 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Removes the acting device's web-push subscription (HIL-199).
+     * Judges the acting device's web-push opt-out and hands the removal to the person's agent (HIL-199).
      *
-     * The opt-out half of the toggle: the row is deleted by endpoint (endpoints are globally
-     * unique). Self-only - an authenticated session is required so an anonymous client cannot
-     * prune subscriptions - though the endpoint alone identifies the row. As with subscribe,
-     * no signal is fanned.
+     * The endpoint alone identifies the row. Self-only - an authenticated session is required so
+     * an anonymous client cannot prune subscriptions. The tabs are not told.
      *
      * @param string $acceptKey Acting connection accept key
      * @param PushUnsubscribeActionDTO $dto Unsubscribe DTO (endpoint)
-     * @throws ValidationException When the endpoint is missing
-     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
-     * @throws DatabaseException When the subscription delete query fails
+     * @throws ValidationException When the endpoint is missing, or the account was merged into another one
+     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user, or there is no such person
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws InvalidFormatException When the person id is not positive
      */
     private function unsubscribePush(string $acceptKey, PushUnsubscribeActionDTO $dto): void
     {
@@ -860,31 +930,51 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
             throw new ValidationException('Push subscription endpoint is required');
         }
 
-        Hilos::$db->pushSubscriptions->actions->unsubscribeOwned(
-            $this->requireUserId($acceptKey),
-            $dto->endpoint,
-        );
+        $userId = $this->requireUserId($acceptKey);
+        AddressablePerson::require($userId);
+        $this->forward(HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE, new UserPushUnsubscribeSignalData(
+            userId: $userId,
+            endpoint: $dto->endpoint,
+            replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: PushSubscriptionAction::UNSUBSCRIBE,
+            successMessage: null,
+        ));
     }
 
     /**
-     * Removes another or expired device row owned by the acting user.
+     * Judges removal of one device owned by the acting user and hands the write to the person's agent.
+     *
+     * A row that is already gone, or that belongs to someone else, is refused here, before the hop.
      *
      * @param string $acceptKey Acting connection accept key
      * @param PushRemoveActionDTO $dto Subscription row to remove
-     * @throws ValidationException When the row is absent or belongs to another user
-     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user
-     * @throws DatabaseException When the subscription lookup or delete fails
+     * @throws ValidationException When the row is absent or belongs to another user, or the account was merged
+     * @throws ItemNotFoundForUpdateException When the acting connection has no resolvable user, or there is no such person
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person, the merges or the subscription cannot be loaded
+     * @throws InvalidFormatException When the person id is not positive
      */
     private function removePush(string $acceptKey, PushRemoveActionDTO $dto): void
     {
-        if (!Hilos::$db->pushSubscriptions->actions->removeOwned(
-            $this->requireUserId($acceptKey),
-            $dto->subscriptionId,
-        )) {
+        $userId = $this->requireUserId($acceptKey);
+        $subscription = Hilos::$db->pushSubscriptions[$dto->subscriptionId] ?? null;
+        if ($subscription === null || $subscription->userId !== $userId) {
             throw new ValidationException('This device is already gone');
         }
 
-        $this->setActionSuccessMessage('Device removed');
+        AddressablePerson::require($userId);
+        $this->forward(HilosSignalConstants::HILOS_USER_PUSH_REMOVE, new UserPushRemoveSignalData(
+            userId: $userId,
+            subscriptionId: $dto->subscriptionId,
+            replySignal: HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: PushSubscriptionAction::REMOVE,
+            successMessage: 'Device removed',
+        ));
     }
 
     /**
@@ -988,7 +1078,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      *
      * @param int $userId Recipient user id (resolves the group name)
      * @param string $signalName Signal name (see NotificationSignalName)
-     * @param NotificationCreatedSignalData|NotificationReadSignalData $data Inner payload
+     * @param NotificationCreatedSignalData $data Inner payload
      * @throws InvalidArgumentException When the signal name is empty
      */
     private function fan(int $userId, string $signalName, mixed $data): void

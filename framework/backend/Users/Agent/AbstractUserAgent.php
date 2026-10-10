@@ -14,6 +14,7 @@ use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -22,6 +23,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
@@ -29,20 +31,30 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\UserActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\User;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Notification\DTO\NotificationPreferencesChangedSignalData;
+use Hilos\Notification\DTO\NotificationReadSignalData;
+use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Notification\NotificationChannelPreferenceProjector;
+use Hilos\Notification\NotificationGroup;
+use Hilos\Notification\NotificationSignalName;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
@@ -58,6 +70,8 @@ use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
+use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
@@ -66,6 +80,8 @@ use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
@@ -107,10 +123,13 @@ use Throwable;
  * and takes away the trust of the person's browsers (HIL-1407): a confirmation proved by a password
  * or a code, a device key or a second-factor code, or credited to a refused sign-in of a blocked
  * person ({@see StepUpConfirmations}); the trust when the second factor goes, when the password is
- * changed or recovered, when the person is blocked and when the person's sessions are ended. Each
- * comes as a frame from the coordinator that judged it: the name, the ways in, the second factor and
- * the confirmations from {@see AbstractUsersLibraryAgent}, the two flags, the credit and the ended
- * sessions from {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
+ * changed or recovered, when the person is blocked and when the person's sessions are ended. It
+ * writes the person's notification edits too (HIL-1408): one notification marked read or all of
+ * them, a channel turned on or off, this browser's push subscription dropped, a push device removed.
+ * Each comes as a frame from the coordinator that judged it: the name, the ways in, the second
+ * factor and the confirmations from {@see AbstractUsersLibraryAgent}, the notification edits from
+ * {@see AbstractNotificationsLibraryAgent}, the two flags, the credit and the ended sessions from
+ * {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
  * accepts the person's pick (HIL-1427). The
  * agent writes and always answers - a refusal included, because the coordinator continues only on
  * the answer and something is waiting on it - and the coordinator does what follows the write.
@@ -219,6 +238,22 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserBrowserTrustRevokeSignalData::userId,
             AgentSignalConfigKey::DTO => UserBrowserTrustRevokeSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => [
+            AgentSignalConfigKey::INDEX_FIELD => UserNotificationReadSignalData::userId,
+            AgentSignalConfigKey::DTO => UserNotificationReadSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => [
+            AgentSignalConfigKey::INDEX_FIELD => UserNotificationChannelSetSignalData::userId,
+            AgentSignalConfigKey::DTO => UserNotificationChannelSetSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPushUnsubscribeSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPushUnsubscribeSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PUSH_REMOVE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPushRemoveSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPushRemoveSignalData::class,
+        ],
     ];
 
     /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
@@ -237,8 +272,10 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     one-to-one extension of the person's own row, not a new member of a set. The person's
      *     confirmations of a protected operation are claimed whole: a confirmation is the mark of the
      *     person's own proof in one browser, and the agent inserts or extends it and clears the
-     *     person's expired ones in one write (owner's decision, 2026-10-09, HIL-1407). A claim that
-     *     may add is not borrowed, so the start does not wait for it.
+     *     person's expired ones in one write (owner's decision, 2026-10-09, HIL-1407). The row that
+     *     says a channel is off is born only by the person's own choice, so that set is claimed whole
+     *     (owner's decision, 2026-10-10, HIL-1408). A claim that may add is not borrowed, so the start
+     *     does not wait for it.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -252,7 +289,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userPhotos => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::notifications => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::notificationPreferences => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userRenames => [TruthSourceOperation::Add],
     ];
@@ -334,7 +371,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
      * A confirmation recorded and a trust taken away are answered as a flag is (HIL-1407): the
      * browser action waits on a confirmation, and the sessions library reads a refusal of a credit or
-     * of a trust into its log.
+     * of a trust into its log. A notification marked read, a channel turned on or off, and a push
+     * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
+     * library waits on the answer, and the tabs hear a read or a channel change only after the write.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -673,6 +712,65 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->sendToAgent($trustRevoke->replySignal, UserBrowserTrustRevokeDoneSignalData::to(
                     $trustRevoke,
                     $this->flagRefusal(fn () => $this->revokeBrowserTrust($trustRevoke->sessionId, $trustRevoke->others), 'Browser trust revoke'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_NOTIFICATION_READ:
+                $notificationRead = $data->data;
+                if (!$notificationRead instanceof UserNotificationReadSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserNotificationReadSignalData::class, $notificationRead);
+                }
+
+                $this->refuseAnotherPerson($notificationRead->userId, $name);
+                $this->sendToAgent($notificationRead->replySignal, HandoverAnswerSignalData::to(
+                    $notificationRead,
+                    $this->flagRefusal(fn () => $this->markNotificationsRead($notificationRead->notificationId), 'Notification read'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET:
+                $channelSet = $data->data;
+                if (!$channelSet instanceof UserNotificationChannelSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserNotificationChannelSetSignalData::class, $channelSet);
+                }
+
+                $this->refuseAnotherPerson($channelSet->userId, $name);
+                $this->sendToAgent($channelSet->replySignal, HandoverAnswerSignalData::to(
+                    $channelSet,
+                    $this->flagRefusal(
+                        fn () => $this->setNotificationChannel($channelSet->channel, $channelSet->enabled),
+                        'Notification channel',
+                    ),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE:
+                $pushUnsubscribe = $data->data;
+                if (!$pushUnsubscribe instanceof UserPushUnsubscribeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPushUnsubscribeSignalData::class, $pushUnsubscribe);
+                }
+
+                $this->refuseAnotherPerson($pushUnsubscribe->userId, $name);
+                $this->sendToAgent($pushUnsubscribe->replySignal, HandoverAnswerSignalData::to(
+                    $pushUnsubscribe,
+                    $this->flagRefusal(fn () => $this->unsubscribePush($pushUnsubscribe->endpoint), 'Push unsubscribe'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PUSH_REMOVE:
+                $pushRemove = $data->data;
+                if (!$pushRemove instanceof UserPushRemoveSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPushRemoveSignalData::class, $pushRemove);
+                }
+
+                $this->refuseAnotherPerson($pushRemove->userId, $name);
+                $this->sendToAgent($pushRemove->replySignal, HandoverAnswerSignalData::to(
+                    $pushRemove,
+                    $this->flagRefusal(fn () => $this->removePush($pushRemove->subscriptionId), 'Push removal'),
                 ));
 
                 return;
@@ -1078,6 +1176,120 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         Hilos::$db->secondFactorTrusts->actions->deleteForPair($sessionId, $this->userId);
+    }
+
+    /**
+     * Marks one of the person's notifications read, or every one, and tells every tab (HIL-1408).
+     *
+     * A missing row, or a row of another person, is the same refusal. An already-read row is left
+     * as it is, and the tabs still hear which one was marked. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param ?int $notificationId Notification to mark, or null for every one of the person's
+     * @throws ItemNotFoundForUpdateException When there is no such person, or the notification row has no id
+     * @throws ValidationException When the account was merged into another one, or the notification is missing or another person's
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person, the merges or a notification cannot be loaded
+     * @throws HilosException When a notification cannot be marked read
+     */
+    protected function markNotificationsRead(?int $notificationId): void
+    {
+        $this->personToWrite();
+        if ($notificationId === null) {
+            Hilos::$db->notifications->actions->markAllReadForUser($this->userId);
+        } else {
+            $notification = Hilos::$db->notifications[$notificationId];
+            if ($notification === null || $notification->userId !== $this->userId) {
+                throw new ValidationException('Notification not found');
+            }
+
+            $notification->actions->markRead();
+        }
+
+        $this->sendToGroup(
+            NotificationSignalName::READ,
+            NotificationGroup::forUser($this->userId),
+            new NotificationReadSignalData($notificationId ?? NotificationReadSignalData::ALL),
+        );
+    }
+
+    /**
+     * Turns one of the person's notification channels on or off, and tells every tab the full map (HIL-1408).
+     *
+     * Turning a channel off is what brings the muted row into being; turning it on removes that row.
+     * Repeating either leaves the table as it is, and the tabs still hear the whole map. Not final,
+     * for the reason {@see self::renamePerson()} gives.
+     *
+     * @param string $channel Channel to set
+     * @param bool $enabled Whether the channel stays on
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws EmptyValueException When the channel name is empty
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person, the merges, a preference or a channel address cannot be loaded or written
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the preference store announcement raises
+     * @throws SettingException When the settings accessor refuses a channel's enablement key
+     * @throws DbCollectionNotReadableException When nothing here reads the preferences or a channel's address collection
+     * @throws HilosException When the truth source refuses the preference write
+     */
+    protected function setNotificationChannel(string $channel, bool $enabled): void
+    {
+        $this->personToWrite();
+        Hilos::$db->notificationPreferences->actions->setChannel($this->userId, $channel, $enabled);
+        $this->sendToGroup(
+            NotificationSignalName::PREFERENCES_CHANGED,
+            NotificationGroup::forUser($this->userId),
+            new NotificationPreferencesChangedSignalData(
+                new NotificationChannelPreferenceProjector()->channelPreferenceMap($this->userId),
+            ),
+        );
+    }
+
+    /**
+     * Drops the person's push subscription at one address (HIL-1408).
+     *
+     * A missing row, or a row of another person, is left as it is and still counts as done. The
+     * tabs are not told: a subscription is one browser's. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param string $endpoint Browser push endpoint of the subscription to drop
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the lookup order is invalid
+     * @throws DatabaseException When the person, the merges or the subscription cannot be loaded or removed
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
+     */
+    protected function unsubscribePush(string $endpoint): void
+    {
+        $this->personToWrite();
+        Hilos::$db->pushSubscriptions->actions->unsubscribeOwned($this->userId, $endpoint);
+    }
+
+    /**
+     * Removes one of the person's push devices (HIL-1408).
+     *
+     * A row that is already gone, or that belongs to someone else, is refused. The tabs are not
+     * told. Not final, for the reason {@see self::renamePerson()} gives.
+     *
+     * @param int $subscriptionId Push subscription row to remove
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one, or the device is already gone
+     * @throws LogicException When a collection's class constants are not configured, or it has no usable object metadata
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the subscription cannot be loaded or removed
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
+     */
+    protected function removePush(int $subscriptionId): void
+    {
+        $this->personToWrite();
+        if (Hilos::$db->pushSubscriptions->actions->removeOwned($this->userId, $subscriptionId) === false) {
+            throw new ValidationException('This device is already gone');
+        }
     }
 
     /**

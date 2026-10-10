@@ -636,7 +636,8 @@ each piece lands:
 | HIL-1405 | the edits of one person's sign-in methods and passkeys, sign-in included, moved to that person's agent (built) |
 | HIL-1406 | the edits of one person's second factor, a removal whose delay elapsed included, moved to that person's agent (built) |
 | HIL-1407 | one person's step-up confirmations and the trust taken from their browsers, moved to that person's agent (built) |
-| HIL-1408…HIL-1409 | the remaining edits of one person moving to that person's agent |
+| HIL-1408 | one person's notification marks, channel preferences and push unsubscribe, moved to that person's agent (built) |
+| HIL-1409 | the remaining edits of one person moving to that person's agent |
 | HIL-632 | the instance-owner rule: [instance-owners.md](instance-owners.md) |
 | HIL-946 | the settings library: one writer for a collection three admin screens write, and the first library that holds a write without holding a read |
 
@@ -716,13 +717,16 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   to the project in `hilos_sessions_swept`, sent only where an agent declares it,
   so a project can drop what it keeps per browser.
 - `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
-  the third (HIL-771): the notifications library, which owns the notification rows,
-  the channel preferences, the delivery journal and the push endpoints. It is the
-  worked example of a library founded on an entity that had *no owner at all* — the
-  emit seam wrote from whatever worker called it, which held only while that worker
-  happened to host an owner of something else — and of co-ownership by operation: a
-  delivery channel agent updates the journal row of the attempt it is running, while
-  the library adds and prunes rows.
+  the third (HIL-771): the notifications library, which still creates the
+  notification rows, holds the delivery journal and brings a push endpoint into
+  being or marks it gone, and only reads the channel preferences (HIL-1408).
+  Marking a letter read, choosing a channel and dropping a device are the
+  person's agent's. It is the worked example of a library founded on an entity
+  that had *no owner at all* — the emit seam wrote from whatever worker called
+  it, which held only while that worker happened to host an owner of something
+  else — and of co-ownership by operation: a delivery channel agent updates the
+  journal row of the attempt it is running, while the library adds and prunes
+  rows.
 - [languages-and-countries.md](languages-and-countries.md) — the i18n library: one
   library over the five tables of the language and country reference, because none
   of their rows is written without reading the others; it holds the whole claim,

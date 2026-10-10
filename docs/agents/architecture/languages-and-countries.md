@@ -100,7 +100,8 @@ country pair; the reflow writes countries and their names in one pass.
 Splitting the tables between agents would turn each such write into an
 inter-agent operation, with no reason to place these small, cold tables apart.
 The notifications library is the precedent:
-`AbstractNotificationsLibraryAgent::OWNS_DB` holds four tables.
+`AbstractNotificationsLibraryAgent` holds the notification tables together,
+three by claim and the channel preferences by reading.
 
 The i18n library holds the **whole claim** — create, update and delete, the
 default operation set.

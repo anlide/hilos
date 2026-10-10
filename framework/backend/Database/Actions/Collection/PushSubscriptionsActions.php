@@ -76,11 +76,11 @@ class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When the lookup or delete query fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws LogicException When the collection has no usable object metadata
-     * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
+     * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
      */
     public function removeOwned(int $userId, int $id): bool
     {
-        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
 
         return $this->objectCollection->removeOwned($userId, $id);
     }
@@ -93,11 +93,11 @@ class PushSubscriptionsActions extends DbActions
      * @throws DatabaseException When the lookup or delete query fails
      * @throws InvalidArgumentException When the entity query is given an invalid order direction
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws WriteNotAllowedException When the notifications library cannot remove subscriptions
+     * @throws WriteNotAllowedException When the caller holds no right to remove that person's subscriptions
      */
     public function unsubscribeOwned(int $userId, string $endpoint): void
     {
-        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
         $this->objectCollection->unsubscribeOwned($userId, $endpoint);
     }
 

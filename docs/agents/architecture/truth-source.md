@@ -310,7 +310,8 @@ asks for: it holds the statement when the value reaches its key at the top of
 the tree. A statement across the table, and one moving rows between sets, still
 asks the collection door, which keeps its one width. The living callers are
 `Notifications::markAllReadForUser()` and the three `deleteForUser()` of the
-second factor, through `DbActions::ensureCanWriteSet()`.
+second factor, through `DbActions::ensureCanWriteSet()`, and
+`PushSubscriptionsActions::removeOwned()` and `unsubscribeOwned()` the same way.
 
 **A row is created into a set by that set's owner.** The creation door asks a
 claim over a set two things: that it allows `Add`, and that the new row lands in

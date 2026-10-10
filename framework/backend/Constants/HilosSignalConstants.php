@@ -129,6 +129,8 @@ use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
+use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
@@ -137,6 +139,8 @@ use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
@@ -830,6 +834,41 @@ final class HilosSignalConstants
      * Only a refusal is read, into the holder's log. Carried by {@see UserBrowserTrustRevokeDoneSignalData}.
      */
     public const string HILOS_USER_BROWSER_TRUST_REVOKE_DONE = 'hilos_user_browser_trust_revoke_done';
+
+    /**
+     * Notifications library → the person's agent: mark one notification read, or all of them (HIL-1408).
+     *
+     * Carried by {@see UserNotificationReadSignalData}.
+     */
+    public const string HILOS_USER_NOTIFICATION_READ = 'hilos_user_notification_read';
+
+    /**
+     * Notifications library → the person's agent: turn one channel on or off (HIL-1408).
+     *
+     * Carried by {@see UserNotificationChannelSetSignalData}.
+     */
+    public const string HILOS_USER_NOTIFICATION_CHANNEL_SET = 'hilos_user_notification_channel_set';
+
+    /**
+     * Notifications library → the person's agent: drop this browser's push subscription by its address (HIL-1408).
+     *
+     * Carried by {@see UserPushUnsubscribeSignalData}.
+     */
+    public const string HILOS_USER_PUSH_UNSUBSCRIBE = 'hilos_user_push_unsubscribe';
+
+    /**
+     * Notifications library → the person's agent: remove one push device by its id (HIL-1408).
+     *
+     * Carried by {@see UserPushRemoveSignalData}.
+     */
+    public const string HILOS_USER_PUSH_REMOVE = 'hilos_user_push_remove';
+
+    /**
+     * The person's agent → notifications library: the write landed, or why not (HIL-1408).
+     *
+     * The agent sends it and does not receive it. Carried by {@see HandoverAnswerSignalData}.
+     */
+    public const string HILOS_USER_NOTIFICATION_WRITE_DONE = 'hilos_user_notification_write_done';
 
     // ── Hilos settings admin: table mutation actions (client → server) ──
     /** Client → server: add a setting override on the HILOS_SETTINGS page. */

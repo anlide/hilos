@@ -51,6 +51,9 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
     /** Truth-source holder used only to write channel settings in these cases. */
     private const string SETTINGS_AGENT_ID = 'notification-channel-delivery-settings';
 
+    /** Truth-source holder standing in for the agent of one person, the writer of a channel choice. */
+    private const string SET_OWNER_AGENT = 'notification-channel-delivery-set-owner';
+
     /** Delivery channels exercised by the chat registry. */
     private const string EMAIL = 'email';
     private const string SMS = 'sms';
@@ -167,7 +170,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $this->enableChannel(self::SMS, true);
         $this->giveEmail(self::RECIPIENT_ID);
         $this->giveSms(self::RECIPIENT_ID);
-        $this->preferences()->setChannel(self::RECIPIENT_ID, self::EMAIL, false);
+        $this->setChannel(self::RECIPIENT_ID, self::EMAIL, false);
 
         $notificationId = $this->emit(self::RECIPIENT_ID);
 
@@ -183,7 +186,7 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
         $this->enableChannel(self::SMS, true);
         $this->giveEmail(self::RECIPIENT_ID);
         $this->giveSms(self::RECIPIENT_ID);
-        $this->preferences()->setChannel(self::RECIPIENT_ID, self::EMAIL, false);
+        $this->setChannel(self::RECIPIENT_ID, self::EMAIL, false);
 
         $notificationId = $this->emit(self::RECIPIENT_ID, type: BackupNotificationType::RESTORE_SUCCEEDED);
 
@@ -293,6 +296,29 @@ final class NotificationChannelDeliveryTest extends IntegrationTestCase
     private function enableChannel(string $channel, bool $enabled): void
     {
         $this->writeChannelSetting($channel, $enabled);
+    }
+
+    /**
+     * Turns one channel on or off for a recipient, under the owner of that person's set.
+     *
+     * The notifications library only reads the choice. Every mute in this file goes through
+     * here, the way {@see enableChannel()} writes a channel's own switch under its writer.
+     */
+    private function setChannel(int $userId, string $channel, bool $enabled): void
+    {
+        $previous = ExecutionContext::currentAgentId();
+        TruthSourceRegistry::register(
+            HilosDbContext::notificationPreferences,
+            TruthSourceKeys::set((string)$userId),
+            self::SET_OWNER_AGENT,
+        );
+        ExecutionContext::setCurrentAgentId(self::SET_OWNER_AGENT);
+        try {
+            $this->preferences()->setChannel($userId, $channel, $enabled);
+        } finally {
+            ExecutionContext::setCurrentAgentId($previous);
+            TruthSourceRegistry::unregister(HilosDbContext::notificationPreferences, self::SET_OWNER_AGENT);
+        }
     }
 
     /** Removes both channel-enable rows so no following chat integration case inherits them. */

@@ -32,10 +32,14 @@ use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
+use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
@@ -143,6 +147,7 @@ final class AbstractUserAgentTest extends TestCase
             TestUserAgent::OWNS_DB_SET[HilosDbContext::secondFactorSettings],
         );
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::stepUps]);
+        self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::notificationPreferences]);
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame([], TestUserAgent::READS_DB);
         self::assertSame([], TestUserAgent::OWNS_RT);
@@ -168,6 +173,7 @@ final class AbstractUserAgentTest extends TestCase
             TruthSourceOperation::Update,
         );
         TruthSourceRegistry::checkCanCreate(HilosDbContext::stepUps, static fn (): array => ['42']);
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['42']);
         foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
             TruthSourceRegistry::checkCanWriteItem(HilosDbContext::stepUps, '1', static fn (): array => ['42'], $operation);
         }
@@ -219,6 +225,17 @@ final class AbstractUserAgentTest extends TestCase
         TruthSourceRegistry::checkCanCreate(HilosDbContext::stepUps, static fn (): array => ['43']);
     }
 
+    public function testNotificationPreferencesOfAnotherPersonAreNotCreated(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new TestUserAgent('42');
+        OwnershipDeclaration::claimDbSet($agent);
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        $this->expectException(CreateNotAllowedException::class);
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['43']);
+    }
+
     public function testTheStepUpClaimMayAddSoItIsNotBorrowed(): void
     {
         self::assertNotContains(HilosDbContext::stepUps, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
@@ -251,6 +268,10 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => UserNotificationReadSignalData::class,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
         ], array_map(
             static fn (array $config): string => $config[AgentSignalConfigKey::DTO],
             TestUserAgent::AGENT_SIGNALS,
@@ -364,7 +385,12 @@ final class AbstractUserAgentTest extends TestCase
     {
         return array_values(array_diff(
             array_keys(TestUserAgent::OWNS_DB_SET),
-            [HilosDbContext::userRenames, HilosDbContext::secondFactorSettings, HilosDbContext::stepUps],
+            [
+                HilosDbContext::userRenames,
+                HilosDbContext::secondFactorSettings,
+                HilosDbContext::stepUps,
+                HilosDbContext::notificationPreferences,
+            ],
         ));
     }
 }

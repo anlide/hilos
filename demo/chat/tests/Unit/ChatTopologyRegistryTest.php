@@ -35,6 +35,7 @@ use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
@@ -294,6 +295,8 @@ use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
+use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
@@ -302,6 +305,8 @@ use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPushRemoveSignalData;
+use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
@@ -950,6 +955,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1012,6 +1021,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
             HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
@@ -1146,6 +1156,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => 'userId',
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => 'userId',
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => 'userId',
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => 'userId',
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => 'userId',
+            HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => 'userId',
+            HilosSignalConstants::HILOS_USER_PUSH_REMOVE => 'userId',
             ChatSignalConstants::BOT_AGENT_START => 'botId',
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
@@ -1218,6 +1232,10 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => UserNotificationReadSignalData::class,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
+            HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
@@ -1280,6 +1298,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,
             HilosSignalConstants::HILOS_PUSH_SUBSCRIPTIONS_GONE => PushSubscriptionsGoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_FILE_BIND => FileBindSignalData::class,
             HilosSignalConstants::HILOS_FILE_REMOVE => FileRemoveSignalData::class,
             HilosSignalConstants::HILOS_FILE_PUBLISH => FilePublishSignalData::class,

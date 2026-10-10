@@ -316,8 +316,9 @@ figure has landed; its write routes and the table agent remain open.
    subject takes its rows from the [owner of that instance](instance-owners.md).
    The person's agent figure exists (HIL-630) and writes the name, the administrator
    flag and the block (HIL-1404), the sign-in methods and passkeys (HIL-1405), the
-   second factor (HIL-1406) and the step-up confirmations and browser trust
-   (HIL-1407); the other ordinary edits reach it only after HIL-1408 and
+   second factor (HIL-1406), the step-up confirmations and browser trust
+   (HIL-1407), and the notification marks, channel preferences and push
+   unsubscribe (HIL-1408); the other ordinary edits reach it only after
    HIL-1409. This
    page does not wait for those routes: it writes the approach. The first leaf of
    the epic that takes a table over an instance subject stands behind HIL-630; a
