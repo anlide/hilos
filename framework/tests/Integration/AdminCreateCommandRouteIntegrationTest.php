@@ -373,7 +373,7 @@ final class AdminCreateCommandRouteIntegrationTest extends FrameworkIntegrationT
      * @param string $userId Person id as the agent address carries it
      * @return AdminCreateRouteTestUserAgent The person's agent with its flag write replaced
      */
-    private function newPersonAgent(string $userId): AdminCreateRouteTestUserAgent
+    protected function newPersonAgent(string $userId): AdminCreateRouteTestUserAgent
     {
         $agent = new AdminCreateRouteTestUserAgent($userId);
         $agent->refuseWith = $this->personRefusal;

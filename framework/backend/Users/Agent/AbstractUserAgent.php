@@ -56,6 +56,8 @@ use Hilos\Notification\NotificationChannelPreferenceProjector;
 use Hilos\Notification\NotificationGroup;
 use Hilos\Notification\NotificationSignalName;
 use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
+use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
@@ -80,6 +82,10 @@ use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
+use Hilos\Users\DTO\UserPhotoPutSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
@@ -126,7 +132,9 @@ use Throwable;
  * changed or recovered, when the person is blocked and when the person's sessions are ended. It
  * writes the person's notification edits too (HIL-1408): one notification marked read or all of
  * them, a channel turned on or off, this browser's push subscription dropped, a push device
- * removed. Each comes as a frame from the coordinator that judged it: the name, the ways in, the
+ * removed. It cancels a standing request to delete the account and sets or removes the profile
+ * photo (HIL-1409), both on a frame from the users library; the library starts the deletion
+ * request. Each comes as a frame from the coordinator that judged it: the name, the ways in, the
  * second factor and the confirmations from {@see AbstractUsersLibraryAgent}, the notification edits
  * from {@see AbstractNotificationsLibraryAgent}, the two flags, the credit and the ended sessions
  * from {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
@@ -237,6 +245,18 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserBrowserTrustRevokeSignalData::userId,
             AgentSignalConfigKey::DTO => UserBrowserTrustRevokeSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL => [
+            AgentSignalConfigKey::INDEX_FIELD => UserAccountDeletionCancelSignalData::userId,
+            AgentSignalConfigKey::DTO => UserAccountDeletionCancelSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PHOTO_PUT => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPhotoPutSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPhotoPutSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserPhotoRemoveSignalData::userId,
+            AgentSignalConfigKey::DTO => UserPhotoRemoveSignalData::class,
+        ],
         HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => [
             AgentSignalConfigKey::INDEX_FIELD => UserNotificationReadSignalData::userId,
             AgentSignalConfigKey::DTO => UserNotificationReadSignalData::class,
@@ -273,8 +293,10 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     person's own proof in one browser, and the agent inserts or extends it and clears the
      *     person's expired ones in one write (owner's decision, 2026-10-09, HIL-1407). The row that
      *     says a channel is off is born only by the person's own choice, so that set is claimed whole
-     *     (owner's decision, 2026-10-10, HIL-1408). A claim that may add is not borrowed, so the start
-     *     does not wait for it.
+     *     (owner's decision, 2026-10-10, HIL-1408). The person's one photo row (`hilos_user_photo`,
+     *     keyed by the person) is born the same way, by the first photo the person sets: the agent
+     *     claims that set whole (owner's decision, 2026-10-10, HIL-1409). A claim that may add is not
+     *     borrowed, so the start does not wait for it.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -286,7 +308,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userPhotos => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::userPhotos => TruthSourceOperation::ALL,
         HilosDbContext::notifications => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -373,6 +395,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * of a trust into its log. A notification marked read, a channel turned on or off, and a push
      * subscription dropped or a device removed are answered the same way (HIL-1408): the notifications
      * library waits on the answer, and the tabs hear a read or a channel change only after the write.
+     * A standing deletion canceled, and a profile photo set or removed, are answered the same way
+     * (HIL-1409): the users library waits on the answer.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -711,6 +735,57 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->sendToAgent($trustRevoke->replySignal, UserBrowserTrustRevokeDoneSignalData::to(
                     $trustRevoke,
                     $this->flagRefusal(fn () => $this->revokeBrowserTrust($trustRevoke->sessionId, $trustRevoke->others), 'Browser trust revoke'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL:
+                $deletionCancel = $data->data;
+                if (!$deletionCancel instanceof UserAccountDeletionCancelSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAccountDeletionCancelSignalData::class, $deletionCancel);
+                }
+
+                $this->refuseAnotherPerson($deletionCancel->userId, $name);
+                $this->sendToAgent($deletionCancel->replySignal, $this->personAnswer(
+                    fn () => new UserAccountDeletionCancelDoneSignalData(
+                        $deletionCancel,
+                        $this->cancelAccountDeletion(),
+                        null,
+                        null,
+                        null,
+                    ),
+                    fn (ActionRefusal $refusal) => UserAccountDeletionCancelDoneSignalData::refused($deletionCancel, $refusal),
+                    'Account deletion cancel',
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PHOTO_PUT:
+                $photoPut = $data->data;
+                if (!$photoPut instanceof UserPhotoPutSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPhotoPutSignalData::class, $photoPut);
+                }
+
+                $this->refuseAnotherPerson($photoPut->userId, $name);
+                $this->sendToAgent($photoPut->replySignal, $this->personAnswer(
+                    fn () => new UserPhotoPutDoneSignalData($photoPut, $this->putPhoto($photoPut->fileId), null, null, null),
+                    fn (ActionRefusal $refusal) => UserPhotoPutDoneSignalData::refused($photoPut, $refusal),
+                    'Profile photo',
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PHOTO_REMOVE:
+                $photoRemove = $data->data;
+                if (!$photoRemove instanceof UserPhotoRemoveSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPhotoRemoveSignalData::class, $photoRemove);
+                }
+
+                $this->refuseAnotherPerson($photoRemove->userId, $name);
+                $this->sendToAgent($photoRemove->replySignal, $this->personAnswer(
+                    fn () => new UserPhotoRemoveDoneSignalData($photoRemove, $this->removePhoto(), null, null, null),
+                    fn (ActionRefusal $refusal) => UserPhotoRemoveDoneSignalData::refused($photoRemove, $refusal),
+                    'Profile photo removal',
                 ));
 
                 return;
@@ -1292,6 +1367,95 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Cancels the person's standing request to delete the account, if one still stands (HIL-1409).
+     *
+     * The users library started the request and judged the cancel. This write only ends a request
+     * that is still live: a missing one, or one the erasure already carried out, answers false, and
+     * the race is the database's conditional update. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @return bool True when this call canceled a standing request, false when none stood
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or a sync signal cannot be named
+     * @throws DatabaseException When the person, the merges or the request cannot be loaded or updated
+     * @throws HilosException On database or truth-source failure while reading or canceling the request
+     */
+    protected function cancelAccountDeletion(): bool
+    {
+        $this->personToWrite();
+        $deletion = Hilos::$db->accountDeletions->liveOf($this->userId);
+
+        return $deletion !== null && $deletion->actions->cancel();
+    }
+
+    /**
+     * Sets the person's profile photo from a published file, returning the file it replaced (HIL-1409).
+     *
+     * The row is born by the first photo and replaced by the next, one transaction either way, so a
+     * failed write leaves the former photo. Not final, for the reason {@see self::renamePerson()} gives.
+     *
+     * @param int $fileId Registry file the photo is set from
+     * @return ?int Registry file of the photo this one replaced, or null when there was none
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the photo cannot be loaded or written
+     * @throws HilosException When the photo or the transaction cannot be written
+     */
+    protected function putPhoto(int $fileId): ?int
+    {
+        $this->personToWrite();
+        Database::transactionStart();
+        try {
+            $former = Hilos::$db->userPhotos->actions->put($this->userId, $fileId);
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            $this->rollBack();
+
+            throw $failure;
+        }
+
+        return $former;
+    }
+
+    /**
+     * Removes the person's profile photo, returning the file it held (HIL-1409).
+     *
+     * No photo is not a refusal: there is nothing to remove, and no transaction is opened. Not final,
+     * for the reason {@see self::renamePerson()} gives.
+     *
+     * @return ?int Registry file of the photo that was removed, or null when there was none
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the photo cannot be loaded or removed
+     * @throws HilosException When the photo or the transaction cannot be written
+     */
+    protected function removePhoto(): ?int
+    {
+        $this->personToWrite();
+        if (Hilos::$db->userPhotos[$this->userId] === null) {
+            return null;
+        }
+
+        Database::transactionStart();
+        try {
+            $fileId = Hilos::$db->userPhotos->actions->deleteForUser($this->userId);
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            $this->rollBack();
+
+            throw $failure;
+        }
+
+        return $fileId;
+    }
+
+    /**
      * The writes of the person's second factor (HIL-1406).
      *
      * Not final: the framework's test stands replace it to make one of the writes fail.
@@ -1366,20 +1530,23 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Runs one edit of the person's second factor and builds its answer, a refusal included (HIL-1406).
+     * Runs one edit of the person's own and builds its answer, a refusal included.
      *
      * An account that cannot be addressed - erased, or folded into someone else between the hop and
      * this frame - is refused before anything is read, in the words of
      * {@see AddressablePerson::require()}. A refusal a write raised for the person keeps its words;
      * anything else becomes the placeholder with its detail beside it, written to this agent's log.
      * The answer always goes: a browser action, the sweep or an operator's command is waiting on it.
+     * The second factor was the first edit answered this way (HIL-1406); a deletion canceled and a
+     * profile photo set or removed are answered the same way (HIL-1409).
      *
      * @template T of SignalDataInterface
      * @param Closure(): T $edit The edit, answering on its own when it went through or was refused on the merits
      * @param Closure(ActionRefusal): T $refused Builds the answer of a refused edit
+     * @param string $what Which edit, for the log line
      * @return T The answer to send back
      */
-    private function secondFactorAnswer(Closure $edit, Closure $refused): SignalDataInterface
+    private function personAnswer(Closure $edit, Closure $refused, string $what): SignalDataInterface
     {
         try {
             AddressablePerson::require($this->userId);
@@ -1390,11 +1557,24 @@ abstract class AbstractUserAgent extends AbstractAgent
         } catch (Throwable $e) {
             $refusal = ActionRefusal::fromThrowable($e);
             if ($refusal->isInternal()) {
-                $this->logAgentError("Second factor of #{$this->userId} failed: {$e->getMessage()}");
+                $this->logAgentError("{$what} of #{$this->userId} failed: {$e->getMessage()}");
             }
 
             return $refused($refusal);
         }
+    }
+
+    /**
+     * Runs one edit of the person's second factor and builds its answer (HIL-1406).
+     *
+     * @template T of SignalDataInterface
+     * @param Closure(): T $edit The edit, answering on its own when it went through or was refused on the merits
+     * @param Closure(ActionRefusal): T $refused Builds the answer of a refused edit
+     * @return T The answer to send back
+     */
+    private function secondFactorAnswer(Closure $edit, Closure $refused): SignalDataInterface
+    {
+        return $this->personAnswer($edit, $refused, 'Second factor');
     }
 
     /**

@@ -98,9 +98,9 @@ page does not name it.
 ## A Person's Photo
 
 The optional `hilos_user_photo` table holds the published photo of one person,
-linked to its registry file by a restrictive foreign key. It is owned by the
-people library and reached through `Hilos::$db->userPhotos[$userId]`, without a
-photo column on `hilos_user`. Its details, checking and browser wire are in
+linked to its registry file by a restrictive foreign key. The person's agent
+writes it (HIL-1409). It is reached through `Hilos::$db->userPhotos[$userId]`,
+without a photo column on `hilos_user`. Its details, checking and browser wire are in
 [profile-photo.md](profile-photo.md).
 
 ## Renaming A Person

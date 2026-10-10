@@ -176,6 +176,7 @@ use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Auth\AccountDeletion\AccountDeletionMessages;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettings;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionRefusal;
@@ -190,6 +191,8 @@ use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
+use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
+use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
@@ -197,6 +200,8 @@ use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
@@ -300,8 +305,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * browser. This library only reads the confirmations ({@see self::READS_DB}).
      *
      * A person's own request to delete their account is here too (HIL-302): this library's
-     * commands start it and call it off. The session holder carries it out, and marks it done
-     * under a borrowed right of its own - it is the one that erases the account.
+     * commands start it. Calling it off - the person's own and an administrator's - is written
+     * by the person's agent on a frame of this library (HIL-1409). The session holder carries
+     * it out, and marks it done under a borrowed right of its own - it is the one that erases
+     * the account.
+     *
+     * The person's one photo row is written by the person's agent whole, the first one too
+     * (owner's decision, 2026-10-10). This library judges the upload and the file, and finishes
+     * after the write.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -314,10 +325,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactors => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Add],
-        HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
+        HilosDbContext::accountDeletions => [TruthSourceOperation::Add],
         HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
         HilosDbContext::userRenames => [TruthSourceOperation::Update],
-        HilosDbContext::userPhotos => TruthSourceOperation::ALL,
     ];
 
     /** @var array<string, list<TruthSourceOperation>> */
@@ -352,7 +362,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * ({@see resumeAction()}). It answers here for every edit of the second factor as well
      * (HIL-1406): a browser action is resumed the same way, the sweep mails on the answer, and the
      * operator's unlock command is answered from it. And it answers here for a step-up confirmation
-     * this library handed over (HIL-1407): the browser action is answered on it.
+     * this library handed over (HIL-1407): the browser action is answered on it. It answers here
+     * for a deletion called off and for a photo set or removed (HIL-1409): the person's own action
+     * is resumed, an administrator's card is answered, and a published file is bound once the row
+     * is written.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -376,6 +389,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE => UserStepUpRecordDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE => UserAccountDeletionCancelDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE => UserPhotoPutDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE => UserPhotoRemoveDoneSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
     ];
@@ -860,6 +876,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * second-factor code - and nothing follows it here: the answer resumes the action with the
      * success ack, or fails it.
      *
+     * A deletion the person calls off, and a photo they remove, are written by their agent and
+     * resumed here (HIL-1409). An administrator's cancel is answered to the card once the agent
+     * has written. A published photo is bound on the agent's answer; that action was already
+     * answered when the upload was sent.
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
@@ -1106,6 +1127,51 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     throw new ValidationException($name . ' payload must be ' . UserStepUpRecordDoneSignalData::class);
                 }
                 $this->resumeAction($recorded->ask, $recorded->error, static fn () => null);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE:
+                $deletionDone = $data->data;
+                if (!$deletionDone instanceof UserAccountDeletionCancelDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserAccountDeletionCancelDoneSignalData::class);
+                }
+                if ($deletionDone->ask->answerSignal === null) {
+                    $this->resumeAction(
+                        $deletionDone->ask,
+                        $deletionDone->error,
+                        function () use ($deletionDone): ?ActionReplyDTO {
+                            if ($deletionDone->canceled) {
+                                $this->accountDeletionCommands()->publishState($deletionDone->ask->userId);
+                            }
+
+                            return null;
+                        },
+                    );
+                } else {
+                    $this->finishAdminDeletionCancel($deletionDone);
+                }
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE:
+                $photoPut = $data->data;
+                if (!$photoPut instanceof UserPhotoPutDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserPhotoPutDoneSignalData::class);
+                }
+                $this->profilePhotoCommands()->afterPut($photoPut);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE:
+                $photoRemoved = $data->data;
+                if (!$photoRemoved instanceof UserPhotoRemoveDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserPhotoRemoveDoneSignalData::class);
+                }
+                $this->resumeAction(
+                    $photoRemoved->ask,
+                    $photoRemoved->error,
+                    fn () => $this->profilePhotoCommands()->afterRemove($photoRemoved),
+                );
 
                 return;
 
@@ -2922,6 +2988,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Schedules a deletion here, and hands a cancel to the person's agent (HIL-1409).
+     *
+     * Calling a deletion off gives back rather than takes away, so it asks no confirmation. The
+     * card waits on a signal, not on an action of this library, so the cancel is
+     * {@see sendToAgent()} and the card is answered from {@see finishAdminDeletionCancel()} once
+     * the agent has written. A person who is already gone is refused in the words of
+     * {@see AddressablePerson::require()}, and the agent is not raised.
+     *
      * @param AccountDeletionSetSignalData $request Target deletion and waiting administrator
      * @throws WiringRefusal When this worker cannot access a required source
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
@@ -2947,11 +3021,22 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     ? 'Deletion scheduled: the account is erased in 1 day'
                     : "Deletion scheduled: the account is erased in {$days} days";
             } else {
-                $this->accountDeletionCommands()->cancelFor($request->userId);
-                $this->logAgentInfo('account_deletion_canceled ' . json_encode([
-                    'event' => 'account_deletion_canceled', 'user' => $request->userId, 'by' => $by,
-                ]));
-                $message = 'Deletion canceled';
+                AddressablePerson::require($request->userId);
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL,
+                    new UserAccountDeletionCancelSignalData(
+                        userId: $request->userId,
+                        by: $by,
+                        replySignal: HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE,
+                        acceptKey: $request->acceptKey,
+                        requestId: $request->requestId,
+                        action: $request->action,
+                        successMessage: null,
+                        answerSignal: $request->replySignal,
+                    ),
+                );
+
+                return;
             }
         } catch (WiringRefusal $refusal) {
             throw $refusal;
@@ -2970,6 +3055,58 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             requestId: $request->requestId,
             action: $request->action,
             successMessage: $message,
+            error: null,
+            errorType: null,
+            errorDetail: null,
+        ));
+    }
+
+    /**
+     * Answers the administrator's card once the person's agent has looked at the cancel (HIL-1409).
+     *
+     * A failure of the write is said in the agent's words. A request that no longer stood is the
+     * sentence the card has always shown, and nothing is fanned. A cancel that landed tells the
+     * person's tabs and then the card.
+     *
+     * @param UserAccountDeletionCancelDoneSignalData $done The agent's answer, carrying the ask back
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     * @throws HilosException When the person's state cannot be built or sent
+     */
+    private function finishAdminDeletionCancel(UserAccountDeletionCancelDoneSignalData $done): void
+    {
+        $ask = $done->ask;
+        if ($done->error !== null) {
+            $this->sendToAgent($ask->answerSignal, new HandoverAnswerSignalData(
+                acceptKey: $ask->acceptKey,
+                requestId: $ask->requestId,
+                action: $ask->action,
+                successMessage: $ask->successMessage,
+                error: $done->error,
+                errorType: $done->errorType,
+                errorDetail: $done->errorDetail,
+            ));
+
+            return;
+        }
+
+        if (!$done->canceled) {
+            $this->sendToAgent(
+                $ask->answerSignal,
+                HandoverAnswerSignalData::to($ask, ActionRefusal::said(AccountDeletionMessages::NOTHING_SCHEDULED)),
+            );
+
+            return;
+        }
+
+        $this->logAgentInfo('account_deletion_canceled ' . json_encode([
+            'event' => 'account_deletion_canceled', 'user' => $ask->userId, 'by' => $ask->by,
+        ]));
+        $this->accountDeletionCommands()->publishState($ask->userId);
+        $this->sendToAgent($ask->answerSignal, new HandoverAnswerSignalData(
+            acceptKey: $ask->acceptKey,
+            requestId: $ask->requestId,
+            action: $ask->action,
+            successMessage: 'Deletion canceled',
             error: null,
             errorType: null,
             errorDetail: null,

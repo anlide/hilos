@@ -71,7 +71,8 @@ use Hilos\Users\AdminAudience;
  * record the last one wrote - the two processes of a stand, folded into one.
  *
  * An edit of a way in is written by the person's agent (HIL-1405), and so is a step-up
- * confirmation (HIL-1407): the library asks it by frame and resumes the action on its answer. The
+ * confirmation (HIL-1407). A deletion called off and a profile photo set or removed are the same
+ * kind of hop (HIL-1409): the library asks by frame and resumes the action on the answer. The
  * same carrying hands each ask to the person's agent, raised under its own claims, and each answer
  * back to the library.
  */
@@ -94,6 +95,9 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE,
         HilosSignalConstants::HILOS_USER_STEP_UP_RECORD,
+        HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL,
+        HilosSignalConstants::HILOS_USER_PHOTO_PUT,
+        HilosSignalConstants::HILOS_USER_PHOTO_REMOVE,
     ];
 
     /** The person's agent's answers, each resuming the action that asked. */
@@ -111,6 +115,9 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE,
         HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE,
+        HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE,
+        HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE,
+        HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE,
     ];
 
     public const string SESSION_TOKEN = 'aa0000000000000000000000000001137';

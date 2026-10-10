@@ -21,6 +21,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
@@ -36,6 +37,8 @@ use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPhotoPutSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
@@ -52,7 +55,7 @@ use PHPUnit\Framework\Assert;
 
 /**
  * The person's agent beside a library under test: raised on the first frame to a person, claimed
- * the way its worker claims it, and run in its own frame (HIL-1404, HIL-1405, HIL-1406, HIL-1407).
+ * the way its worker claims it, and run in its own frame (HIL-1404, HIL-1405, HIL-1406, HIL-1407, HIL-1409).
  *
  * A case that drives a coordinator hands each frame the coordinator queued for a person to
  * {@see deliverToPerson()}, then hands the agent's answer back to the coordinator. A case that
@@ -73,7 +76,7 @@ trait PersonAgentFrames
      * @param string $userId Person id as the agent address carries it
      * @return AbstractUserAgent The agent, not yet claimed
      */
-    private function newPersonAgent(string $userId): AbstractUserAgent
+    protected function newPersonAgent(string $userId): AbstractUserAgent
     {
         return new IntegrationUserAgent($userId);
     }
@@ -113,7 +116,7 @@ trait PersonAgentFrames
      *
      * @param SignalDTO $signal Queued frame addressed to a person's agent
      */
-    private function deliverToPerson(SignalDTO $signal): void
+    protected function deliverToPerson(SignalDTO $signal): void
     {
         $data = $signal->data;
         Assert::assertInstanceOf(AgentSignalData::class, $data);
@@ -145,7 +148,10 @@ trait PersonAgentFrames
             $ask instanceof UserNotificationReadSignalData,
             $ask instanceof UserNotificationChannelSetSignalData,
             $ask instanceof UserPushUnsubscribeSignalData,
-            $ask instanceof UserPushRemoveSignalData => $ask->userId,
+            $ask instanceof UserPushRemoveSignalData,
+            $ask instanceof UserAccountDeletionCancelSignalData,
+            $ask instanceof UserPhotoPutSignalData,
+            $ask instanceof UserPhotoRemoveSignalData => $ask->userId,
             default => Assert::fail('Not a frame to a person\'s agent: ' . get_debug_type($ask)),
         };
 

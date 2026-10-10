@@ -22,10 +22,9 @@ block are written by it (HIL-1404), and so are the edits of the person's sign-in
 methods and passkey credentials, sign-in included (HIL-1405), of the person's
 second factor, a removal whose delay elapsed included (HIL-1406), the
 person's step-up confirmations and the trust taken from the person's browsers
-(HIL-1407), and the notification marks, channel preferences and push unsubscribe
-(HIL-1408). The other edits move to it in the leaves named in
-[Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1409).
+(HIL-1407), the notification marks, channel preferences and push unsubscribe
+(HIL-1408), and calling off a deletion request and the profile photo
+(HIL-1409).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -63,9 +62,9 @@ or an administrator requested them. For the person the name, the administrator
 flag and the block have moved (HIL-1404), and so have the sign-in methods and
 passkey credentials (HIL-1405), the second factor (HIL-1406), the step-up
 confirmations and the trust taken from the person's browsers (HIL-1407), the
-notification marks, channel preferences and push unsubscribe (HIL-1408), and the
-theme choice (HIL-1427); the rest are still ahead (not in the code yet —
-HIL-1409).
+notification marks, channel preferences and push unsubscribe (HIL-1408), calling
+off a deletion request and the profile photo (HIL-1409), and the theme choice
+(HIL-1427).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
 rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).
@@ -110,8 +109,7 @@ agent by frame, and the agent takes the trust away itself with the second factor
 a changed or recovered password and the block. The holder keeps creating the
 trust on the way in, applying the days an administrator sets to every person's
 trust at once, and the merge and the erasure. Notification marks, channel
-preferences and push unsubscribe are the person's agent's too (HIL-1408). The
-other edits are still ahead (not in the code yet — HIL-1409).
+preferences and push unsubscribe are the person's agent's too (HIL-1408).
 Whether a session itself needs an instance owner is open in HIL-1403. Until
 that answer, this rule neither puts the session in the person's set nor rules
 it out as a future decision; it does not change the current Entity declaration.
@@ -150,13 +148,16 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   (owner's decision, 2026-10-09, HIL-1407). A row that says a channel is off is
   born only by the person's own choice, so the notification preferences are
   claimed whole, creation included (owner's decision, 2026-10-10, HIL-1408).
+  The person's one photo row (`hilos_user_photo`, keyed by the person) is born
+  the same way, by the first photo the person sets, so the agent claims that set
+  whole (owner's decision, 2026-10-10, HIL-1409). A deletion request is a member
+  of a set of many — the history of a person's requests — so the users library
+  still creates it.
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
 starting an agent (owner's decision, 2026-10-04): a sign-in after an idle spell
 waits for the person's agent to rise when it has something to write (HIL-1405).
-The remaining content write paths still move
-(not in the code yet — HIL-1409).
 
 An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
 
@@ -187,9 +188,11 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   and `hilos_user_second_factor_unlock` (HIL-1406), and for the step-up
   confirmations and the browser trust `hilos_user_step_up_record` from the users
   library, `hilos_user_step_up_credit` and `hilos_user_browser_trust_revoke` from
-  the sessions holder (HIL-1407), each indexed by `userId`; each has a `_done`
-  answer declared on its coordinator. A proof that is itself the owner's write
-  carries the confirmation in the same frame: `hilos_user_passkey_use` and
+  the sessions holder (HIL-1407), and from the users library
+  `hilos_user_account_deletion_cancel`, `hilos_user_photo_put` and
+  `hilos_user_photo_remove` (HIL-1409), each indexed by `userId`; each has a
+  `_done` answer declared on its coordinator. A proof that is itself the owner's
+  write carries the confirmation in the same frame: `hilos_user_passkey_use` and
   `hilos_user_second_factor_prove` name the operation and the browser's token
   hash, and the agent records the confirmation in the turn that writes the proof
   (HIL-1407). A frame the coordinator does not wait on - the credit, the trust of
@@ -203,7 +206,8 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   sessions holder), the success ack otherwise - carrying the reply the
   continuation returned, such as new backup codes (HIL-1406) - a failure for a
   refusal. The continuation reads the session again off the connection; no token
-  rides in the ask.
+  rides in the ask. Setting a photo does not resume a browser action:
+  `hilos_profile_photo_set` is answered when the upload is submitted (HIL-1409).
 - **A secret travels as its hash.** A new password is hashed in the process the
   browser sent it to, and the frame carries the hash; the password itself never
   crosses a process (HIL-1405).
@@ -291,9 +295,8 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
   this is done (HIL-1404), for the sign-in methods and passkey credentials
   (HIL-1405), for the second factor (HIL-1406) and for the step-up confirmations
   and the browser trust (HIL-1407), and for the notification marks, channel
-  preferences and push unsubscribe (HIL-1408); for the person's other content it
-  is the current arrangement the moves replace, not evidence that the rule is
-  already implemented (not in the code yet — HIL-1409).
+  preferences and push unsubscribe (HIL-1408), and for calling off a deletion
+  request and the profile photo (HIL-1409).
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
@@ -320,7 +323,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-1406 | Second factor, including a reset whose delay elapsed (built). |
 | HIL-1407 | Step-up confirmations and browser trust taken away (built). |
 | HIL-1408 | Notification marks, channel preferences and push unsubscribe (built). |
-| HIL-1409 | Account-deletion requests and profile photos (not in the code yet — HIL-1409). |
+| HIL-1409 | Account-deletion requests and profile photos (built). |
 | HIL-1410 | Erasure and merge stop the affected instance agents (built). |
 | HIL-1411 | The code agent and sessions holder stop writing the people library's sign-in tables (not in the code yet — HIL-1411). Verification codes are outside the person's set and belong to that library (P-163, 2026-08-30). |
 | HIL-1412 | Cluster behavior of the person's agent (not in the code yet — HIL-1412). |

@@ -6,11 +6,14 @@ namespace Hilos\Auth\Library\Command;
 
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
-use Hilos\Database\Database;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Database\DatabaseException;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
@@ -19,8 +22,13 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\ProfilePhotoCheckSignalData;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
+use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
+use Hilos\Users\DTO\UserPhotoPutSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\ProfilePhotoRefusal;
 use Hilos\Users\UserNotificationType;
@@ -122,10 +130,18 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Binds a published registry file to the person's photo row and releases the former file.
+     * Asks the person's agent to write the photo row once a file is published (HIL-1409).
+     *
+     * The checks on the publication stay here. A person who is gone is told on the tab that
+     * submitted, and the agent is not raised. The row itself, the first one included, is the
+     * agent's. The browser action was answered when the upload was sent, so this is not a
+     * hand-off the action waits on.
      *
      * @param FilesPublishedSignalData $answer Files library's publication result
-     * @throws HilosException When a database write or signal delivery fails
+     * @throws HilosException When the file cannot be read or a frame cannot be queued
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the ask cannot be named
+     * @throws DatabaseException When the person or the merges cannot be loaded
      */
     public function published(FilesPublishedSignalData $answer): void
     {
@@ -148,37 +164,75 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
             return;
         }
 
-        Database::transactionStart();
         try {
-            $oldFileId = Hilos::$db->userPhotos->actions->put($file->ownerUserId, $fileId);
-            Database::transactionCommit();
-        } catch (HilosException $failure) {
-            $this->rollBack();
+            AddressablePerson::require($file->ownerUserId);
+        } catch (ValidationException $e) {
+            $this->failSet($answer->acceptKey, $e->getMessage());
 
-            throw $failure;
+            return;
+        }
+
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_USER_PHOTO_PUT,
+            new UserPhotoPutSignalData(
+                userId: $file->ownerUserId,
+                fileId: $fileId,
+                replySignal: HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE,
+                acceptKey: $answer->acceptKey,
+                requestId: null,
+                action: HilosSignalConstants::PROFILE_PHOTO_SET,
+                successMessage: null,
+            ),
+        );
+    }
+
+    /**
+     * Binds the new file and releases the former one after the person's agent wrote the row (HIL-1409).
+     *
+     * A refused write tells the tab and leaves the unbound file for the files janitor. The former
+     * file is released only when the agent named one other than the file just set.
+     *
+     * @param UserPhotoPutDoneSignalData $done The agent's answer, carrying the ask back
+     * @throws HilosException When the failure frame or the restate frame cannot be queued
+     * @throws LogicException When the files door is missing
+     */
+    public function afterPut(UserPhotoPutDoneSignalData $done): void
+    {
+        $ask = $done->ask;
+        if ($done->error !== null) {
+            $this->failSet($ask->acceptKey, $done->error);
+
+            return;
         }
 
         try {
-            $this->files()->markBound([$fileId]);
+            $this->files()->markBound([$ask->fileId]);
         } catch (HilosException $failure) {
             Logger::logAgentWarning($this->library->getId(), "Photo file bind announcement failed: {$failure->getMessage()}");
         }
-        if ($oldFileId !== null && $oldFileId !== $fileId) {
+        if ($done->formerFileId !== null && $done->formerFileId !== $ask->fileId) {
             try {
-                $this->files()->remove([$oldFileId]);
+                $this->files()->remove([$done->formerFileId]);
             } catch (HilosException $failure) {
                 Logger::logAgentWarning($this->library->getId(), "Former photo file removal failed: {$failure->getMessage()}");
             }
         }
-        $this->restate($file->ownerUserId);
+        $this->restate($ask->userId);
     }
 
     /**
-     * Removes the acting person's photo and its registry file.
+     * Asks the person's agent to remove the photo row (HIL-1409).
+     *
+     * The feature, the acting person and a pending check of this connection are judged here.
+     * The row is the agent's, and a person with no photo is answered once the agent says so.
      *
      * @param string $acceptKey Connection that submitted
-     * @throws ValidationException When photos are not enabled
-     * @throws HilosException When state, persistence or signal delivery fails
+     * @throws ValidationException When photos are not enabled, or the person was erased or merged
+     * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
+     * @throws HilosException When state or a frame cannot be queued
+     * @throws LogicException When no action is being dispatched, or a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the ask cannot be named
+     * @throws DatabaseException When the person or the merges cannot be loaded
      */
     public function remove(string $acceptKey): void
     {
@@ -193,28 +247,46 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
                 new ProfilePhotoCheckSignalData(false),
             );
         }
-        if (Hilos::$db->userPhotos[$acting->userId] === null) {
-            return;
+
+        $this->library->askPersonAgent(
+            $acting->userId,
+            HilosSignalConstants::HILOS_USER_PHOTO_REMOVE,
+            new UserPhotoRemoveSignalData(
+                userId: $acting->userId,
+                replySignal: HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
+        );
+    }
+
+    /**
+     * Releases the file the person's agent removed, and refreshes open sessions (HIL-1409).
+     *
+     * No file means the person had no photo: nothing is released and no session is refreshed.
+     * The action is answered with nothing either way.
+     *
+     * @param UserPhotoRemoveDoneSignalData $done The agent's answer, carrying the ask back
+     * @return ?ActionReplyDTO Nothing: the removal has no reply of its own
+     * @throws HilosException When the restate frame cannot be queued
+     * @throws LogicException When the files door is missing
+     */
+    public function afterRemove(UserPhotoRemoveDoneSignalData $done): ?ActionReplyDTO
+    {
+        if ($done->fileId === null) {
+            return null;
         }
 
-        Database::transactionStart();
         try {
-            $fileId = Hilos::$db->userPhotos->actions->deleteForUser($acting->userId);
-            Database::transactionCommit();
+            $this->files()->remove([$done->fileId]);
         } catch (HilosException $failure) {
-            $this->rollBack();
-
-            throw $failure;
+            Logger::logAgentWarning($this->library->getId(), "Photo file removal failed: {$failure->getMessage()}");
         }
+        $this->restate($done->ask->userId);
 
-        if ($fileId !== null) {
-            try {
-                $this->files()->remove([$fileId]);
-            } catch (HilosException $failure) {
-                Logger::logAgentWarning($this->library->getId(), "Photo file removal failed: {$failure->getMessage()}");
-            }
-        }
-        $this->restate($acting->userId);
+        return null;
     }
 
     /**
@@ -320,15 +392,5 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
             HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE,
             new UserSessionsRestateSignalData($userId),
         );
-    }
-
-    /** Keeps a failed transaction from swallowing the failure that caused it. */
-    private function rollBack(): void
-    {
-        try {
-            Database::transactionRollback();
-        } catch (HilosException) {
-            // The original failure is the one the caller is owed.
-        }
     }
 }

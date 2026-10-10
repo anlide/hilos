@@ -11,6 +11,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\ProfilePhotoFeature;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
@@ -33,6 +35,7 @@ use Hilos\Runtime\State\Item\HilosProfilePhotoCheck as StateHilosProfilePhotoChe
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\ProfilePhotoCheckSignalData;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
 use Hilos\Users\ProfilePhotoRefusal;
@@ -50,6 +53,9 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
 
     /** @var list<SignalDTO> Queued frames the previous assertion did not consume */
     private array $pendingSignals = [];
+
+    /** When set, the person's agent refuses the photo write. */
+    private bool $putWriteFails = false;
 
     /** @return RtContext Profile runtime with uploads and pending photo checks */
     protected function createRuntime(): RtContext
@@ -107,6 +113,7 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
 
         $this->seedFile(self::FIRST_FILE_ID);
         $this->deliverPublished('u1', self::FIRST_FILE_ID);
+        $this->settleProfileFlows();
         self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_BIND));
         $restate = $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE);
@@ -117,11 +124,13 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
 
         $this->seedFile(self::SECOND_FILE_ID);
         $this->deliverPublished('u2', self::SECOND_FILE_ID);
+        $this->settleProfileFlows();
         self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_REMOVE));
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
 
         $this->submit(HilosSignalConstants::PROFILE_PHOTO_REMOVE, new ProfilePhotoRemoveActionDTO());
+        $this->settleProfileFlows();
         self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_FILE_REMOVE));
         self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
@@ -197,6 +206,79 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame(ProfilePhotoRefusal::forReason('service_unavailable'), $unavailable[0]->data->data->reason);
     }
 
+    /**
+     * Removing a photo the person does not have acknowledges the action and refreshes nothing.
+     *
+     * @throws HilosException When the action or a frame fails
+     */
+    public function testRemovalWithoutAPhotoAcksAndDoesNotRestate(): void
+    {
+        $this->library->beginActionDispatch('photo-remove-none');
+        try {
+            $reply = $this->library->onAgentAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::PROFILE_PHOTO_REMOVE,
+                new ProfilePhotoRemoveActionDTO(),
+            );
+            self::assertNull($reply);
+            self::assertTrue($this->library->actionReplyDeferred());
+        } finally {
+            $this->library->endActionDispatch();
+        }
+
+        $this->settleProfileFlows();
+        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        $acks = $this->signalsNamed(SignalConstants::ACTION_SUCCESS);
+        self::assertCount(1, $acks);
+        self::assertInstanceOf(WebSocketSignalData::class, $acks[0]->data);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $acks[0]->data->data);
+        self::assertSame(HilosSignalConstants::PROFILE_PHOTO_REMOVE, $acks[0]->data->data->action);
+        self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
+    }
+
+    /**
+     * A photo the person's agent cannot write tells the tab and refreshes nothing.
+     *
+     * @throws HilosException When the file cannot be seeded or a frame fails
+     */
+    public function testAFailingAgentWriteFailsTheSetAndDoesNotRestate(): void
+    {
+        $this->putWriteFails = true;
+        $this->seedFile(self::FIRST_FILE_ID);
+        $this->deliverPublished('u1', self::FIRST_FILE_ID);
+        $this->settleProfileFlows();
+
+        self::assertNull(Hilos::$db->userPhotos[self::USER_ID]);
+        $errors = $this->signalsNamed(SignalConstants::ACTION_ERROR);
+        self::assertCount(1, $errors);
+        self::assertInstanceOf(WebSocketSignalData::class, $errors[0]->data);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $errors[0]->data->data);
+        self::assertSame(HilosSignalConstants::PROFILE_PHOTO_SET, $errors[0]->data->data->action);
+        self::assertSame('The photo could not be kept', $errors[0]->data->data->reason);
+        self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
+    }
+
+    /**
+     * A removal already asked, then a new photo, leaves the new file on the row.
+     *
+     * @throws HilosException When a file cannot be seeded or a frame fails
+     */
+    public function testRemoveThenPutLeavesTheNewFile(): void
+    {
+        $this->seedFile(self::FIRST_FILE_ID);
+        $this->deliverPublished('u1', self::FIRST_FILE_ID);
+        $this->settleProfileFlows();
+        $this->drainSignals();
+        self::assertSame(self::FIRST_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
+
+        $this->seedFile(self::SECOND_FILE_ID);
+        $this->submit(HilosSignalConstants::PROFILE_PHOTO_REMOVE, new ProfilePhotoRemoveActionDTO());
+        $this->deliverPublished('u2', self::SECOND_FILE_ID);
+        $this->settleProfileFlows();
+
+        self::assertSame(self::SECOND_FILE_ID, Hilos::$db->userPhotos[self::USER_ID]?->fileId);
+    }
+
     /** A check on a connection that has gone is removed without publishing. */
     public function testClosedConnectionDropsItsCheck(): void
     {
@@ -204,6 +286,19 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         new ProfilePhotoCommands($this->library)->sweepClosedConnections();
 
         self::assertNull(Hilos::$rt->hilosProfilePhotoChecks['gone']);
+    }
+
+    /**
+     * @param string $userId Person id as the agent address carries it
+     * @return AbstractUserAgent The person's agent, refusing the photo write when this case asks it to
+     */
+    protected function newPersonAgent(string $userId): AbstractUserAgent
+    {
+        if ($this->putWriteFails) {
+            return new ProfilePhotoPutFailsAgent($userId);
+        }
+
+        return new IntegrationUserAgent($userId);
     }
 
     /**
@@ -316,4 +411,20 @@ class ProfilePhotoImmediateTestHilos extends Hilos
 final class ProfilePhotoCheckedTestHilos extends ProfilePhotoImmediateTestHilos
 {
     public const ?string PROFILE_PHOTO_CHECKER = 'fixture_photo_checker';
+}
+
+/** Person's agent whose photo write fails, so no row is kept and no session is refreshed. */
+final class ProfilePhotoPutFailsAgent extends AbstractUserAgent
+{
+    /**
+     * Refuses the photo write, so the case can see the tab told and no refresh sent.
+     *
+     * @param int $fileId Registry file the photo would have been set from
+     * @return ?int Never returns
+     * @throws ValidationException Always: the write is the failure under test
+     */
+    protected function putPhoto(int $fileId): ?int
+    {
+        throw new ValidationException('The photo could not be kept');
+    }
 }

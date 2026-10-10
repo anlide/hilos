@@ -318,8 +318,8 @@ figure has landed; its write routes and the table agent remain open.
    flag and the block (HIL-1404), the sign-in methods and passkeys (HIL-1405), the
    second factor (HIL-1406), the step-up confirmations and browser trust
    (HIL-1407), and the notification marks, channel preferences and push
-   unsubscribe (HIL-1408); the other ordinary edits reach it only after
-   HIL-1409. This
+   unsubscribe (HIL-1408), and calling off a deletion request and the profile
+   photo (HIL-1409). This
    page does not wait for those routes: it writes the approach. The first leaf of
    the epic that takes a table over an instance subject stands behind HIL-630; a
    table over a set subject does not, because the users library is in the code

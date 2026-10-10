@@ -438,6 +438,7 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         self::assertSame([StandingTestExitPage::WRITE], $exit->handled);
     }
 
+    /** @throws HilosException When the deletion fixture or a frame fails */
     public function testTheLibraryClosesItsCommandsToAFrozenPersonButTheCancelOfTheirDeletion(): void
     {
         self::accept(self::USER_ID, 'terms', 'first');
@@ -457,7 +458,14 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             new WebSocketActionSignalDTO(self::ACCEPT_KEY, HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, [], 'req-cancel'),
             SignalSource::WEBSOCKET,
         );
-        $answer = $this->queued(SignalConstants::ACTION_SUCCESS);
+        $answer = null;
+        foreach ($this->drainSignals() as $signal) {
+            if ($answer !== null || $signal->signalName->getName() !== SignalConstants::ACTION_SUCCESS) {
+                continue;
+            }
+            self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            $answer = $signal->data->data;
+        }
         self::assertInstanceOf(PageActionSuccessSignalData::class, $answer);
         self::assertSame('req-cancel', $answer->requestId);
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));

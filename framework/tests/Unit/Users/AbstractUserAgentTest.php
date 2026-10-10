@@ -25,6 +25,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\Agent\AbstractUserAgentDaemon;
+use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
@@ -38,6 +39,8 @@ use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPhotoPutSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
@@ -148,6 +151,7 @@ final class AbstractUserAgentTest extends TestCase
         );
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::stepUps]);
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::notificationPreferences]);
+        self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::userPhotos]);
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame([], TestUserAgent::READS_DB);
         self::assertSame([], TestUserAgent::OWNS_RT);
@@ -236,9 +240,21 @@ final class AbstractUserAgentTest extends TestCase
         TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['43']);
     }
 
+    public function testPhotoRowsOfAnotherPersonAreNotCreated(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new TestUserAgent('42');
+        OwnershipDeclaration::claimDbSet($agent);
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        $this->expectException(CreateNotAllowedException::class);
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::userPhotos, static fn (): array => ['43']);
+    }
+
     public function testTheStepUpClaimMayAddSoItIsNotBorrowed(): void
     {
         self::assertNotContains(HilosDbContext::stepUps, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
+        self::assertNotContains(HilosDbContext::userPhotos, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
         self::assertContains(HilosDbContext::secondFactorTrusts, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
     }
 
@@ -268,6 +284,9 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
             HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL => UserAccountDeletionCancelSignalData::class,
+            HilosSignalConstants::HILOS_USER_PHOTO_PUT => UserPhotoPutSignalData::class,
+            HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => UserPhotoRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => UserNotificationReadSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
@@ -390,6 +409,7 @@ final class AbstractUserAgentTest extends TestCase
                 HilosDbContext::secondFactorSettings,
                 HilosDbContext::stepUps,
                 HilosDbContext::notificationPreferences,
+                HilosDbContext::userPhotos,
             ],
         ));
     }

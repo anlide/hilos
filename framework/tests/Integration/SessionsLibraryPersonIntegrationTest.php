@@ -359,7 +359,7 @@ final class SessionsLibraryPersonIntegrationTest extends HilosSessionIntegration
      * @param string $userId Person id as the agent address carries it
      * @return SessionsLibraryPersonTestUserAgent The person's agent with its two flag writes opened
      */
-    private function newPersonAgent(string $userId): SessionsLibraryPersonTestUserAgent
+    protected function newPersonAgent(string $userId): SessionsLibraryPersonTestUserAgent
     {
         return new SessionsLibraryPersonTestUserAgent($userId);
     }

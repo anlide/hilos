@@ -22,9 +22,12 @@ an administrator receives its variant URL, while the admin view mode hides it.
 
 `hilos_user_photo` has one row per person, keyed by `user_id`, with `file_id`
 and `set_at`. Both keys are foreign keys with RESTRICT: the row must leave before
-its person or its registry file. The users library owns its writes. Restore
-anonymization purges the table whole. A file absent after a restore leaves the
-browser's initials as the visible fallback.
+its person or its registry file. The person's agent writes the row, the first
+one included — one photo per person (owner's decision, 2026-10-10, HIL-1409).
+The users library judges the upload and the file; after the write it binds the
+new file, removes the former one and refreshes sessions. Erasure removes the
+row at the holder. Restore anonymization purges the table whole. A file absent
+after a restore leaves the browser's initials as the visible fallback.
 
 When a checker is configured, the users library keeps one pending check per
 connection in `hilosProfilePhotoChecks`, with accept key, user id, upload id and
@@ -41,9 +44,10 @@ The browser submits `hilos_profile_photo_set` with `clientUploadId`, or
 `hilos_profile_photo_remove` with no client fields. `hilos_profile_photo_check`
 reports the pending flag to that connection. Approval asks the files registry
 to publish; its `hilos_profile_photo_published` answer carries the registry
-file id. One transaction inserts or replaces the person's photo row. After
-commit the new file is bound and the former file is removed. Removal deletes
-the row first, then removes its file. Both endings send
+file id. The write and the removal go to the person's agent as
+`hilos_user_photo_put` and `hilos_user_photo_remove`. After the write the new
+file is bound and the former file is removed. Removal deletes the row first,
+then removes its file. Both endings send
 `hilos_user_sessions_restate` so every open session receives a fresh handshake
 identity with `currentUser.photo`; the admin card follows DB sync.
 

@@ -16,9 +16,9 @@ race in the database and exactly one wins. A carried-out row stays after the
 erasure: the number of an account that no longer exists and three dates are
 the trace that it was erased on request.
 
-The users library owns the table: its commands start and cancel. The session
-holder marks a request carried out under a borrowed `Update` claim, because it
-is the one that erases.
+The users library starts a request. The person's agent cancels it, whether the
+person or an administrator asked (HIL-1409). The session holder marks a request
+carried out under a borrowed `Update` claim, because it is the one that erases.
 
 ## Starting And Calling It Off
 
@@ -28,7 +28,7 @@ Four signed-in actions of the users library (`AccountDeletionCommands`):
 - **code** sends a code of type `account_deletion` (mail) or
   `account_deletion_sms` (phone) to that address;
 - **start** checks and spends the code and records the request;
-- **cancel** calls it off.
+- **cancel** calls it off: the library judges it, the person's agent writes it.
 
 The first three open with the `delete_account` confirmation
 ([step-up.md](step-up.md)) and read the account again: a deletion already
@@ -64,8 +64,9 @@ default, 1 to 365 (`AccountDeletionSettingsCatalog`, folded into the project's
 catalog).
 
 The admin user card schedules the same request and grace period through
-`scheduleFor()`, and cancels it through `cancelFor()`. Both publish the same
-state to the person; either the administrator or the person may call it off.
+`scheduleFor()`, and cancels it through the person's agent. The card is
+answered after the write. Both publish the same state to the person; either
+the administrator or the person may call it off.
 Scheduling asks the administrator's fresh confirmation first (the step-up
 operation `delete_other_account`, see [step-up.md](step-up.md)); calling it off
 asks none.

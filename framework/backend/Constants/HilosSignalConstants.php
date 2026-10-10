@@ -114,6 +114,8 @@ use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
+use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
+use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
@@ -139,6 +141,10 @@ use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
+use Hilos\Users\DTO\UserPhotoPutSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
+use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
@@ -834,6 +840,51 @@ final class HilosSignalConstants
      * Only a refusal is read, into the holder's log. Carried by {@see UserBrowserTrustRevokeDoneSignalData}.
      */
     public const string HILOS_USER_BROWSER_TRUST_REVOKE_DONE = 'hilos_user_browser_trust_revoke_done';
+
+    /**
+     * Users library → the person's agent: cancel a standing request to delete the account (HIL-1409).
+     *
+     * The library started the request; the agent cancels it if it still stands. Carried by
+     * {@see UserAccountDeletionCancelSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_ACCOUNT_DELETION_CANCEL = 'hilos_user_account_deletion_cancel';
+
+    /**
+     * The person's agent → users library: the request is canceled, or was not standing (HIL-1409).
+     *
+     * The library continues and answers. Carried by {@see UserAccountDeletionCancelDoneSignalData}.
+     */
+    public const string HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE = 'hilos_user_account_deletion_cancel_done';
+
+    /**
+     * Users library → the person's agent: set the profile photo from a published file (HIL-1409).
+     *
+     * Sent once the file is published. Carried by {@see UserPhotoPutSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_PHOTO_PUT = 'hilos_user_photo_put';
+
+    /**
+     * The person's agent → users library: the photo is set, or why not (HIL-1409).
+     *
+     * The former file, when there was one, comes back for the library to release. Carried by
+     * {@see UserPhotoPutDoneSignalData}.
+     */
+    public const string HILOS_USER_PHOTO_PUT_DONE = 'hilos_user_photo_put_done';
+
+    /**
+     * Users library → the person's agent: remove the profile photo (HIL-1409).
+     *
+     * Carried by {@see UserPhotoRemoveSignalData}, an ask of the handover form.
+     */
+    public const string HILOS_USER_PHOTO_REMOVE = 'hilos_user_photo_remove';
+
+    /**
+     * The person's agent → users library: the photo is removed, or why not (HIL-1409).
+     *
+     * The file of the photo that was removed comes back for the library to release. Carried by
+     * {@see UserPhotoRemoveDoneSignalData}.
+     */
+    public const string HILOS_USER_PHOTO_REMOVE_DONE = 'hilos_user_photo_remove_done';
 
     /**
      * Notifications library → the person's agent: mark one notification read, or all of them (HIL-1408).

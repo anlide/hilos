@@ -23,11 +23,15 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
+use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\UserAccountDeletionCancelSignalData;
 use Random\RandomException;
 
 /**
@@ -46,10 +50,14 @@ use Random\RandomException;
  * Calling the deletion off is the opposite on purpose: no fresh proof, and not behind the
  * product's guard, because changing one's mind must be easier than deleting, and a frozen
  * account must still be able to do it. It is refused only under impersonation - what a
- * person does to their own account is never done with someone else's hands.
+ * person does to their own account is never done with someone else's hands. The person's
+ * agent writes the cancel (HIL-1409). Nothing left to cancel is a silent success, and no
+ * state is fanned. A hop that loses the race to the erasure is refused in the words of
+ * {@see AddressablePerson}.
  *
- * Every start and cancel fans the person's new state to their group, so every open tab
- * turns the danger zone into the warning and back.
+ * A start fans the person's new state to their group, and a cancel that landed does the
+ * same once the agent answers, so every open tab turns the danger zone into the warning
+ * and back.
  */
 final class AccountDeletionCommands extends AbstractLibraryCommands
 {
@@ -188,32 +196,19 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Cancels an administrator-targeted request, refusing when there is nothing left to cancel.
+     * Calls the scheduled deletion off by asking the person's agent to write it (HIL-1409).
      *
-     * @param int $userId Account whose cancellation was authorized by the caller
-     * @throws ValidationException When no live request can be canceled
-     * @throws HilosException When the request or its state cannot be written or sent
-     */
-    public function cancelFor(int $userId): void
-    {
-        $deletion = Hilos::$db->accountDeletions->liveOf($userId);
-        if ($deletion === null || !$deletion->actions->cancel()) {
-            throw new ValidationException(AccountDeletionMessages::NOTHING_SCHEDULED);
-        }
-        $this->publishState($userId);
-    }
-
-    /**
-     * Calls the scheduled deletion off.
-     *
-     * No confirmation and no product guard (see the class comment). Nothing scheduled - another
-     * tab called it off first - is a silent success, and so is a cancel that lost the race to
-     * the erasure: the state fanned after it tells every tab what is true.
+     * No confirmation and no product guard (see the class comment). Nothing scheduled is a silent
+     * success, and this library sends no state: the agent answers that nothing was canceled. A hop
+     * that loses the race to the erasure is refused in the words of {@see AddressablePerson}.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
-     * @throws ValidationException When the session is impersonated
-     * @throws HilosException When the session, the request lookup or its update fails
+     * @throws ValidationException When the session is impersonated, or the person was erased or merged
+     * @throws LogicException When no action is being dispatched, or a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws HilosException When the session cannot be read
      */
     public function cancel(string $acceptKey): void
     {
@@ -222,13 +217,20 @@ final class AccountDeletionCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::IMPERSONATED);
         }
 
-        $deletion = Hilos::$db->accountDeletions->liveOf($acting->userId);
-        if ($deletion === null) {
-            return;
-        }
-
-        $deletion->actions->cancel();
-        $this->publishState($acting->userId);
+        $this->library->askPersonAgent(
+            $acting->userId,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL,
+            new UserAccountDeletionCancelSignalData(
+                userId: $acting->userId,
+                by: null,
+                replySignal: HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+                answerSignal: null,
+            ),
+        );
     }
 
     /**

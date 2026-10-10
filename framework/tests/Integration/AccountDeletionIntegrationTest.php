@@ -24,6 +24,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -33,6 +34,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -43,8 +45,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  *
  * Four submits: opening the window, the code, the start and the cancel. The three that lead
  * to a deletion open with the operation's confirmation and read the account again; the cancel
- * asks for nothing but a session that is the person's own. Every start and cancel fans the
- * person's state to their group - the frame the second tab turns its zone by.
+ * asks for nothing but a session that is the person's own. A start fans the person's state to
+ * their group, and a cancel that landed does the same once their agent has written it (HIL-1409).
  */
 final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 {
@@ -60,6 +62,9 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     private const int CLOCK_SLACK_SEC = 5;
 
     private string $previousAppClass;
+
+    /** When set, the person's agent refuses the cancel write. */
+    private bool $cancelWriteFails = false;
 
     protected function setUp(): void
     {
@@ -111,6 +116,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         $this->adminDeletion(self::USER_ID, true);
         $this->stateFrames();
         $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());
+        $this->settleProfileFlows();
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
         self::assertNull($this->stateFrames()[0]->deletion);
     }
@@ -206,6 +212,17 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         $other = [];
         $answer = null;
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if ($name === HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL) {
+                $this->deliverToPerson($signal);
+
+                continue;
+            }
+            if ($name === HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE && $signal->data instanceof AgentSignalData) {
+                $this->library->onSignalAgent($signal->data, 'test', $name);
+
+                continue;
+            }
             if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
                 self::assertNull($answer);
                 $answer = $signal->data->data;
@@ -220,6 +237,30 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         self::assertNotNull($answer);
 
         return $answer;
+    }
+
+    /**
+     * @param string $userId Person id as the agent address carries it
+     * @return AbstractUserAgent The person's agent, refusing the cancel when this case asks it to
+     */
+    protected function newPersonAgent(string $userId): AbstractUserAgent
+    {
+        if ($this->cancelWriteFails) {
+            return new AccountDeletionCancelFailsAgent($userId);
+        }
+
+        return new IntegrationUserAgent($userId);
+    }
+
+    /** Asserts the queue holds no cancel ask for the person's agent. */
+    private function assertNoDeletionCancelFrame(): void
+    {
+        foreach ($this->drainSignals() as $signal) {
+            self::assertNotSame(
+                HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL,
+                $signal->signalName->getName(),
+            );
+        }
     }
 
     /**
@@ -463,6 +504,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         );
 
         $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());
+        $this->settleProfileFlows();
 
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
         self::assertNotNull($request->canceledAt);
@@ -504,6 +546,47 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
         );
 
         self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        $this->assertNoDeletionCancelFrame();
+    }
+
+    /**
+     * An administrator canceling a person who is already gone is refused before the hop.
+     */
+    public function testAdministratorCancelOfAMissingPersonIsRefusedWithoutAFrame(): void
+    {
+        $answer = $this->adminDeletion(999999, false);
+
+        self::assertSame('No such user: 999999', $answer->error);
+        $this->assertNoDeletionCancelFrame();
+    }
+
+    /**
+     * A cancel the person's agent cannot write fails the action, fans nothing and leaves the request.
+     *
+     * @throws HilosException When the request cannot be written or a frame fails
+     */
+    public function testAFailingAgentWriteFailsTheCancelAndLeavesTheRequest(): void
+    {
+        $this->cancelWriteFails = true;
+        Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY),
+        );
+
+        $this->submit(HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, new AccountDeletionCancelActionDTO());
+        $this->settleProfileFlows();
+
+        self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+        $failed = false;
+        foreach ($this->drainSignals() as $signal) {
+            self::assertNotSame(HilosSignalConstants::HILOS_ACCOUNT_DELETION_STATE, $signal->signalName->getName());
+            $payload = $signal->data instanceof WebSocketSignalData ? $signal->data->data : null;
+            if ($payload instanceof PageActionErrorSignalData && $payload->action === HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL) {
+                $failed = true;
+                self::assertSame('The deletion could not be canceled', $payload->reason);
+            }
+        }
+        self::assertTrue($failed, 'The cancel action must fail');
     }
 
     /**
@@ -622,5 +705,20 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     {
         self::seedIdentity(self::USER_ID, IdentityType::MAGIC_LINK, self::EMAIL);
         Hilos::$db->identities->createPasswordIdentity(self::USER_ID, self::EMAIL, self::PASSWORD)->markVerified();
+    }
+}
+
+/** Person's agent whose cancel write fails, so the request is left standing. */
+final class AccountDeletionCancelFailsAgent extends AbstractUserAgent
+{
+    /**
+     * Refuses the cancel, so the case can see a failed write leave the request standing.
+     *
+     * @return bool Never returns
+     * @throws ValidationException Always: the write is the failure under test
+     */
+    protected function cancelAccountDeletion(): bool
+    {
+        throw new ValidationException('The deletion could not be canceled');
     }
 }
