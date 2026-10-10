@@ -19,6 +19,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
@@ -48,6 +49,7 @@ use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Group\GroupSubscriptionDispatcher;
@@ -155,6 +157,7 @@ use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeVerifySignalData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
+use Hilos\ProtectedMode\ProtectedModeSettingsReporter;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -198,6 +201,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** Daemon client connection, or null before connect/after cleanup. */
     protected ?WorkerDaemonClient $daemonClient = null;
+
+    /** @var ?ProtectedModeSettingsReporter Subscriber registered once for this worker process */
+    private ?ProtectedModeSettingsReporter $protectedModeSettingsReporter = null;
 
     /** Pid of the daemon that forked this worker, or null before the loop starts. */
     protected ?int $daemonPid = null;
@@ -806,6 +812,15 @@ abstract class WorkerManager extends BaseManager implements PageResender
             $reporter = new WorkerLogWriteLevelReporter($this->daemonClient);
             LogWriteLevelApplier::setListener($reporter);
             $reporter->onWriteLevelChanged(Logger::writeLevel());
+
+            // The master's channel is ready only after registration. Subscribe once, then try
+            // the current value. A cataloged setting waits for DB interest ready below, because
+            // this acknowledgement precedes the master's source-readiness frame.
+            if ($this->protectedModeSettingsReporter === null) {
+                $this->protectedModeSettingsReporter = new ProtectedModeSettingsReporter($this->daemonClient);
+                SourceChangeBus::subscribe($this->protectedModeSettingsReporter);
+            }
+            $this->protectedModeSettingsReporter->report();
         }
 
         // The framework declared its own readers while mounting, long before there was a link to
@@ -1058,6 +1073,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * The drop comes before the mark, and the order is the whole of the guarantee: between the
      * two this worker must not answer a read, and a mark set first would let it answer one out
      * of exactly the cache that is about to be thrown away.
+     * The protected-mode setting reporter makes its first DB read only after this mark. Its
+     * registration-time call may have deferred while the settings source was not ready.
      *
      * @param WorkerDbInterestReadyMessageDTO $data Confirmation naming the collection
      * @throws LogicException When the collection entity class is not configured (eager reload)
@@ -1067,6 +1084,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
     {
         Hilos::$db?->reHydrateCollection($data->collectionKey);
         SourceInterestRegistry::markReady(SourceChange::KIND_DB, $data->collectionKey);
+        if ($data->collectionKey === HilosDbContext::settings) {
+            $this->protectedModeSettingsReporter?->report();
+        }
     }
 
     /**

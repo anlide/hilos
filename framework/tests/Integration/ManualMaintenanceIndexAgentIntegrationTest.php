@@ -290,6 +290,36 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
         $this->assertFileDoesNotExist($this->logDirectory . '/' . ProtectedModeFreezeStore::FILE_NAME);
     }
 
+    public function testBrowserStartedManualWindowReturnsEmptyAfterRestart(): void
+    {
+        $reply = static function (ManualMaintenanceOutcome $outcome): void {
+        };
+        $this->agent->enable('browser-key', 'session-hash', $reply);
+        $enable = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_ENABLE);
+        $this->assertInstanceOf(ProtectedModeEnableSignalData::class, $enable);
+        $this->mode->requestEnable($enable);
+        $this->assertSame('session-hash', Hilos::$rt?->hilosProtectedModeRuntime?->initiatorSessionTokenHash);
+
+        $this->restartTheNode();
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertNull($row?->initiatorSessionTokenHash);
+        $this->assertTrue($row?->locksOut('browser-key', 'session-hash'));
+
+        $this->agent->onSignalCommand(new CommandRequestDTO('cli-pass', CliCommands::MAINTENANCE_PASS, []), '', '');
+        $pass = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_PASS);
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $pass);
+        $this->mode->requestPass($pass);
+        $this->agent->onTick();
+        $this->assertSame([$pass->passHash], $row?->passHashes);
+
+        $this->agent->onSignalCommand(new CommandRequestDTO('cli-disable', CliCommands::MAINTENANCE_DISABLE, []), '', '');
+        $disable = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_DISABLE);
+        $this->assertInstanceOf(ProtectedModeDisableSignalData::class, $disable);
+        $this->mode->requestDisable($disable);
+        $this->agent->onTick();
+        $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, $row?->phase);
+    }
+
     /**
      * Restarts the node: the memory goes and the freeze file stays, as when a master dies under a freeze.
      *

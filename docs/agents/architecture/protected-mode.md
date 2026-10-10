@@ -410,7 +410,7 @@ makes no blocking call.
 | Verdict | What it means |
 |---|---|
 | `INITIATOR_LOST` | the initiator agent stopped; sticky, because the agent-start gate lets its type start again and a fresh instance would read as alive |
-| `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick — under manual maintenance only when the settings key calls for it; by default, a log line (not in the code yet — HIL-1359) |
+| `RESTORED_FROM_DISK` | the freeze came back with the daemon, so nothing is running behind it; reported on the first tick — under a manual window only when `protected_mode.manual_maintenance.restart_is_normal` is off. Workers tell the master this key via `worker_protected_mode_settings`; until one reports it, the returned manual window gets neither a verdict nor a routine-restart line. The default is one warning line for the freeze, without mail |
 | `QUIESCE_OVERDUE` | phase `activating` past `HILOS_PROTECTED_MODE_QUIESCE_TIMEOUT`; the alert names the nodes that never confirmed |
 | `SILENT` | any other non-inactive phase with no progress mark newer than `HILOS_PROTECTED_MODE_SILENCE_TIMEOUT` — except in a manual-maintenance window (operation `manual_maintenance` entered as `verification_window`), where no operation is behind the door to mark progress |
 
@@ -460,7 +460,7 @@ automatically, the human path out has to actually work.
   with the reason named — reading a damaged freeze as "no freeze" opens the node
   on the strength of a parse failure. A missing file is the ordinary startup.
   Every accept key is dropped: it was minted on a 101 that died with the daemon.
-  `restoreFromDisk()` keeps the initiator's session hash: Backups' reopen button
+  `restoreFromDisk()` keeps the restore initiator's session hash: Backups' reopen button
   uses `belongsToInitiator()`, which refuses null, so losing it would lock out
   the restore operator. Passes, admitted sessions and the circle are cleared by
   choice: a code lasts minutes, and a verifier asks for a new one. The restored
@@ -468,9 +468,9 @@ automatically, the human path out has to actually work.
   before this node remembers its leader. It accepts the current leader's frames
   and refuses a fresh quiesce outside the verification window. Manual
   maintenance alone clears that hash too, by operation rather than phase,
-  returning an empty window; restore keeps its behavior
-  (not in the code yet — HIL-1359). Its restart mail follows the settings key;
-  see *Manual Maintenance* (not in the code yet — HIL-1359). On a single node
+  returning an empty window; restore keeps its behavior. Its restart mail follows
+  `protected_mode.manual_maintenance.restart_is_normal`; see *Manual Maintenance*.
+  On a single node
   `StandaloneProtectedMode::adoptStandingFreeze()`, called from
   `DaemonManager::run()` right after the switch is built, takes the restored row
   over as the freeze it holds, as *Leader change* below does on a cluster: the
@@ -902,13 +902,18 @@ exception, not phase branching; other verdicts stand, and the watchdog never lif
 On restart, phase, operation and initiator agent identity survive; codes,
 admitted sessions and the circle are cleared by the ordinary restart rule.
 Manual maintenance also clears the initiating browser's hash, returning an empty
-window, by operation, not phase; restore keeps its hash
-(not in the code yet — HIL-1359). Agents start in `verifying`. Enter with a new
+window, by operation, not phase; restore keeps its hash. Agents start in `verifying`. Enter with a new
 CLI code (`maintenance:pass`) or disable from the CLI (`maintenance:disable`). A
-settings-catalog key saying "restart under manual maintenance is normal"
-defaults to on: log only; off gives `RESTORED_FROM_DISK` mail and reminders as
-for restore, and projects without settings use the default
-(not in the code yet — HIL-1359).
+settings-catalog key, `protected_mode.manual_maintenance.restart_is_normal`,
+defaults to on: one warning line per restored freeze, without mail. Off gives
+`RESTORED_FROM_DISK` mail and reminders as for restore. Projects without this
+key in their catalog or without settings use the default. Registration starts a
+worker's first report; a cataloged key waits for the settings source's readiness
+before that read. After each settings-row change, workers re-read the key and
+report a changed value to the master via `worker_protected_mode_settings`; the
+master does not read the database. Until the first worker reports after restart,
+the manual window gets neither a routine-restart line nor a restored-from-disk
+verdict.
 
 `Hilos::PROTECTED_MODE_STUB` maps operations plus a default to copy, is
 overridden wholesale by a project, and refuses startup without a default or with

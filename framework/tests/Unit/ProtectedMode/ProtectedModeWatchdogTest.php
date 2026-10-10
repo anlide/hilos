@@ -15,10 +15,12 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Mail\Template\ProtectedModeClearedMailTemplate;
 use Hilos\Mail\Template\ProtectedModeStuckMailTemplate;
 use Hilos\ProtectedMode\ProtectedModeStuckVerdict;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
+use Hilos\Utils\LogLevel;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -68,9 +70,14 @@ final class ProtectedModeWatchdogTest extends TestCase
     /** Temporary agent error log stream the watchdog writes into */
     private string $agentLogFile = '';
 
+    /** Temporary agent main log stream for routine warning lines */
+    private string $agentMainLogFile = '';
+
     private ?EnvAccessor $previousEnv = null;
 
     private ?HilosMailer $previousMailer = null;
+
+    private ?LogLevel $previousWriteLevel = null;
 
     protected function setUp(): void
     {
@@ -78,8 +85,16 @@ final class ProtectedModeWatchdogTest extends TestCase
 
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-protected-mode-watchdog');
         Logger::setLogFile($this->logFile);
+        $this->previousWriteLevel = Logger::writeLevel();
+        Logger::setWriteLevel(LogLevel::Info);
         $this->agentLogFile = AgentLogStream::pathFor(dirname($this->logFile), ProtectedModeWatchdog::LOG_AGENT_ID, true);
         file_put_contents($this->agentLogFile, '');
+        $this->agentMainLogFile = AgentLogStream::pathFor(
+            dirname($this->logFile),
+            ProtectedModeWatchdog::LOG_AGENT_ID,
+            false,
+        );
+        file_put_contents($this->agentMainLogFile, '');
 
         $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
         $this->previousMailer = Hilos::$mail;
@@ -92,11 +107,15 @@ final class ProtectedModeWatchdogTest extends TestCase
     protected function tearDown(): void
     {
         Logger::resetLogFile();
+        Logger::setWriteLevel($this->previousWriteLevel ?? LogLevel::Info);
         if (is_file($this->logFile)) {
             unlink($this->logFile);
         }
         if (is_file($this->agentLogFile)) {
             unlink($this->agentLogFile);
+        }
+        if (is_file($this->agentMainLogFile)) {
+            unlink($this->agentMainLogFile);
         }
 
         putenv(EnvConstants::HILOS_PROTECTED_MODE_SILENCE_TIMEOUT->name);
@@ -244,6 +263,142 @@ final class ProtectedModeWatchdogTest extends TestCase
         $watchdog = new ProtectedModeWatchdog();
 
         $watchdog->markRestoredFromDisk();
+        $watchdog->tick(self::STARTED_AT + 1);
+
+        $this->assertVerdict(ProtectedModeStuckVerdict::RESTORED_FROM_DISK);
+    }
+
+    public function testRestoredManualWindowWaitsForTheFirstSettingWithoutAlerting(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+
+        $watchdog->tick(self::STARTED_AT + 1);
+        $watchdog->tick(self::STARTED_AT + self::SILENCE_TIMEOUT + self::ALERT_INTERVAL);
+
+        $this->assertSame('', $this->written());
+        $this->assertSame('', (string)file_get_contents($this->agentMainLogFile));
+        $this->assertSame([], $mailer->sent);
+    }
+
+    public function testRoutineRestoredManualWindowWritesOneLineAndNoMail(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(true);
+
+        $watchdog->tick(self::STARTED_AT + 1);
+        $written = (string)file_get_contents($this->agentMainLogFile);
+        $watchdog->tick(self::STARTED_AT + self::ALERT_INTERVAL + 1);
+
+        $this->assertStringContainsString(ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL, $written);
+        $this->assertStringContainsString('maintenance:pass', $written);
+        $this->assertSame($written, (string)file_get_contents($this->agentMainLogFile));
+        $this->assertSame('', $this->written());
+        $this->assertSame([], $mailer->sent);
+    }
+
+    public function testNonroutineRestoredManualWindowAlertsAndReminds(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(false);
+
+        $watchdog->tick(self::STARTED_AT + 1);
+        $this->assertStringContainsString('is stuck: the daemon restarted under manual maintenance', $this->written());
+        $this->assertStringContainsString('maintenance:pass', $this->written());
+        $this->assertCount(1, $mailer->sent);
+
+        $watchdog->tick(self::STARTED_AT + 1 + self::ALERT_INTERVAL);
+        $this->assertCount(2, $mailer->sent);
+    }
+
+    public function testTurningOffRoutineRestartAlertsTheStandingManualWindow(): void
+    {
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(true);
+        $watchdog->tick(self::STARTED_AT + 1);
+
+        $watchdog->onProtectedModeSettings(false);
+        $watchdog->tick(self::STARTED_AT + 2);
+
+        $this->assertStringContainsString('is stuck: the daemon restarted under manual maintenance', $this->written());
+    }
+
+    public function testTurningOnRoutineRestartStopsRemindersButKeepsTheAllClear(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(false);
+        $watchdog->tick(self::STARTED_AT + 1);
+
+        $watchdog->onProtectedModeSettings(true);
+        $watchdog->tick(self::STARTED_AT + 1 + self::ALERT_INTERVAL);
+        $this->assertCount(1, $mailer->sent);
+
+        $this->lift();
+        $watchdog->tick(self::STARTED_AT + 2 + self::ALERT_INTERVAL);
+        $this->assertCount(2, $mailer->sent);
+        $this->assertSame(MailTemplateCatalogConstants::PROTECTED_MODE_CLEARED, $mailer->sent[1]['templateKey']);
+    }
+
+    public function testTurningRoutineRestartOffAgainRaisesAFreshAlarmImmediately(): void
+    {
+        $mailer = $this->mailTo('ops@example.com');
+        $this->manualWindow();
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(false);
+        $watchdog->tick(self::STARTED_AT + 1);
+        $this->assertCount(1, $mailer->sent);
+
+        $watchdog->onProtectedModeSettings(true);
+        $watchdog->tick(self::STARTED_AT + 2);
+        $this->assertCount(1, $mailer->sent);
+
+        $watchdog->onProtectedModeSettings(false);
+        $watchdog->tick(self::STARTED_AT + 3);
+        $this->assertCount(2, $mailer->sent);
+        $this->assertFalse($mailer->sent[1]['params'][ProtectedModeStuckMailTemplate::PARAM_STILL]);
+    }
+
+    public function testRoutineRestartSettingDoesNotExemptRestoreWindow(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            activatedAt: self::STARTED_AT,
+            entryMode: StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+        );
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(true);
+
+        $watchdog->tick(self::STARTED_AT + 1);
+
+        $this->assertVerdict(ProtectedModeStuckVerdict::RESTORED_FROM_DISK);
+    }
+
+    public function testRoutineRestartSettingDoesNotExemptFullFreezeNamedManualMaintenance(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_ACTIVE,
+            activatedAt: self::STARTED_AT,
+            operation: StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+        );
+        $watchdog = new ProtectedModeWatchdog();
+        $watchdog->markRestoredFromDisk();
+        $watchdog->onProtectedModeSettings(true);
+
         $watchdog->tick(self::STARTED_AT + 1);
 
         $this->assertVerdict(ProtectedModeStuckVerdict::RESTORED_FROM_DISK);
@@ -494,6 +649,17 @@ final class ProtectedModeWatchdogTest extends TestCase
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
         ]));
+    }
+
+    /** Mounts the manual maintenance window that is exempt from silence. */
+    private function manualWindow(): void
+    {
+        $this->freeze(
+            StateProtectedModeRuntime::PHASE_VERIFYING,
+            activatedAt: self::STARTED_AT,
+            operation: StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            entryMode: StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        );
     }
 
     /**

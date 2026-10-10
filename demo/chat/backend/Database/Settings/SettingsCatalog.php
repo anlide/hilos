@@ -24,6 +24,7 @@ use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
@@ -139,6 +140,7 @@ final class SettingsCatalog implements CatalogProviderInterface
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
+            ProtectedModeSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),

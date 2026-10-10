@@ -280,6 +280,18 @@ final class ProtectedModeRuntime extends RtState
     }
 
     /**
+     * The operation name alone also names a full freeze started by a project agent. Only the
+     * operation and entry mode together identify the manual maintenance window; its phase does not.
+     *
+     * @return bool Whether this row is a manual maintenance verification window
+     */
+    public function isManualMaintenanceWindow(): bool
+    {
+        return $this->operation === self::OPERATION_MANUAL_MAINTENANCE
+            && $this->entryMode === self::ENTRY_MODE_VERIFICATION_WINDOW;
+    }
+
+    /**
      * Whether a connection holding this accept key is locked out of everything but
      * authentication while the freeze is up.
      *

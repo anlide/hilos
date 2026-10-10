@@ -186,6 +186,9 @@ final class WorkerConstants
     /** @var string Protected-mode refreeze request (initiator worker -> its master daemon) */
     public const string MESSAGE_PROTECTED_MODE_REFREEZE = 'worker_protected_mode_refreeze';
 
+    /** @var string Current protected-mode setting (worker -> its master daemon) */
+    public const string MESSAGE_PROTECTED_MODE_SETTINGS = 'worker_protected_mode_settings';
+
     /** @var string One worker's answer to the re-hydrate announcement (worker -> its master daemon) */
     public const string MESSAGE_DB_REHYDRATED = 'db_rehydrated';
 }

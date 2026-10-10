@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Hilos\ProtectedMode;
 
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
-use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -47,7 +47,8 @@ use Throwable;
  * with the daemon. Both are held against the fingerprint they belong to rather than as bare flags,
  * so a fact learned before the first tick is not lost when that tick adopts the freeze, and one
  * left over from a previous freeze can never be read as this one's. A phase of inactive drops
- * everything: there is no freeze to remember.
+ * everything about that freeze. The latest setting told by a worker remains in memory between
+ * freezes; the master never reads the settings database.
  *
  * **A cluster caveat worth knowing.** Only the leader watches, and the stop of an initiator agent
  * is reported to the master of the node hosting it. When the initiator sits on a follower the
@@ -55,7 +56,7 @@ use Throwable;
  * initiator stops marking progress, so the freeze is still reported, just after the threshold
  * instead of at once.
  */
-final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
+final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, ProtectedModeSettingsSink
 {
     /** @var string Agent id this watchdog's own log lines are filed under */
     public const string LOG_AGENT_ID = 'protected-mode-watchdog';
@@ -106,6 +107,12 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
 
     /** @var ?string Fingerprint of the freeze this process came up holding, restored from disk */
     private ?string $restoredFromDiskFor = null;
+
+    /** @var ?bool Last manual-restart setting told by a worker; null until the first report */
+    private ?bool $manualRestartIsNormal = null;
+
+    /** @var ?string Fingerprint whose routine restart was already logged */
+    private ?string $quietRestartNotedFor = null;
 
     /** @var ?ProtectedModeStuckVerdict Verdict already reported for this freeze, or null when none */
     private ?ProtectedModeStuckVerdict $reported = null;
@@ -166,9 +173,20 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
         }
 
         $this->adoptFreeze(self::fingerprintOf($view), $now);
+        $this->noteQuietRestart($view);
 
         $verdict = $this->judge($view, $now);
         if ($verdict === null) {
+            if (
+                $this->restoredFromDiskFor === $this->freeze
+                && $view->isManualMaintenanceWindow()
+                && $this->manualRestartIsNormal === true
+            ) {
+                // Re-arm the verdict for a later switch back to "not normal". Keep the alarm
+                // history: a person already mailed about this freeze still gets its all-clear.
+                $this->reported = null;
+            }
+
             return;
         }
 
@@ -210,6 +228,8 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
      * A node that restored a freeze knows with certainty that it started no operation behind it,
      * which is why this is reported at once rather than after the silence threshold. It is filed
      * against the freeze on the row, so the first tick that adopts that freeze reads it.
+     * For a manual maintenance window, the worker-reported setting decides whether this fact
+     * raises an alert; until a worker reports, no verdict or routine-restart line is emitted.
      */
     public function markRestoredFromDisk(): void
     {
@@ -219,6 +239,14 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
         }
 
         $this->restoredFromDiskFor = self::fingerprintOf($view);
+    }
+
+    /**
+     * @param bool $manualRestartIsNormal Whether a manual-window restart is routine
+     */
+    public function onProtectedModeSettings(bool $manualRestartIsNormal): void
+    {
+        $this->manualRestartIsNormal = $manualRestartIsNormal;
     }
 
     /**
@@ -249,8 +277,8 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
      *
      * The four cases in their evaluation order, first match winning: certainty before inference,
      * so the operator is told the strongest thing that can be said about this freeze. A manual
-     * maintenance window is exempt from the last case because nothing behind its door owes
-     * progress; the other three cases still apply to it.
+     * maintenance window is exempt from silence because nothing behind its door owes progress.
+     * Its restart is also exempt while the setting says it is routine or no worker has reported it.
      *
      * @param ProtectedModeRuntime $view Freeze row this node carries
      * @param int $now Epoch seconds to judge against
@@ -261,7 +289,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
         if ($this->initiatorLostFor === $this->freeze) {
             return ProtectedModeStuckVerdict::INITIATOR_LOST;
         }
-        if ($this->restoredFromDiskFor === $this->freeze) {
+        if ($this->restoredFromDiskFor === $this->freeze && $this->restartRaisesAlarm($view)) {
             return ProtectedModeStuckVerdict::RESTORED_FROM_DISK;
         }
         if (
@@ -270,7 +298,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
         ) {
             return ProtectedModeStuckVerdict::QUIESCE_OVERDUE;
         }
-        if (!self::isManualMaintenanceWindow($view) && $now - $this->lastSignOfLife($view) > $this->silenceTimeoutSeconds()) {
+        if (!$view->isManualMaintenanceWindow() && $now - $this->lastSignOfLife($view) > $this->silenceTimeoutSeconds()) {
             return ProtectedModeStuckVerdict::SILENT;
         }
 
@@ -278,22 +306,43 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
     }
 
     /**
-     * Decides whether the freeze row represents a manual maintenance verification window.
-     *
-     * Checked by operation and entry mode together rather than by operation name alone: core
-     * accepts operation 'manual_maintenance' in a full freeze from a project agent
-     * ({@see AbstractAgent::requestProtectedModeEnable()}), and only the test driver trait
-     * reserves it ({@see ProtectedModeTestDriverTrait}); checking both keeps an unreserved full
-     * freeze from escaping silence detection. Not phase-by-phase branching: phase is not
-     * inspected here.
+     * @param ProtectedModeRuntime $view Freeze row this node carries
+     * @return bool Whether this restored freeze calls for an alarm
+     */
+    private function restartRaisesAlarm(ProtectedModeRuntime $view): bool
+    {
+        return !$view->isManualMaintenanceWindow() || $this->manualRestartIsNormal === false;
+    }
+
+    /**
+     * Writes the routine restart once for this freeze, after a worker has confirmed the setting.
      *
      * @param ProtectedModeRuntime $view Freeze row this node carries
-     * @return bool True when the row represents a manual maintenance verification window
      */
-    private static function isManualMaintenanceWindow(ProtectedModeRuntime $view): bool
+    private function noteQuietRestart(ProtectedModeRuntime $view): void
     {
-        return $view->operation === StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE
-            && $view->entryMode === StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
+        if (
+            $this->restoredFromDiskFor !== $this->freeze
+            || !$view->isManualMaintenanceWindow()
+            || $this->manualRestartIsNormal !== true
+            || $this->quietRestartNotedFor === $this->freeze
+        ) {
+            return;
+        }
+
+        Logger::logAgentWarning(
+            self::LOG_AGENT_ID,
+            sprintf(
+                "Freeze for '%s' came back from disk with the daemon; a restart under manual maintenance "
+                    . "is normal by the setting '%s', so no alert is mailed. The window stands empty: "
+                    . "enter with a new code from '%s' or open the system with '%s'",
+                StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+                ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL,
+                CliCommands::MAINTENANCE_PASS,
+                CliCommands::MAINTENANCE_DISABLE,
+            ),
+        );
+        $this->quietRestartNotedFor = $this->freeze;
     }
 
     /**
@@ -354,6 +403,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
         $this->initiatorLostFor = null;
         $this->initiatorLostAt = null;
         $this->restoredFromDiskFor = null;
+        $this->quietRestartNotedFor = null;
         $this->reported = null;
         $this->alarmRaisedAt = null;
         $this->alertedAt = null;
@@ -480,8 +530,14 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink
             ProtectedModeStuckVerdict::INITIATOR_LOST => 'the initiator stopped '
                 . self::elapsedText($now - ($this->initiatorLostAt ?? $now))
                 . ' ago; nothing is running behind the freeze',
-            ProtectedModeStuckVerdict::RESTORED_FROM_DISK
-                => 'the daemon restarted while the node was frozen; the freeze was restored from '
+            ProtectedModeStuckVerdict::RESTORED_FROM_DISK => $view->isManualMaintenanceWindow()
+                ? sprintf(
+                    'the daemon restarted under manual maintenance and the window came back empty; '
+                        . "enter with a new code from '%s' or open the system with '%s'",
+                    CliCommands::MAINTENANCE_PASS,
+                    CliCommands::MAINTENANCE_DISABLE,
+                )
+                : 'the daemon restarted while the node was frozen; the freeze was restored from '
                     . 'disk and no operation is running behind it',
             ProtectedModeStuckVerdict::QUIESCE_OVERDUE => self::quiesceProblem(),
             ProtectedModeStuckVerdict::SILENT => 'the initiator has reported no progress for '

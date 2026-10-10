@@ -824,6 +824,8 @@ abstract class DaemonManager extends BaseManager implements
         // And the door a freeze request knocks on, for the same reason: the roster it asks about is
         // this node's, whichever switch ends up entering the freeze behind it (HIL-1000).
         Hilos::$cluster?->registerProtectedModeEntryGate($this->protectedModeEntryGate);
+        // The watchdog receives the current setting from workers; the master does not read the database.
+        Hilos::$cluster?->registerProtectedModeSettingsSink($this->protectedModeWatchdog);
         // Expose this daemon as the port an RT replica from another node is applied through: the
         // copy a receiving node holds lives in the master, and the workers are fed from here.
         Hilos::$cluster?->registerRtSyncSink($this);

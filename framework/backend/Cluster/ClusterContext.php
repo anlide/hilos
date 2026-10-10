@@ -28,6 +28,7 @@ use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeLeadership;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
+use Hilos\ProtectedMode\ProtectedModeSettingsSink;
 use Hilos\ProtectedMode\ProtectedModeSwitch;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -101,6 +102,9 @@ final class ClusterContext
 
     /** @var ?ProtectedModeEntryGate Door an initiator's freeze request knocks on, null when none is registered */
     private ?ProtectedModeEntryGate $protectedModeEntryGate = null;
+
+    /** @var ?ProtectedModeSettingsSink Receiver of worker-reported protected-mode settings */
+    private ?ProtectedModeSettingsSink $protectedModeSettingsSink = null;
 
     /**
      * @var ?ProtectedModeClientNotifier Local port that tells this node's browser connections about
@@ -617,6 +621,22 @@ final class ClusterContext
     public function protectedModeEntryGate(): ?ProtectedModeEntryGate
     {
         return $this->protectedModeEntryGate;
+    }
+
+    /**
+     * @param ProtectedModeSettingsSink $sink Master-side receiver of the setting
+     */
+    public function registerProtectedModeSettingsSink(ProtectedModeSettingsSink $sink): void
+    {
+        $this->protectedModeSettingsSink = $sink;
+    }
+
+    /**
+     * @return ?ProtectedModeSettingsSink Receiver, or null when this node registered none
+     */
+    public function protectedModeSettingsSink(): ?ProtectedModeSettingsSink
+    {
+        return $this->protectedModeSettingsSink;
     }
 
     /**

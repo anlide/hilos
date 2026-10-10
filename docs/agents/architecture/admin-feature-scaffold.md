@@ -596,7 +596,9 @@ project-bound contract. Pick the recipe by which one it is:
     already required of every installation that can freeze (HIL-1118).
   - manual maintenance needs no extra wiring: the index agent already serves
     the page and owns manual entry ([protected-mode.md](protected-mode.md),
-    *Manual Maintenance*).
+    *Manual Maintenance*). To let an admin change its restart policy in Settings,
+    merge `ProtectedModeSettingsCatalog` into the project's settings catalog;
+    without that key, the default treats a restart as normal.
   A project that registers no page for the section answers its address with a
   404 (HIL-1090), and the dashboard draws no card for it.
 

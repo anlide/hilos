@@ -9,6 +9,7 @@ use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
@@ -50,6 +51,7 @@ final class OnlineTestingSettingsCatalog implements CatalogProviderInterface
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
+            ProtectedModeSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
         );
     }

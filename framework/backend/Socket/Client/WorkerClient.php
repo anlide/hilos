@@ -51,6 +51,7 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeSettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
@@ -214,6 +215,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         match (true) {
             $workerDTO instanceof WorkerRegisterDTO => $this->handleWorkerRegisterMessage($workerDTO),
             $workerDTO instanceof WorkerLogWriteLevelDTO => $this->handleWorkerLogWriteLevelMessage($workerDTO),
+            $workerDTO instanceof WorkerProtectedModeSettingsDTO => $this->handleWorkerProtectedModeSettingsMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStartFailedDTO => $this->handleAgentStartFailedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStoppedDTO => $this->handleAgentStoppedMessage($workerDTO),
@@ -303,6 +305,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         }
 
         LogWriteLevelApplier::applyReported($level, $this->getWorkerIndex());
+    }
+
+    /**
+     * @param WorkerProtectedModeSettingsDTO $dto Setting reported by this worker
+     */
+    private function handleWorkerProtectedModeSettingsMessage(WorkerProtectedModeSettingsDTO $dto): void
+    {
+        Hilos::$cluster?->protectedModeSettingsSink()?->onProtectedModeSettings($dto->manualRestartIsNormal);
     }
 
     /**

@@ -286,6 +286,41 @@ final class ProtectedModeContractTest extends TestCase
         }
     }
 
+    public function testManualMaintenanceWindowIsIdentifiedByOperationAndEntryMode(): void
+    {
+        $manual = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::operation => ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
+        ]);
+        $fullFreeze = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
+            ProtectedModeRuntime::operation => ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
+        ]);
+        $restoreWindow = ProtectedModeRuntime::fromRow([
+            ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
+            ProtectedModeRuntime::operation => 'backup:restore',
+            ProtectedModeRuntime::entryMode => ProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+            ProtectedModeRuntime::passHashes => [],
+            ProtectedModeRuntime::admittedSessionTokenHashes => [],
+            ProtectedModeRuntime::circleSessionTokenHashes => [],
+            ProtectedModeRuntime::circleNamedCount => 0,
+        ]);
+
+        $this->assertTrue($manual->isManualMaintenanceWindow());
+        $this->assertFalse($fullFreeze->isManualMaintenanceWindow());
+        $this->assertFalse($restoreWindow->isManualMaintenanceWindow());
+    }
+
     public function testActiveRuntimeLocksOutEveryConnectionIncludingTheInitiator(): void
     {
         // The recorded key does not buy a way in while the node is frozen: the agents behind

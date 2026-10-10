@@ -53,6 +53,7 @@ use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\Agent\BackupAgentDaemon;
 use Hilos\Cluster\Probe\ClusterProbe;
@@ -708,6 +709,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
             ThemeSettingsCatalog::DEFAULT_THEME_KEY,
             AnalyticsSettingsCatalog::JOURNAL_MAX_BYTES,
+            ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL,
             AuthThrottleSettings::OUTAGE_GRACE_SECONDS_KEY,
         ], array_keys($catalog));
         foreach (ThemeSettingsCatalog::KEYS as $key) {

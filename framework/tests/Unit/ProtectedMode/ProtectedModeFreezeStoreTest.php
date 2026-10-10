@@ -267,6 +267,34 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     }
 
     /**
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     * @throws RtActionsCollectionNameNullException When the mounted item has no collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this process is not the row's writer
+     */
+    public function testRestoredManualWindowForgetsTheInitiatorsBrowser(): void
+    {
+        $this->mountNode();
+        $view = Hilos::$rt?->hilosProtectedModeRuntime;
+        $this->assertNotNull($view);
+
+        $view->actions->restoreFromDisk($this->restoredRow(
+            StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+            StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+        ));
+
+        $this->assertSame(StateProtectedModeRuntime::PHASE_VERIFYING, $view->phase);
+        $this->assertSame(StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE, $view->operation);
+        $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $view->entryMode);
+        $this->assertSame(self::INITIATOR_TYPE, $view->initiatorAgentType);
+        $this->assertNull($view->initiatorSessionTokenHash);
+        $this->assertFalse($view->belongsToInitiator(self::INITIATOR_SESSION_HASH));
+        $this->assertTrue($view->locksOut('accept-new', self::INITIATOR_SESSION_HASH));
+        $this->assertSame([], $view->passHashes);
+        $this->assertSame([], $view->admittedSessionTokenHashes);
+        $this->assertSame([], $view->circleSessionTokenHashes);
+    }
+
+    /**
      * The hand-over the restored row is only ever seen through (HIL-699).
      *
      * The restore runs before any server binds, so the master holds the row alone and every
@@ -331,14 +359,20 @@ final class ProtectedModeFreezeStoreTest extends TestCase
      * {@see DaemonProtectedModeExecutor} handing the whole row over, not a chosen subset of it.
      * What the restore keeps of it is the decision under test, not what the disk offers.
      *
+     * @param string $operation Operation carried by the file
+     * @param string $entryMode Entry mode carried by the file
      * @return StateProtectedModeRuntime Freeze row as the store reads it back
      * @throws InvalidFormatException When the fixture row is not one the state can be built from
      */
-    private function restoredRow(): StateProtectedModeRuntime
+    private function restoredRow(
+        string $operation = self::OPERATION,
+        string $entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+    ): StateProtectedModeRuntime
     {
         return StateProtectedModeRuntime::fromRow([
             StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
-            StateProtectedModeRuntime::operation => self::OPERATION,
+            StateProtectedModeRuntime::entryMode => $entryMode,
+            StateProtectedModeRuntime::operation => $operation,
             StateProtectedModeRuntime::initiatorAcceptKey => 'accept-7',
             StateProtectedModeRuntime::initiatorSessionTokenHash => self::INITIATOR_SESSION_HASH,
             StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,

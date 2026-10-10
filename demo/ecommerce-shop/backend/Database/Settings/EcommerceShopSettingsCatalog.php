@@ -10,6 +10,7 @@ use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
@@ -49,6 +50,7 @@ final class EcommerceShopSettingsCatalog implements CatalogProviderInterface
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
-        ], ThemeSettingsCatalog::getCatalog(), AnalyticsSettingsCatalog::getCatalog(), AuthThrottleSettingsCatalog::getCatalog());
+        ], ThemeSettingsCatalog::getCatalog(), AnalyticsSettingsCatalog::getCatalog(),
+            ProtectedModeSettingsCatalog::getCatalog(), AuthThrottleSettingsCatalog::getCatalog());
     }
 }

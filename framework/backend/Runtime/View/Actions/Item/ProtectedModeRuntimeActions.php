@@ -46,6 +46,10 @@ final class ProtectedModeRuntimeActions extends RtActions
      * operation and left them a terminal as their only door. What comes back is therefore a row
      * that locks out everybody except that browser, and the operator lifts it either by the
      * button or by the ladder ({@see enterInactive()}) once they have looked at the data.
+     * A manual maintenance window is different: its initiator has no browser exit button, so its
+     * session hash is dropped too. After a restart an operator enters with a new maintenance pass
+     * or opens the node from the console. This exception follows the operation and entry mode,
+     * not the phase; a restore verification window still keeps its initiating browser.
      *
      * TODO(HIL-93): the right to enter a frozen node belongs to the roles subsystem (HIL-93
      * anchors it, HIL-97 enforces it); until it exists this half of the decision is a session
@@ -63,7 +67,9 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->entryMode = $row->entryMode;
         $this->state->operation = $row->operation;
         $this->state->initiatorAcceptKey = null;
-        $this->state->initiatorSessionTokenHash = $row->initiatorSessionTokenHash;
+        $this->state->initiatorSessionTokenHash = $row->isManualMaintenanceWindow()
+            ? null
+            : $row->initiatorSessionTokenHash;
         $this->state->initiatorAgentType = $row->initiatorAgentType;
         $this->state->initiatorAgentIndex = $row->initiatorAgentIndex;
         $this->state->initiatorNodeId = $row->initiatorNodeId;

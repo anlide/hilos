@@ -36,7 +36,8 @@ enum ProtectedModeStuckVerdict: string
      *
      * Reported on the first tick rather than after the silence threshold: a restarted node knows
      * with certainty that nothing of its own is running, and waiting out a threshold would only
-     * delay telling the operator something already established.
+     * delay telling the operator something already established. Under a manual-maintenance window
+     * it is reported only when the settings key says a restart there is not normal.
      */
     case RESTORED_FROM_DISK = 'restored-from-disk';
 

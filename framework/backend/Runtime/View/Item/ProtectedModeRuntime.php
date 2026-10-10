@@ -156,6 +156,14 @@ final class ProtectedModeRuntime extends RtItem
     }
 
     /**
+     * @return bool Whether this row is a manual maintenance verification window
+     */
+    public function isManualMaintenanceWindow(): bool
+    {
+        return $this->_state->isManualMaintenanceWindow();
+    }
+
+    /**
      * @return array<string, mixed> Full state row
      */
     public function toArray(): array

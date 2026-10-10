@@ -41,6 +41,7 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeProgressDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
+use Hilos\Socket\Worker\DTO\WorkerProtectedModeSettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerLogWriteLevelDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
@@ -106,6 +107,7 @@ abstract class WorkerDTO extends BaseDTO
         return match ($type) {
             WorkerRegisterDTO::MESSAGE_TYPE => WorkerRegisterDTO::fromArray($data),
             WorkerLogWriteLevelDTO::MESSAGE_TYPE => WorkerLogWriteLevelDTO::fromArray($data),
+            WorkerProtectedModeSettingsDTO::MESSAGE_TYPE => WorkerProtectedModeSettingsDTO::fromArray($data),
             WorkerAgentStartedDTO::MESSAGE_TYPE => WorkerAgentStartedDTO::fromArray($data),
             WorkerAgentStartFailedDTO::MESSAGE_TYPE => WorkerAgentStartFailedDTO::fromArray($data),
             WorkerAgentStoppedDTO::MESSAGE_TYPE => WorkerAgentStoppedDTO::fromArray($data),

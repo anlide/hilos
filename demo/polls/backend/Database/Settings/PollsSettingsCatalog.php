@@ -17,6 +17,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Legal\LegalSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
@@ -60,6 +61,7 @@ final class PollsSettingsCatalog implements CatalogProviderInterface
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
+            ProtectedModeSettingsCatalog::getCatalog(),
             LegalSettingsCatalog::getCatalog(),
             OAuthSettingsCatalog::getCatalog(),
             AuthMethodSettingsCatalog::getCatalog(),

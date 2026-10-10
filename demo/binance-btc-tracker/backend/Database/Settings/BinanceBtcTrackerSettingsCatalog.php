@@ -17,6 +17,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Log\LogSettingsCatalog;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
+use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
 use Hilos\Theme\ThemeSettingsCatalog;
 
 /**
@@ -71,6 +72,7 @@ final class BinanceBtcTrackerSettingsCatalog implements CatalogProviderInterface
             LogSettingsCatalog::getCatalog(),
             ThemeSettingsCatalog::getCatalog(),
             AnalyticsSettingsCatalog::getCatalog(),
+            ProtectedModeSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
         );
     }
