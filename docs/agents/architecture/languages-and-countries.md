@@ -372,24 +372,29 @@ by someone or referenced by a translation string belong to HIL-1424.
 ## Addresses
 
 A language or country is addressed by code, not row number. A code never
-changes; a row number can change on a reload of the data, and a URL can be
-sent by mail. Code addresses and the three new names/locales page keys are registered
-together (HIL-1473). The Vue main language card is built (HIL-1478) and opens
-by direct URL with one subscribed `languageCard` snapshot and live updates; the
-Vue main country card is built the same way with `countryCard` (HIL-1482).
-The Vue names page of a language is built too (HIL-1477): the names table opened
-on the language the address names, standing under the card's shared header and
-tabs fed by the same `languageCard` datum (HIL-1479). So is its Vue locales page
+changes; a row number can change on a reload of the data, and a URL can be sent
+by mail. Code addresses and the three new names/locales page keys are registered
+together (HIL-1473). The Vue main language card is built (HIL-1478) and opens by
+direct URL with one subscribed `languageCard` snapshot and live updates; the Vue
+main country card is built the same way with `countryCard` (HIL-1482). The Vue
+names page of a language is built too (HIL-1477): the names table opened on the
+language the address names, standing under the card's shared header and tabs fed
+by the same `languageCard` datum (HIL-1479). So is its Vue locales page
 (HIL-1476): the locales table opened on that language, a row for the language
 alone and one for every country, keyed by the pair written as its locale's code,
-whether the pair has a locale or not, standing under the card's shared header and
-tabs fed by the same `languageCard` datum. The Vue section root is built
+whether the pair has a locale or not, standing under the card's shared header
+and tabs fed by the same `languageCard` datum. The Vue section root is built
 (HIL-1474) and shows the Languages card; the Vue languages list is built whole
-with its table (HIL-1474), the catalog tally callout above it (`builtInCatalog`),
-and the marks legend below it (HIL-112), kept live by the table's own fan-out.
-The Vue names page of a country is built too
-(HIL-1483): the names table opened on that country, standing under the card's shared header and
-tabs fed by the same `countryCard` datum. The Vue countries list is built whole with its table (HIL-1475), the catalog tally callout above it (`builtInCatalog`), and the marks legend below it (HIL-1481), kept live by the table's own fan-out; the callout and legend are the shared components of the languages and countries lists. The root shows the Countries card (HIL-1475). React and Angular remain unbuilt until HIL-1502/1503.
+with its table (HIL-1474), the catalog tally callout above it
+(`builtInCatalog`), and the marks legend below it (HIL-112), kept live by the
+table's own fan-out. The Vue names page of a country is built too (HIL-1483):
+the names table opened on that country, standing under the card's shared header
+and tabs fed by the same `countryCard` datum. The Vue countries list is built
+whole with its table (HIL-1475), the catalog tally callout above it
+(`builtInCatalog`), and the marks legend below it (HIL-1481), kept live by the
+table's own fan-out; the callout and legend are the shared components of the
+languages and countries lists. The root shows the Countries card (HIL-1475).
+React and Angular remain unbuilt until HIL-1502/1503.
 
 | Page key | Route |
 |---|---|
@@ -419,32 +424,31 @@ The project:
 The six demos have the feature, agent, server pages and migrations (HIL-1470).
 The names tables of a language and of a country (`hilosI18nLanguageNames`,
 `hilosI18nCountryNames`) are registered and bound to their pages in all six
-(HIL-1477), and so is the locales table of a language (`hilosI18nLanguageLocales`,
-HIL-1476). The languages table (`hilosI18nLanguages`) is registered and bound
-to the languages list in all six (HIL-1474), and the countries table
-(`hilosI18nCountries`) is registered and bound to the countries list in all six
-(HIL-1475). All six demos
-bind `languageCard` to the names and locales pages as well as to the main
-language page (HIL-1479), and `countryCard` to both country card pages (HIL-1483). Vue serves
-the section root at `/hilos/i18n` and the languages list at `/hilos/i18n/languages`
-(HIL-1474), the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
-names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales
-at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the code,
-native name, direction, enabled state, locale/name counts, and read-only delete
-verdict. The main card has a Switch off control (HIL-1486); its other action
-controls belong to HIL-1485/1487/1488.
-The Vue locales page adds a locale from a pair without one, edits a switched-off
-locale, and shows a switched-on locale in the same window (HIL-1491). The server
-actions serve all six demos; deletion is HIL-1492 and switching the locale from
-its window is HIL-1493/1494.
+(HIL-1477), and so is the locales table of a language
+(`hilosI18nLanguageLocales`, HIL-1476). The languages table
+(`hilosI18nLanguages`) is registered and bound to the languages list in all six
+(HIL-1474), and the countries table (`hilosI18nCountries`) is registered and
+bound to the countries list in all six (HIL-1475). All six demos bind
+`languageCard` to the names and locales pages as well as to the main language
+page (HIL-1479), and `countryCard` to both country card pages (HIL-1483). Vue
+serves the section root at `/hilos/i18n` and the languages list at
+`/hilos/i18n/languages` (HIL-1474), the main language card at
+`/hilos/i18n/languages/{languageCode}` (HIL-1478), its names at
+`/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales at
+`/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the
+code, native name, direction, enabled state, locale/name counts, and read-only
+delete verdict. The main card has a Switch off control (HIL-1486); its other
+action controls belong to HIL-1485/1487/1488. The Vue locales page adds a locale
+from a pair without one, edits a switched-off locale, and shows a switched-on
+locale in the same window (HIL-1491). The server actions serve all six demos;
+deletion is HIL-1492 and switching the locale from its window is HIL-1493/1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
-at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483).
-The card shows the name, code, currency, default locale, enabled state and
-read-only delete verdict: a known country never, else locales, else any name
-row, block deletion. Its future action controls belong to
-HIL-1496/1497/1498/1499.
-React and Angular stay unbuilt until HIL-1502/1503.
+at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the
+name, code, currency, default locale, enabled state and read-only delete
+verdict: a known country never, else locales, else any name row, block deletion.
+Its future action controls belong to HIL-1496/1497/1498/1499. React and Angular
+stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.
