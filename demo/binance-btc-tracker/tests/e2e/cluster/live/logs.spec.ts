@@ -261,7 +261,14 @@ test('cluster logs workers: shows node column and filters by every cluster membe
   }
 })
 
-test('cluster logs rotations: shows node column, creates batches via max_age, and filters by every cluster member', async ({
+// Red in 2 of the 6 full runs since HIL-1347 added it, both on the HIL-1350 leaf: 1056
+// failed all three attempts and 1060 passed on the third. Every failed attempt is the
+// same - after picking a member in the node filter, the rows did not all turn to that
+// member's within 15 s (expectClusterTable, the poll after memberOption.click()). The
+// journals of every node of both runs are kept in
+// runs/<run>/steps/artifacts/binance-btc-tracker-cluster-e2e/nodes/ on nova-de.
+// Parked by the owner on 10.10.2026 (HOTFIX) without a diagnosis.
+test.fixme('cluster logs rotations: shows node column, creates batches via max_age, and filters by every cluster member', async ({
   browser,
 }) => {
   test.slow()
