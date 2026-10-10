@@ -45,6 +45,16 @@ final readonly class JournalReceiptData
     }
 
     /**
+     * @param string $command Command name as it goes on the wire
+     * @param ?string $agent Agent that took the command
+     * @return self CLI command attribution
+     */
+    public static function cli(string $command, ?string $agent): self
+    {
+        return new self(null, null, null, 'cli', $command, $agent, $command);
+    }
+
+    /**
      * @param string $direction Migration direction, up or down
      * @param int $index Migration number
      * @param string $file Exact SQL file path

@@ -22,6 +22,7 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
@@ -1927,7 +1928,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     );
                     try {
                         $parsedCommandData = Hilos::$sr?->createCommandPayloadDTO($name, $signalData) ?? $signalData;
-                        $agent->onSignalCommand($parsedCommandData, $source, $name);
+                        JournalReceiptScope::run(
+                            JournalReceiptData::cli($signalData->command, $agent->getId()),
+                            static fn () => $agent->onSignalCommand($parsedCommandData, $source, $name),
+                        );
                     } catch (InvalidCommandPayloadException $e) {
                         Logger::logAgentError($agent->getId(), "Command payload validation failed: {$e->getMessage()}");
                         $agent->replyToCommand(CommandReplyDTO::error($signalData->correlationId, $e->getMessage()));

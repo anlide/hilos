@@ -51,6 +51,10 @@ public function execution(): CommandExecution
 departures cannot be built without one — the argument is required by the factory, and a
 reason that is blank fails `CommandExecutionRoleTest`.
 
+A daemon command's journaled writes go under a cli receipt opened by the worker;
+a cli-offline-write or daemon-spawned command's writes carry none — see
+change-log.md, The Receipt.
+
 ## The transport is not the site
 
 `backup:restore-request` sends one frame over the command channel and an agent does the

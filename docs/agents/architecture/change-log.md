@@ -113,12 +113,19 @@ answer: `Session::userAtKeyboard()` in
 | `web` | The person; both people under impersonation | The page's agent; the agent that wrote, when the page handed the write over | The session | `PageSignalRouter` around the accepted synchronous handler |
 | `migration` | Empty | None — the migration runner | The migration file | `Migration` around one SQL file |
 | `agent` | Empty, shown as “System” | That agent | The agent itself | (not in the code yet — HIL-1450) |
-| `cli` | Empty | The executing agent | The command, without the values it was given | (not in the code yet — HIL-1455) |
+| `cli` | Empty | The executing agent | The command's name; never a value it was given | `WorkerManager` around the agent's `onSignalCommand()` |
 | `cron` | Empty | The job's agent | The job and its time | (not in the code yet — HIL-1456) |
 | `mcp` | The person | — | The tool | Outside phase 1; when the MCP server arrives, HIL-356 |
 
 The CLI command channel has no person by design; see
 [Who may call a command — nobody is asked](command-server.md#who-may-call-a-command--nobody-is-asked).
+
+A CLI scope opens in the worker after the command payload is parsed and covers
+one onSignalCommand(); the action and the source are the command's wire name; a
+command handed to another agent stays one receipt (join); commands the master
+answers, cli-offline-write commands and daemon-spawned children write without a
+cli receipt — migrations under their own; a command's own address in the source
+(the setting key of settings:set) — (not in the code yet — HIL-1514).
 
 The action is the name the server knows — `bot.update`, `settings.set` — not the
 button's label.

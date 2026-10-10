@@ -1,0 +1,79 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Unit;
+
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Unit tests for change log journal receipt attribution factory methods (HIL-1455).
+ */
+final class JournalReceiptDataTest extends TestCase
+{
+    public function testCliAttributionCarriesCommandAndAgentWithNullActor(): void
+    {
+        $receipt = JournalReceiptData::cli('admin:grant', 'hilos_sessions_library');
+
+        $this->assertNull($receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
+        $this->assertSame('cli', $receipt->channel);
+        $this->assertSame('admin:grant', $receipt->action);
+        $this->assertSame('hilos_sessions_library', $receipt->agent);
+        $this->assertSame('admin:grant', $receipt->source);
+    }
+
+    public function testCliAttributionAllowsNullAgent(): void
+    {
+        $receipt = JournalReceiptData::cli('admin:grant', null);
+
+        $this->assertNull($receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
+        $this->assertSame('cli', $receipt->channel);
+        $this->assertSame('admin:grant', $receipt->action);
+        $this->assertNull($receipt->agent);
+        $this->assertSame('admin:grant', $receipt->source);
+    }
+
+    public function testWebAttributionWithSession(): void
+    {
+        $receipt = JournalReceiptData::web(10, 20, 30, 'setting.update', 'settings_agent');
+
+        $this->assertSame(10, $receipt->actorUserId);
+        $this->assertSame(20, $receipt->subjectUserId);
+        $this->assertSame(30, $receipt->sessionId);
+        $this->assertSame('web', $receipt->channel);
+        $this->assertSame('setting.update', $receipt->action);
+        $this->assertSame('settings_agent', $receipt->agent);
+        $this->assertSame('session #30', $receipt->source);
+    }
+
+    public function testWebAttributionWithoutSession(): void
+    {
+        $receipt = JournalReceiptData::web(10, null, null, 'setting.update', null);
+
+        $this->assertSame(10, $receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
+        $this->assertSame('web', $receipt->channel);
+        $this->assertSame('setting.update', $receipt->action);
+        $this->assertNull($receipt->agent);
+        $this->assertNull($receipt->source);
+    }
+
+    public function testMigrationAttribution(): void
+    {
+        $receipt = JournalReceiptData::migration('up', 42, '/database/migrations/0042_test.sql');
+
+        $this->assertNull($receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
+        $this->assertSame('migration', $receipt->channel);
+        $this->assertSame('migration.up.42', $receipt->action);
+        $this->assertNull($receipt->agent);
+        $this->assertSame('0042_test.sql', $receipt->source);
+    }
+}
