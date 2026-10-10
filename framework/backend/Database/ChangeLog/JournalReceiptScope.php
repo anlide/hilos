@@ -9,7 +9,10 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Utils\Logger;
 
-/** Creates a receipt around a synchronous write and restores the previous connection attribution. */
+/**
+ * Creates a receipt around a synchronous write and restores the previous connection attribution
+ * ({@see run()}), and runs an agent frame under the receipt its sender stamped on it ({@see join()}).
+ */
 final class JournalReceiptScope
 {
     private const string FRAME_ID = 'id';
@@ -98,6 +101,9 @@ final class JournalReceiptScope
                     try {
                         Database::setJournalReceiptId(self::currentId());
                     } finally {
+                        // A receipt whose work went on in frames to agents lives until the last
+                        // recipient has finished under it (open_handovers); without frames an empty
+                        // one is deleted at once. One left open is hidden until its partition goes.
                         if ($frame[self::FRAME_HANDOVERS] > 0) {
                             Database::sql(
                                 "UPDATE {$database}.`hilos_change_log_receipt` "
