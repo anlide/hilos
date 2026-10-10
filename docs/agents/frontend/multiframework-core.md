@@ -115,23 +115,22 @@ The SDK **primitives** are the exception: the reusable toolkit (`LoadingButton`,
 `HilosModal`, `HilosViewportTable`, `HilosDropdown`, the conflict and breadcrumb
 views) *is* built in all three view layers at full parity, because a React or
 Angular adopter needs the real component, not a stub. The bound demo is minimal;
-the primitive it binds is complete.
-An SDK page may land in Vue before React and Angular, and `SHELL-PARITY` learns
-it from `HILOS_UNBUILT_PAGES` instead of from an exception of its own. The
-languages list is one (HIL-1474): built in Vue, still listed for React and
-Angular, so its page is not compared there. A page's
-files are its Vue view — the file that binds its key to `HilosAdminPage`, or its
-entry in `hilosAdminViews.ts` — and every file under `vue/src/admin/` that the
-view reaches by relative import without leaving `admin/`, together with a root
-`index.ts` export resolving to one of them. Such a file needs no counterpart in
-a layer where every page reaching it is still listed unbuilt; as soon as one of
-them is built there, it is compared there. Everything outside `vue/src/admin/`
-is an SDK primitive and is always compared — a primitive lives there even while
-only staged pages use it. The port that builds the page strikes its layer from
-the registry, which `UNBUILT-PAGE` demands, and that is what turns the page's
-parity on.
-Two thin extra consumers *prove* the core is agnostic; a Vue-only codebase cannot
-(one consumer hides leaked assumptions). These demos are the simplest of the
+the primitive it binds is complete. An SDK page may land in Vue before React and
+Angular, and `SHELL-PARITY` learns it from `HILOS_UNBUILT_PAGES` instead of from
+an exception of its own. The languages and the countries lists are two
+(HIL-1474, HIL-1475): built in Vue, still listed for React and Angular, so their
+pages are not compared there. A page's files are its Vue view — the file that
+binds its key to `HilosAdminPage`, or its entry in `hilosAdminViews.ts` — and
+every file under `vue/src/admin/` that the view reaches by relative import
+without leaving `admin/`, together with a root `index.ts` export resolving to
+one of them. Such a file needs no counterpart in a layer where every page
+reaching it is still listed unbuilt; as soon as one of them is built there, it
+is compared there. Everything outside `vue/src/admin/` is an SDK primitive and
+is always compared — a primitive lives there even while only staged pages use
+it. The port that builds the page strikes its layer from the registry, which
+`UNBUILT-PAGE` demands, and that is what turns the page's parity on. Two thin
+extra consumers *prove* the core is agnostic; a Vue-only codebase cannot (one
+consumer hides leaked assumptions). These demos are the simplest of the
 project's planned demos, so they double as real demos and as portability proofs.
 
 Unit tests run framework-free against the core (most logic needs no browser); the

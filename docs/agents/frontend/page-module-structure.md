@@ -181,38 +181,42 @@ explicitly in the app shell. The violation is the inverse: a God-component that
 reads the navigator itself, backed by a God-map of every page's content. A
 parametrized shell each page invokes with its own key is the sanctioned form.
 
-**Default framework views for un-implemented pages.** The framework ships a real,
-one-per-file default page for every admin key under `@hilos/vue/src/admin/`
-(grouped by section as above) — each a thin component that renders the
-page-agnostic `HilosAdminPage` shell for its key until it grows real content.
-`hilosAdminViews()` in `@hilos/vue` collects these files into a key → component
-map; a project spreads it into its app page map and overrides a key only when it
-implements that page itself. This keeps the 50-odd not-yet-built admin pages in
-the framework — as real files an author opens and fills in — instead of recopying
-them into every project. The `users` / `user` pages are deliberately **not** in
-the map: they are real framework pages that need a project-supplied
-`HilosUsersContext`, so a consumer mounts them directly. It is **not** the revoked
-God-map: every page is its own module file (no page content or metadata map in any
-project), the catalog of identity stays in `@hilos/core` (`HILOS_ADMIN_PAGES`),
-each file renders the page-agnostic shell, and the navigator is read only by
-`HilosView`. To implement a page, replace its file's shell body with real content
-and strike that layer from `HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain); a consumer overriding an unbuilt key names it and its section in `bootHilos` `projectViews`.
-An unbuilt page is listed for each layer that has not built it: the router draws 404 `not_served` without subscribing, and dashboard/child cards omit it.
-A section stays in the registry while none of its pages is built in that layer; checked automatically by `UNBUILT-PAGE` against the views and the PHP catalog tree.
-A child page may be built in a layer before its parent only when the parent is a
-page with content of its own — a list or a table that its mockup draws — and
-never when the parent is a navigation section: a section opens with its first
-built child. The child is then served by direct URL while the parent still
-answers `not_served`. The leaf whose plan builds that child adds one row to
-`STAGED_CHILDREN` in `framework/frontend/codestyle/stagedChildren.ts` — layer,
-parent key, child key and its own `HIL-<n>` — in the same change and without
-another interview: the plan that staged the two pages already decided it, and
-the row only records the decision. A row expires by itself: once the parent is
-built in that layer, or the child is listed unbuilt again, `UNBUILT-PAGE`
-reports the row as spent, and the change that spent it removes it. The
-languages list's row was removed when that list was built in Vue (HIL-1474);
-the countries row remains until its list is. No other
-built child may hide under an unbuilt parent.
+**Default framework views for un-implemented pages.** The framework ships a
+real, one-per-file default page for every admin key under
+`@hilos/vue/src/admin/` (grouped by section as above) — each a thin component
+that renders the page-agnostic `HilosAdminPage` shell for its key until it grows
+real content. `hilosAdminViews()` in `@hilos/vue` collects these files into a
+key → component map; a project spreads it into its app page map and overrides a
+key only when it implements that page itself. This keeps the 50-odd
+not-yet-built admin pages in the framework — as real files an author opens and
+fills in — instead of recopying them into every project. The `users` / `user`
+pages are deliberately **not** in the map: they are real framework pages that
+need a project-supplied `HilosUsersContext`, so a consumer mounts them directly.
+It is **not** the revoked God-map: every page is its own module file (no page
+content or metadata map in any project), the catalog of identity stays in
+`@hilos/core` (`HILOS_ADMIN_PAGES`), each file renders the page-agnostic shell,
+and the navigator is read only by `HilosView`. To implement a page, replace its
+file's shell body with real content and strike that layer from
+`HILOS_UNBUILT_PAGES` in `@hilos/core` (remove the entry when no layers remain);
+a consumer overriding an unbuilt key names it and its section in `bootHilos`
+`projectViews`. An unbuilt page is listed for each layer that has not built it:
+the router draws 404 `not_served` without subscribing, and dashboard/child cards
+omit it. A section stays in the registry while none of its pages is built in
+that layer; checked automatically by `UNBUILT-PAGE` against the views and the
+PHP catalog tree. A child page may be built in a layer before its parent only
+when the parent is a page with content of its own — a list or a table that its
+mockup draws — and never when the parent is a navigation section: a section
+opens with its first built child. The child is then served by direct URL while
+the parent still answers `not_served`. The leaf whose plan builds that child
+adds one row to `STAGED_CHILDREN` in
+`framework/frontend/codestyle/stagedChildren.ts` — layer, parent key, child key
+and its own `HIL-<n>` — in the same change and without another interview: the
+plan that staged the two pages already decided it, and the row only records the
+decision. A row expires by itself: once the parent is built in that layer, or
+the child is listed unbuilt again, `UNBUILT-PAGE` reports the row as spent, and
+the change that spent it removes it. The rows of the languages and the countries
+lists were removed when those lists were built in Vue (HIL-1474, HIL-1475). No
+other built child may hide under an unbuilt parent.
 
 ## Type placement: domain vs page-local
 
