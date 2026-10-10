@@ -271,6 +271,7 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @param string $acceptKey Connection submitting consent
      * @param OAuthCreateAccountActionDTO $dto Signed provider proof and accepted revisions
      * @return ?AuthFlowOutcome Refusal, or null when the holder answers the sign-in
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws HilosException When the identity, account, or acceptance write fails
      */
     public function createAccount(string $acceptKey, OAuthCreateAccountActionDTO $dto): ?AuthFlowOutcome
@@ -313,6 +314,7 @@ final class OAuthCommands extends AbstractLibraryCommands
                 $acting,
                 $identifier,
                 $pass->displayName,
+                $dto->themePick,
                 function (int $userId) use ($pass, $acceptKey): void {
                     Hilos::$db->identities->createOauthIdentity($userId, $pass->provider, $pass->subject);
                     if ($pass->email !== null) {

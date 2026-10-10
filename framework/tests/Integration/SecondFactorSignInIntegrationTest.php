@@ -834,10 +834,11 @@ final class SecondFactorTestLibrary extends AbstractUsersLibraryAgent
 {
     /**
      * @param string $displayName Name the new account would be created with
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @return int Never returns
      * @throws LogicException Always: these cases sign existing people in
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
         throw new LogicException('the second-factor cases register nobody');
     }

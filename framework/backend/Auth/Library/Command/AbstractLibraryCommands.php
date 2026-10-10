@@ -490,11 +490,13 @@ abstract class AbstractLibraryCommands
      * @param ActingSession $acting Browser the proof arrived on
      * @param string $identifier Normalized identifier the proof just settled (lowercased email or E.164)
      * @param string $displayName Name the new account is created with
+     * @param ?string $themePick Guest browser's theme choice, or null when they never picked
      * @param ?string $plainPassword Password the account signs in with, or null for a way in that carries none
      * @param ?string $landAs Identity a secret-less landing earns (see IdentityType), or null to take the hold's own type
      * @param ?Closure(int): void $withAccount What else the new account is written with, given its user id, or null for nothing
      * @return ?AuthFlowOutcome Missing-consent or taken-address refusal, or null when the holder answers
      * @throws EmptyValueException When the display name is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails,
@@ -504,6 +506,7 @@ abstract class AbstractLibraryCommands
         ActingSession $acting,
         string $identifier,
         string $displayName,
+        ?string $themePick,
         ?string $plainPassword = null,
         ?string $landAs = null,
         ?Closure $withAccount = null,
@@ -519,7 +522,7 @@ abstract class AbstractLibraryCommands
 
         Database::transactionStart();
         try {
-            $userId = $this->library->createUser($displayName);
+            $userId = $this->library->createUser($displayName, $themePick);
             $this->library->legalAcceptanceCommands()->record($userId, $acceptance);
             $losers = new RegistrationReservationService()
                 ->confirmProvenAddress($acting->sessionToken, $identifier, $userId, $plainPassword, $landAs);
@@ -574,9 +577,11 @@ abstract class AbstractLibraryCommands
      * @param ActingSession $acting Browser that asked for the account
      * @param string $identifier Sign-in method identifier, handed to the project's new-member bookkeeping
      * @param string $displayName Name the new account is created with
+     * @param ?string $themePick Guest browser's theme choice, or null when they never picked
      * @param Closure(int): void $withAccount The way in the new account is written with, given its user id
      * @param array<string, string> $acceptedRevisions Accepted boundary map from the final passkey action
      * @throws EmptyValueException When the display name is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
      * @throws HilosException When the account, project bookkeeping, or reservation write fails, or whatever
      *     `$withAccount` throws
@@ -585,12 +590,13 @@ abstract class AbstractLibraryCommands
         ActingSession $acting,
         string $identifier,
         string $displayName,
+        ?string $themePick,
         Closure $withAccount,
         array $acceptedRevisions,
     ): void {
         Database::transactionStart();
         try {
-            $userId = $this->library->createUser($displayName);
+            $userId = $this->library->createUser($displayName, $themePick);
             $this->library->legalAcceptanceCommands()->record($userId, $acceptedRevisions);
             $withAccount($userId);
             Database::transactionCommit();

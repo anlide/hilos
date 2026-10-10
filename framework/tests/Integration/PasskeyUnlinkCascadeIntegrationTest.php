@@ -513,10 +513,11 @@ final class PasskeyUnlinkTestLibrary extends AbstractUsersLibraryAgent
 {
     /**
      * @param string $displayName Name the new account would be created with
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @return int Never returns
      * @throws LogicException Always: these cases unlink from accounts that already exist
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
         throw new LogicException('the unlink cases register nobody');
     }

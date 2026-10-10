@@ -331,7 +331,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The refusal or the taken-address rollback to answer with, or null when the holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws InvalidFormatException When the identifier is neither an email address nor a phone number
-     * @throws ValidationException When the challenge, payload, or ceremony is invalid, or the passkey is already registered
+     * @throws ValidationException When the challenge, payload, theme choice, or ceremony is invalid, or the passkey is already registered
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidArgumentException When the landing or grant frame cannot be named or queued
      * @throws HilosException When WebAuthn env config, a lookup, or the account, identity, credential, project
@@ -406,6 +406,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
                 $acting,
                 $normalized,
                 $this->displayNameFromEmail($normalized),
+                $dto->themePick,
                 landAs: IdentityType::MAGIC_LINK,
                 withAccount: $storeKey,
             );
@@ -415,6 +416,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
             $acting,
             IdentityType::PASSKEY . ':' . $result->credentialId,
             $this->newAccountName($config, $claims->challenge),
+            $dto->themePick,
             $storeKey,
             $dto->acceptedRevisions,
         );

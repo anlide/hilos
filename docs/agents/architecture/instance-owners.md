@@ -58,8 +58,9 @@ can find the two Entity constants, but cannot decide the second question.
 The owner writes ordinary edits of one instance's content, whether the person
 or an administrator requested them. For the person the name, the administrator
 flag and the block have moved (HIL-1404), and so have the sign-in methods and
-passkey credentials (HIL-1405) and the second factor (HIL-1406); the rest are still
-ahead (not in the code yet — HIL-1407, HIL-1408, HIL-1409).
+passkey credentials (HIL-1405), the second factor (HIL-1406), and the theme
+choice (HIL-1427); the rest are still ahead (not in the code yet — HIL-1407,
+HIL-1408, HIL-1409).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
 rows and find. See [The Unit: One Entity, One Library](entity-libraries.md#the-unit-one-entity-one-library).

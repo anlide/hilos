@@ -60,7 +60,7 @@ final class UsersLibraryPersonIntegrationTest extends HilosSessionIntegrationTes
      */
     public function testCreatesThePersonInTheFrameworkTableAndNamesThem(): void
     {
-        $userId = $this->inLibrary(fn (): int => $this->library->createUser('  Ada  '));
+        $userId = $this->inLibrary(fn (): int => $this->library->createUser('  Ada  ', null));
 
         self::assertGreaterThan(0, $userId);
         Database::sql('SELECT `name`, `admin`, `block`, `last_activity` FROM `hilos_user` WHERE `id` = ?', [$userId]);
@@ -79,7 +79,7 @@ final class UsersLibraryPersonIntegrationTest extends HilosSessionIntegrationTes
     public function testRefusesAPersonWithABlankName(): void
     {
         try {
-            $this->inLibrary(fn (): int => $this->library->createUser('   '));
+            $this->inLibrary(fn (): int => $this->library->createUser('   ', null));
             self::fail('A blank name must not create a person');
         } catch (EmptyValueException $e) {
             self::assertSame('User name cannot be empty', $e->getMessage());

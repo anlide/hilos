@@ -23,6 +23,7 @@ class User extends Entity
     public const string admin = 'admin';
     public const string block = 'block';
     public const string last_activity = 'last_activity';
+    public const string theme_pick = 'theme_pick';
 
     // Table meta information
     public const string _table = 'hilos_user';
@@ -35,6 +36,7 @@ class User extends Entity
         self::admin,
         self::block,
         self::last_activity,
+        self::theme_pick,
     ];
 
     // Column types
@@ -44,6 +46,7 @@ class User extends Entity
         self::admin => PhpType::BOOLEAN->value,
         self::block => PhpType::BOOLEAN->value,
         self::last_activity => PhpType::DATETIME->value,
+        self::theme_pick => PhpType::STRING->value,
     ];
 
     // Indexes
@@ -65,6 +68,7 @@ class User extends Entity
         self::admin,
         self::block,
         self::last_activity,
+        self::theme_pick,
     ];
 
     // Properties
@@ -73,4 +77,5 @@ class User extends Entity
     public bool $admin = false;
     public bool $block = false;
     public ?string $last_activity = null;
+    public ?string $theme_pick = null;
 }

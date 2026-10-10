@@ -522,7 +522,13 @@ final class CodeSendProgressTestAgent extends AbstractSessionsLibraryAgent
  */
 final class CodeSendProgressTestUsersAgent extends AbstractUsersLibraryAgent
 {
-    public function createUser(string $displayName): int
+    /**
+     * @param string $displayName Proposed account name
+     * @param ?string $themePick Guest theme choice, or null when not chosen
+     * @return int Never returns
+     * @throws LogicException Always: the fixture library makes no users
+     */
+    public function createUser(string $displayName, ?string $themePick): int
     {
         throw new LogicException('The fixture library makes no users');
     }

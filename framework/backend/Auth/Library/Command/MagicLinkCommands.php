@@ -112,6 +112,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The rollback to the address field, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proven address is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
@@ -130,7 +131,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
             );
         }
 
-        return $this->signInProvenAddress($acting, $email);
+        return $this->signInProvenAddress($acting, $email, $dto->themePick);
     }
 
     /**
@@ -152,6 +153,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The refusal in place, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proven address is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
@@ -168,7 +170,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
             );
         }
 
-        return $this->signInProvenAddress($acting, $email);
+        return $this->signInProvenAddress($acting, $email, $dto->themePick);
     }
 
     /**
@@ -215,14 +217,15 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      *
      * @param ActingSession $acting Browser that proved the address
      * @param string $email Lowercased address the ceremony proved
+     * @param ?string $themePick Guest browser's theme choice, used only if a new account is created
      * @return ?AuthFlowOutcome The taken-address rollback of a lost landing, or null when the holder or the agent answers
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidFormatException When the proven address is not a valid identifier
-     * @throws ValidationException When the account's person cannot be addressed
+     * @throws ValidationException When the account's person cannot be addressed or the theme choice is invalid
      * @throws InvalidArgumentException When the hand-off or the ask frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
      */
-    private function signInProvenAddress(ActingSession $acting, string $email): ?AuthFlowOutcome
+    private function signInProvenAddress(ActingSession $acting, string $email, ?string $themePick): ?AuthFlowOutcome
     {
         $userId = Hilos::$db->identities->findAccountIdByEmail($email);
         if ($userId !== null) {
@@ -248,7 +251,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
             return null;
         }
 
-        return $this->landRegistration($acting, $email, $this->displayNameFromEmail($email));
+        return $this->landRegistration($acting, $email, $this->displayNameFromEmail($email), $themePick);
     }
 
     /**

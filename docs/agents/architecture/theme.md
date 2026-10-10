@@ -76,9 +76,10 @@ other element. A subtree pinned to one mode is a pinned color by another name.
   current tab; other tabs follow through the `storage` event (including a clear
   event with no key). Follow "What this browser keeps" in
   [core-and-connection.md](../frontend/core-and-connection.md).
-- **A signed-in person:** keep the pick in the account. Only the person's own
-  agent writes it, like every other edit of their own content; the truth source
-  refuses a write from any other process (not in the code yet — HIL-1427).
+- **A signed-in person:** keep the pick in `hilos_user.theme_pick`, where null means
+  no choice. Only the person's own agent writes it through
+  `hilos_user_theme_pick_write`, like every other edit of their own content; the
+  truth source refuses a write from any other process (HIL-1427).
   A change reaches every session of the person on every device as a frame, and
   each switches at once (not in the code yet — HIL-1429).
 - **The browser copy:** the app writes the signed-in person's pick into the
@@ -98,8 +99,10 @@ Resuming a session follows the same table
 pick: switching off still means the default, and `system` still resolves to one
 of the two themes.
 
-Sign-up writes the guest's pick into the new account; no guest pick means not
-chosen (not in the code yet — HIL-1427). Sign-out changes nothing on screen
+The browser request that creates an account carries its current `themePick`.
+The people library inserts the person with that choice in the registration
+transaction; no guest pick means not chosen (HIL-1427). Sign-out changes nothing
+on screen
 (not in the code yet — HIL-1429).
 
 A cookie never carries the theme; the cookie is the auth credential only. See
@@ -179,11 +182,17 @@ The installation settings use `data.themeSettings` in the handshake and
 `hilos_theme_settings` as the live frame. Both carry the complete pair
 `{switchingEnabled: bool, defaultTheme: 'light'|'dark'|'system'}` (HIL-1428).
 The browser-value keys are `hilos.theme.pick` and `hilos.theme.settings`
-(HIL-1430). The theme also touches a person's stored pick and its frame to their
-sessions. Pass the contract gate in the leaf that lands each remaining surface.
-This specification leaves their names to those leaves: do not invent them here.
-The leaf that lands a surface writes its names into this file in the same commit
-that clears its marker.
+(HIL-1430). The person's stored choice is `hilos_user.theme_pick`:
+`ENUM('light','dark','system') NULL DEFAULT NULL` (HIL-1427). The agent ask is
+`hilos_user_theme_pick_write` with `UserThemePickWriteSignalData`; its answer is
+`UserThemePickWriteDoneSignalData` under the asking coordinator's `replySignal`.
+The optional `themePick` key travels on seven account-creating actions:
+`hilos_complete_registration`, `hilos_complete_registration_passwordless`,
+`hilos_complete_registration_passkey`, `hilos_confirm_magic_link`,
+`hilos_confirm_magic_link_code`, `hilos_confirm_phone_code`, and
+`hilos_oauth_create_account`. The frame to the person's sessions is HIL-1429;
+pass its contract gate there. The leaf that lands a remaining surface writes
+its names into this file in the same commit that clears its marker.
 
 ## Validation
 

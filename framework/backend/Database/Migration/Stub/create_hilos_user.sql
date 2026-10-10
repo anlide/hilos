@@ -9,6 +9,7 @@ CREATE TABLE `hilos_user` (
     `admin` TINYINT(1) NOT NULL DEFAULT 0,
     `block` TINYINT(1) NOT NULL DEFAULT 0,
     `last_activity` TIMESTAMP NULL DEFAULT NULL,
+    `theme_pick` ENUM('light', 'dark', 'system') NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_user_admin` (`admin`),
     KEY `idx_user_block` (`block`),

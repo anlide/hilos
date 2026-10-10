@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as oauthLogin from '../../src/auth/oauthLogin.js'
 import { createAuthActions } from '../../src/auth/authActions.js'
 import { createHilosAuthContext } from '../../src/auth/authContext.js'
@@ -12,6 +12,9 @@ import {
   type ActionLifecycle,
 } from '../../src/connection/actionLifecycle.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { bindPageReady } from '../../src/subscription/pageReadyGate.js'
+import { setHilosThemePick } from '../../src/theme/themeState.js'
+import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
 import { consentTerms } from '../legal/consentFixture.js'
 
 const FORM: AuthFlowForm = {
@@ -87,8 +90,91 @@ function world(
     scopes: new ScopeManager(),
     channels: [],
   })
-  return { actions: createAuthActions(context), sent, emit }
+  return { actions: createAuthActions(context), sent, emit, connection }
 }
+
+afterEach(() => setHilosThemePick(null))
+
+describe('guest theme choice on account-creating submits (HIL-1427)', () => {
+  it.each(['dark', null] as const)(
+    'carries the current choice %s on every creating road',
+    async (pick) => {
+      setHilosThemePick(pick)
+      const { actions, sent, emit, connection } = world()
+      const stopReady = bindPageReady(connection)
+      emit('projectSignal', { type: SIGNAL_TYPE_PAGE_RESPONSE })
+      const pending = vi
+        .spyOn(oauthLogin, 'pendingOAuthAccount')
+        .mockReturnValue({
+          provider: 'oauth:github',
+          providerName: 'GitHub',
+          email: null,
+          accountToken: 'signed-account-token',
+        })
+      try {
+        await actions.onSubmit(
+          'submit',
+          { ...FLOW, step: 'set_password' },
+          { ...FORM, newPassword: 'new-password' },
+        )
+        await actions.onSubmit(
+          'finish_without_password',
+          { ...FLOW, step: 'set_password' },
+          FORM,
+        )
+        await actions.onSubmit(
+          'submit',
+          { ...FLOW, step: 'code', identifierKind: 'phone' },
+          { ...FORM, identifier: '+14155552671', code: '123456' },
+        )
+        await actions.onSubmit(
+          'submit',
+          { ...FLOW, step: 'code', methodKey: 'magic_link' },
+          { ...FORM, code: '123456' },
+        )
+        await actions.onSubmit(
+          'submit',
+          { ...FLOW, methodKey: 'oauth:github', identifierKind: 'unknown' },
+          FORM,
+        )
+        await actions.confirmMagicLink(FORM.identifier, 'mailed-token')
+      } finally {
+        pending.mockRestore()
+        stopReady()
+      }
+
+      expect(sent.map(({ action }) => action)).toEqual([
+        'hilos_complete_registration',
+        'hilos_complete_registration_passwordless',
+        'hilos_confirm_phone_code',
+        'hilos_confirm_magic_link_code',
+        'hilos_oauth_create_account',
+        'hilos_confirm_magic_link',
+      ])
+      for (const { payload } of sent) {
+        expect(payload).toHaveProperty('themePick', pick)
+      }
+    },
+  )
+
+  it('keeps password recovery free of a guest theme choice', async () => {
+    setHilosThemePick('dark')
+    const { actions, sent } = world()
+
+    await actions.onSubmit(
+      'submit',
+      { ...FLOW, step: 'set_password', intent: 'recovery' },
+      { ...FORM, newPassword: 'new-password' },
+    )
+
+    expect(sent).toEqual([
+      {
+        action: 'hilos_complete_password_reset',
+        payload: { password: 'new-password' },
+      },
+    ])
+  })
+})
 
 describe('registration consent on the wire', () => {
   it('sends the accepted map with email registration and renewal, but not a live resend', async () => {
@@ -244,6 +330,7 @@ describe('provider first sign-in consent on the wire (HIL-1235)', () => {
   }
 
   it('submits the signed proof and accepted revisions', async () => {
+    setHilosThemePick('dark')
     const pending = vi
       .spyOn(oauthLogin, 'pendingOAuthAccount')
       .mockReturnValue({
@@ -262,6 +349,7 @@ describe('provider first sign-in consent on the wire (HIL-1235)', () => {
           payload: {
             accountToken: 'signed-account-token',
             acceptedRevisions: FORM.acceptedRevisions,
+            themePick: 'dark',
           },
         },
       ])

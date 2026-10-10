@@ -123,6 +123,7 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
@@ -522,6 +523,14 @@ final class HilosSignalConstants
      * Carried by {@see UserBlockWriteSignalData}, an ask of the handover form.
      */
     public const string HILOS_USER_BLOCK_WRITE = 'hilos_user_block_write';
+
+    /**
+     * Coordinator → the person's agent: write the person's theme choice (HIL-1427).
+     *
+     * Carried by {@see UserThemePickWriteSignalData}, an ask of the handover form. The agent
+     * answers under the replySignal carried by the ask; the coordinator owns that signal name.
+     */
+    public const string HILOS_USER_THEME_PICK_WRITE = 'hilos_user_theme_pick_write';
 
     /**
      * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).

@@ -1022,10 +1022,11 @@ final class StepUpIntegrationLibrary extends AbstractUsersLibraryAgent
 
     /**
      * @param string $displayName Unused display name
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @return int Never returns
      * @throws LogicException Always: these cases create nobody
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
         throw new LogicException('the step-up cases create nobody');
     }

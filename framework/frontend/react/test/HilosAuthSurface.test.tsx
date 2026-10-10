@@ -1934,7 +1934,7 @@ describe('HilosAuthSurface holds the room a step takes (HIL-1107)', () => {
     expect(dispatched.map((call) => call.action)).toEqual([
       AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
     ])
-    expect(dispatched[0]?.payload).toEqual({})
+    expect(dispatched[0]?.payload).toEqual({ themePick: null })
   })
 
   it('keeps the way past the password off a registry that mounted no link', async () => {

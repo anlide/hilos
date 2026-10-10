@@ -23,6 +23,7 @@
 // an account the server was never going to create.
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
+import { hilosThemePick } from '../theme/themeState.js'
 import { type HilosAuthContext } from './authContext.js'
 import { type AuthFlowForm, type AuthFlowSubmitOutcome } from './authFlow.js'
 import { authFlowOutcomeOf, authFlowOutcomeSchema } from './authFlowReply.js'
@@ -383,6 +384,7 @@ export async function runPasskeyNewAccount(
         clientDataJson: attestation.clientDataJson,
         transports: attestation.transports,
         userAgent: navigator.userAgent,
+        themePick: hilosThemePick.get(),
       },
       { replySchema: authFlowOutcomeSchema },
     ).done

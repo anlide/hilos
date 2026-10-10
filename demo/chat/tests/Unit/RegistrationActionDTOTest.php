@@ -61,7 +61,8 @@ final class RegistrationActionDTOTest extends TestCase
     }
 
     /**
-     * The save DTO carries the password verbatim, and names no address at all.
+     * The save DTO carries the password verbatim and the absent theme choice as null,
+     * and names no address at all.
      *
      * The address is read off the hold this browser proved, so a payload cannot point
      * the save at an account whose mailbox somebody else answered (HIL-825).
@@ -74,7 +75,7 @@ final class RegistrationActionDTOTest extends TestCase
         ]);
 
         $this->assertSame('  spaced  ', $dto->password);
-        $this->assertSame(['password' => '  spaced  '], $dto->toArray());
+        $this->assertSame(['password' => '  spaced  ', 'themePick' => null], $dto->toArray());
         $this->assertFalse(property_exists($dto, 'email'));
     }
 

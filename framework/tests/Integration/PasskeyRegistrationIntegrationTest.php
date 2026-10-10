@@ -256,10 +256,12 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         $this->reservations()->createReservation(IdentityType::PASSWORD, self::SESSION_TOKEN, $email, self::LIVE_FOR_SECONDS);
 
         $options = $this->askOptions(null);
-        $reply = $this->complete(null, $options, new WebAuthnTestVectors());
+        $reply = $this->complete(null, $options, new WebAuthnTestVectors(), themePick: 'system');
         $this->assertNull($reply, 'A sign-in is answered by the session holder, not by the submit');
 
         $userId = $this->theOnlyUser();
+        Database::sql('SELECT `theme_pick` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        self::assertSame('system', Database::row()['theme_pick']);
         self::assertCount(1, Hilos::$db->legalAcceptances->ofUser($userId));
         self::assertSame('2026-09-17', Hilos::$db->legalAcceptances->ofUser($userId)[0]->revisionId);
         $name = $options->publicKeyOptions['user']['name'];
@@ -625,6 +627,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
      * @param ?string $echoedChallenge Challenge the client data echoes, or null for the one the options named
      * @param ?string $credentialId Raw id of the key made, or null for a fresh one
      * @param ?array<string, string> $acceptedRevisions Consent on the final action, absent in refusal cases
+     * @param ?string $themePick Guest browser's theme choice, or null when not chosen
      * @return mixed What the submit answered
      * @throws HilosException When the command fails
      */
@@ -635,6 +638,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
         ?string $echoedChallenge = null,
         ?string $credentialId = null,
         ?array $acceptedRevisions = ['terms' => '2026-09-17'],
+        ?string $themePick = null,
     ): mixed {
         $authData = $vectors->authenticatorData(
             WebAuthnTestVectors::FLAG_USER_PRESENT | WebAuthnTestVectors::FLAG_USER_VERIFIED
@@ -657,6 +661,7 @@ final class PasskeyRegistrationIntegrationTest extends HilosSessionIntegrationTe
                 ['internal'],
                 self::USER_AGENT,
                 $acceptedRevisions,
+                $themePick,
             ),
         );
     }
@@ -937,17 +942,21 @@ final class PasskeyRegistrationTestLibrary extends AbstractUsersLibraryAgent
 
     /**
      * @param string $displayName Name the new account is created with
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @return int Id of the inserted row
      * @throws DatabaseException When the fixture insert or the count after it fails
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
         Database::sql(
             'INSERT INTO `' . PasskeyRegistrationIntegrationTest::FIXTURE_USER_TABLE . '` (`display_name`) VALUES (?)',
             [$displayName],
         );
         $userId = Database::lastInsertId();
-        Database::sqlRun('INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, ?)', [$userId, $displayName]);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user` (`id`, `name`, `theme_pick`) VALUES (?, ?, ?)',
+            [$userId, $displayName, $themePick],
+        );
         $this->rowsSeenInsideTransaction = self::usersVisible();
 
         return $userId;

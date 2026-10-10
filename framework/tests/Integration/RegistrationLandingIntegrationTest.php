@@ -18,6 +18,7 @@ use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Context\DbContext;
@@ -194,7 +195,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
         try {
             $library = new RegistrationLandingFixtureLibrary();
             $reply = new RegistrationLandingTestCommands($library)
-                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Unaccepted', null);
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Unaccepted', null, null);
             self::assertSame(AuthFlowOutcome::CODE_CONSENT_REQUIRED, $reply?->code);
             self::assertSame(AuthFlowStep::CONSENT, $reply?->step);
             self::assertSame(0, RegistrationLandingFixtureLibrary::rowsVisible());
@@ -219,8 +220,10 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
                 ['terms' => 'old', 'privacy' => 'privacy'],
             );
             $outcome = new RegistrationLandingTestCommands(new RegistrationLandingFixtureLibrary())
-                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', self::PASSWORD);
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', 'dark', self::PASSWORD);
             self::assertNull($outcome);
+            Database::sql('SELECT `theme_pick` FROM `hilos_user`');
+            self::assertSame('dark', Database::row()['theme_pick']);
             Database::sql('SELECT document, revision_id FROM hilos_legal_acceptance ORDER BY document');
             self::assertSame([
                 ['document' => 'privacy', 'revision_id' => 'privacy'],
@@ -256,8 +259,10 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             );
             $this->reservations()->createReservation(IdentityType::MAGIC_LINK, 'empty-browser', $email, self::LIVE_FOR_SECONDS);
             $outcome = new RegistrationLandingTestCommands(new RegistrationLandingFixtureLibrary())
-                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', null);
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', null, null);
             self::assertNull($outcome);
+            Database::sql('SELECT `theme_pick` FROM `hilos_user`');
+            self::assertNull(Database::row()['theme_pick']);
             Database::sql('SELECT revision_id FROM hilos_legal_acceptance WHERE document = ?', ['terms']);
             self::assertSame('current', Database::row()['revision_id']);
             self::assertNull(new RegistrationReservationService()->findActiveForSession('newer-browser'));
@@ -473,7 +478,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             $this->queuedDbFrameTypes();
 
             $outcome = new RegistrationLandingTestCommands($library)
-                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', self::PASSWORD);
+                ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', null, self::PASSWORD);
 
             self::assertNotNull($outcome, 'A taken address is answered with a rollback outcome, not thrown');
             self::assertFalse($outcome->ok);
@@ -520,7 +525,7 @@ final class RegistrationLandingIntegrationTest extends FrameworkIntegrationTestC
             $raised = null;
             try {
                 new RegistrationLandingTestCommands($library)
-                    ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', null);
+                    ->land(new ActingSession(self::ACCEPT_KEY, self::SESSION_TOKEN, null), $email, 'Landing', null, null);
             } catch (LogicException $failure) {
                 $raised = $failure;
             }
@@ -818,16 +823,21 @@ final class RegistrationLandingFixtureLibrary extends AbstractUsersLibraryAgent
     }
 
     /**
+     * @param string $displayName Proposed account name
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @throws DatabaseException When the fixture insert or the count after it fails
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
         Database::sql(
             'INSERT INTO `' . RegistrationLandingIntegrationTest::FIXTURE_USER_TABLE . '` (`display_name`) VALUES (?)',
             [$displayName],
         );
         $userId = Database::lastInsertId();
-        Database::sqlRun('INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, ?)', [$userId, $displayName]);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user` (`id`, `name`, `theme_pick`) VALUES (?, ?, ?)',
+            [$userId, $displayName, $themePick],
+        );
         $this->rowsSeenInsideTransaction = self::rowsVisible();
 
         return $userId;
@@ -848,16 +858,24 @@ final class RegistrationLandingTestCommands extends AbstractLibraryCommands
      * @param ActingSession $acting Browser the proof arrived on
      * @param string $identifier Normalized identifier the proof just settled
      * @param string $displayName Name the new account is created with
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @param ?string $plainPassword Password the account signs in with, or null for a way in that carries none
      * @return ?AuthFlowOutcome The taken-address rollback to answer with, or null when the holder answers
      * @throws EmptyValueException When the display name is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
      */
-    public function land(ActingSession $acting, string $identifier, string $displayName, ?string $plainPassword): ?AuthFlowOutcome
+    public function land(
+        ActingSession $acting,
+        string $identifier,
+        string $displayName,
+        ?string $themePick,
+        ?string $plainPassword,
+    ): ?AuthFlowOutcome
     {
-        return $this->landRegistration($acting, $identifier, $displayName, $plainPassword);
+        return $this->landRegistration($acting, $identifier, $displayName, $themePick, $plainPassword);
     }
 }
 

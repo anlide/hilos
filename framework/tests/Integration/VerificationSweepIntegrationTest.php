@@ -242,10 +242,11 @@ final class VerificationSweepTestLibrary extends AbstractUsersLibraryAgent
 {
     /**
      * @param string $displayName Proposed account name
+     * @param ?string $themePick Guest theme choice, or null when not chosen
      * @return int Never returns
      * @throws LogicException Always: this fixture creates no users
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
         throw new LogicException('Verification sweep fixture creates no users');
     }

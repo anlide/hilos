@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\DTO;
 
+use Hilos\Auth\Registration\RegistrationThemePick;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -16,13 +19,19 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  * {@see CompleteRegistrationActionDTO} - an omittable field would be a flag in the
  * payload of a public, anonymous-reachable door, which this tree does not do (HIL-576).
  *
- * Carries no fields, for the reason the complete-with-a-password payload carries no
+ * Carries only the guest's theme pick, written into the account when this submit creates one
+ * (HIL-1427). It carries no address, for the reason the complete-with-a-password payload carries no
  * address: which registration is being finished is read from the proved hold of THIS
  * session on the server, and a payload is not entitled to name somebody else's.
  */
 final class CompleteRegistrationPasswordlessActionDTO extends ActionPayloadDTO
 {
     public const array SECRET_FIELDS = [];
+
+    /** @param ?string $themePick Guest browser's choice, or null when they never picked */
+    public function __construct(public readonly ?string $themePick = null)
+    {
+    }
 
     /**
      * Get action name.
@@ -37,21 +46,25 @@ final class CompleteRegistrationPasswordlessActionDTO extends ActionPayloadDTO
     /**
      * Create from array.
      *
-     * @param array<string, mixed> $data Payload data (ignored; no fields)
+     * @param array<string, mixed> $data Payload data
      * @return static Complete-registration-passwordless DTO instance
+     * @throws InvalidFormatException When the submitted theme choice has the wrong type
+     * @throws ValidationException When the theme choice is invalid
      */
     public static function fromArray(array $data): static
     {
-        return new static();
+        return new static(
+            themePick: RegistrationThemePick::readPayload(self::optionalString($data, RegistrationThemePick::PAYLOAD_KEY)),
+        );
     }
 
     /**
      * Convert to array for transport.
      *
-     * @return array<string, mixed> Empty payload
+     * @return array{themePick: ?string} Completion payload
      */
     public function toArray(): array
     {
-        return [];
+        return [RegistrationThemePick::PAYLOAD_KEY => $this->themePick];
     }
 }

@@ -27,6 +27,7 @@ use Hilos\HilosException;
  * @property-read bool $admin Whether the user is a panel admin operator
  * @property-read bool $block Whether the user is blocked from acting
  * @property-read ?string $lastActivity Last activity timestamp
+ * @property-read ?string $themePick The person's theme pick: light, dark or system; null when they never picked
  * @property-read UserActions $actions Actions for write operations on this user
  */
 class User extends DbItem
@@ -48,6 +49,7 @@ class User extends DbItem
             ObjectUser::admin => $this->_object->admin,
             ObjectUser::block => $this->_object->block,
             ObjectUser::lastActivity => $this->_object->lastActivity,
+            ObjectUser::themePick => $this->_object->themePick,
             default => parent::__get($name),
         };
     }

@@ -465,6 +465,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @throws ValueTooShortException When the password is too short
      * @throws FsException When the framework password list cannot be read
      * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proved address is not a valid identifier
      * @throws InvalidArgumentException When the landing frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
@@ -509,6 +510,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             $acting,
             $email,
             $this->displayNameFromEmail($email),
+            $dto->themePick,
             $dto->password,
         );
     }
@@ -541,10 +543,11 @@ final class PasswordCommands extends AbstractLibraryCommands
      * duplicate identity.
      *
      * @param string $acceptKey Accept key the action arrived on
-     * @param CompleteRegistrationPasswordlessActionDTO $dto Parsed complete payload (no fields)
+     * @param CompleteRegistrationPasswordlessActionDTO $dto Parsed complete payload (theme choice only)
      * @return ?AuthFlowOutcome Where the surface goes next, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the display name the new account is created with is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proved address is not a valid identifier
      * @throws InvalidArgumentException When the landing frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
@@ -581,6 +584,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             $acting,
             $email,
             $this->displayNameFromEmail($email),
+            $dto->themePick,
             landAs: IdentityType::MAGIC_LINK,
         );
     }

@@ -45,6 +45,7 @@ import { z } from 'zod'
 import { ActionError } from '../connection/actionLifecycle.js'
 import { type ProjectSignal } from '../protocol/parseSignal.js'
 import { whenPageReady } from '../subscription/pageReadyGate.js'
+import { hilosThemePick } from '../theme/themeState.js'
 import {
   AUTH_CODE_REASON_CAP_REACHED,
   AUTH_CODE_REASON_CHANNEL_UNAVAILABLE,
@@ -382,13 +383,13 @@ function submitAuthFlow(
       // The way PAST the password is asked for by name rather than by intent
       // (HIL-1008): it is the same screen and the same proved hold, but a
       // different ending, and reading it off the intent would make the branch
-      // below say two things at once. It carries no payload at all — not even
-      // the password the other two send.
+      // below say two things at once. It carries only this browser's current
+      // theme pick, not the password the other two send.
       if (action === 'finish_without_password') {
         return dispatchFlow(
           context,
           AUTH_ACTION_COMPLETE_REGISTRATION_PASSWORDLESS,
-          {},
+          { themePick: hilosThemePick.get() },
         )
       }
 
@@ -404,7 +405,9 @@ function submitAuthFlow(
         flow.intent === 'register'
           ? AUTH_ACTION_COMPLETE_REGISTRATION
           : AUTH_ACTION_COMPLETE_PASSWORD_RESET,
-        { password: form.newPassword },
+        flow.intent === 'register'
+          ? { password: form.newPassword, themePick: hilosThemePick.get() }
+          : { password: form.newPassword },
       )
     case 'done':
       // Continue: the announcement is cleared on the server, the gate releases
@@ -465,6 +468,7 @@ async function createOAuthAccount(
     {
       accountToken: pending.accountToken,
       acceptedRevisions: form.acceptedRevisions,
+      themePick: hilosThemePick.get(),
     },
   )
   if (outcome.code === OAUTH_SIGN_IN_EXPIRED_CODE) {
@@ -571,7 +575,11 @@ async function confirmMagicLink(
 ): Promise<AuthFlowSubmitOutcome> {
   await whenPageReady()
 
-  return dispatchFlow(context, AUTH_ACTION_CONFIRM_MAGIC_LINK, { email, token })
+  return dispatchFlow(context, AUTH_ACTION_CONFIRM_MAGIC_LINK, {
+    email,
+    token,
+    themePick: hilosThemePick.get(),
+  })
 }
 
 /**
@@ -657,6 +665,7 @@ function submitCode(
       : dispatchFlow(context, AUTH_ACTION_CONFIRM_PHONE_CODE, {
           phone: form.identifier,
           code: form.code,
+          themePick: hilosThemePick.get(),
         })
   }
   if (flow.methodKey === MAGIC_LINK_METHOD_KEY) {
@@ -672,6 +681,7 @@ function submitCode(
       : dispatchFlow(context, AUTH_ACTION_CONFIRM_MAGIC_LINK_CODE, {
           email: form.identifier,
           code: form.code,
+          themePick: hilosThemePick.get(),
         })
   }
   if (flow.intent === 'recovery') {

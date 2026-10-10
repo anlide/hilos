@@ -20,6 +20,7 @@ use Hilos\Database\Object\Collection\Users as ObjectUsers;
  * @property bool $admin
  * @property bool $block
  * @property ?string $lastActivity
+ * @property ?string $themePick
  */
 class User extends Object_
 {
@@ -31,6 +32,7 @@ class User extends Object_
     public const string admin = 'admin';
     public const string block = 'block';
     public const string lastActivity = 'lastActivity';
+    public const string themePick = 'themePick';
 
     /**
      * Returns the value of a user object property by name.
@@ -47,6 +49,7 @@ class User extends Object_
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
             self::lastActivity => $this->entity->last_activity,
+            self::themePick => $this->entity->theme_pick,
             default => parent::__get($property),
         };
     }
@@ -65,6 +68,7 @@ class User extends Object_
             self::admin => $this->entity->admin = (bool)$value,
             self::block => $this->entity->block = (bool)$value,
             self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
+            self::themePick => $this->entity->theme_pick = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -82,6 +86,7 @@ class User extends Object_
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
             self::lastActivity => $this->entity->last_activity,
+            self::themePick => $this->entity->theme_pick,
         ];
     }
 }

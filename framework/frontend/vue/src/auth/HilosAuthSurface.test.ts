@@ -1517,7 +1517,7 @@ describe('HilosAuthSurface', () => {
     ])
     // No address on the wire: the one this creates an account for is read off
     // the proved hold of this session on the server.
-    expect(dispatched[0]?.payload).toEqual({})
+    expect(dispatched[0]?.payload).toEqual({ themePick: null })
   })
 
   it('keeps the way past the password off a registry that mounted no link', async () => {

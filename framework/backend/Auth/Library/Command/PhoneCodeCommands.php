@@ -147,7 +147,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * @param ConfirmPhoneCodeActionDTO $dto Parsed confirm payload (phone, code)
      * @return ?AuthFlowOutcome The rollback to the identifier step, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the phone or code is invalid
+     * @throws ValidationException When the phone, code or theme choice is invalid
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidFormatException When the proven number is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
@@ -187,6 +187,6 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
             );
         }
 
-        return $this->landRegistration($acting, $phone, $this->generatedAccountName(random_int(0, PHP_INT_MAX)));
+        return $this->landRegistration($acting, $phone, $this->generatedAccountName(random_int(0, PHP_INT_MAX)), $dto->themePick);
     }
 }

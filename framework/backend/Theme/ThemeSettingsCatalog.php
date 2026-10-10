@@ -17,6 +17,7 @@ final class ThemeSettingsCatalog implements CatalogProviderInterface
     public const string DARK = 'dark';
     public const string SYSTEM = 'system';
     public const array THEME_VALUES = [self::LIGHT, self::DARK, self::SYSTEM];
+    public const string THEME_VALUE_REFUSAL = 'Choose light, dark or system';
 
     public const bool DEFAULT_SWITCHING_ENABLED = true;
     public const string DEFAULT_THEME = self::SYSTEM;

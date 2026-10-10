@@ -96,11 +96,12 @@ final class OAuthFirstSignInConsentTest extends IntegrationTestCase
         [$acceptKey, $subject, $token] = $this->pause('accepted-' . RandomHelper::hex(6), 'accepted@example.test');
         $revisions = LegalConsentProjector::acceptance();
 
-        $this->assertNull($this->submit($acceptKey, $token, $revisions));
+        $this->assertNull($this->submit($acceptKey, $token, $revisions, 'dark'));
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, self::PROVIDER . ':' . $subject);
         $this->assertNotNull($identity);
         $userId = $identity->userId;
         $this->assertNotNull($userId);
+        $this->assertSame('dark', Hilos::$db->users[$userId]->themePick);
         $this->assertSame(
             $userId,
             Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, 'accepted@example.test')?->userId,
@@ -110,6 +111,23 @@ final class OAuthFirstSignInConsentTest extends IntegrationTestCase
         // A repeat is a sign-in of the existing pair even if the shown revision is now stale.
         $this->assertNull($this->submit($acceptKey, $token, ['terms' => 'outdated']));
         $this->assertCount(count($revisions), Hilos::$db->legalAcceptances->ofUser($userId));
+    }
+
+    public function testAnUnknownThemePickCannotCreateAnAccount(): void
+    {
+        [$acceptKey, $subject, $token] = $this->pause('bad-theme-' . RandomHelper::hex(6), null);
+
+        try {
+            OAuthCreateAccountActionDTO::fromArray([
+                'accountToken' => $token,
+                'acceptedRevisions' => LegalConsentProjector::acceptance(),
+                'themePick' => 'auto',
+            ]);
+            self::fail('An unknown theme choice must be refused before account creation');
+        } catch (ValidationException) {
+            self::assertNull(Hilos::$db->identities->findByIdentity(IdentityType::OAUTH, self::PROVIDER . ':' . $subject));
+            self::assertNull(Hilos::$rt->connections[$acceptKey]->userId);
+        }
     }
 
     public function testEmailClaimedAfterPauseReturnsToIdentifier(): void
@@ -220,15 +238,16 @@ final class OAuthFirstSignInConsentTest extends IntegrationTestCase
      * @param string $acceptKey Browser connection
      * @param string $token Signed first sign-in capability
      * @param ?array<string, string> $revisions Accepted revisions
+     * @param ?string $themePick Guest browser's theme choice, or null when not chosen
      * @return ?AuthFlowOutcome Refusal, or null when a grant was sent
      * @throws HilosException When account creation fails
      */
-    private function submit(string $acceptKey, string $token, ?array $revisions): ?AuthFlowOutcome
+    private function submit(string $acceptKey, string $token, ?array $revisions, ?string $themePick = null): ?AuthFlowOutcome
     {
         return $this->usersLibrary()->onAgentAction(
             $acceptKey,
             HilosSignalConstants::HILOS_OAUTH_CREATE_ACCOUNT,
-            new OAuthCreateAccountActionDTO($token, $revisions),
+            new OAuthCreateAccountActionDTO($token, $revisions, $themePick),
         );
     }
 

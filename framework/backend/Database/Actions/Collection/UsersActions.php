@@ -10,6 +10,8 @@ use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\HilosException;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -79,11 +81,13 @@ class UsersActions extends DbActions
      * The caller binds the session to what this returns; nothing here identifies the row.
      *
      * @param string $name Display name for the new account
+     * @param ?string $themePick Guest browser's theme choice, or null when they never picked
      * @return User Created user
      * @throws EmptyValueException When the name is empty or blank
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws HilosException On database error
      */
-    public function createWithName(string $name): User
+    public function createWithName(string $name, ?string $themePick = null): User
     {
         $this->ensureCanCreate();
 
@@ -91,11 +95,15 @@ class UsersActions extends DbActions
         if ($displayName === '') {
             throw new EmptyValueException('User name cannot be empty');
         }
+        if ($themePick !== null && !in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
+            throw new ValidationException(ThemeSettingsCatalog::THEME_VALUE_REFUSAL);
+        }
 
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $user = $objectClass::create();
         $user->name = $displayName;
         $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->themePick = $themePick;
         $user->sync();
 
         $this->addObjectToCollection($user);

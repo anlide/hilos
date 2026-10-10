@@ -49,6 +49,7 @@ import {
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { createSignal } from '../../src/state/signal.js'
+import { setHilosThemePick } from '../../src/theme/themeState.js'
 
 /** The base64url every binary option field in the fixture carries. */
 const CHALLENGE = 'AAAA'
@@ -187,6 +188,7 @@ function passkeyWorld(failure: DOMException): HilosAuthContext {
 afterEach(() => {
   delete (globalThis as PasskeyGlobals).PublicKeyCredential
   delete (navigator as unknown as CredentialsHost).credentials
+  setHilosThemePick(null)
 })
 
 describe('the copy a refused passkey ceremony shows', () => {
@@ -399,6 +401,7 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       terms: 'terms-v1',
       privacy: 'privacy-v1',
     })
+    expect(world.dispatched[1]?.payload).toHaveProperty('themePick', null)
     expect(flow.flow.get().step).toBe('consent')
   })
 
@@ -419,6 +422,7 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       acceptedRevisions: { terms: 'terms-v1', privacy: 'privacy-v1' },
     })
     expect(world.dispatched[1]?.payload).not.toHaveProperty('identifier')
+    expect(world.dispatched[1]?.payload).toHaveProperty('themePick', null)
     expect(world.dispatched[1]?.payload).toHaveProperty('acceptedRevisions', {
       terms: 'terms-v1',
       privacy: 'privacy-v1',
@@ -478,6 +482,7 @@ describe('the passkey door of a new account (HIL-1104)', () => {
   })
 
   it('sends the key with the identifier and this device, as the options were asked', async () => {
+    setHilosThemePick('dark')
     const world = newAccountWorld({
       create: () => Promise.resolve(MADE_CREDENTIAL),
     })
@@ -497,6 +502,7 @@ describe('the passkey door of a new account (HIL-1104)', () => {
       signedChallenge: 'signed',
       transports: ['internal'],
       userAgent: navigator.userAgent,
+      themePick: 'dark',
     })
   })
 

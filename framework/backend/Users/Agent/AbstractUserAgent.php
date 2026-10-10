@@ -65,6 +65,8 @@ use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
+use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
@@ -96,7 +98,8 @@ use Throwable;
  * operator lifts - the removal wait, and a removal canceled, carried out or marked reminded
  * ({@see SecondFactorPersonEdits}). Each comes as a frame from the coordinator that judged it: the
  * name, the ways in and the second factor from {@see AbstractUsersLibraryAgent}, the two flags from
- * {@see AbstractSessionsLibraryAgent}. The
+ * {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that accepts
+ * the person's pick (HIL-1427). The
  * agent writes and always answers - a refusal included, because the coordinator continues only on
  * the answer and something is waiting on it - and the coordinator does what follows the write.
  * Creating a way in, an enrolment, a set of backup codes or a removal stays with the libraries that
@@ -127,6 +130,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_BLOCK_WRITE => [
             AgentSignalConfigKey::INDEX_FIELD => UserBlockWriteSignalData::userId,
             AgentSignalConfigKey::DTO => UserBlockWriteSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserThemePickWriteSignalData::userId,
+            AgentSignalConfigKey::DTO => UserThemePickWriteSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_PASSWORD_REHASH => [
             AgentSignalConfigKey::INDEX_FIELD => UserPasswordRehashSignalData::userId,
@@ -358,6 +365,20 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->sendToAgent($blockWrite->replySignal, UserBlockWriteDoneSignalData::to(
                     $blockWrite,
                     $this->flagRefusal(fn () => $this->writeBlockFlag($blockWrite->block), 'Account block'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE:
+                $themePickWrite = $data->data;
+                if (!$themePickWrite instanceof UserThemePickWriteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserThemePickWriteSignalData::class, $themePickWrite);
+                }
+
+                $this->refuseAnotherPerson($themePickWrite->userId, $name);
+                $this->sendToAgent($themePickWrite->replySignal, UserThemePickWriteDoneSignalData::to(
+                    $themePickWrite,
+                    $this->flagRefusal(fn () => $this->writeThemePick($themePickWrite->themePick), 'Theme pick'),
                 ));
 
                 return;
@@ -700,6 +721,25 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function writeBlockFlag(bool $block): void
     {
         $this->personToWrite()->actions->setBlock($block);
+    }
+
+    /**
+     * Writes this person's theme choice without touching the activity timestamp.
+     *
+     * A merged account is refused before the write. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param string $themePick Light, dark or system
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged or the choice is invalid
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws HilosException On database or truth-source failure while writing the choice
+     */
+    protected function writeThemePick(string $themePick): void
+    {
+        $this->personToWrite()->actions->setThemePick($themePick);
     }
 
     /**

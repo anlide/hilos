@@ -1,4 +1,4 @@
--- valid from migration #85
+-- valid from migration #94
 CREATE TRIGGER `hilos_cl_hilos_user_after_delete` AFTER DELETE ON `hilos_user`
 FOR EACH ROW BEGIN
     DECLARE v_created_at DATETIME(6);
@@ -30,4 +30,9 @@ FOR EACH ROW BEGIN
     INSERT INTO {{change_log_database}}.`hilos_change_log_change`
         (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
         VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`block` AS CHAR), NULL);
+    INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'theme_pick');
+    SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'theme_pick';
+    INSERT INTO {{change_log_database}}.`hilos_change_log_change`
+        (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
+        VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`theme_pick` AS CHAR), NULL);
 END;

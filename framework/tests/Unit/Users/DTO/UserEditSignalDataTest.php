@@ -17,6 +17,8 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
+use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use PHPUnit\Framework\TestCase;
 
 /** The frames between a coordinator and the person's agent survive the wire whole (HIL-1404). */
@@ -136,6 +138,39 @@ final class UserEditSignalDataTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         UserBlockWriteDoneSignalData::fromArray([UserBlockWriteDoneSignalData::error => null]);
+    }
+
+    public function testAThemePickAskAndItsAnswerRoundTrip(): void
+    {
+        $ask = new UserThemePickWriteSignalData(7, 'dark', 'theme_pick_done', 'key-1', 'req-1', 'theme_pick', 'Saved');
+        $done = UserThemePickWriteDoneSignalData::to($ask, null);
+
+        $restored = UserThemePickWriteDoneSignalData::fromArray(json_decode(json_encode($done->toArray()), true));
+
+        self::assertEquals($done, $restored);
+        self::assertSame($ask->toArray(), $restored->ask->toArray());
+        self::assertNull($restored->error);
+    }
+
+    public function testAThemePickForNoPersonIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        new UserThemePickWriteSignalData(0, 'dark', 'theme_pick_done', 'key-1', null, 'theme_pick', null);
+    }
+
+    public function testAnUnknownThemePickIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        new UserThemePickWriteSignalData(7, 'auto', 'theme_pick_done', 'key-1', null, 'theme_pick', null);
+    }
+
+    public function testAnEmptyThemePickIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        new UserThemePickWriteSignalData(7, '', 'theme_pick_done', 'key-1', null, 'theme_pick', null);
     }
 
     public function testAnAskForNoPersonIsRefused(): void

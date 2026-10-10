@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\DTO;
 
 use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Auth\Registration\RegistrationThemePick;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -21,6 +22,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  * The identifier must match the road sealed into the challenge: present on the road with a
  * code, absent on the road without one. A present address names this browser's proven hold;
  * it cannot land an account on somebody else's proof.
+ * The guest's theme pick is written into the account when this submit creates one (HIL-1427).
  */
 final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
 {
@@ -36,6 +38,7 @@ final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
      * @param list<string> $transports Reported authenticator transports (e.g. ['internal', 'hybrid'])
      * @param ?string $userAgent Registering device user agent, or null when the client sent none
      * @param ?array<string, string> $acceptedRevisions Accepted document-to-revision boundary map, or null for a repeat
+     * @param ?string $themePick Guest browser's choice, or null when they never picked
      */
     public function __construct(
         public readonly ?string $identifier,
@@ -45,6 +48,7 @@ final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
         public readonly array $transports,
         public readonly ?string $userAgent,
         public readonly ?array $acceptedRevisions = null,
+        public readonly ?string $themePick = null,
     ) {
     }
 
@@ -63,8 +67,8 @@ final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
      *
      * @param array<string, mixed> $data Payload data
      * @return static Registration passkey completion DTO instance
-     * @throws InvalidFormatException When a required string is missing or a present identifier has the wrong type
-     * @throws ValidationException When the accepted revision map has an unknown document or invalid revision id
+     * @throws InvalidFormatException When required data is missing or an identifier or choice has the wrong type
+     * @throws ValidationException When the accepted revision map or theme choice is invalid
      */
     public static function fromArray(array $data): static
     {
@@ -86,6 +90,7 @@ final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
             transports: $transports,
             userAgent: is_string($userAgent) && $userAgent !== '' ? $userAgent : null,
             acceptedRevisions: RegistrationConsent::readPayload(self::optionalArray($data, RegistrationConsent::PAYLOAD_KEY)),
+            themePick: RegistrationThemePick::readPayload(self::optionalString($data, RegistrationThemePick::PAYLOAD_KEY)),
         );
     }
 
@@ -104,6 +109,7 @@ final class CompleteRegistrationPasskeyActionDTO extends ActionPayloadDTO
             'transports' => $this->transports,
             'userAgent' => $this->userAgent,
             RegistrationConsent::PAYLOAD_KEY => $this->acceptedRevisions,
+            RegistrationThemePick::PAYLOAD_KEY => $this->themePick,
         ];
     }
 }

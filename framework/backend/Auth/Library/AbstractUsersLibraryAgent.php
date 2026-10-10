@@ -1917,13 +1917,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * the person adds must be insertable ({@see EntitySchemaAxis::COLUMN_NOT_INSERTABLE}).
      *
      * @param string $displayName Name to show for the new account
+     * @param ?string $themePick Guest browser's theme choice, or null when they never picked
      * @return int Durable id of the created user
      * @throws EmptyValueException When the display name is empty
+     * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws HilosException When the insert fails
      */
-    public function createUser(string $displayName): int
+    public function createUser(string $displayName, ?string $themePick): int
     {
-        return (int)Hilos::$db->users->actions->createWithName($displayName)->id;
+        return (int)Hilos::$db->users->actions->createWithName($displayName, $themePick)->id;
     }
 
     /**

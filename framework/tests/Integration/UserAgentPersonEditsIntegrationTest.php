@@ -36,6 +36,8 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
+use Hilos\Users\DTO\UserThemePickWriteSignalData;
 
 /**
  * The ordinary edits of one person are written by that person's agent and by nobody else (HIL-1404).
@@ -111,6 +113,99 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         }
 
         self::assertSame('Ada', self::personRow($userId)['name']);
+    }
+
+    /** @throws HilosException When a fixture row cannot be written or read */
+    public function testTheUsersLibraryCannotWriteAPersonsThemePick(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+
+        $this->expectException(WriteNotAllowedException::class);
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->users->getId()),
+            static fn () => Hilos::$db->users[$userId]->actions->setThemePick('dark'),
+        );
+    }
+
+    /** @throws HilosException When a fixture row cannot be written or a frame fails */
+    public function testTheAgentWritesTheThemePickAndAnswersTheCoordinator(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $ask = new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, 'req-1', 'theme_pick', 'Saved');
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
+
+        $answer = $this->answer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
+        self::assertNull($answer->error);
+        self::assertSame($ask->toArray(), $answer->ask->toArray());
+        self::assertSame('dark', self::personRow($userId)['theme_pick']);
+        self::assertNull(self::personRow($userId)['last_activity']);
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
+        $repeatSignal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($repeatSignal);
+        self::assertSame('theme_pick_done', $repeatSignal->signalName->getName(), 'The unchanged choice must not emit a DB update');
+        self::assertInstanceOf(AgentSignalData::class, $repeatSignal->data);
+        $repeatAnswer = $repeatSignal->data->data;
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $repeatAnswer);
+        self::assertNull($repeatAnswer->error);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'The unchanged choice must emit only its answer');
+        self::assertSame('dark', self::personRow($userId)['theme_pick']);
+    }
+
+    /** @throws HilosException When a fixture row cannot be written or a frame fails */
+    public function testTheThemePickOfAFoldedAccountIsRefused(): void
+    {
+        $survivorId = self::seedPerson('Survivor', admin: false);
+        $userId = self::seedPerson('Folded', admin: false);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NOW())',
+            [$userId, $survivorId],
+        );
+
+        $this->deliverToPerson($this->frame(
+            HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE,
+            new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null),
+        ));
+
+        $answer = $this->answer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
+        self::assertNotNull($answer->error);
+        self::assertStringContainsString('merged', strtolower($answer->error));
+        self::assertNull(self::personRow($userId)['theme_pick']);
+    }
+
+    /** @throws HilosException When a frame or fixture query fails */
+    public function testTheThemePickOfAMissingPersonIsRefused(): void
+    {
+        $userId = self::seedPerson('Gone', admin: false);
+        Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        $ask = new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null);
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
+
+        $answer = $this->answer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
+        self::assertSame($ask->toArray(), $answer->ask->toArray());
+        self::assertSame("No such user: {$userId}", $answer->error);
+        self::assertNull($answer->errorType);
+    }
+
+    /** @throws HilosException When fixture rows cannot be written or a frame fails */
+    public function testAThemePickFrameForAnotherPersonIsRefused(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $otherId = self::seedPerson('Grace', admin: false);
+
+        $this->expectException(AgentException::class);
+        $this->asPerson($userId, static fn ($agent) => $agent->onSignalAgent(
+            new AgentSignalData(data: new UserThemePickWriteSignalData(
+                $otherId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null,
+            )),
+            '',
+            HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE,
+        ));
     }
 
     /**
@@ -314,11 +409,14 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
 
     /**
      * @param string $name Agent-signal name the frame travels under
-     * @param UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData $ask Frame payload
+     * @param UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData|UserThemePickWriteSignalData $ask Frame payload
      * @return SignalDTO The frame as the coordinator would have queued it
      * @throws HilosException When the frame cannot be queued or taken back
      */
-    private function frame(string $name, UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData $ask): SignalDTO
+    private function frame(
+        string $name,
+        UserRenameSignalData|UserAdminWriteSignalData|UserBlockWriteSignalData|UserThemePickWriteSignalData $ask,
+    ): SignalDTO
     {
         $this->sessions->sendToAgent($name, $ask);
         $signal = Hilos::$sr->getNextQueuedSignal();
@@ -405,7 +503,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
      */
     private static function personRow(int $userId): array
     {
-        Database::sql('SELECT `name`, `admin`, `block` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        Database::sql('SELECT `name`, `admin`, `block`, `last_activity`, `theme_pick` FROM `hilos_user` WHERE `id` = ?', [$userId]);
         $row = Database::row();
         self::assertNotNull($row);
 

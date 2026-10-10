@@ -14,6 +14,8 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -115,6 +117,31 @@ class UserActions extends DbActions
         }
 
         $this->object->block = $block;
+        $this->object->sync();
+    }
+
+    /**
+     * Persists the person's theme choice only when it changes, without changing activity time.
+     *
+     * @param string $themePick Light, dark or system
+     * @throws ItemNotFoundForUpdateException When the user has no persisted id
+     * @throws ValidationException When the choice is outside the theme catalog
+     * @throws HilosException On database or truth-source failure
+     */
+    public function setThemePick(string $themePick): void
+    {
+        $this->ensureCanWrite();
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('User not found for setThemePick (id is null)');
+        }
+        if (!in_array($themePick, ThemeSettingsCatalog::THEME_VALUES, true)) {
+            throw new ValidationException(ThemeSettingsCatalog::THEME_VALUE_REFUSAL);
+        }
+        if ($this->object->themePick === $themePick) {
+            return;
+        }
+
+        $this->object->themePick = $themePick;
         $this->object->sync();
     }
 

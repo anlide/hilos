@@ -17,7 +17,8 @@ Written Ahead Of Its Code*).
 ## Core Rule
 
 The person is the framework's table `hilos_user`, with the columns `id`, `name`,
-`admin`, `block`, `last_activity`. Its Entity declares `Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
+`admin`, `block`, `last_activity`, `theme_pick`. Its Entity declares
+`Entity::SET_STANDALONE` with `_setRoot = true` — a person belongs to
 nobody's set and is the root other tables hang their sets on — and the verdict
 `FAKE_NAME` on `name`. The collection key `users` is mounted by
 `HilosDbContext`. A project carries the migration stub
@@ -56,9 +57,12 @@ base class itself, not in a project subclass, and covers creating a person.
 Ownership and the reader interest a claim raises:
 [truth-source.md](truth-source.md).
 
-The row's name, administrator flag and block are written by the person's own
-agent (`AbstractUserAgent`, HIL-1404) — [instance-owners.md](instance-owners.md).
-The libraries judge those edits and do what follows them; creation stays with the
+The row's name, administrator flag, block and theme choice are written by the
+person's own agent (`AbstractUserAgent`, HIL-1404 and HIL-1427) —
+[instance-owners.md](instance-owners.md). The theme choice is
+`hilos_user.theme_pick`, written on the agent's `hilos_user_theme_pick_write`
+ask (HIL-1427). The libraries judge those edits and do what follows them;
+creation, including the guest's submitted theme choice, stays with the
 users library, and the sessions library keeps three set operations on the row:
 minting the first administrator, the loser's block inside a merge, and the
 erased person's row.
