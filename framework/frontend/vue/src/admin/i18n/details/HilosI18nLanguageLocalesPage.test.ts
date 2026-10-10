@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import {
   createSignal,
   HILOS_I18N_LANGUAGE_LOCALES_TABLE,
+  LOCALE_TEMPLATES_DATA,
   HilosPages,
   LANGUAGE_CARD_DATA,
   ScopeManager,
@@ -30,6 +31,25 @@ const russianCard: HilosI18nLanguageCard = {
     canDelete: true,
     deleteReason: null,
   },
+}
+
+const formats = {
+  date: 'DD.MM.YYYY',
+  time: 'HH:mm:ss',
+  number: '1 000,00',
+  phone: '+XX-XXXX-XXXX',
+  address: 'Street, House, City, Index',
+  measurement: 'metric',
+  collation: 'und',
+}
+const templates = {
+  date: ['DD.MM.YYYY', 'YYYY-MM-DD'],
+  time: ['HH:mm:ss'],
+  number: ['1 000,00'],
+  phone: ['+XX-XXXX-XXXX'],
+  address: ['Street, House, City, Index'],
+  measurement: ['metric', 'imperial'],
+  collation: ['und'],
 }
 
 /** The address of the locales page of Russian, a signal so a test can move it to another language. */
@@ -90,6 +110,7 @@ function makeConnection(): {
       return () => {}
     },
     sendTableRendered(): void {},
+    sendTableRowFocus(): void {},
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -136,6 +157,8 @@ function pair(
     countryName,
     localeCode: enabled === null ? null : rowKey,
     enabled,
+    formats: enabled === null ? null : formats,
+    catalogFormats: rowKey === 'ru-AD' ? null : formats,
   }
 }
 
@@ -146,6 +169,7 @@ async function mountPage() {
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
   scope.data.set(LANGUAGE_CARD_DATA, russianCard)
+  scope.data.set(LOCALE_TEMPLATES_DATA, templates)
   const wrapper = mount(HilosI18nLanguageLocalesPage, {
     props: { context: { connection, scopes, actions: {} as ActionLifecycle } },
     global: {
@@ -213,7 +237,19 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(mainTab.attributes('href')).toBe('/hilos/i18n/languages/ru')
 
     expect(wrapper.find('table').exists()).toBe(true)
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(
+      wrapper.find('[data-id="i18n-locales-view-ru"]').attributes('aria-label'),
+    ).toBe('View locale: nothing to edit')
+    expect(
+      wrapper
+        .find('[data-id="i18n-locales-edit-ru-UA"]')
+        .attributes('aria-label'),
+    ).toBe('Edit locale')
+    expect(
+      wrapper
+        .find('[data-id="i18n-locales-add-ru-AD"]')
+        .attributes('aria-label'),
+    ).toBe('Add locale')
 
     const inputs = wrapper.findAll('input')
     for (const input of inputs) {
@@ -235,6 +271,25 @@ describe('HilosI18nLanguageLocalesPage', () => {
       false,
     )
     expect(wrapper.find('table').exists()).toBe(false)
+  })
+
+  it('keeps an opened locale draft visible when its language card disappears', async () => {
+    const { wrapper, scope } = await mountPage()
+    await wrapper.find('[data-id="i18n-locales-edit-ru-UA"]').trigger('click')
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-locale-window"]'),
+    ).not.toBeNull()
+
+    scope.data.set(LANGUAGE_CARD_DATA, [])
+    await nextTick()
+    expect(wrapper.find('[data-id="language-card-unavailable"]').exists()).toBe(
+      true,
+    )
+    expect(
+      document.querySelector('[data-id="i18n-locale-window"]'),
+    ).not.toBeNull()
+    wrapper.unmount()
   })
 
   it('asks for the window of another language when the address moves to it', async () => {

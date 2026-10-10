@@ -30,6 +30,7 @@ use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -108,6 +109,10 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
         self::assertSame($mainCard, $localesCard);
 
         $payload = $localesCardResponses[0]->payload->toArray();
+        self::assertSame(
+            LocaleTemplates::toArray(),
+            $payload[PagePayload::data][LanguageLocalesPage::LOCALE_TEMPLATES_DATA],
+        );
         self::assertArrayHasKey(PagePayload::windows, $payload);
         self::assertArrayHasKey(ChatTableContext::hilosI18nLanguageLocales, $payload[PagePayload::windows]);
         $window = $payload[PagePayload::windows][ChatTableContext::hilosI18nLanguageLocales];
@@ -139,11 +144,11 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 Hilos::$db->languages['qx'],
                 null,
-                'Y-m-d',
-                'H:i',
-                '1,234.56',
-                '+1 555',
-                'street, city',
+                'YYYY-MM-DD',
+                'HH:mm:ss',
+                '1,000.00',
+                '+XX-XXXX-XXXX',
+                'Street, House, City, Index',
                 MeasurementSystem::METRIC,
                 'und',
             );

@@ -151,7 +151,7 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         self::assertSame($catalogSpanish->dateFormat, Hilos::$db->locales['es']?->dateFormat);
         self::assertSame($catalogSpanish->addressFormat, Hilos::$db->locales['es']?->addressFormat);
         self::assertSame($catalogSpanish->measurementSystem, Hilos::$db->locales['es']?->measurementSystem->value);
-        self::assertSame('Y-m-d', Hilos::$db->locales['en-GB']?->dateFormat);
+        self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']?->dateFormat);
         self::assertNull(Hilos::$db->locales['en-US']);
         self::assertNull(Hilos::$db->locales['ar']);
         self::assertSame(3, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_locale`'));
@@ -235,7 +235,8 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'Y-m-d', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::IMPERIAL, 'unicode',
+            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und',
         );
     }
 

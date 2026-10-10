@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Collection\Locales as ObjectLocales;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Collection\Locales as DbCollectionLocales;
@@ -16,6 +15,7 @@ use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Catalog\LocaleDefinition;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\LocaleTemplates;
 
 /**
  * @extends DbActions<Locale, ObjectLocales>
@@ -35,7 +35,7 @@ class LocalesActions extends DbActions
      * @param MeasurementSystem $measurementSystem Unit system
      * @param string $collation Sorting template
      * @return Locale New switched-off locale
-     * @throws ValidationException When a format is empty or too wide
+     * @throws ValidationException When the pair exists or a format is not a known template
      * @throws HilosException When ownership, the database or collection refuses the write
      */
     public function create(
@@ -51,18 +51,15 @@ class LocalesActions extends DbActions
     ): Locale {
         $this->ensureCanCreateInSet((string)$language->id);
 
-        if (trim($dateFormat) === '' || mb_strlen($dateFormat) > EntityLocale::DATE_FORMAT_MAX_CHARS
-            || trim($timeFormat) === '' || mb_strlen($timeFormat) > EntityLocale::TIME_FORMAT_MAX_CHARS
-            || trim($numberFormat) === '' || mb_strlen($numberFormat) > EntityLocale::NUMBER_FORMAT_MAX_CHARS
-            || trim($phoneFormat) === '' || mb_strlen($phoneFormat) > EntityLocale::PHONE_FORMAT_MAX_CHARS
-            || trim($addressFormat) === '' || mb_strlen($addressFormat) > EntityLocale::ADDRESS_FORMAT_MAX_CHARS
-            || trim($collation) === '' || mb_strlen($collation) > EntityLocale::COLLATION_MAX_CHARS) {
-            throw new ValidationException('Locale formats must be nonempty and fit their columns');
+        $code = ObjectLocale::codeFor($language->code, $country?->code);
+        if ($this->collection[$code] !== null) {
+            throw new ValidationException("Locale '{$code}' already exists.");
         }
+        LocaleTemplates::refuseUnknown($dateFormat, $timeFormat, $numberFormat, $phoneFormat, $addressFormat, $collation);
 
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $locale = $objectClass::create();
-        $locale->code = ObjectLocale::codeFor($language->code, $country?->code);
+        $locale->code = $code;
         $locale->languageId = $language->id;
         $locale->countryId = $country?->id;
         $locale->dateFormat = $dateFormat;
@@ -87,7 +84,7 @@ class LocalesActions extends DbActions
      * The walk is over the catalog by locale code, so a locale the catalog does not know is
      * never reached. Opens no transaction: the reflow calls it inside its own.
      *
-     * @throws ValidationException When a catalog value does not fit the write door
+     * @throws ValidationException When a catalog value is not a known template
      * @throws HilosException When ownership or persistence refuses a write
      */
     public function refreshFromCatalog(): void

@@ -102,7 +102,7 @@ final class ViewerFieldsTest extends TestCase
         );
     }
 
-    public function testAScalarWhereANestedValueWasDeclaredIsHidden(): void
+    public function testAScalarWhereANestedValueWasDeclaredIsHiddenButNullStaysAbsent(): void
     {
         $hidden = ViewerFields::hide(
             ['owner' => 'Olena', 'members' => null],
@@ -110,7 +110,7 @@ final class ViewerFieldsTest extends TestCase
             self::columnsShown(),
         );
 
-        $this->assertSame(['owner' => HiddenValue::mark(), 'members' => HiddenValue::mark()], $hidden);
+        $this->assertSame(['owner' => HiddenValue::mark(), 'members' => null], $hidden);
     }
 
     public function testANestingInsideANestingIsWalkedToTheBottom(): void

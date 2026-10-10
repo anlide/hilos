@@ -79,11 +79,11 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 $language,
                 null,
-                'custom date',
-                'custom time',
-                'custom number',
-                'custom phone',
-                'custom address',
+                'YYYY-MM-DD',
+                'HH:mm:ss',
+                '1 000,00',
+                '+XX-XXXX-XXXX',
+                'Street, House, City, Index',
                 MeasurementSystem::METRIC,
                 'und',
             );
@@ -94,7 +94,7 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
         self::assertSame('Custom English', Hilos::$db->languages['en']?->nativeName);
         self::assertTrue(Hilos::$db->languages['en']?->rtl);
         self::assertTrue(Hilos::$db->languages['en']?->enabled);
-        self::assertSame('custom date', Hilos::$db->locales['en']?->dateFormat);
+        self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en']?->dateFormat);
         self::assertTrue(Hilos::$db->locales['en']?->enabled);
     }
 

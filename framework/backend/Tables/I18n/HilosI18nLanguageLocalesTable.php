@@ -34,6 +34,8 @@ use Hilos\Database\View\Item\Language as DbLanguage;
 use Hilos\Database\View\Item\Locale as DbLocale;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\DTO\LocaleFormats;
 
 /**
  * Framework table of the locales of one language: a row for the language alone and one for every country (HIL-1476).
@@ -274,6 +276,24 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
             ),
             HilosI18nLanguageLocalesTableRow::localeCode => WireField::column(HilosDbContext::locales, ObjectLocale::code),
             HilosI18nLanguageLocalesTableRow::enabled => WireField::column(HilosDbContext::locales, ObjectLocale::enabled),
+            HilosI18nLanguageLocalesTableRow::formats => WireField::each([
+                LocaleFormats::date => WireField::column(HilosDbContext::locales, ObjectLocale::dateFormat),
+                LocaleFormats::time => WireField::column(HilosDbContext::locales, ObjectLocale::timeFormat),
+                LocaleFormats::number => WireField::column(HilosDbContext::locales, ObjectLocale::numberFormat),
+                LocaleFormats::phone => WireField::column(HilosDbContext::locales, ObjectLocale::phoneFormat),
+                LocaleFormats::address => WireField::column(HilosDbContext::locales, ObjectLocale::addressFormat),
+                LocaleFormats::measurement => WireField::column(HilosDbContext::locales, ObjectLocale::measurementSystem),
+                LocaleFormats::collation => WireField::column(HilosDbContext::locales, ObjectLocale::collation),
+            ]),
+            HilosI18nLanguageLocalesTableRow::catalogFormats => WireField::each([
+                LocaleFormats::date => WireField::notPersonal(),
+                LocaleFormats::time => WireField::notPersonal(),
+                LocaleFormats::number => WireField::notPersonal(),
+                LocaleFormats::phone => WireField::notPersonal(),
+                LocaleFormats::address => WireField::notPersonal(),
+                LocaleFormats::measurement => WireField::notPersonal(),
+                LocaleFormats::collation => WireField::notPersonal(),
+            ]),
         ];
     }
 
@@ -544,12 +564,16 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
         ?string $countryName,
         ?DbLocale $locale,
     ): HilosI18nLanguageLocalesTableRow {
+        $catalog = BuiltInI18nCatalog::locale(ObjectLocale::codeFor($languageCode, $countryCode));
+
         return new HilosI18nLanguageLocalesTableRow(
             rowKey: ObjectLocale::codeFor($languageCode, $countryCode),
             countryCode: $countryCode,
             countryName: $countryName,
             localeCode: $locale?->code,
             enabled: $locale?->enabled,
+            formats: $locale === null ? null : LocaleFormats::ofLocale($locale),
+            catalogFormats: $catalog === null ? null : LocaleFormats::ofCatalog($catalog),
         );
     }
 

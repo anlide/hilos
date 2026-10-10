@@ -69,7 +69,7 @@ final readonly class WireField
      * Declares an object, or a list of objects, whose fields are declared by a map of their own.
      *
      * @param array<string, WireField> $fields Fields of the object, or of each object of the list
-     * @return self Origin whose value is walked field by field; a scalar in its place is hidden
+     * @return self Origin walked field by field; null stays null, another scalar is hidden
      */
     public static function each(array $fields): self
     {

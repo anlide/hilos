@@ -6,6 +6,7 @@ import {
   HILOS_I18N_LANGUAGE_LOCALES_FRAME,
   HILOS_I18N_LANGUAGE_LOCALES_TABLE,
   resolveHilosI18nLocaleRow,
+  HilosI18nLocaleRowKey,
 } from '../../../src/admin/i18n/hilosI18nLocales.js'
 import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18nLanguage.js'
 import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
@@ -21,6 +22,16 @@ import { type TableRow } from '../../../src/state/TableRowsStore.js'
 /** A locales row as the backend sends it, its slot keyed `locale`. */
 function localeRow(rowKey: string, slot: Record<string, unknown>): TableRow {
   return { rowKey, slots: { locale: slot } }
+}
+
+const formats = {
+  date: 'DD/MM/YYYY',
+  time: 'HH:mm:ss',
+  number: '1,000.00',
+  phone: '+XX-XXXX-XXXX',
+  address: 'Street, House, City, Index',
+  measurement: 'metric',
+  collation: 'und',
 }
 
 /** A context whose connection records every window asked for, and where. */
@@ -59,6 +70,8 @@ describe('resolveHilosI18nLocaleRow', () => {
         countryName: 'Украина',
         localeCode: 'ru-UA',
         enabled: false,
+        formats,
+        catalogFormats: null,
       }),
     )
 
@@ -68,6 +81,8 @@ describe('resolveHilosI18nLocaleRow', () => {
       countryName: 'Украина',
       localeCode: 'ru-UA',
       enabled: false,
+      formats,
+      catalogFormats: null,
     })
   })
 
@@ -79,6 +94,8 @@ describe('resolveHilosI18nLocaleRow', () => {
         countryName: null,
         localeCode: 'ru',
         enabled: true,
+        formats,
+        catalogFormats: formats,
       }),
     )
     const none = resolveHilosI18nLocaleRow(
@@ -88,6 +105,8 @@ describe('resolveHilosI18nLocaleRow', () => {
         countryName: null,
         localeCode: null,
         enabled: null,
+        formats: null,
+        catalogFormats: null,
       }),
     )
 
@@ -96,6 +115,9 @@ describe('resolveHilosI18nLocaleRow', () => {
     expect(none.countryName).toBeNull()
     expect(none.localeCode).toBeNull()
     expect(none.enabled).toBeNull()
+    expect(own.formats).toEqual(formats)
+    expect(own.catalogFormats).toEqual(formats)
+    expect(none.formats).toBeNull()
   })
 
   it('shows a row it cannot read by its key with no locale, rather than dropping it', () => {
@@ -105,12 +127,14 @@ describe('resolveHilosI18nLocaleRow', () => {
       countryName: null,
       localeCode: null,
       enabled: null,
+      formats: null,
+      catalogFormats: null,
     })
   })
 })
 
 describe('createHilosI18nLanguageLocalesTable', () => {
-  it('declares the country, code and enabled columns and nothing else in its frame', () => {
+  it('declares the country, code, enabled and action columns', () => {
     const table = createHilosI18nLanguageLocalesTable(
       recordingContext([]),
       createSignal('ru'),
@@ -130,12 +154,19 @@ describe('createHilosI18nLanguageLocalesTable', () => {
       ['countryCode', 'Country'],
       ['localeCode', 'Code'],
       ['enabled', 'Enabled'],
+      ['actions', ''],
     ])
     expect(HILOS_I18N_LANGUAGE_LOCALES_COLUMNS[0]).toMatchObject({
       card: 'title',
       reads: ['countryName', 'localeCode', 'enabled'],
     })
     expect(HILOS_I18N_LANGUAGE_LOCALES_COLUMNS[1]?.reads).toEqual(['enabled'])
+    expect(HILOS_I18N_LANGUAGE_LOCALES_COLUMNS[3]?.reads).toEqual([
+      HilosI18nLocaleRowKey.localeCode,
+      HilosI18nLocaleRowKey.enabled,
+      HilosI18nLocaleRowKey.formats,
+      HilosI18nLocaleRowKey.catalogFormats,
+    ])
   })
 
   it('presets the language as the filter and follows the address to another language', () => {

@@ -9,12 +9,12 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Item\Locale;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\LocaleTemplates;
 
 /**
  * @extends DbActions<Locale, ObjectLocale>
@@ -32,7 +32,7 @@ class LocaleActions extends DbActions
      * @param string $collation Sorting template
      * @throws ItemNotFoundForUpdateException When the row has no persisted id
      * @throws I18nRowFrozenException When the locale is switched on
-     * @throws ValidationException When a format is empty or too wide
+     * @throws ValidationException When a format is not a known template
      * @throws HilosException When ownership or persistence refuses the write
      */
     public function update(
@@ -53,14 +53,7 @@ class LocaleActions extends DbActions
                 "Locale '{$this->object->code}' is switched on: switch it off, edit it, switch it on",
             );
         }
-        if (trim($dateFormat) === '' || mb_strlen($dateFormat) > EntityLocale::DATE_FORMAT_MAX_CHARS
-            || trim($timeFormat) === '' || mb_strlen($timeFormat) > EntityLocale::TIME_FORMAT_MAX_CHARS
-            || trim($numberFormat) === '' || mb_strlen($numberFormat) > EntityLocale::NUMBER_FORMAT_MAX_CHARS
-            || trim($phoneFormat) === '' || mb_strlen($phoneFormat) > EntityLocale::PHONE_FORMAT_MAX_CHARS
-            || trim($addressFormat) === '' || mb_strlen($addressFormat) > EntityLocale::ADDRESS_FORMAT_MAX_CHARS
-            || trim($collation) === '' || mb_strlen($collation) > EntityLocale::COLLATION_MAX_CHARS) {
-            throw new ValidationException('Locale formats must be nonempty and fit their columns');
-        }
+        LocaleTemplates::refuseUnknown($dateFormat, $timeFormat, $numberFormat, $phoneFormat, $addressFormat, $collation);
 
         $this->object->dateFormat = $dateFormat;
         $this->object->timeFormat = $timeFormat;

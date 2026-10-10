@@ -12,7 +12,10 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import { subscribeSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosI18nLanguageContext } from './hilosI18nLanguage.js'
@@ -33,7 +36,24 @@ export const HilosI18nLocaleRowKey = {
   countryName: 'countryName',
   localeCode: 'localeCode',
   enabled: 'enabled',
+  formats: 'formats',
+  catalogFormats: 'catalogFormats',
 } as const
+
+/** Seven display formats of one locale or one built-in catalog entry. */
+export const hilosI18nLocaleFormatsSchema = z.strictObject({
+  date: z.string(),
+  time: z.string(),
+  number: z.string(),
+  phone: z.string(),
+  address: z.string(),
+  measurement: z.enum(['metric', 'imperial']),
+  collation: z.string(),
+})
+
+export type HilosI18nLocaleFormats = z.infer<
+  typeof hilosI18nLocaleFormatsSchema
+>
 
 const localeSlotSchema = z.object({
   [HilosI18nLocaleRowKey.rowKey]: z.string(),
@@ -41,6 +61,9 @@ const localeSlotSchema = z.object({
   [HilosI18nLocaleRowKey.countryName]: z.string().nullable(),
   [HilosI18nLocaleRowKey.localeCode]: z.string().nullable(),
   [HilosI18nLocaleRowKey.enabled]: z.boolean().nullable(),
+  [HilosI18nLocaleRowKey.formats]: hilosI18nLocaleFormatsSchema.nullable(),
+  [HilosI18nLocaleRowKey.catalogFormats]:
+    hilosI18nLocaleFormatsSchema.nullable(),
 })
 
 /** One row of the locales table — a pair of the language and a country, or the language alone. */
@@ -55,6 +78,10 @@ export interface HilosI18nLocaleRow {
   readonly localeCode: string | null
   /** Whether the pair's locale is on, or null when the pair has no locale. */
   readonly enabled: boolean | null
+  /** Stored formats, or null when the pair has no locale. */
+  readonly formats: HilosI18nLocaleFormats | null
+  /** Built-in formats, or null when the catalog does not know the pair. */
+  readonly catalogFormats: HilosI18nLocaleFormats | null
 }
 
 /**
@@ -76,6 +103,8 @@ export function resolveHilosI18nLocaleRow(row: TableRow): HilosI18nLocaleRow {
     countryName: null,
     localeCode: null,
     enabled: null,
+    formats: null,
+    catalogFormats: null,
   }
 }
 
@@ -99,6 +128,18 @@ export const HILOS_I18N_LANGUAGE_LOCALES_COLUMNS: readonly HilosTableColumnOf<Hi
       reads: [HilosI18nLocaleRowKey.enabled],
     },
     { key: HilosI18nLocaleRowKey.enabled, label: 'Enabled' },
+    {
+      key: HILOS_TABLE_ACTIONS_KEY,
+      label: '',
+      reads: [
+        HilosI18nLocaleRowKey.localeCode,
+        HilosI18nLocaleRowKey.enabled,
+        HilosI18nLocaleRowKey.formats,
+        HilosI18nLocaleRowKey.catalogFormats,
+      ],
+      headerClass: 'text-end',
+      cellClass: 'text-end text-nowrap',
+    },
   ]
 
 /**
@@ -141,6 +182,8 @@ export function createHilosI18nLanguageLocalesTable(
       context.connection.sendTableViewport(page, tableKey, descriptor),
     sendRendered: (rendered) =>
       context.connection.sendTableRendered(page, tableKey, rendered),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(page, tableKey, rowKey),
     initialFilter: { [HILOS_I18N_LANGUAGE_LOCALES_FILTER]: language.get() },
     frame: HILOS_I18N_LANGUAGE_LOCALES_FRAME,
   })

@@ -116,11 +116,11 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             $locale = Hilos::$db->locales->actions->create(
                 $english,
                 $own,
-                'Y-m-d',
-                'H:i',
-                '1,234.56',
-                '+1 555',
-                'street, city',
+                'YYYY-MM-DD',
+                'HH:mm:ss',
+                '1,000.00',
+                '+XX-XXXX-XXXX',
+                'Street, House, City, Index',
                 MeasurementSystem::METRIC,
                 'und',
             );

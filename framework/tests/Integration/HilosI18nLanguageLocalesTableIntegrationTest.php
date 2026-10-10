@@ -31,6 +31,8 @@ use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTableRow;
 
@@ -159,15 +161,25 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
             HilosI18nLanguageLocalesTableRow::countryName => null,
             HilosI18nLanguageLocalesTableRow::localeCode => 'en',
             HilosI18nLanguageLocalesTableRow::enabled => true,
+            HilosI18nLanguageLocalesTableRow::formats => LocaleFormats::ofLocale(Hilos::$db->locales['en'])->toArray(),
+            HilosI18nLanguageLocalesTableRow::catalogFormats => LocaleFormats::ofCatalog(
+                BuiltInI18nCatalog::locale('en'),
+            )->toArray(),
         ], $english['en']);
         $this->assertSame('en-GB', $english['en-GB'][HilosI18nLanguageLocalesTableRow::localeCode]);
         $this->assertFalse($english['en-GB'][HilosI18nLanguageLocalesTableRow::enabled]);
         $this->assertNull($english['en-US'][HilosI18nLanguageLocalesTableRow::localeCode]);
         $this->assertNull($english['en-US'][HilosI18nLanguageLocalesTableRow::enabled]);
+        $this->assertNull($english['en-US'][HilosI18nLanguageLocalesTableRow::formats]);
+        $this->assertSame(
+            LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en-US'))->toArray(),
+            $english['en-US'][HilosI18nLanguageLocalesTableRow::catalogFormats],
+        );
         $this->assertSame('us', $english['en-US'][HilosI18nLanguageLocalesTableRow::countryCode]);
 
         $german = $this->rows('de');
         $this->assertNull($german['de'][HilosI18nLanguageLocalesTableRow::localeCode]);
+        $this->assertNull($german['de-GB'][HilosI18nLanguageLocalesTableRow::catalogFormats]);
         $this->assertSame('de-US', $german['de-US'][HilosI18nLanguageLocalesTableRow::localeCode]);
     }
 
@@ -218,6 +230,14 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
 
         $this->changes->taken = [];
         $american->actions->switchOff();
+        $this->assertSame([['update', 'en-US', 'en-US', false]], $this->mutations('en'));
+
+        $this->changes->taken = [];
+        $american->actions->update(
+            'DD.MM.YYYY', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+        );
+        $this->assertSame('DD.MM.YYYY', $this->rows('en')['en-US'][HilosI18nLanguageLocalesTableRow::formats][LocaleFormats::date]);
         $this->assertSame([['update', 'en-US', 'en-US', false]], $this->mutations('en'));
 
         $this->changes->taken = [];
@@ -414,7 +434,8 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
     private static function locale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'Y-m-d', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::METRIC, 'unicode',
+            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
         );
     }
 

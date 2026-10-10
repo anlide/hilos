@@ -180,8 +180,8 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
         $this->assertSame($catalogEnglish->addressFormat, $refreshed?->addressFormat);
         $this->assertSame($catalogEnglish->measurementSystem, $refreshed?->measurementSystem->value);
         $this->assertSame($catalogEnglish->collation, $refreshed?->collation);
-        $this->assertSame('Y-m-d', Hilos::$db->locales['en-GB']?->dateFormat);
-        $this->assertSame('Y-m-d', Hilos::$db->locales[$ownLocale->id]?->dateFormat);
+        $this->assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']?->dateFormat);
+        $this->assertSame('YYYY-MM-DD', Hilos::$db->locales[$ownLocale->id]?->dateFormat);
         $this->assertNull(Hilos::$db->locales['en-US']);
         $this->assertNull(Hilos::$db->locales['ar']);
 
@@ -302,7 +302,8 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'Y-m-d', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::IMPERIAL, 'unicode',
+            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und',
         );
     }
 

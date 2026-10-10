@@ -84,7 +84,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             $french = Hilos::$db->languages->actions->create('fr', 'Français', false);
             $french->actions->switchOn();
             Hilos::$db->locales->actions->create(
-                $french, null, 'Y-m-d', 'H:i', '1,234.56', '+1 555', 'street, city', MeasurementSystem::METRIC, 'und',
+                $french, null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX', 'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
             );
             Hilos::$db->languageNames->actions->createManual($french, $english, null, 'French');
         });

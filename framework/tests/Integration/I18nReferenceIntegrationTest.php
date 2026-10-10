@@ -251,7 +251,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         try {
             self::createLocale($language, null);
             $this->fail('Expected a second countryless locale to be refused');
-        } catch (DuplicateEntryException) {
+        } catch (ValidationException $error) {
+            $this->assertSame("Locale 'en' already exists.", $error->getMessage());
             $this->assertSame($locale->id, Hilos::$db->locales['en']?->id);
         }
 
@@ -260,39 +261,46 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         try {
             self::createLocale($language, $country);
             $this->fail('Expected a second locale of one language-country pair to be refused');
-        } catch (DuplicateEntryException) {
+        } catch (ValidationException $error) {
+            $this->assertSame("Locale 'en-GB' already exists.", $error->getMessage());
             $this->assertSame($regional->id, Hilos::$db->locales['en-GB']?->id);
         }
 
+        $otherCountry = Hilos::$db->countries->actions->create('us', '$', 'USD');
         try {
             Hilos::$db->locales->actions->create(
-                $language, null, '', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::METRIC, 'unicode',
+                $language, $otherCountry, '', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
             );
             $this->fail('Expected an empty format to be refused');
-        } catch (ValidationException) {
-            $this->assertSame($locale->id, Hilos::$db->locales['en']?->id);
+        } catch (ValidationException $error) {
+            $this->assertSame("Date format '' is not recognized: expected one of the known templates.", $error->getMessage());
+            $this->assertNull(Hilos::$db->locales['en-US']);
         }
 
         $locale->actions->switchOn();
         try {
-            $locale->actions->update('d/m/Y', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::IMPERIAL, 'unicode');
+            $locale->actions->update('unknown', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und');
             $this->fail('Expected a switched-on locale to refuse an edit');
         } catch (I18nRowFrozenException) {
-            $this->assertSame('Y-m-d', $locale->dateFormat);
+            $this->assertSame('YYYY-MM-DD', $locale->dateFormat);
         }
         Database::sql('SELECT `date_format` FROM `hilos_locale` WHERE `id` = ?', [$locale->id]);
-        $this->assertSame('Y-m-d', Database::row()['date_format']);
+        $this->assertSame('YYYY-MM-DD', Database::row()['date_format']);
 
         $locale->actions->switchOff();
         try {
-            $locale->actions->update('', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::IMPERIAL, 'unicode');
+            $locale->actions->update('', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX', 'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und');
             $this->fail('Expected an empty updated format to be refused');
-        } catch (ValidationException) {
-            $this->assertSame('Y-m-d', $locale->dateFormat);
+        } catch (ValidationException $error) {
+            $this->assertSame("Date format '' is not recognized: expected one of the known templates.", $error->getMessage());
+            $this->assertSame('YYYY-MM-DD', $locale->dateFormat);
         }
-        $locale->actions->update('d/m/Y', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::IMPERIAL, 'unicode');
+        $locale->actions->update('DD/MM/YYYY', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und');
         $locale->actions->switchOn();
-        $this->assertSame('d/m/Y', $locale->dateFormat);
+        $this->assertSame('DD/MM/YYYY', $locale->dateFormat);
         $this->assertSame(MeasurementSystem::IMPERIAL, $locale->measurementSystem);
         $this->assertTrue($locale->enabled);
     }
@@ -627,7 +635,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'Y-m-d', 'H:i', '#,##0.00', '+00 000', 'Street', MeasurementSystem::METRIC, 'unicode',
+            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
         );
     }
 

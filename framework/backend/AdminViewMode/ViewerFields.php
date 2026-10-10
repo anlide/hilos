@@ -24,7 +24,7 @@ final class ViewerFields
      *
      * A key the map declares as a column stays when the column is shown and is marked otherwise; a key
      * declared not personal stays; a key declared nested is walked by its own map - a list element by
-     * element, and a scalar in its place is marked; a key the map does not name is marked. A key the
+     * element; null stays absent, and any other scalar is marked. A key the map does not name is marked. A key the
      * map names and the fragment does not carry is not added.
      *
      * @param array<array-key, mixed> $payload Fragment as it would travel to an admin
@@ -90,6 +90,9 @@ final class ViewerFields
     ): mixed
     {
         if ($declared->fields !== null) {
+            if ($value === null) {
+                return null;
+            }
             return is_array($value)
                 ? self::hideNested($value, $declared->fields, $columnShown, $settingShown)
                 : HiddenValue::mark();

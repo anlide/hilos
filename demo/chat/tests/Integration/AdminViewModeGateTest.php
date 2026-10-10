@@ -106,6 +106,8 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'guardian_agent_run_start',
         'guardian_agent_run_stop',
         'hilos_i18n_language_switch_off',
+        'hilos_i18n_locale_add',
+        'hilos_i18n_locale_update',
         'hilos_impersonate_start',
         'hilos_user_admin_set',
         'hilos_user_block_set',

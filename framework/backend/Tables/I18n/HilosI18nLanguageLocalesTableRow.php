@@ -7,6 +7,7 @@ namespace Hilos\Tables\I18n;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
+use Hilos\I18n\DTO\LocaleFormats;
 
 /**
  * Backend row payload of the locales table of one language (HIL-1476).
@@ -37,12 +38,20 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
     /** Payload key of whether the pair's locale is on, null when the pair has no locale. */
     public const string enabled = 'enabled';
 
+    /** Payload key of the pair's stored formats, null when the pair has no locale. */
+    public const string formats = 'formats';
+
+    /** Payload key of built-in formats, null when the catalog does not know the pair. */
+    public const string catalogFormats = 'catalogFormats';
+
     /**
      * @param string $rowKey The pair, written as the code of its locale
      * @param ?string $countryCode Country's code as stored, null on the row of the language alone
      * @param ?string $countryName Country's base name in the window's language, null when none is written
      * @param ?string $localeCode Code of the pair's locale, null when the pair has no locale
      * @param ?bool $enabled Whether the pair's locale is on, null when the pair has no locale
+     * @param ?LocaleFormats $formats Stored formats, null when the pair has no locale
+     * @param ?LocaleFormats $catalogFormats Built-in formats, null when the catalog does not know the pair
      */
     public function __construct(
         public string $rowKey,
@@ -50,6 +59,8 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
         public ?string $countryName,
         public ?string $localeCode,
         public ?bool $enabled,
+        public ?LocaleFormats $formats,
+        public ?LocaleFormats $catalogFormats,
     ) {
     }
 
@@ -82,6 +93,8 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
             self::countryName => $this->countryName,
             self::localeCode => $this->localeCode,
             self::enabled => $this->enabled,
+            self::formats => $this->formats?->toArray(),
+            self::catalogFormats => $this->catalogFormats?->toArray(),
         ];
     }
 
@@ -94,12 +107,17 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        $formats = self::optionalArray($data, self::formats);
+        $catalogFormats = self::optionalArray($data, self::catalogFormats);
+
         return new static(
             rowKey: self::requireString($data, self::rowKey),
             countryCode: self::optionalString($data, self::countryCode),
             countryName: self::optionalString($data, self::countryName),
             localeCode: self::optionalString($data, self::localeCode),
             enabled: self::optionalBool($data, self::enabled),
+            formats: $formats === null ? null : LocaleFormats::fromArray($formats),
+            catalogFormats: $catalogFormats === null ? null : LocaleFormats::fromArray($catalogFormats),
         );
     }
 }

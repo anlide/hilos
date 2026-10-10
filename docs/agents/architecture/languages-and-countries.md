@@ -55,6 +55,10 @@ decisions, 2026-09-11–12). There is no single name for a language: names are
 written in other languages. A subdomain label can diverge from a code, while
 an edition is addressed by code. Language ordering decides nothing.
 
+The seven locale formats are chosen from the closed lists in `LocaleTemplates`
+(ported from hleb). The create and update write doors refuse any other template,
+including writes made by reflow.
+
 The code is both an address and a reference: env and section addresses refer to
 a language code, and translation strings will do so in Phase 2. Renaming it
 would move three subsystems, so it stays immutable in every row state.
@@ -127,15 +131,15 @@ construction.
   and direction will not be refreshed, no country names will arrive for it,
   and framework updates will add nothing for it; the confirmation catches a
   typo such as `ez` instead of `es` (not in the code yet — HIL-1484).
-- A known locale pair arrives with all seven formats from the catalog
-  (not in the code yet — HIL-1491).
+- A known locale pair arrives with all seven formats from the catalog;
+  the add window prefills them and allows each to be changed before saving.
 - Every known country arrives through reflow, and known countries cannot be
   deleted, so adding a known country is unreachable: its code is refused as
   already present (not in the code yet — HIL-1495).
 - An unknown country is added through the same kind of confirmation
   (not in the code yet — HIL-1495).
 - A newly added language starts switched off (not in the code yet — HIL-1484).
-- A newly added locale starts switched off (not in the code yet — HIL-1491).
+- A newly added locale starts switched off.
 - A newly added country starts switched off (not in the code yet — HIL-1495).
 - For a switched-off country with no default locale, the edit form prefills
   the catalog's default if that locale has been created; the person saves it
@@ -159,8 +163,7 @@ always remains available.
   (not in the code yet — HIL-1485).
 - The same server refusal and disabled form apply to a switched-on country
   (not in the code yet — HIL-1496).
-- The same server refusal and disabled form apply to a switched-on locale
-  (not in the code yet — HIL-1491).
+- The same server refusal and disabled form apply to a switched-on locale.
 - The reflow skips a switched-on row: it checks the switch before it calls the
   item action, so the refusal never rolls a reflow back.
 
@@ -426,6 +429,10 @@ at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the
 native name, direction, enabled state, locale/name counts, and read-only delete
 verdict. The main card has a Switch off control (HIL-1486); its other action
 controls belong to HIL-1485/1487/1488.
+The Vue locales page adds a locale from a pair without one, edits a switched-off
+locale, and shows a switched-on locale in the same window (HIL-1491). The server
+actions serve all six demos; deletion is HIL-1492 and switching the locale from
+its window is HIL-1493/1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
 at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483).

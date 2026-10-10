@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\I18n\Catalog;
 
 use Hilos\Database\Entity\Item\CountryName;
-use Hilos\Database\Entity\Item\Locale;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Catalog\CountryDefinition;
 use Hilos\I18n\Catalog\CountryNameDefinition;
 use Hilos\I18n\Catalog\DefaultLocaleDefinition;
 use Hilos\I18n\Catalog\LanguageDefinition;
 use Hilos\I18n\Catalog\LocaleDefinition;
+use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
 use PHPUnit\Framework\TestCase;
 
@@ -158,15 +158,14 @@ final class BuiltInI18nCatalogTest extends TestCase
         }
         foreach (BuiltInI18nCatalog::locales() as $locale) {
             foreach ([
-                [$locale->dateFormat, Locale::DATE_FORMAT_MAX_CHARS],
-                [$locale->timeFormat, Locale::TIME_FORMAT_MAX_CHARS],
-                [$locale->numberFormat, Locale::NUMBER_FORMAT_MAX_CHARS],
-                [$locale->phoneFormat, Locale::PHONE_FORMAT_MAX_CHARS],
-                [$locale->addressFormat, Locale::ADDRESS_FORMAT_MAX_CHARS],
-                [$locale->collation, Locale::COLLATION_MAX_CHARS],
-            ] as [$format, $maxChars]) {
-                self::assertNotSame('', trim($format), $locale->code);
-                self::assertLessThanOrEqual($maxChars, mb_strlen($format), $locale->code);
+                [$locale->dateFormat, LocaleTemplates::DATE],
+                [$locale->timeFormat, LocaleTemplates::TIME],
+                [$locale->numberFormat, LocaleTemplates::NUMBER],
+                [$locale->phoneFormat, LocaleTemplates::PHONE],
+                [$locale->addressFormat, LocaleTemplates::ADDRESS],
+                [$locale->collation, LocaleTemplates::COLLATION],
+            ] as [$format, $templates]) {
+                self::assertContains($format, $templates, $locale->code);
             }
             self::assertNotNull(MeasurementSystem::tryFrom($locale->measurementSystem), $locale->code);
         }
