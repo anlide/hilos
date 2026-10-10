@@ -8,7 +8,10 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Legal\LegalReconsentProjector;
 
-/** The "the terms have changed" screen's complete content, carried by the tracked action reply (HIL-500), и адрес аккаунта для плашки (HIL-1331). */
+/**
+ * The "the terms have changed" screen's complete content, carried by the tracked action reply
+ * (HIL-500), and the account's confirmed address for the person plaque (HIL-1331).
+ */
 final class LegalReconsentReplyDTO extends ActionReplyDTO
 {
     /**
