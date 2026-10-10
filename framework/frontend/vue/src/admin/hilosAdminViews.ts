@@ -7,13 +7,14 @@
 // bootHilos projectViews. HILOS_UNBUILT_PAGES hides pages the layer has not built:
 // the router answers 404 and no card links to them.
 //
-// The users / user / settings / backup / maintenance, communications hub / channel
-// and the three log pages that read live data are intentionally absent: they are
+// The users / user / settings / backup / maintenance, communications hub /
+// channel, Daemon Workers, and log pages that read live data are intentionally
+// absent: they are
 // real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
 // HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
 // HilosCommunicationsChannelPage / HilosLogsKeysPage / HilosLogsRotationsPage /
-// HilosLogsViewPage) that require a project-supplied context, so a project mounts
-// them directly rather than through this default map.
+// HilosLogsViewPage / HilosDaemonWorkersPage) that require a project-supplied
+// context, so a project mounts them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -48,7 +49,6 @@ import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
 import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
 import HilosOperationsPage from './operations/HilosOperationsPage.vue'
 import HilosDaemonPage from './daemon/HilosDaemonPage.vue'
-import HilosDaemonWorkersPage from './daemon/HilosDaemonWorkersPage.vue'
 import HilosDaemonAgentsPage from './daemon/HilosDaemonAgentsPage.vue'
 import HilosDaemonCronPage from './daemon/HilosDaemonCronPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
@@ -118,7 +118,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
     [HilosPages.OPERATIONS]: HilosOperationsPage,
     [HilosPages.DAEMON]: HilosDaemonPage,
-    [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkersPage,
     [HilosPages.DAEMON_AGENTS]: HilosDaemonAgentsPage,
     [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,

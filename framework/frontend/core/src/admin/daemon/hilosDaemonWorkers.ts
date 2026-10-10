@@ -5,6 +5,7 @@
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { LOG_SOURCE_LIVE, logViewerPath } from '../logs/hilosLogViewer.js'
+import { type HilosDaemonNodeHeading } from './hilosDaemonNode.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readNumber,
@@ -12,6 +13,7 @@ import {
   readString,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
+import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import {
@@ -26,6 +28,9 @@ const DAEMON_WORKERS_SLOT = 'worker'
 
 /** Viewport filter key identifying the node shown by the page. */
 export const DAEMON_WORKERS_FILTER_NODE = 'node'
+
+/** Page-data key recording whether the node has reported its process roster. */
+export const DAEMON_WORKERS_PROCESSES_REPORTED_DATA = 'processesReported'
 
 /** Row payload key of the worker index. */
 export const DAEMON_WORKER_INDEX_FIELD = 'index'
@@ -70,6 +75,33 @@ export interface HilosDaemonWorkersTable {
   readonly controller: TableViewportController<HilosDaemonWorkerRow>
   start(): void
   dispose(): void
+}
+
+/** Empty-table explanation for the selected node. */
+export type HilosDaemonWorkersEmptyState = 'waiting' | 'silent' | 'none'
+
+/** @param scopes The page scope manager. */
+export function readDaemonWorkersProcessesReported(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const source = scopes.pageDataSignal(DAEMON_WORKERS_PROCESSES_REPORTED_DATA)
+  return computedSignal(() => source.get() === true)
+}
+
+/**
+ * Choose the message for an empty workers table.
+ *
+ * @param heading The current node heading, if it has arrived.
+ * @param processesReported Whether the node has reported its process roster.
+ */
+export function daemonWorkersEmptyState(
+  heading: HilosDaemonNodeHeading | null,
+  processesReported: boolean,
+): HilosDaemonWorkersEmptyState {
+  if (processesReported) {
+    return 'none'
+  }
+  return heading?.state === 'silent' ? 'silent' : 'waiting'
 }
 
 /**

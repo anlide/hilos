@@ -539,6 +539,8 @@ The project lists the feature in `Hilos::FEATURES` and registers the three agent
 It registers the section's eight thin pages; six node child addresses require a node ID, while the root and Env mismatch do not.
 The environment child page inherits its node-agent subscription route from the framework; its project subclass declares no page-agent owner.
 Startup refuses a partially activated feature.
+In a Vue project, mount the built Workers page through a thin wrapper with the
+project's `connection` and `scopes` context, as for the Logs pages.
 For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
 
 ### analytics — the Analytics section

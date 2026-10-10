@@ -101,8 +101,9 @@ schedules on the master loop. Apply
 
 Do not await a reply or retry a frame: the next whole frame repairs a lost one.
 A restarted node agent gets a new full frame after it starts; until then its
-`processes` field is null, distinct from a known `workers: []`. The future
-screen says “no picture yet” for an absent node picture
+`processes` field is null, distinct from a known `workers: []`. The Workers page
+says the node has not reported its workers yet while `processes` is null. The
+Agents page will say “no picture yet” for an absent node picture
 (not in the code yet — HIL-1392).
 
 While the node's freeze row holds, the master sends no frames: the freeze has
@@ -191,6 +192,21 @@ master claiming leadership wins only if its term is at least the term of every
 other live master. If several claim leadership in the highest term, the lowest
 node id wins. A newer candidate means there is no leader in the picture until
 the election resolves.
+
+## The Node Line
+
+The page agent answers each node page with a line from its cluster picture
+mirror. The page's own `node` data is a `DaemonNodeHeading`: `clustered`,
+`state`, and `silentSince`. The state comes from `stateOf()`. `silentSince` is
+the last report arrival time only for a silent node; live reports arrive every
+5–60 seconds, and carrying their time would resend the page for each portion.
+
+When the line changes, the page agent resends the whole page to viewers of that
+node. When only table rows change, it resends the window. The frontend draws a
+link to the diagram only when it has built the root address. Workers is the
+first node page with this line (HIL-1391); Agents, Cron, and HTTP join in their
+own leaves. The environment page is served by the node agent and uses its own
+`nodeSilent` verdict.
 
 ## What Never Leaves A Node
 
@@ -324,8 +340,11 @@ addresses carry a required node ID, including on standalone installations; Env
 mismatch is a cluster-wide address without one.
 
 The framework has eight abstract Daemon pages, with thin concrete subclasses in
-all five demos. All eight keys remain in
-[hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts).
+all five demos. Each key stays in
+[hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
+for every frontend that has not built it. Vue builds Workers (HIL-1391) before
+the root, so it serves that staged child by direct address
+(`STAGED_CHILDREN`); React and Angular still leave Workers unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

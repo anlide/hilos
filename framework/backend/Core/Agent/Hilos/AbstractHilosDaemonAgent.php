@@ -12,6 +12,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonPictureWatchSignalData;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
@@ -65,6 +66,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
      * @throws InvalidArgumentException When a table-window signal cannot be named
      * @throws TableRowKeyMissingException When a windowed Daemon table row has no key
      * @throws HilosException When a Daemon table picture or its window cannot be served
+     * @throws EnvException When cluster mode cannot be read for a node line
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {

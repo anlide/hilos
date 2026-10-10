@@ -90,6 +90,7 @@ import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
 import HilosLogsRotations from './views/Hilos/Logs/Rotations.vue'
 import HilosLogsSettings from './views/Hilos/Logs/Settings.vue'
 import HilosLogsView from './views/Hilos/Logs/View.vue'
+import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -154,6 +155,7 @@ const pages: Record<string, Component> = {
   [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
   [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
   [HilosPages.LOGS_VIEW]: HilosLogsView,
+  [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkers,
 }
 
 // The pages that draw a skeleton of their own shape while they wait for their
