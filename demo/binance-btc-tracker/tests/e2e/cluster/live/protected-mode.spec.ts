@@ -71,15 +71,7 @@ async function presentCode(page: Page, code: string): Promise<void> {
   await expect(page.getByTestId('maintenance-pass-form')).toHaveCount(0)
 }
 
-// TODO(HIL-1280) 2026-10-08 · signUpPerson() on the follower is answered "Too many
-// attempts. Please wait a moment and try again." in the password dialog — the
-// cluster-wide auth throttle (e403ed6f3) trips on the run of sign-ups the live phase
-// makes, and the retries then meet the address already created ("Sign in" instead of
-// "Create your account"). A FOREIGN test: red on clean total-refac 22fcafc60 and in
-// runs 0975, 0976 (alone) and 0978 of HIL-1477, which touches nothing of auth.
-// Verify attempt 1 of HIL-1477; parked by the owner's decision of 08.10.2026. Lift
-// the fixme together with the fix of the throttle.
-test.fixme('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
+test('every master shows the stub while the mode is on, and a person signed in on a follower master comes back as the same person', async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.
@@ -123,17 +115,7 @@ test.fixme('every master shows the stub while the mode is on, and a person signe
   }
 })
 
-// TODO(P-518) 2026-10-09 · the circle member's sign-up on the follower is answered
-// "Too many attempts. Please wait a moment and try again." in the "Choose a
-// password" dialog — the cluster-wide auth throttle trips on the run of sign-ups
-// the live phase makes, and `auth-continue` never shows (three attempts alike).
-// A FOREIGN test: red with the same refusal on 2026-10-09 in runs 0983 (HIL-1374),
-// 0986 (HIL-1326), 0989 and 0991 (HIL-1294), 0992 (HIL-1404), 0997 and 0998
-// (HIL-1279) — none of those leaves touches auth, and this one is frontend edit
-// windows only. Verify attempt 1 of HIL-1279; parked by the owner's decision of
-// 2026-10-09. Lift the fixme together with the fix of the throttle on the stand
-// (P-518).
-test.fixme("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
+test("the named circle walks in on a follower master with the tab it already had open, the operator's tab follows its session to another master, and nobody else does", async ({
   browser,
 }) => {
   // Multiple masters settle a freeze, verification window and self-reload in this test.

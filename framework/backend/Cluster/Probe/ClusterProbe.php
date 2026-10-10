@@ -35,7 +35,8 @@ use Hilos\Hilos;
  *
  * Why a probe starts only where {@see self::mayRunHere()} says so - on a clustered node of a
  * non-production environment: the fleet deliberately occupies its worker, since the blocked
- * worker is the load being simulated; the set probe off a cluster has no node and so no set to
+ * worker is the load being simulated, and it stays within one onTick budget per worker turn
+ * ({@see FleetProbeAgent}); the set probe off a cluster has no node and so no set to
  * own; and a production-like node refuses the `test:` commands that drive the rest anyway. So
  * the same project on one node, on its own Playwright stand and in production carries the rows
  * and starts none of them: the worker server's start passes over a probe there without a record

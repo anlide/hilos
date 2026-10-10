@@ -24,7 +24,13 @@ use Hilos\Utils\Logger;
  *
  * The per-job sleep deliberately breaks the "never block in onTick" rule
  * (docs/agents/agent-system/ontick-rule.md): occupying the worker IS the workload
- * being simulated. It never starts outside a clustered non-production node
+ * being simulated, and the work is sized so one slave's whole share of the fleet
+ * ({@see ClusterProbe::FLEET_SIZE} / 2 = 5 members) on one worker stays inside the
+ * 0.1 s onTick budget of a turn. At node start the agents land on one or two
+ * regular workers, so the fleet sits beside real agents, including the auth
+ * throttle, which is given 1 s for a verdict. A job of 50-250 ms stretched that
+ * turn to 0.3-0.7 s, and the startup queue the worker reads 8 KB a turn, to
+ * 20-50 s (HIL-1520). It never starts outside a clustered non-production node
  * ({@see ClusterProbe::mayRunHere()}) and must not be copied into an application agent.
  *
  * It carries no protected-mode drive: the index agent of a full project declares those
@@ -44,10 +50,10 @@ final class FleetProbeAgent extends AbstractAgent
     public const array OWNS_RT_ROWS = [HilosProbeFleetStatus::RT_COLLECTION => TruthSourceOperation::BY_KIND];
 
     /** @var int Shortest synthetic job, in microseconds */
-    private const int JOB_MIN_USEC = 50000;
+    private const int JOB_MIN_USEC = 2000;
 
     /** @var int Longest synthetic job, in microseconds */
-    private const int JOB_MAX_USEC = 250000;
+    private const int JOB_MAX_USEC = 20000;
 
     /** @var float Seconds between throughput reports */
     private const float REPORT_INTERVAL_SEC = 5.0;
