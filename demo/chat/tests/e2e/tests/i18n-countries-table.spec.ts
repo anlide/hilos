@@ -8,6 +8,16 @@ test('opens the countries list after reflow, pages it and searches it', async ({
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
 
+  const catalog = page.getByTestId('i18n-countries-catalog')
+  await expect(catalog).toBeVisible()
+  await expect(catalog.locator('h2')).toContainText(
+    /The system knows \d+ languages and \d+ countries on its own/,
+  )
+
+  const legend = page.getByTestId('i18n-countries-legend')
+  await expect(legend).toBeVisible()
+  await expect(legend.getByTestId('i18n-countries-legend-own')).toBeVisible()
+
   // Fifty-one known countries, twenty-five to a page. `us` sorts past the first page.
   await expect(page.getByTestId('hilos-table-count')).toHaveText('1 – 25 of 51')
   const pageTwo = page.getByTestId('hilos-table-page-2')
@@ -42,6 +52,7 @@ test('opens the countries list after reflow, pages it and searches it', async ({
   await search.pressSequentially('zzzz-absent', { delay: 10 })
   await expect(page.locator('table').getByText('Nothing found')).toBeVisible()
   await expect(row).toHaveCount(0)
+  await expect(legend).toBeVisible()
 
   await gotoPage(page, '/hilos/i18n', PAGE_READY)
   await expect(

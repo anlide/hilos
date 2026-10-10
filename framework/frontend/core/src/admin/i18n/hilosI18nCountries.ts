@@ -11,6 +11,10 @@ import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosI18nCountryContext } from './hilosI18nCountry.js'
+import {
+  type HilosI18nLegendRow,
+  type HilosI18nMark,
+} from './hilosI18nMarks.js'
 
 /** Table key of the countries list, as the backend registers it. */
 export const HILOS_I18N_COUNTRIES_TABLE = 'hilosI18nCountries'
@@ -191,3 +195,24 @@ export function createHilosI18nCountriesTable(
     },
   }
 }
+
+/** Pre-defined marks for country rows in the table and legend. */
+export const HILOS_I18N_COUNTRY_MARKS: Readonly<{
+  readonly own: HilosI18nMark
+}> = {
+  own: {
+    icon: 'bi-question-circle',
+    tone: 'text-bg-warning-subtle text-warning-emphasis',
+    label: 'Custom country',
+  },
+}
+
+/** Legend items explaining marks on the countries page. */
+export const HILOS_I18N_COUNTRIES_LEGEND: ReadonlyArray<HilosI18nLegendRow> = [
+  {
+    key: 'own',
+    mark: HILOS_I18N_COUNTRY_MARKS.own,
+    meaning:
+      'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+  },
+]

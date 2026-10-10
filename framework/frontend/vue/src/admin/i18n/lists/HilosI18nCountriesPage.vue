@@ -9,7 +9,10 @@ mounts it by passing its HilosI18nCountryContext. Bootstrap classes only
 (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  createHilosI18nBuiltInCatalog,
   createHilosI18nCountriesTable,
+  HILOS_I18N_COUNTRIES_LEGEND,
+  HILOS_I18N_COUNTRY_MARKS,
   HilosPages,
   type HilosI18nCountryContext,
   type HilosI18nCountryRow,
@@ -20,6 +23,9 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosLink from '../../../HilosLink.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+import { useSignal } from '../../../useSignal.js'
+import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
+import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -31,6 +37,7 @@ if (!router) {
   throw new Error('HilosI18nCountriesPage requires a provided Hilos router.')
 }
 
+const builtInCatalog = useSignal(createHilosI18nBuiltInCatalog(props.context))
 const countries = createHilosI18nCountriesTable(props.context)
 
 onMounted(() => countries.start())
@@ -43,6 +50,18 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
 
 <template>
   <HilosAdminPage :page="HilosPages.I18N_COUNTRIES">
+    <HilosI18nCatalogNote
+      v-if="builtInCatalog"
+      :catalog="builtInCatalog"
+      data-id="i18n-countries-catalog"
+    >
+      The framework's built-in catalog holds
+      {{ builtInCatalog.countryCount }} countries with their currency and their
+      names in its {{ builtInCatalog.languageCount }} languages; each of them
+      arrives on its own, switched off. Whenever a framework update changes the
+      catalog, a country's currency is refreshed while that country is switched
+      off, and its names wherever nobody has edited them.
+    </HilosI18nCatalogNote>
     <HilosViewportTable :controller="countries.controller">
       <template #cell-code="{ row }">
         <template v-for="path in [countryPath(row)]" :key="path ?? 'none'">
@@ -71,12 +90,19 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
         }}</span>
         <span
           v-if="row.isOwn"
-          class="badge text-bg-warning-subtle text-warning-emphasis ms-1"
-          title="Custom country"
+          class="badge ms-1"
+          :class="HILOS_I18N_COUNTRY_MARKS.own.tone"
+          :title="HILOS_I18N_COUNTRY_MARKS.own.label"
           :data-id="`i18n-countries-own-${row.code}`"
         >
-          <i class="bi bi-question-circle" aria-hidden="true"></i>
-          <span class="visually-hidden">Custom country</span>
+          <i
+            class="bi"
+            :class="HILOS_I18N_COUNTRY_MARKS.own.icon"
+            aria-hidden="true"
+          ></i>
+          <span class="visually-hidden">{{
+            HILOS_I18N_COUNTRY_MARKS.own.label
+          }}</span>
         </span>
       </template>
       <template #cell-currencyCode="{ row }">
@@ -115,5 +141,10 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
         />
       </template>
     </HilosViewportTable>
+    <HilosI18nMarksLegend
+      :rows="HILOS_I18N_COUNTRIES_LEGEND"
+      data-id="i18n-countries-legend"
+      class="mt-4"
+    />
   </HilosAdminPage>
 </template>

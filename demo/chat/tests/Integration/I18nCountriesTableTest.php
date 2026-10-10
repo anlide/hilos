@@ -39,6 +39,7 @@ use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\Language;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -50,6 +51,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 /** The countries table: every country, its name and locale, and a live window (HIL-1475). */
 final class I18nCountriesTableTest extends IntegrationTestCase
 {
+    private const string OPEN = 'countries-open';
     private const string SECOND = 'countries-second';
     private const string SEARCH_MISS = 'countries-search-miss';
     private const string SEARCH_HIT = 'countries-search-hit';
@@ -348,6 +350,23 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertFalse($this->namesRow($live, self::SEARCH_MISS, 'zz'), $this->signalTrace($live));
     }
 
+    public function testPageResponseCarriesBuiltInCatalogTallyToAdmin(): void
+    {
+        $admin = Hilos::$db->users->actions->createWithName('Countries table tally admin');
+        $admin->actions->setAdmin(true);
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . uniqid('', true)), 0, 32));
+        $session->actions->bindUser((int) $admin->id);
+        Hilos::$rt->connections->actions->register(self::OPEN, (int) $admin->id, $session->token, (int) $session->id);
+
+        $this->subscribe(self::OPEN, null);
+        $signals = $this->drain();
+        $pageData = $this->pageDataOf($signals, self::OPEN);
+        self::assertSame([
+            BuiltInCatalogTally::LANGUAGE_COUNT => iterator_count(BuiltInI18nCatalog::languages()),
+            BuiltInCatalogTally::COUNTRY_COUNT => iterator_count(BuiltInI18nCatalog::countries()),
+        ], $pageData[BuiltInCatalogTally::DATA] ?? null);
+    }
+
     public function testAViewerSeesEveryCountryField(): void
     {
         $this->underAgent($this->agent, function (): void {
@@ -363,7 +382,17 @@ final class I18nCountriesTableTest extends IntegrationTestCase
 
         try {
             $this->subscribe(self::VIEWER, null);
-            $window = $this->windowOf($this->drain(), self::VIEWER);
+            $signals = $this->drain();
+            $pageData = $this->pageDataOf($signals, self::VIEWER);
+            $expectedTally = [
+                BuiltInCatalogTally::LANGUAGE_COUNT => iterator_count(BuiltInI18nCatalog::languages()),
+                BuiltInCatalogTally::COUNTRY_COUNT => iterator_count(BuiltInI18nCatalog::countries()),
+            ];
+            self::assertSame($expectedTally, $pageData[BuiltInCatalogTally::DATA] ?? null);
+            self::assertFalse(HiddenValue::isMark($pageData[BuiltInCatalogTally::DATA][BuiltInCatalogTally::LANGUAGE_COUNT]));
+            self::assertFalse(HiddenValue::isMark($pageData[BuiltInCatalogTally::DATA][BuiltInCatalogTally::COUNTRY_COUNT]));
+
+            $window = $this->windowOf($signals, self::VIEWER);
             $rows = $window[TableWindowSignalData::rows];
             self::assertNotSame([], $rows);
             foreach ($rows as $row) {
@@ -560,6 +589,26 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         }
 
         self::fail('The countries window was not delivered');
+    }
+
+    /**
+     * @param list<array{accept: ?string, name: string, data: SignalDataInterface}> $signals Queued signals
+     * @param string $acceptKey Subscribed connection accept key
+     * @return array<string, mixed> Page data section of the page_response frame
+     */
+    private function pageDataOf(array $signals, string $acceptKey): array
+    {
+        foreach ($signals as $signal) {
+            if ($signal['accept'] !== $acceptKey || $signal['name'] !== SignalTypeConstants::PAGE_RESPONSE) {
+                continue;
+            }
+            self::assertInstanceOf(PageResponseSignalData::class, $signal['data']);
+            $payload = $signal['data']->payload->toArray();
+
+            return $payload[PagePayload::data] ?? [];
+        }
+
+        self::fail('The page response was not delivered');
     }
 
     private function clearFixtures(): void

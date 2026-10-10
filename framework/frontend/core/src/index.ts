@@ -61,13 +61,17 @@ export {
   resolveHilosI18nLanguageRow,
   type HilosI18nLanguageRow,
   type HilosI18nLanguagesTable,
+} from './admin/i18n/hilosI18nLanguages.js'
+export {
   type HilosI18nLegendRow,
   type HilosI18nMark,
-} from './admin/i18n/hilosI18nLanguages.js'
+} from './admin/i18n/hilosI18nMarks.js'
 export {
   HILOS_I18N_COUNTRIES_COLUMNS,
   HILOS_I18N_COUNTRIES_FRAME,
+  HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRIES_TABLE,
+  HILOS_I18N_COUNTRY_MARKS,
   HilosI18nCountryRowKey,
   createHilosI18nCountriesTable,
   resolveHilosI18nCountryRow,

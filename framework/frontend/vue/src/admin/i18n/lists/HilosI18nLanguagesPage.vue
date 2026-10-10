@@ -23,6 +23,8 @@ import HilosLink from '../../../HilosLink.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
+import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
+import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
 
 const props = defineProps<{
   /** The project context: connection, scope stores, and the action lifecycle. */
@@ -47,26 +49,17 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
 
 <template>
   <HilosAdminPage :page="HilosPages.I18N_LANGUAGES">
-    <section
+    <HilosI18nCatalogNote
       v-if="builtInCatalog"
-      class="alert alert-info small d-flex gap-2 align-items-start"
+      :catalog="builtInCatalog"
       data-id="i18n-languages-catalog"
     >
-      <i class="bi bi-database-check flex-shrink-0 mt-1" aria-hidden="true"></i>
-      <div>
-        <h2 class="h6 mb-1">
-          The system knows {{ builtInCatalog.languageCount }} languages and
-          {{ builtInCatalog.countryCount }} countries on its own
-        </h2>
-        <p class="mb-0">
-          The framework's built-in catalog holds
-          {{ builtInCatalog.languageCount }} ISO 639-1 codes with their own
-          names and writing direction. A language from it is refreshed whenever
-          a framework update changes the catalog — and only while that language
-          is switched off.
-        </p>
-      </div>
-    </section>
+      The framework's built-in catalog holds
+      {{ builtInCatalog.languageCount }} ISO 639-1 codes with their own names
+      and writing direction. A language from it is refreshed whenever a
+      framework update changes the catalog — and only while that language is
+      switched off.
+    </HilosI18nCatalogNote>
     <HilosViewportTable :controller="languages.controller">
       <template #cell-code="{ row }">
         <template v-for="path in [languagePath(row)]" :key="path ?? 'none'">
@@ -147,32 +140,10 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
         />
       </template>
     </HilosViewportTable>
-    <section data-id="i18n-languages-legend" class="mt-4">
-      <h2 class="small text-body-secondary mb-2">
-        <i class="bi bi-info-circle me-1" aria-hidden="true"></i>What the marks
-        mean
-      </h2>
-      <dl class="row row-cols-1 row-cols-md-2 g-1 mb-0 small">
-        <div
-          v-for="item in HILOS_I18N_LANGUAGES_LEGEND"
-          :key="item.key"
-          class="col d-flex gap-2 align-items-baseline"
-          :data-id="`i18n-languages-legend-${item.key}`"
-        >
-          <dt class="fw-normal">
-            <span
-              class="badge me-1"
-              :class="item.mark.tone"
-              :title="item.mark.label"
-              aria-hidden="true"
-            >
-              <i class="bi" :class="item.mark.icon"></i>
-            </span>
-            {{ item.mark.label }}
-          </dt>
-          <dd class="mb-0 text-body-secondary">{{ item.meaning }}</dd>
-        </div>
-      </dl>
-    </section>
+    <HilosI18nMarksLegend
+      :rows="HILOS_I18N_LANGUAGES_LEGEND"
+      data-id="i18n-languages-legend"
+      class="mt-4"
+    />
   </HilosAdminPage>
 </template>

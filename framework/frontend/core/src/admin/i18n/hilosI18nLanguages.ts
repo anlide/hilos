@@ -10,6 +10,10 @@ import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosI18nLanguageContext } from './hilosI18nLanguage.js'
+import {
+  type HilosI18nLegendRow,
+  type HilosI18nMark,
+} from './hilosI18nMarks.js'
 
 /** Table key of the languages list, as the backend registers it. */
 export const HILOS_I18N_LANGUAGES_TABLE = 'hilosI18nLanguages'
@@ -179,13 +183,6 @@ export function createHilosI18nLanguagesTable(
   }
 }
 
-/** Visual mark attributes attached to a language row or displayed in the legend. */
-export interface HilosI18nMark {
-  readonly icon: string
-  readonly tone: string
-  readonly label: string
-}
-
 /** Pre-defined marks for language rows in the table and legend. */
 export const HILOS_I18N_LANGUAGE_MARKS: Readonly<{
   readonly default: HilosI18nMark
@@ -201,13 +198,6 @@ export const HILOS_I18N_LANGUAGE_MARKS: Readonly<{
     tone: 'text-bg-warning-subtle text-warning-emphasis',
     label: 'Custom language',
   },
-}
-
-/** A row in the languages marks legend. */
-export interface HilosI18nLegendRow {
-  readonly key: string
-  readonly mark: HilosI18nMark
-  readonly meaning: string
 }
 
 /** Legend items explaining marks on the languages page. */

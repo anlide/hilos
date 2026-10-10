@@ -140,6 +140,8 @@ construction.
   already present (not in the code yet — HIL-1495).
 - An unknown country is added through the same kind of confirmation
   (not in the code yet — HIL-1495).
+- Phrases of the countries catalog callout regarding adding by code and custom
+  countries appear together with "Add country" (not in the code yet — HIL-1495).
 - A newly added language starts switched off (not in the code yet — HIL-1484).
 - A newly added locale starts switched off.
 - A newly added country starts switched off (not in the code yet — HIL-1495).
@@ -386,10 +388,7 @@ with its table (HIL-1474), the catalog tally callout above it (`builtInCatalog`)
 and the marks legend below it (HIL-112), kept live by the table's own fan-out.
 The Vue names page of a country is built too
 (HIL-1483): the names table opened on that country, standing under the card's shared header and
-tabs fed by the same `countryCard` datum. The Vue countries list is built
-(HIL-1475): the root shows the Countries card, and the list is the countries
-table, kept live by the table's own fan-out. React and Angular remain unbuilt
-until HIL-1502/1503.
+tabs fed by the same `countryCard` datum. The Vue countries list is built whole with its table (HIL-1475), the catalog tally callout above it (`builtInCatalog`), and the marks legend below it (HIL-1481), kept live by the table's own fan-out; the callout and legend are the shared components of the languages and countries lists. The root shows the Countries card (HIL-1475). React and Angular remain unbuilt until HIL-1502/1503.
 
 | Page key | Route |
 |---|---|

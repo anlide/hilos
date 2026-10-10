@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import {
+  BUILT_IN_CATALOG_DATA,
   createSignal,
   HILOS_I18N_COUNTRIES_TABLE,
   HilosPages,
@@ -75,11 +76,15 @@ function router(): HilosRouter {
   }
 }
 
-function context(): HilosI18nCountryContext {
+function context(
+  rows: CountrySlot[] = [UNITED_STATES, OWN],
+): HilosI18nCountryContext & {
+  scope: ReturnType<ScopeManager['openPage']>
+} {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.I18N_COUNTRIES)
+  const scope = scopes.openPage(HilosPages.I18N_COUNTRIES)
   const windowListeners = new Set<Listener>()
-  const rows = [UNITED_STATES, OWN].map((country) => ({
+  const tableRows = rows.map((country) => ({
     rowKey: country.code,
     slots: { country },
   }))
@@ -87,8 +92,8 @@ function context(): HilosI18nCountryContext {
     const data = {
       page: HilosPages.I18N_COUNTRIES,
       tableKey: HILOS_I18N_COUNTRIES_TABLE,
-      rows,
-      totalCount: rows.length,
+      rows: tableRows,
+      totalCount: tableRows.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -127,6 +132,7 @@ function context(): HilosI18nCountryContext {
   return {
     connection,
     scopes,
+    scope,
   }
 }
 
@@ -193,5 +199,63 @@ describe('HilosI18nCountriesPage', () => {
       false,
     )
     expect(view.text()).not.toContain('Add country')
+  })
+
+  it('renders the catalog callout with counts and omits it when data is absent', async () => {
+    const c1 = context()
+    c1.scope.data.set(BUILT_IN_CATALOG_DATA, {
+      languageCount: 3,
+      countryCount: 4,
+    })
+    const viewWithData = mount(HilosI18nCountriesPage, {
+      props: { context: c1 },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+
+    const catalog = viewWithData.get('[data-id="i18n-countries-catalog"]')
+    expect(catalog.get('h2').text()).toBe(
+      'The system knows 3 languages and 4 countries on its own',
+    )
+    expect(catalog.get('p').text()).toBe(
+      "The framework's built-in catalog holds 4 countries with their currency and their names in its 3 languages; each of them arrives on its own, switched off. Whenever a framework update changes the catalog, a country's currency is refreshed while that country is switched off, and its names wherever nobody has edited them.",
+    )
+
+    const c2 = context()
+    const viewWithoutData = mount(HilosI18nCountriesPage, {
+      props: { context: c2 },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    expect(
+      viewWithoutData.find('[data-id="i18n-countries-catalog"]').exists(),
+    ).toBe(false)
+  })
+
+  it('renders the legend row even when the countries table is empty', async () => {
+    const c = context([])
+    const view = mount(HilosI18nCountriesPage, {
+      props: { context: c },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+
+    const legend = view.get('[data-id="i18n-countries-legend"]')
+    expect(legend.get('h2').text()).toContain('What the marks mean')
+
+    const ownRow = view.get('[data-id="i18n-countries-legend-own"]')
+    expect(ownRow.get('dt').text()).toContain('Custom country')
+    expect(ownRow.get('dd').text()).toBe(
+      'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+    )
   })
 })

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   HILOS_I18N_COUNTRIES_COLUMNS,
   HILOS_I18N_COUNTRIES_FRAME,
+  HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRIES_TABLE,
+  HILOS_I18N_COUNTRY_MARKS,
   resolveHilosI18nCountryRow,
 } from '../../../src/admin/i18n/hilosI18nCountries.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
@@ -73,5 +75,21 @@ describe('HILOS_I18N_COUNTRIES_FRAME', () => {
       HILOS_I18N_COUNTRIES_COLUMNS.every((column) => column.sortable),
     ).toBe(true)
     expect(HILOS_I18N_COUNTRIES_COLUMNS[0]?.card).toBe('title')
+  })
+})
+
+describe('HILOS_I18N_COUNTRIES_LEGEND', () => {
+  it('references own mark and maps its meaning', () => {
+    expect(HILOS_I18N_COUNTRIES_LEGEND).toEqual([
+      {
+        key: 'own',
+        mark: HILOS_I18N_COUNTRY_MARKS.own,
+        meaning:
+          'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+      },
+    ])
+    expect(HILOS_I18N_COUNTRIES_LEGEND[0]?.mark).toBe(
+      HILOS_I18N_COUNTRY_MARKS.own,
+    )
   })
 })
