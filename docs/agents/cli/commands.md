@@ -198,28 +198,28 @@ can inspect a network-partitioned node that cannot reach MySQL either), the clus
 family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the two drills
 beside it, `test:cluster:db:announce` and `test:cluster:agent:place` (same reason: the
 master answers them out of memory, and a partitioned node is exactly where they are worth
-running),
-`test:notification:emit`, `test:account:force-purge`, `test:verification:sweep`, `test:legal:hold` and
-`test:i18n:language:on <code>` (every row they cause is written
-by the agent that answers them, so the CLI process itself has nothing to read or write),
+running), `test:notification:emit`, `test:account:force-purge`, `test:verification:sweep`,
+`test:legal:hold` and `test:i18n:language:on <code>` (every row they cause is written by
+the agent that answers them, so the CLI process itself has nothing to read or write),
 `test:table:lag` (the master answers it out of memory and writes its own node's lag row,
-so the CLI process has nothing to read or
-write either — HIL-1020), `test:table:refuse` (the same shape: the master answers it out of
-memory and writes its own node's refusal row — HIL-1131), `test:admin-view-mode` (the
-master answers it out of memory and writes its own node's admin view mode row —
-HIL-1249; refused on a node of a cluster — HIL-1274), `protected-mode:inspect` (reads
-in-memory state and has to answer on a frozen node, which is exactly where a connect would
-hang), the manual maintenance family `maintenance:enable` / `:disable` / `:pass` (the index
-agent answers them and drives the freeze, so the CLI process writes nothing), the protected-mode drive family `test:protected-mode:enter` / `:leave` / `:open` /
-`:pass` / `:close` (the drive commands write nothing from this process, and the rows the mint
-and the close move are the agent's)
-and the account and session family `admin:grant` / `:revoke` / `:create`,
-`impersonate:start` / `:stop` and `account:merge` (same reason as `test:notification:emit`:
-every row they cause is written where the account lives), and the cluster TLS family
-`cluster:tls:ca` / `:issue` / `:trust` (they need no database at all: they issue the
-certificates of a cluster that may not exist yet, print PEM and nothing else, and are run
-exactly where there is no installation to connect to — HIL-1034). Everything else keeps the
-full connect plus `Hilos::init()`.
+so the CLI process has nothing to read or write either — HIL-1020), `test:table:refuse`
+(the same shape: the master answers it out of memory and writes its own node's refusal row
+— HIL-1131), `test:admin-view-mode` (the master answers it out of memory and writes its
+own node's admin view mode row — HIL-1249; refused on a node of a cluster — HIL-1274),
+`protected-mode:inspect` (reads in-memory state and has to answer on a frozen node, which
+is exactly where a connect would hang), the operator family `protected-mode:pass` /
+`:open` / `:close` (the backup agent answers them and drives the freeze, so the CLI
+process writes nothing), the manual maintenance family `maintenance:enable` / `:disable` /
+`:pass` (the index agent answers them and drives the freeze, so the CLI process writes
+nothing), the protected-mode drive family `test:protected-mode:enter` / `:leave` / `:open`
+/ `:pass` / `:close` (the drive commands write nothing from this process, and the rows the
+mint and the close move are the agent's) and the account and session family `admin:grant`
+/ `:revoke` / `:create`, `impersonate:start` / `:stop` and `account:merge` (same reason as
+`test:notification:emit`: every row they cause is written where the account lives), and
+the cluster TLS family `cluster:tls:ca` / `:issue` / `:trust` (they need no database at
+all: they issue the certificates of a cluster that may not exist yet, print PEM and
+nothing else, and are run exactly where there is no installation to connect to —
+HIL-1034). Everything else keeps the full connect plus `Hilos::init()`.
 
 Because the whole registry is now constructed *before* the connect, a command constructor
 must not touch the database or Hilos state. Do that work in `execute()`.
