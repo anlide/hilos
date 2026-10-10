@@ -2830,14 +2830,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * The action left the dispatcher deferred ({@see askPersonAgent()}), and the ask comes back
      * whole: its action name and request id make this dispatch the one that left, and the
      * connection that asked is put back on the execution frame, so every write and every frame of
-     * the continuation reads as that press of that button - {@see grantSession()} and its
-     * siblings name the action and the request they hand over. A refusal fails the action. A
-     * write goes on to the continuation, and then the action is answered as the dispatcher answers
-     * one: nothing when the continuation handed the answer to the session holder, the success ack
-     * otherwise, carrying what the continuation returned - the codes, the secret or the next screen
-     * a handler would have returned (HIL-1406). A continuation that breaks fails the action and leaves an error line, as a handler
-     * that breaks does. An untracked action is told only of a failure, the way the dispatcher tells
-     * it.
+     * the continuation reads as that press of that button - {@see grantSession()} and its siblings
+     * name the action and the request they hand over. A refusal fails the action. A write goes on
+     * to the continuation, and then the action is answered as the dispatcher answers one: nothing
+     * when the continuation handed the answer to the session holder, the success ack otherwise,
+     * carrying what the continuation returned - the codes, the secret or the next screen a handler
+     * would have returned (HIL-1406). A continuation that breaks fails the action and leaves an
+     * error line, as a handler that breaks does. An untracked action is told only of a failure, the
+     * way the dispatcher tells it.
      *
      * @param HandoverAskInterface $ask The ask the agent answered, untouched
      * @param ?string $refusal Words the action is refused in, or null when the agent wrote

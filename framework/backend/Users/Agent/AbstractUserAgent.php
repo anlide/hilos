@@ -112,30 +112,29 @@ use Throwable;
 /**
  * Agent for one person. Its claims name the person's row and child sets; it keeps no copy of them.
  *
- * It writes the ordinary edits of the person's row - the name, the admin flag, the block (HIL-1404) -
- * and every edit of the person's ways of signing in and passkeys, sign-in included (HIL-1405): a
- * fresh password hash, a password verified by a letter, a passkey's counter and last use, a new
- * password from recovery or from the profile, an address moved, a method unlinked. It writes the
- * person's second factor too (HIL-1406): an app confirmed or disconnected, a code that proves the
- * person - a step taken, a backup code burned, a wrong code counted and the lock it puts or an
- * operator lifts - the removal wait, and a removal canceled, carried out or marked reminded
+ * It writes the ordinary edits of the person's row - the name, the admin flag, the block
+ * (HIL-1404) - and every edit of the person's ways of signing in and passkeys, sign-in included
+ * (HIL-1405): a fresh password hash, a password verified by a letter, a passkey's counter and last
+ * use, a new password from recovery or from the profile, an address moved, a method unlinked. It
+ * writes the person's second factor too (HIL-1406): an app confirmed or disconnected, a code that
+ * proves the person - a step taken, a backup code burned, a wrong code counted and the lock it puts
+ * or an operator lifts - the removal wait, and a removal canceled, carried out or marked reminded
  * ({@see SecondFactorPersonEdits}). It records the person's confirmations of a protected operation
  * and takes away the trust of the person's browsers (HIL-1407): a confirmation proved by a password
  * or a code, a device key or a second-factor code, or credited to a refused sign-in of a blocked
  * person ({@see StepUpConfirmations}); the trust when the second factor goes, when the password is
  * changed or recovered, when the person is blocked and when the person's sessions are ended. It
  * writes the person's notification edits too (HIL-1408): one notification marked read or all of
- * them, a channel turned on or off, this browser's push subscription dropped, a push device removed.
- * Each comes as a frame from the coordinator that judged it: the name, the ways in, the second
- * factor and the confirmations from {@see AbstractUsersLibraryAgent}, the notification edits from
- * {@see AbstractNotificationsLibraryAgent}, the two flags, the credit and the ended sessions from
- * {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
- * accepts the person's pick (HIL-1427). The
- * agent writes and always answers - a refusal included, because the coordinator continues only on
- * the answer and something is waiting on it - and the coordinator does what follows the write.
- * Creating a way in, an enrolment, a set of backup codes or a removal stays with the libraries that
- * create it. When the person is erased, or folded
- * into someone else, the agent stops itself.
+ * them, a channel turned on or off, this browser's push subscription dropped, a push device
+ * removed. Each comes as a frame from the coordinator that judged it: the name, the ways in, the
+ * second factor and the confirmations from {@see AbstractUsersLibraryAgent}, the notification edits
+ * from {@see AbstractNotificationsLibraryAgent}, the two flags, the credit and the ended sessions
+ * from {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
+ * accepts the person's pick (HIL-1427). The agent writes and always answers - a refusal included,
+ * because the coordinator continues only on the answer and something is waiting on it - and the
+ * coordinator does what follows the write. Creating a way in, an enrolment, a set of backup codes
+ * or a removal stays with the libraries that create it. When the person is erased, or folded into
+ * someone else, the agent stops itself.
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -1348,7 +1347,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * @param callable(): void $write The write - a flag, or one of the person's ways of signing in
      * @param string $what Which write, for the log line
-     * @return ?ActionRefusal Why the flag was not written, or null when it was
+     * @return ?ActionRefusal Why the write was refused, or null when it was written
      */
     private function flagRefusal(callable $write, string $what): ?ActionRefusal
     {
