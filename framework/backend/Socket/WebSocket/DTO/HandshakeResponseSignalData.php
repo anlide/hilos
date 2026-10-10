@@ -123,12 +123,13 @@ use Hilos\Users\AccountStandingResolver;
  * null, an absent key and anything but true as off - the same fail-closed default the admin flag
  * takes. The framework stamps it ({@see withAdminViewMode()}) on every send path.
  *
- * `impersonationPolicy` is the set of impersonation settings an open tab draws a takeover and card by
- * (HIL-1170, HIL-1307, {@see ImpersonationPolicySignalData}): allowed, scope/view-only, carried rights,
- * account access, and whether blocked, frozen or equal accounts may be taken over. Like the view mode it is the
- * installation's fact and rides every response; a change between handshakes arrives on
- * {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY}. Null means the stamp never ran; the
- * surface reads it as the defaults. The framework stamps it ({@see withImpersonationPolicy()}) on every send path.
+ * `impersonationPolicy` is the set of impersonation settings an open tab draws a takeover and card
+ * by (HIL-1170, HIL-1307, {@see ImpersonationPolicySignalData}): allowed, scope/view-only, carried
+ * rights, account access, and whether blocked, frozen or equal accounts may be taken over. Like the
+ * view mode it is the installation's fact and rides every response; a change between handshakes
+ * arrives on {@see HilosSignalConstants::HILOS_IMPERSONATION_POLICY}. Null means the stamp never
+ * ran; the surface reads it as the defaults. The framework stamps it
+ * ({@see withImpersonationPolicy()}) on every send path.
  *
  * `themeSettings` is the installation's switching flag and default theme (HIL-1428,
  * {@see ThemeSettingsSignalData}). The framework stamps it on the anonymous and authenticated
