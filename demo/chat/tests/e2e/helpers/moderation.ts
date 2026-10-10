@@ -13,10 +13,11 @@ import { dictateModelAnswer } from '../../../../../framework/frontend/scripts/st
  * (demo/chat/backend/Agents/DTO/ModerationDecision.php): a JSON object with the
  * keys `allow` and `reason`.
  *
- * EVERY moderated action needs a verdict — sending a message, and renaming
- * oneself from the profile. With none dictated the model refuses the call with a
- * 503, the moderator reports `service_unavailable`, and the author reads
- * "Moderation unavailable" instead of the outcome the spec was written for.
+ * EVERY moderated action needs a verdict — sending a message, and
+ * renaming oneself from the profile. With none dictated the model refuses
+ * the call with a 503, the moderator reports `service_unavailable`, and
+ * the author reads "Moderation is unavailable right now" instead of the
+ * outcome the spec was written for.
  *
  * The key is a `modelKey()` the spec puts into the text of the message or into
  * the new name: the moderator's prompt carries that text verbatim, which is where

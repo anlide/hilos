@@ -290,7 +290,7 @@ OpenAI-compatible gateway instead.
 | Symptom | Cause to check first |
 |---|---|
 | Message stuck in *checking* | Ollama unreachable from the container, or a cold model load still running (up to ~40 s for 3b, longer for 7b) |
-| `Moderation unavailable` | The model returned unparseable output, or the request errored — read the daemon log for the raw body |
+| `Moderation is unavailable right now` | The model returned unparseable output, or the request errored — read the daemon log for the raw body |
 | Settings change had no effect | The role has not started another LLM request, or a role-specific persisted row overrides the edited `default_bot_*` value |
 | External call fails immediately | Model name still an Ollama tag; or the URL is not `https://` |
 | Everything resolves `local` after setting `external` in `.env` | Expected — the settings row is authoritative for bot and moderation |

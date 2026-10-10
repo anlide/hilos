@@ -80,9 +80,10 @@ test('sends a message action and starts the re-send lockout', async ({
   // the same live connection.
   await signUp(page)
 
-  // The stand's model answers only what a spec dictated, so the permission is
-  // ordered up front under a key the text carries; with none the text would come
-  // back into the field as "Moderation unavailable" and the input never empty.
+  // The stand's model answers only what a spec dictated, so the permission
+  // is ordered up front under a key the text carries; with none the text
+  // would come back into the field as "Moderation is unavailable right now"
+  // and the input never empty.
   const key = modelKey()
   const text = `hello hilos ${key}`
   await dictateModerationVerdict(key, true, 'ok')
