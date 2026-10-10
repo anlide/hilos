@@ -55,6 +55,16 @@ export {
   type HilosI18nLanguagesTable,
 } from './admin/i18n/hilosI18nLanguages.js'
 export {
+  HILOS_I18N_COUNTRIES_COLUMNS,
+  HILOS_I18N_COUNTRIES_FRAME,
+  HILOS_I18N_COUNTRIES_TABLE,
+  HilosI18nCountryRowKey,
+  createHilosI18nCountriesTable,
+  resolveHilosI18nCountryRow,
+  type HilosI18nCountryRow,
+  type HilosI18nCountriesTable,
+} from './admin/i18n/hilosI18nCountries.js'
+export {
   HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
   HILOS_I18N_LANGUAGE_SWITCH_OFF_COPY,
   createHilosI18nLanguageSwitchOff,

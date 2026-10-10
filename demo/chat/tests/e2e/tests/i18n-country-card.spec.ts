@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { signUpAdmin } from '../helpers/adminGrant.js'
-import { gotoPage, PAGE_READY, PAGE_REFUSED } from '../helpers/page.js'
+import { gotoPage, PAGE_READY } from '../helpers/page.js'
 
 test('opens a reflowed country card directly with read-only details and staged tabs', async ({
   page,
@@ -47,6 +47,6 @@ test('opens a reflowed country card directly with read-only details and staged t
     page.getByTestId('country-card-state').locator('button, input'),
   ).toHaveCount(0)
 
-  await gotoPage(page, '/hilos/i18n/countries', PAGE_REFUSED)
+  await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
   await gotoPage(page, '/hilos/i18n', PAGE_READY)
 })

@@ -13,6 +13,7 @@ use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Demo\Polls\Hilos;
 use Demo\Polls\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
@@ -63,6 +64,7 @@ use Hilos\Tables\Security\HilosSecurityImpersonationTable;
  * @property-read HilosSecurityImpersonationTable $hilosSecurityImpersonation
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nLanguagesTable $hilosI18nLanguages
+ * @property-read HilosI18nCountriesTable $hilosI18nCountries
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  */
@@ -91,6 +93,7 @@ final class PollsTableContext extends TableContext
     public const string hilosSecurityImpersonation = HilosSecurityImpersonationTable::TABLE;
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nLanguages = HilosI18nLanguagesTable::TABLE;
+    public const string hilosI18nCountries = HilosI18nCountriesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
 

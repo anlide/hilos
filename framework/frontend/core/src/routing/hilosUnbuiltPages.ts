@@ -21,7 +21,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.GUARDIAN_AGENT]: ['vue', 'react', 'angular'],
   [HilosPages.I18N]: ['react', 'angular'],
   [HilosPages.I18N_LANGUAGES]: ['react', 'angular'],
-  [HilosPages.I18N_COUNTRIES]: ['vue', 'react', 'angular'],
+  [HilosPages.I18N_COUNTRIES]: ['react', 'angular'],
   [HilosPages.I18N_ENTITIES]: ['vue', 'react', 'angular'],
   [HilosPages.I18N_UI_PAGES]: ['vue', 'react', 'angular'],
   [HilosPages.I18N_GROUPS]: ['vue', 'react', 'angular'],

@@ -9,11 +9,4 @@ export interface StagedChild {
   child: string
   leaf: string
 }
-export const STAGED_CHILDREN: readonly StagedChild[] = [
-  {
-    layer: 'vue',
-    parent: 'hilos_i18n_countries',
-    child: 'hilos_i18n_country',
-    leaf: 'HIL-1482',
-  },
-]
+export const STAGED_CHILDREN: readonly StagedChild[] = []

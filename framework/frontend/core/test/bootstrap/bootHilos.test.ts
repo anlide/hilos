@@ -174,8 +174,11 @@ describe('bootHilos', () => {
       for (const page of [
         ...(viewLayer === 'vue'
           ? []
-          : [HilosPages.I18N, HilosPages.I18N_LANGUAGES]),
-        HilosPages.I18N_COUNTRIES,
+          : [
+              HilosPages.I18N,
+              HilosPages.I18N_LANGUAGES,
+              HilosPages.I18N_COUNTRIES,
+            ]),
       ]) {
         const connection = fakeConnection()
         const hilosConnection = connection as unknown as HilosConnection
@@ -202,7 +205,11 @@ describe('bootHilos', () => {
         expect(connection.sent).toEqual([])
       }
       if (viewLayer === 'vue') {
-        for (const page of [HilosPages.I18N, HilosPages.I18N_LANGUAGES]) {
+        for (const page of [
+          HilosPages.I18N,
+          HilosPages.I18N_LANGUAGES,
+          HilosPages.I18N_COUNTRIES,
+        ]) {
           const connection = fakeConnection()
           const hilosConnection = connection as unknown as HilosConnection
           const router = bootHilos({

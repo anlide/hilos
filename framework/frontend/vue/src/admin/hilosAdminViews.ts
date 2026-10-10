@@ -26,7 +26,6 @@ import { HilosPages } from '@hilos/core'
 import HilosDashboardPage from './dashboard/HilosDashboardPage.vue'
 import HilosRolesPage from './roles/HilosRolesPage.vue'
 import HilosI18nPage from './i18n/HilosI18nPage.vue'
-import HilosI18nCountriesPage from './i18n/lists/HilosI18nCountriesPage.vue'
 import HilosI18nEntitiesPage from './i18n/lists/HilosI18nEntitiesPage.vue'
 import HilosI18nUiPagesPage from './i18n/lists/HilosI18nUiPagesPage.vue'
 import HilosI18nGroupsPage from './i18n/lists/HilosI18nGroupsPage.vue'
@@ -78,9 +77,8 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.DASHBOARD]: HilosDashboardPage,
     [HilosPages.ROLES]: HilosRolesPage,
     [HilosPages.I18N]: HilosI18nPage,
-    // I18N_LANGUAGES is a real framework page: its table reads a live connection,
-    // so a project mounts HilosI18nLanguagesPage directly with its context.
-    [HilosPages.I18N_COUNTRIES]: HilosI18nCountriesPage,
+    // I18N_LANGUAGES and I18N_COUNTRIES are real framework pages: their tables
+    // read a live connection, so a project mounts them directly with its context.
     [HilosPages.I18N_ENTITIES]: HilosI18nEntitiesPage,
     [HilosPages.I18N_UI_PAGES]: HilosI18nUiPagesPage,
     [HilosPages.I18N_GROUPS]: HilosI18nGroupsPage,

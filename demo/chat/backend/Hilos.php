@@ -12,6 +12,7 @@ use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
@@ -687,6 +688,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         ChatTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
         ChatTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
+        ChatTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         ChatTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         ChatTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
     ];
@@ -912,6 +914,9 @@ final class Hilos extends HilosFacade
         ],
         LanguagesListPage::PAGE => [
             ChatTableContext::hilosI18nLanguages => [],
+        ],
+        CountriesListPage::PAGE => [
+            ChatTableContext::hilosI18nCountries => [],
         ],
         LanguageNamesPage::PAGE => [
             ChatTableContext::hilosI18nLanguageNames => [],

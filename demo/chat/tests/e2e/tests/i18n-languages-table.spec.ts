@@ -33,5 +33,5 @@ test('opens the languages list with the default language and searches it', async
   ).toBeVisible()
   await expect(
     page.getByTestId('hilos-admin-child-hilos_i18n_countries'),
-  ).toHaveCount(0)
+  ).toBeVisible()
 })

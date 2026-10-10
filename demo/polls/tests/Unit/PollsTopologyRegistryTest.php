@@ -25,6 +25,7 @@ use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
@@ -303,6 +304,8 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame([PollsTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
         $this->assertSame(HilosI18nLanguagesTable::class, Hilos::TABLES[PollsTableContext::hilosI18nLanguages]);
         $this->assertSame([PollsTableContext::hilosI18nLanguages => []], Hilos::PAGE_TABLES[LanguagesListPage::PAGE]);
+        $this->assertSame(HilosI18nCountriesTable::class, Hilos::TABLES[PollsTableContext::hilosI18nCountries]);
+        $this->assertSame([PollsTableContext::hilosI18nCountries => []], Hilos::PAGE_TABLES[CountriesListPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
@@ -712,6 +715,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
             PollsTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
             PollsTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
+            PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -743,6 +747,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 UsersPage::PAGE,
                 UserPage::PAGE,
                 LanguagesListPage::PAGE,
+                CountriesListPage::PAGE,
                 LanguageNamesPage::PAGE,
                 LanguageLocalesPage::PAGE,
                 CountryNamesPage::PAGE,

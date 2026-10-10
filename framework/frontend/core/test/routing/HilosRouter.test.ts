@@ -185,6 +185,7 @@ describe('unbuilt pages', () => {
           layer === 'vue' &&
           (page === HilosPages.I18N ||
             page === HilosPages.I18N_LANGUAGES ||
+            page === HilosPages.I18N_COUNTRIES ||
             page === HilosPages.I18N_LANGUAGE ||
             page === HilosPages.I18N_LANGUAGE_NAMES ||
             page === HilosPages.I18N_LANGUAGE_LOCALES ||

@@ -524,7 +524,7 @@ name and an indeterminate bar — and a run that outlives its estimate is told i
 
 ### i18n — the languages and countries section
 
-Configure-only: the framework owns the five reference tables, their library and the section's pages. The languages browser table is registered in all six demos (HIL-1474); the countries table follows in HIL-1475.
+Configure-only: the framework owns the five reference tables, their library and the section's pages. The languages browser table is registered in all six demos (HIL-1474), and so is the countries table (HIL-1475).
 The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
 It registers three thin section pages in the server topology and migrates the five framework stubs (HIL-1470).
 The SDK pages are still unbuilt in Vue, React and Angular: their URLs answer `not_served`/404 before subscription and have no card links. HIL-112/1481 and HIL-1502/1503 build and open them with real content.

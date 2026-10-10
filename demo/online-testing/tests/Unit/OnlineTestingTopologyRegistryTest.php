@@ -99,6 +99,7 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
@@ -316,6 +317,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([OnlineTestingTableContext::hilosI18nLanguageLocales => []], Hilos::PAGE_TABLES[LanguageLocalesPage::PAGE]);
         $this->assertSame(HilosI18nLanguagesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosI18nLanguages]);
         $this->assertSame([OnlineTestingTableContext::hilosI18nLanguages => []], Hilos::PAGE_TABLES[LanguagesListPage::PAGE]);
+        $this->assertSame(HilosI18nCountriesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosI18nCountries]);
+        $this->assertSame([OnlineTestingTableContext::hilosI18nCountries => []], Hilos::PAGE_TABLES[CountriesListPage::PAGE]);
         $this->assertSame(LanguageCardBrowserData::class, Hilos::BROWSER_DATA[LanguageCardBrowserData::DATA]);
         $this->assertSame(
             [LanguageCardBrowserData::DATA => LanguageCardBrowserData::BINDING],
@@ -679,6 +682,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
             OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
             OnlineTestingTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
+            OnlineTestingTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         ], Hilos::TABLES);
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
@@ -696,6 +700,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             UsersPage::PAGE,
             UserPage::PAGE,
             LanguagesListPage::PAGE,
+            CountriesListPage::PAGE,
             LanguageNamesPage::PAGE,
             LanguageLocalesPage::PAGE,
             CountryNamesPage::PAGE,

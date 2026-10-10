@@ -379,8 +379,10 @@ tabs fed by the same `languageCard` datum. The Vue section root and the language
 (HIL-1474): the root shows the Languages card, and the list is the languages
 table, kept live by the table's own fan-out. The Vue names page of a country is built too
 (HIL-1483): the names table opened on that country, standing under the card's shared header and
-tabs fed by the same `countryCard` datum. The country list remains unbuilt; React
-and Angular remain unbuilt until their own leaves.
+tabs fed by the same `countryCard` datum. The Vue countries list is built
+(HIL-1475): the root shows the Countries card, and the list is the countries
+table, kept live by the table's own fan-out. React and Angular remain unbuilt
+until HIL-1502/1503.
 
 | Page key | Route |
 |---|---|
@@ -412,21 +414,21 @@ The names tables of a language and of a country (`hilosI18nLanguageNames`,
 `hilosI18nCountryNames`) are registered and bound to their pages in all six
 (HIL-1477), and so is the locales table of a language (`hilosI18nLanguageLocales`,
 HIL-1476). The languages table (`hilosI18nLanguages`) is registered and bound
-to the languages list in all six (HIL-1474); the countries table follows in
-HIL-1475. All six demos
+to the languages list in all six (HIL-1474), and the countries table
+(`hilosI18nCountries`) is registered and bound to the countries list in all six
+(HIL-1475). All six demos
 bind `languageCard` to the names and locales pages as well as to the main
 language page (HIL-1479), and `countryCard` to both country card pages (HIL-1483). Vue serves
 the section root at `/hilos/i18n` and the languages list at `/hilos/i18n/languages`
 (HIL-1474), the main language card at `/hilos/i18n/languages/{languageCode}` (HIL-1478), its
 names at `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales
-at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The country list
-still returns `not_served`/404. The card shows the code,
+at `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the code,
 native name, direction, enabled state, locale/name counts, and read-only delete
 verdict. The main card has a Switch off control (HIL-1486); its other action
 controls belong to HIL-1485/1487/1488.
-Vue serves the main country card at `/hilos/i18n/countries/{countryCode}`
-(HIL-1482) and its names at `/hilos/i18n/countries/{countryCode}/names`
-(HIL-1483); the country list still returns `not_served`/404.
+Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
+country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
+at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483).
 The card shows the name, code, currency, default locale, enabled state and
 read-only delete verdict: a known country never, else locales, else any name
 row, block deletion. Its future action controls belong to
@@ -446,12 +448,12 @@ and answers 404 for a page the project does not serve. Build no separate
 mechanism for that (owner's decision, 2026-10-04).
 
 Edits of the languages table reach every open tab through the ordinary
-[browser table source fan-out](browser-source-fanout.md) (HIL-1474).
-The countries table follows in HIL-1475.
+[browser table source fan-out](browser-source-fanout.md) (HIL-1474), and so do
+edits of the countries table (HIL-1475).
 The columns are nonpersonal, so [admin view mode](admin-view-mode.md) shows
 the whole section without allowing the viewer to change anything.
 The country list uses names in the default language and falls back to the
-code when no name exists (not in the code yet — HIL-1475). The header of the
+code when no name exists (HIL-1475). The header of the
 country card follows the same rule (HIL-1482).
 Names in the reader's language belong to HIL-1424.
 

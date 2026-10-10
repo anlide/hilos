@@ -29,14 +29,12 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('opens only the Vue language card, its names and locales and the country main card while sibling i18n pages remain unbuilt', () => {
+  it('opens the Vue languages and countries lists and their cards while sibling i18n pages remain unbuilt', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const unbuilt = hilosUnbuiltPages(layer)
-      for (const page of [HilosPages.I18N_COUNTRIES]) {
-        expect(unbuilt.has(page)).toBe(true)
-      }
       expect(unbuilt.has(HilosPages.I18N)).toBe(layer !== 'vue')
       expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(layer !== 'vue')
+      expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(layer !== 'vue')
       expect(unbuilt.has(HilosPages.I18N_LANGUAGE)).toBe(layer !== 'vue')
       expect(unbuilt.has(HilosPages.I18N_LANGUAGE_NAMES)).toBe(layer !== 'vue')
       expect(unbuilt.has(HilosPages.I18N_LANGUAGE_LOCALES)).toBe(

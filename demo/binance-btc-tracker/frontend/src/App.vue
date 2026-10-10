@@ -43,6 +43,7 @@ import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
 import HilosI18nLanguages from './views/Hilos/I18n/Languages/Languages.vue'
 import HilosI18nLanguageNames from './views/Hilos/I18n/LanguageNames/LanguageNames.vue'
 import HilosI18nLanguageLocales from './views/Hilos/I18n/LanguageLocales/LanguageLocales.vue'
+import HilosI18nCountries from './views/Hilos/I18n/Countries/Countries.vue'
 import HilosI18nCountry from './views/Hilos/I18n/Country/Country.vue'
 import HilosI18nCountryNames from './views/Hilos/I18n/CountryNames/CountryNames.vue'
 import HilosLogsOverview from './views/Hilos/Logs/Overview.vue'
@@ -78,6 +79,7 @@ const pages: Record<string, Component> = {
   [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
   [HilosPages.I18N_LANGUAGE_NAMES]: HilosI18nLanguageNames,
   [HilosPages.I18N_LANGUAGE_LOCALES]: HilosI18nLanguageLocales,
+  [HilosPages.I18N_COUNTRIES]: HilosI18nCountries,
   [HilosPages.I18N_COUNTRY]: HilosI18nCountry,
   [HilosPages.I18N_COUNTRY_NAMES]: HilosI18nCountryNames,
   [HilosPages.LOGS]: HilosLogsOverview,
