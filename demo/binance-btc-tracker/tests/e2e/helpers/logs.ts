@@ -64,6 +64,21 @@ export const TAIL_ARRIVAL_TIMEOUT_MS =
   }).factor
 
 /**
+ * The cap a wait on rotated batches arriving from cluster nodes gets, in milliseconds.
+ *
+ * Four rounds of the live scan (LogStoreAgent::LIVE_SCAN_INTERVAL_SECONDS, 5 s),
+ * as in the single-node scenario, plus the path of the node index to the follower master.
+ *
+ * Scaled by the same host-pressure factor every Playwright cap is.
+ */
+export const ROTATION_ARRIVAL_TIMEOUT_MS =
+  30_000 *
+  deriveTimeoutScale({
+    override: process.env.HILOS_E2E_TIMEOUT_SCALE,
+    ...readHostPressure(),
+  }).factor
+
+/**
  * The stream the appended lines land in.
  *
  * Written out rather than read from the reply because the rule behind it — an
