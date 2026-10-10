@@ -1,23 +1,23 @@
 <!-- HilosLogsRotationsPage — the framework Hilos rotation-history page
-(HilosPages.LOGS_ROTATIONS): what already lies in the log archive, what it weighs,
-and what the retention rule recommends carrying off before the installation runs out
-of room. A row is one batch ON ONE NODE — the same rotation moment on two machines is
-two directories, carried off apart — so the node column, the node filter and the node
-half of the search hint exist only where nodes have names. The shared bar draws
-search, the node select and the awaiting toggle from the frame (server-side, no
-local filtering); the toggle lives in the address too (HIL-903), so the overview
-banner opens it on Awaiting and a reload keeps what is on the screen; the window is
-re-served by the page whenever the cluster picture or the rule moves. A recommended batch carries the first of this screen's two commands:
-a modal saying where the batch lies and how to copy it off, and a confirmation that
-it was (HIL-483) — the badge then repaints when the holding node's next index
-arrives, not when the ack does. A taken batch carries the other half of that
-(HIL-759): a trigger that takes the word back while the batch is still on disk,
-behind a modal naming when its node's cleaner may first delete it. Deleting a taken
-batch is HIL-382, and there is no way through to the viewer yet because it takes no
-batch address (HIL-388). All table logic, the row view-model, the empty-state
-discrimination and the wording are the core headless's (hilosLogRotations); this view
-owns only the markup, so a project mounts it by passing its HilosLogRotationsContext.
-Bootstrap classes only (styling-rules.md). -->
+(HilosPages.LOGS_ROTATIONS): what already lies in the log archive, what it weighs, and
+what the retention rule recommends carrying off before the installation runs out of
+room. A row is one batch ON ONE NODE — the same rotation moment on two machines is two
+directories, carried off apart — so the node column, the node filter and the node half
+of the search hint exist only where nodes have names. The shared bar draws search, the
+node select and the awaiting toggle from the frame (server-side, no local filtering);
+the toggle lives in the address too (HIL-903), so the overview banner opens it on
+Awaiting and a reload keeps what is on the screen; the window is re-served by the page
+whenever the cluster picture or the rule moves. A recommended batch carries the first
+of this screen's two commands: a modal saying where the batch lies and how to copy it
+off, and a confirmation that it was (HIL-483) — the badge then repaints when the
+holding node's next index arrives, not when the ack does. A taken batch carries the
+other half of that (HIL-759): a trigger that takes the word back while the batch is
+still on disk, behind a modal naming when its node's cleaner may first delete it.
+Deleting a taken batch is HIL-382, and there is no way through to the viewer yet
+because it takes no batch address (HIL-388). All table logic, the row view-model, the
+empty-state discrimination and the wording are the core headless's
+(hilosLogRotations); this view owns only the markup, so a project mounts it by passing
+its HilosLogRotationsContext. Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosLogRotationsActions,
