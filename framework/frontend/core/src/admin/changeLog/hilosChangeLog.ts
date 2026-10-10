@@ -26,6 +26,56 @@ export const CHANGE_LOG_CHANNELS: readonly HilosTableFilterOption[] = [
   { value: 'mcp', label: 'MCP' },
 ]
 
+/** Explanation for a journal row without an application receipt. */
+export const CHANGE_LOG_NO_RECEIPT_TEXT =
+  'Changed past the application — no receipt'
+
+/**
+ * Show a journal moment in the reader's local date and time.
+ *
+ * @param at UTC journal moment.
+ */
+export function formatChangeLogTime(at: string): string {
+  const date = new Date(at)
+  return Number.isNaN(date.getTime())
+    ? at
+    : date.toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+      })
+}
+
+/**
+ * Look up the label and Bootstrap icon of a known receipt channel.
+ *
+ * @param channel Receipt channel, or null for a bare journal entry.
+ */
+export function changeLogChannelBadge(
+  channel: string | null,
+): { label: string; icon: string } | null {
+  const label = CHANGE_LOG_CHANNELS.find(
+    (option) => option.value === channel,
+  )?.label
+  if (label === undefined) return null
+
+  switch (channel) {
+    case 'web':
+      return { label, icon: 'bi-globe' }
+    case 'migration':
+      return { label, icon: 'bi-database-up' }
+    case 'agent':
+      return { label, icon: 'bi-cpu' }
+    case 'cli':
+      return { label, icon: 'bi-terminal' }
+    case 'cron':
+      return { label, icon: 'bi-alarm' }
+    case 'mcp':
+      return { label, icon: 'bi-robot' }
+    default:
+      return null
+  }
+}
+
 /** Attribution fields carried by either journal row. */
 export interface HilosChangeLogPersonFields {
   readonly receiptId: number | null

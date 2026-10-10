@@ -8,11 +8,11 @@
 // the router answers 404 and no card links to them.
 //
 // The users / user / settings / backup / maintenance, communications hub /
-// channel, Daemon Workers, and log pages that read live data are intentionally
+// channel, Change Log, Daemon Workers, and log pages that read live data are intentionally
 // absent: they are
 // real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
 // HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
-// HilosCommunicationsChannelPage / HilosLogsKeysPage / HilosLogsRotationsPage /
+// HilosCommunicationsChannelPage / HilosChangeLogPage / HilosLogsKeysPage / HilosLogsRotationsPage /
 // HilosLogsViewPage / HilosDaemonWorkersPage) that require a project-supplied
 // context, so a project mounts them directly rather than through this default map.
 //
@@ -53,7 +53,6 @@ import HilosDaemonAgentsPage from './daemon/HilosDaemonAgentsPage.vue'
 import HilosDaemonCronPage from './daemon/HilosDaemonCronPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
 import HilosDaemonHttpServerPage from './daemon/HilosDaemonHttpServerPage.vue'
-import HilosChangeLogPage from './changeLog/HilosChangeLogPage.vue'
 import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
 import HilosChangeLogTablePage from './changeLog/HilosChangeLogTablePage.vue'
 import HilosAnalyticsPage from './analytics/HilosAnalyticsPage.vue'
@@ -131,7 +130,6 @@ export function hilosAdminViews(): Record<string, Component> {
     // drawn from. So a project mounts HilosLogsPage, HilosLogsKeysPage,
     // HilosLogsWorkersPage, HilosLogsRotationsPage, HilosLogsSettingsPage and
     // HilosLogsViewPage directly with its own context.
-    [HilosPages.CHANGE_LOG]: HilosChangeLogPage,
     [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,
     [HilosPages.ANALYTICS]: HilosAnalyticsPage,

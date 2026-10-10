@@ -424,7 +424,7 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_CHANGE_LOG => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Change Log',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Audit triggers and change-tracking configuration.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Who changed what in the tracked tables, and through which action.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-clock-history',
         ],

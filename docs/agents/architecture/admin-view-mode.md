@@ -660,6 +660,12 @@ disabled for them (HIL-1256); a channel field's value follows its own catalog
 key, while the source and editability are shown — the edit and reset controls
 stand for a viewer the same as for an admin (HIL-1255).
 
+The Change Log section carries its viewer case as a unit of the dashboard page
+(`framework/frontend/vue/src/admin/changeLog/HilosChangeLogPage.test.ts`):
+the tiles remain complete, while person names in the feed become a hidden mark
+beside the person's number. The page-response data integration is covered by
+`demo/chat/tests/Integration/ChangeLogDashboardPageIntegrationTest.php`.
+
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page
 (`framework/frontend/vue/src/admin/backup/HilosBackupPage.test.ts`); its e2e

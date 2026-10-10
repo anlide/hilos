@@ -90,7 +90,10 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $before = $reader->overview();
         $this->assertGreaterThan(0, $before->journalBytes);
         $this->assertGreaterThan(0, $before->liveTables);
-        $this->assertGreaterThan(0, $before->journaledTables);
+        $this->assertContains('hilos_setting', $before->journaledTables);
+        $sorted = $before->journaledTables;
+        sort($sorted, SORT_STRING);
+        $this->assertSame($sorted, $before->journaledTables);
         if ($before->journalEntries === 0) {
             $this->assertNull($before->oldestAt);
         }
@@ -112,6 +115,7 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             $tables[$summary->name] = $summary;
         }
         $this->assertSame($after->liveTables, count($tables));
+        $this->assertSame([], array_diff($after->journaledTables, array_keys($tables)));
         $this->assertSame('framework', $tables['hilos_setting']->owner->value);
         $this->assertTrue($tables['hilos_setting']->journaled);
         $this->assertGreaterThanOrEqual(1, $tables['hilos_setting']->changesLast24h);

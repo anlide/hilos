@@ -1811,6 +1811,9 @@ export {
   CHANGE_LOG_FILTER_PERIOD,
   CHANGE_LOG_PERIODS,
   CHANGE_LOG_CHANNELS,
+  CHANGE_LOG_NO_RECEIPT_TEXT,
+  formatChangeLogTime,
+  changeLogChannelBadge,
   formatChangeLogWho,
   formatChangeLogOnBehalfOf,
   formatChangeLogRecordKey,
@@ -1847,6 +1850,21 @@ export {
   type HilosChangeLogHistoryTable,
   type HilosChangeLogHistoryOptions,
 } from './admin/changeLog/hilosChangeLogHistory.js'
+export {
+  CHANGE_LOG_OVERVIEW_SECTION,
+  changeLogOverviewSchema,
+  CHANGE_LOG_SECTION_NOTE,
+  CHANGE_LOG_TILE_JOURNAL_LABEL,
+  CHANGE_LOG_TILE_TRACKED_LABEL,
+  CHANGE_LOG_TILE_TRACKED_NOTE,
+  CHANGE_LOG_OPEN_TABLES_LABEL,
+  readHilosChangeLogOverview,
+  formatChangeLogEntries,
+  changeLogJournalNote,
+  formatChangeLogCoverage,
+  changeLogFeedEmpty,
+  type HilosChangeLogOverview,
+} from './admin/changeLog/hilosChangeLogOverview.js'
 export {
   hilosLogSettingsVocabulary,
   formatLogWriteLevel,

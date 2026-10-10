@@ -90,8 +90,8 @@ HIL-1453. The column mode for a custom trigger belongs to phase 2, HIL-1413.
 - A write without a receipt is allowed and produces a journal row with a NULL
   receipt number. The section reader returns one feed row per changed record
   and includes it in the table history. The feed's core view model labels its
-  actor “Unknown”; the screen explains that the change was made past the
-  application (not in the code yet — HIL-1459).
+  actor “Unknown”; the dashboard shows “Changed past the application — no
+  receipt” without a channel or an action.
 
 The journal row commits and rolls back with the write it describes: a trigger
 runs inside its statement's transaction, and both databases are on the same
@@ -266,6 +266,13 @@ receipts plus one row for each journal entry without a receipt; table history
 includes both. Windows use a complete time-and-row anchor and carry at most 50
 rows. Counts stop at the table count ceiling plus one, so a caller can show a
 bounded count without scanning an unbounded result into memory.
+
+The Change Log dashboard answers its subscription with one overview snapshot
+in the page response (`changeLogOverview`): journal entries, journal database
+weight, the oldest entry time, alphabetized names of live journaled tables,
+and the total number of live tables. It is not sent again. The table names
+become the feed's Table filter choices. If the overview cannot be read, the
+subscription is refused with `internal_error`.
 
 The reader fetches current person names for the selected window and keeps the
 number with each label. It exposes live table names and column policies without

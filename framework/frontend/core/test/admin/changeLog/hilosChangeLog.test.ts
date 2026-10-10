@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   CHANGE_LOG_CHANNELS,
+  CHANGE_LOG_NO_RECEIPT_TEXT,
   CHANGE_LOG_PERIODS,
+  changeLogChannelBadge,
   formatChangeLogMutation,
   formatChangeLogOnBehalfOf,
   formatChangeLogRecordKey,
   formatChangeLogTouched,
+  formatChangeLogTime,
   formatChangeLogWho,
   type HilosChangeLogPersonFields,
 } from '../../../src/admin/changeLog/hilosChangeLog.js'
@@ -122,5 +125,36 @@ describe('change-log attribution and labels', () => {
       'week',
       'month',
     ])
+  })
+
+  it('shows local journal time and leaves an invalid timestamp unchanged', () => {
+    const at = '2026-10-09T14:30:00.000Z'
+    expect(formatChangeLogTime(at)).toBe(
+      new Date(at).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+      }),
+    )
+    expect(formatChangeLogTime('not-a-time')).toBe('not-a-time')
+  })
+
+  it('labels every known channel and omits absent or unknown channels', () => {
+    expect(
+      ['web', 'migration', 'agent', 'cli', 'cron', 'mcp'].map((channel) =>
+        changeLogChannelBadge(channel),
+      ),
+    ).toEqual([
+      { label: 'Web', icon: 'bi-globe' },
+      { label: 'Migration', icon: 'bi-database-up' },
+      { label: 'Agent', icon: 'bi-cpu' },
+      { label: 'CLI', icon: 'bi-terminal' },
+      { label: 'Cron', icon: 'bi-alarm' },
+      { label: 'MCP', icon: 'bi-robot' },
+    ])
+    expect(changeLogChannelBadge(null)).toBeNull()
+    expect(changeLogChannelBadge('unknown')).toBeNull()
+    expect(CHANGE_LOG_NO_RECEIPT_TEXT).toBe(
+      'Changed past the application — no receipt',
+    )
   })
 })

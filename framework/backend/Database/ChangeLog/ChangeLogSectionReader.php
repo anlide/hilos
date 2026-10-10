@@ -53,7 +53,7 @@ final class ChangeLogSectionReader
     private const array INTEGER_KEY_TYPES = ['tinyint', 'smallint', 'mediumint', 'int', 'bigint'];
 
     /**
-     * @return ChangeLogOverview Exact row count, approximate bytes, and live table coverage
+     * @return ChangeLogOverview Exact row count, approximate bytes, and journaled live table names
      * @throws HilosException When the journal or live schema cannot be read
      */
     public function overview(): ChangeLogOverview
@@ -79,12 +79,14 @@ final class ChangeLogSectionReader
                 static fn(string $entityClass): string => $entityClass::_table,
                 array_values(JournaledTables::mounted()),
             ), true);
+            $journaledNames = array_keys(array_intersect_key($journaled, array_fill_keys($live, true)));
+            sort($journaledNames, SORT_STRING);
 
             return new ChangeLogOverview(
                 $entries,
                 $bytes,
                 self::moment($oldest['created_at'] ?? null),
-                count(array_intersect_key($journaled, array_fill_keys($live, true))),
+                $journaledNames,
                 count($live),
             );
         });
