@@ -200,9 +200,7 @@ export interface HilosLogWorkersTable {
  */
 export function createHilosLogWorkersTable(
   context: HilosLogWorkersContext,
-  header: ReadonlySignal<HilosLogWorkersHeader | null> = createSignal<HilosLogWorkersHeader | null>(
-    null,
-  ),
+  header: ReadonlySignal<HilosLogWorkersHeader | null>,
   initialFilter?: Record<string, unknown>,
 ): HilosLogWorkersTable {
   const frame: HilosTableFrame = {
