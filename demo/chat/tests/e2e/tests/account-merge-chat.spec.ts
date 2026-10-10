@@ -22,6 +22,17 @@ import {
 /** The survivor's password after setup, distinct from the loser's default. */
 const SURVIVOR_PASSWORD = 'the survivor password stays'
 
+/**
+ * How far past the suite's own cap the merge walk may run.
+ *
+ * Three people in three sessions, the merge and a second search of the candidates
+ * take 25.4-28.8 s on the line (runs 1066-1075), against the 30 s base cap, and
+ * went past it on a slower box, alone as well as in the full run. The factor
+ * multiplies the configured cap rather than replacing it, so the host-pressure
+ * scale still applies on top: 45 s serial, more under load.
+ */
+const ACCOUNT_MERGE_TIMEOUT_FACTOR = 1.5
+
 // The browser path through account merge (HIL-411): three people occupy three
 // independent sessions, the loser publishes project-owned content, and the
 // administrator folds it into the survivor from the framework user card. The
@@ -35,6 +46,7 @@ test('merges another account into the user on the admin card', async ({
   browser,
   page,
 }) => {
+  test.setTimeout(test.info().timeout * ACCOUNT_MERGE_TIMEOUT_FACTOR)
   const { baseURL, ignoreHTTPSErrors } = test.info().project.use
   const survivorContext = await browser.newContext({
     baseURL,
