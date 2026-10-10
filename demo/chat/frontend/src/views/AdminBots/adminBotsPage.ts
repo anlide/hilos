@@ -141,8 +141,8 @@ export function createBotsTable(view: BotsTableView): BotsTable {
       )
     },
     dispose() {
-      // The controller outlives the page: a dialog open at unmount would leave its
-      // row in focus, and the next mount's first window would say that focus again.
+      // A dialog open when the page goes away still holds its row in focus on the
+      // server; let it go - an empty focus key - before the bindings are dropped.
       controller.releaseFocus()
       for (const off of teardown.splice(0)) {
         off()
