@@ -916,13 +916,13 @@ the manual window gets neither a routine-restart line nor a restored-from-disk
 verdict.
 
 `Hilos::PROTECTED_MODE_STUB` maps operations plus a default to copy, is
-overridden wholesale by a project, and refuses startup without a default or with
-missing or extra copy fields. The manual entry says "closed for maintenance",
-with no promise of a brief wait or automatic return
-(not in the code yet — HIL-1360). Its admitted banner names manual maintenance
+overridden wholesale by a project, and refuses startup without both the default
+and `manual_maintenance` entries or with missing or extra copy fields. The manual
+entry says "closed for maintenance", with no promise of a brief wait or automatic
+return. Its admitted banner names manual maintenance
 and says the system is closed to visitors, naming the Maintenance section in
-words, with no disable button; projects may replace it
-(not in the code yet — HIL-1360).
+words, with no disable button. Projects may replace the registry, but must
+provide their own `manual_maintenance` entry too.
 
 Restore under the manual window is refused as a foreign freeze; disable manual
 maintenance first, accepting the visitor gap before restore freezes the node

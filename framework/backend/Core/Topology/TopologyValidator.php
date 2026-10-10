@@ -66,6 +66,7 @@ use Hilos\Database\Schema\SetTree;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -91,6 +92,11 @@ final class TopologyValidator
     private const string SECTION_PAGE_DATA = 'PAGE_DATA';
 
     private const string SECTION_PROTECTED_MODE_STUB = 'PROTECTED_MODE_STUB';
+
+    private const array PROTECTED_MODE_STUB_REQUIRED_OPERATIONS = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION,
+        StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE,
+    ];
 
     private const string SECTION_PAGE_CATALOG = 'PAGE_CATALOG';
 
@@ -3124,6 +3130,8 @@ final class TopologyValidator
      * while a node is frozen, and an entry that answers nothing turns into a maintenance screen
      * without words in the middle of a restore, where nobody is left to report it. The state is
      * judged, not the history - the framework default is subject to the same rule as an override.
+     * Both the fallback and manual-maintenance entries are required: the fallback promises a
+     * brief interruption, while manual maintenance ends only when a person opens it.
      *
      * Read through {@see Hilos::catalogConstantOf()} rather than {@see constantArray()}: the
      * constant is protected, so `defined()` answers false from this scope, the registry would
@@ -3140,9 +3148,10 @@ final class TopologyValidator
             return;
         }
 
-        if (!array_key_exists(ProtectedModeStubConstants::DEFAULT_OPERATION, $registry)) {
-            $errors[] = self::SECTION_PROTECTED_MODE_STUB . ' is missing the '
-                . ProtectedModeStubConstants::DEFAULT_OPERATION . ' entry';
+        foreach (self::PROTECTED_MODE_STUB_REQUIRED_OPERATIONS as $operation) {
+            if (!array_key_exists($operation, $registry)) {
+                $errors[] = self::SECTION_PROTECTED_MODE_STUB . ' is missing the ' . $operation . ' entry';
+            }
         }
 
         foreach ($registry as $operation => $entry) {

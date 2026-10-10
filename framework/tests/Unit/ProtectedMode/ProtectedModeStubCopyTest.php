@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -101,6 +102,18 @@ final class ProtectedModeStubCopyTest extends TestCase
         $this->assertArrayHasKey(
             ProtectedModeStubConstants::DEFAULT_OPERATION,
             Hilos::protectedModeStubRegistry(),
+        );
+    }
+
+    public function testTheFrameworkShipsManualMaintenanceWordsOfItsOwn(): void
+    {
+        $copy = ProtectedModeStubCopy::forOperation(StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE);
+
+        $this->assertSame('Closed for maintenance', $copy->title);
+        $this->assertSame('The application is closed for maintenance. Please check back later.', $copy->message);
+        $this->assertSame(
+            'Manual maintenance is on: the system is closed to visitors. Turn it off in the Maintenance section.',
+            $copy->bannerMessage,
         );
     }
 }

@@ -51,6 +51,7 @@ use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlIndexType;
 use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos as HilosFacade;
@@ -757,10 +758,10 @@ final class TopologyValidatorTest extends TestCase
      * A project that replaces the stub registry wholesale passes validation, and the registry the
      * validator let through resolves to that project's words.
      *
-     * The four cases after this one pin what the rule refuses; this one pins what it must let
+     * The refusal cases after this one pin what the rule rejects; this one pins what it must let
      * through, which {@see testValidTopologyPasses()} does not cover: that facade leaves
-     * PROTECTED_MODE_STUB alone, so the registry it validates green is the framework's own single
-     * entry, and a rule that refused every override would look just as green.
+     * PROTECTED_MODE_STUB alone, so the registry it validates green is the framework's own
+     * entries, and a rule that refused every override would look just as green.
      *
      * Resolution is asserted next to validation because shape and words are separate questions:
      * the rule only judges that the entries are well formed, while the case worth pinning is that
@@ -798,6 +799,19 @@ final class TopologyValidatorTest extends TestCase
             },
             [
                 'PROTECTED_MODE_STUB is missing the ' . ProtectedModeStubConstants::DEFAULT_OPERATION . ' entry',
+            ],
+        );
+    }
+
+    public function testProtectedModeStubMissingManualMaintenanceEntryFails(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyProtectedModeStubMissingManualMaintenanceHilos::validateTopology();
+            },
+            [
+                'PROTECTED_MODE_STUB is missing the '
+                    . StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE . ' entry',
             ],
         );
     }
@@ -3376,6 +3390,30 @@ final class TopologyProtectedModeStubMissingDefaultHilos extends HilosFacade
     }
 }
 
+/**
+ * Facade whose stub registry drops the manual-maintenance entry.
+ */
+final class TopologyProtectedModeStubMissingManualMaintenanceHilos extends HilosFacade
+{
+    protected const array PROTECTED_MODE_STUB = [
+        ProtectedModeStubConstants::DEFAULT_OPERATION => [
+            ProtectedModeStubConstants::TITLE => 'Maintenance in progress',
+            ProtectedModeStubConstants::MESSAGE => 'The application is briefly unavailable.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'The work is being verified.',
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
 final class TopologyProtectedModeStubBrokenEntryHilos extends HilosFacade
 {
     protected const array PROTECTED_MODE_STUB = [
@@ -3469,7 +3507,7 @@ final class TopologyProtectedModeStubNumericKeyHilos extends HilosFacade
 }
 
 /**
- * Facade whose stub registry is replaced wholesale: the project's own default plus one operation.
+ * Facade whose stub registry is replaced wholesale: the project's own default, manual entry, and operation.
  *
  * The words differ from the framework's default ({@see HilosFacade::PROTECTED_MODE_STUB}) on
  * purpose - an override that never took effect would still resolve to sentences, and only
@@ -3482,6 +3520,11 @@ final class TopologyProtectedModeStubOverrideHilos extends HilosFacade
             ProtectedModeStubConstants::TITLE => 'Project maintenance',
             ProtectedModeStubConstants::MESSAGE => 'This project is briefly unavailable.',
             ProtectedModeStubConstants::BANNER_MESSAGE => 'This project is being verified.',
+        ],
+        StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE => [
+            ProtectedModeStubConstants::TITLE => 'Project manual maintenance',
+            ProtectedModeStubConstants::MESSAGE => 'This project is closed for maintenance.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'Manual maintenance is active.',
         ],
         'restore' => [
             ProtectedModeStubConstants::TITLE => 'Restoring a backup',

@@ -87,6 +87,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\NotificationTypeRegistry;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Users\AccountStandingChangeSubscriber;
@@ -267,6 +268,10 @@ abstract class Hilos implements TruthSourceOwner
      * {@see BACKUP_CATALOG}, which name a class, this constant carries the content itself:
      * the copy is one sentence per operation and has nowhere else to live.
      *
+     * Manual maintenance has its own entry: the default promises a brief interruption and an
+     * automatic return, while a manual window ends only when a person opens it. A project that
+     * replaces the registry must provide this entry too, or startup refuses its topology.
+     *
      * Deliberately not a settings row: the database is exactly what a restore is rewriting,
      * so copy read from it during the mode is unreliable by construction.
      *
@@ -279,6 +284,12 @@ abstract class Hilos implements TruthSourceOwner
                 . ' a maintenance operation finishes. It will come back on its own.',
             ProtectedModeStubConstants::BANNER_MESSAGE => 'Maintenance has finished and is being'
                 . ' verified. The system is still closed to everyone else.',
+        ],
+        StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE => [
+            ProtectedModeStubConstants::TITLE => 'Closed for maintenance',
+            ProtectedModeStubConstants::MESSAGE => 'The application is closed for maintenance. Please check back later.',
+            ProtectedModeStubConstants::BANNER_MESSAGE => 'Manual maintenance is on: the system is closed to visitors.'
+                . ' Turn it off in the Maintenance section.',
         ],
     ];
 
@@ -669,7 +680,7 @@ abstract class Hilos implements TruthSourceOwner
      * back to the default is {@see ProtectedModeStubCopy}'s job, the same split
      * {@see getBackupCatalogClass()} makes between naming a catalog and reading it.
      *
-     * @return array<string, array{title: string, message: string}> Stub copy keyed by operation
+     * @return array<string, array{title: string, message: string, bannerMessage: string}> Stub copy keyed by operation
      */
     public static function protectedModeStubRegistry(): array
     {
