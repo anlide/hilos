@@ -3636,6 +3636,18 @@ FLAKY_SKIP = {
     # out at 180s waiting for the majority {m1,m2} to keep one leader while m3 steps down.
     "8 split-brain prevention":
         "flake: the majority keeps no single leader within 180s (red 11x, last 2026-09-26)",
+    # The one below was parked on the owner's word on 2026-10-10 (HOTFIX), without a
+    # diagnosis. It is paid off by finding the cause, its line removed, and `-- 36` green on
+    # the stand it failed on.
+    #
+    # 36, on the binance-btc-tracker cluster stand since HIL-1287 (2026-10-08): red in 10 of
+    # 72 full runs (0962 to 1056, ten different leaves; last 2026-10-10 on HIL-1350), each
+    # time green on the leaf's next run. Every red is the same: s1 carried five fleet members
+    # for m1 and was cut off with it, yet its log never got the "Self-fence: placing leader
+    # 'm1' stopped leading" line. One symptom every time may be a race in the fence itself
+    # rather than in the scenario's wait - that is the first thing to rule out.
+    "36 slave cut off with its leader stops its work":
+        "flake: the slave cut off with its leader never self-fences (red 10/72, last 2026-10-10)",
 }
 
 
