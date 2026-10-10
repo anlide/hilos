@@ -29,7 +29,7 @@ const USER_MERGE_DATA = 'userMerge'
 const PRESENCE_FIELD = 'presence'
 const ONLINE_SESSION_COUNT_FIELD = 'onlineSessionCount'
 // The merge fields, mirroring the backend HilosUserTableRow::FIELD_MERGED_INTO
-// and UserMergeBrowserData::FIELD_MERGED_INTO_NAME.
+// and FIELD_MERGED_INTO_NAME.
 const MERGED_INTO_FIELD = 'mergedInto'
 const MERGED_INTO_NAME_FIELD = 'mergedIntoName'
 
