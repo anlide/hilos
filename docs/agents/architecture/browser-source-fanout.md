@@ -189,7 +189,7 @@ own meaning and are outside this rule.
 A **window owed whole** is one whose live road froze, with
 `table_viewport_frozen` (HIL-1139). A refused window is owed whole too, whether
 the refusal arrived as `table_window_refused` in reply to a request or in the
-`refusedWindows` section of `page_response` (not in the code yet — HIL-1350).
+`refusedWindows` section of `page_response`.
 
 A **page owed whole** is one whose delivery failed and whose connection was
 told `subscription_page_error`. An internal error on the subscription's very
@@ -199,8 +199,8 @@ verdict refusing rights or a missing resource is not a debt: it comes back by
 when its guard starts passing.
 
 There is one debt per window and one per page subscription, whoever set it:
-a window that froze and was then refused is still one window owed whole
-(not in the code yet — HIL-1350). What the tab was told decides only what it
+a window that froze and was then refused is still one window owed whole.
+What the tab was told decides only what it
 shows — rows under "not updated since" or the "List unavailable" tile — and
 never what the server owes.
 
@@ -208,8 +208,7 @@ A debt lives and dies with what is owed. Remove it where the window or page
 subscription is removed: leaving the page, closing the connection, or
 re-subscribing. A page owed whole carries its windows' debts: its answer
 accounts for each table in `windows` or `refusedWindows`. A window in `windows`
-pays its debt; an entry in `refusedWindows` sets it again
-(not in the code yet — HIL-1350).
+pays its debt; an entry in `refusedWindows` sets it again.
 
 ### What A Debt Is Paid With
 
@@ -223,23 +222,22 @@ re-sent on its serving agent (`PageResender` → `PageSignalRouter::resendPage()
 see [Page Snapshots](#page-snapshots)).
 
 Any window pays the window's debt. A refusal never pays it: it changes the
-visible state to the tile, and the debt stands
-(not in the code yet — HIL-1350).
+visible state to the tile, and the debt stands.
 
 While a window is owed whole, send it no live frame: no `table_viewport_delta`
 of any kind, including `row_stale`; no `table_viewport_count`,
 `table_viewport_append`, `table_viewport_own_create`, `table_viewport_announce`,
 or `table_viewport_unannounce`; no second `table_viewport_frozen`. This already
 holds for a frozen window. It holds for a refused window too, and a refused
-window is not told it froze (not in the code yet — HIL-1350). The tab also
+window is not told it froze. The tab also
 drops these frames; that is a defense, not the rule's enforcement.
 
 ### The Facts That Try A Debt
 
 1. A change of the table's own source that the table built for this window
    without a throw proves that its road is back. It tries a frozen window's
-   debt today (HIL-1139), and a refused window's debt too
-   (not in the code yet — HIL-1350). For a page owed whole, the fact is the
+   debt today (HIL-1139), and a refused window's debt too.
+   For a page owed whole, the fact is the
    first successful delivery to it: a fan-out to the subscription or a window
    it asked for.
 2. The database came back: the worker's first successful query after it lost
@@ -264,7 +262,7 @@ and pays the debt; a try that fails sends nothing, not even a refusal, and
 the debt waits for the next fact.
 
 A try that fails again writes no new log line: the line was written when the
-debt was set (not in the code yet — HIL-1350). Set aside a window that could
+debt was set. Set aside a window that could
 not be built for the rest of that flush; this already holds for a frozen
 window. The server starts the try. The tab never asks again on its own.
 
@@ -285,7 +283,7 @@ they are also recorded in the database fact's docblock
 
 Removing the stand's `test:table:refuse` lever is not a fact either. On the
 stand, a change of the table's source made after removing the lever brings
-the window back (not in the code yet — HIL-1350).
+the window back.
 
 ## Source Change DTO
 

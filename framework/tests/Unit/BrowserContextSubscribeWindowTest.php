@@ -40,6 +40,7 @@ use Hilos\Core\Table\TableProgressScope;
 use Hilos\Core\Table\TableWindowRefusalCode;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -295,6 +296,56 @@ final class BrowserContextSubscribeWindowTest extends TestCase
             [TableWindowRefusedSignalData::errorCode => TableWindowRefusalCode::INTERNAL_ERROR],
             self::refusalOf($snapshot, SubscribeWindowRefusingTable::TABLE),
         );
+    }
+
+    /**
+     * A table in `refusedWindows` stays owed, and the subscription recorded after the answer
+     * does not drop the debt the answer just set.
+     */
+    public function testARefusedTableStaysOwedThroughTheSubscriptionAfterTheAnswer(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+
+        ob_start();
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::REFUSING_PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+        ob_end_clean();
+
+        $this->assertArrayNotHasKey(SubscribeWindowRefusingTable::TABLE, $snapshot->windows);
+        $this->assertArrayHasKey(SubscribeWindowRefusingTable::TABLE, $snapshot->refusedWindows);
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', SubscribeWindowRefusingTable::TABLE));
+
+        Hilos::$sr->subscribeToPage(
+            SubscribeWindowUnitBrowserContext::REFUSING_PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', SubscribeWindowUnitBrowserContext::REFUSING_PAGE),
+        );
+
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', SubscribeWindowRefusingTable::TABLE));
+    }
+
+    /**
+     * A window that was already owed pays when the subscription builds it into `windows`.
+     */
+    public function testATableThatWasOwedPaysWhenItsWindowIsBuilt(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$table = new SubscribeWindowUnitTableContext(self::threeRows());
+        Hilos::$table->configure();
+        Hilos::$sr->oweTableWindow('ak-1', SubscribeWindowUnitTable::TABLE);
+
+        $snapshot = new SubscribeWindowUnitBrowserContext()->buildSubscribeSnapshot(
+            SubscribeWindowUnitBrowserContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $this->assertArrayHasKey(SubscribeWindowUnitTable::TABLE, $snapshot->windows);
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', SubscribeWindowUnitTable::TABLE));
     }
 
     public function testAPageWithTwoTablesKeepsTheLiveWindowAndRefusesTheBrokenOne(): void

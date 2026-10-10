@@ -125,8 +125,8 @@ final class BrowserContextWindowScopedTableTest extends TestCase
         $this->assertSame([], $this->namedFor('ak-en', SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
         $this->assertCount(1, $this->namedFor('ak-de', SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
         $this->assertSame([], $this->namedFor('ak-de', SignalTypeConstants::TABLE_VIEWPORT_DELTA));
-        $this->assertFalse(Hilos::$sr?->isTableViewportFrozen('ak-en', WindowScopedUnitTable::TABLE));
-        $this->assertTrue(Hilos::$sr?->isTableViewportFrozen('ak-de', WindowScopedUnitTable::TABLE));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-en', WindowScopedUnitTable::TABLE));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-de', WindowScopedUnitTable::TABLE));
     }
 
     /**
@@ -151,7 +151,7 @@ final class BrowserContextWindowScopedTableTest extends TestCase
             array_map(static fn(array $row): string => $row[PagePayload::slots][WindowScopedUnitTable::SLOT]['label'], $windows[0]->rows),
         );
         $this->assertSame([], $this->namedFor('ak-de', SignalTypeConstants::TABLE_VIEWPORT_DELTA));
-        $this->assertFalse(Hilos::$sr?->isTableViewportFrozen('ak-de', WindowScopedUnitTable::TABLE));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-de', WindowScopedUnitTable::TABLE));
     }
 
     public function testAnOrdinaryTableOnTheSamePageStillBuildsOneRowForEveryWindow(): void

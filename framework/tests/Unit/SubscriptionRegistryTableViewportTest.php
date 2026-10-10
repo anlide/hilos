@@ -242,89 +242,89 @@ final class SubscriptionRegistryTableViewportTest extends TestCase
     {
         $registry = new SubscriptionRegistry();
 
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
-        $this->assertTrue($registry->markTableViewportFrozen('ak', 'settings'));
-        $this->assertFalse($registry->markTableViewportFrozen('ak', 'settings'));
-        $this->assertTrue($registry->isTableViewportFrozen('ak', 'settings'));
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'users'));
+        $this->assertFalse($registry->isTableWindowOwed('ak', 'settings'));
+        $this->assertTrue($registry->oweTableWindow('ak', 'settings'));
+        $this->assertFalse($registry->oweTableWindow('ak', 'settings'));
+        $this->assertTrue($registry->isTableWindowOwed('ak', 'settings'));
+        $this->assertFalse($registry->isTableWindowOwed('ak', 'users'));
     }
 
-    public function testReadingTheFrozenMarkLeavesItStanding(): void
+    public function testReadingTheDebtLeavesItStanding(): void
     {
         $registry = new SubscriptionRegistry();
-        $registry->markTableViewportFrozen('ak', 'settings');
+        $registry->oweTableWindow('ak', 'settings');
 
-        $registry->isTableViewportFrozen('ak', 'settings');
+        $registry->isTableWindowOwed('ak', 'settings');
 
-        $this->assertTrue($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->isTableWindowOwed('ak', 'settings'));
     }
 
-    public function testClearingTheFrozenMarkAnswersWhetherItStood(): void
+    public function testClearingTheDebtAnswersWhetherItStood(): void
     {
         $registry = new SubscriptionRegistry();
-        $registry->markTableViewportFrozen('ak', 'settings');
-        $registry->markTableViewportFrozen('ak', 'users');
+        $registry->oweTableWindow('ak', 'settings');
+        $registry->oweTableWindow('ak', 'users');
 
-        $this->assertTrue($registry->clearTableViewportFrozen('ak', 'settings'));
-        $this->assertFalse($registry->clearTableViewportFrozen('ak', 'settings'));
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
-        $this->assertTrue($registry->isTableViewportFrozen('ak', 'users'));
-        $this->assertTrue($registry->markTableViewportFrozen('ak', 'settings'));
+        $this->assertTrue($registry->clearTableWindowDebt('ak', 'settings'));
+        $this->assertFalse($registry->clearTableWindowDebt('ak', 'settings'));
+        $this->assertFalse($registry->isTableWindowOwed('ak', 'settings'));
+        $this->assertTrue($registry->isTableWindowOwed('ak', 'users'));
+        $this->assertTrue($registry->oweTableWindow('ak', 'settings'));
     }
 
     public function testAnEmptyAcceptKeyIsNeverMarkedFrozen(): void
     {
         $registry = new SubscriptionRegistry();
 
-        $this->assertFalse($registry->markTableViewportFrozen('', 'settings'));
-        $this->assertFalse($registry->isTableViewportFrozen('', 'settings'));
+        $this->assertFalse($registry->oweTableWindow('', 'settings'));
+        $this->assertFalse($registry->isTableWindowOwed('', 'settings'));
     }
 
-    public function testSubscribingDropsEveryFrozenMarkOfTheConnection(): void
+    public function testSubscribingKeepsTheWindowDebtsTheAnswerSettled(): void
     {
         $registry = new SubscriptionRegistry();
-        $registry->markTableViewportFrozen('ak', 'settings');
-        $registry->markTableViewportFrozen('other', 'settings');
+        $registry->oweTableWindow('ak', 'settings');
+        $registry->oweTableWindow('other', 'settings');
 
         $registry->subscribeToPage('ak', 'page', []);
 
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
-        $this->assertTrue($registry->isTableViewportFrozen('other', 'settings'));
+        $this->assertTrue($registry->isTableWindowOwed('ak', 'settings'));
+        $this->assertTrue($registry->isTableWindowOwed('other', 'settings'));
     }
 
-    public function testUnsubscribingFromThePageDropsTheFrozenMarks(): void
+    public function testUnsubscribingFromThePageDropsTheDebts(): void
     {
         $registry = new SubscriptionRegistry();
         $registry->subscribeToPage('ak', 'page', []);
-        $registry->markTableViewportFrozen('ak', 'settings');
+        $registry->oweTableWindow('ak', 'settings');
 
         $registry->unsubscribeFromPage('ak', 'page');
 
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertFalse($registry->isTableWindowOwed('ak', 'settings'));
     }
 
-    public function testUnsubscribingFromAllDropsTheFrozenMarks(): void
+    public function testUnsubscribingFromAllDropsTheDebts(): void
     {
         $registry = new SubscriptionRegistry();
-        $registry->markTableViewportFrozen('ak', 'settings');
+        $registry->oweTableWindow('ak', 'settings');
 
         $registry->unsubscribeFromAll('ak');
 
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
+        $this->assertFalse($registry->isTableWindowOwed('ak', 'settings'));
     }
 
-    public function testForgettingAViewportDropsOnlyThatTablesFrozenMark(): void
+    public function testForgettingAViewportDropsOnlyThatTablesDebt(): void
     {
         $registry = new SubscriptionRegistry();
         $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'settings'));
         $registry->setTableViewport('ak', new TableViewportSubscription(tableKey: 'users'));
-        $registry->markTableViewportFrozen('ak', 'settings');
-        $registry->markTableViewportFrozen('ak', 'users');
+        $registry->oweTableWindow('ak', 'settings');
+        $registry->oweTableWindow('ak', 'users');
 
         $registry->forgetTableViewport('ak', 'settings');
 
-        $this->assertFalse($registry->isTableViewportFrozen('ak', 'settings'));
-        $this->assertTrue($registry->isTableViewportFrozen('ak', 'users'));
+        $this->assertFalse($registry->isTableWindowOwed('ak', 'settings'));
+        $this->assertTrue($registry->isTableWindowOwed('ak', 'users'));
     }
 
     /**

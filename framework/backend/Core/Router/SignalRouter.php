@@ -919,39 +919,47 @@ class SignalRouter
     }
 
     /**
-     * Records that one table's window stopped receiving its live changes, and answers whether to say so.
+     * Records that one window is owed whole, and answers whether this call set the debt.
      *
-     * @param string $acceptKey Client accept key
-     * @param string $tableKey Table key of the frozen window
-     * @return bool Whether this window has not been told yet, and is owed the frozen frame
-     */
-    public function markTableViewportFrozen(string $acceptKey, string $tableKey): bool
-    {
-        return $this->subscriptions->markTableViewportFrozen($acceptKey, $tableKey);
-    }
-
-    /**
-     * Answers whether one table's window is frozen, without clearing the mark.
+     * A test-and-set: true when this call set the debt, false when it already stood or the accept
+     * key is empty. The freeze reads the answer to decide whether to say the window froze and
+     * whether to write the line — nothing else.
      *
      * @param string $acceptKey Client accept key
      * @param string $tableKey Table key of the window
-     * @return bool Whether the window was told it froze and has not received a full window since
+     * @return bool Whether this call set the debt
      */
-    public function isTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    public function oweTableWindow(string $acceptKey, string $tableKey): bool
     {
-        return $this->subscriptions->isTableViewportFrozen($acceptKey, $tableKey);
+        return $this->subscriptions->oweTableWindow($acceptKey, $tableKey);
     }
 
     /**
-     * Clears one table's frozen mark once a full window or its refusal has replaced the frozen rows.
+     * Answers whether one window is owed whole, without clearing the debt.
+     *
+     * A read rather than a test-and-clear: the catch-up that reads it may fail to build the window,
+     * and a debt cleared before the window left would let the next delivery send a delta onto rows
+     * the connection never got back.
      *
      * @param string $acceptKey Client accept key
      * @param string $tableKey Table key of the window
-     * @return bool Whether the mark was standing
+     * @return bool Whether the window is owed whole
      */
-    public function clearTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    public function isTableWindowOwed(string $acceptKey, string $tableKey): bool
     {
-        return $this->subscriptions->clearTableViewportFrozen($acceptKey, $tableKey);
+        return $this->subscriptions->isTableWindowOwed($acceptKey, $tableKey);
+    }
+
+    /**
+     * Clears one window's debt once a built window is on its way to the tab, or the window is gone.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key of the window
+     * @return bool Whether the debt was standing
+     */
+    public function clearTableWindowDebt(string $acceptKey, string $tableKey): bool
+    {
+        return $this->subscriptions->clearTableWindowDebt($acceptKey, $tableKey);
     }
 
     /**

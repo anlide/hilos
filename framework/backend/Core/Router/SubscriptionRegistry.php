@@ -61,16 +61,14 @@ final class SubscriptionRegistry
     private array $pageDeliveryFailures = [];
 
     /**
-     * @var array<string, array<string, true>> Windows already told they stopped receiving live changes, keyed by
-     *     accept key, then table key
+     * @var array<string, array<string, true>> Windows owed whole, keyed by accept key, then table key
      *
-     * One bit per window, not per failure, for the page failures' reason: a change the table cannot
-     * build for a window fails again on every flush that carries it, and the connection would be told
-     * the same thing each time. The bit is also what the next successful delivery reads to know the
-     * window owes a full snapshot instead of a delta. It lives and dies with the window: dropped
-     * wherever the viewport is dropped, and wherever a fresh window replaces the frozen rows.
+     * One debt per window, whoever set it: a freeze of the live road (HIL-1139) or a refusal of the
+     * window (HIL-1350). Only a window that left for the tab pays; a refusal never pays. The debt
+     * lives and dies with the window. The rule is docs/agents/architecture/browser-source-fanout.md,
+     * "Coming Back Without A Reload".
      */
-    private array $tableViewportFreezes = [];
+    private array $tableWindowDebts = [];
 
     /**
      * @param string $acceptKey Client accept key
@@ -92,8 +90,13 @@ final class SubscriptionRegistry
         // below and unsubscribeFromAll() — which covers every way one page replaces another;
         // what remains is a connection re-subscribing the page it is already on, where the
         // answer overwrites each of its windows with the one it just built.
+        // Window debts are not dropped here. The subscription's answer already settled each of
+        // its tables — a window in `windows` paid, one in `refusedWindows` set the debt
+        // (BrowserContext::subscribeTableWindow()) — and on the worker this write happens AFTER
+        // the answer (WorkerManager::rememberPageSubscriptionAfterSubscribe(), the PAGE_SUBSCRIBE
+        // case and the method in framework/backend/Core/Daemon/WorkerManager.php), so a reset here
+        // would erase the debt the answer just set.
         unset($this->pageDeliveryFailures[$acceptKey]);
-        unset($this->tableViewportFreezes[$acceptKey]);
     }
 
     /**
@@ -187,7 +190,7 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey]);
         unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
-        unset($this->tableViewportFreezes[$acceptKey]);
+        unset($this->tableWindowDebts[$acceptKey]);
     }
 
     /**
@@ -310,7 +313,7 @@ final class SubscriptionRegistry
         unset($this->tableFacetRequests[$acceptKey]);
         unset($this->tableFocus[$acceptKey]);
         unset($this->pageDeliveryFailures[$acceptKey]);
-        unset($this->tableViewportFreezes[$acceptKey]);
+        unset($this->tableWindowDebts[$acceptKey]);
     }
 
     /**
@@ -357,58 +360,59 @@ final class SubscriptionRegistry
     }
 
     /**
-     * Records that one table's window stopped receiving its live changes, and answers whether to say so.
+     * Records that one window is owed whole, and answers whether this call set the debt.
      *
-     * A test-and-set for {@see self::markPageDeliveryFailure()}'s reason: the answer has to be the
-     * state BEFORE this call, so that the second failure of the same window says nothing.
+     * A test-and-set: true when this call set the debt, false when it already stood or the accept
+     * key is empty. The freeze reads the answer to decide whether to say the window froze and
+     * whether to write the line — nothing else.
      *
      * @param string $acceptKey Client accept key
-     * @param string $tableKey Table key of the frozen window
-     * @return bool Whether this window has not been told yet, and is owed the frozen frame
+     * @param string $tableKey Table key of the window
+     * @return bool Whether this call set the debt
      */
-    public function markTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    public function oweTableWindow(string $acceptKey, string $tableKey): bool
     {
-        if ($acceptKey === '' || isset($this->tableViewportFreezes[$acceptKey][$tableKey])) {
+        if ($acceptKey === '' || isset($this->tableWindowDebts[$acceptKey][$tableKey])) {
             return false;
         }
 
-        $this->tableViewportFreezes[$acceptKey][$tableKey] = true;
+        $this->tableWindowDebts[$acceptKey][$tableKey] = true;
 
         return true;
     }
 
     /**
-     * Answers whether one table's window is frozen, without clearing the mark.
+     * Answers whether one window is owed whole, without clearing the debt.
      *
      * A read rather than a test-and-clear: the catch-up that reads it may fail to build the window,
-     * and a mark cleared before the window left would let the next delivery send a delta onto rows
+     * and a debt cleared before the window left would let the next delivery send a delta onto rows
      * the connection never got back.
      *
      * @param string $acceptKey Client accept key
      * @param string $tableKey Table key of the window
-     * @return bool Whether the window was told it froze and has not received a full window since
+     * @return bool Whether the window is owed whole
      */
-    public function isTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    public function isTableWindowOwed(string $acceptKey, string $tableKey): bool
     {
-        return isset($this->tableViewportFreezes[$acceptKey][$tableKey]);
+        return isset($this->tableWindowDebts[$acceptKey][$tableKey]);
     }
 
     /**
-     * Clears one table's frozen mark once a full window or its refusal has replaced the frozen rows.
+     * Clears one window's debt once a built window is on its way to the tab, or the window is gone.
      *
      * @param string $acceptKey Client accept key
      * @param string $tableKey Table key of the window
-     * @return bool Whether the mark was standing
+     * @return bool Whether the debt was standing
      */
-    public function clearTableViewportFrozen(string $acceptKey, string $tableKey): bool
+    public function clearTableWindowDebt(string $acceptKey, string $tableKey): bool
     {
-        if (!isset($this->tableViewportFreezes[$acceptKey][$tableKey])) {
+        if (!isset($this->tableWindowDebts[$acceptKey][$tableKey])) {
             return false;
         }
 
-        unset($this->tableViewportFreezes[$acceptKey][$tableKey]);
-        if ($this->tableViewportFreezes[$acceptKey] === []) {
-            unset($this->tableViewportFreezes[$acceptKey]);
+        unset($this->tableWindowDebts[$acceptKey][$tableKey]);
+        if ($this->tableWindowDebts[$acceptKey] === []) {
+            unset($this->tableWindowDebts[$acceptKey]);
         }
 
         return true;
@@ -466,7 +470,7 @@ final class SubscriptionRegistry
         }
         $this->forgetTableFacets($acceptKey, $tableKey);
         $this->clearTableFocus($acceptKey, $tableKey);
-        $this->clearTableViewportFrozen($acceptKey, $tableKey);
+        $this->clearTableWindowDebt($acceptKey, $tableKey);
     }
 
     /**

@@ -193,6 +193,7 @@ final class BrowserContextTableWindowTest extends TestCase
             ],
             $signal->data->data->toArray(),
         );
+        $this->assertTrue(Hilos::$sr->isTableWindowOwed('ak-1', 'no_such_table'));
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 

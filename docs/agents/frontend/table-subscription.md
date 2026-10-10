@@ -170,8 +170,7 @@ except that a page header withdrawing a declared filter or sortable column clear
 the now unavailable value and asks for the updated window.
 Nothing on the live stream moves the window: the catch-up of a window that froze
 (HIL-1139) re-sends the same window with its rows read again, not another one.
-The same holds for the catch-up of a refused window
-(not in the code yet — HIL-1350).
+The same holds for the catch-up of a refused window.
 
 An explicit window change is **authoritative**: the snapshot that arrives already
 carries everything that was waiting, so the pending queue is emptied rather than
@@ -270,8 +269,8 @@ on a narrow screen is a fourth and has its own section below:
   `table_window_refused` frame, or the `refusedWindows` section of the page
   answer. The body draws the "List unavailable" tile; the way out is the next
   window that arrives, whether the reader asked for it, a reconnect brought
-  it, or the server sent it on its own as the catch-up of a window owed whole
-  (not in the code yet — HIL-1350). The facts that try its debt are in
+  it, or the server sent it on its own as the catch-up of a window owed whole.
+  The facts that try its debt are in
   [Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
   The tile's words promise no return; they stay true in the two cases that
   still wait. Frames that belong to a window (`table_viewport_delta`,
@@ -280,10 +279,9 @@ on a narrow screen is a fourth and has its own section below:
   `HilosRouter.pageError`, the page's own refusal, not a state of its table.
   On a test stand the state is called up by `test:table:refuse <tableKey>`.
   Removing the lever is not a fact: no window goes out until a change of the
-  table's source is built (not in the code yet — HIL-1350).
+  table's source is built.
   `demo/binance-btc-tracker/tests/e2e/tests/table-refusal.spec.ts` walks the two
-  refusal roads and this third road back too
-  (not in the code yet — HIL-1350).
+  refusal roads and this third road back too.
 
 ### The card a row projects to
 
@@ -1339,7 +1337,7 @@ is a window the reader changed; in the `windows` section of the page's own
 `page_response`, which is the first window of every viewport table the page
 declares — a cold load and a reconnect alike; and as the catch-up of a window
 owed whole. The third road carries a window that froze on the live road
-(HIL-1139), or one that was refused (not in the code yet — HIL-1350).
+(HIL-1139), or one that was refused.
 A window freezes when a change or a freshness
 move cannot be built for it, or anything further down its live road throws: the
 connection is told once with `table_viewport_frozen`, its rows stay where they
@@ -1350,7 +1348,7 @@ to date on; the whole window is laid down the way one is after a broken socket �
 pending, placeholders, highlights and announcements go, the selection narrows to
 the rows that came, the focus is said again — and the frozen line goes with them.
 Any window pays the debt; a refusal does not — it changes the visible state to
-the tile, and the window remains owed whole (not in the code yet — HIL-1350).
+the tile, and the window remains owed whole.
 A window that cannot be built sends nothing and leaves the debt standing.
 A refusal of a window travels the first
 two roads only: `table_window_refused` in reply to a request, and the

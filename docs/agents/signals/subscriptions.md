@@ -236,8 +236,7 @@ A viewport table whose first window could not be built is a sixth section,
 error code a `table_window_refused` reply carries. A table stands in `windows`
 or in `refusedWindows`, never both. The section is omitted when empty, as every
 payload section is. A table in `refusedWindows` remains owed its window whole,
-and the server sends it on its own when a fact pays the debt
-(not in the code yet — HIL-1350); see
+and the server sends it on its own when a fact pays the debt; see
 [Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
 
 The window a tab is already holding travels the other way in the same pair of

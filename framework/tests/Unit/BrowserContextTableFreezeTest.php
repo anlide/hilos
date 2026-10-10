@@ -66,7 +66,8 @@ use RuntimeException;
  * What pulls against itself here is the same as for a page that failed (HIL-575): the
  * connection must be told, it must be told once, and the recovery must be whole. A frozen
  * window is also left alone for the rest of the flush that froze it — a delivery built in the
- * same flush as the failure is no proof the road is back.
+ * same flush as the failure is no proof the road is back. The window's debt is one for a freeze
+ * and a refusal alike (HIL-1350).
  */
 final class BrowserContextTableFreezeTest extends TestCase
 {
@@ -120,7 +121,7 @@ final class BrowserContextTableFreezeTest extends TestCase
         $this->assertSame(FreezeUnitContext::PAGE, $frozen[0]->page);
         $this->assertSame($table::TABLE, $frozen[0]->tableKey);
         $this->assertGreaterThanOrEqual($before, $frozen[0]->since);
-        $this->assertTrue(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
     /**
@@ -167,7 +168,7 @@ final class BrowserContextTableFreezeTest extends TestCase
         $facets = $queued[array_search(SignalTypeConstants::TABLE_FACET_COUNTS, $names, true)][1];
         $this->assertInstanceOf(TableFacetCountsSignalData::class, $facets);
         $this->assertSame($table::TABLE, $facets->tableKey);
-        $this->assertFalse(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
     public function testOnceCaughtUpTheWindowGetsDeltasAgain(): void
@@ -214,7 +215,7 @@ final class BrowserContextTableFreezeTest extends TestCase
         $context->flushToSignalRouter();
 
         $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW));
-        $this->assertFalse(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
     /**
@@ -285,7 +286,7 @@ final class BrowserContextTableFreezeTest extends TestCase
             array_column($this->queued(), 0),
             static fn(string $name): bool => str_starts_with($name, 'table_'),
         ));
-        $this->assertTrue(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
 
         $table->failQuery = false;
         $this->flushChange('b', 'Beta renamed again');
@@ -295,7 +296,7 @@ final class BrowserContextTableFreezeTest extends TestCase
 
     /**
      * A table that refused the catch-up once refuses it for every later change of the same flush;
-     * trying again for each would be a full query and a line in the log per change.
+     * trying again for each would be a full query, and no line.
      */
     public function testACatchUpThatCannotBeBuiltIsNotTriedAgainInTheSameFlush(): void
     {
@@ -312,11 +313,11 @@ final class BrowserContextTableFreezeTest extends TestCase
         $context->flushToSignalRouter();
 
         $this->assertSame(
-            $logged + 1,
+            $logged,
             substr_count($this->writtenLog(), 'Browser window skipped a table that failed to build'),
         );
         $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_DELTA));
-        $this->assertTrue(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
     /**
@@ -340,8 +341,7 @@ final class BrowserContextTableFreezeTest extends TestCase
     }
 
     /**
-     * A window request and its refusal both replace the rows the client holds, so either of them
-     * thaws the window; the next change is an ordinary delta again.
+     * Only a built window pays the debt; the next change is an ordinary delta again.
      */
     public function testAWindowRequestThawsTheWindow(): void
     {
@@ -355,7 +355,7 @@ final class BrowserContextTableFreezeTest extends TestCase
         $delivered = (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
 
         $this->assertTrue($delivered);
-        $this->assertFalse(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
         $this->drain();
 
         $this->flushChange('a', 'Alpha renamed');
@@ -364,7 +364,11 @@ final class BrowserContextTableFreezeTest extends TestCase
         $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_DELTA));
     }
 
-    public function testARefusedWindowRequestThawsTheWindowToo(): void
+    /**
+     * A refusal does not pay a window that froze. The debt stands, the tab is not told it froze
+     * a second time, and the next change the table builds brings the one window and no delta.
+     */
+    public function testARefusedWindowRequestKeepsTheWindowOwed(): void
     {
         $table = $this->boot(failOn: ['a']);
         $this->flushChange('a');
@@ -377,7 +381,19 @@ final class BrowserContextTableFreezeTest extends TestCase
 
         $this->assertFalse($delivered);
         $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW_REFUSED));
-        $this->assertFalse(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+        $this->drain();
+
+        $table->failQuery = false;
+        $this->flushChange('b');
+
+        $tableFrames = array_values(array_filter(
+            array_column($this->queued(), 0),
+            static fn(string $name): bool => str_starts_with($name, 'table_'),
+        ));
+        $this->assertSame([SignalTypeConstants::TABLE_WINDOW], $tableFrames);
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
     /**
@@ -419,7 +435,7 @@ final class BrowserContextTableFreezeTest extends TestCase
         $this->assertCount(1, $bars);
         $this->assertInstanceOf(TableProgressSignalData::class, $bars[0]);
         $this->assertSame($table::TABLE, $bars[0]->tableKey);
-        $this->assertTrue(Hilos::$sr?->isTableViewportFrozen('ak-1', $table::TABLE));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
     }
 
     public function testTheChangeThatFreezesTheWindowStillCarriesItsProgress(): void
@@ -431,6 +447,174 @@ final class BrowserContextTableFreezeTest extends TestCase
 
         $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
         $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_PROGRESS));
+    }
+
+    public function testARefusalOwesAWindowThatNeverFroze(): void
+    {
+        $table = $this->boot();
+        $table->failQuery = true;
+
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        $delivered = (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
+
+        $this->assertFalse($delivered);
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW_REFUSED));
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * The first change the table builds after a refusal is the whole window, with the counts
+     * beside the filters, and none of the live frames a window that was never owed would get.
+     */
+    public function testTheFirstChangeTheTableBuildsBringsARefusedWindowBackWhole(): void
+    {
+        $table = $this->boot();
+        $table->failQuery = true;
+        Hilos::$sr?->setTableFacets('ak-1', $table::TABLE, [FreezeUnitTable::FILTER_LABEL => ['Alpha', 'Beta']]);
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
+        $this->drain();
+
+        $table->failQuery = false;
+        $this->flushChange('a');
+
+        $names = array_column($this->queued(), 0);
+        $this->assertSame(
+            [SignalTypeConstants::TABLE_WINDOW, SignalTypeConstants::TABLE_FACET_COUNTS],
+            array_values(array_filter($names, static fn(string $name): bool => str_starts_with($name, 'table_'))),
+        );
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * Taking the stand lever off is not itself a fact. While the window still cannot be built,
+     * a change of its source sends nothing and writes nothing, and the debt stands.
+     */
+    public function testARefusedWindowWhoseWindowStillCannotBeBuiltIsSentNothing(): void
+    {
+        $table = $this->boot();
+        $table->failQuery = true;
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
+        $this->drain();
+        $logged = $this->writtenLog();
+
+        $this->flushChange('a');
+
+        $this->assertSame([], array_filter(
+            array_column($this->queued(), 0),
+            static fn(string $name): bool => str_starts_with($name, 'table_') && $name !== SignalTypeConstants::TABLE_PROGRESS,
+        ));
+        $this->assertSame($logged, $this->writtenLog());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testAChangeTheTableCannotBuildForARefusedWindowSaysNothing(): void
+    {
+        $table = $this->boot();
+        $table->failQuery = true;
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
+        $this->drain();
+        $logged = $this->writtenLog();
+
+        $table->failQuery = false;
+        $table->failOn = ['a'];
+        $this->flushChange('a');
+
+        $this->assertSame([], array_filter(
+            array_column($this->queued(), 0),
+            static fn(string $name): bool => str_starts_with($name, 'table_'),
+        ));
+        $this->assertSame($logged, $this->writtenLog());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    /**
+     * The numbers of a refused window arrive with its catch-up, beside the rows they count; a
+     * recount while it is still owed would move a total under rows the tab does not hold.
+     */
+    public function testARefusedWindowGetsNoRecountedTotal(): void
+    {
+        $table = $this->boot(search: 'a');
+        $table->failQuery = true;
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        $this->assertFalse((new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport));
+        $this->drain();
+
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitRtContext::ROWS, 'z', ['name' => 'Zeta alpha']));
+        $context->flushToSignalRouter();
+
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_COUNT));
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW));
+        $this->assertSame(7, Hilos::$sr?->getTableViewport('ak-1', $table::TABLE)?->totalCount());
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testAFreshnessMoveTheTableBuildsBringsARefusedWindowBack(): void
+    {
+        $table = $this->boot();
+        $table->failQuery = true;
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
+        $this->drain();
+
+        $table->failQuery = false;
+        $context = new FreezeUnitContext();
+        $context->recordSourceStaleness(FreezeUnitRtContext::ROWS, ['b']);
+        $context->flushToSignalRouter();
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW));
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_DELTA));
+        $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+    }
+
+    public function testAFrozenWindowWhoseChangesKeepFailingWritesOneLine(): void
+    {
+        $this->boot(failOn: ['a']);
+
+        $this->flushChange('a');
+        $this->flushChange('a');
+
+        $this->assertCount(1, $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->assertSame(
+            1,
+            substr_count($this->writtenLog(), 'Viewport delta skipped a change the table failed to build'),
+        );
+    }
+
+    /**
+     * A bar is not part of the window: work running on a refused table keeps being shown, and a
+     * bar alone does not pay the debt.
+     */
+    public function testARefusedWindowStillGetsItsProgress(): void
+    {
+        $table = $this->boot();
+        $table->failQuery = true;
+        $viewport = Hilos::$sr?->getTableViewport('ak-1', $table::TABLE);
+        $this->assertNotNull($viewport);
+        (new FreezeUnitContext())->sendTableWindow(FreezeUnitContext::PAGE, 'ak-1', $viewport);
+        $this->drain();
+
+        $context = new FreezeUnitContext();
+        $context->record(SourceChange::rtUpdated(FreezeUnitTable::PROGRESS_SOURCE, 'run-1', []));
+        $context->flushToSignalRouter();
+
+        $bars = $this->payloadsNamed(SignalTypeConstants::TABLE_PROGRESS);
+        $this->assertCount(1, $bars);
+        $this->assertInstanceOf(TableProgressSignalData::class, $bars[0]);
+        $this->assertSame($table::TABLE, $bars[0]->tableKey);
+        $this->assertTrue(Hilos::$sr?->isTableWindowOwed('ak-1', $table::TABLE));
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_WINDOW));
+        $this->assertSame([], $this->payloadsNamed(SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
     }
 
     /**
