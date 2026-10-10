@@ -3648,6 +3648,18 @@ FLAKY_SKIP = {
     # rather than in the scenario's wait - that is the first thing to rule out.
     "36 slave cut off with its leader stops its work":
         "flake: the slave cut off with its leader never self-fences (red 10/72, last 2026-10-10)",
+    # The one below was parked on the owner's word on 2026-10-10 (HOTFIX), without a
+    # diagnosis. It is paid off by finding the cause, its line removed, and `-- 24` green on
+    # the online-testing cluster stand.
+    #
+    # 24, on the online-testing cluster stand, the only one that carries it: red in 5 of 246
+    # runs (0733 to 1064; last 2026-10-10 on HIL-1391, green alone on the rerun of the same
+    # sha, after a retry), four of them since 2026-10-09, and retried in 9 more. Two symptoms. Three times m1's log never started a
+    # fleet member the leader's table placed on it after the cut. Twice both attempts found the
+    # new leader carrying no fleet member, because the fleet had already moved under a
+    # re-election of the stand's own - the startup link flap of P-459.
+    "24 cut-off leader stops its work":
+        "flake: a re-election of its own moves the fleet first, or m1 never starts a member (red 5/246, last 2026-10-10)",
 }
 
 
