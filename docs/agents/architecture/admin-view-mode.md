@@ -278,7 +278,9 @@ nobody is asked*).
   its verdict decides, the declaration never does),
   `WireField::notPersonal()` for a computed or RT field, and
   `WireField::each($fields)` for a nested object or a list of them. A key the
-  map does not name is hidden, and so is a scalar where `each` was declared.
+  map does not name is hidden, and so is a scalar where `each` was declared;
+  null there stays null, since whether the object is present is its shape,
+  which the walk shows anyway.
   The walk is one function for every point below (`ViewerFields::hide()`).
 - The strategy does not travel on the wire: a viewer sees the hidden mark —
   not a fake name, not a mask of the kind `a•••@gmail.com`, not a truncated
