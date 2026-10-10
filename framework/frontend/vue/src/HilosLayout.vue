@@ -1,49 +1,46 @@
 <!-- HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
-app frame a project fills rather than re-implements. It renders the top
-navigation bar carrying the project's brand, nav, and user slots, the shell's
-theme icon first in the right-hand group (it disappears when switching is off
-and under maintenance), the framework admin
-entry (the gear linking to the Hilos dashboard, drawn for an admin and, in the
-admin view mode, for a viewer), the live connection indicator
-the SDK owns (core-and-connection.md), and, last, its tracked sign-out control
-while a person stands behind the session; a full-width banner region below the nav
-carrying, in this order, the framework's own protected-mode strip, its
+app frame a project fills rather than re-implements. It renders the top navigation
+bar carrying the project's brand, nav, and user slots, the shell's theme icon
+first in the right-hand group (it disappears when switching is off and under
+maintenance), the framework admin entry (the gear linking to the Hilos dashboard,
+drawn for an admin and, in the admin view mode, for a viewer), the live connection
+indicator the SDK owns (core-and-connection.md), and, last, its tracked sign-out
+control while a person stands behind the session; a full-width banner region below
+the nav carrying, in this order, the framework's own protected-mode strip, its
 impersonation strip (drawn from the session, with a Stop that waits for the
 server's answer, colored by the standing of the person taken over, and marked
-"view only" when the administrator may only look, HIL-1170), its account
-deletion strip (the session's own scheduled deletion, with a "Keep my account"
-that waits the same way, HIL-945), its view-mode strip (a viewer of the admin view
-mode on an admin route, HIL-1260), and the app-wide status strip a project
-fills (e.g. a trial notice) through the #banner slot — one live region for all,
-empty and zero-height while none is up — the
-routed page content in the default slot (inside HilosTakeoverScope, so in a
-takeover that only looks the page's controls stand disabled and the shell's do
-not), and a footer of the public framework pages
+"view only" when the administrator may only look, HIL-1170), its account deletion
+strip (the session's own scheduled deletion, with a "Keep my account" that waits
+the same way, HIL-945), its view-mode strip (a viewer of the admin view mode on an
+admin route, HIL-1260), and the app-wide status strip a project fills (e.g. a
+trial notice) through the #banner slot — one live region for all, empty and
+zero-height while none is up — the routed page content in the default slot (inside
+HilosTakeoverScope, so in a takeover that only looks the page's controls stand
+disabled and the shell's do not), and a footer of the public framework pages
 (HILOS_FOOTER_LINKS). The shell is a fixed-height viewport column (vh-100): the
-nav, banner, and footer never scroll (flex-shrink-0) and the main region grows
-and scrolls its own overflow (min-h-0 + overflow-auto), so a page either scrolls
+nav, banner, and footer never scroll (flex-shrink-0) and the main region grows and
+scrolls its own overflow (min-h-0 + overflow-auto), so a page either scrolls
 inside main or — like the chat page — fills it and scrolls an inner region rather
-than the whole document.
-The brand, the gear, and the footer links are HilosLinks — no-refresh navigation
-that leaves the socket alive — so the shell alone moves between the project home,
-the admin section, and the public pages. While the connection reports protected
-mode the shell becomes the maintenance surface (HilosMaintenance) and keeps only
-the connection indicator — every other region of the shell links to a page the
-freeze has shut. On the very first frame there is nothing to report yet, and on a
-browser that has met maintenance here the core holds that frame back (HIL-613):
-the shell then renders only the hidden hilos-boot-state marker, so a reload into a
-frozen node never flashes the ordinary layout. While the session holds a blocked
-account the routed content gives way to the "Access closed" card
-(HilosAccountBlocked, HIL-289) — the header and footer stay, maintenance still
-comes first. The "the terms have changed" screen is the shell's too (HIL-500):
-a yellow document icon right after the user slot while a document waits for a
-decision, the window it opens (raised by itself on a sign-in in this tab), and,
-once the deadline has passed and the account is frozen, the same screen in the
-content's place on every page the freeze does not leave open — after the
-"Access closed" card, before the content. Styling is Bootstrap classes only
-and the shell carries no CSS of its own (styling-rules.md); the status and admin
-icons are Bootstrap Icons (`bi-*`), shipped with the view layer (src/index.ts)
-like Bootstrap. -->
+than the whole document. The brand, the gear, and the footer links are
+HilosLinks — no-refresh navigation that leaves the socket alive — so the shell
+alone moves between the project home, the admin section, and the public pages.
+While the connection reports protected mode the shell becomes the maintenance
+surface (HilosMaintenance) and keeps only the connection indicator — every other
+region of the shell links to a page the freeze has shut. On the very first frame
+there is nothing to report yet, and on a browser that has met maintenance here the
+core holds that frame back (HIL-613): the shell then renders only the hidden
+hilos-boot-state marker, so a reload into a frozen node never flashes the ordinary
+layout. While the session holds a blocked account the routed content gives way to
+the "Access closed" card (HilosAccountBlocked, HIL-289) — the header and footer
+stay, maintenance still comes first. The "the terms have changed" screen is the
+shell's too (HIL-500): a yellow document icon right after the user slot while a
+document waits for a decision, the window it opens (raised by itself on a sign-in
+in this tab), and, once the deadline has passed and the account is frozen, the
+same screen in the content's place on every page the freeze does not leave open —
+after the "Access closed" card, before the content. Styling is Bootstrap classes
+only and the shell carries no CSS of its own (styling-rules.md); the status and
+admin icons are Bootstrap Icons (`bi-*`), shipped with the view layer
+(src/index.ts) like Bootstrap. -->
 <script setup lang="ts">
 import type { ConnectionState, HilosConnection } from '@hilos/core'
 import {
@@ -117,10 +114,10 @@ const props = defineProps<{
 const connectionState = useConnectionState(props.connection)
 
 // While the backend holds the node in protected mode the shell shows the
-// maintenance surface instead of the routed page, and drops everything that
-// leads anywhere: the brand, the nav, the theme icon, the user region, the
-// admin gear, and the footer all point at pages the freeze has shut. The connection indicator is
-// the one thing that stays — during planned work it is the only status worth
+// maintenance surface instead of the routed page, and drops everything that leads
+// anywhere: the brand, the nav, the theme icon, the user region, the admin gear,
+// and the footer all point at pages the freeze has shut. The connection indicator
+// is the one thing that stays — during planned work it is the only status worth
 // telling the visitor. The state is read from the connection, not from a page
 // store, so it outlives routing and subscription lifecycles.
 const protectedMode = useProtectedMode(props.connection)
