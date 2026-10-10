@@ -217,6 +217,7 @@ final class ProtectedModeSnapshotTest extends TestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => $circleSessionTokenHashes,
             StateProtectedModeRuntime::circleNamedCount => $circleNamedCount,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 

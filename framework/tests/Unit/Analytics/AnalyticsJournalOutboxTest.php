@@ -386,6 +386,7 @@ final class AnalyticsJournalOutboxTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 }

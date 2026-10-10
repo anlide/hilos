@@ -446,8 +446,8 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_MAINTENANCE => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Maintenance',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation: its state, the verifier circle, '
-                . 'and the way out of the window.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Node freeze under a destructive operation and manual maintenance: '
+                . 'its state, the verifier circle, closing the system to visitors, and the way out of the window.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-tools',
         ],

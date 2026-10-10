@@ -70,6 +70,7 @@ final class ProtectedModeRuntime extends RtState
     public const string admittedSessionTokenHashes = 'admittedSessionTokenHashes';
     public const string circleSessionTokenHashes = 'circleSessionTokenHashes';
     public const string circleNamedCount = 'circleNamedCount';
+    public const string enteredFromBrowser = 'enteredFromBrowser';
 
     /** Hash algorithm the initiator's session token is stored and compared under. */
     private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
@@ -169,6 +170,14 @@ final class ProtectedModeRuntime extends RtState
     public int $circleNamedCount = 0;
 
     /**
+     * Whether the request that opened this freeze came from a browser session.
+     *
+     * This survives restart when a manual window drops its initiating session hash, so the
+     * Maintenance section can still say whether the window was opened there or from the CLI.
+     */
+    public bool $enteredFromBrowser = false;
+
+    /**
      * Creates the inactive singleton runtime row.
      *
      * @return static Inactive protected mode runtime state
@@ -208,6 +217,7 @@ final class ProtectedModeRuntime extends RtState
         $instance->admittedSessionTokenHashes = self::requireStringList($row, self::admittedSessionTokenHashes);
         $instance->circleSessionTokenHashes = self::requireStringList($row, self::circleSessionTokenHashes);
         $instance->circleNamedCount = self::requireInt($row, self::circleNamedCount);
+        $instance->enteredFromBrowser = self::requireBool($row, self::enteredFromBrowser);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -239,6 +249,7 @@ final class ProtectedModeRuntime extends RtState
         $this->admittedSessionTokenHashes = self::patchStringList($diff, self::admittedSessionTokenHashes, $this->admittedSessionTokenHashes);
         $this->circleSessionTokenHashes = self::patchStringList($diff, self::circleSessionTokenHashes, $this->circleSessionTokenHashes);
         $this->circleNamedCount = self::patchInt($diff, self::circleNamedCount, $this->circleNamedCount);
+        $this->enteredFromBrowser = self::patchBool($diff, self::enteredFromBrowser, $this->enteredFromBrowser);
     }
 
     /**
@@ -459,6 +470,7 @@ final class ProtectedModeRuntime extends RtState
             self::admittedSessionTokenHashes => $this->admittedSessionTokenHashes,
             self::circleSessionTokenHashes => $this->circleSessionTokenHashes,
             self::circleNamedCount => $this->circleNamedCount,
+            self::enteredFromBrowser => $this->enteredFromBrowser,
         ];
     }
 

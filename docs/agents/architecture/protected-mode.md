@@ -468,7 +468,11 @@ automatically, the human path out has to actually work.
   before this node remembers its leader. It accepts the current leader's frames
   and refuses a fresh quiesce outside the verification window. Manual
   maintenance alone clears that hash too, by operation rather than phase,
-  returning an empty window; restore keeps its behavior. Its restart mail follows
+  returning an empty window; restore keeps its behavior. The separate
+  `enteredFromBrowser` flag persists in the version 2 freeze file and survives
+  `restoreFromDisk()` even when the manual window loses its session hash, so
+  Maintenance still labels the entry as browser or console after a restart.
+  Its restart mail follows
   `protected_mode.manual_maintenance.restart_is_normal`; see *Manual Maintenance*.
   On a single node
   `StandaloneProtectedMode::adoptStandingFreeze()`, called from
@@ -929,8 +933,11 @@ maintenance first, accepting the visitor gap before restore freezes the node
 (owner decision, 2026-10-04); manual entry under another freeze is refused too.
 
 Maintenance shows open / manually closed (since when, button or CLI, not who) /
-operation running, the last without manual controls
-(not in the code yet — HIL-1361). Its controls enable
+operation running, the last without manual controls. The page sends a
+`subscription_page_hilos_maintenance` state frame before `page_response` and
+pushes changed frames after protected-mode RT sync through the index agent's tick;
+locked-out subscribers receive none. The frame counts passes and the captured
+circle without sending personal fields. Its controls enable
 (not in the code yet — HIL-1362), disable (not in the code yet — HIL-1363) and
 mint a code (not in the code yet — HIL-1364); each is disabled for a view-mode
 viewer. There is no extra project wiring: the index agent already serves this
@@ -952,6 +959,7 @@ project" — activation is not declarative, so there is nothing to ask:
 | `AbstractDeliveryChannelAgent::freezeSilencesDeliveries()` | must the durable deliveries go quiet? |
 | `AnalyticsCollector::isHeld()` | must the collector record nothing and throw its batch away? |
 | `AnalyticsJournalAgent::onStop()` | is this stop the freeze's, so the node's journal goes with its lost events counted? |
+| `AbstractHilosMaintenancePage` / `AbstractHilosIndexAgent` | what state should the Maintenance section show and push after RT sync? |
 
 The two entries read the same row as their guard (`StandaloneProtectedMode` and
 `ClusterProtectedMode`, each with its own `runtimeView()`).

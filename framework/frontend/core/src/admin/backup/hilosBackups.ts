@@ -690,7 +690,7 @@ export interface HilosProgressAnchors {
  * @param instant The ISO-8601 instant to measure from, or null.
  * @param nowMs The current epoch milliseconds the caller counts against.
  */
-function elapsedSecondsSince(
+export function elapsedSecondsSince(
   instant: string | null,
   nowMs: number,
 ): number | null {

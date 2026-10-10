@@ -12,6 +12,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
@@ -19,6 +20,7 @@ use Hilos\HilosException;
 use LogicException;
 use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
@@ -253,7 +255,22 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         $this->tickProtectedModeTestDriver();
         $this->tickProtectedModeOperator();
         $this->tickManualMaintenance();
+        AbstractHilosMaintenancePage::onAgentTick($this);
         AccountStandingAudience::onAgentTick($this);
+    }
+
+    /**
+     * Marks the Maintenance picture stale when the protected-mode singleton syncs to this worker.
+     *
+     * @param RtSyncUpdatedSignalData $data Updated runtime collection
+     * @param string $source Framework signal source (unused)
+     * @param string $name Framework signal name (unused)
+     */
+    public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        if ($data->collectionKey === StateProtectedModeRuntime::RT_ITEM) {
+            AbstractHilosMaintenancePage::markStale();
+        }
     }
 
     /**
@@ -298,6 +315,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     {
         parent::onSignalConnectionClose($data, $source, $name);
         AccountStandingAudience::removeSubscriber($data->acceptKey);
+        AbstractHilosMaintenancePage::removeSubscriber($data->acceptKey);
     }
 
     /**
@@ -310,6 +328,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         $this->clearManualMaintenance();
         parent::onStop();
         AccountStandingAudience::reset();
+        AbstractHilosMaintenancePage::reset();
     }
 
     /**

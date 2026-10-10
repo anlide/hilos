@@ -1,12 +1,12 @@
-// The framework Hilos maintenance section headless (HIL-1119): the verifier circle
-// view-model, its row resolver, the table factory, and the section's words that the
+// The framework Hilos maintenance section headless: the protected-mode state and
+// verifier circle view-models, their live handles, and the section's words that the
 // per-framework HilosMaintenancePage views render from. It is framework-agnostic
 // (imports no UI framework) and reads only @hilos/core primitives, so the
 // Vue/React/Angular sections stay thin (multiframework-core.md).
 //
 // The section has no on-switch: the freeze under it is core, so a project mounts it
-// by registering the page and binding the circle table to it. Its one block today is
-// the verifier circle - who will check the system after a freeze - delivered through
+// by registering the page and binding the circle table to it. Its state arrives in
+// the page's own signal; the verifier circle - who will check the system after a freeze - arrives through
 // the page-scoped `hilosVerifierCircle` viewport table. The section names a verifier
 // and takes one out as tracked actions (HIL-1120, HIL-1121): the named row arrives
 // over the live table and the removed one leaves it the same way, and the dialog
@@ -19,6 +19,8 @@ import {
   type ActionHandle,
   type ActionLifecycle,
 } from '../../connection/actionLifecycle.js'
+import { z } from 'zod'
+import { elapsedSecondsSince } from '../backup/hilosBackups.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -29,6 +31,7 @@ import {
 import { type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
+import { createSignal, type ReadonlySignal } from '../../state/signal.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import {
   HILOS_TABLE_ACTIONS_KEY,
@@ -41,6 +44,199 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 // after the circle's DB source. A project binds its backend to these keys.
 const HILOS_MAINTENANCE_CIRCLE_TABLE = 'hilosVerifierCircle'
 const HILOS_MAINTENANCE_CIRCLE_SLOT = 'verifierCircle'
+/** Server→client state frame sent before the Maintenance page response and on change. */
+export const MAINTENANCE_STATE_SIGNAL = 'subscription_page_hilos_maintenance'
+
+/** The whole non-personal state frame (PHP `HilosMaintenanceStateSignalData`). */
+export const maintenanceStateSchema = z.looseObject({
+  phase: z.enum([
+    'inactive',
+    'activating',
+    'active',
+    'verifying',
+    'deactivating',
+  ]),
+  operation: z.string().nullable(),
+  manual: z.boolean(),
+  startedAt: z.string().nullable(),
+  enteredFromBrowser: z.boolean(),
+  passCount: z.number().int(),
+  circleNamed: z.number().int(),
+  circleAdmitted: z.number().int(),
+})
+
+/** One state frame of the Maintenance section. */
+export type HilosMaintenanceState = z.infer<typeof maintenanceStateSchema>
+
+/** Schema registration for the section's own live frame. */
+export const MAINTENANCE_STATE_SIGNAL_SCHEMAS = {
+  [MAINTENANCE_STATE_SIGNAL]: maintenanceStateSchema,
+}
+
+/** The section state handle; null means its first frame has not arrived. */
+export interface HilosMaintenanceStateHandle {
+  readonly state: ReadonlySignal<HilosMaintenanceState | null>
+  start(): void
+  dispose(): void
+}
+
+/**
+ * Listen to the page's own state frame and every subsequent server push.
+ *
+ * @param context The section's project context.
+ */
+export function createHilosMaintenanceState(
+  context: HilosMaintenanceContext,
+): HilosMaintenanceStateHandle {
+  const state = createSignal<HilosMaintenanceState | null>(null)
+  const teardown: Array<() => void> = []
+
+  return {
+    state,
+    start() {
+      teardown.push(
+        context.connection.on('projectSignal', (signal) => {
+          if (signal.type === MAINTENANCE_STATE_SIGNAL) {
+            // The connection validated this body against maintenanceStateSchema.
+            state.set(signal.data as HilosMaintenanceState)
+          }
+        }),
+      )
+    },
+    dispose() {
+      for (const off of teardown.splice(0)) {
+        off()
+      }
+    },
+  }
+}
+
+/** Words of the protected-mode block, shared by every view of this section. */
+export const HILOS_MAINTENANCE_STATE_COPY = {
+  openTitle: 'The node is open',
+  openDescription:
+    'No freeze: every page is served and the agents are running.',
+  manualTitle: 'Closed to visitors by hand',
+  operationTitle: 'The node is frozen',
+  phase: 'Phase',
+  closedSince: 'Closed since',
+  turnedOn: 'Turned on',
+  codesInHand: 'Codes in hand',
+  circle: 'Circle',
+  operation: 'Operation',
+  started: 'Started',
+  operationPrefix: 'operation',
+  manualPhaseNote: 'visitors see the maintenance screen, agents are running',
+  verifyingPhaseNote: 'the verification window is open',
+  turnedOnFromBrowser: 'with the button in this section',
+  turnedOnFromConsole: 'from the console · maintenance:enable',
+  circleNamed: 'named',
+  circleAdmitted: 'let in',
+  minuteAgo: 'minute ago',
+  minutesAgo: 'minutes ago',
+  justNow: 'just now',
+} as const
+
+/** The protected-mode block's three positions; null leaves its room empty. */
+export type HilosMaintenancePosition = 'open' | 'manual' | 'operation' | null
+
+/**
+ * Choose the block solely from the server's row verdict.
+ *
+ * @param state The newest section frame, or null before it arrives.
+ */
+export function hilosMaintenancePosition(
+  state: HilosMaintenanceState | null,
+): HilosMaintenancePosition {
+  if (state === null) {
+    return null
+  }
+  if (state.phase === 'inactive') {
+    return 'open'
+  }
+
+  return state.manual ? 'manual' : 'operation'
+}
+
+/**
+ * Text below the manual window's timestamp; the browser's clock moves it locally.
+ *
+ * @param startedAt Freeze start in ISO-8601, or null if absent.
+ * @param nowMs Current browser time in epoch milliseconds.
+ */
+export function hilosMaintenanceElapsed(
+  startedAt: string | null,
+  nowMs: number,
+): string {
+  const elapsed = elapsedSecondsSince(startedAt, nowMs)
+  if (elapsed === null || elapsed < 60) {
+    return HILOS_MAINTENANCE_STATE_COPY.justNow
+  }
+  const minutes = Math.floor(elapsed / 60)
+
+  return `${minutes} ${minutes === 1 ? HILOS_MAINTENANCE_STATE_COPY.minuteAgo : HILOS_MAINTENANCE_STATE_COPY.minutesAgo}`
+}
+
+/** The lines of an active protected-mode card. */
+export interface HilosMaintenanceCard {
+  readonly position: 'manual' | 'operation'
+  readonly title: string
+  readonly phase: string
+  readonly phaseNote: string | null
+  readonly operation: string | null
+  readonly operationCaption: string
+  readonly startedAt: string | null
+  readonly elapsed: string | null
+  readonly turnedOn: string | null
+  readonly passCount: number
+  readonly circle: string
+}
+
+/**
+ * Select every active card line without coupling the view to the wire shape.
+ *
+ * @param state The newest section frame, or null before it arrives.
+ * @param nowMs Current browser time in epoch milliseconds.
+ */
+export function hilosMaintenanceCard(
+  state: HilosMaintenanceState | null,
+  nowMs: number,
+): HilosMaintenanceCard | null {
+  const position = hilosMaintenancePosition(state)
+  if (state === null || position === null || position === 'open') {
+    return null
+  }
+
+  return {
+    position,
+    title:
+      position === 'manual'
+        ? HILOS_MAINTENANCE_STATE_COPY.manualTitle
+        : HILOS_MAINTENANCE_STATE_COPY.operationTitle,
+    phase: state.phase,
+    phaseNote:
+      position === 'manual'
+        ? HILOS_MAINTENANCE_STATE_COPY.manualPhaseNote
+        : state.phase === 'verifying'
+          ? HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote
+          : null,
+    operation: state.operation,
+    operationCaption: `${HILOS_MAINTENANCE_STATE_COPY.operationPrefix} ${state.operation ?? '—'}`,
+    startedAt: state.startedAt,
+    elapsed:
+      position === 'manual'
+        ? hilosMaintenanceElapsed(state.startedAt, nowMs)
+        : null,
+    turnedOn:
+      position === 'manual'
+        ? state.enteredFromBrowser
+          ? HILOS_MAINTENANCE_STATE_COPY.turnedOnFromBrowser
+          : HILOS_MAINTENANCE_STATE_COPY.turnedOnFromConsole
+        : null,
+    passCount: state.passCount,
+    circle: `${state.circleNamed} ${HILOS_MAINTENANCE_STATE_COPY.circleNamed} · ${state.circleAdmitted} ${HILOS_MAINTENANCE_STATE_COPY.circleAdmitted}`,
+  }
+}
 // Wire action names: byte-equal to the backend HilosSignalConstants::MAINTENANCE_CIRCLE_ADD
 // and HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE.
 const MAINTENANCE_CIRCLE_ADD_ACTION = 'maintenance_circle_add'

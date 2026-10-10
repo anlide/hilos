@@ -192,6 +192,7 @@ final class MailPoolPendingPickupIntegrationTest extends IntegrationTestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 

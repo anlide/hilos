@@ -3,11 +3,19 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
+  createHilosMaintenanceState,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
+  MAINTENANCE_STATE_SIGNAL,
+  MAINTENANCE_STATE_SIGNAL_SCHEMAS,
   type HilosMaintenanceCircleTableView,
   type HilosMaintenanceContext,
+  type HilosMaintenanceState,
+  hilosMaintenanceCard,
+  hilosMaintenanceElapsed,
+  hilosMaintenancePosition,
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
@@ -292,5 +300,157 @@ describe('createHilosMaintenanceActions', () => {
     expect(sent).toEqual([
       { action: 'maintenance_circle_remove', payload: { memberId: 7 } },
     ])
+  })
+})
+const STARTED_AT = '2026-10-10T10:00:00+00:00'
+const NOW = Date.parse('2026-10-10T10:23:00+00:00')
+
+function state(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return {
+    phase: 'inactive',
+    operation: null,
+    manual: false,
+    startedAt: null,
+    enteredFromBrowser: false,
+    passCount: 0,
+    circleNamed: 0,
+    circleAdmitted: 0,
+    ...overrides,
+  }
+}
+
+describe('maintenance state frame', () => {
+  it('matches the backend DTO and rejects an incomplete or malformed frame', () => {
+    expect(Object.keys(MAINTENANCE_STATE_SIGNAL_SCHEMAS)).toEqual([
+      MAINTENANCE_STATE_SIGNAL,
+    ])
+    expect(
+      MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].parse(
+        state({ phase: 'verifying', operation: 'restore', passCount: 2 }),
+      ).passCount,
+    ).toBe(2)
+    const incomplete: Partial<HilosMaintenanceState> = state()
+    delete incomplete.circleAdmitted
+    expect(
+      MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].safeParse(
+        incomplete,
+      ).success,
+    ).toBe(false)
+    expect(
+      MAINTENANCE_STATE_SIGNAL_SCHEMAS[MAINTENANCE_STATE_SIGNAL].safeParse(
+        state({ passCount: 1.5 }),
+      ).success,
+    ).toBe(false)
+  })
+
+  it('stays empty before its frame, then follows each server push and disposes', () => {
+    const listeners = new Set<
+      (signal: { type: string; data: unknown }) => void
+    >()
+    const context = {
+      connection: {
+        on(
+          event: string,
+          listener: (signal: { type: string; data: unknown }) => void,
+        ) {
+          if (event === 'projectSignal') {
+            listeners.add(listener)
+          }
+
+          return () => listeners.delete(listener)
+        },
+      },
+    } as unknown as HilosMaintenanceContext
+    const handle = createHilosMaintenanceState(context)
+    expect(handle.state.get()).toBeNull()
+    handle.start()
+    const first = state()
+    for (const listener of listeners) {
+      listener({ type: MAINTENANCE_STATE_SIGNAL, data: first })
+    }
+    expect(handle.state.get()).toEqual(first)
+    const second = state({ phase: 'verifying', passCount: 2 })
+    for (const listener of listeners) {
+      listener({ type: MAINTENANCE_STATE_SIGNAL, data: second })
+    }
+    expect(handle.state.get()?.passCount).toBe(2)
+    handle.dispose()
+    expect(listeners.size).toBe(0)
+  })
+})
+
+describe('maintenance state selector', () => {
+  it('keeps the block absent until the row arrives, then distinguishes all positions', () => {
+    expect(hilosMaintenancePosition(null)).toBeNull()
+    expect(hilosMaintenancePosition(state())).toBe('open')
+    expect(
+      hilosMaintenancePosition(
+        state({
+          phase: 'verifying',
+          operation: 'manual_maintenance',
+          manual: true,
+        }),
+      ),
+    ).toBe('manual')
+    expect(
+      hilosMaintenancePosition(
+        state({ phase: 'verifying', operation: 'restore' }),
+      ),
+    ).toBe('operation')
+  })
+
+  it('selects the manual source, circle counts and elapsed words', () => {
+    const manual = state({
+      phase: 'verifying',
+      operation: 'manual_maintenance',
+      manual: true,
+      startedAt: STARTED_AT,
+      enteredFromBrowser: true,
+      passCount: 1,
+      circleNamed: 3,
+      circleAdmitted: 2,
+    })
+    expect(hilosMaintenanceCard(manual, NOW)).toMatchObject({
+      position: 'manual',
+      title: HILOS_MAINTENANCE_STATE_COPY.manualTitle,
+      turnedOn: HILOS_MAINTENANCE_STATE_COPY.turnedOnFromBrowser,
+      passCount: 1,
+      circle: '3 named · 2 let in',
+      elapsed: '23 minutes ago',
+    })
+    expect(
+      hilosMaintenanceCard({ ...manual, enteredFromBrowser: false }, NOW)
+        ?.turnedOn,
+    ).toBe(HILOS_MAINTENANCE_STATE_COPY.turnedOnFromConsole)
+    expect(
+      hilosMaintenanceElapsed(STARTED_AT, Date.parse(STARTED_AT) - 1),
+    ).toBe(HILOS_MAINTENANCE_STATE_COPY.justNow)
+    expect(
+      hilosMaintenanceElapsed(STARTED_AT, Date.parse(STARTED_AT) + 60_000),
+    ).toBe('1 minute ago')
+  })
+
+  it('selects operation lines and the verification note only in that phase', () => {
+    const restore = state({
+      phase: 'verifying',
+      operation: 'restore',
+      startedAt: STARTED_AT,
+      passCount: 2,
+    })
+    expect(hilosMaintenanceCard(restore, NOW)).toMatchObject({
+      position: 'operation',
+      phaseNote: HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
+      operationCaption: 'operation restore',
+      startedAt: STARTED_AT,
+      passCount: 2,
+      elapsed: null,
+      turnedOn: null,
+    })
+    expect(
+      hilosMaintenanceCard({ ...restore, phase: 'active' }, NOW)?.phaseNote,
+    ).toBeNull()
+    expect(hilosMaintenanceCard(state(), NOW)).toBeNull()
   })
 })

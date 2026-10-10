@@ -87,7 +87,9 @@ final class ProtectedModeFreezeStoreTest extends TestCase
 
     public function testTheFreezeIsReadBackTheWayItWasLeft(): void
     {
-        new ProtectedModeFreezeStore()->save($this->row(StateProtectedModeRuntime::PHASE_ACTIVE));
+        $row = $this->row(StateProtectedModeRuntime::PHASE_ACTIVE);
+        $row[StateProtectedModeRuntime::enteredFromBrowser] = true;
+        new ProtectedModeFreezeStore()->save($row);
 
         $restored = new ProtectedModeFreezeStore()->load();
 
@@ -100,21 +102,21 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame(self::STARTED_AT, $restored->startedAt);
         $this->assertSame(self::STARTED_AT + 1, $restored->activatedAt);
         $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_FREEZE, $restored->entryMode);
+        $this->assertTrue($restored->enteredFromBrowser);
     }
 
-    public function testVersionOneFileWithoutEntryModeKeepsTheLegacyFreeze(): void
+    public function testVersionOneFileRefusesStartup(): void
     {
         $row = $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
-        unset($row[StateProtectedModeRuntime::entryMode]);
-        new ProtectedModeFreezeStore()->save($row);
+        unset($row[StateProtectedModeRuntime::enteredFromBrowser]);
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 1, 'row' => $row]));
 
-        $this->assertSame(
-            StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
-            (new ProtectedModeFreezeStore())->load()?->entryMode,
-        );
+        $this->expectException(ProtectedModeFreezeUnreadableException::class);
+        $this->expectExceptionMessage('version 2 freeze file');
+        new ProtectedModeFreezeStore()->load();
     }
 
-    public function testDirectWindowPersistsInTheVersionOneFile(): void
+    public function testDirectWindowPersistsInTheVersionTwoFile(): void
     {
         $executor = $this->executorOnAMountedNode();
         $executor->enterVerificationWindow($this->freeze(), null);
@@ -188,7 +190,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
     {
         // A build that cannot tell what the fields mean must say so rather than restore a freeze by
         // guessing at them - the version key exists for exactly this moment.
-        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2, 'row' => []]));
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 3, 'row' => []]));
 
         $this->expectException(ProtectedModeFreezeUnreadableException::class);
         new ProtectedModeFreezeStore()->load();
@@ -196,7 +198,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
 
     public function testAFileCarryingNoRowRefusesTheStartup(): void
     {
-        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 1]));
+        file_put_contents($this->freezeFile(), (string)json_encode(['version' => 2]));
 
         $this->expectException(ProtectedModeFreezeUnreadableException::class);
         new ProtectedModeFreezeStore()->load();
@@ -260,6 +262,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame([], $view->passHashes);
         $this->assertSame([], $view->admittedSessionTokenHashes);
         $this->assertSame(self::INITIATOR_SESSION_HASH, $view->initiatorSessionTokenHash);
+        $this->assertTrue($view->enteredFromBrowser);
         $this->assertTrue($view->belongsToInitiator(self::INITIATOR_SESSION_HASH));
         $this->assertFalse($view->locksOut('accept-new', self::INITIATOR_SESSION_HASH));
         $this->assertTrue($view->locksOut('accept-7', null));
@@ -287,6 +290,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
         $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $view->entryMode);
         $this->assertSame(self::INITIATOR_TYPE, $view->initiatorAgentType);
         $this->assertNull($view->initiatorSessionTokenHash);
+        $this->assertTrue($view->enteredFromBrowser);
         $this->assertFalse($view->belongsToInitiator(self::INITIATOR_SESSION_HASH));
         $this->assertTrue($view->locksOut('accept-new', self::INITIATOR_SESSION_HASH));
         $this->assertSame([], $view->passHashes);
@@ -349,6 +353,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ])->toArray();
     }
 
@@ -381,6 +386,7 @@ final class ProtectedModeFreezeStoreTest extends TestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-9'],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => true,
         ]);
     }
 

@@ -61,7 +61,7 @@ final class ProtectedModeFreezeStore
      * Read back on load and refused when it differs: a build that does not understand what it finds
      * must say so rather than restore a freeze by guessing at its fields.
      */
-    private const int FORMAT_VERSION = 1;
+    private const int FORMAT_VERSION = 2;
 
     /** @var string File key carrying {@see FORMAT_VERSION} */
     private const string KEY_VERSION = 'version';

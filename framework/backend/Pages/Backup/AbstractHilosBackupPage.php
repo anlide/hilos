@@ -549,31 +549,6 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
     }
 
     /**
-     * Reads the session behind a subscribing or acting connection, in the form the row compares.
-     *
-     * The connection knows its session token, and the protected-mode row keeps only a hash of the
-     * initiator's - so the two meet through the one hashing door the row owns
-     * ({@see StateProtectedModeRuntime::hashSessionToken()}) rather than through a second spelling of
-     * the algorithm here.
-     *
-     * Null is the honest answer to three different questions - the session registry is not
-     * mounted, this accept key names no connection, that connection carries no session - and all
-     * three mean the same thing to the only caller that reads it: this is not the browser the
-     * freeze was started from ({@see StateProtectedModeRuntime::belongsToInitiator()} refuses null).
-     *
-     * @param string $acceptKey Accept key of the connection to read
-     * @return ?string Hash of that connection's session token, or null when it carries no session
-     */
-    private function subscriberSessionTokenHash(string $acceptKey): ?string
-    {
-        $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
-
-        return $sessionToken === null || $sessionToken === ''
-            ? null
-            : StateProtectedModeRuntime::hashSessionToken($sessionToken);
-    }
-
-    /**
      * Reads the environment this installation runs in.
      *
      * An installation that cannot name its environment reads as null, and every reader of this

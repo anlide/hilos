@@ -295,6 +295,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]));
 
         foreach ([self::ANONYMOUS_KEY, self::VISITOR_KEY, self::ADMIN_KEY] as $acceptKey) {

@@ -347,6 +347,7 @@ final class ProtectedModeTestDriverTest extends TestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 

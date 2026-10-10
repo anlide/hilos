@@ -37,6 +37,7 @@ use Hilos\HilosException;
  * @property-read list<string> $admittedSessionTokenHashes Session token hashes let in by a pass; empty otherwise
  * @property-read list<string> $circleSessionTokenHashes Session token hashes of the circle photographed at the freeze; empty otherwise
  * @property-read int $circleNamedCount How many people the circle named at the freeze; zero otherwise
+ * @property-read bool $enteredFromBrowser Whether the freeze was opened from a browser session
  * @property-read ProtectedModeRuntimeActions $actions Write operations for the runtime singleton
  */
 final class ProtectedModeRuntime extends RtItem
@@ -51,12 +52,12 @@ final class ProtectedModeRuntime extends RtItem
 
     /**
      * @param string $name Property name
-     * @return string|int|array<int, string>|ProtectedModeRuntimeActions|null Property value
+     * @return string|int|bool|array<int, string>|ProtectedModeRuntimeActions|null Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      * @throws HilosException When an inherited getter or an implementation's relation read fails
      */
-    public function __get(string $name): string|int|array|ProtectedModeRuntimeActions|null
+    public function __get(string $name): string|int|bool|array|ProtectedModeRuntimeActions|null
     {
         return match ($name) {
             StateProtectedModeRuntime::phase => $this->_state->phase,
@@ -74,6 +75,7 @@ final class ProtectedModeRuntime extends RtItem
             StateProtectedModeRuntime::admittedSessionTokenHashes => $this->_state->admittedSessionTokenHashes,
             StateProtectedModeRuntime::circleSessionTokenHashes => $this->_state->circleSessionTokenHashes,
             StateProtectedModeRuntime::circleNamedCount => $this->_state->circleNamedCount,
+            StateProtectedModeRuntime::enteredFromBrowser => $this->_state->enteredFromBrowser,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

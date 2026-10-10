@@ -118,6 +118,25 @@ final class ProtectedModeRuntimeViewTest extends TestCase
         $this->assertSame('node-a', $view->initiatorNodeId);
         $this->assertNotNull($view->startedAt);
         $this->assertNull($view->activatedAt);
+        $this->assertTrue($view->enteredFromBrowser);
+    }
+
+    public function testDirectWindowRecordsBrowserOrConsoleAndLiftClearsTheOrigin(): void
+    {
+        RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);
+        $view = $this->viewWithActions(StateProtectedModeRuntime::create());
+
+        $view->actions->enterVerificationWindow($this->freeze(), null);
+        $this->assertFalse($view->enteredFromBrowser);
+
+        $view->actions->enterVerificationWindow(
+            $this->freeze()->withInitiatorSessionTokenHash(self::INITIATOR_SESSION_HASH),
+            self::INITIATOR_KEY,
+        );
+        $this->assertTrue($view->enteredFromBrowser);
+
+        $view->actions->enterInactive();
+        $this->assertFalse($view->enteredFromBrowser);
     }
 
     public function testEnterActiveStampsTheMomentEveryNodeQuiesced(): void
@@ -388,6 +407,7 @@ final class ProtectedModeRuntimeViewTest extends TestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         return new ProtectedModeRuntime($state);

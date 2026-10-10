@@ -377,6 +377,7 @@ final class ProtectedModeAdmissionTest extends TestCase
                 $circleSessionTokens,
             ),
             StateProtectedModeRuntime::circleNamedCount => count($circleSessionTokens),
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 

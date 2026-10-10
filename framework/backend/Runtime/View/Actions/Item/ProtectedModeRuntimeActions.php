@@ -49,7 +49,8 @@ final class ProtectedModeRuntimeActions extends RtActions
      * A manual maintenance window is different: its initiator has no browser exit button, so its
      * session hash is dropped too. After a restart an operator enters with a new maintenance pass
      * or opens the node from the console. This exception follows the operation and entry mode,
-     * not the phase; a restore verification window still keeps its initiating browser.
+     * not the phase; a restore verification window still keeps its initiating browser. The
+     * separate entered-from-browser fact survives either kind of restart for Maintenance's source label.
      *
      * TODO(HIL-93): the right to enter a frozen node belongs to the roles subsystem (HIL-93
      * anchors it, HIL-97 enforces it); until it exists this half of the decision is a session
@@ -80,6 +81,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->admittedSessionTokenHashes = [];
         $this->state->circleSessionTokenHashes = [];
         $this->state->circleNamedCount = 0;
+        $this->state->enteredFromBrowser = $row->enteredFromBrowser;
         $this->sync();
     }
 
@@ -115,6 +117,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->operation = $freeze->operation;
         $this->state->initiatorAcceptKey = $initiatorAcceptKey;
         $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
+        $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
         $this->state->initiatorAgentType = $freeze->initiatorAgentType;
         $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
         $this->state->initiatorNodeId = $freeze->initiatorNodeId;
@@ -148,6 +151,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->operation = $freeze->operation;
         $this->state->initiatorAcceptKey = $initiatorAcceptKey;
         $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
+        $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
         $this->state->initiatorAgentType = $freeze->initiatorAgentType;
         $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
         $this->state->initiatorNodeId = $freeze->initiatorNodeId;
@@ -346,6 +350,7 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->state->operation = null;
         $this->state->initiatorAcceptKey = null;
         $this->state->initiatorSessionTokenHash = null;
+        $this->state->enteredFromBrowser = false;
         $this->state->initiatorAgentType = null;
         $this->state->initiatorAgentIndex = null;
         $this->state->initiatorNodeId = null;

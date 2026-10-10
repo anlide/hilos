@@ -148,6 +148,7 @@ final class MailPoolFreezeIntegrationTest extends IntegrationTestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ];
         if ($entryMode !== null) {
             $row[StateProtectedModeRuntime::entryMode] = $entryMode;

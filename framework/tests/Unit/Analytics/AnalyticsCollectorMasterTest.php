@@ -120,6 +120,7 @@ final class AnalyticsCollectorMasterTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]));
         $collector->openWsConnection(self::ACCEPT_KEY, null);
         $collector->flush();

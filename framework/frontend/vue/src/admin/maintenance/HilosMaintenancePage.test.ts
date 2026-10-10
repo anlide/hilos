@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionError,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
+  MAINTENANCE_STATE_SIGNAL,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
   ScopeManager,
@@ -17,6 +19,7 @@ import type {
   ActionResult,
   HilosConnection,
   HilosMaintenanceContext,
+  HilosMaintenanceState,
   HilosRouter,
   PageRouteMatch,
   ProjectSignal,
@@ -123,6 +126,7 @@ function seededContext(
   focus: string[]
   pushUpdate: (next: CircleMember) => void
   pushRemove: (memberId: number, own?: boolean) => void
+  pushState: (state: HilosMaintenanceState) => void
 } {
   const rows = initial.slice()
   const focus: string[] = []
@@ -130,6 +134,9 @@ function seededContext(
   scopes.openPage(HilosPages.MAINTENANCE)
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const stateListeners = new Set<
+    (signal: { type: string; data: unknown }) => void
+  >()
   const serveWindow = (
     page: string = HilosPages.MAINTENANCE,
     tableKey: string = CIRCLE_TABLE,
@@ -183,6 +190,16 @@ function seededContext(
 
         return () => deltaListeners.delete(listener)
       }
+      if (event === 'projectSignal') {
+        stateListeners.add(
+          listener as (signal: { type: string; data: unknown }) => void,
+        )
+
+        return () =>
+          stateListeners.delete(
+            listener as (signal: { type: string; data: unknown }) => void,
+          )
+      }
 
       return () => {}
     },
@@ -196,6 +213,11 @@ function seededContext(
       actions,
     },
     focus,
+    pushState(state: HilosMaintenanceState): void {
+      for (const listener of stateListeners) {
+        listener({ type: MAINTENANCE_STATE_SIGNAL, data: state })
+      }
+    },
     pushUpdate(next: CircleMember): void {
       for (const listener of deltaListeners) {
         listener({
@@ -299,6 +321,22 @@ const ANN: CircleMember = {
   online: true,
 }
 
+function maintenanceState(
+  overrides: Partial<HilosMaintenanceState> = {},
+): HilosMaintenanceState {
+  return {
+    phase: 'inactive',
+    operation: null,
+    manual: false,
+    startedAt: null,
+    enteredFromBrowser: false,
+    passCount: 0,
+    circleNamed: 0,
+    circleAdmitted: 0,
+    ...overrides,
+  }
+}
+
 /** Open the add dialog and type an address into its field. */
 async function openAndType(
   wrapper: Awaited<ReturnType<typeof mountPage>>,
@@ -313,6 +351,74 @@ async function openAndType(
 }
 
 describe('HilosMaintenancePage', () => {
+  it('shows no state before a frame and the open banner after it, without a future action', async () => {
+    const { context, pushState } = seededContext([])
+    const wrapper = await mountPage(context)
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-state-open"]').exists(),
+    ).toBe(false)
+    pushState(maintenanceState())
+    await nextTick()
+    const stateBlock = wrapper.get('[data-id="hilos-maintenance-state"]')
+    expect(stateBlock.text()).toContain(HILOS_MAINTENANCE_STATE_COPY.openTitle)
+    expect(stateBlock.text()).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.openDescription,
+    )
+    expect(stateBlock.find('button').exists()).toBe(false)
+  })
+
+  it('renders the manual card and redraws its pass count on a new frame', async () => {
+    const { context, pushState } = seededContext([])
+    const wrapper = await mountPage(context)
+    const manual = maintenanceState({
+      phase: 'verifying',
+      operation: 'manual_maintenance',
+      manual: true,
+      startedAt: new Date(Date.now() - 150_000).toISOString(),
+      enteredFromBrowser: false,
+      circleNamed: 3,
+      circleAdmitted: 2,
+    })
+    pushState(manual)
+    await nextTick()
+    const card = wrapper.get('[data-id="hilos-maintenance-state-manual"]')
+    expect(card.text()).toContain(HILOS_MAINTENANCE_STATE_COPY.manualTitle)
+    expect(card.text()).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.turnedOnFromConsole,
+    )
+    expect(card.text()).toContain('3 named · 2 let in')
+    expect(card.text()).toContain('2 minutes ago')
+    expect(card.find('button').exists()).toBe(false)
+    pushState({ ...manual, passCount: 1 })
+    await nextTick()
+    expect(wrapper.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
+      '1',
+    )
+  })
+
+  it('renders only the planned operation lines in the frozen card', async () => {
+    const { context, pushState } = seededContext([])
+    const wrapper = await mountPage(context)
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        operation: 'restore',
+        startedAt: '2026-10-10T10:00:00+00:00',
+        passCount: 2,
+      }),
+    )
+    await nextTick()
+    const card = wrapper.get('[data-id="hilos-maintenance-state-operation"]')
+    expect(card.text()).toContain(HILOS_MAINTENANCE_STATE_COPY.operationTitle)
+    expect(card.text()).toContain(
+      HILOS_MAINTENANCE_STATE_COPY.verifyingPhaseNote,
+    )
+    expect(card.text()).toContain('restore')
+    expect(card.text()).toContain('2026-10-10T10:00:00+00:00')
+    expect(card.text()).not.toContain('Initiator')
+    expect(card.find('button').exists()).toBe(false)
+  })
+
   it('renders a row per member with the mark of whether they are signed in', async () => {
     const { context } = seededContext([
       {

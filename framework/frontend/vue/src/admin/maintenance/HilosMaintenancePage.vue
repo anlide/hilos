@@ -1,6 +1,6 @@
 <!-- HilosMaintenancePage — the framework Hilos maintenance section
-(HilosPages.MAINTENANCE, HIL-1119): the admin section of the node freeze, inside the
-admin shell. Its one block today is the verifier circle — who will check the system
+(HilosPages.MAINTENANCE): the live protected-mode state and verifier circle inside the
+admin shell. The circle says who will check the system
 after a freeze. A verifier is named here in a dialog (HIL-1120) and taken out here
 too, from the row's remove button (HIL-1121); the dialog confirming a removal holds
 its row in focus, so a row taken out in another tab is said to be gone before anybody
@@ -16,8 +16,12 @@ classes only (styling-rules.md). -->
 import {
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
+  createHilosMaintenanceState,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_STATE_COPY,
   HilosPages,
+  hilosMaintenanceCard,
+  hilosMaintenancePosition,
   isHiddenValue,
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
@@ -39,6 +43,28 @@ const props = defineProps<{
   /** The project context: scope stores, the connection, and the action lifecycle. */
   context: HilosMaintenanceContext
 }>()
+
+const stateHandle = createHilosMaintenanceState(props.context)
+const maintenanceState = useSignal(stateHandle.state)
+const nowMs = ref(Date.now())
+const position = computed(() =>
+  hilosMaintenancePosition(maintenanceState.value),
+)
+const stateCard = computed(() =>
+  hilosMaintenanceCard(maintenanceState.value, nowMs.value),
+)
+let clockTick: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  stateHandle.start()
+  clockTick = setInterval(() => {
+    nowMs.value = Date.now()
+  }, 30_000)
+})
+onUnmounted(() => {
+  stateHandle.dispose()
+  clearInterval(clockTick)
+})
 
 const circle = createHilosMaintenanceCircleTable(props.context, {
   openAdd: openCircleAdd,
@@ -164,6 +190,94 @@ async function submitCircleRemove(): Promise<void> {
 
 <template>
   <HilosAdminPage :page="HilosPages.MAINTENANCE">
+    <div aria-live="polite" data-id="hilos-maintenance-state">
+      <div
+        v-if="position === 'open'"
+        class="alert alert-success d-flex gap-3 align-items-start mb-3"
+        data-id="hilos-maintenance-state-open"
+      >
+        <i class="bi bi-check-circle-fill fs-5" aria-hidden="true"></i>
+        <div>
+          <h2 class="h6 fw-semibold mb-1">
+            {{ HILOS_MAINTENANCE_STATE_COPY.openTitle }}
+          </h2>
+          <p class="small mb-0">
+            {{ HILOS_MAINTENANCE_STATE_COPY.openDescription }}
+          </p>
+        </div>
+      </div>
+
+      <section
+        v-else-if="stateCard"
+        class="card border-warning mb-3"
+        :data-id="`hilos-maintenance-state-${stateCard.position}`"
+        :aria-label="stateCard.title"
+      >
+        <div
+          class="card-header d-flex flex-wrap align-items-center gap-2 bg-warning-subtle"
+        >
+          <h2 class="h6 fw-semibold mb-0">{{ stateCard.title }}</h2>
+          <span class="badge text-bg-warning">{{ stateCard.phase }}</span>
+          <span class="small text-body-secondary ms-auto">
+            {{ HILOS_MAINTENANCE_STATE_COPY.operationPrefix }}
+            <code>{{ stateCard.operation ?? '—' }}</code>
+          </span>
+        </div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-3">{{ HILOS_MAINTENANCE_STATE_COPY.phase }}</dt>
+            <dd class="col-sm-9">
+              <span class="badge text-bg-warning">{{ stateCard.phase }}</span>
+              <span
+                v-if="stateCard.phaseNote"
+                class="text-body-secondary ms-2"
+                >{{ stateCard.phaseNote }}</span
+              >
+            </dd>
+
+            <template v-if="stateCard.position === 'manual'">
+              <dt class="col-sm-3">
+                {{ HILOS_MAINTENANCE_STATE_COPY.closedSince }}
+              </dt>
+              <dd class="col-sm-9">
+                <code>{{ stateCard.startedAt ?? '—' }}</code>
+                <span class="text-body-secondary ms-2">{{
+                  stateCard.elapsed
+                }}</span>
+              </dd>
+              <dt class="col-sm-3">
+                {{ HILOS_MAINTENANCE_STATE_COPY.turnedOn }}
+              </dt>
+              <dd class="col-sm-9">{{ stateCard.turnedOn }}</dd>
+            </template>
+            <template v-else>
+              <dt class="col-sm-3">
+                {{ HILOS_MAINTENANCE_STATE_COPY.operation }}
+              </dt>
+              <dd class="col-sm-9">
+                <code>{{ stateCard.operation ?? '—' }}</code>
+              </dd>
+              <dt class="col-sm-3">
+                {{ HILOS_MAINTENANCE_STATE_COPY.started }}
+              </dt>
+              <dd class="col-sm-9">
+                <code>{{ stateCard.startedAt ?? '—' }}</code>
+              </dd>
+            </template>
+
+            <dt class="col-sm-3">
+              {{ HILOS_MAINTENANCE_STATE_COPY.codesInHand }}
+            </dt>
+            <dd class="col-sm-9" data-id="hilos-maintenance-pass-count">
+              {{ stateCard.passCount }}
+            </dd>
+            <dt class="col-sm-3">{{ HILOS_MAINTENANCE_STATE_COPY.circle }}</dt>
+            <dd class="col-sm-9">{{ stateCard.circle }}</dd>
+          </dl>
+        </div>
+      </section>
+    </div>
+
     <div class="card mb-3" data-id="hilos-maintenance-circle-panel">
       <div class="card-body">
         <HilosViewportTable

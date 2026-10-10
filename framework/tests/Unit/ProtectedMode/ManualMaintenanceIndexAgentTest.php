@@ -12,9 +12,12 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
@@ -23,6 +26,7 @@ use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -48,12 +52,38 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
 
     protected function tearDown(): void
     {
+        AbstractHilosMaintenancePage::reset();
         Hilos::$sr = null;
         Hilos::$rt = null;
+        Hilos::$browser = null;
         Hilos::$env = $this->previousEnv;
         Hilos::$cluster = $this->previousCluster;
 
         parent::tearDown();
+    }
+
+    public function testOnlyProtectedModeRtSyncMarksTheMaintenanceStateStale(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        Hilos::initBrowser();
+        Hilos::$browser = new IdentityTestBrowser(userId: 1, admin: true);
+        $agent = new ManualMaintenanceTestAgent();
+        new ManualMaintenanceStatePage($agent)->onSubscribe('maintenance-viewer', new PageRouteParams([]));
+        while (Hilos::$sr?->getNextQueuedSignal() !== null) {
+            continue;
+        }
+
+        $agent->onSignalRtSyncUpdated(new RtSyncUpdatedSignalData('other', 'runtime', []), '', '');
+        AbstractHilosMaintenancePage::onAgentTick($agent);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+
+        $agent->onSignalRtSyncUpdated(
+            new RtSyncUpdatedSignalData(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::ID, []),
+            '',
+            '',
+        );
+        AbstractHilosMaintenancePage::onAgentTick($agent);
+        $this->assertNotNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testEnableCarriesBrowserIdentityAndAnswersOnReadyOnly(): void
@@ -455,6 +485,7 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 
@@ -536,4 +567,9 @@ final class ManualMaintenanceTestRtContext extends RtContext
     public function configure(): void
     {
     }
+}
+
+/** Concrete Maintenance page for the index agent's RT-sync delivery test. */
+final class ManualMaintenanceStatePage extends AbstractHilosMaintenancePage
+{
 }

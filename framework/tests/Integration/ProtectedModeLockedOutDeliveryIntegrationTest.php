@@ -246,6 +246,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
             StateProtectedModeRuntime::initiatorSessionTokenHash => self::sessionHash(self::OPERATOR_SESSION_TOKEN),
             StateProtectedModeRuntime::circleSessionTokenHashes => [self::sessionHash(self::MEMBER_SESSION_TOKEN)],
             StateProtectedModeRuntime::circleNamedCount => 1,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
             StateProtectedModeRuntime::admittedSessionTokenHashes => [self::sessionHash(self::PASS_HOLDER_SESSION_TOKEN)],
             StateProtectedModeRuntime::passHashes => ['hash-of-a-pass'],
         ]));

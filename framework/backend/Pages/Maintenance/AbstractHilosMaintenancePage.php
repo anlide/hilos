@@ -7,23 +7,32 @@ namespace Hilos\Pages\Maintenance;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\View\Item\VerifierCircleMember;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
+use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 
 /**
@@ -34,10 +43,10 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
  * to it in the topology, with no line in FEATURES (docs/agents/architecture/admin-features.md).
  *
  * The page declares two actions: naming a verifier to the circle (HIL-1120) and taking one out
- * (HIL-1121). The circle's window rides the page response by itself because the table is bound to
- * the page; a named person arrives as a row of that table, and one taken out leaves as a row of the
- * same table. The page is served by the hilos index agent ({@see AbstractHilosIndexAgent}), which is also the one
- * that owns the circle.
+ * (HIL-1121). The circle's window rides the page response because the table is bound to the page;
+ * its rows follow circle writes. The section also sends the current protected-mode state before
+ * that response, then pushes changes while it is open. The hilos index agent
+ * ({@see AbstractHilosIndexAgent}) serves the page, owns the circle and marks its state stale on RT sync.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Maintenance\MaintenancePage).
  */
@@ -55,6 +64,151 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MAINTENANCE,
     ];
+
+    /** @var array<string, true> Connections currently subscribed to the Maintenance section */
+    private static array $subscribers = [];
+
+    /** Fingerprint of the last state broadcast, unaffected by individual subscriptions. */
+    private static ?string $lastBroadcastFingerprint = null;
+
+    /** Whether an RT sync has made the shown state potentially stale. */
+    private static bool $stale = false;
+
+    /** Marks the section for a push on the next index-agent tick when it has an audience. */
+    public static function markStale(): void
+    {
+        if (self::$subscribers !== []) {
+            self::$stale = true;
+        }
+    }
+
+    /**
+     * Forgets a departed connection; safe after both unsubscribe and connection close.
+     *
+     * @param string $acceptKey Connection accept key
+     */
+    public static function removeSubscriber(string $acceptKey): void
+    {
+        unset(self::$subscribers[$acceptKey]);
+        if (self::$subscribers === []) {
+            self::$lastBroadcastFingerprint = null;
+            self::$stale = false;
+        }
+    }
+
+    /** Clears worker-local subscribers when the index agent stops. */
+    public static function reset(): void
+    {
+        self::$subscribers = [];
+        self::$lastBroadcastFingerprint = null;
+        self::$stale = false;
+    }
+
+    /**
+     * Sends a changed state to admitted subscribers after an RT sync.
+     *
+     * A missing runtime row means this process holds no state yet; it cannot claim the node is
+     * open, and the stale mark stays for the next tick. A locked-out connection receives nothing.
+     *
+     * @param PageAgentInterface $agent Index agent routing the page signal
+     * @throws InvalidArgumentException When the subscription signal cannot be named or queued
+     */
+    public static function onAgentTick(PageAgentInterface $agent): void
+    {
+        if (self::$subscribers === [] || !self::$stale) {
+            return;
+        }
+
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($row === null) {
+            return;
+        }
+
+        $data = self::stateFromRow($row);
+        self::$stale = false;
+        $fingerprint = hash('sha256', serialize($data->toArray()));
+        if ($fingerprint === self::$lastBroadcastFingerprint) {
+            return;
+        }
+        self::$lastBroadcastFingerprint = $fingerprint;
+
+        foreach (array_keys(self::$subscribers) as $acceptKey) {
+            if ($row->locksOut($acceptKey, self::subscriberSessionTokenHash($acceptKey))) {
+                continue;
+            }
+
+            $frame = static::frameForViewer($acceptKey, $data, HilosMaintenanceStateSignalData::wireFields());
+            if ($frame === null) {
+                continue;
+            }
+
+            Hilos::$sr->queueSignal(
+                signalSource: $agent->getAgentSignalSource(),
+                signalType: new SignalType(SignalTypeConstants::WS_USER),
+                signalName: new SignalName(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MAINTENANCE),
+                signalData: new WebSocketSignalData(data: $frame, targetAcceptKey: $acceptKey),
+            );
+        }
+    }
+
+    /**
+     * Sends the state ahead of the page response that releases the first render.
+     *
+     * An individual answer does not touch the fingerprint or staleness of a pending broadcast.
+     *
+     * @param string $acceptKey Connection accept key
+     * @param PageRouteParams $params Route parameters (unused)
+     * @throws InvalidArgumentException When the subscription signal cannot be named or queued
+     */
+    protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        $row = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($row === null || $row->locksOut($acceptKey, self::subscriberSessionTokenHash($acceptKey))) {
+            return;
+        }
+
+        $frame = static::frameForViewer($acceptKey, self::stateFromRow($row), HilosMaintenanceStateSignalData::wireFields());
+        if ($frame !== null) {
+            $this->sendToUser(HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_MAINTENANCE, $acceptKey, $frame);
+        }
+    }
+
+    /**
+     * Registers a connection only after its page response succeeds.
+     *
+     * @param string $acceptKey Connection accept key
+     * @param PageRouteParams $params Route parameters (unused)
+     */
+    protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
+    {
+        self::$subscribers[$acceptKey] = true;
+    }
+
+    /**
+     * @param string $acceptKey Connection leaving the section
+     */
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        self::removeSubscriber($acceptKey);
+    }
+
+    /**
+     * @param ProtectedModeRuntime $row Current protected-mode row
+     * @return HilosMaintenanceStateSignalData State shown in the section
+     */
+    private static function stateFromRow(ProtectedModeRuntime $row): HilosMaintenanceStateSignalData
+    {
+        return new HilosMaintenanceStateSignalData(
+            phase: $row->phase,
+            operation: $row->operation,
+            manual: $row->isManualMaintenanceWindow(),
+            startedAt: $row->startedAt === null ? null : gmdate(DATE_ATOM, $row->startedAt),
+            enteredFromBrowser: $row->enteredFromBrowser,
+            passCount: count($row->passHashes),
+            circleNamed: $row->circleNamedCount,
+            circleAdmitted: count($row->circleSessionTokenHashes),
+        );
+    }
 
     /**
      * Routes the verifier-circle actions of the section.

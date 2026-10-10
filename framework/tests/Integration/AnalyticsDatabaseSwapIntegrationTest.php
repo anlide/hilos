@@ -312,6 +312,7 @@ final class AnalyticsDatabaseSwapIntegrationTest extends AnalyticsSchemaIntegrat
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ];
         if ($entryMode !== null) {
             $row[ProtectedModeRuntime::entryMode] = $entryMode;

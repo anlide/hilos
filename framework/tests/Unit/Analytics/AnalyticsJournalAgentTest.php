@@ -488,6 +488,7 @@ final class AnalyticsJournalAgentTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]));
     }
 

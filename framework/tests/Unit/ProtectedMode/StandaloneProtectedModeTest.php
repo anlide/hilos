@@ -866,6 +866,7 @@ final class StandaloneProtectedModeTest extends TestCase
                 StateProtectedModeRuntime::admittedSessionTokenHashes => [],
                 StateProtectedModeRuntime::circleSessionTokenHashes => [],
                 StateProtectedModeRuntime::circleNamedCount => 0,
+                StateProtectedModeRuntime::enteredFromBrowser => false,
             ]);
             $this->withDaemonTruthSource(static fn() => $view->actions->restoreFromDisk($row));
         }

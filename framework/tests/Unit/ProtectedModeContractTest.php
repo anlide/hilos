@@ -41,6 +41,7 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame([], $runtime->admittedSessionTokenHashes);
         $this->assertSame([], $runtime->circleSessionTokenHashes);
         $this->assertSame(0, $runtime->circleNamedCount);
+        $this->assertFalse($runtime->enteredFromBrowser);
         $this->assertSame(ProtectedModeRuntime::RT_ITEM, ProtectedModeRuntime::getRtCollectionKey());
     }
 
@@ -62,6 +63,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => true,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
@@ -69,6 +71,7 @@ final class ProtectedModeContractTest extends TestCase
         $this->assertSame($row, $runtime->toArray());
         $this->assertSame(0, $runtime->initiatorAgentIndex);
         $this->assertSame(1_700_000_000, $runtime->startedAt);
+        $this->assertTrue($runtime->enteredFromBrowser);
     }
 
     public function testVerifyingRuntimeRoundTripsBothLists(): void
@@ -89,11 +92,33 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
             ProtectedModeRuntime::circleSessionTokenHashes => ['session-hash-circle'],
             ProtectedModeRuntime::circleNamedCount => 3,
+            ProtectedModeRuntime::enteredFromBrowser => true,
         ];
 
         $runtime = ProtectedModeRuntime::fromRow($row);
 
         $this->assertSame($row, $runtime->toArray());
+    }
+
+    public function testRuntimeDiffChangesBrowserOriginOnlyWhenPresent(): void
+    {
+        $runtime = ProtectedModeRuntime::create();
+        $runtime->applyDiff([ProtectedModeRuntime::enteredFromBrowser => true]);
+
+        $this->assertTrue($runtime->enteredFromBrowser);
+        $runtime->applyDiff([ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING]);
+        $this->assertTrue($runtime->enteredFromBrowser);
+        $runtime->applyDiff([ProtectedModeRuntime::enteredFromBrowser => false]);
+        $this->assertFalse($runtime->enteredFromBrowser);
+    }
+
+    public function testRuntimeRowRequiresBrowserOrigin(): void
+    {
+        $row = ProtectedModeRuntime::create()->toArray();
+        unset($row[ProtectedModeRuntime::enteredFromBrowser]);
+
+        $this->expectException(InvalidFormatException::class);
+        ProtectedModeRuntime::fromRow($row);
     }
 
     public function testLegacyRuntimeRowInfersFreezeOnlyWhileOccupied(): void
@@ -157,6 +182,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $runtime->applyDiff([
@@ -194,6 +220,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $runtime->applyDiff([
@@ -219,6 +246,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $runtime->applyDiff([
@@ -242,6 +270,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $runtime->applyDiff([
@@ -280,6 +309,7 @@ final class ProtectedModeContractTest extends TestCase
                 ProtectedModeRuntime::admittedSessionTokenHashes => [],
                 ProtectedModeRuntime::circleSessionTokenHashes => [],
                 ProtectedModeRuntime::circleNamedCount => 0,
+                ProtectedModeRuntime::enteredFromBrowser => false,
             ]);
 
             $this->assertSame($silences, $runtime->silencesUnstoppedWriters(), $phase);
@@ -296,6 +326,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
         $fullFreeze = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
@@ -305,6 +336,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
         $restoreWindow = ProtectedModeRuntime::fromRow([
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_VERIFYING,
@@ -314,6 +346,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertTrue($manual->isManualMaintenanceWindow());
@@ -333,6 +366,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-initiator', null));
@@ -352,6 +386,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-9', null));
@@ -369,6 +404,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertTrue($runtime->locksOut('accept-initiator', null));
@@ -384,6 +420,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-initiator', null));
@@ -404,6 +441,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertFalse($runtime->locksOut('accept-second-tab', 'session-hash-verifier'));
@@ -417,6 +455,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertTrue($runtime->admits('session-hash-verifier'));
@@ -438,6 +477,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-a', 'session-hash-b'],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertTrue($runtime->admits('session-hash-a'));
@@ -464,6 +504,7 @@ final class ProtectedModeContractTest extends TestCase
                 ProtectedModeRuntime::admittedSessionTokenHashes => ['session-hash-verifier'],
                 ProtectedModeRuntime::circleSessionTokenHashes => [],
                 ProtectedModeRuntime::circleNamedCount => 0,
+                ProtectedModeRuntime::enteredFromBrowser => false,
             ]);
 
             $this->assertTrue($runtime->locksOut('accept-verifier', 'session-hash-verifier'), $phase);
@@ -708,6 +749,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertSame(1_700_000_030, $runtime->progressAt);
@@ -729,6 +771,7 @@ final class ProtectedModeContractTest extends TestCase
             ProtectedModeRuntime::admittedSessionTokenHashes => [],
             ProtectedModeRuntime::circleSessionTokenHashes => [],
             ProtectedModeRuntime::circleNamedCount => 0,
+            ProtectedModeRuntime::enteredFromBrowser => false,
         ]);
 
         $this->assertNull($runtime->progressAt);
