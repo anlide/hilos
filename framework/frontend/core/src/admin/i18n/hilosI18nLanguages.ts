@@ -178,3 +178,50 @@ export function createHilosI18nLanguagesTable(
     },
   }
 }
+
+/** Visual mark attributes attached to a language row or displayed in the legend. */
+export interface HilosI18nMark {
+  readonly icon: string
+  readonly tone: string
+  readonly label: string
+}
+
+/** Pre-defined marks for language rows in the table and legend. */
+export const HILOS_I18N_LANGUAGE_MARKS: Readonly<{
+  readonly default: HilosI18nMark
+  readonly own: HilosI18nMark
+}> = {
+  default: {
+    icon: 'bi-star-fill',
+    tone: 'text-bg-primary-subtle text-primary-emphasis',
+    label: 'Default language',
+  },
+  own: {
+    icon: 'bi-question-circle',
+    tone: 'text-bg-warning-subtle text-warning-emphasis',
+    label: 'Custom language',
+  },
+}
+
+/** A row in the languages marks legend. */
+export interface HilosI18nLegendRow {
+  readonly key: string
+  readonly mark: HilosI18nMark
+  readonly meaning: string
+}
+
+/** Legend items explaining marks on the languages page. */
+export const HILOS_I18N_LANGUAGES_LEGEND: ReadonlyArray<HilosI18nLegendRow> = [
+  {
+    key: 'default',
+    mark: HILOS_I18N_LANGUAGE_MARKS.default,
+    meaning:
+      'the language from the environment; it can be neither switched off nor deleted',
+  },
+  {
+    key: 'own',
+    mark: HILOS_I18N_LANGUAGE_MARKS.own,
+    meaning:
+      'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+  },
+]

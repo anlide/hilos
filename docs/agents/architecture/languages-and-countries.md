@@ -131,6 +131,8 @@ construction.
   and direction will not be refreshed, no country names will arrive for it,
   and framework updates will add nothing for it; the confirmation catches a
   typo such as `ez` instead of `es` (not in the code yet — HIL-1484).
+- Phrases of the languages catalog callout regarding adding by code and custom
+  languages appear together with "Add language" (not in the code yet — HIL-1484).
 - A known locale pair arrives with all seven formats from the catalog;
   the add window prefills them and allows each to be changed before saving.
 - Every known country arrives through reflow, and known countries cannot be
@@ -378,9 +380,11 @@ tabs fed by the same `languageCard` datum (HIL-1479). So is its Vue locales page
 (HIL-1476): the locales table opened on that language, a row for the language
 alone and one for every country, keyed by the pair written as its locale's code,
 whether the pair has a locale or not, standing under the card's shared header and
-tabs fed by the same `languageCard` datum. The Vue section root and the languages list are built
-(HIL-1474): the root shows the Languages card, and the list is the languages
-table, kept live by the table's own fan-out. The Vue names page of a country is built too
+tabs fed by the same `languageCard` datum. The Vue section root is built
+(HIL-1474) and shows the Languages card; the Vue languages list is built whole
+with its table (HIL-1474), the catalog tally callout above it (`builtInCatalog`),
+and the marks legend below it (HIL-112), kept live by the table's own fan-out.
+The Vue names page of a country is built too
 (HIL-1483): the names table opened on that country, standing under the card's shared header and
 tabs fed by the same `countryCard` datum. The Vue countries list is built
 (HIL-1475): the root shows the Countries card, and the list is the countries

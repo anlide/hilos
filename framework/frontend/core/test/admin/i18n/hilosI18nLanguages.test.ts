@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_COLUMNS,
   HILOS_I18N_LANGUAGES_FRAME,
+  HILOS_I18N_LANGUAGES_LEGEND,
   HILOS_I18N_LANGUAGES_TABLE,
   resolveHilosI18nLanguageRow,
 } from '../../../src/admin/i18n/hilosI18nLanguages.js'
@@ -69,5 +71,24 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
       HILOS_I18N_LANGUAGES_COLUMNS.every((column) => column.sortable),
     ).toBe(true)
     expect(HILOS_I18N_LANGUAGES_COLUMNS[0]?.card).toBe('title')
+  })
+})
+
+describe('HILOS_I18N_LANGUAGES_LEGEND', () => {
+  it('references default and own marks and maps their meanings', () => {
+    expect(HILOS_I18N_LANGUAGES_LEGEND).toEqual([
+      {
+        key: 'default',
+        mark: HILOS_I18N_LANGUAGE_MARKS.default,
+        meaning:
+          'the language from the environment; it can be neither switched off nor deleted',
+      },
+      {
+        key: 'own',
+        mark: HILOS_I18N_LANGUAGE_MARKS.own,
+        meaning:
+          'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+      },
+    ])
   })
 })

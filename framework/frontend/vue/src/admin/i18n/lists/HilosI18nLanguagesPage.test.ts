@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import {
+  BUILT_IN_CATALOG_DATA,
   createSignal,
   HILOS_I18N_LANGUAGES_TABLE,
   HilosPages,
@@ -73,11 +74,11 @@ function router(): HilosRouter {
   }
 }
 
-function context(): HilosI18nLanguageContext {
+function context(rows: LanguageSlot[] = [ENGLISH, OWN]) {
   const scopes = new ScopeManager()
-  scopes.openPage(HilosPages.I18N_LANGUAGES)
+  const scope = scopes.openPage(HilosPages.I18N_LANGUAGES)
   const windowListeners = new Set<Listener>()
-  const rows = [ENGLISH, OWN].map((language) => ({
+  const tableRows = rows.map((language) => ({
     rowKey: language.code,
     slots: { language },
   }))
@@ -85,8 +86,8 @@ function context(): HilosI18nLanguageContext {
     const data = {
       page: HilosPages.I18N_LANGUAGES,
       tableKey: HILOS_I18N_LANGUAGES_TABLE,
-      rows,
-      totalCount: rows.length,
+      rows: tableRows,
+      totalCount: tableRows.length,
       totalExact: true,
       firstAnchor: null,
       lastAnchor: null,
@@ -122,17 +123,19 @@ function context(): HilosI18nLanguageContext {
     },
   } as unknown as HilosConnection
 
-  return {
+  const ctx: HilosI18nLanguageContext = {
     connection,
     scopes,
     actions: {} as ActionLifecycle,
   }
+
+  return { context: ctx, scope }
 }
 
 describe('HilosI18nLanguagesPage', () => {
   it('links the code, marks default and custom, and ticks rtl and enabled', async () => {
     const view = mount(HilosI18nLanguagesPage, {
-      props: { context: context() },
+      props: { context: context().context },
       global: {
         provide: { [hilosRouterKey as symbol]: router() },
         stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
@@ -189,5 +192,69 @@ describe('HilosI18nLanguagesPage', () => {
     ).toBe(true)
     expect(view.text()).toContain('Qx own tongue')
     expect(view.html()).toContain('text-body-secondary')
+  })
+
+  it('renders the catalog callout with counts and omits it when data is absent', async () => {
+    const c1 = context()
+    c1.scope.data.set(BUILT_IN_CATALOG_DATA, {
+      languageCount: 3,
+      countryCount: 4,
+    })
+    const viewWithData = mount(HilosI18nLanguagesPage, {
+      props: { context: c1.context },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+
+    const catalog = viewWithData.get('[data-id="i18n-languages-catalog"]')
+    expect(catalog.get('h2').text()).toBe(
+      'The system knows 3 languages and 4 countries on its own',
+    )
+    expect(catalog.get('p').text()).toBe(
+      "The framework's built-in catalog holds 3 ISO 639-1 codes with their own names and writing direction. A language from it is refreshed whenever a framework update changes the catalog — and only while that language is switched off.",
+    )
+
+    const c2 = context()
+    const viewWithoutData = mount(HilosI18nLanguagesPage, {
+      props: { context: c2.context },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    expect(
+      viewWithoutData.find('[data-id="i18n-languages-catalog"]').exists(),
+    ).toBe(false)
+  })
+
+  it('renders the legend rows even when the languages table is empty', async () => {
+    const c = context([])
+    const view = mount(HilosI18nLanguagesPage, {
+      props: { context: c.context },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+
+    const legend = view.get('[data-id="i18n-languages-legend"]')
+    expect(legend.get('h2').text()).toContain('What the marks mean')
+
+    const defaultRow = view.get('[data-id="i18n-languages-legend-default"]')
+    expect(defaultRow.get('dt').text()).toContain('Default language')
+    expect(defaultRow.get('dd').text()).toBe(
+      'the language from the environment; it can be neither switched off nor deleted',
+    )
+
+    const ownRow = view.get('[data-id="i18n-languages-legend-own"]')
+    expect(ownRow.get('dt').text()).toContain('Custom language')
+    expect(ownRow.get('dd').text()).toBe(
+      'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+    )
   })
 })
