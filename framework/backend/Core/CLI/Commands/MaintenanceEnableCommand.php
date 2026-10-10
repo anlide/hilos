@@ -73,7 +73,7 @@ Description:
   Close the system to visitors by entering the manual maintenance window.
   Visitors see the maintenance screen immediately.
 
-  Answered by the index agent (HilosIndexAgent). Neighboring commands:
+  Answered by the index agent (agent type hilos_index). Neighboring commands:
   {$pass} lets a person in by minting a one-time pass code;
   {$disable} lifts manual maintenance and opens the system to everyone again.
 

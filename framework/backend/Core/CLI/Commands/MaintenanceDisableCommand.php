@@ -71,7 +71,7 @@ Description:
   Lift manual maintenance and open the system to everyone again.
   The maintenance screen goes away and normal traffic is admitted.
 
-  Answered by the index agent (HilosIndexAgent). Neighboring commands:
+  Answered by the index agent (agent type hilos_index). Neighboring commands:
   {$enable} closes the system to visitors;
   maintenance:pass mints a pass into the maintenance window.
 

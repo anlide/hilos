@@ -72,7 +72,7 @@ Description:
   Mint one pass into the manual maintenance window and print it.
   Give it to the person to let in: they enter it on the maintenance screen.
 
-  Answered by the index agent (HilosIndexAgent). Neighboring commands:
+  Answered by the index agent (agent type hilos_index). Neighboring commands:
   {$enable} closes the system to visitors;
   {$disable} lifts manual maintenance and opens the system to everyone again.
 
