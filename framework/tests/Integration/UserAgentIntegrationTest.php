@@ -151,10 +151,11 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::users, '43', []);
-        // The rename journal and the second-factor settings row are the sets the agent adds to -
-        // the journal with the name, the settings row on its first edit (HIL-1406) - and only to its
-        // own person's set.
-        foreach ([HilosDbContext::userRenames, HilosDbContext::secondFactorSettings] as $collection) {
+        // The rename journal, the second-factor settings row and the step-up confirmations are the
+        // sets the agent adds to - the journal with the name, the settings row on its first edit
+        // (HIL-1406), a confirmation of the person's own proof (HIL-1407) - and only to its own
+        // person's set.
+        foreach (self::addedSets() as $collection) {
             TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::USER_ID]);
             $this->assertCreateDenied($collection, ['43']);
         }
@@ -187,8 +188,9 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
     {
         ExecutionContext::setCurrentAgentId(self::AGENT_ID);
         $this->assertWriteDenied(HilosDbContext::users, self::USER_ID, []);
-        $this->assertCreateDenied(HilosDbContext::userRenames, [self::USER_ID]);
-        $this->assertCreateDenied(HilosDbContext::secondFactorSettings, [self::USER_ID]);
+        foreach (self::addedSets() as $collection) {
+            $this->assertCreateDenied($collection, [self::USER_ID]);
+        }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
         foreach (self::borrowedSets() as $collection) {
             $this->assertWriteDenied($collection, '1', [self::USER_ID]);
@@ -200,10 +202,15 @@ final class UserAgentIntegrationTest extends FrameworkIntegrationTestCase
      */
     private static function borrowedSets(): array
     {
-        return array_values(array_diff(
-            array_keys(UserAgentIntegrationWorker::OWNS_DB_SET),
-            [HilosDbContext::userRenames, HilosDbContext::secondFactorSettings],
-        ));
+        return array_values(array_diff(array_keys(UserAgentIntegrationWorker::OWNS_DB_SET), self::addedSets()));
+    }
+
+    /**
+     * @return list<string> Child sets the agent adds rows to, its own person's alone
+     */
+    private static function addedSets(): array
+    {
+        return [HilosDbContext::userRenames, HilosDbContext::secondFactorSettings, HilosDbContext::stepUps];
     }
 
     /**

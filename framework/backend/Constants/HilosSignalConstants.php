@@ -24,7 +24,6 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
@@ -123,6 +122,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
@@ -154,6 +155,10 @@ use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
+use Hilos\Users\DTO\UserStepUpCreditSignalData;
+use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
+use Hilos\Users\DTO\UserStepUpRecordSignalData;
 
 /**
  * Signal names used by framework-level Hilos admin pages.
@@ -613,8 +618,9 @@ final class HilosSignalConstants
     /**
      * The person's agent → users library: the changed password is written, or why not (HIL-1405).
      *
-     * The library clears the reset codes, tells the tabs, ends the other sessions or their trust,
-     * and closes the step. Carried by {@see UserPasswordChangeDoneSignalData}.
+     * The library clears the reset codes, tells the tabs, ends the other sessions if the person asked
+     * to, and closes the step; the agent took the other browsers' trust away before it wrote the
+     * password (HIL-1407). Carried by {@see UserPasswordChangeDoneSignalData}.
      */
     public const string HILOS_USER_PASSWORD_CHANGE_DONE = 'hilos_user_password_change_done';
 
@@ -770,6 +776,54 @@ final class HilosSignalConstants
      * The library answers the parked command. Carried by {@see UserSecondFactorUnlockDoneSignalData}.
      */
     public const string HILOS_USER_SECOND_FACTOR_UNLOCK_DONE = 'hilos_user_second_factor_unlock_done';
+
+    /**
+     * Users library → the confirming person's agent: record the confirmation a password or a code proved (HIL-1407).
+     *
+     * The library checked the proof; the agent clears the person's expired confirmations, records
+     * this one on the browser and tells every tab of it. Carried by {@see UserStepUpRecordSignalData},
+     * an ask of the handover form.
+     */
+    public const string HILOS_USER_STEP_UP_RECORD = 'hilos_user_step_up_record';
+
+    /**
+     * The confirming person's agent → users library: the confirmation is recorded, or why not (HIL-1407).
+     *
+     * The library answers the browser action. Carried by {@see UserStepUpRecordDoneSignalData}.
+     */
+    public const string HILOS_USER_STEP_UP_RECORD_DONE = 'hilos_user_step_up_record_done';
+
+    /**
+     * Sessions library → the person's agent: credit the data copy to a blocked person whose sign-in was refused (HIL-1407).
+     *
+     * The proof of the refused sign-in confirms the copy of the person's data in that browser. The
+     * holder does not wait: the refusal and the card are answered at once. Carried by
+     * {@see UserStepUpCreditSignalData}.
+     */
+    public const string HILOS_USER_STEP_UP_CREDIT = 'hilos_user_step_up_credit';
+
+    /**
+     * The person's agent → sessions library: the credit is recorded, or why not (HIL-1407).
+     *
+     * Only a refusal is read, into the holder's log. Carried by {@see UserStepUpCreditDoneSignalData}.
+     */
+    public const string HILOS_USER_STEP_UP_CREDIT_DONE = 'hilos_user_step_up_credit_done';
+
+    /**
+     * Sessions library → the person's agent: browsers whose sessions were ended no longer skip the second factor (HIL-1407).
+     *
+     * Sent once the holder has ended the sessions and answered the browser - one browser for "end
+     * this session", every browser of the person but one for "end the other sessions". Carried by
+     * {@see UserBrowserTrustRevokeSignalData}.
+     */
+    public const string HILOS_USER_BROWSER_TRUST_REVOKE = 'hilos_user_browser_trust_revoke';
+
+    /**
+     * The person's agent → sessions library: the trust is taken away, or why not (HIL-1407).
+     *
+     * Only a refusal is read, into the holder's log. Carried by {@see UserBrowserTrustRevokeDoneSignalData}.
+     */
+    public const string HILOS_USER_BROWSER_TRUST_REVOKE_DONE = 'hilos_user_browser_trust_revoke_done';
 
     // ── Hilos settings admin: table mutation actions (client → server) ──
     /** Client → server: add a setting override on the HILOS_SETTINGS page. */
@@ -1676,8 +1730,9 @@ final class HilosSignalConstants
     /**
      * Users library → the session holder: this person's second factor is gone (HIL-494).
      *
-     * Drops the browsers trusted to skip the step and lets every sign-in of the person still
-     * waiting on a code go. Carried by {@see AuthSecondFactorOffSignalData}.
+     * Lets every sign-in of the person still waiting on a code go. The browsers trusted to skip the
+     * step lost their trust already: the person's agent took it away with the factor (HIL-1407).
+     * Carried by {@see AuthSecondFactorOffSignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_OFF = 'hilos_auth_second_factor_off';
 
@@ -1686,12 +1741,6 @@ final class HilosSignalConstants
      * Carried by {@see AuthSecondFactorTrustDaysApplySignalData}.
      */
     public const string HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY = 'hilos_auth_second_factor_trust_days_apply';
-
-    /**
-     * Users library → session holder: revoke other browsers after a password change.
-     * Carried by {@see AuthSecondFactorTrustRevokeOthersSignalData}.
-     */
-    public const string HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS = 'hilos_auth_second_factor_trust_revoke_others';
 
     /**
      * Users library → session holder: end the other sessions after a password change (HIL-300).
@@ -1876,11 +1925,12 @@ final class HilosSignalConstants
     public const string HILOS_PROFILE_FLOW_CANCEL = 'hilos_profile_flow_cancel';
 
     /**
-     * Whoever recorded an identity confirmation → every tab of one browser session: these are the
-     * operations the session has a live confirmation of now (HIL-1330).
+     * The person's agent that recorded an identity confirmation → every tab of one browser session:
+     * these are the operations the session has a live confirmation of now (HIL-1330, HIL-1407).
      *
-     * Sent by the writer of the confirmation, right after the row is written, to every tab of the
-     * session ({@see StepUpConfirmations::record()}), so a tab standing on the confirmation step of
+     * Sent by the agent of the person who confirmed, the one writer of a confirmation, right after
+     * the row is written and before the agent answers whoever handed the write over, to every tab of
+     * the session ({@see StepUpConfirmations::record()}), so a tab standing on the confirmation step of
      * one of these operations passes it without a press; and by the sessions library on a
      * handshake, to the one tab that connected, so a tab that was away when the confirmation
      * landed passes it too. It carries the LIST {operations: [...]} rather than the operation just

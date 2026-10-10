@@ -90,7 +90,6 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
@@ -281,30 +280,30 @@ use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
-use Hilos\Users\DTO\UserSessionsRestateSignalData;
-use Hilos\Users\DTO\UserRenameSignalData;
-use Hilos\Users\DTO\UserRenameDoneSignalData;
-use Hilos\Users\DTO\UserBlockWriteSignalData;
-use Hilos\Users\DTO\UserThemePickWriteSignalData;
-use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
-use Hilos\Users\DTO\UserPasswordRehashSignalData;
-use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
-use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAddressVerifyDoneSignalData;
-use Hilos\Users\DTO\UserPasskeyUseSignalData;
-use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
-use Hilos\Users\DTO\UserPasswordResetSignalData;
-use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
-use Hilos\Users\DTO\UserPasswordChangeSignalData;
-use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
-use Hilos\Users\DTO\UserEmailChangeSignalData;
-use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
-use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
-use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
-use Hilos\Users\DTO\UserAdminWriteSignalData;
-use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
-use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
+use Hilos\Users\DTO\UserAdminWriteSignalData;
+use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
+use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
+use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
+use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
+use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
+use Hilos\Users\DTO\UserRenameDoneSignalData;
+use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
@@ -321,6 +320,12 @@ use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Users\DTO\UserSessionsRestateSignalData;
+use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
+use Hilos\Users\DTO\UserStepUpCreditSignalData;
+use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
+use Hilos\Users\DTO\UserStepUpRecordSignalData;
+use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\HilosException;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\Database\Schema\MountedCollectionKeyGuard;
@@ -935,6 +940,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -955,6 +963,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => HilosAgentType::HILOS_USERS_LIBRARY,
             ChatSignalConstants::RENAME_MODERATION_RESULT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -982,7 +991,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => HilosAgentType::HILOS_SESSIONS_LIBRARY,
-            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -991,6 +999,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
@@ -1126,6 +1136,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => 'userId',
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => 'userId',
+            HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => 'userId',
+            HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => 'userId',
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => 'userId',
             ChatSignalConstants::BOT_AGENT_START => 'botId',
             HilosSignalConstants::HILOS_MAIL_DELIVER => NotificationDeliverSignalData::shardKey,
             HilosSignalConstants::HILOS_MAIL_SEND => MailSendSignalData::shardKey,
@@ -1195,6 +1208,9 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => UserSecondFactorResetDueSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => UserSecondFactorResetRemindSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => UserSecondFactorUnlockSignalData::class,
+            HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => UserStepUpRecordSignalData::class,
+            HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => UserStepUpCreditSignalData::class,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => UserBrowserTrustRevokeSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
@@ -1215,6 +1231,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => UserSecondFactorResetDueDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE => UserStepUpRecordDoneSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
             HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
             ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
@@ -1242,7 +1259,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
-            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS => AuthSecondFactorTrustRevokeOthersSignalData::class,
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
@@ -1251,6 +1267,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,
             HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => UserStepUpCreditDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => UserBrowserTrustRevokeDoneSignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_EMIT => NotificationEmitSignalData::class,
             HilosSignalConstants::HILOS_DELIVERY_RETRY => DeliveryRetrySignalData::class,
             HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER => DeferredNotificationHandoverSignalData::class,

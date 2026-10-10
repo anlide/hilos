@@ -100,6 +100,9 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(HilosDbContext::pushSubscriptions, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::legalAcceptances, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         TruthSourceRegistry::register(HilosDbContext::accessLogEntries, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        // A step-up confirmation is the person's agent's to write (HIL-1407); a case that needs one
+        // open seeds it under this harness id rather than raising the agent.
+        TruthSourceRegistry::register(HilosDbContext::stepUps, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         Database::handlerStart();
     }
 

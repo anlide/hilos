@@ -44,6 +44,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -51,6 +52,8 @@ use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Utils\Helpers\RandomHelper;
 use JsonException;
 use Random\RandomException;
@@ -162,7 +165,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     }
 
     /**
-     * A block removes a signed-out browser's trust even when the person has no active session.
+     * A block removes a signed-out browser's trust even when the person has no active session: the
+     * person's agent takes it in the transaction that writes the flag, and the frame that ends the
+     * sessions takes none (HIL-1407).
      *
      * @throws HilosException When a user, session, or trust write fails
      * @throws RandomException When a fixture token cannot be minted
@@ -181,6 +186,12 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         });
 
         $this->block($userId);
+        $this->sendBlockChanged($userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, 30), 'The frame takes no trust');
+        $this->unblock($userId);
+        $this->sendBlockChanged($userId);
+
+        $this->blockThroughTheAgent($userId);
         $this->sendBlockChanged($userId);
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, $userId, 30));
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted(0, $userId, 30));
@@ -580,6 +591,9 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     /**
      * A new password saved through recovery stays, but the browser gets the card and no session.
      *
+     * The other browser lost its trust in the person's agent's write of the password, before the
+     * holder heard of it; the browser that recovered keeps its own (HIL-1407).
+     *
      * @throws HilosException When setup or a frame fails
      */
     public function testARecoveredPasswordDoesNotSignABlockedPersonIn(): void
@@ -600,6 +614,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
 
             return $other->id;
         });
+        $this->writeRecoveredPassword($userId, $currentSessionId);
         $this->underAgent($library, static fn () => $library->onSignalAgent(
             new AgentSignalData(new AuthPasswordChangedSignalData(
                 userId: $userId,
@@ -724,6 +739,42 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     }
 
     /**
+     * An account folded into another one is refused at sign-in like a blocked one, and credited
+     * nothing: the holder sends its agent no frame (HIL-1407).
+     *
+     * @throws HilosException When a fixture or a frame fails
+     */
+    public function testAFoldedAccountRefusedAtSignInIsCreditedNothing(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $survivorId = $this->registerUser($this->uniqueEmail());
+        Hilos::$db->userMerges->actions->add($userId, $survivorId);
+        $this->block($userId);
+        $token = $this->anonymousSession('folded-credit-ak');
+
+        $library = $this->sessionsLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalAgent(new AgentSignalData(new AuthSessionGrantSignalData(
+            sessionToken: $token,
+            userId: $userId,
+            acceptKey: 'folded-credit-ak',
+            requestId: self::REQUEST_ID,
+            action: HilosSignalConstants::HILOS_LOGIN,
+            provenBy: StepUpMethod::PASSWORD,
+        )), '', HilosSignalConstants::HILOS_AUTH_SESSION_GRANT));
+
+        $credits = 0;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT) {
+                $credits++;
+            }
+        }
+        self::assertSame(0, $credits);
+        self::assertFalse(Hilos::$db->stepUps->isConfirmed(
+            StateProtectedModeRuntime::hashSessionToken($token), $userId, StepUpOperationKey::EXPORT_DATA,
+        ));
+    }
+
+    /**
      * A refused password login credits export, and the copy owner accepts only that browser's person.
      *
      * @throws HilosException When a fixture, order or forget frame fails
@@ -817,6 +868,7 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             new StepUpConfirmActionDTO(StepUpOperationKey::EXPORT_DATA, StepUpMethod::PASSWORD, '', false,
                 'a long enough passphrase', null),
         );
+        $this->deliverPersonAgentFrames();
         self::assertTrue(Hilos::$db->stepUps->isConfirmed(
             StateProtectedModeRuntime::hashSessionToken($this->sessionOf('export-ask-ak')->token),
             $userId, StepUpOperationKey::EXPORT_DATA,
@@ -855,6 +907,59 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         Hilos::$db->users[$userId]->actions->setAdmin(true);
 
         return $userId;
+    }
+
+    /**
+     * Blocks the person the way the admin card does: the person's agent writes the flag, and the
+     * trust of every browser of the person goes in the same transaction (HIL-1407).
+     *
+     * The frame that ends the sessions is left to the case.
+     *
+     * @param int $userId Person to block
+     * @throws HilosException When the agent fails on the frame
+     */
+    private function blockThroughTheAgent(int $userId): void
+    {
+        $agent = $this->personAgent($userId);
+        $this->underAgent($agent, static fn () => $agent->onSignalAgent(new AgentSignalData(new UserBlockWriteSignalData(
+            userId: $userId,
+            block: true,
+            by: $userId + 1,
+            replySignal: HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE,
+            acceptKey: 'block-card-ak',
+            requestId: self::REQUEST_ID,
+            action: HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET,
+            successMessage: null,
+            answerSignal: 'block-card-answer',
+        )), '', HilosSignalConstants::HILOS_USER_BLOCK_WRITE));
+        self::assertTrue(Hilos::$db->users[$userId]?->block);
+    }
+
+    /**
+     * Writes a recovered password the way the users library asks the person's agent to: the trust
+     * of every browser of the person but the recovering one goes first (HIL-1407).
+     *
+     * @param int $userId Person whose password is recovered
+     * @param int $keepSessionId Session row of the browser that recovers
+     * @throws HilosException When the password row or the agent's write fails
+     */
+    private function writeRecoveredPassword(int $userId, int $keepSessionId): void
+    {
+        $password = Hilos::$db->identities->findPasswordByUser($userId);
+        self::assertNotNull($password);
+        $agent = $this->personAgent($userId);
+        $this->underAgent($agent, static fn () => $agent->onSignalAgent(new AgentSignalData(new UserPasswordResetSignalData(
+            userId: $userId,
+            identityId: (int)$password->id,
+            passwordHash: ObjectIdentity::hashPassword('a newer long passphrase'),
+            email: (string)$password->identifier,
+            keepSessionId: $keepSessionId,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
+            acceptKey: 'recovery-ak',
+            requestId: self::REQUEST_ID,
+            action: HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+            successMessage: null,
+        )), '', HilosSignalConstants::HILOS_USER_PASSWORD_RESET));
     }
 
     /**
@@ -961,8 +1066,11 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     ): ?AuthFlowOutcome {
         $library = $this->sessionsLibrary();
         $this->underAgent($library, static fn () => $library->onSignalAgent(new AgentSignalData($frame), '', $name));
+        $outcome = $this->deliverLibraryFrames($this->holder);
+        // A refused sign-in of a blocked person credits the data copy through the person's agent (HIL-1407).
+        $this->deliverPersonAgentFrames();
 
-        return $this->deliverLibraryFrames($this->holder);
+        return $outcome;
     }
 
     /**

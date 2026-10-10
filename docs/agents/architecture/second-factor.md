@@ -43,7 +43,7 @@ has a submit of its own in flight.
 | `hilos_second_factor_backup_code` | person's agent edits; users library creates (Add/Remove) | one row per code, spent by a conditional write |
 | `hilos_second_factor_reset` | person's agent edits; users library creates (Add) | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent creates and edits; session holder whole | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | session holder | a browser (session row) trusted for a person until a moment |
+| `hilos_second_factor_trust` | session holder creates and applies the administrator's term; person's agent takes one person's away | a browser (session row) trusted for a person until a moment |
 
 Every edit of one person's factor is written by that person's agent
 (`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
@@ -130,6 +130,27 @@ revokes that browser's trust for the person; ending all other sessions revokes
 all their trusts. Blocking a person removes every trust even when no session is
 currently signed in. Unblocking does not restore one. Ordinary sign-out keeps
 the trust until its expiry or an explicit revocation.
+
+Who writes each of these (HIL-1407). The session holder creates a trust on the
+way in, applies the administrator's term to every person's trust at once, and
+moves or removes them in the merge and the erasure; it claims the table whole for
+that. Taking one person's trust away is that person's agent's, in the turn of the
+write that causes it:
+
+- switching the factor off and a carried-out removal - in the transaction that
+  takes the factor out (`SecondFactorPersonEdits`); the holder's `off` frame only
+  lets go the browsers waiting on a code;
+- a changed or recovered password - the agent takes the trust of every browser
+  but the one named in the ask FIRST and writes the new hash SECOND. Taking the
+  trust away commits on its own and the framework does not nest transactions, so
+  the order is the guarantee: a failure of either half refuses the password as
+  not changed, and no moment exists where the password is new while the other
+  browsers still pass without a code;
+- a block - in the transaction that writes the flag; lifting it writes the flag
+  alone;
+- ending one session or all others - the holder ends the sessions and answers the
+  browser, then asks the agent on `hilos_user_browser_trust_revoke`, and only logs
+  a refusal.
 
 ## The delayed removal
 

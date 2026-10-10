@@ -816,6 +816,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             cancelReset: $cancelReset,
             trustDevice: $trustDevice,
             operation: null,
+            sessionTokenHash: null,
             replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
             acceptKey: $acceptKey,
             requestId: $this->library->currentActionRequestId(),

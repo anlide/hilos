@@ -8,7 +8,6 @@ use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
-use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\StepUp\StepUpGate;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpMethod;
@@ -16,14 +15,15 @@ use Hilos\Auth\StepUp\StepUpMethodResolver;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Users\DTO\UserPasskeyUseSignalData;
-use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\UserSecondFactorProveSignalData;
+use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use Random\RandomException;
 
 /**
@@ -32,7 +32,9 @@ use Random\RandomException;
  * The proof is asked of whoever the gate names as the confirmer ({@see StepUpGate::confirmer()}):
  * the person, or inside a takeover allowed to touch the sign-in the administrator behind it, whose
  * method, code, password or device key it then is, and on whom the confirmation is recorded
- * (HIL-1170). Nothing goes to the person whose account it is.
+ * (HIL-1170). Nothing goes to the person whose account it is. The confirmation is recorded by the
+ * confirmer's agent ({@see AbstractUserAgent}, HIL-1407): this library checks the proof and hands the
+ * record over.
  */
 final class StepUpCommands extends AbstractLibraryCommands
 {
@@ -109,24 +111,25 @@ final class StepUpCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Verifies the selected proof and opens one operation in this browser for the TTL, and tells every
-     * tab of the browser (HIL-1330).
+     * Verifies the selected proof and has the confirming person's agent open one operation in this
+     * browser for the TTL and tell every tab of the browser (HIL-1330, HIL-1407).
      *
      * An operation this browser has already confirmed returns at once and tells nobody: the tabs
      * heard of it when it was written, and a tab that connected since was told on its handshake.
      *
-     * A device key and a second-factor code are the two proofs that write, and the writes are the
-     * confirming person's agent's: a key's counter and last use (HIL-1405), a code's step, a burned
+     * A password and a code from a letter or a message are checked here, and only a proof that
+     * passed is handed to the agent, which records the confirmation; the action is answered on the
+     * agent's answer. A device key and a second-factor code are the two proofs that write, and the
+     * writes are the agent's too: a key's counter and last use (HIL-1405), a code's step, a burned
      * backup code, a wrong code counted against the ceiling (HIL-1406). A key's signature is checked
-     * here, a code by the agent; the confirmation is recorded on the agent's answer
-     * ({@see finishPasskeyProof()}, {@see finishSecondFactorProof()}), so the proof opens the
-     * operation only once it is written.
+     * here, a code by the agent, and the agent records the confirmation in the turn that writes the
+     * proof, so the proof opens the operation only once both are written.
      *
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpConfirmActionDTO $dto Protected operation and proof returned by its opening
      * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
-     * @throws ValidationException When the operation, method, or proof is no longer valid
-     * @throws HilosException When account proofs, verification, WebAuthn, env, or confirmation storage fails, or the frame cannot be queued
+     * @throws ValidationException When the operation, method, or proof is no longer valid, or the confirmer was erased or merged
+     * @throws HilosException When account proofs, verification, WebAuthn, env, or confirmation reads fail, or the ask cannot be queued
      */
     public function confirm(string $acceptKey, StepUpConfirmActionDTO $dto): void
     {
@@ -150,9 +153,9 @@ final class StepUpCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
+        $confirmerId = (int)$acting->userId;
         switch ($target->method) {
             case StepUpMethod::SECOND_FACTOR:
-                $confirmerId = (int)$acting->userId;
                 $this->library->askPersonAgent(
                     $confirmerId,
                     HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE,
@@ -163,6 +166,7 @@ final class StepUpCommands extends AbstractLibraryCommands
                         cancelReset: false,
                         trustDevice: false,
                         operation: $dto->operation,
+                        sessionTokenHash: ProtectedModeRuntime::hashSessionToken($acting->sessionToken),
                         replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
                         acceptKey: $acceptKey,
                         requestId: $this->library->currentActionRequestId(),
@@ -202,52 +206,19 @@ final class StepUpCommands extends AbstractLibraryCommands
                 throw new ValidationException(StepUpMessages::EXPIRED);
         }
 
-        StepUpConfirmations::record($this->library, $acting->sessionToken, $acting->userId, $dto->operation);
-    }
-
-    /**
-     * Records the confirmation a device key gave, once the confirming person's agent has recorded
-     * the key's use (HIL-1405).
-     *
-     * The continuation of {@see confirm()} on the agent's answer. The confirmation is written on the
-     * person who confirmed - the one the ask was addressed to - in the browser that asked, read
-     * again off the connection, which may have gone in between.
-     *
-     * @param UserPasskeyUseSignalData $ask The ask the agent answered, naming the operation
-     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
-     * @throws LogicException When the ask names no operation, which only a sign-in's ask does
-     * @throws HilosException When the confirmation cannot be stored, or the frame cannot be queued
-     */
-    public function finishPasskeyProof(UserPasskeyUseSignalData $ask): void
-    {
-        StepUpConfirmations::record(
-            $this->library,
-            $this->acting($ask->acceptKey)->sessionToken,
-            $ask->userId,
-            $ask->operation ?? throw new LogicException('A step-up proof by device key names no operation'),
-        );
-    }
-
-    /**
-     * Records the confirmation a second-factor code gave, once the confirming person's agent has
-     * checked it (HIL-1406).
-     *
-     * The continuation of {@see confirm()} on the agent's answer, in the form of
-     * {@see finishPasskeyProof()}: the confirmation is written on the person who confirmed, in the
-     * browser that asked, read again off the connection.
-     *
-     * @param UserSecondFactorProveSignalData $ask The ask the agent answered, naming the operation
-     * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
-     * @throws LogicException When the ask names no operation, which only the sign-in step and the profile's asks do
-     * @throws HilosException When the confirmation cannot be stored, or the frame cannot be queued
-     */
-    public function finishSecondFactorProof(UserSecondFactorProveSignalData $ask): void
-    {
-        StepUpConfirmations::record(
-            $this->library,
-            $this->acting($ask->acceptKey)->sessionToken,
-            $ask->userId,
-            $ask->operation ?? throw new LogicException('A step-up proof by second-factor code names no operation'),
+        $this->library->askPersonAgent(
+            $confirmerId,
+            HilosSignalConstants::HILOS_USER_STEP_UP_RECORD,
+            new UserStepUpRecordSignalData(
+                userId: $confirmerId,
+                sessionTokenHash: ProtectedModeRuntime::hashSessionToken($acting->sessionToken),
+                operation: $dto->operation,
+                replySignal: HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE,
+                acceptKey: $acting->acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
         );
     }
 

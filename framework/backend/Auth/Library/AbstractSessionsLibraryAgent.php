@@ -39,7 +39,6 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ProfileFlowStepSignalData;
@@ -51,6 +50,10 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
+use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
@@ -132,6 +135,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Item\SessionActions;
@@ -311,9 +315,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * that has one declares them itself, under the same condition that arms the hold sweep.
      *
      * The browsers trusted to skip the second-factor step (HIL-494) are claimed outright too. A
-     * trust is keyed by the session row, it is written when a sign-in this library grants is
-     * let through, and it is dropped when the second factor it skipped is switched off - all of
-     * it here, because what a browser is let into is decided here.
+     * trust is keyed by the session row and written when a sign-in this library grants is let
+     * through, because what a browser is let into is decided here; its days an administrator sets
+     * are applied to every person's trusts at once, and the merge and the erasure move and remove
+     * them. Taking one person's trust away - the second factor switched off, the password changed
+     * or recovered, the person blocked, the person's sessions ended - is the person's agent's
+     * (HIL-1407); this library asks for the last of these by frame.
      *
      * The rest are borrowed for the account erasure and merge: set operations held by this library
      * in one transaction, a declared shape in docs/agents/architecture/instance-owners.md#operations-over-many-instances.
@@ -332,6 +339,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     public const array OWNS_DB = [
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
+        // Created on the way in, capped or erased by the days an administrator sets for every person, moved by the merge
+        // and removed by the erasure: operations over many people. One person's trust is taken away by their agent (HIL-1407).
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorTrusts => TruthSourceOperation::ALL,
         // Minting the first administrator, the loser's block in the merge transaction and the erased person's row:
         // set operations of this library. The admin flag and the block are written by the person's agent.
@@ -361,8 +371,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Full ownership: merging upserts the survivor's wait and erasure removes the row in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
-        // TODO(HIL-1407): step-up writes move to the person's own agent; also credited by a sign-in the block refused.
-        HilosDbContext::stepUps => TruthSourceOperation::ALL,
+        // Borrowed for the account erasure, held by this library in one transaction.
+        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
+        HilosDbContext::stepUps => [TruthSourceOperation::Remove],
         // Borrowed for the account erasure, held by this library in one transaction.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove],
@@ -468,7 +479,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * library judges them and the person's agent writes them (HIL-1404), so three answers of that
      * agent are here too - the card's admin flag, the command's admin flag and the block - each
      * carrying back what this library needs to finish: tell the tabs, bind the session, end the
-     * sessions, answer whoever waits.
+     * sessions, answer whoever waits. Two more answers of that agent finish nothing (HIL-1407): a
+     * data copy credited to a refused sign-in of a blocked person, and the trust of browsers whose
+     * sessions were ended taken away. This library answered the browser before it asked, so it only
+     * logs a refusal.
      *
      * One more is the users library's (HIL-1182): a profile window of a session reached a step or
      * finished. The record of how far it got is the session's, so it is written here, and
@@ -500,7 +514,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY => AuthSecondFactorTrustDaysApplySignalData::class,
-        HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS => AuthSecondFactorTrustRevokeOthersSignalData::class,
         HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END => AuthOtherSessionsEndSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL => AuthSecondFactorCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED => AccountBlockChangedSignalData::class,
@@ -509,6 +522,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE => UserAdminWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE => UserBlockWriteDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE => UserStepUpCreditDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => UserBrowserTrustRevokeDoneSignalData::class,
     ];
 
     /**
@@ -3143,9 +3158,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Ends one other ordinary session owned by the acting user.
      *
+     * The ended browser's trust to skip the second factor is the person's, so the person's agent
+     * takes it away, asked once the session is ended (HIL-1407).
+     *
      * @param string $actingSessionToken Session token of the connection that asked
      * @param int $targetSessionId Database id of the session to end
      * @throws ValidationException When the acting or target session cannot be ended
+     * @throws InvalidArgumentException When a state frame or the ask to the person's agent cannot be named or queued
      * @throws HilosException On database or runtime failure
      */
     private function endSession(string $actingSessionToken, int $targetSessionId): void
@@ -3173,16 +3192,24 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->deauthenticateSession($targetSession->token);
-        Hilos::$db->secondFactorTrusts->actions->deleteForPair($targetSessionId, $actingSession->userId);
         $this->setActionSuccessMessage("Session #{$targetSessionId} ended");
+        $this->askPersonAgent($actingSession->userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
+            $actingSession->userId,
+            $targetSessionId,
+            false,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE,
+        ));
     }
 
     /**
      * Ends every other ordinary session owned by the acting user.
      *
+     * The trust of every other browser of the person to skip the second factor is taken away by the
+     * person's agent, asked once the sessions are ended (HIL-1407).
+     *
      * @param string $actingSessionToken Session token of the connection that asked
      * @throws ValidationException When the acting session no longer names a signed-in user
-     * @throws InvalidArgumentException When a state frame cannot be named
+     * @throws InvalidArgumentException When a state frame or the ask to the person's agent cannot be named or queued
      * @throws HilosException On database or runtime failure
      */
     private function endOtherSessions(string $actingSessionToken): void
@@ -3192,16 +3219,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             throw new ValidationException('This session has already ended');
         }
 
-        $ended = $this->deauthenticateOtherSessions(
-            $actingSession->userId,
-            $actingSessionToken,
-            $actingSession->id ?? 0,
-        );
+        $ended = $this->deauthenticateOtherSessions($actingSession->userId, $actingSessionToken);
         $this->setActionSuccessMessage(match ($ended) {
             0 => 'No other sessions were signed in',
             1 => 'Signed out of 1 session',
             default => "Signed out of {$ended} sessions",
         });
+        $this->askPersonAgent($actingSession->userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE, new UserBrowserTrustRevokeSignalData(
+            $actingSession->userId,
+            $actingSession->id ?? 0,
+            true,
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE,
+        ));
     }
 
     /**
@@ -3234,17 +3263,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * lowered and its tabs are told they are guests; it was signed out already, so the count
      * does not include it. The kept session keeps its own card.
      *
+     * The trust of the other browsers to skip the second factor is not taken here: it is the
+     * person's, and their agent takes it away (HIL-1407) - in the write of the new password when the
+     * password is changed or recovered, and on the frame {@see endOtherSessions()} sends when the
+     * person ends the other sessions from the profile.
+     *
      * @param int $userId User whose other sessions are dropped
      * @param string $keepSessionToken Session token that stays signed in
-     * @param int $keepSessionId Durable row of the browser to retain, or 0 when absent
      * @return int Number of ordinary sessions reverted to anonymous
      * @throws InvalidArgumentException When a state frame cannot be named
      * @throws HilosException On database or runtime failure
      */
-    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken, int $keepSessionId): int
+    private function deauthenticateOtherSessions(int $userId, string $keepSessionToken): int
     {
-        Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($userId, $keepSessionId);
-
         $ended = 0;
         foreach (Hilos::$db->sessions->findByUserId($userId) as $session) {
             if ($session->token === $keepSessionToken || $session->impersonatorUserId !== null) {
@@ -3778,7 +3809,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * master about agents that are gone (HIL-1044), one from whoever wrote a block flag (HIL-289),
      * two from the admin card asking to write rights or a block (HIL-304), the password
      * change's request to end other sessions (HIL-300), a profile window's step (HIL-1182), and
-     * three answers of a person's agent that wrote what this library judged (HIL-1404).
+     * three answers of a person's agent that wrote what this library judged (HIL-1404), and two
+     * more of that agent that are only logged when refused - a credit to a refused sign-in and a
+     * trust taken from ended sessions (HIL-1407).
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -3996,6 +4029,32 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE:
+                $credited = $data->data;
+                if (!$credited instanceof UserStepUpCreditDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserStepUpCreditDoneSignalData::class, $credited);
+                }
+                if ($credited->error !== null) {
+                    $this->logAgentError(
+                        "Step-up credit for #{$credited->request->userId} refused: " . ($credited->errorDetail ?? $credited->error),
+                    );
+                }
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE:
+                $revoked = $data->data;
+                if (!$revoked instanceof UserBrowserTrustRevokeDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserBrowserTrustRevokeDoneSignalData::class, $revoked);
+                }
+                if ($revoked->error !== null) {
+                    $this->logAgentError(
+                        "Browser trust revoke for #{$revoked->request->userId} refused: " . ($revoked->errorDetail ?? $revoked->error),
+                    );
+                }
+
+                return;
+
             case HilosSignalConstants::HILOS_IMPERSONATE_REQUEST:
                 if (!$data->data instanceof ImpersonateRequestSignalData) {
                     throw new InvalidAgentSignalPayloadException(
@@ -4129,32 +4188,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
-            case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS:
-                if (!$data->data instanceof AuthSecondFactorTrustRevokeOthersSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthSecondFactorTrustRevokeOthersSignalData::class,
-                        $data->data,
-                    );
-                }
-
-                Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession(
-                    $data->data->userId,
-                    $data->data->keepSessionId,
-                );
-
-                return;
-
             case HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END:
                 if (!$data->data instanceof AuthOtherSessionsEndSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
                 }
 
-                $this->deauthenticateOtherSessions(
-                    $data->data->userId,
-                    $data->data->sessionToken,
-                    $data->data->keepSessionId,
-                );
+                $this->deauthenticateOtherSessions($data->data->userId, $data->data->sessionToken);
 
                 return;
 
@@ -5681,7 +5720,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * own, and the ones where they take over somebody else - and each is marked with the account
      * BEFORE its sign-out, so the one frame the sign-out sends already carries the "Access closed"
      * card. A session where an administrator takes the blocked person over is not theirs to lose
-     * (HIL-304). Either way a second frame finds nothing left to do and writes nothing.
+     * (HIL-304). The trust of the person's browsers to skip the second factor is not taken here: the
+     * person's agent took it away in the transaction that wrote the flag (HIL-1407). Either way a
+     * second frame finds nothing left to do and writes nothing.
      *
      * Not blocked: every browser still holding a card about the account is given back to the
      * person it lost (HIL-1188). A card that can give nothing back ({@see returningBlockedUserId()})
@@ -5749,19 +5790,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return 0;
         }
 
-        $trusts = Hilos::$db->secondFactorTrusts;
-        Database::transactionStart();
-        try {
-            $trusts->actions->deleteForUser($userId);
-            Database::transactionCommit();
-        } catch (Throwable $failure) {
-            try {
-                Database::transactionRollback();
-            } catch (HilosException) {
-                // Preserve the failure that prevented the trust revocation.
-            }
-            throw $failure;
-        }
         $sessions = array_merge(
             array_filter(
                 Hilos::$db->sessions->findByUserId($userId),
@@ -6538,9 +6566,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The throttle is not told ({@see ThrottleGate::reportAuthenticated()} is reached only by the
      * sign-in itself): the password was right, and the session did not come up either.
      *
-     * A fresh proof by the very method the data copy would ask for counts as its confirmation, and
-     * is recorded and told to every tab of the browser through the one door every confirmation takes
-     * ({@see StepUpConfirmations::record()}, HIL-1330).
+     * A fresh proof by the very method the data copy would ask for counts as its confirmation. The
+     * confirmation is the person's, so their agent records it and tells every tab of the browser
+     * through the one door every confirmation takes ({@see StepUpConfirmations::record()}, HIL-1330),
+     * on a frame this library sends without waiting (HIL-1407): the card and the answer go at once.
+     * An account folded into another one is credited nothing.
      *
      * @param Session $session Session the proof arrived on
      * @param int $userId Person the proof resolved to
@@ -6549,8 +6579,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @param ?string $action Action name the answer is for, or null
      * @param ?string $provenBy Fresh sign-in proof eligible to credit export confirmation
      * @return bool True when the sign-in was refused, false when the account is not blocked
-     * @throws HilosException When the flag, the session, the identities or the confirmation cannot be read or written
-     * @throws InvalidArgumentException When a state frame or the confirmation frame cannot be named
+     * @throws HilosException When the flag, the session, the identities or the confirmations cannot be read or written
+     * @throws InvalidArgumentException When a state frame or the credit cannot be named or queued
      */
     private function refuseBlockedSignIn(
         Session $session,
@@ -6570,7 +6600,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($provenBy !== null && StepUpSettings::isEnabled(StepUpOperationKey::EXPORT_DATA)
             && (new StepUpMethodResolver())->resolve($userId)?->method === $provenBy
         ) {
-            StepUpConfirmations::record($this, $session->token, $userId, StepUpOperationKey::EXPORT_DATA);
+            $this->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT, new UserStepUpCreditSignalData(
+                $userId,
+                StateProtectedModeRuntime::hashSessionToken($session->token),
+                StepUpOperationKey::EXPORT_DATA,
+                HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT_DONE,
+            ));
         }
         if ($session->pendingSecondFactorUserId !== null) {
             $session->actions->releasePendingSecondFactor();
@@ -6594,6 +6629,32 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         );
 
         return true;
+    }
+
+    /**
+     * Hands one person's write to the person's agent, unless the person can no longer be addressed (HIL-1407).
+     *
+     * A person erased or folded into someone else gets no frame: the erasure and the merge took
+     * their confirmations and their trust away already, and there is nothing left to write. Nobody
+     * waits on the answer: this library answered the browser before it asked, and only logs a
+     * refusal when the answer comes back under the name the request carries.
+     *
+     * @param int $userId Person whose agent writes, the index of the frame
+     * @param string $signalName Frame name the person's agent declared
+     * @param SignalDataInterface $request The request the agent writes and answers
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     */
+    private function askPersonAgent(int $userId, string $signalName, SignalDataInterface $request): void
+    {
+        try {
+            AddressablePerson::require($userId);
+        } catch (ValidationException) {
+            return;
+        }
+
+        $this->sendToAgent($signalName, $request);
     }
 
     /**
@@ -6760,9 +6821,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Takes away what a person's second factor let this library keep, once the factor is gone (HIL-494).
      *
-     * The browsers trusted to skip the step are forgotten - a trust is worth nothing past the
-     * factor it skipped - and every browser still waiting on a code from that factor is sent back
-     * to the address field: nothing can produce the code any more.
+     * Every browser still waiting on a code from that factor is sent back to the address field:
+     * nothing can produce the code any more. The browsers trusted to skip the step are not this
+     * library's to forget: the person's agent took their trust away with the factor, in the same
+     * transaction (HIL-1407).
      *
      * @param int $userId Person whose second factor is gone
      * @throws HilosException On database or runtime failure
@@ -6770,8 +6832,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function forgetSecondFactor(int $userId): void
     {
-        Hilos::$db->secondFactorTrusts->actions->deleteForUser($userId);
-
         foreach (Hilos::$db->sessions->whereColumnIs(ObjectSession::pendingSecondFactorUserId, $userId) as $session) {
             $this->releaseSecondFactorWait($session, null, null, null, null, null);
         }
@@ -7734,7 +7794,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // browser gets the card where the "password changed" panel would have been, and every other
         // session still goes, as a reset promises.
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
-        $keepSessionId = $session?->id ?? 0;
         if ($session !== null && $this->refuseBlockedSignIn(
             $session,
             $frame->userId,
@@ -7743,7 +7802,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $frame->action,
         )) {
             $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey, sameSessionHeld: true);
-            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, $keepSessionId);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
 
             return;
         }
@@ -7764,7 +7823,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 $frame->requestId,
                 $frame->action,
             );
-            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken, $keepSessionId);
+            $this->deauthenticateOtherSessions($frame->userId, $frame->sessionToken);
 
             return;
         }
@@ -7781,7 +7840,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             outcome: $frame->outcome,
         );
         $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
-        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken, $keepSessionId);
+        $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken);
     }
 
     /**

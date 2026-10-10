@@ -19,10 +19,12 @@ person or an administrator: its own row and every row whose set tree ends at
 that instance. For a person, the indexed agent, its row and set claims, and
 its idle lifetime are built (HIL-630). The name, the administrator flag and the
 block are written by it (HIL-1404), and so are the edits of the person's sign-in
-methods and passkey credentials, sign-in included (HIL-1405), and of the person's
-second factor, a removal whose delay elapsed included (HIL-1406). The other edits
-move to it in the leaves named in [Where The Pieces Land](#where-the-pieces-land)
-(not in the code yet — HIL-1407, HIL-1408, HIL-1409).
+methods and passkey credentials, sign-in included (HIL-1405), of the person's
+second factor, a removal whose delay elapsed included (HIL-1406), and the
+person's step-up confirmations and the trust taken from the person's browsers
+(HIL-1407). The other edits move to it in the leaves named in
+[Where The Pieces Land](#where-the-pieces-land)
+(not in the code yet — HIL-1408, HIL-1409).
 
 Choose the writer before adding a write path. A new surface does not become
 another writer merely because it already runs in a library or a page agent.
@@ -58,8 +60,9 @@ can find the two Entity constants, but cannot decide the second question.
 The owner writes ordinary edits of one instance's content, whether the person
 or an administrator requested them. For the person the name, the administrator
 flag and the block have moved (HIL-1404), and so have the sign-in methods and
-passkey credentials (HIL-1405), the second factor (HIL-1406), and the theme
-choice (HIL-1427); the rest are still ahead (not in the code yet — HIL-1407,
+passkey credentials (HIL-1405), the second factor (HIL-1406), the step-up
+confirmations and the trust taken from the person's browsers (HIL-1407), and the
+theme choice (HIL-1427); the rest are still ahead (not in the code yet —
 HIL-1408, HIL-1409).
 
 The library keeps operations over the set: create, erase, merge, sweep expired
@@ -98,8 +101,14 @@ The sessions holder's responsibility is authorization. The person's other
 ordinary content edits go to the person's own agent, with erasure and merge
 remaining the declared set operations below (owner's decision, 2026-10-04). It
 judges the administrator flag and the block and the person's agent writes them
-(HIL-1404); the other edits are still ahead
-(not in the code yet — HIL-1407, HIL-1408, HIL-1409).
+(HIL-1404). One person's step-up confirmation and one person's browser trust
+taken away are the person's agent's too (HIL-1407): the holder hands the data-copy
+credit of a refused blocked sign-in and the trust of the sessions it ended to the
+agent by frame, and the agent takes the trust away itself with the second factor,
+a changed or recovered password and the block. The holder keeps creating the
+trust on the way in, applying the days an administrator sets to every person's
+trust at once, and the merge and the erasure. The other edits are still ahead
+(not in the code yet — HIL-1408, HIL-1409).
 Whether a session itself needs an instance owner is open in HIL-1403. Until
 that answer, this rule neither puts the session in the person's set nor rules
 it out as a future decision; it does not change the current Entity declaration.
@@ -132,14 +141,17 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   wrong code counted — so the agent claims that set with `Add` and `Update`
   (owner's decision, 2026-10-09, HIL-1406). It is a one-to-one extension of the
   person's own row, not a new member of the set; where a set holds many rows, the
-  library still creates them.
+  library still creates them - with one exception. A step-up confirmation is the
+  mark of the person's own proof in one browser: the owner inserts or extends it
+  and clears the person's expired ones in one write, so it claims that set whole
+  (owner's decision, 2026-10-09, HIL-1407).
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
 starting an agent (owner's decision, 2026-10-04): a sign-in after an idle spell
 waits for the person's agent to rise when it has something to write (HIL-1405).
 The remaining content write paths still move
-(not in the code yet — HIL-1407, HIL-1408, HIL-1409).
+(not in the code yet — HIL-1408, HIL-1409).
 
 An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
 
@@ -167,8 +179,16 @@ An edit that moved travels in one shape, and the next ones follow it (HIL-1404):
   `hilos_user_second_factor_enroll_confirm`, `hilos_user_second_factor_remove`,
   `hilos_user_second_factor_reset_cancel`, `hilos_user_second_factor_wait_write`,
   `hilos_user_second_factor_reset_due`, `hilos_user_second_factor_reset_remind`
-  and `hilos_user_second_factor_unlock` (HIL-1406), each indexed by `userId`; each
-  has a `_done` answer declared on its coordinator.
+  and `hilos_user_second_factor_unlock` (HIL-1406), and for the step-up
+  confirmations and the browser trust `hilos_user_step_up_record` from the users
+  library, `hilos_user_step_up_credit` and `hilos_user_browser_trust_revoke` from
+  the sessions holder (HIL-1407), each indexed by `userId`; each has a `_done`
+  answer declared on its coordinator. A proof that is itself the owner's write
+  carries the confirmation in the same frame: `hilos_user_passkey_use` and
+  `hilos_user_second_factor_prove` name the operation and the browser's token
+  hash, and the agent records the confirmation in the turn that writes the proof
+  (HIL-1407). A frame the coordinator does not wait on - the credit, the trust of
+  ended sessions - is a plain one: its answer is only logged on a refusal.
 - **A browser action that ends after the agent's answer is resumed by the
   coordinator** (HIL-1405). The coordinator defers the action's answer when it
   sends the ask; on the answer it takes the action name and the request id back
@@ -234,6 +254,11 @@ These are declared shapes, not debts waiting for an instance owner:
   decision at the split, 2026-10-04).
 - **Unlinking the rename journal while clearing chat history** is a sweep. The
   chat agent has the borrowed write needed to clear the room reference.
+- **The days an administrator sets for browser trust** cap or erase every
+  person's trust at once, at the sessions holder (HIL-1301). With the trust it
+  creates on the way in and moves or removes in the merge and the erasure, this
+  is why the holder claims the trust table whole; one person's trust taken away
+  is still the person's agent's (HIL-1407).
 
 After an erasure or a merge commits, on any node, the agent of each erased
 person and the agent of the folded account stop themselves: the people row is
@@ -259,9 +284,10 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 - **A library writes ordinary content edits of one owned instance.** Send the
   edit to the instance owner. For the name, the administrator flag and the block
   this is done (HIL-1404), for the sign-in methods and passkey credentials
-  (HIL-1405) and for the second factor (HIL-1406); for the person's other content
-  it is the current arrangement the moves replace, not evidence that the rule is
-  already implemented (not in the code yet — HIL-1407, HIL-1408, HIL-1409).
+  (HIL-1405), for the second factor (HIL-1406) and for the step-up confirmations
+  and the browser trust (HIL-1407); for the person's other content it is the
+  current arrangement the moves replace, not evidence that the rule is already
+  implemented (not in the code yet — HIL-1408, HIL-1409).
 - **The owner writes only its own row and merely reads its children.** Own the
   child set as well, with the executor exceptions above. Owning the children
   was the owner's explicit decision of 2026-09-17; the person's figure carries
@@ -286,7 +312,7 @@ move keeps a `TODO` naming the leaf that will remove the borrowed write.
 | HIL-1404 | Name, administrator flag and block edits (built). |
 | HIL-1405 | Sign-in methods and passkey credentials, including sign-in (built). |
 | HIL-1406 | Second factor, including a reset whose delay elapsed (built). |
-| HIL-1407 | Step-up confirmations and browser trust (not in the code yet — HIL-1407). |
+| HIL-1407 | Step-up confirmations and browser trust taken away (built). |
 | HIL-1408 | Notification marks, channel preferences and push unsubscribe (not in the code yet — HIL-1408). |
 | HIL-1409 | Account-deletion requests and profile photos (not in the code yet — HIL-1409). |
 | HIL-1410 | Erasure and merge stop the affected instance agents (built). |

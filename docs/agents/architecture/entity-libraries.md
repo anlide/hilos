@@ -635,7 +635,8 @@ each piece lands:
 | HIL-630 | the person's own agent as a figure: raised on demand, asleep when idle, holding its row and set |
 | HIL-1405 | the edits of one person's sign-in methods and passkeys, sign-in included, moved to that person's agent (built) |
 | HIL-1406 | the edits of one person's second factor, a removal whose delay elapsed included, moved to that person's agent (built) |
-| HIL-1407…HIL-1409 | the remaining edits of one person moving to that person's agent |
+| HIL-1407 | one person's step-up confirmations and the trust taken from their browsers, moved to that person's agent (built) |
+| HIL-1408…HIL-1409 | the remaining edits of one person moving to that person's agent |
 | HIL-632 | the instance-owner rule: [instance-owners.md](instance-owners.md) |
 | HIL-946 | the settings library: one writer for a collection three admin screens write, and the first library that holds a write without holding a read |
 

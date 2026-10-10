@@ -18,7 +18,6 @@ use Hilos\Auth\Library\DTO\ProfileSetPasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpeningReplyDTO;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordOpenActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
@@ -204,15 +203,6 @@ final class ProfileActionDTOTest extends TestCase
         self::assertSame($dto->toArray(), AuthSecondFactorTrustDaysApplySignalData::fromJson($dto->toJson())->toArray());
         $this->expectException(InvalidFormatException::class);
         AuthSecondFactorTrustDaysApplySignalData::fromArray(['trustDays' => 7]);
-    }
-
-    /** The current browser is named by its row id, even when its token later rotates. */
-    public function testOtherTrustsRevokeFrameRoundTrips(): void
-    {
-        $dto = new AuthSecondFactorTrustRevokeOthersSignalData(300, 41);
-        self::assertSame($dto->toArray(), AuthSecondFactorTrustRevokeOthersSignalData::fromJson($dto->toJson())->toArray());
-        $this->expectException(InvalidFormatException::class);
-        AuthSecondFactorTrustRevokeOthersSignalData::fromArray(['userId' => 300]);
     }
 
     /**

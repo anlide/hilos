@@ -70,9 +70,10 @@ use Hilos\Users\AdminAudience;
  * frames to a holder of the fixture ({@see self::submitStep()}), so the next step reads the
  * record the last one wrote - the two processes of a stand, folded into one.
  *
- * An edit of a way in is written by the person's agent (HIL-1405): the library asks it by frame
- * and resumes the action on its answer. The same carrying hands each ask to the person's agent,
- * raised under its own claims, and each answer back to the library.
+ * An edit of a way in is written by the person's agent (HIL-1405), and so is a step-up
+ * confirmation (HIL-1407): the library asks it by frame and resumes the action on its answer. The
+ * same carrying hands each ask to the person's agent, raised under its own claims, and each answer
+ * back to the library.
  */
 abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCase
 {
@@ -92,6 +93,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE,
+        HilosSignalConstants::HILOS_USER_STEP_UP_RECORD,
     ];
 
     /** The person's agent's answers, each resuming the action that asked. */
@@ -108,6 +110,7 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE,
+        HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE,
     ];
 
     public const string SESSION_TOKEN = 'aa0000000000000000000000000001137';

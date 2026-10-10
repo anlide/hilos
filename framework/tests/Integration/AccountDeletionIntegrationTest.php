@@ -518,7 +518,7 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
     {
         putenv(EnvConstants::MAIL_SMTP_HOST->name);
         $this->seedPasswordAccount();
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
             new StepUpConfirmActionDTO(StepUpOperationKey::DELETE_ACCOUNT, StepUpMethod::PASSWORD, '', false, self::PASSWORD, null),
         );

@@ -9,6 +9,7 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPersonEdits;
+use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -51,6 +52,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
@@ -83,6 +86,10 @@ use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
+use Hilos\Users\DTO\UserStepUpCreditSignalData;
+use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
+use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use Hilos\WiringRefusal;
 use Throwable;
 
@@ -96,10 +103,15 @@ use Throwable;
  * person's second factor too (HIL-1406): an app confirmed or disconnected, a code that proves the
  * person - a step taken, a backup code burned, a wrong code counted and the lock it puts or an
  * operator lifts - the removal wait, and a removal canceled, carried out or marked reminded
- * ({@see SecondFactorPersonEdits}). Each comes as a frame from the coordinator that judged it: the
- * name, the ways in and the second factor from {@see AbstractUsersLibraryAgent}, the two flags from
- * {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that accepts
- * the person's pick (HIL-1427). The
+ * ({@see SecondFactorPersonEdits}). It records the person's confirmations of a protected operation
+ * and takes away the trust of the person's browsers (HIL-1407): a confirmation proved by a password
+ * or a code, a device key or a second-factor code, or credited to a refused sign-in of a blocked
+ * person ({@see StepUpConfirmations}); the trust when the second factor goes, when the password is
+ * changed or recovered, when the person is blocked and when the person's sessions are ended. Each
+ * comes as a frame from the coordinator that judged it: the name, the ways in, the second factor and
+ * the confirmations from {@see AbstractUsersLibraryAgent}, the two flags, the credit and the ended
+ * sessions from {@see AbstractSessionsLibraryAgent}. The theme choice comes from the coordinator that
+ * accepts the person's pick (HIL-1427). The
  * agent writes and always answers - a refusal included, because the coordinator continues only on
  * the answer and something is waiting on it - and the coordinator does what follows the write.
  * Creating a way in, an enrolment, a set of backup codes or a removal stays with the libraries that
@@ -195,6 +207,18 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorUnlockSignalData::userId,
             AgentSignalConfigKey::DTO => UserSecondFactorUnlockSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_STEP_UP_RECORD => [
+            AgentSignalConfigKey::INDEX_FIELD => UserStepUpRecordSignalData::userId,
+            AgentSignalConfigKey::DTO => UserStepUpRecordSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT => [
+            AgentSignalConfigKey::INDEX_FIELD => UserStepUpCreditSignalData::userId,
+            AgentSignalConfigKey::DTO => UserStepUpCreditSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserBrowserTrustRevokeSignalData::userId,
+            AgentSignalConfigKey::DTO => UserBrowserTrustRevokeSignalData::class,
+        ],
     ];
 
     /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
@@ -210,7 +234,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     second-factor settings (`hilos_second_factor_setting`, keyed by the person), which the
      *     owner's first edit of it brings into being - a wait chosen, a wrong code counted - so the
      *     agent claims that set with adding and editing (owner's decision, 2026-10-09). It is a
-     *     one-to-one extension of the person's own row, not a new member of a set.
+     *     one-to-one extension of the person's own row, not a new member of a set. The person's
+     *     confirmations of a protected operation are claimed whole: a confirmation is the mark of the
+     *     person's own proof in one browser, and the agent inserts or extends it and clears the
+     *     person's expired ones in one write (owner's decision, 2026-10-09, HIL-1407). A claim that
+     *     may add is not borrowed, so the start does not wait for it.
      */
     public const array OWNS_DB_SET = [
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -220,7 +248,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::stepUps => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userPhotos => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::notifications => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -304,6 +332,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
+     * A confirmation recorded and a trust taken away are answered as a flag is (HIL-1407): the
+     * browser action waits on a confirmation, and the sessions library reads a refusal of a credit or
+     * of a trust into its log.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
@@ -420,7 +451,12 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->refuseAnotherPerson($passkeyUse->userId, $name);
                 $this->sendToAgent($passkeyUse->replySignal, UserPasskeyUseDoneSignalData::to(
                     $passkeyUse,
-                    $this->flagRefusal(fn () => $this->recordPasskeyUse($passkeyUse->passkeyId, $passkeyUse->signCount), 'Passkey use'),
+                    $this->flagRefusal(function () use ($passkeyUse): void {
+                        $this->recordPasskeyUse($passkeyUse->passkeyId, $passkeyUse->signCount);
+                        if ($passkeyUse->operation !== null && $passkeyUse->sessionTokenHash !== null) {
+                            $this->recordStepUp($passkeyUse->sessionTokenHash, $passkeyUse->operation);
+                        }
+                    }, 'Passkey use'),
                 ));
 
                 return;
@@ -434,7 +470,10 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->refuseAnotherPerson($reset->userId, $name);
                 $this->sendToAgent($reset->replySignal, UserPasswordResetDoneSignalData::to(
                     $reset,
-                    $this->flagRefusal(fn () => $this->writePasswordHash($reset->identityId, $reset->passwordHash), 'Password recovery'),
+                    $this->flagRefusal(
+                        fn () => $this->writeNewPassword($reset->identityId, $reset->passwordHash, $reset->keepSessionId),
+                        'Password recovery',
+                    ),
                 ));
 
                 return;
@@ -448,7 +487,10 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->refuseAnotherPerson($change->userId, $name);
                 $this->sendToAgent($change->replySignal, UserPasswordChangeDoneSignalData::to(
                     $change,
-                    $this->flagRefusal(fn () => $this->writePasswordHash($change->identityId, $change->passwordHash), 'Password change'),
+                    $this->flagRefusal(
+                        fn () => $this->writeNewPassword($change->identityId, $change->passwordHash, $change->keepSessionId),
+                        'Password change',
+                    ),
                 ));
 
                 return;
@@ -489,7 +531,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($prove->userId, $name);
                 $this->sendToAgent($prove->replySignal, $this->secondFactorAnswer(
-                    fn () => $this->secondFactorEdits()->prove($prove),
+                    fn () => $this->proveSecondFactor($prove),
                     fn (ActionRefusal $refusal) => UserSecondFactorProveDoneSignalData::refused($prove, $refusal),
                 ));
 
@@ -589,6 +631,48 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->sendToAgent($unlock->replySignal, $this->secondFactorAnswer(
                     fn () => $this->secondFactorEdits()->unlock($unlock),
                     fn (ActionRefusal $refusal) => UserSecondFactorUnlockDoneSignalData::refused($unlock, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_STEP_UP_RECORD:
+                $record = $data->data;
+                if (!$record instanceof UserStepUpRecordSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserStepUpRecordSignalData::class, $record);
+                }
+
+                $this->refuseAnotherPerson($record->userId, $name);
+                $this->sendToAgent($record->replySignal, UserStepUpRecordDoneSignalData::to(
+                    $record,
+                    $this->flagRefusal(fn () => $this->recordStepUp($record->sessionTokenHash, $record->operation), 'Step-up confirmation'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT:
+                $credit = $data->data;
+                if (!$credit instanceof UserStepUpCreditSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserStepUpCreditSignalData::class, $credit);
+                }
+
+                $this->refuseAnotherPerson($credit->userId, $name);
+                $this->sendToAgent($credit->replySignal, UserStepUpCreditDoneSignalData::to(
+                    $credit,
+                    $this->flagRefusal(fn () => $this->recordStepUp($credit->sessionTokenHash, $credit->operation), 'Step-up credit'),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE:
+                $trustRevoke = $data->data;
+                if (!$trustRevoke instanceof UserBrowserTrustRevokeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserBrowserTrustRevokeSignalData::class, $trustRevoke);
+                }
+
+                $this->refuseAnotherPerson($trustRevoke->userId, $name);
+                $this->sendToAgent($trustRevoke->replySignal, UserBrowserTrustRevokeDoneSignalData::to(
+                    $trustRevoke,
+                    $this->flagRefusal(fn () => $this->revokeBrowserTrust($trustRevoke->sessionId, $trustRevoke->others), 'Browser trust revoke'),
                 ));
 
                 return;
@@ -708,19 +792,38 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * The same shape as {@see self::writeAdminFlag()}: a folded account is refused, both ways,
      * before the write - the merge closed its sign-in with the flag, and the flag is not an
-     * administrator's to reopen. Not final, for the reason {@see self::renamePerson()} gives.
+     * administrator's to reopen. A block takes away the trust of every browser of the person in the
+     * same transaction (HIL-1407): a blocked person who is let back in passes the second factor
+     * again everywhere, and a block the trust survived did not happen whole. Lifting the block
+     * writes the flag alone. Not final, for the reason {@see self::renamePerson()} gives.
      *
      * @param bool $block New block flag
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one
      * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws DatabaseException When the person or the merges cannot be loaded
-     * @throws HilosException On database or truth-source failure while reading or writing the flag
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or a sync signal cannot be named
+     * @throws DatabaseException When the person or the merges cannot be loaded, or the trust cannot be removed
+     * @throws HilosException On database or truth-source failure while reading or writing the flag, the trust or the transaction
      */
     protected function writeBlockFlag(bool $block): void
     {
-        $this->personToWrite()->actions->setBlock($block);
+        $user = $this->personToWrite();
+        if (!$block) {
+            $user->actions->setBlock(false);
+
+            return;
+        }
+
+        Database::transactionStart();
+        try {
+            Hilos::$db->secondFactorTrusts->actions->deleteForUser($this->userId);
+            $user->actions->setBlock(true);
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            $this->rollBack();
+
+            throw $failure;
+        }
     }
 
     /**
@@ -745,12 +848,12 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * Stores a password hash on the person's password row (HIL-1405).
      *
-     * One write for three asks - a rehash on sign-in, a recovery, a change in the profile - because
-     * the write is the same and only what the users library does after it differs. The hash was
-     * minted where the password arrived; the password itself never reaches this agent. The row is
-     * the one the library checked, named by id: one that is gone, is not a password, or is not this
-     * person's is refused rather than written somewhere else. Not final, for the reason
-     * {@see self::renamePerson()} gives.
+     * One write for three asks - a rehash on sign-in, and a recovery and a change in the profile
+     * through {@see self::writeNewPassword()} - because the write is the same and only what the users
+     * library does after it differs. The hash was minted where the password arrived; the password
+     * itself never reaches this agent. The row is the one the library checked, named by id: one that
+     * is gone, is not a password, or is not this person's is refused rather than written somewhere
+     * else. Not final, for the reason {@see self::renamePerson()} gives.
      *
      * @param int $identityId Password row to write
      * @param string $passwordHash `password_hash()` value to store
@@ -770,6 +873,35 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         $password->setPasswordHash($passwordHash);
+    }
+
+    /**
+     * Stores a new password of the person - recovered, or changed in the profile - after taking away
+     * the trust of every other browser of the person (HIL-1407).
+     *
+     * A browser trusted to skip the second factor was trusted on the strength of the old password,
+     * so the new one ends that trust everywhere but in the browser that set it. The two writes are
+     * not one transaction - taking the trust away commits on its own, and the framework does not
+     * nest transactions - so the order carries the guarantee: the trust goes FIRST and the hash
+     * SECOND. A failure of either half refuses the password as not changed, and there is no moment
+     * at which the password is new while the other browsers still pass without a code. Not final,
+     * for the reason {@see self::renamePerson()} gives.
+     *
+     * @param int $identityId Password row to write
+     * @param string $passwordHash `password_hash()` value to store
+     * @param int $keepSessionId Session row of the browser that set the password, which keeps its trust; 0 when it has none
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one, or the row is not this person's password
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person, the merges or the row cannot be loaded, or the secret cannot be written
+     * @throws HilosException On database or truth-source failure while taking the trust away or writing the row
+     */
+    protected function writeNewPassword(int $identityId, string $passwordHash, int $keepSessionId): void
+    {
+        $this->personToWrite();
+        Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $keepSessionId);
+        $this->writePasswordHash($identityId, $passwordHash);
     }
 
     /**
@@ -894,6 +1026,61 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Records the person's confirmation of one operation in one browser, and tells every tab of it (HIL-1407).
+     *
+     * A confirmation is the mark of the person's own proof, so this agent is its one writer. One
+     * write for four paths - a password or a code checked by the users library, a device key and a
+     * second-factor code recorded in the turn that writes the proof, and a refused sign-in of a
+     * blocked person credited by the sessions library - because the mark is the same and only who
+     * judged the proof differs. The person's expired confirmations are cleared in the same write
+     * ({@see StepUpConfirmations::record()}). Not final, for the reason {@see self::renamePerson()}
+     * gives.
+     *
+     * @param string $sessionTokenHash Hash of the session token of the browser the operation is confirmed in
+     * @param string $operation Protected operation confirmed
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded, or a confirmation cannot be read, written or removed
+     * @throws HilosException On truth-source failure while writing a confirmation, or when the lifetime cannot be read
+     */
+    protected function recordStepUp(string $sessionTokenHash, string $operation): void
+    {
+        $this->personToWrite();
+        StepUpConfirmations::record($this, $sessionTokenHash, $this->userId, $operation);
+    }
+
+    /**
+     * Takes away the trust of the person's browsers whose sessions were ended (HIL-1407).
+     *
+     * The one browser named for "end this session"; for "end the other sessions" every browser of
+     * the person but the one named, and every one when the named one is 0. The sessions library ended
+     * the sessions and answered the browser before it asked. Not final, for the reason
+     * {@see self::renamePerson()} gives.
+     *
+     * @param int $sessionId Session row of the browser losing trust, or with others the one keeping it
+     * @param bool $others Whether every browser of the person but the named one loses trust
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type
+     * @throws DatabaseException When the person or the merges cannot be loaded
+     * @throws HilosException On truth-source, lookup, transaction or delete failure while taking the trust away
+     */
+    protected function revokeBrowserTrust(int $sessionId, bool $others): void
+    {
+        $this->personToWrite();
+        if ($others) {
+            Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $sessionId);
+
+            return;
+        }
+
+        Hilos::$db->secondFactorTrusts->actions->deleteForPair($sessionId, $this->userId);
+    }
+
+    /**
      * The writes of the person's second factor (HIL-1406).
      *
      * Not final: the framework's test stands replace it to make one of the writes fail.
@@ -1000,6 +1187,33 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Checks a second-factor code and, when it confirms an operation and proves the person, records
+     * the confirmation in the same turn (HIL-1407).
+     *
+     * The proof opens the operation only once both are written. A missed or refused code records
+     * nothing. A confirmation that fails after the code was accepted refuses the proof, and the code
+     * stays spent - as a device key's counter stays moved when its confirmation fails.
+     *
+     * @param UserSecondFactorProveSignalData $ask The code, where it was typed, and the operation it confirms if any
+     * @return UserSecondFactorProveDoneSignalData Whether it proved the person, what it counted, and what it canceled
+     * @throws ItemNotFoundForUpdateException When there is no such person
+     * @throws ValidationException When the account was merged into another one
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a stored row is not the collection's object type, or the frame cannot be named or queued
+     * @throws DatabaseException When the person or the merges cannot be loaded, or a confirmation cannot be read, written or removed
+     * @throws HilosException When a lookup, a write or the env read of the check or of the confirmation fails
+     */
+    private function proveSecondFactor(UserSecondFactorProveSignalData $ask): UserSecondFactorProveDoneSignalData
+    {
+        $proof = $this->secondFactorEdits()->prove($ask);
+        if ($proof->error === null && $ask->operation !== null && $ask->sessionTokenHash !== null) {
+            $this->recordStepUp($ask->sessionTokenHash, $ask->operation);
+        }
+
+        return $proof;
+    }
+
+    /**
      * @return User The person's row, open to an edit
      * @throws ItemNotFoundForUpdateException When there is no such person
      * @throws ValidationException When the account was merged into another one
@@ -1045,7 +1259,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Rolls back a failed rename or address move without letting the cleanup replace the failure.
+     * Rolls back a failed rename, address move or block without letting the cleanup replace the failure.
      *
      * The connection under the transaction belongs to the worker and outlives the frame, so a
      * transaction left open would take in every later write that worker makes.

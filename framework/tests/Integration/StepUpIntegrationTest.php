@@ -26,11 +26,13 @@ use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
@@ -51,6 +53,10 @@ use Hilos\Runtime\View\Context\RtContext;
 
 /**
  * Operation-level step-up against real auth and confirmation tables (HIL-495).
+ *
+ * The library checks the proof and the confirming person's agent records it and tells the tabs
+ * (HIL-1407): the frames between them are carried by the case, and the agent is the sender of
+ * every confirmation frame.
  */
 final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -563,12 +569,18 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
             $this->addToAssertionCount(1);
         }
 
+        $this->confirmedSignals();
+
         $this->confirm(StepUpOperationKey::CHANGE_PASSWORD, StepUpMethod::PASSWORD, password: self::ADMINISTRATOR_PASSWORD);
 
         $this->library->assertOperation(self::ACCEPT_KEY, StepUpOperationKey::CHANGE_PASSWORD);
         $hash = ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN);
         self::assertTrue(Hilos::$db->stepUps->isConfirmed($hash, self::ADMINISTRATOR_ID, StepUpOperationKey::CHANGE_PASSWORD));
         self::assertFalse(Hilos::$db->stepUps->isConfirmed($hash, self::USER_ID, StepUpOperationKey::CHANGE_PASSWORD));
+        $signals = $this->confirmedSignals();
+        self::assertCount(1, $signals);
+        self::assertSame(HilosAgentType::HILOS_USER, $signals[0]->signalSource->getType(), 'The administrator\'s agent records it');
+        self::assertSame((string)self::ADMINISTRATOR_ID, $signals[0]->signalSource->getIndex());
     }
 
     /**
@@ -608,7 +620,8 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
-     * A recorded confirmation is told to every tab of the browser, and to no other browser (HIL-1330).
+     * A recorded confirmation is told to every tab of the browser, and to no other browser, by the
+     * person's agent that recorded it (HIL-1330, HIL-1407).
      *
      * @throws HilosException When the command fails
      */
@@ -618,12 +631,44 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
 
         $this->confirm(self::OPERATION, StepUpMethod::PASSWORD, password: self::PASSWORD);
 
-        $frames = $this->confirmedFrames();
-        self::assertCount(1, $frames);
-        self::assertSame(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN), $frames[0]->targetSessionTokenHash);
-        self::assertNull($frames[0]->targetAcceptKey);
-        self::assertInstanceOf(StepUpConfirmedSignalData::class, $frames[0]->data);
-        self::assertSame([self::OPERATION], $frames[0]->data->operations);
+        $signals = $this->confirmedSignals();
+        self::assertCount(1, $signals);
+        self::assertSame(HilosAgentType::HILOS_USER, $signals[0]->signalSource->getType());
+        self::assertSame((string)self::USER_ID, $signals[0]->signalSource->getIndex());
+        $frame = $signals[0]->data;
+        self::assertInstanceOf(WebSocketSignalData::class, $frame);
+        self::assertSame(ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN), $frame->targetSessionTokenHash);
+        self::assertNull($frame->targetAcceptKey);
+        self::assertInstanceOf(StepUpConfirmedSignalData::class, $frame->data);
+        self::assertSame([self::OPERATION], $frame->data->operations);
+    }
+
+    /**
+     * A second-factor code confirms the operation in the turn of the agent that checked it: the
+     * frame to the tabs leaves from there, and a missed code tells nobody (HIL-1407).
+     *
+     * @throws HilosException When the factor or a command fails
+     */
+    public function testACodeIsRecordedAndToldByTheAgentThatCheckedIt(): void
+    {
+        Hilos::$db->secondFactors->actions
+            ->startEnrolment(self::USER_ID, 'Phone', Base32::encode(self::SECRET_BYTES))
+            ->actions->confirm('Phone');
+        $this->confirmedSignals();
+
+        try {
+            $this->confirm(self::OPERATION, StepUpMethod::SECOND_FACTOR, code: 'ABCD-EFGH', backupCode: true);
+            self::fail('A wrong backup code confirms nothing');
+        } catch (ValidationException) {
+            self::assertSame([], $this->confirmedSignals());
+        }
+
+        $this->confirm(self::OPERATION, StepUpMethod::SECOND_FACTOR, code: Totp::codeAt(self::SECRET_BYTES, Totp::stepAt(time())));
+
+        $signals = $this->confirmedSignals();
+        self::assertCount(1, $signals);
+        self::assertSame(HilosAgentType::HILOS_USER, $signals[0]->signalSource->getType());
+        self::assertSame((string)self::USER_ID, $signals[0]->signalSource->getIndex());
     }
 
     /**
@@ -778,16 +823,30 @@ final class StepUpIntegrationTest extends HilosSessionIntegrationTestCase
     private function confirmedFrames(): array
     {
         $frames = [];
+        foreach ($this->confirmedSignals() as $signal) {
+            self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            $frames[] = $signal->data;
+        }
+
+        return $frames;
+    }
+
+    /**
+     * @return list<SignalDTO> Every confirmation frame queued since the last call, in order, with its sender
+     */
+    private function confirmedSignals(): array
+    {
+        $signals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             if (
                 $signal->signalName->getName() === HilosSignalConstants::HILOS_STEP_UP_CONFIRMED
                 && $signal->data instanceof WebSocketSignalData
             ) {
-                $frames[] = $signal->data;
+                $signals[] = $signal;
             }
         }
 
-        return $frames;
+        return $signals;
     }
 
     /**

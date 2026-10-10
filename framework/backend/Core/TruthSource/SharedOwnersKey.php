@@ -16,9 +16,9 @@ use Hilos\Hilos;
  *
  * ```php
  * public const array SHARED_DB_OWNERS = [
- *     HilosDbContext::stepUps => [
- *         SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
- *         SharedOwnersKey::DEBT => 'HIL-1407',
+ *     HilosDbContext::verifications => [
+ *         SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
+ *         SharedOwnersKey::DEBT => 'HIL-1411',
  *     ],
  * ];
  * ```

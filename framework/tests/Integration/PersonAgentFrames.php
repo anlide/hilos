@@ -25,6 +25,7 @@ use Hilos\Users\DTO\UserAddressVerifySignalData;
 use Hilos\Users\DTO\UserAdminCommandSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
@@ -41,11 +42,13 @@ use Hilos\Users\DTO\UserSecondFactorResetDueSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Users\DTO\UserStepUpCreditSignalData;
+use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use PHPUnit\Framework\Assert;
 
 /**
  * The person's agent beside a library under test: raised on the first frame to a person, claimed
- * the way its worker claims it, and run in its own frame (HIL-1404, HIL-1405, HIL-1406).
+ * the way its worker claims it, and run in its own frame (HIL-1404, HIL-1405, HIL-1406, HIL-1407).
  *
  * A case that drives a coordinator hands each frame the coordinator queued for a person to
  * {@see deliverToPerson()}, then hands the agent's answer back to the coordinator. A case that
@@ -131,7 +134,10 @@ trait PersonAgentFrames
             $ask instanceof UserSecondFactorWaitWriteSignalData,
             $ask instanceof UserSecondFactorResetDueSignalData,
             $ask instanceof UserSecondFactorResetRemindSignalData,
-            $ask instanceof UserSecondFactorUnlockSignalData => $ask->userId,
+            $ask instanceof UserSecondFactorUnlockSignalData,
+            $ask instanceof UserStepUpRecordSignalData,
+            $ask instanceof UserStepUpCreditSignalData,
+            $ask instanceof UserBrowserTrustRevokeSignalData => $ask->userId,
             default => Assert::fail('Not a frame to a person\'s agent: ' . get_debug_type($ask)),
         };
 

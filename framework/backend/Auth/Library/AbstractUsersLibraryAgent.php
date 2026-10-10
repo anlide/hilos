@@ -42,7 +42,6 @@ use Hilos\Auth\Library\DTO\AuthRegistrationWaitMovedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorCancelSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorMissedSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorOffSignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\AuthSecondFactorSetupProvenSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\CancelRegistrationActionDTO;
@@ -209,6 +208,7 @@ use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
+use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
@@ -291,12 +291,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * canceled, carried out or marked reminded, the person's own removal wait, the count and the
      * lock of wrong app codes - is written by the person's agent on a frame of this library, and the
      * row that wait and count live on is the agent's to create too. This library only reads that
-     * row ({@see self::READS_DB}). The browsers trusted to skip the step are keyed by a session row
-     * and belong to the session holder.
+     * row ({@see self::READS_DB}). The browsers trusted to skip the step are keyed by a session row:
+     * the session holder creates the trust on the way in, and the person's agent takes one person's
+     * trust away (HIL-1407).
      *
-     * A step-up confirmation is another proof owned here (HIL-495): this library derives,
-     * checks and records it while executing the protected account command. Its browser key is
-     * a token hash, but its set is the person whose operation it opens.
+     * A step-up confirmation is checked here (HIL-495) and recorded by the confirming person's agent
+     * on a frame of this library (HIL-1407): it is the mark of the person's own proof in one
+     * browser. This library only reads the confirmations ({@see self::READS_DB}).
      *
      * A person's own request to delete their account is here too (HIL-302): this library's
      * commands start it and call it off. The session holder carries it out, and marks it done
@@ -313,7 +314,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosDbContext::secondFactors => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorResets => [TruthSourceOperation::Add],
-        HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => TruthSourceOperation::ALL,
         HilosDbContext::legalAcceptances => TruthSourceOperation::ALL,
         HilosDbContext::userRenames => [TruthSourceOperation::Update],
@@ -331,9 +331,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * The files library owns the registry row whose owner decides a published photo's person. The
      * person's agent owns their second-factor settings (HIL-1406): the wait in force dates a new
-     * removal, and the section shows the wait and the lock.
+     * removal, and the section shows the wait and the lock. It owns their step-up confirmations too
+     * (HIL-1407): the gate's verdict and the choice of a way to confirm read them.
      */
-    public const array READS_DB = [HilosDbContext::files, HilosDbContext::secondFactorSettings];
+    public const array READS_DB = [HilosDbContext::files, HilosDbContext::secondFactorSettings, HilosDbContext::stepUps];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_USERS_LIBRARY;
 
@@ -350,7 +351,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * of it (HIL-1405): the browser action waiting on the edit is resumed on the answer
      * ({@see resumeAction()}). It answers here for every edit of the second factor as well
      * (HIL-1406): a browser action is resumed the same way, the sweep mails on the answer, and the
-     * operator's unlock command is answered from it.
+     * operator's unlock command is answered from it. And it answers here for a step-up confirmation
+     * this library handed over (HIL-1407): the browser action is answered on it.
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
@@ -373,6 +375,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => UserSecondFactorResetDueDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => UserSecondFactorResetRemindDoneSignalData::class,
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => UserSecondFactorUnlockDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE => UserStepUpRecordDoneSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_VERDICT => ProfilePhotoVerdictSignalData::class,
         HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED => FilesPublishedSignalData::class,
     ];
@@ -837,6 +840,11 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * told to the session holder, the letter of a lock this miss put or of a removal this proof
      * canceled. The sweep's answers mail the person, and the operator's unlock command is answered.
      *
+     * A step-up confirmation is recorded by the confirming person's agent (HIL-1407) - on a frame of
+     * its own after a password or a code, in the turn that writes a device key's use or a
+     * second-factor code - and nothing follows it here: the answer resumes the action with the
+     * success ack, or fails it.
+     *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
@@ -920,7 +928,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 $this->resumeAction(
                     $used->ask,
                     $used->error === null ? null : StepUpMessages::PASSKEY_NOT_CONFIRMED,
-                    fn () => $this->stepUpCommands()->finishPasskeyProof($used->ask),
+                    static fn () => null,
                 );
 
                 return;
@@ -987,7 +995,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     $proven->ask,
                     $proven->error,
                     fn () => $proven->ask->action === HilosSignalConstants::HILOS_STEP_UP_CONFIRM
-                        ? $this->stepUpCommands()->finishSecondFactorProof($proven->ask)
+                        ? null
                         : $this->secondFactorCommands()->finishProof($proven->ask),
                 );
 
@@ -1074,6 +1082,15 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                     throw new ValidationException($name . ' payload must be ' . UserSecondFactorUnlockDoneSignalData::class);
                 }
                 $this->finishSecondFactorUnlock($unlocked);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE:
+                $recorded = $data->data;
+                if (!$recorded instanceof UserStepUpRecordDoneSignalData) {
+                    throw new ValidationException($name . ' payload must be ' . UserStepUpRecordDoneSignalData::class);
+                }
+                $this->resumeAction($recorded->ask, $recorded->error, static fn () => null);
 
                 return;
 
@@ -1817,20 +1834,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $this->sendToAgent(
             HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END,
             new AuthOtherSessionsEndSignalData($acting->userId, $acting->sessionToken, $keepSessionId),
-        );
-    }
-
-    /**
-     * @param ActingSession $acting Browser that changed its password
-     * @throws HilosException When the current session cannot be read
-     * @throws InvalidArgumentException When the frame cannot be named or queued
-     */
-    public function announceOtherTrustsRevoke(ActingSession $acting): void
-    {
-        $keepSessionId = Hilos::$db->sessions->findByToken($acting->sessionToken)?->id ?? 0;
-        $this->sendToAgent(
-            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS,
-            new AuthSecondFactorTrustRevokeOthersSignalData($acting->userId, $keepSessionId),
         );
     }
 

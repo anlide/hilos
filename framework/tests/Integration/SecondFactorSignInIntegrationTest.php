@@ -28,6 +28,8 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
+use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -44,6 +46,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
@@ -502,6 +505,9 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     /**
      * A new password saved by mail does not sign in past the factor, and holds its sentence.
      *
+     * The other browser lost its trust to the person's agent, which took it away before it wrote the
+     * password; the holder takes none (HIL-1407).
+     *
      * @throws HilosException When the frame fails
      */
     public function testARecoveredPasswordWaitsOnTheCodeStep(): void
@@ -522,6 +528,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
             date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY),
         );
 
+        $this->recoverPassword($currentSessionId);
         $this->holder->onSignalAgent(
             new AgentSignalData(data: new AuthPasswordChangedSignalData(
                 self::USER_ID,
@@ -544,7 +551,8 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     }
 
     /**
-     * Recovery that signs in at once retains this browser and revokes even a signed-out other.
+     * Recovery that signs in at once retains this browser's trust, and even a signed-out other loses
+     * its own - taken away by the person's agent in the write of the new password (HIL-1407).
      *
      * @throws HilosException When a session or trust write fails
      */
@@ -558,6 +566,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until);
         Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until);
 
+        $this->recoverPassword($currentSessionId);
         $this->holder->onSignalAgent(
             new AgentSignalData(new AuthPasswordChangedSignalData(
                 self::USER_ID,
@@ -640,6 +649,42 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     private function currentCode(): string
     {
         return Totp::codeAt(self::SECRET_BYTES, Totp::stepAt(time()));
+    }
+
+    /**
+     * Has the person's agent write a recovered password, the way the users library asks it to: the
+     * trust of every browser of the person but this one goes first (HIL-1407).
+     *
+     * @param int $keepSessionId Session row of the browser that recovers
+     * @throws HilosException When the password row or the agent's write fails
+     */
+    private function recoverPassword(int $keepSessionId): void
+    {
+        $password = Hilos::$db->identities->createPasswordIdentity(self::USER_ID, 'ada@example.test', 'old-password-1407');
+        $this->asPerson(self::USER_ID, static fn ($agent) => $agent->onSignalAgent(
+            new AgentSignalData(new UserPasswordResetSignalData(
+                userId: self::USER_ID,
+                identityId: (int)$password->id,
+                passwordHash: ObjectIdentity::hashPassword('new-password-1407'),
+                email: 'ada@example.test',
+                keepSessionId: $keepSessionId,
+                replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
+                acceptKey: self::ACCEPT_KEY,
+                requestId: self::REQUEST_ID,
+                action: HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET,
+                successMessage: null,
+            )),
+            'test',
+            HilosSignalConstants::HILOS_USER_PASSWORD_RESET,
+        ));
+        $answer = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE) {
+                $answer = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+            }
+        }
+        $this->assertInstanceOf(UserPasswordResetDoneSignalData::class, $answer);
+        $this->assertNull($answer->error);
     }
 
     /**

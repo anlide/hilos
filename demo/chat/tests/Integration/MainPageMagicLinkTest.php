@@ -646,6 +646,8 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
                     null,
                 ),
             );
+            // The person's agent records the confirmation the code proved (HIL-1407).
+            $this->deliverPersonAgentFrames();
             $this->usersLibrary()->onAgentAction(
                 'profile-ak',
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_REQUEST,

@@ -192,7 +192,8 @@ final class RecoveryCommands extends AbstractLibraryCommands
      *
      * The force-logout is the point of resetting a password at all: it is done when access
      * has leaked, so the reset takes the account back rather than adding one more live
-     * session to it.
+     * session to it. The trust of the person's other browsers goes with it: the person's agent
+     * takes it away before it writes the password (HIL-1407), keeping only this browser's.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param CompletePasswordResetActionDTO $dto Parsed complete payload (password)
@@ -202,7 +203,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @throws FsException When the framework password list cannot be read
      * @throws ValidationException When the account's person cannot be addressed
      * @throws InvalidArgumentException When the ask frame cannot be named or queued
-     * @throws HilosException When the code spend, the identity lookup or the runtime read fails
+     * @throws HilosException When the code spend, the identity lookup, the session lookup or the runtime read fails
      */
     public function completePasswordReset(string $acceptKey, CompletePasswordResetActionDTO $dto): ?AuthFlowOutcome
     {
@@ -241,6 +242,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
             identityId: (int)$password->id,
             passwordHash: Hilos::$db->identities->hashPassword($dto->password),
             email: $email,
+            keepSessionId: Hilos::$db->sessions->findByToken($acting->sessionToken)?->id ?? 0,
             replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE,
             acceptKey: $acceptKey,
             requestId: $this->library->currentActionRequestId(),

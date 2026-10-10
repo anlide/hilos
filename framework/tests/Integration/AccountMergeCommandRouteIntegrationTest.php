@@ -1291,6 +1291,7 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
                     false,
                     false,
                     null,
+                    null,
                     HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
                     'accept-merge-proof',
                     null,

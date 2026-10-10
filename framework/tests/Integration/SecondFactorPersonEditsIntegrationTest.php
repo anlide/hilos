@@ -460,6 +460,7 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
             cancelReset: false,
             trustDevice: false,
             operation: null,
+            sessionTokenHash: null,
             replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE,
             acceptKey: self::ACCEPT_KEY,
             requestId: 'req-1',

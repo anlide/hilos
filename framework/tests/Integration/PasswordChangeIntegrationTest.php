@@ -13,7 +13,6 @@ use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeConfirmActionDTO;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordCodeRequestActionDTO;
@@ -28,6 +27,7 @@ use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooShortException;
@@ -334,16 +334,28 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
         $this->refuseSave(self::PASSWORD);
     }
 
-    /** @throws HilosException When the seed or command fails */
+    /**
+     * The other sessions stay signed in, and their browsers lose the trust to skip the second factor
+     * in the person's agent's write of the new password - this browser keeps its own (HIL-1407).
+     *
+     * @throws HilosException When the seed or command fails
+     */
     public function testUncheckedSessionChoiceSendsNoSessionEndFrame(): void
     {
         $this->prepareChange(withCode: true);
+        $currentId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
+        $otherId = (int)Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN)?->id;
+        $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
+        Hilos::$db->secondFactorTrusts->actions->trust($currentId, self::USER_ID, $until);
+        Hilos::$db->secondFactorTrusts->actions->trust($otherId, self::USER_ID, $until);
         $this->submit(
             HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
             new ProfileChangePasswordActionDTO(self::NEW_PASSWORD, false),
         );
         $this->assertChangeFrames(signOutOthers: false);
         self::assertSame(self::USER_ID, Hilos::$db->sessions->findByToken(self::OTHER_SESSION_TOKEN)?->userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentId, self::USER_ID, 30));
+        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($otherId, self::USER_ID, 30));
     }
 
     /** @throws HilosException When the seed or command fails */
@@ -420,7 +432,7 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     private function prepareChange(bool $withCode = false): void
     {
         $this->seedPassword();
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
             new StepUpConfirmActionDTO(StepUpOperationKey::CHANGE_PASSWORD, StepUpMethod::PASSWORD, '', false, self::PASSWORD, null),
         );
@@ -514,7 +526,6 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
     {
         $updates = [];
         $ends = [];
-        $revokes = [];
         foreach ($this->drainSignals() as $signal) {
             if ($signal->signalName->getName() === HilosSignalConstants::PROFILE_PASSWORD_UPDATED) {
                 self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
@@ -525,11 +536,6 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
                 self::assertInstanceOf(AgentSignalData::class, $signal->data);
                 self::assertInstanceOf(AuthOtherSessionsEndSignalData::class, $signal->data->data);
                 $ends[] = $signal->data->data->toArray();
-            }
-            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS) {
-                self::assertInstanceOf(AgentSignalData::class, $signal->data);
-                self::assertInstanceOf(AuthSecondFactorTrustRevokeOthersSignalData::class, $signal->data->data);
-                $revokes[] = $signal->data->data->toArray();
             }
         }
         self::assertSame([[self::ACCEPT_KEY, 'changed'], [self::OTHER_ACCEPT_KEY, 'changed']], $updates);
@@ -542,13 +548,6 @@ final class PasswordChangeIntegrationTest extends ProfileIntegrationTestCase
                 ]]
                 : [],
             $ends,
-        );
-        self::assertSame(
-            $signOutOthers ? [] : [[
-                'userId' => self::USER_ID,
-                'keepSessionId' => Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id,
-            ]],
-            $revokes,
         );
     }
 }

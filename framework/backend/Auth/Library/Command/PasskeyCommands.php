@@ -46,6 +46,7 @@ use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\PasskeyCredential;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Random\RandomException;
 
@@ -631,10 +632,9 @@ final class PasskeyCommands extends AbstractLibraryCommands
      *
      * The step-up half of a key's use (HIL-1405): everything up to the signature and the counter is
      * checked here, as for a sign-in, and the counter and the last use are written by the agent of
-     * the person confirming - the acting person, or the administrator behind a takeover. The
-     * confirmation of the operation is recorded on the agent's answer
-     * ({@see StepUpCommands::finishPasskeyProof()}), so a key whose counter the agent refuses opens
-     * nothing.
+     * the person confirming - the acting person, or the administrator behind a takeover. The same
+     * agent records the confirmation of the operation in the turn that writes the counter (HIL-1407),
+     * so a key whose counter the agent refuses opens nothing.
      *
      * @param ActingSession $acting Browser completing the proof, and the person confirming
      * @param StepUpPasskeyAnswer $answer Browser assertion
@@ -698,6 +698,9 @@ final class PasskeyCommands extends AbstractLibraryCommands
     /**
      * Asks the key owner's agent to record a use of the key the library has just checked.
      *
+     * A key that confirms an operation names the browser by the hash of its session token, and the
+     * agent records the confirmation there in the same turn (HIL-1407).
+     *
      * @param ActingSession $acting Browser that used the key
      * @param PasskeyCredential $credential Key whose assertion passed
      * @param int $signCount Signature counter the authenticator reported
@@ -713,6 +716,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
             passkeyId: (int)$credential->id,
             signCount: $signCount,
             operation: $operation,
+            sessionTokenHash: $operation === null ? null : ProtectedModeRuntime::hashSessionToken($acting->sessionToken),
             replySignal: HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
             acceptKey: $acting->acceptKey,
             requestId: $this->library->currentActionRequestId(),

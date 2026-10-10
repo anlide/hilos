@@ -16,9 +16,10 @@ use Hilos\Users\Agent\AbstractUserAgent;
  *
  * What {@see HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE} carries.
  * {@see AbstractUsersLibraryAgent} checked the step, the proof and the password rule and spent the
- * code; {@see AbstractUserAgent} writes the hash and sends this ask back inside
- * {@see UserPasswordChangeDoneSignalData}. The last two fields of the subject are what the library
- * does once the password is written, carried so it holds nothing between the hops.
+ * code; {@see AbstractUserAgent} takes away the trust of every other browser of the person, writes
+ * the hash (HIL-1407) and sends this ask back inside {@see UserPasswordChangeDoneSignalData}. The
+ * sign-out of the other sessions and the open code step are what the library does once the password
+ * is written, carried so it holds nothing between the hops.
  */
 final class UserPasswordChangeSignalData extends BaseDTO implements HandoverAskInterface
 {
@@ -27,6 +28,7 @@ final class UserPasswordChangeSignalData extends BaseDTO implements HandoverAskI
     public const string passwordHash = 'passwordHash';
     public const string signOutOthers = 'signOutOthers';
     public const string flowOpen = 'flowOpen';
+    public const string keepSessionId = 'keepSessionId';
     public const string replySignal = 'replySignal';
     public const string acceptKey = 'acceptKey';
     public const string requestId = 'requestId';
@@ -39,6 +41,7 @@ final class UserPasswordChangeSignalData extends BaseDTO implements HandoverAskI
      * @param string $passwordHash New hash of the password, minted where the password arrived
      * @param bool $signOutOthers Whether the person asked to end their other sessions
      * @param bool $flowOpen Whether the change ran through a code step, which is closed after the write
+     * @param int $keepSessionId Session row of the browser that changes the password, which keeps its trust; 0 when it has none
      * @param string $replySignal Agent signal the agent answers the library under
      * @param string $acceptKey Accept key of the connection that asked, and the origin of the write
      * @param ?string $requestId Client-minted request id of the tracked submit, or null when untracked
@@ -52,6 +55,7 @@ final class UserPasswordChangeSignalData extends BaseDTO implements HandoverAskI
         public readonly string $passwordHash,
         public readonly bool $signOutOthers,
         public readonly bool $flowOpen,
+        public readonly int $keepSessionId,
         public readonly string $replySignal,
         public readonly string $acceptKey,
         public readonly ?string $requestId,
@@ -76,6 +80,7 @@ final class UserPasswordChangeSignalData extends BaseDTO implements HandoverAskI
             passwordHash: self::requireString($data, self::passwordHash),
             signOutOthers: self::requireBool($data, self::signOutOthers),
             flowOpen: self::requireBool($data, self::flowOpen),
+            keepSessionId: self::requireInt($data, self::keepSessionId),
             replySignal: self::requireString($data, self::replySignal),
             acceptKey: self::requireString($data, self::acceptKey),
             requestId: self::optionalString($data, self::requestId),
@@ -93,6 +98,7 @@ final class UserPasswordChangeSignalData extends BaseDTO implements HandoverAskI
             self::passwordHash => $this->passwordHash,
             self::signOutOthers => $this->signOutOthers,
             self::flowOpen => $this->flowOpen,
+            self::keepSessionId => $this->keepSessionId,
             self::replySignal => $this->replySignal,
             self::acceptKey => $this->acceptKey,
             self::requestId => $this->requestId,

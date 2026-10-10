@@ -190,6 +190,7 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
             passwordHash: Hilos::$db->identities->hashPassword($dto->newPassword),
             signOutOthers: $dto->signOutOthers,
             flowOpen: $target !== null,
+            keepSessionId: Hilos::$db->sessions->findByToken($acting->sessionToken)?->id ?? 0,
             replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
             acceptKey: $acceptKey,
             requestId: $this->library->currentActionRequestId(),
@@ -202,10 +203,11 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      * Does what follows a changed password, once the person's agent has written it (HIL-1405).
      *
      * Reset challenges are deleted by person, because any account address can have received one.
-     * Every tab of the person hears the password changed; the person's other sessions are ended, or
-     * only their browsers' trust is taken back, as the person chose. The flow is over last, and the
-     * record goes with it; an account no code can reach has neither proof nor record. The session is
-     * read again off the connection, which may have gone in between.
+     * Every tab of the person hears the password changed; the person's other sessions are ended if
+     * the person chose so. The trust of the person's other browsers is not taken back here: the agent
+     * took it away before it wrote the password (HIL-1407). The flow is over last, and the record
+     * goes with it; an account no code can reach has neither proof nor record. The session is read
+     * again off the connection, which may have gone in between.
      *
      * @param UserPasswordChangeSignalData $ask The ask the agent answered, carrying the person's choices
      * @throws ItemNotFoundForUpdateException When the asking connection has no signed-in session any more
@@ -219,8 +221,6 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
         $this->library->announcePasswordUpdated($ask->userId, ProfilePasswordUpdatedSignalData::MODE_CHANGED);
         if ($ask->signOutOthers) {
             $this->library->announceOtherSessionsEnd($acting);
-        } else {
-            $this->library->announceOtherTrustsRevoke($acting);
         }
         if ($ask->flowOpen) {
             $this->library->announceProfileFlowStep($acting, StepUpOperationKey::CHANGE_PASSWORD, null);

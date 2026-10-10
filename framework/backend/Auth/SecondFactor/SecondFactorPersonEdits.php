@@ -34,7 +34,8 @@ use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
  * {@see AbstractUserAgent} hands each frame of {@see AbstractUsersLibraryAgent} here and sends the
  * answer back. Everything written is the person's own set: an app's step taken and the app
  * confirmed or removed, a backup code burned, the wrong app codes counted and the lock they put or
- * an operator lifted, the removal wait chosen, a removal canceled, carried out or marked reminded.
+ * an operator lifted, the removal wait chosen, a removal canceled, carried out or marked reminded,
+ * and - when the factor goes whole - the trust of every browser that skipped it (HIL-1407).
  * Creating - an enrolment started, a set of backup codes issued, a removal asked for - stays with
  * the library.
  *
@@ -128,7 +129,7 @@ final class SecondFactorPersonEdits
      *
      * The last app cannot go while an administrator requires the factor. When it goes, the removal
      * that stands is canceled - without a letter, the person is the one switching it off - and every
-     * app and backup code leaves in one transaction with it.
+     * app, backup code and trusted browser leaves in one transaction with it.
      *
      * @param UserSecondFactorRemoveSignalData $ask The app and the code proving the person
      * @return UserSecondFactorRemoveDoneSignalData Whether the app went, and whether the factor went whole
@@ -393,7 +394,11 @@ final class SecondFactorPersonEdits
     }
 
     /**
-     * Deletes every app and backup code of the person - the factor switched off whole.
+     * Deletes every app and backup code of the person - the factor switched off whole - and the
+     * trust of every browser that skipped it (HIL-1407).
+     *
+     * Inside the caller's transaction: a browser trusted to skip a factor that is gone would skip
+     * the next one too.
      *
      * @throws HilosException When a delete fails
      */
@@ -401,6 +406,7 @@ final class SecondFactorPersonEdits
     {
         Hilos::$db->secondFactors->actions->deleteForUser($this->userId);
         Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($this->userId);
+        Hilos::$db->secondFactorTrusts->actions->deleteForUser($this->userId);
     }
 
     /**

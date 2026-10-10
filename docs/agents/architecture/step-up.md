@@ -90,11 +90,30 @@ listed operations passes by itself, through the window's own continuation; while
 the step's own request is in flight, its answer decides instead.
 
 There is one place a confirmation is written and told,
-`StepUpConfirmations::record()`, and two writers reach it: the ordinary Confirm
-(`StepUpCommands::confirm()`, users library) and a refused sign-in of a blocked
-person that counts towards the data copy (sessions library). The frame leaves
-from the writer, not from the session's holder, so it moves with the write when
-the write moves (HIL-1407). Confirming an operation already confirmed writes
+`StepUpConfirmations::record()`, and one writer reaches it: the agent of the
+person who confirmed - the person, or the administrator behind a takeover
+(HIL-1407). A confirmation is the mark of the person's own proof in one browser,
+so it is that person's to write, as any edit of their own content is
+([instance-owners.md](instance-owners.md)). Four paths lead there:
+
+- a password or a code from a letter or a message: the users library checks it
+  in `StepUpCommands::confirm()` and refuses at once what fails, and hands what
+  passes to the agent on `hilos_user_step_up_record`; the browser action is
+  answered on the agent's answer;
+- a device key: the agent records the confirmation in the turn that writes the
+  key's counter (`hilos_user_passkey_use` names the operation and the browser),
+  so a counter the agent refuses opens nothing;
+- a second-factor code: the agent records it in the turn that checks the code
+  (`hilos_user_second_factor_prove`), and a missed code records nothing;
+- a refused sign-in of a blocked person, which counts towards the data copy: the
+  sessions library hands it to the agent on `hilos_user_step_up_credit` without
+  waiting, and an account folded into another one is credited nothing.
+
+The users library only reads the confirmations, for the gate's verdict and the
+choice of a way to confirm; the sessions library removes them with an erased
+account. The frame leaves from the writer, not from the session's holder, and
+before the agent answers, so a tab hears of the confirmation before the press
+that made it is answered. Confirming an operation already confirmed writes
 nothing and tells nobody.
 
 Device trust belongs to the sign-in question and is deliberately not read here.

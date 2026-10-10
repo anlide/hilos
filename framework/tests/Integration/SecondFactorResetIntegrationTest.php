@@ -239,7 +239,8 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
-     * The last app takes the whole factor with it, and the holder is told.
+     * The last app takes the whole factor with it - and the trust of every browser that skipped it,
+     * in the person's agent's transaction (HIL-1407) - and the holder is told.
      *
      * @throws HilosException When a command fails
      */
@@ -248,6 +249,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $secret = $this->connectFirstAppSecret();
         $this->drain();
         $factor = Hilos::$db->secondFactors->confirmedOf(self::USER_ID)[0];
+        $sessionId = $this->trustThisBrowser();
 
         $this->act(
             self::ACCEPT_KEY,
@@ -257,6 +259,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
 
         $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
         $this->assertSame([], Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 30));
         $this->assertContains(HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF, $this->queuedNames());
     }
 
@@ -294,7 +297,8 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
-     * The sweep carries a due removal out and reminds of one still waiting.
+     * The sweep carries a due removal out and reminds of one still waiting; the removal carried out
+     * takes the browser trust with the factor (HIL-1407).
      *
      * @throws HilosException When a command or the sweep fails
      * @throws DatabaseException When the backdating write fails
@@ -327,9 +331,11 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         );
         Hilos::$db->secondFactorResets->getObjectCollection()?->clearInMemory();
         Hilos::$db->secondFactorResets->clearCache();
+        $sessionId = $this->trustThisBrowser();
         $this->tick();
 
         $this->assertSame([], Hilos::$db->secondFactors->confirmedOf(self::USER_ID));
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 30));
         $this->assertNotNull($this->announcement(SecondFactorNotificationType::RESET_COMPLETED));
     }
 
@@ -680,6 +686,21 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     {
         $this->queued();
         $this->seen = [];
+    }
+
+    /**
+     * Trusts the person's browser to skip the factor for a month, the way a sign-in let through does.
+     *
+     * @return int Session row of the trusted browser
+     * @throws HilosException When the session cannot be read or the trust cannot be written
+     */
+    private function trustThisBrowser(): int
+    {
+        $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
+        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, date('Y-m-d H:i:s', time() + 30 * 86400));
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($sessionId, self::USER_ID, 30));
+
+        return $sessionId;
     }
 }
 

@@ -413,20 +413,17 @@ final class Hilos extends HilosFacade
      * owners no longer collide. The rights of nobody changed when the list was written - what
      * writes today goes on writing, out loud instead of by eye.
      *
-     * Three rows, and all of them are signing in: the framework tables the auth libraries share
+     * Two rows, and both of them are signing in: the framework tables the auth libraries share
      * with the code agent. They stand the same way in every demo that switches the feature on.
      * The people table is no longer among them: an edit of one person is that person's agent's,
      * and the libraries' shares of the row no longer collide (HIL-1404). Nor are the ways in: the
      * users library and the OAuth agent only create them, and an edit is the person's agent's
-     * (HIL-1405). The rows are parted by their own leaves: stepUps by HIL-1407, and verifications
-     * and registrationReservations by HIL-1411.
+     * (HIL-1405). Nor are the step-up confirmations: the person's agent records them, and the
+     * sessions library only removes them with an erased account (HIL-1407). The rows are parted by
+     * their own leaf: verifications and registrationReservations by HIL-1411.
      * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
      */
     public const array SHARED_DB_OWNERS = [
-        HilosDbContext::stepUps => [
-            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, SessionsLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-1407',
-        ],
         HilosDbContext::verifications => [
             SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
             SharedOwnersKey::DEBT => 'HIL-1411',

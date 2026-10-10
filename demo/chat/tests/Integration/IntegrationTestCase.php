@@ -49,6 +49,8 @@ use Hilos\Users\DTO\UserAdminWriteDoneSignalData;
 use Hilos\Users\DTO\UserAdminWriteSignalData;
 use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
+use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
@@ -79,6 +81,10 @@ use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
+use Hilos\Users\DTO\UserStepUpCreditSignalData;
+use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
+use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use PHPUnit\Framework\TestCase;
 use Random\RandomException;
 use Throwable;
@@ -480,8 +486,8 @@ abstract class IntegrationTestCase extends TestCase
 
     /**
      * Carries every edit of one person to that person's agent, and its answer back to the library
-     * that asked (HIL-1404) - the edits of their ways in and passkeys (HIL-1405) and of their second
-     * factor (HIL-1406) included.
+     * that asked (HIL-1404) - the edits of their ways in and passkeys (HIL-1405), of their second
+     * factor (HIL-1406), and their step-up confirmations and browser trust (HIL-1407) included.
      *
      * A library judges an edit and asks the person's agent to write it; the agent answers and the
      * library finishes - tells the tabs, ends the sessions, writes the feed line, answers whoever
@@ -522,6 +528,9 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserSecondFactorResetDueSignalData
                 || $frame instanceof UserSecondFactorResetRemindSignalData
                 || $frame instanceof UserSecondFactorUnlockSignalData
+                || $frame instanceof UserStepUpRecordSignalData
+                || $frame instanceof UserStepUpCreditSignalData
+                || $frame instanceof UserBrowserTrustRevokeSignalData
             ) {
                 $agent = $this->personAgent($frame->userId);
                 $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, '', $name));
@@ -542,6 +551,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserSecondFactorResetDueDoneSignalData
                 || $frame instanceof UserSecondFactorResetRemindDoneSignalData
                 || $frame instanceof UserSecondFactorUnlockDoneSignalData
+                || $frame instanceof UserStepUpRecordDoneSignalData
             ) {
                 $library = $this->usersLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));
@@ -549,6 +559,8 @@ abstract class IntegrationTestCase extends TestCase
                 $frame instanceof UserAdminWriteDoneSignalData
                 || $frame instanceof UserAdminCommandDoneSignalData
                 || $frame instanceof UserBlockWriteDoneSignalData
+                || $frame instanceof UserStepUpCreditDoneSignalData
+                || $frame instanceof UserBrowserTrustRevokeDoneSignalData
             ) {
                 $library = $this->sessionsLibrary();
                 $this->underAgent($library, static fn () => $library->onSignalAgent($data, '', $name));

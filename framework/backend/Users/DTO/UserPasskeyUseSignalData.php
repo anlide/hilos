@@ -18,9 +18,10 @@ use Hilos\Users\Agent\AbstractUserAgent;
  * for a protected step confirmed with one alike: the write is the same.
  * {@see AbstractUsersLibraryAgent} checked the signature and the counter; {@see AbstractUserAgent}
  * checks the counter once more against the stored one before writing it, because two assertions of
- * a cloned key could both pass the library's check before either is written. The ask comes back
- * inside {@see UserPasskeyUseDoneSignalData}, and the operation tells the library which of the two
- * it continues.
+ * a cloned key could both pass the library's check before either is written. A confirmed step is
+ * recorded by the agent in the same turn, on the browser the hash names (HIL-1407): a refused counter
+ * records nothing. The ask comes back inside {@see UserPasskeyUseDoneSignalData}, and the operation
+ * tells the library which of the two it continues.
  */
 final class UserPasskeyUseSignalData extends BaseDTO implements HandoverAskInterface
 {
@@ -28,6 +29,7 @@ final class UserPasskeyUseSignalData extends BaseDTO implements HandoverAskInter
     public const string passkeyId = 'passkeyId';
     public const string signCount = 'signCount';
     public const string operation = 'operation';
+    public const string sessionTokenHash = 'sessionTokenHash';
     public const string replySignal = 'replySignal';
     public const string acceptKey = 'acceptKey';
     public const string requestId = 'requestId';
@@ -39,18 +41,20 @@ final class UserPasskeyUseSignalData extends BaseDTO implements HandoverAskInter
      * @param int $passkeyId Row of the key in hilos_passkey_credential
      * @param int $signCount Signature counter the authenticator reported
      * @param ?string $operation Protected operation the key confirms, or null for a sign-in
+     * @param ?string $sessionTokenHash Hash of the session token of the browser the operation is confirmed in, or null for a sign-in
      * @param string $replySignal Agent signal the agent answers the library under
      * @param string $acceptKey Accept key of the connection that asked, and the origin of the write
      * @param ?string $requestId Client-minted request id of the tracked submit, or null when untracked
      * @param string $action Browser action name the ack is addressed to
      * @param ?string $successMessage Sentence to speak on success, always null: the library answers once it has continued
-     * @throws InvalidFormatException When the person id is not positive
+     * @throws InvalidFormatException When the person id is not positive, or only one of the operation and the browser is named
      */
     public function __construct(
         public readonly int $userId,
         public readonly int $passkeyId,
         public readonly int $signCount,
         public readonly ?string $operation,
+        public readonly ?string $sessionTokenHash,
         public readonly string $replySignal,
         public readonly string $acceptKey,
         public readonly ?string $requestId,
@@ -59,6 +63,9 @@ final class UserPasskeyUseSignalData extends BaseDTO implements HandoverAskInter
     ) {
         if ($userId <= 0) {
             throw new InvalidFormatException('User id must be positive');
+        }
+        if (($operation === null) !== ($sessionTokenHash === null)) {
+            throw new InvalidFormatException('A confirmed operation and its browser are named together');
         }
     }
 
@@ -74,6 +81,7 @@ final class UserPasskeyUseSignalData extends BaseDTO implements HandoverAskInter
             passkeyId: self::requireInt($data, self::passkeyId),
             signCount: self::requireInt($data, self::signCount),
             operation: self::optionalString($data, self::operation),
+            sessionTokenHash: self::optionalString($data, self::sessionTokenHash),
             replySignal: self::requireString($data, self::replySignal),
             acceptKey: self::requireString($data, self::acceptKey),
             requestId: self::optionalString($data, self::requestId),
@@ -90,6 +98,7 @@ final class UserPasskeyUseSignalData extends BaseDTO implements HandoverAskInter
             self::passkeyId => $this->passkeyId,
             self::signCount => $this->signCount,
             self::operation => $this->operation,
+            self::sessionTokenHash => $this->sessionTokenHash,
             self::replySignal => $this->replySignal,
             self::acceptKey => $this->acceptKey,
             self::requestId => $this->requestId,

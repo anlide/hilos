@@ -6,7 +6,6 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
-use Hilos\Auth\Library\DTO\AuthSecondFactorTrustRevokeOthersSignalData;
 use Hilos\HilosException;
 use Hilos\Auth\Session\DTO\SessionEndActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -21,6 +20,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Database;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
@@ -29,12 +29,21 @@ use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserPasswordChangeSignalData;
 
 /**
  * Integration coverage for ending one or every other browser session.
+ *
+ * The holder ends the sessions and answers the browser; the trust of the browsers to skip the second
+ * factor is the person's, and the person's agent takes it away on the frame the holder sends after
+ * (HIL-1407). A new password takes it away in the agent's own write.
  */
 final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
     private const int USER_ID = 41;
     private const int ADMIN_ID = 7;
 
@@ -68,6 +77,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
 
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionToastStack::RT_COLLECTION);
         RtTruthSourceRegistry::unregisterDaemon(StateHilosSessionRotation::RT_COLLECTION);
         Hilos::$sr = null;
@@ -127,6 +137,11 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $this->dispatch(new SessionEndActionDTO((int)$other->id));
 
         self::assertNull($other->userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30), 'The holder takes no trust itself');
+        $revoked = $this->carryTrustRevoke();
+        self::assertNull($revoked->error);
+        self::assertSame((int)$other->id, $revoked->request->sessionId);
+        self::assertFalse($revoked->request->others);
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
         $frame = $this->nextSessionState();
         self::assertNotNull($frame);
@@ -151,6 +166,11 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
 
         self::assertSame(self::USER_ID, $current->userId);
         self::assertNull($other->userId);
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30), 'The holder takes no trust itself');
+        $revoked = $this->carryTrustRevoke();
+        self::assertNull($revoked->error);
+        self::assertSame((int)$current->id, $revoked->request->sessionId);
+        self::assertTrue($revoked->request->others);
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($current->id, self::USER_ID, 30));
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($signedOut->id, self::USER_ID, 30));
@@ -160,7 +180,8 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
     }
 
     /**
-     * The password-change frame uses the same session-ending path as the profile control.
+     * The password-change frame uses the same session-ending path as the profile control, and takes
+     * no trust: the person's agent took it away before it wrote the password (HIL-1407).
      *
      * @throws HilosException When a seed or session update fails
      */
@@ -182,7 +203,7 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertSame(self::USER_ID, $current->userId);
         self::assertNull($other->userId);
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($current->id, self::USER_ID, 30));
-        self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
+        self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
         self::assertSame(self::USER_ID, $admin->userId);
         self::assertSame(self::ADMIN_ID, $admin->impersonatorUserId);
         $state = $this->nextSessionState();
@@ -192,7 +213,12 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         self::assertNull($this->nextSuccessMessage(), 'The holder owes no second acknowledgement');
     }
 
-    /** A profile password change may keep other sessions while revoking their browser trust. */
+    /**
+     * A profile password change may keep other sessions while their browsers lose trust: the
+     * person's agent takes it away in the write of the new password, before the hash (HIL-1407).
+     *
+     * @throws HilosException When a seed or the agent's write fails
+     */
     public function testTrustOnlyPasswordChangeLeavesOtherSessionsSignedIn(): void
     {
         $current = $this->session(self::CURRENT_TOKEN, self::CURRENT_ACCEPT_KEY);
@@ -200,13 +226,30 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         $until = date('Y-m-d H:i:s', time() + 30 * TimeConstants::SECONDS_PER_DAY);
         Hilos::$db->secondFactorTrusts->actions->trust($current->id, self::USER_ID, $until);
         Hilos::$db->secondFactorTrusts->actions->trust($other->id, self::USER_ID, $until);
+        $password = Hilos::$db->identities->createPasswordIdentity(self::USER_ID, 'person@example.test', 'old-password-1407');
 
-        new SessionsEndActionsAgent()->onSignalAgent(
-            new AgentSignalData(new AuthSecondFactorTrustRevokeOthersSignalData(self::USER_ID, $current->id)),
+        $this->asPerson(self::USER_ID, static fn ($agent) => $agent->onSignalAgent(
+            new AgentSignalData(new UserPasswordChangeSignalData(
+                userId: self::USER_ID,
+                identityId: (int)$password->id,
+                passwordHash: ObjectIdentity::hashPassword('new-password-1407'),
+                signOutOthers: false,
+                flowOpen: false,
+                keepSessionId: (int)$current->id,
+                replySignal: HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
+                acceptKey: self::CURRENT_ACCEPT_KEY,
+                requestId: 'request-1',
+                action: HilosSignalConstants::PROFILE_CHANGE_PASSWORD,
+                successMessage: null,
+            )),
             'users-library',
-            HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_REVOKE_OTHERS,
-        );
+            HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE,
+        ));
 
+        $answer = $this->nextAgentAnswer(HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE);
+        self::assertInstanceOf(UserPasswordChangeDoneSignalData::class, $answer);
+        self::assertNull($answer->error);
+        self::assertTrue(Hilos::$db->identities->findPasswordByUser(self::USER_ID)?->verifyPassword('new-password-1407'));
         self::assertSame(self::USER_ID, $other->userId);
         self::assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($current->id, self::USER_ID, 30));
         self::assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($other->id, self::USER_ID, 30));
@@ -257,6 +300,53 @@ final class SessionsEndActionsTest extends HilosSessionIntegrationTestCase
         } finally {
             $agent->endActionDispatch();
         }
+    }
+
+    /**
+     * Hands the holder's request to take trust away to the person's agent, and returns the agent's
+     * answer (HIL-1407).
+     *
+     * Every other signal taken off the queue goes back on it in the order it came, so the case reads
+     * the queue as if the hop had never been there.
+     *
+     * @return UserBrowserTrustRevokeDoneSignalData The agent's answer to the holder
+     * @throws HilosException When the agent fails on the frame
+     */
+    private function carryTrustRevoke(): UserBrowserTrustRevokeDoneSignalData
+    {
+        $request = null;
+        $kept = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($request === null && $signal->signalName->getName() === HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE) {
+                $request = $signal;
+            } else {
+                $kept[] = $signal;
+            }
+        }
+        self::assertNotNull($request, "The holder asks the person's agent to take the trust away");
+        $this->deliverToPerson($request);
+        $answer = $this->nextAgentAnswer(HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE);
+        foreach ($kept as $signal) {
+            Hilos::$sr?->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+        self::assertInstanceOf(UserBrowserTrustRevokeDoneSignalData::class, $answer);
+
+        return $answer;
+    }
+
+    /**
+     * @param string $name Answer name the person's agent sends under
+     * @return mixed Payload of the first answer under that name, or null when none was queued
+     */
+    private function nextAgentAnswer(string $name): mixed
+    {
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === $name && $signal->data instanceof AgentSignalData) {
+                return $signal->data->data;
+            }
+        }
+
+        return null;
     }
 
     /**
