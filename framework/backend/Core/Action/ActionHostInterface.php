@@ -49,6 +49,11 @@ interface ActionHostInterface
     public function frozenExitActions(): array;
 
     /**
+     * @return list<string> Action names of this host that only read: open in every look-only state
+     */
+    public function readingActions(): array;
+
+    /**
      * @return SignalSourceInterface Signal source every frame this host sends goes out from
      */
     public function getAgentSignalSource(): SignalSourceInterface;

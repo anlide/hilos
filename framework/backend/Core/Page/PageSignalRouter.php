@@ -21,6 +21,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionHostInterface;
+use Hilos\Core\Action\LookOnlyActions;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -1093,7 +1094,8 @@ class PageSignalRouter
      * @param ?string $requestId Client-minted request id, or null for an untracked action
      * @param ?string $clientIp Peer address carried by the action, or null
      * @throws ActionForbiddenException When the page's ADMIN level denies the acting user
-     * @throws ActionAccountFrozenException When a frozen person asks for an action that is not an exit
+     * @throws ActionAccountFrozenException When a frozen person asks for an action that neither only reads,
+     *     belongs to the session, nor is an exit outside a takeover
      * @throws ActionUnauthorizedException When the page or the action requires a session the caller has not got
      * @throws ActionViewModeException When a viewer of the admin view mode asks for an action the page did not declare reading
      * @throws ActionImpersonationException When an administrator inside someone else's account asks for what the settings close there
@@ -1193,6 +1195,10 @@ class PageSignalRouter
             Logger::info(
                 "Action refused inside an impersonation: host={$host->actionHostName()}, action={$action}, "
                     . "code={$e->errorCode}, acceptKey={$acceptKey}",
+            );
+        } elseif ($e instanceof ActionAccountFrozenException) {
+            Logger::info(
+                "Action refused to a frozen person: host={$host->actionHostName()}, action={$action}, acceptKey={$acceptKey}",
             );
         } else {
             // The client is told an action failed, never why: the frontend shows a
@@ -2203,48 +2209,54 @@ class PageSignalRouter
      * model. The connection→user resolution stays project-owned through the
      * browser context seam.
      *
-     * The same list is what a freeze closes (HIL-945): a frozen person is refused every listed
-     * action with the freeze's own 403, unless the owner declared it an exit
-     * ({@see ActionHostInterface::frozenExitActions()}) or it belongs to a page open while
-     * frozen. That is how a page everyone may read still closes its writes to a frozen
-     * person - the chat's message, say, is closed by this list and by nothing else.
+     * A freeze judges every action of a signed-in person (HIL-1290): only actions open in
+     * look-only states and exits pass. An exit is declared by its owner or belongs to a
+     * page open while frozen. Exits do not open inside a takeover.
      *
      * @param ActionHostInterface $host Owner the action was routed to
      * @param string $action Dispatched action name
      * @param string $acceptKey Acting connection accept key
      * @throws ActionUnauthorizedException When a guarded action is invoked by an anonymous session
-     * @throws ActionAccountFrozenException When a guarded action that is not an exit is invoked by a frozen person
-     * @throws HilosException When the person's standing cannot be read
+     * @throws ActionAccountFrozenException When a frozen person's action is neither open in look-only states nor an exit outside a takeover
+     * @throws HilosException When the person's standing or session row cannot be read
      */
     private function assertActionAuthorized(ActionHostInterface $host, string $action, string $acceptKey): void
     {
-        if (!in_array($action, $host->authActions(), true)) {
+        $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
+        if ($userId === null) {
+            if (in_array($action, $host->authActions(), true)) {
+                throw new ActionUnauthorizedException();
+            }
+
             return;
         }
 
-        $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
-        if ($userId === null) {
-            throw new ActionUnauthorizedException();
+        if (LookOnlyActions::opens($action, $host->readingActions())) {
+            return;
+        }
+        if (!AccountStandingResolver::isFrozen($userId)) {
+            return;
         }
 
         if (
-            !in_array($action, $host->frozenExitActions(), true)
-            && !($host instanceof AbstractPage && $host::OPEN_WHILE_FROZEN)
-            && AccountStandingResolver::isFrozen($userId)
+            (
+                in_array($action, $host->frozenExitActions(), true)
+                || ($host instanceof AbstractPage && $host::OPEN_WHILE_FROZEN)
+            )
+            && Takeover::administratorBehind($acceptKey) === null
         ) {
-            throw new ActionAccountFrozenException();
+            return;
         }
+
+        throw new ActionAccountFrozenException();
     }
 
     /**
      * Holds an administrator inside someone else's account to the impersonation settings, and journals what they write (HIL-1170).
      *
-     * Asked only of an action that writes: one that needs a signed-in session ({@see ActionHostInterface::authActions()}
-     * of any owner - the chat's message, a rename, the profile's commands), one that touches the sign-in of the
-     * account ({@see ImpersonationAccountAccess::ACTIONS}), and an action of an ADMIN page that the page did not
-     * declare reading, which a takeover reaches only with the administrator's rights carried inside. Reading, the
-     * subscriptions, the windows of a table, "Stop" and signing out are none of these, and pass without the session
-     * row being read at all.
+     * An action writes when it is not open in look-only states (HIL-1290). The owner's reading
+     * actions and the session's own actions pass without this gate reading the session row or
+     * writing an impersonated_action journal line.
      *
      * Inside a takeover the settings are read live, on every action: with only looking allowed every such action is
      * refused; with the sign-in closed, an action that touches it is. What passes is written to the node's journal
@@ -2259,15 +2271,7 @@ class PageSignalRouter
      */
     private function assertTakeover(ActionHostInterface $host, string $action, string $acceptKey): void
     {
-        $touchesSignIn = in_array($action, ImpersonationAccountAccess::ACTIONS, true);
-        $writes = $touchesSignIn
-            || in_array($action, $host->authActions(), true)
-            || (
-                $host instanceof AbstractPage
-                && $host::ACCESS_LEVEL === PageAccessLevel::ADMIN
-                && !in_array($action, $host::READING_ACTIONS, true)
-            );
-        if (!$writes) {
+        if (LookOnlyActions::opens($action, $host->readingActions())) {
             return;
         }
 
@@ -2279,7 +2283,7 @@ class PageSignalRouter
         if (ImpersonationSettings::isViewOnly()) {
             throw new ActionImpersonationException(ActionImpersonationException::CODE_VIEW_ONLY);
         }
-        if ($touchesSignIn && !ImpersonationSettings::allowsAccountAccess()) {
+        if (in_array($action, ImpersonationAccountAccess::ACTIONS, true) && !ImpersonationSettings::allowsAccountAccess()) {
             throw new ActionImpersonationException(ActionImpersonationException::CODE_ACCOUNT_ACCESS);
         }
 

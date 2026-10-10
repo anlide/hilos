@@ -549,6 +549,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * from the acting session, which an anonymous one has none of. So are the four submits of
      * account deletion (HIL-302) and password change (HIL-300), for the same reason, and the
      * re-consent read and the acceptance (HIL-500): both are about the documents the person holds.
+     * The exits from a freeze are declared alongside this list in FROZEN_EXIT_ACTIONS.
      */
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
@@ -589,13 +590,27 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * The commands of this library a frozen person still runs (HIL-945). Calling off their own
      * deletion: closing it would build a trap - to keep the account one would first have to accept
-     * the terms of an account one is leaving. And reading the new terms and accepting them - the
-     * exit that lifts the freeze (HIL-500).
+     * the terms of an account one is leaving. Accepting the new terms lifts the freeze (HIL-500);
+     * reading them is a reading action and needs no exit. The step-up gate passes start and
+     * confirm, and the confirmation library decides by the operation's own mark (HIL-1290).
+     * The second-factor reset cancel link lets the person stop a removal they did not request.
      */
     public const array FROZEN_EXIT_ACTIONS = [
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
-        HilosSignalConstants::HILOS_LEGAL_RECONSENT,
         HilosSignalConstants::HILOS_LEGAL_ACCEPT,
+        HilosSignalConstants::HILOS_STEP_UP_START,
+        HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+        HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
+    ];
+
+    /**
+     * Legal document reads, open in every look-only state (HIL-1290).
+     * Under a takeover the re-consent identifier is already null.
+     */
+    public const array READING_ACTIONS = [
+        HilosSignalConstants::HILOS_LEGAL_CONSENT,
+        HilosSignalConstants::HILOS_LEGAL_RECONSENT,
+        HilosSignalConstants::HILOS_LEGAL_RECONSENT_PREVIEW,
     ];
 
     /**

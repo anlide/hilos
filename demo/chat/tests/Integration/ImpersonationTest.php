@@ -8,6 +8,7 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
@@ -16,9 +17,13 @@ use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Library\DTO\LegalReconsentActionDTO;
+use Hilos\Auth\Library\DTO\LoginActionDTO;
+use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStartActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Auth\Session\DTO\LogoutActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
@@ -26,10 +31,12 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\Exception\ActionImpersonationException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\HilosPageFactory;
@@ -43,6 +50,8 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\UploadsAgent;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -463,6 +472,111 @@ final class ImpersonationTest extends IntegrationTestCase
     }
 
     /**
+     * Agent actions outside AUTH_ACTIONS write too; reads and the session's own controls stay open (HIL-1290).
+     *
+     * @throws HilosException When setup, dispatch or cleanup fails
+     */
+    public function testOnlyLookingRefusesUploadsLoginAndStepUpButAllowsReadingAndToastDismissal(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $this->authenticatedAdminSession($agent, 'look-upload-ak', $token);
+        $this->runCommand($agent, $this->startCommand($token, $this->registerUser()));
+        $this->storeSetting(ImpersonationSettings::SCOPE_KEY, ImpersonationSettings::SCOPE_VIEW);
+        $uploads = new UploadsAgent();
+        $this->underAgent($uploads, fn () => $this->startAgent($uploads));
+        $this->drainSignals();
+
+        try {
+            $this->dispatchToAgent(
+                $uploads,
+                'look-upload-ak',
+                new UploadInitActionDTO(ChatAttachmentUploadTarget::NAME, 'look-upload', 'file.txt', 'text/plain', 4),
+            );
+            $this->assertSame(ActionImpersonationException::CODE_VIEW_ONLY, $this->actionErrorTo('look-upload-ak')?->errorCode);
+            $this->assertNull(Hilos::$rt->hilosUploads->find('look-upload-ak', 'look-upload'));
+
+            $this->dispatchToAgent($this->usersLibrary(), 'look-upload-ak', new LoginActionDTO('person@example.test', 'password'));
+            $this->assertSame(ActionImpersonationException::CODE_VIEW_ONLY, $this->actionErrorTo('look-upload-ak')?->errorCode);
+
+            $this->dispatchToAgent($this->usersLibrary(), 'look-upload-ak', new StepUpStartActionDTO(StepUpOperationKey::EXPORT_DATA));
+            $this->assertSame(ActionImpersonationException::CODE_VIEW_ONLY, $this->actionErrorTo('look-upload-ak')?->errorCode);
+
+            $this->dispatchToAgent($this->usersLibrary(), 'look-upload-ak', new LegalReconsentActionDTO());
+            $this->assertActionSucceeded('look-upload-ak', HilosSignalConstants::HILOS_LEGAL_RECONSENT);
+
+            $this->dispatchToAgent($this->sessionsLibrary(), 'look-upload-ak', new DismissSessionToastActionDTO('absent-toast'));
+            $this->assertActionSucceeded('look-upload-ak', HilosSignalConstants::HILOS_TOAST_DISMISS);
+        } finally {
+            $this->underAgent($uploads, static fn () => $uploads->onStop());
+            RtTruthSourceRegistry::unregisterAgent($uploads->getId());
+            $this->storeSetting(ImpersonationSettings::SCOPE_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
+     * An allowed upload is journaled once; reading and session controls add no impersonated_action (HIL-1290).
+     *
+     * @throws HilosException When setup, dispatch or cleanup fails
+     */
+    public function testActingInsideATakeoverJournalsTheUploadButNotReadingToastDismissalOrStop(): void
+    {
+        $agent = $this->bootAgent();
+        $token = RandomHelper::hex(16);
+        $adminId = $this->authenticatedAdminSession($agent, 'act-upload-ak', $token);
+        $targetId = $this->registerUser();
+        $this->runCommand($agent, $this->startCommand($token, $targetId));
+        $this->storeSetting(ImpersonationSettings::SCOPE_KEY, ImpersonationSettings::SCOPE_ACT);
+        $uploads = new UploadsAgent();
+        $this->underAgent($uploads, fn () => $this->startAgent($uploads));
+        $this->drainSignals();
+        $journal = (string) tempnam(sys_get_temp_dir(), 'hilos-impersonated-upload');
+        Logger::setLogFile($journal);
+
+        try {
+            $this->dispatchToAgent(
+                $uploads,
+                'act-upload-ak',
+                new UploadInitActionDTO(ChatAttachmentUploadTarget::NAME, 'act-upload', 'file.txt', 'text/plain', 4),
+            );
+            $this->assertActionSucceeded('act-upload-ak', HilosSignalConstants::HILOS_UPLOAD_INIT);
+            $this->assertNotNull(Hilos::$rt->hilosUploads->find('act-upload-ak', 'act-upload'));
+            $line = (string) file_get_contents($journal);
+            $this->assertSame(1, substr_count($line, 'impersonated_action {'));
+            $this->assertStringContainsString('"admin":' . $adminId, $line);
+            $this->assertStringContainsString('"user":' . $targetId, $line);
+            $this->assertStringContainsString('"action":"hilos_upload_init"', $line);
+
+            $this->dispatchToAgent($this->sessionsLibrary(), 'act-upload-ak', new DismissSessionToastActionDTO('absent-toast'));
+            $this->assertActionSucceeded('act-upload-ak', HilosSignalConstants::HILOS_TOAST_DISMISS);
+            $this->dispatchToAgent($this->usersLibrary(), 'act-upload-ak', new LegalReconsentActionDTO());
+            $this->assertActionSucceeded('act-upload-ak', HilosSignalConstants::HILOS_LEGAL_RECONSENT);
+            $this->dispatchToAgent($this->sessionsLibrary(), 'act-upload-ak', new ImpersonateStopActionDTO());
+            $this->deliverLibraryFrames($agent);
+            $this->assertSame($adminId, $this->sessionOf('act-upload-ak')?->userId);
+            $this->assertNull($this->sessionOf('act-upload-ak')?->impersonatorUserId);
+
+            $after = (string) file_get_contents($journal);
+            $this->assertSame(1, substr_count($after, 'impersonated_action {'));
+            foreach ([
+                HilosSignalConstants::HILOS_TOAST_DISMISS,
+                HilosSignalConstants::HILOS_LEGAL_RECONSENT,
+                HilosSignalConstants::HILOS_IMPERSONATE_STOP,
+            ] as $action) {
+                $this->assertStringNotContainsString('"action":"' . $action . '"', $after);
+            }
+        } finally {
+            Logger::resetLogFile();
+            unlink($journal);
+            $this->underAgent($uploads, static fn () => $uploads->onStop());
+            RtTruthSourceRegistry::unregisterAgent($uploads->getId());
+            $this->storeSetting(ImpersonationSettings::SCOPE_KEY, null);
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    /**
      * The sign-in of the account stays closed inside a takeover until it is allowed, and what passes is journaled with both people (HIL-1170).
      *
      * @throws HilosException When setup, a dispatch or the command fails
@@ -736,6 +850,42 @@ final class ImpersonationTest extends IntegrationTestCase
             $library,
             static fn () => $router->dispatchAction(new WebSocketActionSignalDTO($acceptKey, $action, [], 'request-' . $action), 'websocket'),
         );
+    }
+
+    /**
+     * @param AbstractAgent $agent Owner of the submitted action
+     * @param string $acceptKey Connection that submitted
+     * @param ActionPayloadDTO $dto Parsed payload serialized through the real action reader
+     * @throws HilosException When dispatch fails outside the action's answer
+     */
+    private function dispatchToAgent(AbstractAgent $agent, string $acceptKey, ActionPayloadDTO $dto): void
+    {
+        $router = new PageSignalRouter(new HilosPageFactory($agent, Hilos::class), new ActionRouteConfig());
+        $this->underAgent(
+            $agent,
+            static fn () => $router->dispatchAction(
+                new WebSocketActionSignalDTO($acceptKey, $dto->getAction(), $dto->toArray(), 'request-' . $dto->getAction()),
+                'websocket',
+            ),
+        );
+    }
+
+    /**
+     * @param string $acceptKey Connection whose answer is expected
+     * @param string $action Action expected to have succeeded
+     */
+    private function assertActionSucceeded(string $acceptKey, string $action): void
+    {
+        $answer = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData && $signal->data->targetAcceptKey === $acceptKey) {
+                $this->assertNotInstanceOf(PageActionErrorSignalData::class, $signal->data->data);
+                if ($signal->data->data instanceof PageActionSuccessSignalData && $signal->data->data->action === $action) {
+                    $answer = $signal->data->data;
+                }
+            }
+        }
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $answer, $action);
     }
 
     /**

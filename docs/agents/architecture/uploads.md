@@ -134,11 +134,12 @@ browsers declare `application/octet-stream` for everything they do not know.
 tracked action; success means "send the chunks". It is refused, with no row
 left behind, in this order: a malformed payload (the reader: an id outside
 1–64 of `[A-Za-z0-9_-]`, an empty or over-255-character name once its path is
-cut, a negative size); an unknown target; sign-in required on an anonymous
-connection (401, the `AUTH_ACTIONS` refusal); the same id still ready or
-uploading (a failed or complete one is replaced with its file); sixteen
-uploads holding a file on the connection; a target check; a tmp file that
-cannot be created.
+cut, a negative size); a look-only state (a view-only takeover, a freeze) — the
+action does not only read; an unknown target; sign-in required by the target
+on an anonymous connection (401, `ActionUnauthorizedException`); the same id
+still ready or uploading (a failed or complete one is replaced with its file);
+sixteen uploads holding a file on the connection; a target check; a tmp file
+that cannot be created.
 
 Every chunk is a signed `frame_binary` frame (`UploadFrame`):
 

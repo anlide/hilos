@@ -53,24 +53,43 @@ mandatory — silence would open the profile to guests.
   protected-mode lockdown and before the browser guards, which starves a denied
   kept-alive subscription of fan-out and table windows. This second point is
   load-bearing: most admin pages declare no browser guards at all.
-- **actions** — `PageSignalRouter::dispatchAction`, before `AUTH_ACTIONS`, through
-  `PageAccessGate::assertAction()`: a guest gets 401 `ActionUnauthorizedException`,
-  a frozen person 403 `account_frozen` (`ActionAccountFrozenException`, below),
-  an authenticated non-admin 403 `ActionForbiddenException`, and — with the admin
-  view mode on — a viewer of an `ADMIN` page 403 `view_mode`
-  (`ActionViewModeException`) for every action the page did not declare in
-  `READING_ACTIONS`. After the `AUTH_ACTIONS` and freeze guard,
-  `PageSignalRouter::assertTakeover()` holds an administrator inside someone
-  else's account to the impersonation settings (*The takeover gate*, below).
-  A page's actions are closed by its level; the
-  per-action `AUTH_ACTIONS` list remains for project pages with the
-  anonymous-read + authenticated-write model. The level closes the actions the
-  *page* holds, and it does not travel with the name: an action name moved to an
-  agent is closed by `AbstractAgent::AUTH_ACTIONS`
-  (`framework/backend/Core/Agent/AbstractAgent.php:138`) and by nothing else.
-  Which names may leave the page, and the two-step shape of the ones that may
-  not, is in
-  [entity-libraries.md](entity-libraries.md#the-lock-does-not-travel-with-the-name-hil-771).
+- **actions** — `PageSignalRouter::dispatchAction` reaches `runAction()`, which
+  asks three gates before the handler, in the order below.
+
+All three gates share `LookOnlyActions::opens()`: an action is open in look-only
+states exactly when its owner lists it in `READING_ACTIONS` or it belongs to
+`LookOnlyActions::SESSION_ACTIONS`, the one framework list of session actions.
+Pages of every access level and agents can declare reading actions; the
+dispatcher reads either owner through `ActionHostInterface::readingActions()`.
+
+1. **Page level, for page-owned actions only** —
+   `PageAccessGate::assertAction()`: `PUBLIC` passes this step; an `ADMIN`-page
+   viewer passes only when `opens()` answers true, otherwise 403 `view_mode`
+   (`ActionViewModeException`). For everyone else on a non-public page: a guest
+   gets 401 `ActionUnauthorizedException`; a frozen person on a page without
+   `OPEN_WHILE_FROZEN` gets 403 `account_frozen`
+   (`ActionAccountFrozenException`); a connection that does not act as an admin
+   on an `ADMIN` page gets 403 `ActionForbiddenException`.
+2. **Sign-in and freeze, for either owner** — `assertActionAuthorized()`: a
+   guest calling an `AUTH_ACTIONS` name gets 401. Every action of a signed-in
+   frozen person is judged: `opens()` passes; a declared freeze exit passes
+   only outside a takeover; anything else gets 403 `account_frozen`. An exit is
+   an owner's `FROZEN_EXIT_ACTIONS` name or an action of a page declaring
+   `OPEN_WHILE_FROZEN` (*The freeze step*, below).
+3. **Takeover, for either owner** — `assertTakeover()`: `opens()` passes without
+   an `impersonated_action` line; a session outside a takeover passes too.
+   Inside a takeover, scope `view` refuses with 403 `impersonation_view_only`;
+   with account access off, an `ImpersonationAccountAccess::ACTIONS` name is
+   refused with 403 `impersonated`; what passes leaves one `impersonated_action`
+   line (*The takeover gate*, below).
+
+A page's level closes the actions the *page* holds, and it does not travel with
+the name. An agent action has its own `AUTH_ACTIONS` sign-in requirement and is
+judged by the freeze and takeover gates, but has no page-level admin gate. The
+per-action `AUTH_ACTIONS` list also serves project pages with anonymous reads
+and authenticated writes. Which names may leave the page, and the two-step
+shape of the ones that may not, is in
+[entity-libraries.md](entity-libraries.md#the-lock-does-not-travel-with-the-name-hil-771).
 
 Identity comes from two `BrowserContext` seams (see the identity hook below):
 `resolveActionUserId()` answers "which user", and `isAdmin(int $userId): bool` —
@@ -89,13 +108,22 @@ admin 403, so a frozen administrator is told about the freeze and stays out of
 the admin. A `PUBLIC` page passes, and a viewer of the admin view mode never
 reaches the step.
 
-The exits are declared at their place, never in a list beside the gate. A page
-that stays open to a frozen person declares `OPEN_WHILE_FROZEN = true`, and its
-actions go with it. An action that stays open is listed in its owner's
-`FROZEN_EXIT_ACTIONS`, beside `AUTH_ACTIONS`: that same list closes every
-`AUTH_ACTIONS` name of a page or an agent to a frozen person with
-`ActionAccountFrozenException`. What the freeze is, the one place that composes
-it, and the exact exits: [account-standing.md](account-standing.md).
+The action freeze gate then judges **every action of a signed-in person**,
+whether or not it is in `AUTH_ACTIONS`, and whether its owner is a page or an
+agent. `LookOnlyActions::opens()` lets the owner's reading actions and the
+framework's session actions through. The exits are declared at their place,
+never in a list beside the gate: `OPEN_WHILE_FROZEN = true` for a page and its
+actions, `FROZEN_EXIT_ACTIONS` for an action of either owner. An action that
+needs one of these exit declarations passes only when the session is **outside
+a takeover**; inside one it is refused with `ActionAccountFrozenException`,
+403 `account_frozen`, even if the takeover allows writing. Reading and session
+actions still pass the common rule.
+
+A `PUBLIC` page therefore does not open writing to a signed-in frozen person.
+Conversely, a reading declaration does not open a page the first gate refused:
+the page's level is judged first. A guest's `AUTH_ACTIONS` requirement also
+stays in force. What the freeze is, the one place that composes it, and the exact
+exits: [account-standing.md](account-standing.md).
 
 ## The view verdict (the admin view mode)
 
@@ -108,10 +136,12 @@ through: the subscription, its update and every delivery go, and each frame that
 leaves for such a viewer passes the personal-data bridge, asked per delivery by
 `BrowserContext::isAdminViewModeViewer()`. `PageAccessGate::assertAction()` —
 may it act — refuses a viewer with `ActionViewModeException` (403 `view_mode`),
-except the actions the page declares in `READING_ACTIONS`. The error text of a
-failed action goes by the actor, not by the page's level: only a connection that
-proves an admin now (`PageAccessGate::provesAdmin()`) is told the exception's
-class and message, and a page's own frame carries `AbstractPage::failureText()`.
+except when `LookOnlyActions::opens()` answers true. The framework session
+actions are owned by the sessions agent, so this page-only gate never meets
+them. The error text of a failed action goes by the actor, not by the page's
+level: only a connection that proves an admin now (`PageAccessGate::provesAdmin()`)
+is told the exception's class and message, and a page's own frame carries
+`AbstractPage::failureText()`.
 With the mode off, everything below in this document holds without a
 qualification — except that the text rule holds there too: a non-admin whose
 action the gate refused is not told the text of the refusal. The mode whole —
@@ -122,23 +152,34 @@ side, what a new admin section owes — is [admin-view-mode.md](admin-view-mode.
 
 Inside a takeover the impersonation settings (`ImpersonationSettings`, HIL-1170)
 are read live on every action that writes, by
-`PageSignalRouter::assertTakeover()`, right after the `AUTH_ACTIONS` and
-freeze guard. An action writes when it is an `AUTH_ACTIONS` name of any owner,
-touches the sign-in of the account (`ImpersonationAccountAccess::ACTIONS`, one
-framework list), or is an action of an `ADMIN` page the page did not declare
-in `READING_ACTIONS`. Nothing else — reading, subscriptions, table windows,
-"Stop", signing out — reads the session row at all. The administrator behind
-the connection is read off the session row (`Takeover::administratorBehind()`).
+`PageSignalRouter::assertTakeover()`, right after the sign-in and freeze guard.
+An action writes exactly when `LookOnlyActions::opens()` answers false,
+whatever its owner's access level or `AUTH_ACTIONS` list. This gate lets the
+owner's reading actions and `LookOnlyActions::SESSION_ACTIONS` through without
+reading the session row or writing an `impersonated_action` line. Subscriptions
+and table windows do not enter this action gate. For every other action the
+administrator behind the connection is read off the session row
+(`Takeover::administratorBehind()`); outside a takeover the action passes.
 
 - `auth.impersonation.scope = view` refuses every writing action with 403
   `impersonation_view_only`.
 - `auth.impersonation.account_access` off refuses an action that touches the
-  sign-in with 403 `impersonated`.
+  sign-in (`ImpersonationAccountAccess::ACTIONS`) with 403 `impersonated`.
 
-Both are `ActionImpersonationException`, journaled as an INFO verdict, not a
-failure. What passes leaves the journal line
+Guest sign-in actions are writing too — login, registration, password reset,
+links, OAuth (including `HILOS_OAUTH_RESUME`), device keys and second factor at
+sign-in. Being outside `AUTH_ACTIONS` does not open them to a view-only takeover
+or a signed-in frozen person. To enter as someone else, sign out or use Stop.
+
+Both takeover refusals are `ActionImpersonationException`. Like `view_mode` and
+`account_frozen`, they are journaled by `failAction()` as one INFO verdict with
+no trace. Every writing action that passes the gates inside a takeover leaves
+one journal line
 `impersonated_action {event, admin, user, host, action, session}` with both
-people, so nothing done in someone else's name is anonymous.
+people. It carries the event and the action name together and is found by either
+filter; no duplicate line is needed. Reading and session actions leave no such
+line. The takeover's start and stop still have their own `impersonate_start` and
+`impersonate_stop` events.
 
 Carried admin rights (`auth.impersonation.carry_admin`) open the admin surface
 through `BrowserContext::actsAsAdmin()`, the one question the `ADMIN` level and

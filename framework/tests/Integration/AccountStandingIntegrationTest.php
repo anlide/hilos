@@ -9,8 +9,17 @@ use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\DTO\LoginActionDTO;
+use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
+use Hilos\Auth\Session\DTO\DismissSessionToastActionDTO;
+use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
+use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
+use Hilos\Auth\StepUp\DTO\StepUpStartActionDTO;
+use Hilos\Auth\StepUp\StepUpMethod;
+use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -55,6 +64,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Files\Upload\DTO\UploadInitActionDTO;
+use Hilos\Files\Upload\UploadsAgent;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\Exception\UnknownRevisionException;
@@ -86,6 +97,7 @@ use Hilos\Users\AccountStandingChangeSubscriber;
 use Hilos\Users\AccountStandingKind;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
 
 /**
@@ -336,6 +348,40 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         $sessions->mayImpersonate(self::ADMIN_USER_ID, self::USER_ID);
     }
 
+    /** @throws HilosException When the takeover fixture or an action fails */
+    public function testATakeoverOfAFrozenPersonClosesExitsButLeavesReadingAndStopOpen(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->actions->setImpersonator(self::ADMIN_USER_ID);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, date('Y-m-d H:i:s', time() + TimeConstants::SECONDS_PER_DAY));
+        $router = $this->pageRouter(new StandingTestPageFactory($this->library));
+
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL, [], 'req-cancel'),
+            SignalSource::WEBSOCKET,
+        );
+        $refusal = $this->queued(SignalConstants::ACTION_ERROR);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal);
+        self::assertSame('account_frozen', $refusal->errorCode);
+        self::assertNotNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+
+        $router->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, HilosSignalConstants::HILOS_LEGAL_RECONSENT, [], 'req-read'),
+            SignalSource::WEBSOCKET,
+        );
+        $read = $this->queued(SignalConstants::ACTION_SUCCESS);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $read);
+        self::assertSame('req-read', $read->requestId);
+
+        $frames = $this->dispatchAgentAction(new StandingSessionsLibrary(), new ImpersonateStopActionDTO());
+        self::assertArrayNotHasKey(SignalConstants::ACTION_ERROR, $frames);
+        $state = $frames[HilosSignalConstants::HILOS_SESSION_STATE][0] ?? null;
+        self::assertInstanceOf(SessionStateSignalData::class, $state);
+        self::assertSame(self::ADMIN_USER_ID, $state->userId);
+        self::assertSame(self::ADMIN_USER_ID, Hilos::$db->sessions[$state->sessionId]?->userId);
+        self::assertNull(Hilos::$db->sessions[$state->sessionId]?->impersonatorUserId);
+    }
+
     public function testAFrozenPersonsSubscriptionIsRefusedWithTheFreezesCode(): void
     {
         self::accept(self::USER_ID, 'terms', 'first');
@@ -377,6 +423,11 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         self::assertInstanceOf(ActionAccountFrozenException::class, $page->actionException);
 
         $page->actionException = null;
+        $router->dispatchAction(new WebSocketActionSignalDTO(self::ACCEPT_KEY, StandingTestPublicPage::GUEST_WRITE), SignalSource::WEBSOCKET);
+        self::assertSame([], $page->handled);
+        self::assertInstanceOf(ActionAccountFrozenException::class, $page->actionException);
+
+        $page->actionException = null;
         $router->dispatchAction(new WebSocketActionSignalDTO(self::ACCEPT_KEY, StandingTestPublicPage::EXIT), SignalSource::WEBSOCKET);
         $router->dispatchAction(new WebSocketActionSignalDTO(self::ACCEPT_KEY, StandingTestPublicPage::READ), SignalSource::WEBSOCKET);
         $router->dispatchAction(new WebSocketActionSignalDTO(self::ACCEPT_KEY, StandingTestExitPage::WRITE), SignalSource::WEBSOCKET);
@@ -410,6 +461,108 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         self::assertInstanceOf(PageActionSuccessSignalData::class, $answer);
         self::assertSame('req-cancel', $answer->requestId);
         self::assertNull(Hilos::$db->accountDeletions->liveOf(self::USER_ID));
+    }
+
+    /** @throws HilosException When a session action or its fixture fails */
+    public function testAFrozenPersonMayDismissAToastAndSignOut(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        $sessions = new StandingSessionsLibrary();
+
+        $dismissed = $this->dispatchAgentAction($sessions, new DismissSessionToastActionDTO('absent-toast'));
+        self::assertArrayNotHasKey(SignalConstants::ACTION_ERROR, $dismissed);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $dismissed[SignalConstants::ACTION_SUCCESS][0] ?? null);
+
+        $signedOut = $this->dispatchAgentAction($sessions, new LogoutActionDTO());
+        self::assertArrayNotHasKey(SignalConstants::ACTION_ERROR, $signedOut);
+        $state = $signedOut[HilosSignalConstants::HILOS_SESSION_STATE][0] ?? null;
+        self::assertInstanceOf(SessionStateSignalData::class, $state);
+        self::assertNull($state->userId);
+        self::assertNotSame(self::SESSION_TOKEN, $state->sessionToken);
+    }
+
+    /** @throws HilosException When the fixture or dispatch fails */
+    public function testAFrozenPersonCannotSignInAgainOrStartAnUpload(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        $login = $this->dispatchAgentAction($this->library, new LoginActionDTO('frozen@example.test', 'password'));
+        $loginRefusal = $login[SignalConstants::ACTION_ERROR][0] ?? null;
+        self::assertInstanceOf(PageActionErrorSignalData::class, $loginRefusal);
+        self::assertSame('account_frozen', $loginRefusal->errorCode);
+
+        $upload = $this->dispatchAgentAction(new UploadsAgent(), new UploadInitActionDTO('attachment', 'frozen', 'file.txt', 'text/plain', 4));
+        $uploadRefusal = $upload[SignalConstants::ACTION_ERROR][0] ?? null;
+        self::assertInstanceOf(PageActionErrorSignalData::class, $uploadRefusal);
+        self::assertSame('account_frozen', $uploadRefusal->errorCode);
+    }
+
+    /** @throws HilosException When the fixture or dispatch fails */
+    public function testAFrozenPersonMayConfirmExportAndReachTheResetCancelLink(): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        $opened = $this->dispatchAgentAction($this->library, new StepUpStartActionDTO(StepUpOperationKey::EXPORT_DATA));
+        self::assertArrayNotHasKey(SignalConstants::ACTION_ERROR, $opened);
+        $reply = $opened[SignalConstants::ACTION_SUCCESS][0] ?? null;
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertFalse($reply->reply['required']);
+
+        $confirmed = $this->dispatchAgentAction(
+            $this->library,
+            new StepUpConfirmActionDTO(StepUpOperationKey::EXPORT_DATA, StepUpMethod::PASSWORD, '', false, '', null),
+        );
+        self::assertArrayNotHasKey(SignalConstants::ACTION_ERROR, $confirmed);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $confirmed[SignalConstants::ACTION_SUCCESS][0] ?? null);
+
+        $canceled = $this->dispatchAgentAction($this->library, new SecondFactorResetCancelLinkActionDTO('invalid-reset-token'));
+        $refusal = $canceled[SignalConstants::ACTION_ERROR][0] ?? null;
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal);
+        self::assertSame(HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK, $refusal->action);
+        self::assertNotSame('account_frozen', $refusal->errorCode);
+    }
+
+    /**
+     * Both step-up entrances refuse before asking for proof or returning an existing confirmation (HIL-1290).
+     *
+     * @param bool $confirm Whether to submit proof instead of opening the step
+     * @param bool $alreadyConfirmed Whether the browser already holds a live confirmation
+     * @throws HilosException When the fixture or dispatch fails
+     */
+    #[DataProvider('frozenStepUpEntrances')]
+    public function testAFrozenPersonCannotStartOrConfirmAnOperationThatIsNotAnExit(bool $confirm, bool $alreadyConfirmed): void
+    {
+        self::accept(self::USER_ID, 'terms', 'first');
+        Hilos::$db->identities->createPasswordIdentity(self::USER_ID, 'frozen@example.test', 'frozen-person-password')->markVerified();
+        if ($alreadyConfirmed) {
+            $this->confirmStepUp(StepUpOperationKey::DELETE_ACCOUNT);
+        }
+        $this->drained();
+        $dto = $confirm
+            ? new StepUpConfirmActionDTO(StepUpOperationKey::DELETE_ACCOUNT, StepUpMethod::PASSWORD, '', false, 'frozen-person-password', null)
+            : new StepUpStartActionDTO(StepUpOperationKey::DELETE_ACCOUNT);
+
+        $this->pageRouter(new StandingTestPageFactory($this->library))->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, $dto->getAction(), $dto->toArray(), 'req-frozen-step-up'),
+            SignalSource::WEBSOCKET,
+        );
+
+        $frames = $this->drained();
+        $refusal = $frames[SignalConstants::ACTION_ERROR][0] ?? null;
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal);
+        self::assertSame('req-frozen-step-up', $refusal->requestId);
+        self::assertSame('account_frozen', $refusal->errorCode);
+        self::assertSame([SignalConstants::ACTION_ERROR], array_keys($frames), 'A refusal must not hand proof or a confirmation to another agent');
+        self::assertSame([], $this->mailer->sent);
+    }
+
+    /** @return array<string, array{bool, bool}> Both entrances with and without a live confirmation */
+    public static function frozenStepUpEntrances(): array
+    {
+        return [
+            'start without confirmation' => [false, false],
+            'confirm without confirmation' => [true, false],
+            'start already confirmed' => [false, true],
+            'confirm already confirmed' => [true, true],
+        ];
     }
 
     public function testAFrozenPersonReadsTheNewTermsAndAcceptsThemPastTheGate(): void
@@ -740,8 +893,25 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
             StandingTestPublicPage::WRITE => StandingTestPublicPage::PAGE,
             StandingTestPublicPage::EXIT => StandingTestPublicPage::PAGE,
             StandingTestPublicPage::READ => StandingTestPublicPage::PAGE,
+            StandingTestPublicPage::GUEST_WRITE => StandingTestPublicPage::PAGE,
             StandingTestExitPage::WRITE => StandingTestExitPage::PAGE,
         ]));
+    }
+
+    /**
+     * @param PageAgentInterface $agent Owner of the action
+     * @param ActionPayloadDTO $dto Payload submitted by the frozen person's tab
+     * @return array<string, list<SignalDataInterface>> Frames queued by the dispatch, by signal name
+     * @throws HilosException When dispatch fails outside the action's answer
+     */
+    private function dispatchAgentAction(PageAgentInterface $agent, ActionPayloadDTO $dto): array
+    {
+        $this->pageRouter(new StandingTestPageFactory($agent))->dispatchAction(
+            new WebSocketActionSignalDTO(self::ACCEPT_KEY, $dto->getAction(), $dto->toArray(), 'req-' . $dto->getAction()),
+            SignalSource::WEBSOCKET,
+        );
+
+        return $this->drained();
     }
 
     /**
@@ -831,6 +1001,8 @@ abstract class StandingIntegrationHilos extends Hilos
 {
     public const array AGENTS = [
         ProfileIntegrationLibrary::AGENT_TYPE => [AgentRegistryKey::WORKER => ProfileIntegrationLibrary::class],
+        StandingSessionsLibrary::AGENT_TYPE => [AgentRegistryKey::WORKER => StandingSessionsLibrary::class],
+        UploadsAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => UploadsAgent::class],
     ];
 
     protected const ?string LEGAL_CATALOG = StandingIntegrationCatalog::class;
@@ -1023,14 +1195,18 @@ final class StandingTestPublicPage extends StandingTestPage
     public const string WRITE = 'standing_public_write';
     public const string EXIT = 'standing_public_exit';
     public const string READ = 'standing_public_read';
+    public const string GUEST_WRITE = 'standing_public_guest_write';
 
     public const array ACTIONS = [
         self::WRITE => StandingTestActionDTO::class,
         self::EXIT => StandingTestActionDTO::class,
         self::READ => StandingTestActionDTO::class,
+        self::GUEST_WRITE => StandingTestActionDTO::class,
     ];
 
     public const array AUTH_ACTIONS = [self::WRITE, self::EXIT];
+
+    public const array READING_ACTIONS = [self::READ];
 
     public const array FROZEN_EXIT_ACTIONS = [self::EXIT];
 }
@@ -1116,6 +1292,8 @@ final class StandingIntegrationRtContext extends RtContext
 {
     /**
      * Mounts the two tabs of the person, the administrator's and the signed-out one.
+     *
+     * @throws HilosException When the acting tab's session cannot be read
      */
     public function configure(): void
     {
@@ -1124,6 +1302,7 @@ final class StandingIntegrationRtContext extends RtContext
             ProfileIntegrationTestCase::ACCEPT_KEY,
             ProfileIntegrationTestCase::USER_ID,
             ProfileIntegrationTestCase::SESSION_TOKEN,
+            Hilos::$db->sessions->findByToken(ProfileIntegrationTestCase::SESSION_TOKEN)?->id,
         ));
         $connections->add(ProfileIntegrationConnection::create(
             ProfileIntegrationTestCase::OTHER_ACCEPT_KEY,

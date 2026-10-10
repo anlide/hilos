@@ -51,6 +51,7 @@ abstract class StepUpOperationDirectory
                 false,
                 opensOnBlockedCard: true,
                 passesWithNothingToConfirm: true,
+                opensWhileFrozen: true,
             ),
             StepUpOperationKey::ADD_AUTHENTICATOR_APP => new StepUpOperation(
                 StepUpOperationKey::ADD_AUTHENTICATOR_APP,

@@ -211,25 +211,50 @@ change the body of that question, not the mode around it.
 ## Reading Actions
 
 A reading action writes nothing and sends nothing to anyone — no database, no
-RT, no file, no message to the outside. The page that holds the action declares
-it reading in `AbstractPage::READING_ACTIONS`, a list of its own action names:
-a viewer runs those (`PageAccessGate::assertAction()`) and is refused the rest.
-The start refuses a name the page does not own through `ACTIONS` and a list on
-a page that is not `ADMIN` (`TopologyValidator`), because either is silent at
-run time — a typo quietly closes an action, or reads as opening one that no
-viewer will ever reach. Today there are three: `LOGS_READ_LINES`
-(`logs_read_lines`), `LOGS_FOLLOW_START` (`logs_follow_start`) and
-`LOGS_FOLLOW_STOP` (`logs_follow_stop`); the logs viewer page declares them in
-`AbstractHilosLogsViewPage::READING_ACTIONS` and sends its view-mode verdict to
-the file owner, which hides line text (HIL-1257).
+RT, no file, no message to the outside. Its owner lists its own action names in
+`AbstractPage::READING_ACTIONS` or `AbstractAgent::READING_ACTIONS`.
+
+A reading action is declared by its owner — a page of any level or an agent
+(`AbstractAgent::READING_ACTIONS`) — and it is open in every look-only state:
+a viewer on an ADMIN page, a view-only takeover, a freeze (`LookOnlyActions`).
+An action left unmarked writes, and every look-only state refuses it. When in
+doubt, the action writes.
+
+The framework's session actions have their own common opening:
+`LookOnlyActions::SESSION_ACTIONS`. `LookOnlyActions::opens()` answers true
+exactly for those names or the owner's reading list, exposed by
+`ActionHostInterface::readingActions()`. All three gates ask that predicate;
+it does not bypass the page's access level or an action's sign-in requirement
+([page-access-control.md](page-access-control.md)). Freeze exits are separate
+and open only outside a takeover ([account-standing.md](account-standing.md)).
+
+The start refuses a reading name the page does not own through `ACTIONS` or
+the agent through `AGENT_ACTIONS` (`TopologyValidator`): a typo would quietly
+close a reading action. The same agent validation checks `FROZEN_EXIT_ACTIONS`.
+No owner is required to mark its actions. Today there are nine reading actions,
+pinned by `ReadingActionsRegistryTest`:
+
+| Owner (`READING_ACTIONS`) | Actions |
+|---|---|
+| `AbstractHilosLogsViewPage` | `LOGS_READ_LINES` (`logs_read_lines`), `LOGS_FOLLOW_START` (`logs_follow_start`), `LOGS_FOLLOW_STOP` (`logs_follow_stop`) |
+| `AbstractHilosTermsPage` | `HILOS_TERMS_REVISION_TEXT` (`hilos_terms_revision_text`) |
+| `AbstractHilosProfileAgreementsHistoryPage` | `HILOS_LEGAL_REVISION_TEXT` (`hilos_legal_revision_text`), `HILOS_LEGAL_REVISION_CHANGES` (`hilos_legal_revision_changes`) |
+| `AbstractUsersLibraryAgent` | `HILOS_LEGAL_CONSENT` (`hilos_legal_consent`), `HILOS_LEGAL_RECONSENT` (`hilos_legal_reconsent`), `HILOS_LEGAL_RECONSENT_PREVIEW` (`hilos_legal_reconsent_preview`) |
+
+The logs viewer page sends its view-mode verdict to the file owner, which
+hides line text (HIL-1257). The users library's re-consent reply carries a null
+identifier under a takeover.
 
 `COMMUNICATIONS_CHANNEL_TEST` (`communications_channel_test`) is not reading:
-it sends a real message. When in doubt, the action writes.
+it sends a real message. `LEGAL_ACCEPTANCES_EXPORT` orders a data export,
+`PROFILE_SECOND_FACTOR_CODES_SHOW` consumes confirmation, and
+`HILOS_DETECT_IDENTIFIER` belongs to a guest's sign-in; none is reading.
 
 The verdict closes the actions of the *page*. An agent action
-(`AGENT_ACTIONS`) is looked up before the page's and is closed by
-`AbstractAgent::AUTH_ACTIONS` alone, so the mode never sees it — which is why
-an admin mutation keeps its name on the page: the rule *The Lock Does Not
+(`AGENT_ACTIONS`) is looked up before the page's. The page's level and the
+admin view mode do not judge it; the action's sign-in requirement
+(`AbstractAgent::AUTH_ACTIONS`), the freeze and the takeover gates do. That is
+why an admin mutation keeps its name on the page: the rule *The Lock Does Not
 Travel With The Name* of
 [entity-libraries.md](entity-libraries.md#the-lock-does-not-travel-with-the-name-hil-771)
 is here also a condition of the mode.

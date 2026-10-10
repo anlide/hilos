@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Action\LookOnlyActions;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
@@ -36,7 +37,7 @@ use Hilos\Users\AccountStandingResolver;
  * the bridge of the view mode on every frame; the gate only lets them in.
  *
  * May the connection ACT ({@see self::assertAction()}, where VIEW passes only
- * the page's {@see AbstractPage::READING_ACTIONS}): asked by the action
+ * what {@see LookOnlyActions::opens()} opens): asked by the action
  * dispatcher before the handler runs. One carrier keeps the points from
  * drifting apart.
  *
@@ -119,7 +120,7 @@ final class PageAccessGate
     /**
      * Asserts the connection may run one action of a page of the given class.
      *
-     * A viewer runs only what the page declared reading; any other action is refused with
+     * A viewer runs only what LookOnlyActions::opens() opens; any other action is refused with
      * the view mode as the reason, before its handler runs.
      *
      * @param class-string<AbstractPage> $pageClass Page class declaring ACCESS_LEVEL and READING_ACTIONS
@@ -128,14 +129,14 @@ final class PageAccessGate
      * @throws PageUnauthorizedException When the level requires a user and the session is anonymous (or no browser context is mounted)
      * @throws PageAccountFrozenException When the person is frozen and the page is not open while frozen
      * @throws PageForbiddenException When the level is ADMIN and the authenticated user lacks the admin privilege
-     * @throws ActionViewModeException When the connection is a viewer and the action is not declared reading
+     * @throws ActionViewModeException When the connection is a viewer and the action is not open in look-only states
      * @throws HilosException When the administrator lookup fails with the admin view mode off, or the person's standing cannot be read
      */
     public static function assertAction(string $pageClass, string $acceptKey, string $action): void
     {
         if (
             self::verdict($pageClass, $acceptKey) === PageAccessVerdict::VIEW
-            && !in_array($action, $pageClass::READING_ACTIONS, true)
+            && !LookOnlyActions::opens($action, $pageClass::READING_ACTIONS)
         ) {
             throw new ActionViewModeException();
         }

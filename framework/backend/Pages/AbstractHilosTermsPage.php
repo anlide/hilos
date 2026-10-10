@@ -61,6 +61,8 @@ abstract class AbstractHilosTermsPage extends AbstractHilosPage
         HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => TermsRevisionTextActionDTO::class,
     ];
 
+    public const array READING_ACTIONS = [HilosSignalConstants::HILOS_TERMS_REVISION_TEXT];
+
     /**
      * @param string $acceptKey Requesting connection
      * @param string $action Requested read

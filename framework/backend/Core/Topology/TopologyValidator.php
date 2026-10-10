@@ -2203,12 +2203,10 @@ final class TopologyValidator
     /**
      * Validates the list of reading actions a page declares over its own actions.
      *
-     * READING_ACTIONS names actions a viewer of the admin view mode may run on an ADMIN
-     * page. A name the page does not own through ACTIONS opens nothing - the gate asks the
-     * list of the page that owns the action - and a list on a page that is not ADMIN is never
-     * read, since only an ADMIN page has viewers. Both are silent at run time: a typo quietly
-     * closes an action a viewer should have, or reads as opening one it never will. So they
-     * are refused at startup, the way an agent's guard lists are (HIL-622).
+     * Every look-only gate reads READING_ACTIONS, regardless of the page's access level.
+     * A name the page does not own through ACTIONS opens nothing: the gate asks the list
+     * of the page that owns the action. A typo quietly closes a reading action, so the
+     * start refuses it, the way it refuses an agent's guard lists (HIL-1290).
      *
      * @param array $pages Page registry
      * @param list<string> $errors Validation error accumulator
@@ -2221,11 +2219,6 @@ final class TopologyValidator
             }
             if ($pageClass::READING_ACTIONS === []) {
                 continue;
-            }
-
-            if ($pageClass::ACCESS_LEVEL !== PageAccessLevel::ADMIN) {
-                $errors[] = "PAGES[{$page}] class {$pageClass} READING_ACTIONS is declared on a page that is not ADMIN; "
-                    . 'only the admin view mode reads it';
             }
 
             foreach ($pageClass::READING_ACTIONS as $action) {
@@ -2370,7 +2363,7 @@ final class TopologyValidator
     /**
      * Validates the guard lists an agent declares over its own actions.
      *
-     * THROTTLED_ACTIONS and AUTH_ACTIONS name actions of the declaring agent, so a name
+     * THROTTLED_ACTIONS, AUTH_ACTIONS, READING_ACTIONS and FROZEN_EXIT_ACTIONS name actions of the declaring agent, so a name
      * that is not in its AGENT_ACTIONS guards nothing: the dispatcher looks the lists up
      * on whoever owns the action being dispatched, and an action owned elsewhere never
      * asks this agent. A typo there is silent - the action simply runs unguarded - which
@@ -2390,6 +2383,8 @@ final class TopologyValidator
             $guardLists = [
                 'THROTTLED_ACTIONS' => $agentClass::THROTTLED_ACTIONS,
                 'AUTH_ACTIONS' => $agentClass::AUTH_ACTIONS,
+                'READING_ACTIONS' => $agentClass::READING_ACTIONS,
+                'FROZEN_EXIT_ACTIONS' => $agentClass::FROZEN_EXIT_ACTIONS,
             ];
             foreach ($guardLists as $listName => $actions) {
                 foreach ($actions as $action) {

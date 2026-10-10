@@ -12,15 +12,18 @@ use Hilos\Auth\StepUp\StepUpGate;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpMethodResolver;
+use Hilos\Auth\StepUp\StepUpOperation;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
@@ -56,9 +59,10 @@ final class StepUpCommands extends AbstractLibraryCommands
      * @param StepUpStartActionDTO $dto Protected operation to open
      * @return StepUpOpeningReplyDTO Opening state for the operation modal
      * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
+     * @throws ActionAccountFrozenException When the signed-in person is frozen and the operation is not an exit
      * @throws ValidationException When the operation is unknown, impersonated, has no proof, or reaches the send cap
      * @throws RandomException When a verification code or WebAuthn challenge cannot be drawn
-     * @throws HilosException When settings, account proofs, verification delivery, or WebAuthn configuration fails
+     * @throws HilosException When standing, settings, account proofs, verification delivery, or WebAuthn configuration fails
      */
     public function start(string $acceptKey, StepUpStartActionDTO $dto): StepUpOpeningReplyDTO
     {
@@ -69,6 +73,7 @@ final class StepUpCommands extends AbstractLibraryCommands
         }
 
         $operation = $directory::get($dto->operation);
+        $this->refuseFrozen($acceptKey, $operation);
         $verdict = new StepUpGate()->verdict($acting->sessionToken, $acting->userId, $dto->operation);
         if ($verdict === StepUpGate::VERDICT_IMPERSONATED) {
             throw new ValidationException(StepUpMessages::IMPERSONATED);
@@ -128,8 +133,9 @@ final class StepUpCommands extends AbstractLibraryCommands
      * @param string $acceptKey Accept key of the connection that submitted
      * @param StepUpConfirmActionDTO $dto Protected operation and proof returned by its opening
      * @throws ItemNotFoundForUpdateException When the acting connection holds neither a signed-in person nor an allowed block notice
+     * @throws ActionAccountFrozenException When the signed-in person is frozen and the operation is not an exit
      * @throws ValidationException When the operation, method, or proof is no longer valid, or the confirmer was erased or merged
-     * @throws HilosException When account proofs, verification, WebAuthn, env, or confirmation reads fail, or the ask cannot be queued
+     * @throws HilosException When standing, account proofs, verification, WebAuthn, env, or confirmation reads fail, or the ask cannot be queued
      */
     public function confirm(string $acceptKey, StepUpConfirmActionDTO $dto): void
     {
@@ -139,6 +145,7 @@ final class StepUpCommands extends AbstractLibraryCommands
             throw new ValidationException(StepUpMessages::UNKNOWN_OPERATION);
         }
 
+        $this->refuseFrozen($acceptKey, $directory::get($dto->operation));
         $verdict = new StepUpGate()->verdict($acting->sessionToken, $acting->userId, $dto->operation);
         if ($verdict === StepUpGate::VERDICT_IMPERSONATED) {
             throw new ValidationException(StepUpMessages::IMPERSONATED);
@@ -237,6 +244,22 @@ final class StepUpCommands extends AbstractLibraryCommands
     public function require(string $acceptKey, string $operation): void
     {
         $this->confirmedUser($acceptKey, $operation);
+    }
+
+    /**
+     * Judges only the signed-in person, leaving the blocked-card identity path unchanged.
+     *
+     * @param string $acceptKey Connection asking for confirmation
+     * @param StepUpOperation $operation Declared operation whose freeze permission is checked
+     * @throws ActionAccountFrozenException When the signed-in person is frozen and the operation is not an exit
+     * @throws HilosException When the account standing cannot be read
+     */
+    private function refuseFrozen(string $acceptKey, StepUpOperation $operation): void
+    {
+        $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
+        if ($userId !== null && !$operation->opensWhileFrozen && AccountStandingResolver::isFrozen($userId)) {
+            throw new ActionAccountFrozenException();
+        }
     }
 
     /**

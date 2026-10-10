@@ -55,6 +55,11 @@ abstract class AbstractHilosProfileAgreementsHistoryPage extends AbstractPage
         HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES => LegalRevisionChangesActionDTO::class,
     ];
 
+    public const array READING_ACTIONS = [
+        HilosSignalConstants::HILOS_LEGAL_REVISION_TEXT,
+        HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES,
+    ];
+
     /**
      * @param string $acceptKey Requesting connection
      * @param string $action Requested read

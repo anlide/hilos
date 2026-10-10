@@ -103,7 +103,9 @@ replies with `{form, documents}`. `form` is `checkbox` or `line`, read from
 `legal.consent_form`. Each document supplies its `document` key, current
 `revision` and composed `clauses` in the shared `LegalWire` shapes. The last
 declared revision is current even when its acceptance deadline is in the future.
-The action is a read and is not an authentication or secret-guessing door.
+The action is declared reading (`AbstractUsersLibraryAgent::READING_ACTIONS`),
+open in every look-only state, and is not an authentication or secret-guessing
+door.
 
 The first email, phone or magic-link send carries `acceptedRevisions`, a map
 from each declared document to the exact revision shown. Both actions of the
@@ -210,9 +212,9 @@ resolution follows the same rule as the "Access closed" card.
 
 | Action | Payload → reply | Reach |
 |---|---|---|
-| `hilos_legal_reconsent` | `{}` → `{refusal, documents: [{document, standing, deadline, held, current, changes, clauses}], identifier}` — every document in its window or lapsed, in declaration order; identifier is the account's confirmed address (email, else phone) or null, null under impersonation | signed in (`AUTH_ACTIONS`), open while frozen (`FROZEN_EXIT_ACTIONS`) |
+| `hilos_legal_reconsent` | `{}` → `{refusal, documents: [{document, standing, deadline, held, current, changes, clauses}], identifier}` — every document in its window or lapsed, in declaration order; identifier is the account's confirmed address (email, else phone) or null, null under impersonation | signed in (`AUTH_ACTIONS`), reading (`READING_ACTIONS`) |
 | `hilos_legal_accept` | `{acceptedRevisions: {document: revisionId}}` → tracked reply without a body | signed in, open while frozen |
-| `hilos_legal_reconsent_preview` | `{document}` → `{document, standing, deadline, held, current, changes, clauses}` | public, like the consent read |
+| `hilos_legal_reconsent_preview` | `{document}` → `{document, standing, deadline, held, current, changes, clauses}` | public, reading (`READING_ACTIONS`), like the consent read |
 
 `LegalReconsentProjector` builds both replies: `held`, `current` and `changes`
 are the `LegalWire` revision and change shapes, `clauses` the composed clauses

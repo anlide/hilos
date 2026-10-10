@@ -13,10 +13,10 @@ use Throwable;
  * ActionAccountFrozenException - a frozen person asked for an action that is not one of the exits (HIL-945).
  *
  * The action counterpart of {@see PageAccountFrozenException}: raised by the action dispatcher
- * ({@see PageSignalRouter::dispatchAction}) for any action that needs a signed-in session, unless
- * its owner declared it an exit ({@see AbstractPage::FROZEN_EXIT_ACTIONS},
- * {@see AbstractAgent::FROZEN_EXIT_ACTIONS}) or it belongs to a page open while frozen. A 403 like
- * its parent, with the code the client tells a freeze by.
+ * ({@see PageSignalRouter::dispatchAction}) for any action that does not only read, is not the
+ * session's own and is not an exit. An exit is declared by its owner ({@see AbstractPage::FROZEN_EXIT_ACTIONS},
+ * {@see AbstractAgent::FROZEN_EXIT_ACTIONS}) or belongs to a page open while frozen, and opens
+ * only outside a takeover. A 403 like its parent, with the code the client tells a freeze by.
  */
 final class ActionAccountFrozenException extends ActionForbiddenException
 {

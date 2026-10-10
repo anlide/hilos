@@ -8,6 +8,7 @@ use Hilos\Auth\Impersonation\ImpersonationAccountAccess;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\LookOnlyActions;
 use Hilos\Pages\AbstractHilosProfileSignInPage;
 use PHPUnit\Framework\TestCase;
 
@@ -39,6 +40,7 @@ final class ImpersonationAccountAccessTest extends TestCase
         foreach ([HilosSignalConstants::HILOS_IMPERSONATE_STOP, HilosSignalConstants::HILOS_LOGOUT] as $exit) {
             self::assertNotContains($exit, ImpersonationAccountAccess::ACTIONS, $exit);
             self::assertNotContains($exit, AbstractSessionsLibraryAgent::AUTH_ACTIONS, $exit);
+            self::assertContains($exit, LookOnlyActions::SESSION_ACTIONS, $exit);
         }
     }
 

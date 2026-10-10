@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
+use Hilos\Core\Action\LookOnlyActions;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\WorkerManager;
@@ -19,7 +20,6 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
-use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
@@ -95,19 +95,17 @@ abstract class AbstractPage implements ActionHostInterface
 
     /**
      * @var list<string> Names of this page's actions a frozen person may still run (HIL-945). A freeze
-     *     closes every action that needs a signed-in session ({@see self::AUTH_ACTIONS}) and leaves only the
-     *     exits: an action is one when its owner lists it here. A page open while frozen
+     *     closes every action not open through {@see LookOnlyActions}, except the exits outside a
+     *     takeover: an action is one when its owner lists it here. A page open while frozen
      *     ({@see self::OPEN_WHILE_FROZEN}) needs no list - all its actions are exits with it.
      */
     public const array FROZEN_EXIT_ACTIONS = [];
 
     /**
      * @var list<string> Names of this page's actions that only read: they write nothing - no database,
-     *     no RT, no file - and send nothing to anyone. With the admin view mode on, a viewer runs these
-     *     and nothing else; every other action of an ADMIN page is refused to them with
-     *     {@see ActionViewModeException} ({@see PageAccessGate::assertAction()}). When in doubt, the
-     *     action writes. The start refuses a name the page does not own through ACTIONS and a list on a
-     *     page that is not ADMIN ({@see TopologyValidator}). See
+     *     no RT, no file - and send nothing to anyone. They are open in all three look-only states
+     *     ({@see LookOnlyActions}), on a page of any access level. When in doubt, the action writes.
+     *     The start refuses a name the page does not own through ACTIONS ({@see TopologyValidator}). See
      *     docs/agents/architecture/admin-view-mode.md, "Reading Actions".
      */
     public const array READING_ACTIONS = [];
@@ -325,6 +323,14 @@ abstract class AbstractPage implements ActionHostInterface
     public function frozenExitActions(): array
     {
         return static::FROZEN_EXIT_ACTIONS;
+    }
+
+    /**
+     * @return list<string> Action names of this page that only read: open in every look-only state
+     */
+    public function readingActions(): array
+    {
+        return static::READING_ACTIONS;
     }
 
     /**

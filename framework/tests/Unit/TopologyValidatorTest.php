@@ -1343,15 +1343,30 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
-    public function testReadingActionsOnAPageThatIsNotAdminAreRefused(): void
+    public function testAPageOfAnyLevelMayDeclareItsOwnActionsReading(): void
+    {
+        TopologyReadingActionsNotAdminHilos::validateTopology();
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAnAgentsReadingAndExitListsNameOnlyItsOwnActions(): void
     {
         $this->assertTopologyErrors(
             static function (): void {
-                TopologyReadingActionsNotAdminHilos::validateTopology();
+                TopologyReadingActionsAgentHilos::validateTopology();
             },
             [
-                'PAGES[' . TopologyReadingActionsNotAdminPage::PAGE . '] class ' . TopologyReadingActionsNotAdminPage::class
-                    . ' READING_ACTIONS is declared on a page that is not ADMIN; only the admin view mode reads it',
+                'AGENTS[' . TopologyReadingActionsAgent::AGENT_TYPE . '] class ' . TopologyReadingActionsAgent::class
+                    . ' READING_ACTIONS must list non-empty action names',
+                'AGENTS[' . TopologyReadingActionsAgent::AGENT_TYPE . '] class ' . TopologyReadingActionsAgent::class
+                    . ' READING_ACTIONS names ' . TopologyReadingActionsAgent::FOREIGN_ACTION
+                    . ', which it does not own through AGENT_ACTIONS',
+                'AGENTS[' . TopologyReadingActionsAgent::AGENT_TYPE . '] class ' . TopologyReadingActionsAgent::class
+                    . ' FROZEN_EXIT_ACTIONS must list non-empty action names',
+                'AGENTS[' . TopologyReadingActionsAgent::AGENT_TYPE . '] class ' . TopologyReadingActionsAgent::class
+                    . ' FROZEN_EXIT_ACTIONS names ' . TopologyReadingActionsAgent::FOREIGN_ACTION
+                    . ', which it does not own through AGENT_ACTIONS',
             ],
         );
     }
@@ -6444,6 +6459,46 @@ final class TopologyUndeclaredSecretsAgentHilos extends HilosFacade
     /**
      * Creates a no-op DB context for tests.
      *
+     * @return HilosDbContext Test DB context
+     */
+    protected static function createDb(): HilosDbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyReadingActionsAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'reading_actions_agent';
+
+    public const string OWN_ACTION = 'reading_actions_agent_own';
+
+    public const string FOREIGN_ACTION = 'reading_actions_agent_elsewhere';
+
+    public const array AGENT_ACTIONS = [
+        self::OWN_ACTION => TopologyTestActionPayloadDTO::class,
+    ];
+
+    public const array READING_ACTIONS = ['', self::FOREIGN_ACTION];
+
+    public const array FROZEN_EXIT_ACTIONS = ['', self::FOREIGN_ACTION];
+}
+
+final class TopologyReadingActionsAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = TopologyReadingActionsAgent::AGENT_TYPE;
+}
+
+final class TopologyReadingActionsAgentHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyReadingActionsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyReadingActionsAgent::class,
+            AgentRegistryKey::DAEMON => TopologyReadingActionsAgentDaemon::class,
+        ],
+    ];
+
+    /**
      * @return HilosDbContext Test DB context
      */
     protected static function createDb(): HilosDbContext

@@ -16,6 +16,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\ActionHostInterface;
 use Hilos\Core\Action\ActionReply;
+use Hilos\Core\Action\LookOnlyActions;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Daemon\WorkerManager;
@@ -258,11 +259,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
     /**
      * @var list<string> Action names of this agent a frozen person may still run (HIL-945). Read by the
-     *     action dispatcher exactly as a page's FROZEN_EXIT_ACTIONS is: a freeze refuses every action of
-     *     {@see self::AUTH_ACTIONS} with {@see ActionAccountFrozenException} except the ones listed here.
-     *     An exit is declared by the agent that owns the action, next to the action.
+     *     action dispatcher exactly as a page's FROZEN_EXIT_ACTIONS is: a freeze refuses every action
+     *     not open through {@see LookOnlyActions} with {@see ActionAccountFrozenException}, except
+     *     these exits outside a takeover. An exit is declared by the agent that owns the action.
      */
     public const array FROZEN_EXIT_ACTIONS = [];
+
+    /**
+     * @var list<string> Action names of this agent that only read: they write nothing - no database,
+     *     no RT, no file - and send nothing to anyone. The dispatcher reads this list exactly as a
+     *     page's READING_ACTIONS, opening all three look-only states through {@see LookOnlyActions}.
+     *     When in doubt, the action writes. The start refuses a name the agent does not own through
+     *     AGENT_ACTIONS.
+     */
+    public const array READING_ACTIONS = [];
 
     /**
      * @var list<string> Action names of this agent the anti-abuse layer rate-limits (HIL-420).
@@ -1492,6 +1502,14 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
     public function frozenExitActions(): array
     {
         return static::FROZEN_EXIT_ACTIONS;
+    }
+
+    /**
+     * @return list<string> Action names of this agent that only read: open in every look-only state
+     */
+    public function readingActions(): array
+    {
+        return static::READING_ACTIONS;
     }
 
     /**

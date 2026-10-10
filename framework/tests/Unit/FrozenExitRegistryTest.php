@@ -38,8 +38,10 @@ final class FrozenExitRegistryTest extends TestCase
     private const array FROZEN_EXIT_ACTIONS = [
         AbstractUsersLibraryAgent::class => [
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_CANCEL,
-            HilosSignalConstants::HILOS_LEGAL_RECONSENT,
             HilosSignalConstants::HILOS_LEGAL_ACCEPT,
+            HilosSignalConstants::HILOS_STEP_UP_START,
+            HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+            HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_CANCEL_LINK,
         ],
         AbstractDataExportAgent::class => [HilosSignalConstants::HILOS_DATA_EXPORT_ORDER],
     ];

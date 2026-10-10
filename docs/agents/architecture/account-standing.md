@@ -124,13 +124,17 @@ page refuses a non-admin 403 `forbidden`; anything else allows
   there is the shell's freeze screen ([legal-documents.md](legal-documents.md),
   Re-consent).
 
-**Actions.** `PageSignalRouter::assertActionAuthorized()` refuses a frozen person
-every action its host lists in `AUTH_ACTIONS` — page or agent — with
-`ActionAccountFrozenException`, unless the host lists the action in
-`FROZEN_EXIT_ACTIONS` or the host is a page open while frozen. That is what closes
-the chat's message on its public main page. The `action_error` frame carries the
-code whether the action was tracked or not, so the shell can tell a freeze from a
-failure either way.
+**Actions.** `PageSignalRouter::assertActionAuthorized()` judges every action of
+a signed-in frozen person — page or agent, inside or outside `AUTH_ACTIONS`.
+`LookOnlyActions::opens()` passes the owner's `READING_ACTIONS` and the framework
+session actions. An owner's `FROZEN_EXIT_ACTIONS` name or an action of a page
+open while frozen passes only outside a takeover; everything else is refused
+with `ActionAccountFrozenException`, 403 `account_frozen`. The page's access
+level is judged first: a public page does not open its writes, and a reading
+declaration does not open a page that level refused. A guest still gets 401 for
+an `AUTH_ACTIONS` name. The `action_error` frame carries the freeze code whether
+the action was tracked or not, and `failAction()` records one INFO verdict with
+no trace.
 
 ### Exits are declared at their place
 
@@ -140,29 +144,47 @@ failure either way.
 | `/profile/agreements` | `AbstractHilosProfileAgreementsPage::OPEN_WHILE_FROZEN` |
 | `/profile/agreements/history` | `AbstractHilosProfileAgreementsHistoryPage::OPEN_WHILE_FROZEN` |
 | `hilos_account_deletion_cancel` — calling off one's own deletion | `AbstractUsersLibraryAgent::FROZEN_EXIT_ACTIONS` |
+| `hilos_legal_accept` — accepting the new terms | `AbstractUsersLibraryAgent::FROZEN_EXIT_ACTIONS` |
+| `hilos_step_up_start`, `hilos_step_up_confirm` — confirming an operation with `opensWhileFrozen`, currently only `export_data` | `AbstractUsersLibraryAgent::FROZEN_EXIT_ACTIONS` |
+| `hilos_second_factor_reset_cancel_link` — stopping a second-factor removal the person did not request | `AbstractUsersLibraryAgent::FROZEN_EXIT_ACTIONS` |
 | `hilos_data_export_order` — ordering a copy of one's data | `AbstractDataExportAgent::FROZEN_EXIT_ACTIONS` |
 
-`FrozenExitRegistryTest` pins that composition exactly. The data copy order is
-outside `AUTH_ACTIONS` today, so nothing closes it yet; the declaration keeps it
-open if it joins.
+`FrozenExitRegistryTest` pins that composition exactly. The data copy order
+needs its exit even though it is outside `AUTH_ACTIONS`: the freeze judges
+every action of a signed-in person. Inside a takeover no exit declaration
+opens a writing action, including on pages open while frozen; reading and
+session actions still pass the common rule.
 
-Open without a declaration, because no list closes them: the actions outside
-every `AUTH_ACTIONS` — sign-out (`hilos_logout`), dismissing the "Access closed"
-card (`hilos_dismiss_account_blocked`), the step-up start and confirmation
-(`hilos_step_up_start`, `hilos_step_up_confirm`) — and the four public footer
-pages (About, Terms, Privacy, License). Reading the new terms and accepting them
-— `hilos_legal_reconsent` and `hilos_legal_accept` — are the users library's
-declared exits beside the cancel of one's own deletion: the acceptance is what
-lifts a freeze ([legal-documents.md](legal-documents.md), Re-consent).
+The step-up actions pass the freeze gate as exits, then `StepUpCommands::start()`
+and `confirm()` check `StepUpOperation::$opensWhileFrozen` before asking
+`StepUpGate::verdict()`. An operation without the mark is refused with 403
+`account_frozen`, even when a live confirmation would otherwise pass. Only
+`export_data` has the mark. It is separate from `opensOnBlockedCard`: a person
+using the blocked card is not signed in, and that entrance is unchanged
+([step-up.md](step-up.md)).
+
+Open without a **freeze-exit** declaration: the owner's reading actions and
+the framework session actions in `LookOnlyActions::SESSION_ACTIONS`. They stay
+open under a takeover too. Reading the new terms, `hilos_legal_reconsent`, is
+declared reading, not an exit; accepting them, `hilos_legal_accept`, is the
+declared exit that lifts the freeze ([legal-documents.md](legal-documents.md),
+Re-consent). The four public footer pages (About, Terms, Privacy, License) stay
+open by their page level.
 
 - Declare an exit on the class that owns the page or the action, next to it:
-  `OPEN_WHILE_FROZEN` for a page (all its actions go with it), the owner's
-  `FROZEN_EXIT_ACTIONS` for one action. Keep no list of exits anywhere else.
+  `OPEN_WHILE_FROZEN` for a page (its actions go with it outside a takeover),
+  the owner's `FROZEN_EXIT_ACTIONS` for one action. Keep no list of exits
+  anywhere else.
 - A freeze takes away using the product and nothing more. Add an exit only for
   leaving, calling off one's own deletion, one's own data, and reading or
-  accepting one's agreements; everything else stays closed.
-- A new page for signed-in people or administrators, and a new name in any
-  `AUTH_ACTIONS`, is closed to a frozen person with no code of its own.
+  accepting one's agreements, confirming an operation open to a frozen person,
+  or stopping a second-factor removal the person did not request; everything
+  else stays closed. Reading and session actions already pass the common rule
+  and need no exit.
+- A new page for signed-in people or administrators is closed to a frozen
+  person with no code of its own. Every action that is not declared reading is
+  closed unless it is a framework session action or a declared exit outside a
+  takeover; `AUTH_ACTIONS` does not decide that boundary.
 - The frontend mirrors the open pages in `HILOS_FROZEN_OPEN_PAGES`: a page that
   becomes an exit changes there too, in the same commit.
 
@@ -268,6 +290,7 @@ The core binds the session's standing once, in `bootHilos`
 - The composition, the memory and the epoch:
   `framework/tests/Unit/Users/AccountStandingResolverTest.php`.
 - The exits: `framework/tests/Unit/FrozenExitRegistryTest.php`.
+- The reading actions: `framework/tests/Unit/ReadingActionsRegistryTest.php`.
 - The gate, the actions, the exits and the frozen cases over the real router,
   the wire and the holder's tick:
   `framework/tests/Integration/AccountStandingIntegrationTest.php`.

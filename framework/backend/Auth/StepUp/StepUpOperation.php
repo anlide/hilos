@@ -23,6 +23,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
  * administrator allowed it; allowed, its confirmation is asked of the ADMINISTRATOR, by their own
  * method, and never of the person whose account it is (HIL-1170). Every other operation of a
  * person's own account stays closed to a takeover whatever the setting says.
+ *
+ * A signed-in person whose account is frozen may confirm only an operation declared as an exit
+ * from the freeze (HIL-1290). This permission is separate from confirmation on a blocked card,
+ * where the person is not signed in.
  */
 final readonly class StepUpOperation
 {
@@ -42,6 +46,7 @@ final readonly class StepUpOperation
      *     or only once one switches it on (false)
      * @param bool $accountAccess Whether the operation touches the sign-in of the account, so that a takeover
      *     allowed to touch it may run it, confirmed by the administrator
+     * @param bool $opensWhileFrozen Whether a signed-in person whose account is frozen may confirm this operation (HIL-1290)
      * @throws InvalidArgumentException When the operation key is empty or malformed
      */
     public function __construct(
@@ -54,6 +59,7 @@ final readonly class StepUpOperation
         public bool $opensWithSecondFactorProof = false,
         public bool $enabledByDefault = true,
         public bool $accountAccess = false,
+        public bool $opensWhileFrozen = false,
     ) {
         if (preg_match(self::KEY_PATTERN, $key) !== 1) {
             throw new InvalidArgumentException("Invalid step-up operation key: {$key}");
