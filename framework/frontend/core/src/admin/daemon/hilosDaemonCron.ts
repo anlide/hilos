@@ -1,7 +1,13 @@
 // Framework headless cron table for one Daemon node. Rows come from the
 // worker-local picture mirror through a server viewport, in picture order.
-// The page header and empty states belong to the per-framework view.
+// The page header is drawn by the per-framework view; the empty-state and
+// idle-notice choices live here.
 
+import {
+  DAEMON_NODE_STATE_SILENT,
+  DAEMON_NODE_STATE_STANDBY,
+  type HilosDaemonNodeHeading,
+} from './hilosDaemonNode.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -10,6 +16,7 @@ import {
   readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
+import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
@@ -17,6 +24,9 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 
 const DAEMON_CRON_TABLE = 'hilosDaemonCron'
 const DAEMON_CRON_SLOT = 'rule'
+
+/** Page-data key recording whether the node has reported its cron section. */
+export const DAEMON_CRON_REPORTED_DATA = 'cronReported'
 
 /** Viewport filter key identifying the node shown by the page. */
 export const DAEMON_CRON_FILTER_NODE = 'node'
@@ -59,6 +69,67 @@ export interface HilosDaemonCronTable {
   readonly controller: TableViewportController<HilosDaemonCronRow>
   start(): void
   dispose(): void
+}
+
+/** Empty-table explanation for a node's cron rules. */
+export type HilosDaemonCronEmptyState = 'waiting' | 'silent' | 'none'
+
+/** Notice explaining why daemon rules do not run on this node. */
+export type HilosDaemonCronIdleNotice = 'none' | 'idle' | 'idle_until_leader'
+
+/** @param scopes The page scope manager. */
+export function readDaemonCronReported(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const source = scopes.pageDataSignal(DAEMON_CRON_REPORTED_DATA)
+  return computedSignal(() => source.get() === true)
+}
+
+/**
+ * Choose the message for an empty cron table.
+ *
+ * @param heading The current node heading, if it has arrived.
+ * @param cronReported Whether the node has reported its cron section.
+ */
+export function daemonCronEmptyState(
+  heading: HilosDaemonNodeHeading | null,
+  cronReported: boolean,
+): HilosDaemonCronEmptyState {
+  if (cronReported) {
+    return 'none'
+  }
+  return heading?.state === DAEMON_NODE_STATE_SILENT ? 'silent' : 'waiting'
+}
+
+/**
+ * Choose the notice for daemon rules that are idle on this node.
+ *
+ * @param rows Rules in the current table window.
+ * @param heading The current node heading, if it has arrived.
+ */
+export function daemonCronIdleNotice(
+  rows: readonly HilosDaemonCronRow[],
+  heading: HilosDaemonNodeHeading | null,
+): HilosDaemonCronIdleNotice {
+  if (!rows.some((row) => row.agentId === null && row.idleReason !== null)) {
+    return 'none'
+  }
+  return heading?.state === DAEMON_NODE_STATE_STANDBY
+    ? 'idle_until_leader'
+    : 'idle'
+}
+
+/**
+ * Hold room for the notice wherever daemon rules can become idle.
+ *
+ * @param rows Rules in the current table window.
+ * @param heading The current node heading, if it has arrived.
+ */
+export function daemonCronHoldsIdleNotice(
+  rows: readonly HilosDaemonCronRow[],
+  heading: HilosDaemonNodeHeading | null,
+): boolean {
+  return heading?.clustered === true && rows.some((row) => row.agentId === null)
 }
 
 /**
@@ -165,6 +236,7 @@ export function formatDaemonCronExecutor(
 
 /**
  * Format the last run, including the daemon's not-on-this-node state.
+ * Not yet means the rule has not fired; Never is reserved for the next run.
  *
  * @param row Rule being drawn.
  * @param nowMs Current instant in browser milliseconds.
@@ -177,7 +249,7 @@ export function formatDaemonCronLastRun(
     return 'Not on this node'
   }
   return row.lastRunAt === null
-    ? 'Never'
+    ? 'Not yet'
     : formatDaemonCronMoment(row.lastRunAt, nowMs)
 }
 

@@ -368,7 +368,7 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_DAEMON_CRON => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Cron',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Schedule rules and their last run.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'The node\'s schedule: daemon and agent rules, and their runs.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DAEMON,
         ],
         HilosPageConstants::HILOS_DAEMON_WEBSOCKETS => [

@@ -44,3 +44,19 @@ test('finds the section node agent on the standalone agents page', async ({
   ).toBeVisible()
   await expect(rows).toHaveCount(1)
 })
+
+test('shows the standalone node and its schedule', async ({ page }) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/daemon/standalone/cron', PAGE_READY)
+
+  await expect(page.getByTestId('hilos-daemon-node-id')).toHaveText(
+    'standalone',
+  )
+  await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
+  await expect(
+    page.locator(
+      '[data-id^="hilos-table-row-"][data-id$="/hilos_sessions_expire"]',
+    ),
+  ).toBeVisible()
+  await expect(page.getByTestId('hilos-daemon-cron-not-leader')).toHaveCount(0)
+})

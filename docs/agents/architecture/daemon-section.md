@@ -133,6 +133,11 @@ runs on that node.
 Until the master's cron part arrives, the `cron` section is null rather than an
 empty rule list. Rows are sorted with daemon rules first, then by agent id and
 rule name. A new process roster removes rows of agents no longer on this node.
+The Cron page carries `cronReported`: while the section is null it says the node
+has not reported its schedule, or is silent and never reported it; only a
+reported empty list says there are no rules. Its non-leader notice comes from
+daemon rows with `idleReason`, and only a standby node gets the second sentence
+about starting here if leadership moves to this node.
 The node agent does not expire a report by elapsed time: after its own restart,
 agent rows return on the agents' next changed or minute repair report, which can
 take up to a minute. The master forces its part as soon as the node agent
@@ -205,10 +210,10 @@ the last report arrival time only for a silent node; live reports arrive every
 `nodeData()`. The page agent compares its fingerprint per page and node; when
 that data changes, it resends the whole page to live viewers of that node. When
 only table rows change, it resends the window. The frontend draws a link to the
-diagram only when it has built the root address. Workers and Agents carry the
-line; Cron and HTTP join in their own leaves by adding `nodeData()`. The
-environment page is served by the node agent and uses its own `nodeSilent`
-verdict.
+diagram only when it has built the root address. Workers, Agents and Cron carry
+the line; Cron adds its own `cronReported` flag through `nodeData()`. HTTP joins
+in its own leaf by adding `nodeData()`. The environment page is served by the
+node agent and uses its own `nodeSilent` verdict.
 
 ## What Never Leaves A Node
 
@@ -363,9 +368,10 @@ mismatch is a cluster-wide address without one.
 The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. Each key stays in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
-for every frontend that has not built it. Vue builds Workers (HIL-1391) and
-Agents (HIL-1392) before the root, so it serves those staged children by direct
-address (`STAGED_CHILDREN`); React and Angular still leave both unbuilt.
+for every frontend that has not built it. Vue builds Workers (HIL-1391),
+Agents (HIL-1392) and Cron (HIL-1393) before the root, so it serves those staged
+children by direct address (`STAGED_CHILDREN`); React and Angular still leave
+all three unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

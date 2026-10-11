@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosDaemonCronTable,
+  daemonCronEmptyState,
+  daemonCronHoldsIdleNotice,
+  daemonCronIdleNotice,
   formatDaemonCronExecutor,
   formatDaemonCronLastRun,
   formatDaemonCronMoment,
   formatDaemonCronNextRun,
+  readDaemonCronReported,
   resolveHilosDaemonCronRow,
   DAEMON_CRON_IDLE_NOT_LEADER,
   type HilosDaemonCronContext,
@@ -16,7 +20,7 @@ import {
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
-import { type ScopeManager } from '../../../src/state/ScopeManager.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 function row(overrides: Partial<HilosDaemonCronRow> = {}): HilosDaemonCronRow {
@@ -165,6 +169,104 @@ describe('daemon cron viewport', () => {
   })
 })
 
+describe('daemon cron empty state', () => {
+  it('reads the current page report flag and follows its changes', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_CRON)
+    const reported = readDaemonCronReported(scopes)
+
+    expect(reported.get()).toBe(false)
+    page.data.set('cronReported', true)
+    expect(reported.get()).toBe(true)
+    page.data.set('cronReported', false)
+    expect(reported.get()).toBe(false)
+    page.data.set('cronReported', 'true')
+    expect(reported.get()).toBe(false)
+  })
+
+  it('keeps a reported empty schedule distinct from an absent report', () => {
+    const silent = { clustered: true, state: 'silent', silentSince: 42 }
+
+    expect(daemonCronEmptyState(null, true)).toBe('none')
+    expect(daemonCronEmptyState(silent, true)).toBe('none')
+  })
+
+  it('explains an absent cron report on a silent node', () => {
+    const silent = { clustered: true, state: 'silent', silentSince: 42 }
+
+    expect(daemonCronEmptyState(silent, false)).toBe('silent')
+  })
+
+  it('waits for an absent cron report on any other node', () => {
+    const standby = { clustered: true, state: 'standby', silentSince: null }
+
+    expect(daemonCronEmptyState(null, false)).toBe('waiting')
+    expect(daemonCronEmptyState(standby, false)).toBe('waiting')
+  })
+})
+
+describe('daemon cron idle notice', () => {
+  const standby = { clustered: true, state: 'standby', silentSince: null }
+  const idle = row({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })
+
+  it('ignores agent rules even when they carry an idle reason', () => {
+    const agent = row({
+      agentId: 'log',
+      idleReason: DAEMON_CRON_IDLE_NOT_LEADER,
+    })
+
+    expect(daemonCronIdleNotice([agent], standby)).toBe('none')
+    expect(daemonCronIdleNotice([agent, row()], standby)).toBe('none')
+    expect(daemonCronIdleNotice([], standby)).toBe('none')
+  })
+
+  it('has no notice for running daemon rules on a leader or standalone node', () => {
+    expect(daemonCronIdleNotice([row()], { ...standby, state: 'leader' })).toBe(
+      'none',
+    )
+    expect(
+      daemonCronIdleNotice([row()], {
+        clustered: false,
+        state: null,
+        silentSince: null,
+      }),
+    ).toBe('none')
+  })
+
+  it('adds the leadership prospect only on a standby node', () => {
+    expect(daemonCronIdleNotice([idle], standby)).toBe('idle_until_leader')
+    expect(daemonCronIdleNotice([idle], { ...standby, state: 'data' })).toBe(
+      'idle',
+    )
+    expect(daemonCronIdleNotice([idle], { ...standby, state: 'silent' })).toBe(
+      'idle',
+    )
+    expect(daemonCronIdleNotice([idle], { ...standby, state: null })).toBe(
+      'idle',
+    )
+    expect(daemonCronIdleNotice([idle], null)).toBe('idle')
+  })
+
+  it('holds room in a cluster with daemon rules before and during idling', () => {
+    expect(
+      daemonCronHoldsIdleNotice([row()], { ...standby, state: 'leader' }),
+    ).toBe(true)
+    expect(daemonCronHoldsIdleNotice([idle], standby)).toBe(true)
+  })
+
+  it('holds no room on a standalone node or without daemon rules', () => {
+    const standalone = { clustered: false, state: null, silentSince: null }
+
+    expect(daemonCronHoldsIdleNotice([row()], standalone)).toBe(false)
+    expect(daemonCronHoldsIdleNotice([idle], standalone)).toBe(false)
+    expect(daemonCronHoldsIdleNotice([row({ agentId: 'log' })], standby)).toBe(
+      false,
+    )
+    expect(daemonCronHoldsIdleNotice([], standby)).toBe(false)
+    expect(daemonCronHoldsIdleNotice([row()], null)).toBe(false)
+  })
+})
+
 describe('daemon cron cell text', () => {
   const now = new Date(2026, 9, 8, 12, 0).getTime()
 
@@ -180,7 +282,7 @@ describe('daemon cron cell text', () => {
     const idle = row({ idleReason: DAEMON_CRON_IDLE_NOT_LEADER })
     expect(formatDaemonCronLastRun(idle, now)).toBe('Not on this node')
     expect(formatDaemonCronNextRun(idle, now)).toBe('—')
-    expect(formatDaemonCronLastRun(row(), now)).toBe('Never')
+    expect(formatDaemonCronLastRun(row(), now)).toBe('Not yet')
     expect(formatDaemonCronNextRun(row(), now)).toBe('Never')
     const agent = row({ agentId: 'log', nextRunAt: now / 1000 })
     expect(formatDaemonCronNextRun(agent, now)).toContain('Today, ')

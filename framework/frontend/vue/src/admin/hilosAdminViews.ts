@@ -8,13 +8,14 @@
 // the router answers 404 and no card links to them.
 //
 // The users / user / settings / backup / maintenance, communications hub /
-// channel, Change Log, Daemon Workers and Agents, and log pages that read live data are intentionally
-// absent: they are
+// channel, Change Log, Daemon Workers, Agents and Cron, and log pages that read
+// live data are intentionally absent: they are
 // real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
 // HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
 // HilosCommunicationsChannelPage / HilosChangeLogPage / HilosLogsKeysPage / HilosLogsRotationsPage /
-// HilosLogsViewPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage) that require a project-supplied
-// context, so a project mounts them directly rather than through this default map.
+// HilosLogsViewPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /
+// HilosDaemonCronPage) that require a project-supplied context, so a project
+// mounts them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):
 // every page is its own module file, the catalog of identity stays in @hilos/core
@@ -49,7 +50,6 @@ import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
 import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
 import HilosOperationsPage from './operations/HilosOperationsPage.vue'
 import HilosDaemonPage from './daemon/HilosDaemonPage.vue'
-import HilosDaemonCronPage from './daemon/HilosDaemonCronPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
 import HilosDaemonHttpServerPage from './daemon/HilosDaemonHttpServerPage.vue'
 import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
@@ -116,7 +116,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
     [HilosPages.OPERATIONS]: HilosOperationsPage,
     [HilosPages.DAEMON]: HilosDaemonPage,
-    [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
     [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttpServerPage,
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
