@@ -13,12 +13,14 @@ final readonly class DaemonProcessRoster
      * @param list<DaemonWorkerPicture> $workers Live workers sorted by index
      * @param ?list<string> $unplacedAgentIds Leader's sorted unhosted ids, or null on a follower
      * @param int $workerRestarts24h Successful crash replacements in the last day
+     * @param list<DaemonRestartingAgent> $restartingAgents Open restarts sorted by agent id
      * @throws InvalidFormatException When a field, uniqueness, or order is invalid
      */
     public function __construct(
         public array $workers,
         public ?array $unplacedAgentIds,
         public int $workerRestarts24h,
+        public array $restartingAgents = [],
     ) {
         if (!array_is_list($workers) || $workerRestarts24h < 0) {
             throw new InvalidFormatException('Daemon process roster carries invalid workers or restart count');
@@ -48,6 +50,16 @@ final readonly class DaemonProcessRoster
                 }
                 $previousId = $id;
             }
+        }
+        if (!array_is_list($restartingAgents)) {
+            throw new InvalidFormatException('Daemon restarting agents must be a list');
+        }
+        $previousId = null;
+        foreach ($restartingAgents as $agent) {
+            if (!$agent instanceof DaemonRestartingAgent || ($previousId !== null && strcmp($previousId, $agent->id) >= 0)) {
+                throw new InvalidFormatException('Daemon restarting agents must have unique sorted ids');
+            }
+            $previousId = $agent->id;
         }
     }
 }

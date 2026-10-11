@@ -15,6 +15,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
@@ -66,6 +67,9 @@ final class DaemonProcessRosterBuilder
     private bool $leader = false;
     private int $workerRestarts24h = 0;
 
+    /** @var list<DaemonRestartingAgent> */
+    private array $restartingAgents = [];
+
     /** @param ProcessMetricsReader $metrics Reader initialized before the runtime loop */
     public function __construct(private readonly ProcessMetricsReader $metrics)
     {
@@ -80,6 +84,7 @@ final class DaemonProcessRosterBuilder
      * @param AgentManagerDaemon $agentManager Started-agent source
      * @param ?PlacementRegistry $placementRegistry Leader's placement source, if any
      * @param bool $leader Whether this node may state which agents run nowhere
+     * @param list<DaemonRestartingAgent> $restartingAgents Open restarts on this master
      * @throws InvalidFormatException When tracked worker identity fields are invalid
      */
     public function start(
@@ -87,6 +92,7 @@ final class DaemonProcessRosterBuilder
         AgentManagerDaemon $agentManager,
         ?PlacementRegistry $placementRegistry,
         bool $leader,
+        array $restartingAgents = [],
     ): void {
         $this->workers = $workerServer->liveWorkerPictures();
         $this->workersByIndex = [];
@@ -119,6 +125,7 @@ final class DaemonProcessRosterBuilder
         $this->result = null;
         $this->leader = $leader;
         $this->workerRestarts24h = $workerServer->workerRestarts24h();
+        $this->restartingAgents = $restartingAgents;
         $this->stage = self::STAGE_AGENTS;
     }
 
@@ -178,6 +185,7 @@ final class DaemonProcessRosterBuilder
                             $this->builtWorkers,
                             $this->leader ? $this->sortedUnplaced : null,
                             $this->workerRestarts24h,
+                            $this->restartingAgents,
                         );
                         $this->stage = self::STAGE_DONE;
                         break;

@@ -17,6 +17,7 @@ use Hilos\Core\Agent\Daemon\WorkerInfo;
 use Hilos\Core\Daemon\DaemonProcessRosterBuilder;
 use Hilos\Core\Daemon\ProcessMetricsReader;
 use Hilos\DaemonSection\DaemonWorkerPicture;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
 use LogicException;
@@ -100,6 +101,18 @@ final class DaemonProcessRosterBuilderTest extends TestCase
         $builder->start($server, $agents, null, true);
         $builder->advance(100);
         self::assertSame([], $builder->result()?->workers);
+    }
+
+    public function testRestartMarksRideTheWholeFrame(): void
+    {
+        $builder = new DaemonProcessRosterBuilder(new ProcessMetricsReader());
+        $builder->start(new ProcessRosterTestWorkerServer(), new ProcessRosterTestAgentManagerDaemon(), null, true, [
+            new DaemonRestartingAgent('a', 'n1'),
+        ]);
+        $builder->advance(100);
+
+        self::assertSame('a', $builder->result()?->restartingAgents[0]->id);
+        self::assertSame('n1', $builder->result()?->restartingAgents[0]->nodeId);
     }
 
     public function testPendingAndUnhostedAgentsAreExcludedFromLiveWorkers(): void

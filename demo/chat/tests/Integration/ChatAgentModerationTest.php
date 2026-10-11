@@ -28,7 +28,9 @@ use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\HilosException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use LogicException as NativeLogicException;
 
 /**
  * Integration tests for ChatAgent shutdown and moderation result cleanup.
@@ -71,6 +73,59 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $this->assertSame(0, count(Hilos::$rt->userStates));
             $this->assertEventTypeExists(ChatEventType::CHAT_STOPPED);
         } finally {
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+            Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
+    /**
+     * A replacement chat agent must restore the user state of a tab that sends no new handshake.
+     *
+     * @throws HilosException When test setup or chat lifecycle fails
+     * @throws NativeLogicException When the user state factory rejects a state row
+     */
+    public function testOnStartRestoresUserStateForOpenConnections(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$db->events->actions->deleteAll();
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('User');
+            Hilos::$rt->connections->actions->register('restart-ak-1', $user->id);
+            Hilos::$rt->connections->actions->register('restart-ak-2', $user->id);
+            Hilos::$rt->connections->actions->register('restart-anonymous-ak', null);
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+
+            new ChatAgent()->onStop();
+
+            $this->assertCount(3, Hilos::$rt->connections);
+            $this->assertCount(0, Hilos::$rt->userStates);
+            $this->assertNull(Hilos::$rt->connections['restart-ak-1']?->userState);
+
+            $agent = new ChatAgent();
+            $agent->onStart();
+
+            $this->assertCount(1, Hilos::$rt->userStates);
+            $this->assertSame($user->id, Hilos::$rt->connections['restart-ak-2']?->userState?->userId);
+            $this->assertNull(Hilos::$rt->connections['restart-anonymous-ak']?->userState);
+
+            ExecutionContext::setCurrentAcceptKey('restart-ak-1');
+            new MainPage($agent)->onAction(
+                'restart-ak-1',
+                ChatSignalConstants::MESSAGE,
+                new MessageActionDTO('message after restart'),
+            );
+
+            $this->assertSame(
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+                Hilos::$rt->connections['restart-ak-1']?->outboundModerationPhase,
+            );
+            $this->assertGreaterThan(0, Hilos::$rt->connections['restart-ak-1']?->userState?->lastOutboundSubmittedAt);
+        } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
             Hilos::$db->events->actions->deleteAll();

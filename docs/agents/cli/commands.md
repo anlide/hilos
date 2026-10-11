@@ -45,6 +45,7 @@ reason in its `execution()` declaration. See
 | `daemon:status` | `daemon` | Show daemon status (uptime, node cores, daemon and machine load, memory against the ceiling, workers) — over the command channel; exits 0 when no daemon answers, non-zero when one answers late or refuses |
 | `daemon:monitor` | `daemon` | Live monitoring of daemon (continuous blocking watch — use `daemon:status` for a one-shot check, not for an AI agent) |
 | `daemon:ping` | `daemon` | Probe the command channel itself |
+| `agent:restart <agentId> [--node=<nodeId>]` | `daemon` | Stop one running agent and start the same instance again; the daemon reports the result |
 | `help` | `cli-read` | List available commands — runs while the server is still down |
 
 ## Account and session commands
@@ -191,8 +192,10 @@ unregistered command name skips it too, so a typo answers `Unknown command` inst
 connection failure.
 
 Marked today: `db:wait` (its poll *is* the connect, and it has to run before the server
-answers), `test:db:reset` (opens its own server-level connection, because it drops and
-recreates the database `DB_DATABASE` names), `help` (prints the registry it was handed),
+answers), `agent:restart` (the master coordinates the stop and start over its command
+socket, and the CLI process has no database work), `test:db:reset` (opens its own
+server-level connection, because it drops and recreates the database `DB_DATABASE`
+names), `help` (prints the registry it was handed),
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
 can inspect a network-partitioned node that cannot reach MySQL either), the cluster client
 family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the two drills

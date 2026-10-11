@@ -17,6 +17,7 @@ use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\LocalNodeAnnouncer;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
@@ -84,6 +85,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Daemon\AgentRestartDoor;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -199,6 +201,9 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var ?ClusterPlacement Agent-placement coordinator, built at start on any clustered node; null when no worker executor is registered */
     private ?ClusterPlacement $placement = null;
 
+    /** @var ?AgentRestartDoor Master receiving peer restart requests */
+    private ?AgentRestartDoor $agentRestartDoor = null;
+
     /** @var ?ProtectedModeCoordinator Protected-mode freeze handler, registered by the leader-orchestration slice; null until then */
     private ?ProtectedModeCoordinator $protectedMode = null;
 
@@ -241,6 +246,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param ClusterTlsConfig $tls This node's certificate and the authorities a peer certificate must be signed by
      * @param PeerMarkers $localMarkers This node's markers, named on every handshake and judged against the peer's
      * @param ?ConnectionPolicy $connectionPolicy Policy choosing which known peers to dial; full mesh when null
+     * @param ?AgentRestartDoor $agentRestartDoor Master receiving peer restart requests
      */
     public function __construct(
         string $host,
@@ -250,6 +256,7 @@ final class PeerServer extends AbstractTlsServer implements
         ClusterTlsConfig $tls,
         PeerMarkers $localMarkers,
         ?ConnectionPolicy $connectionPolicy = null,
+        ?AgentRestartDoor $agentRestartDoor = null,
     ) {
         parent::__construct($host, $port, $tls->certificateFile, $tls->trustFile);
 
@@ -258,6 +265,7 @@ final class PeerServer extends AbstractTlsServer implements
         $this->tls = $tls;
         $this->localMarkers = $localMarkers;
         $this->connectionPolicy = $connectionPolicy ?? new FullMeshConnectionPolicy();
+        $this->agentRestartDoor = $agentRestartDoor;
         $this->nodeReaderMap = new SourceReaderMap();
     }
 
@@ -298,6 +306,7 @@ final class PeerServer extends AbstractTlsServer implements
                 Hilos::$env[EnvConstants::CLUSTER_SLAVE_WORK_GRACE_MS]->int(),
                 Hilos::$env[EnvConstants::CLUSTER_PLACEMENT_ACK_TIMEOUT_MS]->int(),
                 policy: Hilos::$cluster->placementPolicy(),
+                restartSink: Hilos::$cluster->placementRestartSink(),
             );
             Hilos::$cluster->registerPlacement($this->placement);
             // The placement coordinator doubles as the router's read-only placement lookup, so
@@ -1166,6 +1175,26 @@ final class PeerServer extends AbstractTlsServer implements
         if ($from !== null) {
             $this->placement?->onPlacementRequest($from, $frame);
         }
+    }
+
+    /**
+     * Hands an authenticated peer restart request to this node's master.
+     *
+     * @param PeerLink $link Link the frame arrived on
+     * @param PeerAgentRestartDTO $frame Received restart request
+     * @throws EnvException When the leader id cannot be read
+     */
+    public function onAgentRestartReceived(PeerLink $link, PeerAgentRestartDTO $frame): void
+    {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from === null) {
+            return;
+        }
+        if ($frame->inPlace && $from !== $this->placement?->knownLeaderId()) {
+            Logger::warning("Dropping in-place agent restart from non-leader node '{$from}'");
+            return;
+        }
+        $this->agentRestartDoor?->requestPeerAgentRestart($frame);
     }
 
     /**

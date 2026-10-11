@@ -10,6 +10,7 @@ use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\AccountMergeCommand;
 use Hilos\Core\CLI\Commands\AccountTestForcePurgeCommand;
+use Hilos\Core\CLI\Commands\AgentRestartCommand;
 use Hilos\Core\CLI\Commands\AdminCreateCommand;
 use Hilos\Core\CLI\Commands\AdminGrantCommand;
 use Hilos\Core\CLI\Commands\AdminRevokeCommand;
@@ -156,6 +157,7 @@ class CliManager
         $this->commands[CliCommands::DAEMON_STATUS] = new StatusCommand();
         $this->commands[CliCommands::DAEMON_MONITOR] = new MonitorCommand();
         $this->commands[CliCommands::DAEMON_PING] = new PingCommand();
+        $this->commands[CliCommands::AGENT_RESTART] = new AgentRestartCommand();
         $this->commands[CliCommands::CLUSTER_NODES] = new ClusterNodesCommand();
         $this->commands[CliCommands::CLUSTER_RELOAD] = new ClusterReloadCommand();
         $this->commands[CliCommands::CLUSTER_TLS_CA] = new ClusterTlsCaCommand();

@@ -6,6 +6,7 @@ namespace Hilos\Socket\Server;
 
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\AbandonedCommandSink;
+use Hilos\Core\Daemon\AgentRestartDoor;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\DaemonStatusSource;
@@ -52,6 +53,9 @@ class CommandServer extends AbstractServer
 
     /** @var ?DaemonStatusSource Master seam that samples this daemon's runtime status, wired at registration */
     private ?DaemonStatusSource $daemonStatusSource = null;
+
+    /** @var ?AgentRestartDoor Master seam that restarts an agent */
+    private ?AgentRestartDoor $agentRestartDoor = null;
 
     /**
      * Called when a new command client connection is accepted.
@@ -234,6 +238,18 @@ class CommandServer extends AbstractServer
     public function daemonStatusSnapshot(): ?DaemonStatusDTO
     {
         return $this->daemonStatusSource?->daemonStatusSnapshot();
+    }
+
+    /** @param AgentRestartDoor $door Master handling the restart request */
+    public function setAgentRestartDoor(AgentRestartDoor $door): void
+    {
+        $this->agentRestartDoor = $door;
+    }
+
+    /** @return ?AgentRestartDoor Master restart seam, or null if unavailable */
+    public function agentRestartDoor(): ?AgentRestartDoor
+    {
+        return $this->agentRestartDoor;
     }
 
     /**

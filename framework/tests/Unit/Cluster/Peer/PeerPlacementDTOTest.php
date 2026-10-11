@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -27,6 +28,27 @@ use PHPUnit\Framework\TestCase;
  */
 final class PeerPlacementDTOTest extends TestCase
 {
+    public function testAgentRestartFrameRoundTripsWithoutChangingItsReturnAddress(): void
+    {
+        $frame = new PeerAgentRestartDTO('command-7', 'origin', 'chat', '42', 'host', true);
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerAgentRestartDTO::class, $parsed);
+        $this->assertSame($frame->toArray(), $parsed->toArray());
+    }
+
+    public function testAgentRestartFrameRejectsAMissingInPlaceFlag(): void
+    {
+        $this->expectException(PeerTransportException::class);
+        PeerAgentRestartDTO::fromArray([
+            PeerAgentRestartDTO::FIELD_CORRELATION_ID => 'command-7',
+            PeerAgentRestartDTO::FIELD_ORIGIN_NODE_ID => 'origin',
+            PeerAgentRestartDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerAgentRestartDTO::FIELD_AGENT_INDEX => null,
+            PeerAgentRestartDTO::FIELD_NODE_ID => null,
+        ]);
+    }
+
     public function testProtocolVersionBumpedForPlacementFrames(): void
     {
         // The placement-verdict frame extends the peer channel, so the version moved to at least 7.

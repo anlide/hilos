@@ -307,6 +307,27 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 continue;
             }
 
+            if ($request->command === CliCommands::AGENT_RESTART) {
+                $door = $this->server->agentRestartDoor();
+                if ($door === null) {
+                    $this->writeBuffer .= CommandReplyDTO::error(
+                        $request->correlationId,
+                        'This daemon restarts no agents',
+                    )->toJson() . "\n";
+                    continue;
+                }
+
+                $this->heldCorrelationId = $request->correlationId;
+                $this->heldSince = microtime(true);
+                $this->heldCommand = $request->command;
+                $this->server->hold($request->correlationId, $this);
+                $door->requestAgentRestart($request->withOriginNodeId(
+                    Hilos::$cluster?->isEnabled() === true ? Hilos::$cluster->localNodeId() : null,
+                ));
+
+                return;
+            }
+
             // Async: park, then route to the owning agent; the reply returns via writeReply().
             $this->heldCorrelationId = $request->correlationId;
             $this->heldSince = microtime(true);

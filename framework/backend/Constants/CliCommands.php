@@ -30,6 +30,15 @@ final class CliCommands
     /** @var string Command: Ping the daemon over the command channel */
     public const string DAEMON_PING = 'daemon:ping';
 
+    /**
+     * Restart one running agent through its daemon (operator).
+     *
+     * Not test-only: an operator may need to replace an agent on a production node.
+     *
+     * @var string Command: Restart one agent
+     */
+    public const string AGENT_RESTART = 'agent:restart';
+
     /** @var string Command: List the cluster nodes the daemon knows about */
     public const string CLUSTER_NODES = 'cluster:nodes';
 

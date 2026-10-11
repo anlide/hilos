@@ -104,11 +104,17 @@ final class CommandConstants
     /** @var string Request payload key: row id a test RT write names */
     public const string FIELD_RT_STATE_ID = 'rtStateId';
 
-    /** @var string Request payload key: agent type a test placement request names */
+    /** @var string Request payload key: agent type a placement or restart request names */
     public const string FIELD_AGENT_TYPE = 'agentType';
 
-    /** @var string Request payload key: agent index a test placement request names, or null */
+    /** @var string Request payload key: agent index a placement or restart request names, or null */
     public const string FIELD_AGENT_INDEX = 'agentIndex';
+
+    /** @var string Request and reply payload key: node hosting an agent */
+    public const string FIELD_NODE_ID = 'nodeId';
+
+    /** @var string Reply payload key: restarted agent id */
+    public const string FIELD_AGENT_ID = 'agentId';
 
     /**
      * The prefix every test-only command name carries on the wire.

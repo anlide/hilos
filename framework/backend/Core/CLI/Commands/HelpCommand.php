@@ -116,6 +116,7 @@ HELP;
             'Daemon Management' => [
                 CliCommands::DAEMON_STATUS,
                 CliCommands::DAEMON_MONITOR,
+                CliCommands::AGENT_RESTART,
             ],
             'Database Migrations' => [
                 CliCommands::MIGRATION_UP,

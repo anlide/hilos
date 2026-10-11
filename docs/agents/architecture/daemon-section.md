@@ -256,32 +256,43 @@ decomposition moved them to the node frame, preserving the boundary on values.
 ## Restarting One Agent
 
 A restart stops that one instance and brings it back by the same placement rule
-that put it there; the daemon does the work, and `agent:restart` asks and prints
-the result (not in the code yet — HIL-1380). Keep that process boundary from
+that put it there; the master answers `agent:restart` itself after the work, and
+the CLI prints the result. Keep that process boundary from
 [../cli/command-execution.md](../cli/command-execution.md).
 The command answers when the agent is up again, or refuses in words: no such
-agent, node silent, or start refused by the freeze or leadership gate
-(not in the code yet — HIL-1380).
+agent, node silent, or start refused by the freeze or leadership gate. A caller's
+wait can end while a slow restart continues; the master's restart record stays
+open until the agent starts or the restart fails.
 
 `WorkerServer::stopAgent()` already stops one agent without stopping its worker
 neighbors. Do not offer a worker restart: it takes down every agent on that worker.
 
-| Kind | Where it comes back | Today's mechanism |
+| Kind | Where it comes back | Restart path |
 |---|---|---|
-| Node replica | On the same node, started by that node's master (not in the code yet — HIL-1380) | `WorkerServer::onInitialWorkersReady()` starts replicas once when local workers are ready; an ordinary stop has no automatic restart. |
-| Leader singleton | On the leader (not in the code yet — HIL-1380) | An address can start it; `DaemonManager::ensureSingletonsStarted()` also runs the bootstrap after worker death re-arms it. Stopping one agent does not re-arm it. |
-| Policy-placed | Forget the stopped instance's placement; the leader places it by best-fit again, possibly on another node (not in the code yet — HIL-1380) | `ClusterPlacement::stopAgentOnNode()` forgets placement; `DaemonManager::ensurePolicyAgentsPlaced()` reconciles it. With cluster mode off the same declaration lands here. |
-| Indexed | The same type:index, placed as an address to it would place it (not in the code yet — HIL-1380) | An address supplies the index; the unindexed policy reconciliation does not rebuild an indexed pool. |
-| Idle (“lazy”) | Immediately, with the idle window counted from the new start (not in the code yet — HIL-1380) | Waiting for the next address would leave “restarting” open indefinitely. |
-| Monopolistic | Apply its placement kind's rule and use a free monopolistic worker or raise one (not in the code yet — HIL-1380) | The worker stays in the pool when its agent stops; the pool does not shrink. This is a worker kind, subject to the existing restrictions in [monopolistic-agent.md](../agent-system/monopolistic-agent.md). |
+| Node replica | On the same node, started by that node's master | The master stops and starts the instance directly. |
+| Leader singleton | On the leader | The leader stops and starts it directly; this does not wait for the next bootstrap pass or address. |
+| Policy-placed | On the node selected by the leader's policy, possibly a different one | The leader checks best fit before stopping it. If that is its current host, the restart stays in place and retains placement across the stop report. Otherwise the leader waits for the old host's stop status before placing it on the selected node. |
+| Indexed | The same type:index under its declared placement rule | The command carries the index into the restart; it does not wait for another addressed frame. |
+| Idle (“lazy”) | Immediately, with the idle window counted from the new start | Waiting for the next address could leave the restart open indefinitely. |
+| Monopolistic | Under its placement rule, on a suitable monopolistic worker | The old worker is preferred when still able to take the agent; otherwise a free one is used or one is raised. The worker pool does not shrink when its agent stops. See [monopolistic-agent.md](../agent-system/monopolistic-agent.md). |
+
+For a local restart, `WorkerServer::restartAgentHere()` prefers the instance's
+former worker when it is still suitable. If the old worker has not reported the
+stop, the start waits for that report or for the worker link to close. A POLICY
+restart to another node uses the leader's placement status to finish, including
+a best-fit retry if the selected target cannot take the agent. With cluster mode
+off, a POLICY agent restarts here.
 
 The CLI speaks to its local daemon. A replica on another node is restarted by
 that node's master; a cluster-scoped agent is restarted through the leader that
-holds placement (not in the code yet — HIL-1380).
+holds placement. The master doing the restart owns its open record: the local
+host for a replica or an in-place restart, and the leader for a POLICY move.
 
-The node picture keeps “restarting” until the agent starts or the restart is
-refused (not in the code yet — HIL-1380). Everyone watching the section sees
-that mark (not in the code yet — HIL-1397). The confirmation dialog warns that
+That master's node frame carries `restartingAgents`: each entry names the agent
+and the node that hosted it when the restart began. It remains until the agent
+starts or the restart is refused, even if a command caller's wait has ended.
+Everyone watching the section sees that mark (not in the code yet — HIL-1397).
+The confirmation dialog warns that
 a `POLICY` agent may come back on a different node
 (not in the code yet — HIL-1397). The restart button is disabled for an admin
 view-mode viewer (not in the code yet — HIL-1397).

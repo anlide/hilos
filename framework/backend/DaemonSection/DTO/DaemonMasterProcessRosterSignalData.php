@@ -9,6 +9,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 
 /** Whole process roster sent by the master to its own node agent. */
@@ -25,6 +26,7 @@ final class DaemonMasterProcessRosterSignalData extends BaseDTO implements Signa
     public const string scope = 'scope';
     public const string placement = 'placement';
     public const string unplacedAgentIds = 'unplacedAgentIds';
+    public const string restartingAgents = 'restartingAgents';
     public const string workerRestarts24h = 'workerRestarts24h';
 
     /**
@@ -80,6 +82,13 @@ final class DaemonMasterProcessRosterSignalData extends BaseDTO implements Signa
                 $roster->workers,
             ),
             self::unplacedAgentIds => $roster->unplacedAgentIds,
+            self::restartingAgents => array_map(
+                static fn (DaemonRestartingAgent $agent): array => [
+                    self::id => $agent->id,
+                    self::nodeId => $agent->nodeId,
+                ],
+                $roster->restartingAgents,
+            ),
             self::workerRestarts24h => $roster->workerRestarts24h,
         ];
     }
@@ -135,7 +144,22 @@ final class DaemonMasterProcessRosterSignalData extends BaseDTO implements Signa
             }
         }
 
-        return new DaemonProcessRoster($workers, $unplacedRows, self::requireInt($data, self::workerRestarts24h));
+        $restartingRows = self::requireArray($data, self::restartingAgents);
+        if (!array_is_list($restartingRows)) {
+            throw new InvalidFormatException('Daemon restarting agents must be a list');
+        }
+        $restartingAgents = [];
+        foreach ($restartingRows as $row) {
+            if (!is_array($row)) {
+                throw new InvalidFormatException('Daemon restarting agent must be an object');
+            }
+            $restartingAgents[] = new DaemonRestartingAgent(
+                self::requireString($row, self::id),
+                self::requireString($row, self::nodeId),
+            );
+        }
+
+        return new DaemonProcessRoster($workers, $unplacedRows, self::requireInt($data, self::workerRestarts24h), $restartingAgents);
     }
 
     /**

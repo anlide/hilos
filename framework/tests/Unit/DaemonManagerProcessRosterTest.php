@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentScope;
@@ -19,6 +21,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use LogicException;
 use PHPUnit\Framework\TestCase;
@@ -120,6 +123,28 @@ final class DaemonManagerProcessRosterTest extends TestCase
         self::assertSame([], $server->delivered);
         self::assertSame(0, $server->rosterReads);
     }
+
+    public function testOpeningAndClosingARestartChangesTheWholeRoster(): void
+    {
+        $manager = new ProcessRosterTestDaemonManager();
+        $server = $manager->addRosterServer();
+        $manager->tickRosterAt(100.0);
+        self::assertSame([], $server->delivered[0]->signal->data->data->roster->restartingAgents);
+
+        $manager->requestAgentRestart(new CommandRequestDTO('c1', CliCommands::AGENT_RESTART, [
+            CommandConstants::FIELD_AGENT_TYPE => 'replica',
+            CommandConstants::FIELD_AGENT_INDEX => null,
+            CommandConstants::FIELD_NODE_ID => null,
+        ]));
+        $manager->tickRosterAt(101.0);
+        $manager->tickRosterAt(101.6);
+        self::assertSame('replica', $server->delivered[1]->signal->data->data->roster->restartingAgents[0]->id);
+
+        $manager->onAgentStarted('replica');
+        $manager->tickRosterAt(102.0);
+        $manager->tickRosterAt(102.6);
+        self::assertSame([], $server->delivered[2]->signal->data->data->roster->restartingAgents);
+    }
 }
 
 /** Daemon test double exposing one guarded roster step. */
@@ -188,6 +213,25 @@ final class ProcessRosterManagerWorkerServer extends WorkerServer
         $this->delivered[] = $messageDto;
     }
 
+    /**
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index
+     * @return ?int Linked worker id
+     */
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
+    {
+        return $agentType === 'replica' ? 1 : null;
+    }
+
+    /**
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index
+     * @param bool $placedByLeader Placement sanction
+     */
+    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader): void
+    {
+    }
+
     protected function onStart(): void
     {
     }
@@ -197,12 +241,21 @@ final class ProcessRosterManagerWorkerServer extends WorkerServer
 final class ProcessRosterManagerAgentManager extends AgentManagerDaemon
 {
     /**
+     * @param string $agentId Agent id
+     * @return bool Whether the test roster knows the agent
+     */
+    public function hasAgent(string $agentId): bool
+    {
+        return $agentId === 'replica';
+    }
+
+    /**
      * @param string $agentId Receiver id
      * @return bool The node agent has completed its start
      */
     public function isAgentStarted(string $agentId): bool
     {
-        return $agentId === HilosAgentType::HILOS_DAEMON_NODE;
+        return $agentId === HilosAgentType::HILOS_DAEMON_NODE || $agentId === 'replica';
     }
 
     /**
@@ -236,6 +289,7 @@ abstract class ProcessRosterManagerTestHilos extends Hilos
 {
     public const array AGENTS = [
         HilosAgentType::HILOS_DAEMON_NODE => [AgentRegistryKey::SCOPE => AgentScope::NODE],
+        'replica' => [AgentRegistryKey::SCOPE => AgentScope::NODE],
     ];
 }
 

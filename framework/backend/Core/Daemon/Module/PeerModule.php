@@ -94,6 +94,7 @@ final class PeerModule implements DaemonModule
             $tls,
             ($this->localMarkers)(),
             Hilos::$cluster->connectionPolicy(),
+            $daemon,
         );
         $daemon->registerServer($peerServer);
     }

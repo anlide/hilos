@@ -610,6 +610,23 @@ final class SubscriptionRegistry
     }
 
     /**
+     * @param string $agentType Serving agent type
+     * @param ?string $agentIndex Serving agent index, or null for an unindexed agent
+     * @return list<string> Accept keys whose page is bound to that agent
+     */
+    public function acceptKeysServedBy(string $agentType, ?string $agentIndex): array
+    {
+        $acceptKeys = [];
+        foreach ($this->pages as $acceptKey => $subscription) {
+            if ($subscription->agentType === $agentType && $subscription->agentIndex === $agentIndex) {
+                $acceptKeys[] = $acceptKey;
+            }
+        }
+
+        return $acceptKeys;
+    }
+
+    /**
      * @return list<string> Unique accept keys from page and group subscriptions
      */
     public function getSubscribedAcceptKeys(): array

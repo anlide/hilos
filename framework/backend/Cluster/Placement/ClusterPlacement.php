@@ -118,6 +118,9 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var PlacementObserver Seam that receives placement-degradation events */
     private PlacementObserver $observer;
 
+    /** @var PlacementRestartSink Master waiting for POLICY restart outcomes */
+    private PlacementRestartSink $restartSink;
+
     /** @var PlacementPolicy Node-selection policy that ranks capable nodes for best-fit placement */
     private PlacementPolicy $policy;
 
@@ -189,6 +192,12 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private array $placementAckDeadlines = [];
 
+    /** @var array<string, array{host: string, target: string, placing: bool}> Pending POLICY moves */
+    private array $restartsElsewhere = [];
+
+    /** @var array<string, true> POLICY restarts retaining their host across the old stop report */
+    private array $restartsInPlace = [];
+
     /** @var array<string, string> Hosting node id per agent id, as the leader last published it; empty on the leader */
     private array $placementView = [];
 
@@ -242,6 +251,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param int $slaveWorkGraceMs Slave self-fence grace in ms
      * @param int $placementAckTimeoutMs Placement-ack timeout in ms
      * @param ?PlacementPolicy $policy Node-selection policy; the best-fit policy when null
+     * @param ?PlacementRestartSink $restartSink Master restart callback; inert when null
      */
     public function __construct(
         string $selfNodeId,
@@ -252,11 +262,13 @@ final class ClusterPlacement implements WorkerPlacement
         int $slaveWorkGraceMs = self::DEFAULT_SLAVE_WORK_GRACE_MS,
         int $placementAckTimeoutMs = self::DEFAULT_PLACEMENT_ACK_TIMEOUT_MS,
         ?PlacementPolicy $policy = null,
+        ?PlacementRestartSink $restartSink = null,
     ) {
         $this->selfNodeId = $selfNodeId;
         $this->mesh = $mesh;
         $this->executor = $executor;
         $this->observer = $observer ?? new NullPlacementObserver();
+        $this->restartSink = $restartSink ?? new NullPlacementRestartSink();
         $this->failoverGraceSec = $failoverGraceMs / TimeConstants::MS_PER_SECOND;
         $this->slaveWorkGraceSec = $slaveWorkGraceMs / TimeConstants::MS_PER_SECOND;
         $this->placementAckTimeoutSec = $placementAckTimeoutMs / TimeConstants::MS_PER_SECOND;
@@ -272,6 +284,17 @@ final class ClusterPlacement implements WorkerPlacement
     public function registry(): PlacementRegistry
     {
         return $this->registry;
+    }
+
+    /**
+     * @return ?string Leader this node knows, including the placing leader on a slave
+     * @throws EnvException When cluster mode cannot be read
+     */
+    public function knownLeaderId(): ?string
+    {
+        $leadership = Hilos::$cluster?->leadership();
+
+        return $leadership instanceof PendingLeadership ? $this->placingLeaderId : $leadership?->leaderId();
     }
 
     /**
@@ -427,6 +450,27 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Chooses where an agent would fit now without changing the placement view.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index
+     * @return ?string Best capable online node, or null
+     * @throws AgentDaemonCreationFailedException When an agent's placement profile cannot be built
+     * @throws HilosException When the project factory cannot describe an agent
+     * @throws LogicException When a resource cost is negative
+     */
+    public function bestNodeFor(string $agentType, ?string $agentIndex): ?string
+    {
+        return $this->pickBestNode(
+            $agentType,
+            $agentIndex,
+            $this->executor->requiredCapabilities($agentType, $agentIndex),
+            $this->executor->placementProfile($agentType, $agentIndex),
+            '',
+        );
+    }
+
+    /**
      * Makes sure an agent somebody just addressed is placed somewhere, on whichever node the
      * frame that addressed it happened to land (HIL-628).
      *
@@ -511,6 +555,76 @@ final class ClusterPlacement implements WorkerPlacement
     }
 
     /**
+     * Revokes a POLICY agent but retains its old record until the host confirms the stop.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index
+     * @param string $hostNodeId Current host
+     * @param string $targetNodeId Policy's selected target
+     */
+    public function restartElsewhere(
+        string $agentType,
+        ?string $agentIndex,
+        string $hostNodeId,
+        string $targetNodeId,
+    ): void {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $this->restartsElsewhere[$agentId] = ['host' => $hostNodeId, 'target' => $targetNodeId, 'placing' => false];
+        try {
+            $sent = $this->revokeOnNode($agentType, $agentIndex, $hostNodeId);
+        } catch (Throwable $failure) {
+            unset($this->restartsElsewhere[$agentId]);
+            throw $failure;
+        }
+        if (!$sent) {
+            unset($this->restartsElsewhere[$agentId]);
+            $this->restartSink->onRestartNotPlaced($agentType, $agentIndex, "node {$hostNodeId} is silent");
+            return;
+        }
+        if ($hostNodeId === $this->selfNodeId) {
+            $this->onAgentStatus($hostNodeId, PeerAgentStatusDTO::stopped($agentType, $agentIndex));
+        }
+    }
+
+    /**
+     * Retains a POLICY agent's placement while its local old worker reports stopped.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index
+     */
+    public function beginInPlaceRestart(string $agentType, ?string $agentIndex): void
+    {
+        $this->restartsInPlace[$this->agentId($agentType, $agentIndex)] = true;
+    }
+
+    /**
+     * Releases an in-place hold and reports a failed restart to the placing leader.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index
+     * @param bool $running Whether an instance is running after the attempt
+     * @param string $reason Failure reason when no instance runs
+     */
+    public function endInPlaceRestart(string $agentType, ?string $agentIndex, bool $running, string $reason): void
+    {
+        $agentId = $this->agentId($agentType, $agentIndex);
+        if (!isset($this->restartsInPlace[$agentId])) {
+            return;
+        }
+        unset($this->restartsInPlace[$agentId]);
+        if ($running) {
+            return;
+        }
+
+        unset($this->hosted[$agentId]);
+        if ($this->isLeader) {
+            $this->registry->put(new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Failed));
+        } elseif ($this->placingLeaderId !== null) {
+            $this->mesh->sendToNode($this->placingLeaderId, PeerAgentStatusDTO::failed($agentType, $agentIndex, $reason));
+        }
+    }
+
+    /**
      * Stops an agent whose claim over an RT collection lost, and never puts it back (HIL-696).
      *
      * {@see stopAgentOnNode()} with the opposite ending, and the ending is the whole point: a
@@ -543,8 +657,9 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type to stop
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Id of the node the agent is placed on
+     * @return bool Whether the local stop ran or a peer link carried it
      */
-    private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
+    private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId): bool
     {
         if ($nodeId === $this->selfNodeId) {
             $agentId = $this->agentId($agentType, $agentIndex);
@@ -554,10 +669,10 @@ final class ClusterPlacement implements WorkerPlacement
             $this->executor->revokePlacement($agentType, $agentIndex);
             unset($this->hosted[$agentId]);
 
-            return;
+            return true;
         }
 
-        $this->mesh->sendToNode($nodeId, new PeerStopAgentDTO($agentType, $agentIndex));
+        return $this->mesh->sendToNode($nodeId, new PeerStopAgentDTO($agentType, $agentIndex));
     }
 
     /**
@@ -589,6 +704,9 @@ final class ClusterPlacement implements WorkerPlacement
     public function noteAgentStopped(string $agentType, ?string $agentIndex): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
+        if (isset($this->restartsInPlace[$agentId])) {
+            return;
+        }
         if (!isset($this->hosted[$agentId])) {
             return;
         }
@@ -621,8 +739,14 @@ final class ClusterPlacement implements WorkerPlacement
     public function noteAgentStarted(string $agentType, ?string $agentIndex): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
+        $restart = $this->restartsElsewhere[$agentId] ?? null;
+        $restartHere = $restart !== null && $restart['placing'] && $restart['target'] === $this->selfNodeId;
         $deferred = $this->deferredPlacementAnswers[$agentId] ?? null;
         if ($deferred === null) {
+            if ($restartHere) {
+                unset($this->restartsElsewhere[$agentId]);
+                $this->restartSink->onRestartPlaced($agentType, $agentIndex, $this->selfNodeId);
+            }
             return;
         }
 
@@ -641,6 +765,10 @@ final class ClusterPlacement implements WorkerPlacement
         $this->hosted[$agentId] = $record;
         $this->registry->put($record);
         unset($this->placementVerdictWaiters[$agentId]);
+        if ($restartHere) {
+            unset($this->restartsElsewhere[$agentId]);
+            $this->restartSink->onRestartPlaced($agentType, $agentIndex, $this->selfNodeId);
+        }
     }
 
     /**
@@ -658,6 +786,13 @@ final class ClusterPlacement implements WorkerPlacement
     public function noteAgentStartFailed(string $agentType, ?string $agentIndex, string $reason): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
+        $restart = $this->restartsElsewhere[$agentId] ?? null;
+        if ($restart !== null && $restart['placing'] && $restart['target'] === $this->selfNodeId) {
+            unset($this->restartsElsewhere[$agentId]);
+            unset($this->hosted[$agentId]);
+            $this->registry->put(new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Failed));
+            $this->restartSink->onRestartNotPlaced($agentType, $agentIndex, $reason);
+        }
         $deferred = $this->deferredPlacementAnswers[$agentId] ?? null;
         if ($deferred === null) {
             return;
@@ -800,13 +935,56 @@ final class ClusterPlacement implements WorkerPlacement
     {
         $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
         $existing = $this->registry->get($agentId);
+        $restart = $this->restartsElsewhere[$agentId] ?? null;
         if ($existing?->state === PlacementState::Refused) {
-            // The node is confirming the stop this leader ordered for a two-owner split, and the
-            // record is the only thing keeping the agent down (HIL-696). Forgetting it here would
-            // undo the refusal with the very frame that carried it out.
+            // A truth-source refusal must not be undone by the stop of a restart in flight.
+            if ($restart !== null) {
+                unset($this->restartsElsewhere[$agentId]);
+                $this->restartSink->onRestartNotPlaced(
+                    $frame->agentType,
+                    $frame->agentIndex,
+                    'placement refused by the truth-source guard',
+                );
+            }
             return;
         }
-
+        if ($restart !== null && !$restart['placing']
+            && $frame->state === PlacementState::Stopped && $fromNodeId === $restart['host']) {
+            $this->registry->forget($agentId);
+            $this->restartsElsewhere[$agentId]['placing'] = true;
+            $target = $restart['target'];
+            try {
+                $this->placeAgentOnNode($frame->agentType, $frame->agentIndex, $target);
+                if ($this->registry->get($agentId)?->state === PlacementState::Failed) {
+                    throw new LogicException("Node {$target} could not receive the placement");
+                }
+            } catch (Throwable) {
+                try {
+                    $target = $this->placeOnBestFitNode($frame->agentType, $frame->agentIndex);
+                } catch (Throwable) {
+                    $target = null;
+                }
+            }
+            if ($this->registry->get($agentId)?->state === PlacementState::Failed) {
+                $target = null;
+            }
+            if ($target === null) {
+                unset($this->restartsElsewhere[$agentId]);
+                $this->restartSink->onRestartNotPlaced($frame->agentType, $frame->agentIndex, 'no capable node is available');
+            } else {
+                $this->restartsElsewhere[$agentId]['target'] = $target;
+            }
+            return;
+        }
+        if ($restart !== null && !$restart['placing']
+            && $frame->state === PlacementState::Failed && $fromNodeId === $restart['host']) {
+            unset($this->restartsElsewhere[$agentId]);
+            $this->restartSink->onRestartNotPlaced(
+                $frame->agentType,
+                $frame->agentIndex,
+                $frame->error ?? 'the old host failed before stopping',
+            );
+        }
         // Read exactly as in onPlacementReport(), runsNowhere() and all: an Unplaced record is
         // meant to be adopted by whichever node reports the agent up.
         if ($existing !== null && $existing->nodeId !== $fromNodeId && !$existing->state->runsNowhere()) {
@@ -825,6 +1003,19 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->registry->put(new PlacementRecord($frame->agentType, $frame->agentIndex, $fromNodeId, $frame->state));
+
+        if ($restart !== null && $restart['placing'] && $fromNodeId === $restart['target']) {
+            unset($this->restartsElsewhere[$agentId]);
+            if ($frame->state === PlacementState::Started) {
+                $this->restartSink->onRestartPlaced($frame->agentType, $frame->agentIndex, $fromNodeId);
+            } elseif ($frame->state === PlacementState::Failed) {
+                $this->restartSink->onRestartNotPlaced(
+                    $frame->agentType,
+                    $frame->agentIndex,
+                    $frame->error ?? 'the node reported a failed placement',
+                );
+            }
+        }
 
         if ($frame->state === PlacementState::Failed) {
             $reason = $frame->error;
@@ -1212,6 +1403,8 @@ final class ClusterPlacement implements WorkerPlacement
         $wasLeader = $this->isLeader;
         $this->isLeader = false;
         $this->registry->clear();
+        $this->restartsElsewhere = [];
+        $this->restartsInPlace = [];
         $this->failoverDeadlines = [];
         $this->placementAckDeadlines = [];
         $this->placementVerdictWaiters = [];
@@ -1247,6 +1440,21 @@ final class ClusterPlacement implements WorkerPlacement
      */
     public function noteNodeOffline(string $nodeId, float $now): void
     {
+        foreach ($this->restartsElsewhere as $agentId => $restart) {
+            if ((!$restart['placing'] && $restart['host'] !== $nodeId)
+                || ($restart['placing'] && $restart['target'] !== $nodeId)) {
+                continue;
+            }
+            unset($this->restartsElsewhere[$agentId]);
+            $record = $this->registry->get($agentId);
+            if ($record !== null) {
+                $this->restartSink->onRestartNotPlaced(
+                    $record->agentType,
+                    $record->agentIndex,
+                    "node {$nodeId} went silent during the restart",
+                );
+            }
+        }
         $this->offlineSince[$nodeId] ??= $now;
         if ($this->isLeader && array_key_exists($nodeId, $this->rebuildAwaited) && $this->rebuildAwaited[$nodeId] === null) {
             $this->rebuildAwaited[$nodeId] = $now + $this->failoverGraceSec;

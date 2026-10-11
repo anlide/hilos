@@ -17,6 +17,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
@@ -41,6 +42,8 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 use ErrorException;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
+use ReflectionProperty;
 use RuntimeException;
 use Socket;
 
@@ -101,6 +104,21 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $manager->handleDaemonMessage(new AgentStopDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
 
         $this->assertFalse($manager->hostsAgent(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+    }
+
+    public function testAgentStopDropsThePageRouterOfTheStoppedInstance(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent();
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->handleDaemonMessage(new AgentStartDTO($agent->getId()));
+        $routers = new ReflectionProperty(WorkerManager::class, 'pageSignalRouters');
+        $routers->setValue($manager, [
+            $agent->getId() => new ReflectionClass(PageSignalRouter::class)->newInstanceWithoutConstructor(),
+        ]);
+
+        $manager->handleDaemonMessage(new AgentStopDTO($agent->getId()));
+
+        $this->assertSame([], $routers->getValue($manager));
     }
 
     public function testCleanupStopsRemainingAgentsAndClosesTransportAfterStopHookThrows(): void

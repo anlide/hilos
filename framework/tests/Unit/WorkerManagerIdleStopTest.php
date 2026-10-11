@@ -13,6 +13,7 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
@@ -20,8 +21,11 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use ReflectionProperty;
 
 /**
@@ -95,6 +99,34 @@ final class WorkerManagerIdleStopTest extends TestCase
         // An open tab is the only claim no frame renews, and the owner of the instance is the
         // one process that can push someone else's write to it.
         $this->assertTrue($manager->hasAgent(self::IDLE_AGENT_ID));
+    }
+
+    public function testStartRestoresSubscribersAlreadyInTheWorkerMirror(): void
+    {
+        $manager = new IdleStopTestManager();
+        Hilos::$sr->subscribeToPage('unit-page', new WebSocketPageSubscribeSignalDTO('accept-1'));
+        Hilos::$sr->bindPageAgent('accept-1', 'unit-page', self::IDLE_TYPE, '7');
+
+        $manager->handleDaemonMessage(new AgentStartDTO(self::IDLE_AGENT_ID));
+        $this->goIdle($manager, self::IDLE_AGENT_ID);
+        $this->tickAgents($manager);
+
+        $this->assertTrue($manager->hasAgent(self::IDLE_AGENT_ID));
+    }
+
+    public function testLocalStopDropsThePageRouterOfTheStoppedInstance(): void
+    {
+        $manager = new IdleStopTestManager();
+        $this->addAgent($manager, self::IDLE_TYPE);
+        $routers = new ReflectionProperty(WorkerManager::class, 'pageSignalRouters');
+        $routers->setValue($manager, [
+            self::IDLE_AGENT_ID => new ReflectionClass(PageSignalRouter::class)->newInstanceWithoutConstructor(),
+        ]);
+        $this->goIdle($manager, self::IDLE_AGENT_ID);
+
+        $this->tickAgents($manager);
+
+        $this->assertSame([], $routers->getValue($manager));
     }
 
     public function testAnAgentThatClaimsWorkInFlightKeepsItselfUp(): void

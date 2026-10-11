@@ -95,13 +95,21 @@ final class ChatAgent extends AbstractAgent
     ];
 
     /**
-     * Records chat startup.
+     * Records chat startup and restores per-user state for connections kept through a stop.
      *
      * @throws HilosException On database or runtime startup failure
+     * @throws LogicException If the startup event has no id
+     * @throws NativeLogicException When the user state factory rejects a state row
      */
     public function onStart(): void
     {
         Hilos::$db->events->actions->addChatStarted();
+
+        foreach (Hilos::$rt->connections as $connection) {
+            if ($connection->userId !== null) {
+                Hilos::$rt->userStates->actions->ensure($connection->userId);
+            }
+        }
     }
 
     /**

@@ -10,6 +10,7 @@ use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
@@ -30,7 +31,10 @@ final class DaemonMasterProcessRosterSignalDataTest extends TestCase
             new DaemonWorkerPicture(2, 'monopolistic', null, null, [
                 new DaemonAgentPicture('c', 'cluster', 'policy'),
             ]),
-        ], ['unplaced:1'], 2);
+        ], ['unplaced:1'], 2, [
+            new DaemonRestartingAgent('a:1', 'n1'),
+            new DaemonRestartingAgent('c', 'n2'),
+        ]);
 
         $master = new DaemonMasterProcessRosterSignalData('n1', $roster);
         self::assertEquals($master, DaemonMasterProcessRosterSignalData::fromArray($master->toArray()));
@@ -61,6 +65,7 @@ final class DaemonMasterProcessRosterSignalDataTest extends TestCase
             new DaemonProcessRoster([], null, 0),
         ));
         self::assertSame([], $knownEmpty->toArray()['processes']['workers']);
+        self::assertSame([], $knownEmpty->toArray()['processes']['restartingAgents']);
         self::assertEquals($knownEmpty, DaemonNodePictureSignalData::fromArray($knownEmpty->toArray()));
         self::assertSame([], (new DaemonProcessRoster([], [], 0))->unplacedAgentIds);
     }
@@ -77,6 +82,12 @@ final class DaemonMasterProcessRosterSignalDataTest extends TestCase
         $missingUnplaced = $good;
         unset($missingUnplaced['unplacedAgentIds']);
         $bad[] = $missingUnplaced;
+        $missingRestarting = $good;
+        unset($missingRestarting['restartingAgents']);
+        $bad[] = $missingRestarting;
+        $wrongRestarting = $good;
+        $wrongRestarting['restartingAgents'] = [['id' => 'a']];
+        $bad[] = $wrongRestarting;
         $missingPid = $good;
         unset($missingPid['workers'][0]['pid']);
         $bad[] = $missingPid;
@@ -113,5 +124,14 @@ final class DaemonMasterProcessRosterSignalDataTest extends TestCase
 
         $this->expectException(InvalidFormatException::class);
         new DaemonProcessRoster([$two, $one], [], 0);
+    }
+
+    public function testRestartMarksMustBeUniqueAndSorted(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        new DaemonProcessRoster([], null, 0, [
+            new DaemonRestartingAgent('z', 'n1'),
+            new DaemonRestartingAgent('a', 'n1'),
+        ]);
     }
 }

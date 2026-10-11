@@ -193,6 +193,23 @@ again.
 it is down, and it re-reads its own state in `onStart()` when it comes back —
 the same thing any instance agent does today.
 
+## Starting After A Stop
+
+The master removes a stopped agent from its roster before the old worker has
+necessarily sent `agent_stopped`. When a new start meets that outstanding stop,
+`WorkerServer` holds the start until the stop report arrives or the old worker
+link closes. The replacement cannot enter the roster while the old instance is
+still stopping. A local restart prefers the former worker when it can still take
+the agent; a placement start waiting for the report counts as an accepted start
+until it can be seated.
+
+`WorkerManager` keeps a `PageSignalRouter` for each agent instance and removes
+that router when the instance stops, including an idle stop. On the new start it
+rebuilds the idle tracker's subscriber count from the worker's page subscription
+mirror (`Hilos::$sr->acceptKeysServedBy()`), before `onStart()`. A tab whose
+subscription survived the stop therefore still keeps the new instance from
+being stopped for idleness without sending another subscribe frame.
+
 ## When a worker dies
 
 A worker that dies takes its agents with it, and none of them gets to report a

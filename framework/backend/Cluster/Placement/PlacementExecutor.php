@@ -55,17 +55,17 @@ interface PlacementExecutor
     /**
      * Launches an agent of the given type on this node and returns its worker id.
      *
-     * A monopolistic agent that found no free worker is accepted rather than refused: a worker is
-     * being raised for it, and the answer is null until it is seated (HIL-998). The caller learns
-     * the worker from {@see placedWorkerId()} once there is one.
+     * An agent waiting for a monopolistic worker or for its earlier stop report is accepted
+     * rather than refused. The answer is null until it is seated, and the caller learns its
+     * worker from {@see placedWorkerId()} once there is one.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @return ?int Worker id the agent was placed on (negative = monopolistic, positive = regular), or
-     *     null while the agent waits for a worker raised for it
+     *     null while the agent waits for a worker or an earlier stop report
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws NoSuitableWorkerException When no suitable worker is available to host it
-     * @throws AgentNotLinkedToWorkerException When the agent neither linked to a worker nor waits for one
+     * @throws AgentNotLinkedToWorkerException When the agent is neither linked nor waiting for a start
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function executePlacement(string $agentType, ?string $agentIndex): ?int;
@@ -75,7 +75,7 @@ interface PlacementExecutor
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @return ?int Worker id once the agent is seated, null while it is still waiting for a worker
+     * @return ?int Worker id once the agent is seated, null while its start is still waiting
      */
     public function placedWorkerId(string $agentType, ?string $agentIndex): ?int;
 

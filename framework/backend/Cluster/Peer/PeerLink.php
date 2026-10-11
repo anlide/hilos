@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerAnnounceDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientFanoutDTO;
@@ -447,6 +448,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerPlacementReportDTO => $this->onPlacementReport($frame),
             $frame instanceof PeerPlacementViewDTO => $this->onPlacementView($frame),
             $frame instanceof PeerPlacementRequestDTO => $this->onPlacementRequest($frame),
+            $frame instanceof PeerAgentRestartDTO => $this->onAgentRestart($frame),
             $frame instanceof PeerPlacementVerdictDTO => $this->onPlacementVerdict($frame),
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
@@ -766,6 +768,17 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('placement request');
         $this->server->onPlacementRequestReceived($this, $frame);
+    }
+
+    /**
+     * @param PeerAgentRestartDTO $frame Incoming restart request
+     * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws EnvException When this node cannot read its leader id
+     */
+    private function onAgentRestart(PeerAgentRestartDTO $frame): void
+    {
+        $this->requireHandshaked('agent restart');
+        $this->server->onAgentRestartReceived($this, $frame);
     }
 
     /**

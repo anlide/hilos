@@ -909,7 +909,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
             Logger::logAgentStart($agent->getId(), $agent->getType());
             // Before the start hook rather than after it: an agent whose onStart() throws is still an
             // agent this worker holds, and one the tracker has never heard of is never idle.
-            $this->agentIdleTracker->noteStarted($agentId, microtime(true));
+            $now = microtime(true);
+            $this->agentIdleTracker->noteStarted($agentId, $now);
+            foreach (Hilos::$sr->acceptKeysServedBy($agentType, $agentIndex) as $acceptKey) {
+                $this->agentIdleTracker->noteSubscriber($agentId, $acceptKey, $now);
+            }
             // Before the start hook and not inside it: an agent writes its first row within onStart(),
             // so the claim has to stand by then. The hook stays outside the try because the catch
             // below takes back the start of an agent that never ran, which is why it may skip
@@ -1013,6 +1017,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         Logger::logAgentStop($agent->getId(), $agent->getType());
         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
         $this->agentManager->removeAgent($agentId);
+        unset($this->pageSignalRouters[$agentId]);
         $this->agentIdleTracker->forget($agentId);
         Logger::info("Agent {$agentId} stopped");
         // Additional agent log from worker side
@@ -3284,6 +3289,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         Logger::logAgentStop($agent->getId(), $agent->getType());
         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
         $this->agentManager->removeAgent($agentId);
+        unset($this->pageSignalRouters[$agentId]);
         $this->agentIdleTracker->forget($agentId);
         Logger::info("Agent {$agentId} stopped ({$reason})");
         Logger::logAgentInfo($agentId, "Agent stopped ({$reason}) on worker [workerIndex={$this->workerIndex}]");

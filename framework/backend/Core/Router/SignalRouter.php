@@ -989,6 +989,16 @@ class SignalRouter
     }
 
     /**
+     * @param string $agentType Serving agent type
+     * @param ?string $agentIndex Serving agent index, or null for an unindexed agent
+     * @return list<string> Accept keys whose page is bound to that agent
+     */
+    public function acceptKeysServedBy(string $agentType, ?string $agentIndex): array
+    {
+        return $this->subscriptions->acceptKeysServedBy($agentType, $agentIndex);
+    }
+
+    /**
      * Accept keys known to this router's subscription registry.
      *
      * In a worker this is the worker-local mirror used by browser

@@ -14,8 +14,10 @@ use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\NullPlacementObserver;
+use Hilos\Cluster\Placement\NullPlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\Placement\PlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\DaemonManager;
@@ -69,6 +71,9 @@ final class ClusterContext
 
     /** @var ?PlacementObserver Observer notified of placement-degradation events, registered by the daemon at start. */
     private ?PlacementObserver $placementObserver = null;
+
+    /** @var ?PlacementRestartSink Master waiting for POLICY restart outcomes */
+    private ?PlacementRestartSink $placementRestartSink = null;
 
     /** @var ?PlacementExecutor Local worker executor for placed agents, registered by the daemon at start. */
     private ?PlacementExecutor $placementExecutor = null;
@@ -383,6 +388,18 @@ final class ClusterContext
     public function placementObserver(): PlacementObserver
     {
         return $this->placementObserver ??= new NullPlacementObserver();
+    }
+
+    /** @param PlacementRestartSink $sink Master waiting for POLICY restart outcomes */
+    public function registerPlacementRestartSink(PlacementRestartSink $sink): void
+    {
+        $this->placementRestartSink = $sink;
+    }
+
+    /** @return PlacementRestartSink Registered restart outcome sink or inert default */
+    public function placementRestartSink(): PlacementRestartSink
+    {
+        return $this->placementRestartSink ??= new NullPlacementRestartSink();
     }
 
     /**

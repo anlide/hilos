@@ -175,6 +175,9 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private array $agentsAwaitingWorker = [];
 
+    /** @var array<string, AwaitingStopReportStart> Starts held until the old worker reports the agent stopped */
+    private array $agentsAwaitingStopReport = [];
+
     /** @var float Interval between worker processes tick checks in seconds */
     private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
 
@@ -593,6 +596,9 @@ abstract class WorkerServer extends AbstractServer implements
         // Seat or give up the agents waiting for a monopolistic worker, every pass and for the same
         // reason: under the throttle a worker that registered would wait up to a second for its agent.
         $this->advanceAgentsAwaitingWorker();
+
+        // A stop report or closed worker link releases a deferred start on this pass.
+        $this->advanceAgentsAwaitingStopReport();
 
         // Tick worker processes and related checks (check status, read output, handle graceful shutdown)
         // In normal operation, check once per second to reduce system call overhead.
@@ -1316,6 +1322,34 @@ abstract class WorkerServer extends AbstractServer implements
             return;
         }
 
+        // A worker handles stop before a later start on its link, but an agent placed on a
+        // different worker could report its old stop after the new instance was registered.
+        // Keep the start out of the roster until that report (or the link's departure). Once
+        // recorded, only the advance pass ends this wait: it reports a gate's quiet refusal.
+        $awaiting = $this->agentsAwaitingStopReport[$agentId] ?? null;
+        $awaitedWorkerId = $awaiting?->awaitedWorkerId;
+        if ($awaitedWorkerId === null) {
+            foreach ($this->clients as $client) {
+                if ($client instanceof WorkerClient && $client->awaitsStopReport($agentId)) {
+                    $awaitedWorkerId = $client->getWorkerId();
+                    break;
+                }
+            }
+        }
+
+        if ($awaitedWorkerId !== null) {
+            $this->agentsAwaitingStopReport[$agentId] = new AwaitingStopReportStart(
+                $agentId,
+                $agentType,
+                $agentIndex,
+                $placedByLeader || ($awaiting?->placedByLeader ?? false),
+                $awaiting?->preferredWorkerId ?? $preferredWorkerId,
+                $awaitedWorkerId,
+            );
+
+            return;
+        }
+
         // Protected-mode freeze gate: while the node is frozen only the initiator agent may
         // start, so an inbound signal cannot revive an agent the freeze just stopped. It sits
         // here, above the temporary record, because a freeze refuses everyone alike - unlike the
@@ -1563,6 +1597,47 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
+     * Continues starts once their old worker reports the stop or its link closes.
+     *
+     * The ordinary start asks every current gate again. A quiet refusal must be reported to
+     * the master because it may be holding frames for this start.
+     */
+    private function advanceAgentsAwaitingStopReport(): void
+    {
+        foreach ($this->agentsAwaitingStopReport as $agentId => $awaiting) {
+            $client = $this->findWorkerClientById($awaiting->awaitedWorkerId);
+            if ($client !== null && $client->awaitsStopReport($agentId)) {
+                continue;
+            }
+
+            unset($this->agentsAwaitingStopReport[$agentId]);
+            try {
+                $this->startAgentInternal(
+                    $awaiting->agentType,
+                    $awaiting->agentIndex,
+                    $awaiting->placedByLeader,
+                    $awaiting->preferredWorkerId,
+                );
+            } catch (Throwable $failure) {
+                Logger::error("Agent {$agentId} could not start after its earlier stop: {$failure->getMessage()}");
+                $this->refuseAwaitingAgent($agentId, $failure);
+
+                continue;
+            }
+
+            if ($this->isAgentAwaitingStopReport($agentId) || $this->isAgentAwaitingWorker($agentId)) {
+                continue;
+            }
+            if ($this->agentManager->getAgent($agentId)?->hasWorkerClient() !== true) {
+                $this->reportWaitEndedWithoutStart(
+                    $agentId,
+                    'a gate refused the start once its earlier stop was reported',
+                );
+            }
+        }
+    }
+
+    /**
      * Ends a wait that produced no agent: the record goes, and the asker and the project are told
      * (HIL-998).
      *
@@ -1622,6 +1697,15 @@ abstract class WorkerServer extends AbstractServer implements
     public function isAgentAwaitingWorker(string $agentId): bool
     {
         return isset($this->agentsAwaitingWorker[$agentId]);
+    }
+
+    /**
+     * @param string $agentId Agent id
+     * @return bool Whether its next start awaits the earlier worker stop report
+     */
+    public function isAgentAwaitingStopReport(string $agentId): bool
+    {
+        return isset($this->agentsAwaitingStopReport[$agentId]);
     }
 
     /**
@@ -1958,6 +2042,13 @@ abstract class WorkerServer extends AbstractServer implements
     protected function stopAgent(string $agentType, ?string $agentIndex = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
+
+        if (isset($this->agentsAwaitingStopReport[$agentId])) {
+            unset($this->agentsAwaitingStopReport[$agentId]);
+            $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its earlier stop report');
+
+            return;
+        }
 
         if (isset($this->agentsAwaitingWorker[$agentId])) {
             unset($this->agentsAwaitingWorker[$agentId]);
@@ -2477,17 +2568,16 @@ abstract class WorkerServer extends AbstractServer implements
      * is the one entry that carries the placement sanction, so it is also the only way a
      * {@see AgentPlacement::POLICY} agent comes up on a node that is not the leader.
      *
-     * A monopolistic agent that found no free worker is accepted and answered with null: it waits
-     * for a worker raised for it, and {@see placedWorkerId()} names the worker once it is seated
-     * (HIL-998).
+     * A start waiting for a monopolistic worker or an earlier stop report is accepted and
+     * answered with null; {@see placedWorkerId()} names its worker once it is seated.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @return ?int Worker id the agent was placed on (negative = monopolistic, positive = regular), or
-     *     null while the agent waits for a worker raised for it
+     *     null while the agent waits for a worker or an earlier stop report
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
      * @throws NoSuitableWorkerException If no suitable worker is available to host it
-     * @throws AgentNotLinkedToWorkerException If the agent neither linked to a worker nor waits for one
+     * @throws AgentNotLinkedToWorkerException If the agent is neither linked nor waiting for a start
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
     public function executePlacement(string $agentType, ?string $agentIndex): ?int
@@ -2496,7 +2586,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $workerId = $this->placedWorkerId($agentType, $agentIndex);
-        if ($workerId === null && !$this->isAgentAwaitingWorker($agentId)) {
+        if ($workerId === null && !$this->isAgentAwaitingWorker($agentId) && !$this->isAgentAwaitingStopReport($agentId)) {
             throw new AgentNotLinkedToWorkerException($agentId);
         }
 
@@ -2511,7 +2601,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return ?int Worker id once the agent is seated, null while it is still waiting for a worker
+     * @return ?int Worker id once the agent is seated, null while its start is still waiting
      */
     public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
     {
@@ -2521,6 +2611,39 @@ abstract class WorkerServer extends AbstractServer implements
         }
 
         return $this->agentManager->getAgentWorkerId($agentId);
+    }
+
+    /**
+     * Stops a local agent and asks the ordinary start to bring it back on its former worker.
+     *
+     * @param string $agentType Agent type to restart
+     * @param ?string $agentIndex Agent index, or null for a singleton
+     * @param bool $placedByLeader Whether the leader sanctioned this placement
+     * @throws LogicException When the old instance could not be taken off the roster
+     * @throws AgentDaemonCreationFailedException If the new agent daemon cannot be built
+     * @throws NoSuitableWorkerException If no worker can host the new instance
+     * @throws HilosException Whatever the project's agent-daemon factory raises
+     */
+    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader): void
+    {
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $oldWorkerId = $this->placedWorkerId($agentType, $agentIndex);
+        $this->stopAgent($agentType, $agentIndex);
+        if ($this->agentManager->hasAgent($agentId)) {
+            throw new LogicException("Agent {$agentId} could not be stopped");
+        }
+
+        $this->startAgentInternal($agentType, $agentIndex, $placedByLeader, $oldWorkerId);
+    }
+
+    /**
+     * @param string $agentType Agent type asking to start
+     * @param ?string $agentIndex Agent index, or null for a singleton
+     * @return bool Whether protected mode currently refuses its start
+     */
+    public function refusesStartUnderProtectedMode(string $agentType, ?string $agentIndex): bool
+    {
+        return $this->protectedModeRefusesStart($agentType, $agentIndex);
     }
 
     /**

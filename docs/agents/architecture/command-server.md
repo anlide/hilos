@@ -97,9 +97,11 @@ second status and no second key: `STATUS_ERROR` with the sentence under `FIELD_M
 1. **CLI** opens an `AsyncCommandClient`, sends a `CommandRequestDTO`, and polls
    `tick()` / `hasResult()` until `consumeResult()` (with a wall-clock timeout).
 2. **Master** — a health command like `ping` is answered synchronously in the
-   master. Any other command **parks**: the master holds the client connection
+   master. An agent-owned command **parks**: the master holds the client connection
    (keyed by `correlationId`), queues a `COMMAND_REQUEST` signal, and stops
-   parsing that socket until the reply.
+   parsing that socket until the reply. A master-owned command that finishes later,
+   such as `agent:restart`, holds the same connection but calls its master door
+   directly, without a `COMMAND_REQUEST`.
 3. **Routing** — `SignalRouter` resolves `COMMAND_REQUEST` to an `AgentDestination`
    via `Hilos::getCommandAgentRoutes()[command]`; the worker delivers it to the
    agent's `onSignalCommand()`.
@@ -109,8 +111,9 @@ second status and no second key: `STATUS_ERROR` with the sentence under `FIELD_M
    → delivers to the held client, or sends `peer_command_reply` to the node holding it
    → the CLI's `hasResult()` turns true.
 
-**Steps 3 and 4 can fail, and when they do the master answers instead of the agent**
-(HIL-730). An empty destination list, an agent nothing placed, a node with no live link —
+**For agent-owned commands, steps 3 and 4 can fail; then the master answers
+instead of the agent** (HIL-730). An empty destination list, an agent nothing
+placed, a node with no live link —
 in all three the master knows the work will not happen, and it queues the same
 `CommandReplyDTO::error()` an agent would have. A handler that threw is answered by the
 worker, out of the `AgentException` catch beside the payload one. All four keep their log
@@ -130,9 +133,17 @@ the receiving node does not route it again. Refusals written by the answering da
 take the same path. The origin entry leaves when the reply is sent, when the requesting
 node leaves the cluster, or after `CommandChannelWindows::CHANNEL_HELD_SECONDS`.
 
+For `agent:restart`, the accepting master sends `peer_agent_restart` to a remote
+replica's master or to a remote leader for a cluster-scoped agent. For an
+in-place POLICY restart, the leader may send the same frame to the current
+host. The master that finishes the restart returns its result by the existing
+`peer_command_reply` path to the held connection. The restart frame requires
+peer protocol version 19; the reply frame keeps its existing shape.
+
 The frame is best effort. If the link to the asking node is gone, the answering node
-logs a WARNING and drops the reply; the caller waits out its own window. The new frame
-requires peer protocol version 14, so older nodes are refused on handshake.
+logs a WARNING and drops the reply; the caller waits out its own window.
+`peer_command_reply` was added in peer protocol version 14; older nodes are refused
+on handshake.
 
 ## Wiring a command
 

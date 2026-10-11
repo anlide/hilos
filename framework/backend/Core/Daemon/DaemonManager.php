@@ -29,6 +29,7 @@ use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
 use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Peer\PeerServer;
@@ -36,6 +37,7 @@ use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
+use Hilos\Cluster\Placement\PlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Probe\ProbeFleetSupervisor;
@@ -240,11 +242,13 @@ abstract class DaemonManager extends BaseManager implements
     LeadershipObserver,
     RtClaimSink,
     PlacementObserver,
+    PlacementRestartSink,
     ConnectionDropper,
     ClientSocketDetacher,
     LiveConnectionRoster,
     ContainedFailureSink,
     AbandonedCommandSink,
+    AgentRestartDoor,
     AgentSignalSink,
     PlacementVerdictSink,
     AgentLossSink,
@@ -463,6 +467,9 @@ abstract class DaemonManager extends BaseManager implements
     /** @var CommandReplyOrigins Node holding each console connection answered on this node */
     private readonly CommandReplyOrigins $commandReplyOrigins;
 
+    /** Open restarts of agents hosted by this master. */
+    private readonly AgentRestarts $agentRestarts;
+
     /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
     protected ?float $readinessTimeout = null;
 
@@ -507,6 +514,7 @@ abstract class DaemonManager extends BaseManager implements
 
     private int $processRosterWorkerRevision = -1;
     private int $processRosterAgentRevision = -1;
+    private int $processRosterRestartRevision = -1;
     private int $processRosterPlacementRevision = -1;
     private int $processRosterPlacementIdentity = -1;
     private bool $processRosterWasLeader = false;
@@ -566,6 +574,12 @@ abstract class DaemonManager extends BaseManager implements
         $this->probeFleetSupervisor = new ProbeFleetSupervisor();
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
         $this->commandReplyOrigins = new CommandReplyOrigins();
+        $this->agentRestarts = new AgentRestarts(
+            $this->agentManagerDaemon,
+            fn (): ?WorkerServer => $this->findWorkerServer(),
+            $this->commandReplyOrigins,
+            fn (): ?PeerServer => $this->findPeerServer(),
+        );
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
         // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
@@ -798,6 +812,7 @@ abstract class DaemonManager extends BaseManager implements
 
         // Receive placement-degradation events from the placement failover coordinator
         Hilos::$cluster?->registerPlacementObserver($this);
+        Hilos::$cluster?->registerPlacementRestartSink($this);
 
         // Arbitrate RT ownership: this node's claims go out through here, and as leader it is
         // this node that judges everybody's (HIL-696).
@@ -958,6 +973,7 @@ abstract class DaemonManager extends BaseManager implements
             // One bounded step of the process frame, only while its source changed or the
             // minute-long whole-frame repair is due. The fast path reads four scalars.
             $this->tickProcessRoster($loopStartTime);
+            $this->agentRestarts->tick($loopStartTime);
             $this->tickCronFrame($loopStartTime);
             $this->tickStanding($loopStartTime);
             $this->tickHttpFrame($loopStartTime);
@@ -1092,15 +1108,18 @@ abstract class DaemonManager extends BaseManager implements
             $placementRevision = $placementRegistry?->revision() ?? 0;
             $workerRevision = $workerServer->rosterRevision();
             $agentRevision = $this->agentManagerDaemon->rosterRevision();
+            $restartRevision = $this->agentRestarts->revision();
             if (
                 $workerRevision !== $this->processRosterWorkerRevision
                 || $agentRevision !== $this->processRosterAgentRevision
+                || $restartRevision !== $this->processRosterRestartRevision
                 || $placementRevision !== $this->processRosterPlacementRevision
                 || $placementIdentity !== $this->processRosterPlacementIdentity
                 || $leader !== $this->processRosterWasLeader
             ) {
                 $this->processRosterWorkerRevision = $workerRevision;
                 $this->processRosterAgentRevision = $agentRevision;
+                $this->processRosterRestartRevision = $restartRevision;
                 $this->processRosterPlacementRevision = $placementRevision;
                 $this->processRosterPlacementIdentity = $placementIdentity;
                 $this->processRosterWasLeader = $leader;
@@ -1127,7 +1146,13 @@ abstract class DaemonManager extends BaseManager implements
                 ) {
                     return;
                 }
-                $this->processRosterBuilder->start($workerServer, $this->agentManagerDaemon, $placementRegistry, $leader);
+                $this->processRosterBuilder->start(
+                    $workerServer,
+                    $this->agentManagerDaemon,
+                    $placementRegistry,
+                    $leader,
+                    $this->agentRestarts->restartingAgents(),
+                );
                 $this->processRosterBuilding = true;
             }
             $this->processRosterBuilder->advance(self::PROCESS_ROSTER_ROWS_PER_PASS);
@@ -1138,6 +1163,7 @@ abstract class DaemonManager extends BaseManager implements
             if (
                 $workerServer->rosterRevision() !== $workerRevision
                 || $this->agentManagerDaemon->rosterRevision() !== $agentRevision
+                || $this->agentRestarts->revision() !== $restartRevision
                 || ($placementRegistry?->revision() ?? 0) !== $placementRevision
                 || (Hilos::$cluster?->amLeader() ?? true) !== $leader
             ) {
@@ -1694,6 +1720,7 @@ abstract class DaemonManager extends BaseManager implements
             // master's own, so the command branch reads them here instead of asking an agent
             // that in a cluster may be answering from another node entirely.
             $server->setDaemonStatusSource($this);
+            $server->setAgentRestartDoor($this);
         }
 
         // The HTTP server parks a request for an agent the way the command channel parks a
@@ -1772,6 +1799,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function reportAgentsLostWithWorker(int $workerIndex, bool $isMonopolistic, array $agentIds): void
     {
+        $this->agentRestarts->onAgentsLost($agentIds);
         $this->rearmSingletonStart();
         $this->answerFramesHeldForLostAgents($agentIds);
         $this->announceAgentsGone($agentIds, AgentsGoneSignalData::REASON_WORKER_DIED);
@@ -1802,6 +1830,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentStarted(string $agentId): void
     {
+        $this->agentRestarts->onAgentStarted($agentId);
         if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
             $this->processRosterForce = true;
             $this->cronFrameForce = true;
@@ -1866,6 +1895,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentStartFailed(string $agentId, string $reason): void
     {
+        $this->agentRestarts->onAgentStartFailed($agentId, $reason);
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
             if ($parked->agentId !== $agentId) {
@@ -1972,7 +2002,20 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onCommandAbandoned(string $correlationId): void
     {
+        $this->agentRestarts->onCommandAbandoned($correlationId);
         $this->dropParkedCommandSignals($correlationId);
+    }
+
+    /** @param CommandRequestDTO $request Held operator request for an agent restart */
+    public function requestAgentRestart(CommandRequestDTO $request): void
+    {
+        $this->agentRestarts->request($request);
+    }
+
+    /** @param PeerAgentRestartDTO $frame Authenticated peer restart request */
+    public function requestPeerAgentRestart(PeerAgentRestartDTO $frame): void
+    {
+        $this->agentRestarts->fromPeer($frame);
     }
 
     /**
@@ -6728,7 +6771,8 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         return $this->agentManagerDaemon->getAgent($agentId)?->hasWorkerClient() === true
-            || $workerServer->isAgentAwaitingWorker($agentId);
+            || $workerServer->isAgentAwaitingWorker($agentId)
+            || $workerServer->isAgentAwaitingStopReport($agentId);
     }
 
     /**
@@ -7451,6 +7495,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onNodeLeft(ClusterNode $node): void
     {
+        $this->agentRestarts->onNodeLeft($node->nodeId);
         Hilos::$cluster?->placement()?->noteNodeOffline($node->nodeId, microtime(true));
         // A node that left mid-round is taken off the re-hydrate barrier for the same reason a
         // dead worker is: it cannot answer, and whatever rejoins reads the database already in
@@ -7588,6 +7633,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onLostLeadership(int $term): void
     {
+        $this->agentRestarts->onLostLeadership();
         $this->stopClusterSingletons();
 
         // Drop the leader-side placement view; the placed agents keep running (data-plane)
@@ -7668,6 +7714,26 @@ abstract class DaemonManager extends BaseManager implements
     public function onPlacementDegraded(string $agentType, ?string $agentIndex): void
     {
         // Default: do nothing, child classes may override
+    }
+
+    /**
+     * @param string $agentType Agent type placed again
+     * @param ?string $agentIndex Agent index
+     * @param string $nodeId New host
+     */
+    public function onRestartPlaced(string $agentType, ?string $agentIndex, string $nodeId): void
+    {
+        $this->agentRestarts->onRestartPlaced($agentType, $agentIndex, $nodeId);
+    }
+
+    /**
+     * @param string $agentType Agent type not placed
+     * @param ?string $agentIndex Agent index
+     * @param string $reason Placement refusal
+     */
+    public function onRestartNotPlaced(string $agentType, ?string $agentIndex, string $reason): void
+    {
+        $this->agentRestarts->onRestartNotPlaced($agentType, $agentIndex, $reason);
     }
 
     /**
