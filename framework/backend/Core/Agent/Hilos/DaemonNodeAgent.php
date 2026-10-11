@@ -25,6 +25,7 @@ use Hilos\DaemonSection\DaemonCronRuleReport;
 use Hilos\DaemonSection\DTO\DaemonAgentCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
@@ -50,6 +51,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         HilosSignalConstants::DAEMON_MASTER_CRON => DaemonMasterCronSignalData::class,
         HilosSignalConstants::DAEMON_MASTER_STANDING => DaemonMasterStandingSignalData::class,
         HilosSignalConstants::DAEMON_MASTER_HTTP => DaemonMasterHttpSignalData::class,
+        HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS => DaemonMasterMeasurementsSignalData::class,
         HilosSignalConstants::DAEMON_AGENT_CRON => DaemonAgentCronSignalData::class,
     ];
 
@@ -153,6 +155,17 @@ final class DaemonNodeAgent extends AbstractHilosAgent
                     throw new AgentException('Daemon HTTP frame must come from this node\'s master');
                 }
                 $this->updatePicture($this->picture->withHttp($http->http));
+                return;
+
+            case HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS:
+                $measurements = $data->data;
+                if (!$measurements instanceof DaemonMasterMeasurementsSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonMasterMeasurementsSignalData::class, $measurements);
+                }
+                if ($sender !== SignalSource::DAEMON || $measurements->nodeId !== $this->picture->nodeId) {
+                    throw new AgentException('Daemon measurements frame must come from this node\'s master');
+                }
+                $this->updatePicture($this->picture->withMeasurements($measurements->measurements));
                 return;
 
             case HilosSignalConstants::DAEMON_AGENT_CRON:

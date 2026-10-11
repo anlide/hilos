@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
 final class CpuStatsTest extends TestCase
 {
     /**
-     * fromProcStat() maps the five leading columns to user/nice/system/idle/iowait.
+     * fromProcStat() maps the leading aggregate CPU columns.
      */
     public function testFromProcStatMapsColumns(): void
     {
@@ -28,6 +28,17 @@ final class CpuStatsTest extends TestCase
         $this->assertSame(210, $stats->getIdle());
         $this->assertSame(155, $stats->getNonIdle());
         $this->assertSame(365, $stats->getTotal());
+    }
+
+    public function testInterruptsAndStealCountAsBusyTime(): void
+    {
+        $previous = CpuStats::fromProcStat('cpu 100 0 0 100 0 0 0 0');
+        $current = CpuStats::fromProcStat('cpu 100 0 0 150 0 20 20 10');
+        self::assertSame(20, $current->irq);
+        self::assertSame(20, $current->softirq);
+        self::assertSame(10, $current->steal);
+        self::assertSame(150, $current->getNonIdle());
+        self::assertSame(50.0, $current->getUsagePercentage($previous));
     }
 
     /**

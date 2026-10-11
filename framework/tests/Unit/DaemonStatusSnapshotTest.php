@@ -7,6 +7,8 @@ namespace Hilos\Tests\Unit;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Core\Daemon\ProcessMetricsReader;
+use Hilos\Core\Http\StatusHandler;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\Server\WorkerServer;
 use LogicException;
@@ -19,23 +21,27 @@ use ReflectionProperty;
  *
  * The snapshot is what both status doors publish - the GET /status endpoint and the
  * `daemon:status` branch of the command channel - so these cases are about what the master
- * can say on its own: the clock and the memory figure it holds, the worker counts it reads
+ * can say on its own: the clock and last measurement it holds, the worker counts it reads
  * off the server it registered, and the three zeroes a daemon without a worker server owes
  * instead of a refusal.
  */
 final class DaemonStatusSnapshotTest extends TestCase
 {
-    public function testTheSnapshotCarriesTheMastersOwnClockAndMemory(): void
+    public function testTheSnapshotCarriesTheLastMeasurementWithoutSampling(): void
     {
         // Uptime is counted from the status object the manager was built with, so a snapshot
         // taken a hundred seconds later reports a hundred seconds of life rather than zero:
         // the endpoint used to build a status object of its own and started the clock afresh.
-        $manager = $this->buildManager(startTime: microtime(true) - 100.0);
+        $startTime = microtime(true) - 100.0;
+        $manager = $this->buildManager(startTime: $startTime);
 
         $snapshot = $manager->daemonStatusSnapshot();
+        $next = $manager->daemonStatusSnapshot();
 
         $this->assertSame(100, $snapshot->uptime);
-        $this->assertGreaterThan(0, $snapshot->memory);
+        $this->assertSame($snapshot->measurements, $next->measurements);
+        $this->assertNull($snapshot->measurements->masterMemory);
+        $this->assertSame((int)$startTime, $snapshot->measurements->startedAt);
         $this->assertGreaterThan(0, $snapshot->timestamp);
     }
 
@@ -50,6 +56,21 @@ final class DaemonStatusSnapshotTest extends TestCase
         $this->assertSame(StatusTestWorkerServer::MAX_REGULAR_WORKERS, $snapshot->workersMaxRegular);
     }
 
+    public function testHttpStatusUsesTheSharedMeasurementJsonShape(): void
+    {
+        $manager = $this->buildManager();
+
+        $response = (new StatusHandler($manager))([]);
+        $data = json_decode($response['body'], true, flags: JSON_THROW_ON_ERROR);
+
+        $this->assertArrayHasKey('measurements', $data);
+        $this->assertArrayHasKey('startedAt', $data['measurements']);
+        $this->assertArrayHasKey('masterMemory', $data['measurements']);
+        $this->assertNull($data['measurements']['masterMemory']);
+        $this->assertArrayNotHasKey('memory', $data);
+        $this->assertArrayNotHasKey('cpu', $data);
+    }
+
     public function testADaemonWithoutAWorkerServerReportsZeroWorkers(): void
     {
         // Zeroes rather than a refusal: a daemon that forks nobody has no workers, and that is
@@ -61,7 +82,7 @@ final class DaemonStatusSnapshotTest extends TestCase
         $this->assertSame(0, $snapshot->workersRegular);
         $this->assertSame(0, $snapshot->workersMonopolistic);
         $this->assertSame(0, $snapshot->workersMaxRegular);
-        $this->assertGreaterThan(0, $snapshot->memory);
+        $this->assertNull($snapshot->measurements->masterMemory);
     }
 
     /**
@@ -78,7 +99,10 @@ final class DaemonStatusSnapshotTest extends TestCase
     {
         $manager = new ReflectionClass(StatusTestDaemonManager::class)->newInstanceWithoutConstructor();
 
-        new ReflectionProperty(DaemonManager::class, 'daemonStatus')->setValue($manager, new DaemonStatus($startTime));
+        new ReflectionProperty(DaemonManager::class, 'daemonStatus')->setValue(
+            $manager,
+            new DaemonStatus(new ProcessMetricsReader(), startTime: $startTime),
+        );
         new ReflectionProperty(DaemonManager::class, 'servers')
             ->setValue($manager, $workerServer === null ? [] : [$workerServer]);
 

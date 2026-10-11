@@ -4,137 +4,179 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Master;
 
-use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Cli\CpuStats;
+use Hilos\Core\Daemon\DaemonMeasurements;
+use Hilos\Core\Daemon\NodeLimitsReader;
+use Hilos\Core\Daemon\ProcessMetricsReader;
+use Hilos\Core\Daemon\ProcessSample;
+use Hilos\Core\Exception\InvalidFormatException;
 
-/**
- * Holds daemon status information.
- *
- * Contains runtime information about daemon state. One of these lives in the master and is
- * what both status doors report: the GET /status endpoint and the daemon:status command.
- */
+/** Samples the master, its workers, and node limits on one clock. */
 class DaemonStatus
 {
-    /** @var float Daemon start time (microtime) */
+    private const int BYTES_PER_MIB = 1048576;
+
     private float $startTime;
-
-    /** @var ?CpuStats Previous /proc/stat sample for delta-based CPU calculation */
+    private ?float $previousTime = null;
+    /** @var array<int, ProcessSample> */
+    private array $previousProcesses = [];
     private ?CpuStats $previousCpuStats = null;
-
-    /** @var int Memory usage in bytes */
-    private(set) int $memoryUsage = 0;
-
-    /** @var float CPU usage percentage */
-    private(set) float $cpuUsage = 0.0;
-
-    /** @var int Number of active regular workers */
-    private(set) int $workersRegular = 0;
-
-    /** @var int Number of active monopolistic workers */
-    private(set) int $workersMonopolistic = 0;
-
-    /** @var int Maximum number of regular workers */
-    private(set) int $workersMaxRegular = 0;
+    private DaemonMeasurements $last;
+    private ProcessMetricsReader $metrics;
+    private NodeLimitsReader $limits;
+    private int $masterPid;
 
     /**
-     * Creates daemon status with optional start time.
-     *
-     * @param ?float $startTime Optional start time (for creating from DTO)
+     * @param ProcessMetricsReader $metrics Reader of master and worker process metrics
+     * @param ?NodeLimitsReader $limits Node pseudo-file reader
+     * @param ?int $masterPid Master process id
+     * @param ?float $startTime Explicit start time for tests
+     * @throws InvalidFormatException When the initial measurement violates its value contract
      */
-    public function __construct(?float $startTime = null)
-    {
+    public function __construct(
+        ProcessMetricsReader $metrics,
+        ?NodeLimitsReader $limits = null,
+        ?int $masterPid = null,
+        ?float $startTime = null,
+    ) {
+        $this->metrics = $metrics;
+        $this->limits = $limits ?? new NodeLimitsReader();
+        $this->masterPid = $masterPid ?? getmypid();
         $this->startTime = $startTime ?? microtime(true);
+        $this->last = new DaemonMeasurements(
+            startedAt: (int)$this->startTime,
+            cores: null,
+            coresBound: null,
+            daemonCores: null,
+            masterCores: null,
+            machineLoad: null,
+            masterMemory: null,
+            workersMemory: null,
+            workersMeasured: 0,
+            memoryCeiling: null,
+            memoryCeilingBound: null,
+            phpMemoryLimit: null,
+        );
     }
 
     /**
-     * Refreshes memory usage and samples CPU usage as the delta since the
-     * previous call.
-     *
-     * The first call, and non-Linux hosts without a readable /proc/stat, leave
-     * cpuUsage at its last-known value (0.0 until the first successful delta).
+     * @param float $now Sample clock in seconds
+     * @param list<int> $workerPids Live worker process ids
+     * @return DaemonMeasurements Rounded sample stored for all consumers
+     * @throws InvalidFormatException When a sampled measurement violates its value contract
      */
-    public function update(): void
+    public function sample(float $now, array $workerPids): DaemonMeasurements
     {
-        $this->memoryUsage = memory_get_usage(true);
-        $this->updateCpuUsage();
+        $master = $this->metrics->readSample($this->masterPid);
+        $current = $master === null ? [] : [$this->masterPid => $master];
+        $workerBytes = 0;
+        $workersMeasured = 0;
+        $workerMemoryKnown = $this->metrics->pageSizeBytes() !== null;
+        foreach (array_unique($workerPids) as $pid) {
+            if ($pid === $this->masterPid) {
+                continue;
+            }
+            $process = $this->metrics->readSample($pid);
+            if ($process === null) {
+                continue;
+            }
+            $current[$pid] = $process;
+            if ($process->residentBytes === null) {
+                continue;
+            }
+            if ($process->residentBytes > PHP_INT_MAX - $workerBytes) {
+                $workerMemoryKnown = false;
+                continue;
+            }
+            $workerBytes += $process->residentBytes;
+            $workersMeasured++;
+        }
+
+        $masterCores = null;
+        $daemonCores = null;
+        $elapsed = $this->previousTime === null ? 0.0 : $now - $this->previousTime;
+        $ticksPerSecond = $this->metrics->ticksPerSecond();
+        if ($master !== null && $this->previousTime !== null && $elapsed > 0 && $ticksPerSecond !== null) {
+            $masterTicks = $this->tickDelta($this->masterPid, $master);
+            $totalTicks = $masterTicks;
+            foreach ($current as $pid => $process) {
+                if ($pid !== $this->masterPid) {
+                    $totalTicks += $this->tickDelta($pid, $process);
+                }
+            }
+            $masterCores = round($masterTicks / $ticksPerSecond / $elapsed, 2);
+            $daemonCores = round($totalTicks / $ticksPerSecond / $elapsed, 2);
+        }
+
+        $machineCpu = $this->limits->machineCpu();
+        $usage = $machineCpu !== null && $this->previousCpuStats !== null
+            ? $machineCpu->getUsagePercentage($this->previousCpuStats) : null;
+        if ($usage !== null && (!is_finite($usage) || $usage < 0 || $usage > 100)) {
+            $usage = null;
+        }
+        $this->previousCpuStats = $machineCpu;
+        $this->previousTime = $now;
+        $this->previousProcesses = $current;
+
+        $quota = $this->limits->cpuQuotaCores();
+        $cpus = $this->limits->allowedCpus();
+        $cores = $quota !== null && ($cpus === null || $quota <= $cpus) ? $quota : $cpus;
+        $coresBound = $cores === null ? null : ($cores === $quota ? DaemonMeasurements::CORES_QUOTA : DaemonMeasurements::CORES_CPUS);
+        $cgroupMemory = $this->limits->cgroupMemoryMax();
+        $physicalMemory = $this->limits->physicalMemory();
+        $ceiling = $cgroupMemory !== null && ($physicalMemory === null || $cgroupMemory <= $physicalMemory)
+            ? $cgroupMemory : $physicalMemory;
+        $ceilingBound = $ceiling === null ? null : ($ceiling === $cgroupMemory
+            ? DaemonMeasurements::CEILING_CGROUP : DaemonMeasurements::CEILING_MACHINE);
+        $phpLimit = ini_parse_quantity((string)ini_get('memory_limit'));
+
+        $this->last = new DaemonMeasurements(
+            startedAt: (int)$this->startTime,
+            cores: $cores === null ? null : max(0.01, round($cores, 2)),
+            coresBound: $coresBound,
+            daemonCores: $daemonCores,
+            masterCores: $masterCores,
+            machineLoad: $usage === null ? null : (int)round($usage),
+            masterMemory: self::roundedMemory($master?->residentBytes),
+            workersMemory: $workerMemoryKnown ? self::roundedMemory($workerBytes) : null,
+            workersMeasured: $workerMemoryKnown ? $workersMeasured : 0,
+            memoryCeiling: $ceiling,
+            memoryCeilingBound: $ceilingBound,
+            phpMemoryLimit: $phpLimit > 0 ? $phpLimit : null,
+        );
+        return $this->last;
     }
 
-    /**
-     * Get uptime in seconds.
-     *
-     * @return int Uptime in seconds
-     */
+    /** @return DaemonMeasurements Last completed sample, initially unknown except start time */
+    public function last(): DaemonMeasurements
+    {
+        return $this->last;
+    }
+
+    /** @return int Uptime in seconds */
     public function getUptime(): int
     {
         return (int)(microtime(true) - $this->startTime);
     }
 
     /**
-     * Create DaemonStatus from DTO.
-     *
-     * @param DaemonStatusDTO $dto Source DTO
-     * @return self DaemonStatus instance
+     * @param int $pid Process id to compare
+     * @param ProcessSample $process Current process sample
+     * @return int CPU tick increase for a process with the same kernel start tick
      */
-    public static function fromDTO(DaemonStatusDTO $dto): self
+    private function tickDelta(int $pid, ProcessSample $process): int
     {
-        // Calculate start time from uptime
-        $startTime = microtime(true) - $dto->uptime;
-
-        $status = new self($startTime);
-        $status->memoryUsage = $dto->memory;
-        $status->cpuUsage = $dto->cpu;
-        $status->workersRegular = $dto->workersRegular;
-        $status->workersMonopolistic = $dto->workersMonopolistic;
-        $status->workersMaxRegular = $dto->workersMaxRegular;
-
-        return $status;
+        $previous = $this->previousProcesses[$pid] ?? null;
+        return $previous !== null && $previous->startTicks === $process->startTicks
+            ? max(0, $process->cpuTicks - $previous->cpuTicks) : 0;
     }
 
     /**
-     * Samples CPU usage from /proc/stat against the previous sample and stores
-     * the current sample for the next call.
-     *
-     * Leaves cpuUsage unchanged when no sample is available (non-Linux) or the
-     * delta is not yet meaningful (first call, or zero total time between
-     * samples).
+     * @param ?int $bytes Resident bytes, or null when unavailable
+     * @return ?int Resident bytes floored to whole MiB
      */
-    private function updateCpuUsage(): void
+    private static function roundedMemory(?int $bytes): ?int
     {
-        $current = $this->readCpuStats();
-        if ($current === null) {
-            return;
-        }
-
-        if ($this->previousCpuStats !== null) {
-            $usage = $current->getUsagePercentage($this->previousCpuStats);
-            if ($usage !== null) {
-                $this->cpuUsage = $usage;
-            }
-        }
-
-        $this->previousCpuStats = $current;
-    }
-
-    /**
-     * Reads the aggregate CPU sample from the first line of /proc/stat.
-     *
-     * @return ?CpuStats Current sample, or null when /proc/stat is unreadable (non-Linux hosts)
-     */
-    private function readCpuStats(): ?CpuStats
-    {
-        // warning-suppressed: /proc is absent off Linux, the caller reads null as CPU usage unknown
-        $contents = @file_get_contents('/proc/stat', false, null, 0, 256);
-        if ($contents === false) {
-            return null;
-        }
-
-        // The aggregate "cpu" line is space-padded; collapse whitespace runs so
-        // CpuStats::fromProcStat() splits the columns at the right offsets.
-        $cpuLine = preg_replace('/\s+/', ' ', trim(explode("\n", $contents, 2)[0]));
-        if ($cpuLine === null || !str_starts_with($cpuLine, 'cpu ')) {
-            return null;
-        }
-
-        return CpuStats::fromProcStat($cpuLine);
+        return $bytes === null ? null : intdiv($bytes, self::BYTES_PER_MIB) * self::BYTES_PER_MIB;
     }
 }

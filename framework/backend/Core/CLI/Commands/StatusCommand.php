@@ -7,16 +7,15 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\DaemonStatusTable;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
-use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Utils\Helpers\StringHelper;
 
 /**
  * StatusCommand - Display daemon status.
  *
- * Shows current daemon status including uptime, memory usage and other metrics, read from the
+ * Shows current daemon status including uptime and the latest measurement, read from the
  * running daemon over the CLI command channel - the one door the CLI has into the daemon. The
  * master answers `daemon:status` itself, because the figures are its own.
  *
@@ -30,8 +29,8 @@ class StatusCommand implements CommandInterface
 {
     use CommandChannelClientTrait;
 
-    /** @var ?DaemonStatus Status the daemon reported; null when no reply arrived */
-    private ?DaemonStatus $daemonStatus = null;
+    /** @var ?DaemonStatusDTO Status the daemon reported; null when no reply arrived */
+    private ?DaemonStatusDTO $daemonStatus = null;
 
     /** @var ?CommandChannelFailure Why no reply arrived; null when one did */
     private ?CommandChannelFailure $failure = null;
@@ -78,7 +77,7 @@ Command: daemon:status
 
 Description:
   Display current status and metrics of the running Hilos daemon.
-  Shows uptime, memory usage, CPU usage, and worker counts.
+  Shows uptime, node and process measurements, and worker counts.
   Asks the daemon over the CLI command channel.
 
 Usage:
@@ -130,7 +129,7 @@ HELP;
         }
 
         try {
-            $this->daemonStatus = DaemonStatus::fromDTO(DaemonStatusDTO::fromArray($result->reply->payload));
+            $this->daemonStatus = DaemonStatusDTO::fromArray($result->reply->payload);
         } catch (InvalidFormatException $e) {
             return $this->printToStandardError("The daemon answered daemon:status with no status in it: {$e->getMessage()}");
         }
@@ -145,17 +144,7 @@ HELP;
      */
     private function printStatusTable(): void
     {
-        echo "+--------------------+---------------------+\n";
-        echo "| Metric             | Value               |\n";
-        echo "+--------------------+---------------------+\n";
-        printf("| %-18s | %-19s |\n", "Status", $this->getStatusValue());
-        printf("| %-18s | %-19s |\n", "Uptime", $this->getUptimeValue());
-        printf("| %-18s | %-19s |\n", "Memory Usage", $this->getMemoryValue());
-        printf("| %-18s | %-19s |\n", "CPU Usage", $this->getCpuValue());
-        printf("| %-18s | %-4s | %-12s |\n", "Workers Regular", $this->getWorkersRegularValue(), $this->getWorkersMaxRegularValue());
-        printf("| %-18s | %-19s |\n", "Workers Mono", $this->getWorkersMonopolisticValue());
-        echo "+--------------------+---------------------+\n";
-        echo "\n";
+        echo DaemonStatusTable::render($this->getStatusValue(), $this->daemonStatus) . "\n";
     }
 
     /**
@@ -176,89 +165,5 @@ HELP;
         }
 
         return DaemonConstants::STATUS_OFFLINE;
-    }
-
-    /**
-     * Get formatted daemon uptime string (HH:MM:SS).
-     *
-     * @return string Uptime string or VALUE_NOT_AVAILABLE
-     */
-    private function getUptimeValue(): string
-    {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::VALUE_NOT_AVAILABLE;
-        }
-
-        return StringHelper::formatUptime($this->daemonStatus->getUptime());
-    }
-
-    /**
-     * Get formatted daemon memory usage string.
-     *
-     * @return string Memory string (e.g. "15.2 MB") or VALUE_NOT_AVAILABLE
-     */
-    private function getMemoryValue(): string
-    {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::VALUE_NOT_AVAILABLE;
-        }
-
-        return StringHelper::formatBytes($this->daemonStatus->memoryUsage);
-    }
-
-    /**
-     * Get formatted daemon CPU usage string (percentage).
-     *
-     * @return string CPU percentage or VALUE_NOT_AVAILABLE
-     */
-    private function getCpuValue(): string
-    {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::VALUE_NOT_AVAILABLE;
-        }
-
-        return round($this->daemonStatus->cpuUsage, 1) . '%';
-    }
-
-    /**
-     * Get formatted regular workers count string.
-     *
-     * @return string Workers count or VALUE_NOT_AVAILABLE
-     */
-    private function getWorkersRegularValue(): string
-    {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::VALUE_NOT_AVAILABLE;
-        }
-
-        return (string)$this->daemonStatus->workersRegular;
-    }
-
-    /**
-     * Get formatted monopolistic workers count string.
-     *
-     * @return string Workers count or VALUE_NOT_AVAILABLE
-     */
-    private function getWorkersMonopolisticValue(): string
-    {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::VALUE_NOT_AVAILABLE;
-        }
-
-        return (string)$this->daemonStatus->workersMonopolistic;
-    }
-
-    /**
-     * Get formatted maximum regular workers count string.
-     *
-     * @return string Max workers count or VALUE_NOT_AVAILABLE
-     */
-    private function getWorkersMaxRegularValue(): string
-    {
-        if ($this->daemonStatus === null) {
-            return DaemonConstants::VALUE_NOT_AVAILABLE;
-        }
-
-        return (string)$this->daemonStatus->workersMaxRegular;
     }
 }

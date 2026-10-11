@@ -16,6 +16,27 @@ final class ProcessMetricsReaderTest extends TestCase
         self::assertSame(0, ProcessMetricsReader::parseResidentBytes(123, self::stat(123, 'idle', '0'), 4096));
     }
 
+    public function testParsesCpuAndMemoryFromTheSameStatRow(): void
+    {
+        $sample = ProcessMetricsReader::parseSample(123, self::stat(123, 'a ) b ( c', '12', '55', '40', '15'), 4096);
+        self::assertNotNull($sample);
+        self::assertSame(55, $sample->startTicks);
+        self::assertSame(55, $sample->cpuTicks);
+        self::assertSame(49152, $sample->residentBytes);
+        self::assertNull(ProcessMetricsReader::parseSample(124, self::stat(123, 'old', '12'), 4096));
+        self::assertNull(ProcessMetricsReader::parseSample(123, '123 (cut) S 1', 4096));
+    }
+
+    public function testSampleCanKeepCpuWhenPageSizeIsUnknownOrRssOverflows(): void
+    {
+        $withoutPageSize = ProcessMetricsReader::parseSample(123, self::stat(123, 'test', '12'), null);
+        self::assertSame(55, $withoutPageSize?->startTicks);
+        self::assertNull($withoutPageSize?->residentBytes);
+        $overflow = ProcessMetricsReader::parseSample(123, self::stat(123, 'test', (string)PHP_INT_MAX), 4096);
+        self::assertSame(0, $overflow?->cpuTicks);
+        self::assertNull($overflow?->residentBytes);
+    }
+
     public function testRejectsPidReuseTruncationAndOverflow(): void
     {
         self::assertNull(ProcessMetricsReader::parseResidentBytes(124, self::stat(123, 'old', '12'), 4096));
@@ -46,12 +67,23 @@ final class ProcessMetricsReaderTest extends TestCase
      * @param string $comm Command name in parentheses
      * @param string $rss Resident pages
      * @param string $startTicks Kernel start tick
+     * @param string $utime User CPU ticks
+     * @param string $stime System CPU ticks
      * @return string Synthetic stat row through field 24
      */
-    private static function stat(int $pid, string $comm, string $rss, string $startTicks = '55'): string
+    private static function stat(
+        int $pid,
+        string $comm,
+        string $rss,
+        string $startTicks = '55',
+        string $utime = '0',
+        string $stime = '0',
+    ): string
     {
         $fields = array_fill(0, 22, '0');
         $fields[0] = 'S';
+        $fields[11] = $utime;
+        $fields[12] = $stime;
         $fields[19] = $startTicks;
         $fields[21] = $rss;
         return $pid . ' (' . $comm . ') ' . implode(' ', $fields);

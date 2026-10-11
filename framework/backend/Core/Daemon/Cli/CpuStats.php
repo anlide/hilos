@@ -8,7 +8,7 @@ namespace Hilos\Core\Daemon\Cli;
  * CPU statistics data holder.
  *
  * Represents CPU statistics from /proc/stat for comparison between measurements.
- * Stores user, nice, system, idle, and iowait values for CPU usage calculation.
+ * Stores the aggregate kernel CPU counters needed for usage calculation.
  */
 class CpuStats
 {
@@ -27,6 +27,12 @@ class CpuStats
     /** @var int I/O wait time */
     public int $iowait;
 
+    public int $irq;
+
+    public int $softirq;
+
+    public int $steal;
+
     /**
      * Creates CpuStats instance with CPU time values.
      *
@@ -35,19 +41,28 @@ class CpuStats
      * @param int $system System time
      * @param int $idle Idle time
      * @param int $iowait I/O wait time
+     * @param int $irq Hardware interrupt time
+     * @param int $softirq Software interrupt time
+     * @param int $steal Stolen virtual CPU time
      */
     public function __construct(
         int $user,
         int $nice,
         int $system,
         int $idle,
-        int $iowait
+        int $iowait,
+        int $irq = 0,
+        int $softirq = 0,
+        int $steal = 0,
     ) {
         $this->user = $user;
         $this->nice = $nice;
         $this->system = $system;
         $this->idle = $idle;
         $this->iowait = $iowait;
+        $this->irq = $irq;
+        $this->softirq = $softirq;
+        $this->steal = $steal;
     }
 
     /**
@@ -60,7 +75,10 @@ class CpuStats
      */
     public static function fromProcStat(string $statLine): self
     {
-        $parts = explode(' ', trim($statLine));
+        $parts = preg_split('/\s+/', trim($statLine));
+        if ($parts === false) {
+            $parts = [];
+        }
 
         return new self(
             (int)($parts[1] ?? 0),
@@ -68,6 +86,9 @@ class CpuStats
             (int)($parts[3] ?? 0),
             (int)($parts[4] ?? 0),
             (int)($parts[5] ?? 0),
+            (int)($parts[6] ?? 0),
+            (int)($parts[7] ?? 0),
+            (int)($parts[8] ?? 0),
         );
     }
 
@@ -82,13 +103,13 @@ class CpuStats
     }
 
     /**
-     * Calculates non-idle time (user + nice + system).
+     * Calculates non-idle time, including interrupt and stolen CPU time.
      *
      * @return int Total non-idle time
      */
     public function getNonIdle(): int
     {
-        return $this->user + $this->nice + $this->system;
+        return $this->user + $this->nice + $this->system + $this->irq + $this->softirq + $this->steal;
     }
 
     /**

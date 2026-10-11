@@ -12,8 +12,8 @@ use Hilos\Socket\Server\CommandServer;
 /**
  * DaemonStatusSource - master-side seam that reports this node's own runtime status.
  *
- * The sibling of {@see ProtectedModeSnapshotSource} in role and in wiring: uptime, memory,
- * CPU and the worker counts live in the master process and nowhere else, so both doors that
+ * The sibling of {@see ProtectedModeSnapshotSource} in role and in wiring: uptime, the last
+ * process measurement and worker counts live in the master process, so both doors that
  * publish them - the {@see StatusHandler} behind GET /status and the `daemon:status` branch
  * of the command channel - ask the master for the same snapshot. The {@see DaemonManager}
  * implements this; the HTTP handler is handed it at registration and the
@@ -21,18 +21,18 @@ use Hilos\Socket\Server\CommandServer;
  * neither depends on the concrete manager.
  *
  * One source rather than one per door on purpose: a {@see DaemonStatus} of its own would give
- * each door its own uptime anchor and its own CPU delta, and two answers about one daemon
+ * each door its own uptime anchor and its own measurement, and two answers about one daemon
  * would disagree.
  */
 interface DaemonStatusSource
 {
     /**
-     * Samples this node's runtime status.
+     * Reports this node's runtime status.
      *
-     * Reads in-memory counters plus /proc/stat only - no database and no socket I/O - because
-     * it runs on the master's connection-accept path, where a blocking call stalls every client.
+     * Reads the master's last completed measurement and current worker counts without sampling.
+     * This runs on the master's connection-accept path, where blocking stalls every client.
      *
-     * @return DaemonStatusDTO Fresh status sample of this daemon
+     * @return DaemonStatusDTO Last measurement with current uptime and worker counts
      */
     public function daemonStatusSnapshot(): DaemonStatusDTO;
 }

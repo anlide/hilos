@@ -18,6 +18,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\BuildTimestampModule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Daemon\Module\PeerModule;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
@@ -41,6 +42,8 @@ final class ChatDaemonManager extends DaemonManager
      *
      * Sets shutdown timeout to 10 seconds.
      * Registers the cron rule of the chat history cleanup.
+     *
+     * @throws InvalidFormatException When the initial daemon measurement violates its value contract
      */
     public function __construct()
     {

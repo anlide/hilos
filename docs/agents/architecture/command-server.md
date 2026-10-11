@@ -72,9 +72,9 @@ preview stand, which publishes each demo's status port under a subdomain of its 
 (`framework/docker/caddy/Caddyfile`), so it is an outside observation surface with a live
 consumer. What changed is that the framework registers it once, in `DaemonManager::boot()`
 next to the root hint that promises it, instead of each project repeating the line —
-and that both doors now read one snapshot, `DaemonStatusSource::daemonStatusSnapshot()`
-(`framework/backend/Core/Daemon/DaemonStatusSource.php`), so they cannot disagree about
-the uptime or the CPU delta of the same daemon.
+and that both doors read the master's last measurement through
+`DaemonStatusSource::daemonStatusSnapshot()`
+(`framework/backend/Core/Daemon/DaemonStatusSource.php`).
 
 ## Request / reply DTOs
 

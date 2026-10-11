@@ -4,19 +4,82 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
-/** Reads a process's resident bytes from kernel pseudo-files without starting a sampler. */
+use Hilos\Core\Exception\InvalidFormatException;
+
+/** Reads a process's kernel counters and resident bytes without starting a sampler. */
 final class ProcessMetricsReader
 {
     private const int BYTES_PER_KIB = 1024;
+    private const int UTIME_FIELD_AFTER_COMM = 11;
+    private const int STIME_FIELD_AFTER_COMM = 12;
     private const int START_TICKS_FIELD_AFTER_COMM = 19;
     private const int RSS_FIELD_AFTER_COMM = 21;
     private const int PAGE_SIZE_SAMPLE_BYTES = 8192;
 
     private readonly ?int $pageSizeBytes;
+    private readonly ?int $ticksPerSecond;
 
-    public function __construct()
+    /**
+     * @param string $procRoot Procfs root, replaceable by tests
+     * @param ?int $ticksPerSecond Explicit clock frequency for tests, or null to detect it
+     */
+    public function __construct(private readonly string $procRoot = '/proc', ?int $ticksPerSecond = null)
     {
-        $this->pageSizeBytes = self::detectPageSizeBytes();
+        $this->pageSizeBytes = $this->detectPageSizeBytes();
+        $detected = $ticksPerSecond;
+        if ($detected === null && defined('POSIX_SC_CLK_TCK') && function_exists('posix_sysconf')) {
+            $value = posix_sysconf(constant('POSIX_SC_CLK_TCK'));
+            $detected = is_int($value) ? $value : null;
+        }
+        $this->ticksPerSecond = $detected !== null && $detected > 0 ? $detected : null;
+    }
+
+    /** @return ?int Kernel clock ticks per second, or null when unavailable */
+    public function ticksPerSecond(): ?int
+    {
+        return $this->ticksPerSecond;
+    }
+
+    /** @return ?int Kernel page size in bytes, or null when unavailable */
+    public function pageSizeBytes(): ?int
+    {
+        return $this->pageSizeBytes;
+    }
+
+    /**
+     * @param int $pid Process id to inspect
+     * @return ?ProcessSample One process sample, or null when its stat row is unavailable
+     * @throws InvalidFormatException When the parsed sample violates its value contract
+     */
+    public function readSample(int $pid): ?ProcessSample
+    {
+        $stat = $this->readStat($pid);
+        return $stat === null ? null : self::parseSample($pid, $stat, $this->pageSizeBytes);
+    }
+
+    /**
+     * @param int $pid Expected process id
+     * @param string $stat Kernel stat row
+     * @param ?int $pageSizeBytes Validated page size, or null when unknown
+     * @return ?ProcessSample Parsed sample, or null when identity or CPU counters are invalid
+     * @throws InvalidFormatException When the parsed sample violates its value contract
+     */
+    public static function parseSample(int $pid, string $stat, ?int $pageSizeBytes): ?ProcessSample
+    {
+        $fields = self::fieldsAfterComm($pid, $stat);
+        if ($fields === null) {
+            return null;
+        }
+        $start = self::unsignedInt($fields[self::START_TICKS_FIELD_AFTER_COMM] ?? null);
+        $utime = self::unsignedInt($fields[self::UTIME_FIELD_AFTER_COMM] ?? null);
+        $stime = self::unsignedInt($fields[self::STIME_FIELD_AFTER_COMM] ?? null);
+        if ($start === null || $utime === null || $stime === null || $utime > PHP_INT_MAX - $stime) {
+            return null;
+        }
+        $pages = self::unsignedInt($fields[self::RSS_FIELD_AFTER_COMM] ?? null);
+        $resident = $pageSizeBytes !== null && $pageSizeBytes > 0 && $pages !== null
+            && $pages <= intdiv(PHP_INT_MAX, $pageSizeBytes) ? $pages * $pageSizeBytes : null;
+        return new ProcessSample($start, $utime + $stime, $resident);
     }
 
     /**
@@ -25,7 +88,7 @@ final class ProcessMetricsReader
      */
     public function readStartTimeTicks(int $pid): ?int
     {
-        $stat = self::readStat($pid);
+        $stat = $this->readStat($pid);
         return $stat === null ? null : self::parseStartTimeTicks($pid, $stat);
     }
 
@@ -39,7 +102,7 @@ final class ProcessMetricsReader
         if ($this->pageSizeBytes === null) {
             return null;
         }
-        $stat = self::readStat($pid);
+        $stat = $this->readStat($pid);
         return $stat === null ? null : self::parseResidentBytes($pid, $stat, $this->pageSizeBytes, $expectedStartTicks);
     }
 
@@ -86,13 +149,13 @@ final class ProcessMetricsReader
      * @param int $pid Process id to inspect
      * @return ?string Kernel stat row, or null when unavailable
      */
-    private static function readStat(int $pid): ?string
+    private function readStat(int $pid): ?string
     {
         if ($pid <= 0) {
             return null;
         }
         // warning-suppressed: /proc can disappear between roster and sample; null preserves unknown metrics
-        $stat = @file_get_contents("/proc/{$pid}/stat");
+        $stat = @file_get_contents("{$this->procRoot}/{$pid}/stat");
         return $stat === false ? null : $stat;
     }
 
@@ -129,10 +192,10 @@ final class ProcessMetricsReader
     }
 
     /** @return ?int Kernel page size in bytes, sampled once before the runtime loop */
-    private static function detectPageSizeBytes(): ?int
+    private function detectPageSizeBytes(): ?int
     {
         // warning-suppressed: /proc may be absent off Linux; no page size means all RSS samples stay unknown
-        $smaps = @file_get_contents('/proc/self/smaps', false, null, 0, self::PAGE_SIZE_SAMPLE_BYTES);
+        $smaps = @file_get_contents("{$this->procRoot}/self/smaps", false, null, 0, self::PAGE_SIZE_SAMPLE_BYTES);
         if ($smaps === false || preg_match('/^KernelPageSize:\s+(\d+)\s+kB$/m', $smaps, $match) !== 1) {
             return null;
         }

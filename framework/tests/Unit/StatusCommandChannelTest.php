@@ -9,7 +9,9 @@ use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\CLI\Commands\StatusCommand;
+use Hilos\Core\CLI\DaemonStatusTable;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
+use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -87,9 +89,11 @@ final class StatusCommandChannelTest extends TestCase
         $command = new StatusCommandProbe(CommandChannelResult::replied(
             CommandReplyDTO::ok(self::CORRELATION_ID, new DaemonStatusDTO(
                 uptime: 3661,
-                memory: 2097152,
-                cpu: 12.5,
                 timestamp: 1786000000,
+                measurements: new DaemonMeasurements(
+                    1785996339, 4.0, DaemonMeasurements::CORES_QUOTA, 0.42, 0.03, 37,
+                    2097152, 419430400, 4, 8589934592, DaemonMeasurements::CEILING_CGROUP, 268435456,
+                ),
                 workersRegular: 4,
                 workersMonopolistic: 1,
                 workersMaxRegular: 8,
@@ -100,9 +104,16 @@ final class StatusCommandChannelTest extends TestCase
         [$exitCode, $output] = $this->execute($command);
 
         $this->assertSame(ExitCode::SUCCESS, $exitCode);
-        $this->assertStringContainsString(DaemonConstants::STATUS_ONLINE, $output);
+        $this->assertMatchesRegularExpression('/\| Status\s+\| ONLINE\b/', $output);
+        $this->assertMatchesRegularExpression('/\| Workers Mono\s+\| 1\b/', $output);
         $this->assertStringContainsString('01:01:01', $output);
-        $this->assertStringContainsString('12.5%', $output);
+        $this->assertStringContainsString('4 (quota)', $output);
+        $this->assertStringContainsString('0.42 cores, master 0.03', $output);
+        $this->assertStringContainsString('37%', $output);
+        $this->assertStringContainsString('400 MB, 4 workers', $output);
+        $this->assertStringContainsString('8 GB (cgroup), 5%', $output);
+        $this->assertStringContainsString('256 MB per process', $output);
+        $this->assertStringContainsString('4 / 8', $output);
         $this->assertSame([], $command->printedToStandardError);
         // The wire name is the one already declared for this command, and the request is empty:
         // the master needs nothing from the caller to describe itself.
@@ -118,6 +129,8 @@ final class StatusCommandChannelTest extends TestCase
         $this->assertSame(ExitCode::ERROR, $exitCode);
         $this->assertStringContainsString(DaemonConstants::STATUS_NOT_RESPONDING, $output);
         $this->assertStringContainsString(DaemonConstants::VALUE_NOT_AVAILABLE, $output);
+        $this->assertStringContainsString('Node cores', $output);
+        $this->assertStringContainsString('Workers memory', $output);
         $this->assertCount(1, $command->printedToStandardError);
         $this->assertStringContainsString(CliCommands::DAEMON_STATUS, $command->printedToStandardError[0]);
     }
@@ -150,6 +163,41 @@ final class StatusCommandChannelTest extends TestCase
         $this->assertSame(ExitCode::ERROR, $exitCode);
         $this->assertStringNotContainsString(DaemonConstants::STATUS_OFFLINE, $output);
         $this->assertSame(['Refused: This daemon reports no status'], $command->printedToStandardError);
+    }
+
+    public function testLegacyStatusReplyIsRefusedInsteadOfDrawn(): void
+    {
+        $command = new StatusCommandProbe(CommandChannelResult::replied(
+            CommandReplyDTO::ok(self::CORRELATION_ID, [
+                'uptime' => 1,
+                'timestamp' => 1786000000,
+                'memory' => 2097152,
+                'cpu' => 12.5,
+                'workersRegular' => 0,
+                'workersMonopolistic' => 0,
+                'workersMaxRegular' => 0,
+            ]),
+            StatusCommandProbe::ADDRESS,
+        ));
+
+        [$exitCode, $output] = $this->execute($command);
+
+        $this->assertSame(ExitCode::ERROR, $exitCode);
+        $this->assertStringNotContainsString('| Status', $output);
+        $this->assertStringContainsString(DaemonStatusDTO::MEASUREMENTS, $command->printedToStandardError[0]);
+    }
+
+    public function testUnknownMeasurementValuesRenderAsNotAvailable(): void
+    {
+        $status = new DaemonStatusDTO(1, 1786000000, new DaemonMeasurements(
+            1785999999, null, null, null, null, null, null, null, 0, null, null, null,
+        ));
+
+        $table = DaemonStatusTable::render(DaemonConstants::STATUS_ONLINE, $status);
+
+        $this->assertMatchesRegularExpression('/\| Node cores\s+\| N\/A\b/', $table);
+        $this->assertMatchesRegularExpression('/\| Daemon load\s+\| N\/A\b/', $table);
+        $this->assertStringContainsString('unlimited', $table);
     }
 
     /**

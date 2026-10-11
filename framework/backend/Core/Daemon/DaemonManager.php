@@ -68,6 +68,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
+use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
@@ -135,6 +136,7 @@ use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
@@ -347,6 +349,8 @@ abstract class DaemonManager extends BaseManager implements
     private const float STANDING_REANNOUNCE_SECONDS = 60.0;
     private const float HTTP_FRAME_SAMPLE_SECONDS = 1.0;
     private const float HTTP_FRAME_REANNOUNCE_SECONDS = 60.0;
+    private const float MEASUREMENT_SAMPLE_SECONDS = 5.0;
+    private const float MEASUREMENT_REANNOUNCE_SECONDS = 60.0;
 
     /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
@@ -490,7 +494,7 @@ abstract class DaemonManager extends BaseManager implements
     private ProbeFleetSupervisor $probeFleetSupervisor;
 
     /**
-     * @var DaemonStatus This daemon's own runtime status, sampled on demand by both status doors.
+     * @var DaemonStatus This daemon's measurements, sampled on its main-loop clock.
      *
      * Built with the manager rather than in {@see boot()}: its construction is what starts the
      * uptime clock, and the moment an operator calls the daemon's birth is the moment the master
@@ -533,12 +537,20 @@ abstract class DaemonManager extends BaseManager implements
     private int $httpFrameRevision = -1;
     private int $httpFrameHour = -1;
 
+    private ?DaemonMeasurements $measurementsLastSent = null;
+    private float $measurementsSampledAt = 0.0;
+    private float $measurementsLastSentAt = 0.0;
+    private float $measurementsRetryAt = 0.0;
+    private bool $measurementsForce = false;
+
     /**
      * Initializes daemon manager.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates
      * agent manager daemon. Child classes must implement createSignalRouter()
      * and createAgentManagerDaemon().
+     *
+     * @throws InvalidFormatException When the initial daemon measurement violates its value contract
      */
     public function __construct()
     {
@@ -546,8 +558,9 @@ abstract class DaemonManager extends BaseManager implements
         $this->agentManagerDaemon = $this->createAgentManagerDaemon();
         // Here and not in boot(): this constructor call starts the uptime clock the operator
         // reads, and the daemon is born when the master process is, not when it finishes binding.
-        $this->daemonStatus = new DaemonStatus();
-        $this->processRosterBuilder = new DaemonProcessRosterBuilder(new ProcessMetricsReader());
+        $metrics = new ProcessMetricsReader();
+        $this->daemonStatus = new DaemonStatus($metrics, new NodeLimitsReader(), getmypid());
+        $this->processRosterBuilder = new DaemonProcessRosterBuilder($metrics);
         $this->protectedModeWatchdog = new ProtectedModeWatchdog();
         $this->protectedModeEntryGate = new ProtectedModeEntryGate();
         $this->probeFleetSupervisor = new ProbeFleetSupervisor();
@@ -948,6 +961,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->tickCronFrame($loopStartTime);
             $this->tickStanding($loopStartTime);
             $this->tickHttpFrame($loopStartTime);
+            $this->tickMeasurements($loopStartTime);
 
         // Let a freeze in once the lift before it has finished bringing the agents back. Outside
         // the leader gate for the plainest reason: a single-node daemon is not a leader of
@@ -1341,6 +1355,75 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Samples once per interval and sends the rounded result to this node's agent on change.
+     *
+     * @param float $now Start time of this main-loop pass
+     * @throws InvalidFormatException When a live worker or sample violates its value contract
+     */
+    private function tickMeasurements(float $now): void
+    {
+        if ($this->shouldExit) {
+            return;
+        }
+        if ($this->measurementsSampledAt === 0.0 || $now - $this->measurementsSampledAt >= self::MEASUREMENT_SAMPLE_SECONDS) {
+            $this->measurementsSampledAt = $now;
+            $pids = [];
+            foreach ($this->findWorkerServer()?->liveWorkerPictures() ?? [] as $worker) {
+                if ($worker->pid !== null) {
+                    $pids[] = $worker->pid;
+                }
+            }
+            $this->daemonStatus->sample($now, $pids);
+        }
+
+        $freeze = Hilos::$rt?->hilosProtectedModeRuntime;
+        if ($freeze !== null && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE) {
+            $this->measurementsForce = true;
+            return;
+        }
+        if (!$this->agentManagerDaemon->isAgentStarted(HilosAgentType::HILOS_DAEMON_NODE)) {
+            return;
+        }
+        if (!$this->measurementsForce && $now < $this->measurementsRetryAt) {
+            return;
+        }
+        $measurements = $this->daemonStatus->last();
+        if (!$this->measurementsForce && $measurements == $this->measurementsLastSent
+            && $now - $this->measurementsLastSentAt < self::MEASUREMENT_REANNOUNCE_SECONDS) {
+            return;
+        }
+
+        try {
+            $nodeId = Hilos::$cluster?->localNodeId() ?? StateHilosClusterNode::STANDALONE_NODE_ID;
+            $this->sendToAgent(
+                HilosAgentType::HILOS_DAEMON_NODE,
+                null,
+                HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
+                new DaemonMasterMeasurementsSignalData($nodeId, $measurements),
+            );
+            if (isset($this->masterFrameDeliveryProblems[HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS])) {
+                $this->measurementsLastSentAt = $now;
+                $this->measurementsRetryAt = $now + self::MEASUREMENT_REANNOUNCE_SECONDS;
+                $this->measurementsForce = false;
+                return;
+            }
+            $this->measurementsLastSent = $measurements;
+            $this->measurementsLastSentAt = $now;
+            $this->measurementsRetryAt = 0.0;
+            $this->measurementsForce = false;
+        } catch (Throwable $failure) {
+            $this->reportMasterSignalDropped(
+                HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
+                'agent ' . HilosAgentType::HILOS_DAEMON_NODE,
+                get_class($failure) . ': ' . $failure->getMessage(),
+            );
+            $this->measurementsLastSentAt = $now;
+            $this->measurementsRetryAt = $now + self::MEASUREMENT_REANNOUNCE_SECONDS;
+            $this->measurementsForce = false;
+        }
+    }
+
+    /**
      * @param HttpServer $server Registered HTTP listener
      * @param HttpRouter $router Router whose registered templates own the counts
      * @param int $now Unix second selecting the current hour window
@@ -1724,6 +1807,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->cronFrameForce = true;
             $this->standingForce = true;
             $this->httpFrameForce = true;
+            $this->measurementsForce = true;
         }
         $stillParked = [];
         foreach ($this->parkedAgentSignals as $parked) {
@@ -2108,6 +2192,7 @@ abstract class DaemonManager extends BaseManager implements
                         HilosSignalConstants::DAEMON_MASTER_CRON,
                         HilosSignalConstants::DAEMON_MASTER_STANDING,
                         HilosSignalConstants::DAEMON_MASTER_HTTP,
+                        HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
                     ], true)) {
                         unset($this->masterFrameDeliveryProblems[$signalName]);
                     }
@@ -2216,28 +2301,24 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Samples this node's runtime status for both doors that publish it.
+     * Reports this node's runtime status to both doors that publish it.
      *
-     * Implements {@see DaemonStatusSource}. The sample is taken here rather than in either door
-     * because the master is where it exists: the uptime anchor and the CPU delta belong to the
-     * one {@see DaemonStatus} this manager built, and the worker counts are read off the server
-     * this manager registered.
+     * Implements {@see DaemonStatusSource}. The measurement comes from the master's last sample;
+     * this request path only reads it and the current counts from the registered worker server.
      *
      * A daemon with no worker server reports three zeroes rather than refusing: it has no workers,
      * which is an answer about this daemon and not a failure to answer.
      *
-     * @return DaemonStatusDTO Fresh status sample of this daemon
+     * @return DaemonStatusDTO Last measurement with current uptime and worker counts
      */
     public function daemonStatusSnapshot(): DaemonStatusDTO
     {
-        $this->daemonStatus->update();
         $workerServer = $this->findWorkerServer();
 
         return new DaemonStatusDTO(
             uptime: $this->daemonStatus->getUptime(),
-            memory: $this->daemonStatus->memoryUsage,
-            cpu: $this->daemonStatus->cpuUsage,
             timestamp: time(),
+            measurements: $this->daemonStatus->last(),
             workersRegular: $workerServer?->getRegularWorkersCount() ?? 0,
             workersMonopolistic: $workerServer?->getMonopolisticWorkersCount() ?? 0,
             workersMaxRegular: $workerServer?->getMaxRegularWorkers() ?? 0,
@@ -5537,6 +5618,7 @@ abstract class DaemonManager extends BaseManager implements
             HilosSignalConstants::DAEMON_MASTER_CRON,
             HilosSignalConstants::DAEMON_MASTER_STANDING,
             HilosSignalConstants::DAEMON_MASTER_HTTP,
+            HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
         ], true)) {
             if ($reason === ($this->masterFrameDeliveryProblems[$signalName] ?? null)) {
                 return;

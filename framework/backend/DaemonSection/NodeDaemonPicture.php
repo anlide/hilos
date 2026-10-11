@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\DaemonSection;
 
 use Hilos\Cluster\NodeRole;
+use Hilos\Core\Daemon\DaemonMeasurements;
 
 /** One node's complete Daemon picture, as measured by its own agent. */
 final class NodeDaemonPicture
@@ -18,6 +19,7 @@ final class NodeDaemonPicture
      * @param ?NodeEnvironmentSummary $environment Environment counts, null before the first read
      * @param ?DaemonNodeStanding $standing Master's standing, null before the first frame
      * @param ?DaemonHttpPicture $http Master's HTTP section, null before the first frame
+     * @param ?DaemonMeasurements $measurements Master's measurement, null before the first frame
      */
     public function __construct(
         public readonly string $nodeId,
@@ -28,6 +30,7 @@ final class NodeDaemonPicture
         public readonly ?NodeEnvironmentSummary $environment = null,
         public readonly ?DaemonNodeStanding $standing = null,
         public readonly ?DaemonHttpPicture $http = null,
+        public readonly ?DaemonMeasurements $measurements = null,
     ) {
     }
 
@@ -37,7 +40,10 @@ final class NodeDaemonPicture
      */
     public function sampledAt(int $sampledAt): self
     {
-        return new self($this->nodeId, $this->role, $sampledAt, $this->processes, $this->cron, $this->environment, $this->standing, $this->http);
+        return new self(
+            $this->nodeId, $this->role, $sampledAt, $this->processes, $this->cron,
+            $this->environment, $this->standing, $this->http, $this->measurements,
+        );
     }
 
     /**
@@ -52,7 +58,8 @@ final class NodeDaemonPicture
             && $this->cron == $other->cron
             && $this->environment == $other->environment
             && $this->standing == $other->standing
-            && $this->http == $other->http;
+            && $this->http == $other->http
+            && $this->measurements == $other->measurements;
     }
 
     /**
@@ -61,7 +68,10 @@ final class NodeDaemonPicture
      */
     public function withProcesses(?DaemonProcessRoster $processes): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $processes, $this->cron, $this->environment, $this->standing, $this->http);
+        return new self(
+            $this->nodeId, $this->role, $this->sampledAt, $processes, $this->cron,
+            $this->environment, $this->standing, $this->http, $this->measurements,
+        );
     }
 
     /**
@@ -70,7 +80,10 @@ final class NodeDaemonPicture
      */
     public function withCron(?DaemonCronPicture $cron): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $cron, $this->environment, $this->standing, $this->http);
+        return new self(
+            $this->nodeId, $this->role, $this->sampledAt, $this->processes, $cron,
+            $this->environment, $this->standing, $this->http, $this->measurements,
+        );
     }
 
     /**
@@ -79,7 +92,10 @@ final class NodeDaemonPicture
      */
     public function withEnvironment(?NodeEnvironmentSummary $environment): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $environment, $this->standing, $this->http);
+        return new self(
+            $this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron,
+            $environment, $this->standing, $this->http, $this->measurements,
+        );
     }
 
     /**
@@ -88,7 +104,10 @@ final class NodeDaemonPicture
      */
     public function withStanding(?DaemonNodeStanding $standing): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $this->environment, $standing, $this->http);
+        return new self(
+            $this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron,
+            $this->environment, $standing, $this->http, $this->measurements,
+        );
     }
 
     /**
@@ -97,6 +116,21 @@ final class NodeDaemonPicture
      */
     public function withHttp(?DaemonHttpPicture $http): self
     {
-        return new self($this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron, $this->environment, $this->standing, $http);
+        return new self(
+            $this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron,
+            $this->environment, $this->standing, $http, $this->measurements,
+        );
+    }
+
+    /**
+     * @param ?DaemonMeasurements $measurements New master measurement
+     * @return self Picture preserving every other section
+     */
+    public function withMeasurements(?DaemonMeasurements $measurements): self
+    {
+        return new self(
+            $this->nodeId, $this->role, $this->sampledAt, $this->processes, $this->cron,
+            $this->environment, $this->standing, $this->http, $measurements,
+        );
     }
 }

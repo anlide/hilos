@@ -212,7 +212,7 @@ class CommandServer extends AbstractServer
      * Wires the master seam used to sample this daemon's runtime status.
      *
      * Set by {@see DaemonManager::registerServer()} so the `daemon:status` command can read the
-     * master-owned uptime, memory, CPU and worker counts through the command channel.
+     * master-owned uptime, last measurement and worker counts through the command channel.
      *
      * @param DaemonStatusSource $daemonStatusSource Master seam sampling the daemon status
      */
@@ -229,7 +229,7 @@ class CommandServer extends AbstractServer
      * array reads as "this installation has no such subsystem": a daemon always has an uptime and
      * a memory figure, so an empty status would not be a verdict but a lie.
      *
-     * @return ?DaemonStatusDTO Fresh status sample, or null when no source is wired
+     * @return ?DaemonStatusDTO Last measurement with current counters, or null when no source is wired
      */
     public function daemonStatusSnapshot(): ?DaemonStatusDTO
     {

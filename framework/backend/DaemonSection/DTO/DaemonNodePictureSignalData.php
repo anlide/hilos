@@ -6,6 +6,7 @@ namespace Hilos\DaemonSection\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Cluster\NodeRole;
+use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DaemonSection\DaemonCronPicture;
@@ -27,6 +28,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
     public const string environment = 'environment';
     public const string standing = 'standing';
     public const string http = 'http';
+    public const string measurements = 'measurements';
     public const string catalogKeys = 'catalogKeys';
     public const string missingRequired = 'missingRequired';
     public const string fromExample = 'fromExample';
@@ -81,6 +83,9 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
             self::http => $this->picture->http === null
                 ? null
                 : DaemonMasterHttpSignalData::httpToArray($this->picture->http),
+            self::measurements => $this->picture->measurements === null
+                ? null
+                : DaemonStatusDTO::measurementsToArray($this->picture->measurements),
         ];
     }
 
@@ -102,6 +107,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
         $environment = self::requireNullableArray($data, self::environment);
         $standing = self::requireNullableArray($data, self::standing);
         $http = self::requireNullableArray($data, self::http);
+        $measurements = self::requireNullableArray($data, self::measurements);
 
         return new static(new NodeDaemonPicture(
             $nodeId,
@@ -119,6 +125,7 @@ final class DaemonNodePictureSignalData extends BaseDTO implements SignalDataInt
             ),
             $standing === null ? null : DaemonMasterStandingSignalData::standingFromArray($standing),
             $http === null ? null : DaemonMasterHttpSignalData::httpFromArray($http),
+            $measurements === null ? null : DaemonStatusDTO::measurementsFromArray($measurements),
         ));
     }
 

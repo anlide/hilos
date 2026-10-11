@@ -150,8 +150,8 @@ class CommandClient extends AbstractClient implements CommandClientInterface
             }
 
             if ($request->command === CliCommands::DAEMON_STATUS) {
-                // Answered here and not parked, for the same reason ping is: uptime, memory, CPU
-                // and the worker counts are the master's own, an agent holds none of them, and in
+                // Answered here and not parked, for the same reason ping is: uptime, the last
+                // measurement and worker counts are the master's own, an agent holds none, and in
                 // a cluster the agent that would answer may be reporting from another node.
                 $snapshot = $this->server->daemonStatusSnapshot();
                 $reply = $snapshot === null

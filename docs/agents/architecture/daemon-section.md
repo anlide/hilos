@@ -59,7 +59,7 @@ An unfinished delivery names the leaf that will add it.
 | Worker crashes in the last 24 hours | In-memory loss and replacement tracker in [WorkerServer](../../../framework/backend/Socket/Server/WorkerServer.php) | `workerRestarts24h` counts successful replacements after unexpected loss, not a daemon or agent restart |
 | Cron rules and last firing | [CronRule](../../../framework/backend/Core/Daemon/Cron/CronRule.php) and its `lastFiredAt`: daemon rules belong to the master and run only on the leader; agent schedules belong to the agents and run wherever those agents live | Master cron part on change and once a minute; agent schedules from the agents themselves |
 | HTTP server, including agent addresses | [HttpRouter](../../../framework/backend/API/Router/HttpRouter.php) counts every answer per registered route in hourly cells (`HttpRouteTraffic`) | `http` part: host, port, countingSince, routes and unrouted; on change and once a minute |
-| Process measurements | [DaemonStatusSource](../../../framework/backend/Core/Daemon/DaemonStatusSource.php), implemented by `DaemonManager::daemonStatusSnapshot()` | Process samples (not in the code yet — HIL-1373) |
+| Process measurements | `DaemonStatus`, sampled by the master every five seconds; `DaemonStatusSource` serves its last sample | `measurements` part: on change of the rounded sample, once a minute, forced when the node agent starts |
 | Leader, quorum, term | [Leadership](../../../framework/backend/Cluster/Leadership.php) and [ClusterCoordinator](../../../framework/backend/Cluster/Consensus/ClusterCoordinator.php) | `standing.consensus`: role, term, recognised leader, and quorum view (live masters of the static set, set size, majority) |
 | Node sessions and connections | The master's own handshaked WebSocket clients | `standing.sessions` / `standing.connections`; sessions are distinct session tokens among those clients |
 
@@ -87,10 +87,11 @@ of the master*.
   [../runtime/rt-context.md](../runtime/rt-context.md), *The truth source is unique
   per cluster, not per process*.
 
-Process measurements leave every interval (not in the code yet — HIL-1373). The
+The master sends process measurements as a separate fixed-size part when the rounded
+sample changes, once a minute, and when the node agent starts. The
 roster parts that grow with the number of agent instances — workers, instances
 and placement — leave on change and once a minute to repair a lost frame; they
-are never packed on every measurement interval. They are built in bounded
+are never packed with measurements. They are built in bounded
 passes, and a changed source revision discards the unfinished build. The small
 set of daemon cron rules leaves as a whole part on change and once a minute to
 repair a lost frame. Agent schedules leave from their own workers, not through
@@ -287,30 +288,28 @@ view-mode viewer (not in the code yet — HIL-1397).
 
 ## Measuring The Daemon
 
-- **Node cores:** the cgroup quota from `cpu.max`, quota divided by period;
-  without a quota, use the CPUs allowed to the process (the answer `nproc`
-  gives), read without starting an external process
-  (not in the code yet — HIL-1373).
+- **Node cores:** the smaller of the cgroup v2 `cpu.max` quota (the minimum
+  quota/period along its ancestor chain) and CPUs allowed to the process (the
+  answer `nproc` gives). Name the limiting source, `quota` or `cpus`.
 - **Daemon load:** sum the master's and every live worker's increases in
   `utime + stime` from `/proc/<pid>/stat`, converted from clock ticks to CPU
-  seconds, and divide by elapsed seconds. The result is occupied cores
-  (not in the code yet — HIL-1373). Show the master separately
-  (not in the code yet — HIL-1373). Show the machine's `/proc/stat` load
-  separately for context (not in the code yet — HIL-1373).
-- **Memory:** resident memory of each process from that same stat row
-  (not in the code yet — HIL-1373). The ceiling for the daemon's sum is cgroup
-  `memory.max`, falling back to physical memory without that ceiling
-  (not in the code yet — HIL-1373). Show PHP `memory_limit` per process as
-  reference information (not in the code yet — HIL-1373).
+  seconds, and divide by elapsed seconds. The result is occupied cores; show
+  the master separately and the machine's `/proc/stat` load for context. The
+  first sample and a newly seen process establish a baseline; their CPU load is
+  unknown until the next sample. A dead process contributes no final interval.
+- **Memory:** resident memory of the master and live workers comes from those
+  stat rows. The ceiling is the smaller of cgroup v2 `memory.max` along its
+  ancestor chain and physical memory, named `cgroup` or `machine`. PHP
+  `memory_limit` is a limit for one process and is shown for reference.
 
-Today [DaemonStatus](../../../framework/backend/Core/Daemon/Master/DaemonStatus.php)
-reports the machine's CPU load — the host's inside a container.
-[ProcessStat](../../../framework/backend/Core/Daemon/ProcessStat.php) holds the
-parent PID and zombie flag parsed from `/proc/<pid>/stat` by
-`OrphanReaper::statOf()`; it does not yet hold CPU or resident-memory samples.
-`GET /status` and `daemon:status` already share `DaemonStatusSource`: two sources
-would give different uptime anchors and CPU deltas for one daemon.
-The master frame reads that same source (not in the code yet — HIL-1373).
+Occupied cores are rounded to 0.01, machine load to a whole percentage, and
+resident bytes down to whole MiB at the source. Unavailable values stay null.
+
+[DaemonStatus](../../../framework/backend/Core/Daemon/Master/DaemonStatus.php)
+is the master's sampler. `GET /status`, `daemon:status`, and the node frame read
+its last sample. `ProcessMetricsReader` reads process stat rows, while
+`NodeLimitsReader` reads node limits and machine CPU counters. `ProcessStat`
+remains the parent PID and zombie parser used by the orphan reaper.
 
 Unknown is a dash, never zero: an unavailable `/proc` or cgroup measurement must
 stay unavailable. This is the second rule in [logs.md](logs.md), *Rules This
@@ -321,8 +320,9 @@ Feature Proved, Wider Than Logs*; use a named fallback above only when available
 Apply [../antipatterns/heavy-work-in-master.md](../antipatterns/heavy-work-in-master.md)
 to every frame-producing path. The master may read its own memory and kernel
 pseudo-files under `/proc` and `/sys/fs/cgroup`: the kernel produces them, with
-no ordinary disk file to wait for. `DaemonStatusSource` already restricts its
-sample to in-memory counters plus `/proc/stat`. Pack a frame once and put it
+no ordinary disk file to wait for. The master samples kernel pseudo-files every
+five seconds; the status doors read the completed sample. Pack a frame once and
+put it
 on one local worker connection. HTTP request accounting is an increment in memory.
 
 No database access, ordinary file read, network work beyond that local worker

@@ -11,16 +11,15 @@ use Hilos\Core\Daemon\DaemonStatusSource;
 /**
  * Invokable handler for the GET /status endpoint, registered on every daemon.
  *
- * Asks the master for a fresh status sample on each request and returns it as JSON.
+ * Asks the master for its last completed measurement and current counters as JSON.
  * Registered by {@see DaemonManager::boot()} with the manager itself as the source, so the
  * endpoint and the `daemon:status` command read the one status object the master holds - two
- * samplers would each anchor uptime and the CPU delta of their own, and the two doors would
- * disagree about the same daemon.
+ * samplers would disagree about the same daemon.
  */
 final class StatusHandler
 {
     /**
-     * @param DaemonStatusSource $source Master seam the status sample is read from
+     * @param DaemonStatusSource $source Master seam the last measurement is read from
      */
     public function __construct(
         private readonly DaemonStatusSource $source,

@@ -9,6 +9,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Daemon\DaemonMeasurements;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -19,6 +20,7 @@ use Hilos\DaemonSection\DaemonHttpPicture;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
+use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
@@ -82,6 +84,57 @@ final class DaemonNodePictureTest extends TestCase
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
         $agent->reportIfDue($now + 67.0);
         self::assertNotNull(Hilos::$sr?->getNextQueuedSignal());
+    }
+
+    /** A local measurement changes the next report and survives other section updates. */
+    public function testMasterMeasurementsUpdatePictureWithoutLosingOtherSections(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $measurements = new DaemonMeasurements(100, null, null, null, null, null,
+            null, 0, 0, null, null, null);
+        $agent->onSignalAgent(
+            new AgentSignalData(data: new DaemonMasterMeasurementsSignalData('standalone', $measurements)),
+            SignalSource::DAEMON,
+            HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
+        );
+        $agent->reportIfDue(microtime(true) + 6.0);
+        $reported = Hilos::$sr?->getNextQueuedSignal()?->data?->data;
+        self::assertInstanceOf(DaemonNodePictureSignalData::class, $reported);
+        self::assertEquals($measurements, $reported->picture->measurements);
+        self::assertFalse($reported->picture->sameContent($reported->picture->withMeasurements(null)));
+        self::assertEquals($measurements, $reported->picture->sampledAt(12)->withProcesses(null)
+            ->withCron(null)->withEnvironment(null)->withStanding(null)->withHttp(null)->measurements);
+        $http = new DaemonHttpPicture('127.0.0.1', 8080, 10, [], new HttpRouteTally(0, 0, 0, null));
+        $standing = new DaemonNodeStanding(1, 2, false, null);
+        $withSections = $reported->picture->withHttp($http)->withStanding($standing);
+        self::assertEquals($http, $withSections->withMeasurements(null)->http);
+        self::assertEquals($standing, $withSections->withMeasurements(null)->standing);
+        self::assertEquals($measurements, $withSections->withProcesses(null)->withCron(null)->measurements);
+    }
+
+    /** A frame from another node or an agent cannot replace this node's measurement. */
+    public function testForeignMasterMeasurementsAreRefused(): void
+    {
+        $agent = new DaemonNodeAgent();
+        $agent->onStart();
+        Hilos::$sr?->getNextQueuedSignal();
+        $measurements = new DaemonMeasurements(100, null, null, null, null, null,
+            null, 0, 0, null, null, null);
+        foreach ([[SignalSource::AGENT, 'standalone'], [SignalSource::DAEMON, 'other-node']] as [$sender, $nodeId]) {
+            try {
+                $agent->onSignalAgent(
+                    new AgentSignalData(data: new DaemonMasterMeasurementsSignalData($nodeId, $measurements)),
+                    $sender,
+                    HilosSignalConstants::DAEMON_MASTER_MEASUREMENTS,
+                );
+                self::fail('Foreign master measurements were accepted');
+            } catch (AgentException) {
+            }
+        }
+        $agent->reportIfDue(microtime(true) + 6.0);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
     }
 
     public function testNodeWireRejectsAnInvalidIdentityOrRole(): void
