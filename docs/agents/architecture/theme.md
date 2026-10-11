@@ -35,10 +35,12 @@ Apply this rule in this order:
 4. If that gave `system` → use the system's color scheme.
 
 `@hilos/core` implements this as the pure
-`resolveThemeMode(pick, settings, systemDark): ThemeMode` function. Build the head
-script from that same function (not in the code yet — HIL-1431). A hand-written
-copy of the rule anywhere is forbidden: the first frame and the running app must
-make the same decision.
+`resolveThemeMode(pick, settings, systemDark): ThemeMode` function.
+[`themeHeadScript()`](../../../framework/frontend/core/src/theme/themeHeadScript.ts)
+builds the head script from that function and the browser-value parsers in
+[`themeStored.ts`](../../../framework/frontend/core/src/theme/themeStored.ts).
+A hand-written copy of the rule anywhere is forbidden: the first frame and the
+running app must make the same decision.
 
 Follow the system through the `change` event of
 `matchMedia('(prefers-color-scheme: dark)')`, never by polling. If matchMedia is
@@ -61,7 +63,7 @@ the code yet — HIL-1440, HIL-1441.
 ## Who Sets It
 
 Express the theme as `data-bs-theme` on `<html>`, written by the framework's head
-script before the app loads (not in the code yet — HIL-1431), then by the one
+script before the app loads, then by the one
 `core/dom/applyTheme` effect bound by `bootHilos`. Follow "Shared DOM effects" in
 [multiframework-core.md](../frontend/multiframework-core.md).
 
@@ -110,16 +112,22 @@ A cookie never carries the theme; the cookie is the auth credential only. See
 
 ## Before The App Loads
 
-Put one synchronous framework script in the `<head>` of every page the build
-emits: the Vite `index.html` of the Vue and React demos, the Angular `index.html`
-and `index.csr.html`, and the prerender template
-([framework/frontend/prerender/src/template.ts](../../../framework/frontend/prerender/src/template.ts)).
-It reads only browser values — the pick and the remembered settings — with no
-network, cookie or import. Nothing remembered, on a new browser's first visit,
-means `system`. The build inserts the script
-(not in the code yet — HIL-1431).
+The last project build step is
+`node node_modules/@hilos/core/bin/theme-head.mjs <dir>`, after Vite prerendering
+or `ng build`. It inserts `<script data-hilos-theme-head>` just before `</head>`
+in every emitted HTML page: Vite's `index.html` and prerendered pages, Angular's
+`index.csr.html` and `<route>/index.html` pages. The synchronous script is built
+from `resolveThemeMode` and the browser-value parsers in `themeStored.ts`; it
+reads only the pick and remembered settings, with no network, cookie or import.
+Nothing remembered on a new browser's first visit means `system`.
 
-No `index.html` carries a hand-written copy; a project never writes its own.
+The pass refuses a missing or unreadable output directory, a directory without
+HTML pages, a page without `</head>`, and a deferred stylesheet. Angular
+production sets `optimization.styles.inlineCritical: false`: critical CSS
+inlining otherwise defers the external Bootstrap stylesheet with `media=print`
+and `onload`, so the first frame could have the right theme attribute but the
+wrong background. Dev servers do not carry the build-inserted script. No source
+`index.html` carries a hand-written copy; a project never writes its own.
 
 ## The Two Settings
 

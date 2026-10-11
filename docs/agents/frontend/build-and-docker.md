@@ -239,6 +239,11 @@ package's discovery, and a failed render fails the build before anything is
 written — a page that now renders more can fail in more ways, and it fails in
 the same place.
 
+Every demo build ends with `node node_modules/@hilos/core/bin/theme-head.mjs
+<dir>` after prerendering or `ng build`, so the pass sees every final HTML page.
+It inserts the first-frame theme script and refuses an absent or unreadable
+output directory, no HTML pages, a missing `</head>`, or a deferred stylesheet.
+
 ## Building a demo against the vendored SDK
 
 A demo vendors `@hilos/core` and its view layer via `file:` dependencies that npm

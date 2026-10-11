@@ -31,6 +31,7 @@ export {
   Watched,
 } from './geometry.js'
 export { armSocketDrop, dropSocket } from './socket.js'
+export { openFirstFrame } from './firstFrame.js'
 export {
   PASSKEY_PLATFORMS,
   platformsLeftOut,

@@ -35,6 +35,9 @@ Common ground (containers, connection, e2e, stable ids) is in
   handshake welcome.
 - The public footer pages are prerendered by `scripts/prerenderEntry.tsx`,
   built for Node (`vite build --ssr`) and run after the client build.
+- End `npm run build` after prerendering with
+  `node node_modules/@hilos/core/bin/theme-head.mjs dist`, so every emitted HTML
+  page gets the first-frame theme script.
 
 ## SDK wiring
 

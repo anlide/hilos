@@ -23,6 +23,11 @@ Common ground (containers, connection, e2e, stable ids) is in
   `app.config.ts` keeps only `provideBrowserGlobalErrorListeners()`.
 - Flat dist: `outputPath: { "base": "dist", "browser": "" }` so the nginx
   mount stays `../frontend/dist`, uniform with the Vite demos.
+- End `npm run build` after `ng build` with
+  `node node_modules/@hilos/core/bin/theme-head.mjs dist`. In the production
+  configuration set `optimization.styles.inlineCritical: false` so Bootstrap's
+  stylesheet loads before the first themed frame; the theme-head pass refuses
+  deferred stylesheets.
 - deps `@angular/{common,compiler,core,platform-browser}`, `rxjs`,
   `tslib`, `@vue/reactivity` and `qrcode-generator` (see below),
   `bootstrap` + `bootstrap-icons` (see Styling), and `@hilos/angular` pinned

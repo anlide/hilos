@@ -1,16 +1,20 @@
 import { browserStorage } from '../browser/browserStorage.js'
 import { browserValue } from '../browser/browserValue.js'
-import {
-  themeSettingsSchema,
-  type ThemeSettings,
-} from '../session/sessionScope.js'
+import { type ThemeSettings } from '../session/sessionScope.js'
 import { type ThemePick } from './themeRule.js'
+import {
+  DEFAULT_THEME_SETTINGS,
+  parseThemePick,
+  parseThemeSettings,
+  THEME_PICK_STORAGE_KEY,
+  THEME_SETTINGS_STORAGE_KEY,
+} from './themeStored.js'
 
-/** The guest's chosen theme position, absent when none was chosen. */
-export const THEME_PICK_STORAGE_KEY = 'hilos.theme.pick'
-
-/** The last complete installation settings snapshot for the next page load. */
-export const THEME_SETTINGS_STORAGE_KEY = 'hilos.theme.settings'
+export {
+  DEFAULT_THEME_SETTINGS,
+  THEME_PICK_STORAGE_KEY,
+  THEME_SETTINGS_STORAGE_KEY,
+} from './themeStored.js'
 
 /** The guest's theme position, declared for the /privacy sweep. */
 export const THEME_PICK_BROWSER_VALUE = browserValue({
@@ -26,21 +30,11 @@ export const THEME_SETTINGS_BROWSER_VALUE = browserValue({
   label: 'Remembered theme settings for this site',
 })
 
-/** Catalog defaults before a valid settings snapshot is available. */
-export const DEFAULT_THEME_SETTINGS: ThemeSettings = Object.freeze({
-  switchingEnabled: true,
-  defaultTheme: 'system',
-})
-
 /** Read the guest's choice; an unknown or inaccessible value is no choice. */
 export function readThemePick(): ThemePick {
   const storage = browserStorage('localStorage')
   try {
-    const value = storage?.getItem(THEME_PICK_STORAGE_KEY)
-
-    return value === 'light' || value === 'dark' || value === 'system'
-      ? value
-      : null
+    return parseThemePick(storage?.getItem(THEME_PICK_STORAGE_KEY) ?? null)
   } catch {
     return null
   }
@@ -69,17 +63,7 @@ export function readThemeSettings(): ThemeSettings {
   const storage = browserStorage('localStorage')
   try {
     const raw = storage?.getItem(THEME_SETTINGS_STORAGE_KEY)
-    if (raw === null || raw === undefined) {
-      return DEFAULT_THEME_SETTINGS
-    }
-    const parsed = themeSettingsSchema.safeParse(JSON.parse(raw))
-
-    return parsed.success
-      ? {
-          switchingEnabled: parsed.data.switchingEnabled,
-          defaultTheme: parsed.data.defaultTheme,
-        }
-      : DEFAULT_THEME_SETTINGS
+    return parseThemeSettings(raw ?? null, DEFAULT_THEME_SETTINGS)
   } catch {
     return DEFAULT_THEME_SETTINGS
   }

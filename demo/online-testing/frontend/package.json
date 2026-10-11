@@ -8,7 +8,7 @@
     "predev": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
     "dev": "ng serve --host 0.0.0.0 --port 5173",
     "prebuild": "node ../../../framework/frontend/scripts/prebuild-sdk.mjs angular && node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
-    "build": "ng build",
+    "build": "ng build && node node_modules/@hilos/core/bin/theme-head.mjs dist",
     "postbuild": "node -e \"require('fs').writeFileSync('dist/build-timestamp.txt', new Date().toISOString())\"",
     "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
     "check": "npm run check:types && npm run check:templates",

@@ -8,7 +8,7 @@ export type ThemeMode = 'light' | 'dark'
 
 /**
  * Resolve the page's color mode from the pick, installation settings and system.
- * This pure rule is also the source for the pre-boot head script (HIL-1431).
+ * This pure rule is also the source for theme/themeHeadScript.ts.
  *
  * @param pick The person's position, or no choice.
  * @param settings The installation's complete theme settings.

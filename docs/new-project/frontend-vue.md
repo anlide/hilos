@@ -31,6 +31,9 @@ Common ground (containers, connection, e2e, stable ids) is in
   `strictPort`; native HMR (no polling); `server.fs.allow: ['../../..']`
   (README.md, "Frontend (common ground)"); a build plugin that writes
   `dist/build-timestamp.txt`, which the daemon ships in the handshake welcome.
+- End `npm run build` after the client and public-page prerender builds with
+  `node node_modules/@hilos/core/bin/theme-head.mjs dist`, so every emitted HTML
+  page gets the first-frame theme script.
 
 ## SDK wiring
 
