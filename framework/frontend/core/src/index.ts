@@ -1783,6 +1783,23 @@ export {
   type HilosDaemonCronTable,
 } from './admin/daemon/hilosDaemonCron.js'
 export {
+  resolveHilosDaemonHttpRouteRow,
+  createHilosDaemonHttpRoutesTable,
+  formatDaemonHttpRoute,
+  formatDaemonHttpCount,
+  formatDaemonHttpSlowest,
+  DAEMON_HTTP_ROUTES_FILTER_NODE,
+  DAEMON_HTTP_ROUTE_METHOD_FIELD,
+  DAEMON_HTTP_ROUTE_PATH_FIELD,
+  DAEMON_HTTP_ROUTE_AGENT_FIELD,
+  DAEMON_HTTP_ROUTE_REQUESTS_FIELD,
+  DAEMON_HTTP_ROUTE_ERRORS_FIELD,
+  DAEMON_HTTP_ROUTE_SLOWEST_FIELD,
+  type HilosDaemonHttpRouteRow,
+  type HilosDaemonHttpRoutesContext,
+  type HilosDaemonHttpRoutesTable,
+} from './admin/daemon/hilosDaemonHttpRoutes.js'
+export {
   resolveHilosDaemonAgentRow,
   createHilosDaemonAgentsTable,
   formatDaemonAgentWorker,

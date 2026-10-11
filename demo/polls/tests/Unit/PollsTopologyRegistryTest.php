@@ -131,6 +131,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -716,6 +717,7 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             PollsTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             PollsTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+            PollsTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             PollsTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
@@ -753,6 +755,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 DaemonEnvPage::PAGE,
                 DaemonPage::PAGE,
                 DaemonAgentsPage::PAGE,
+                DaemonHttpServerPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
                 SecuritySignInMethodsPage::PAGE,
@@ -1014,6 +1017,10 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             [PollsTableContext::hilosDaemonAgents => []],
             Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosDaemonHttpRoutes => []],
+            Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE],
         );
 
         // The logging modes screen writes framework keys, and a key the project catalog does

@@ -247,6 +247,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -677,6 +678,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         ChatTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         ChatTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+        ChatTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
         ChatTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         ChatTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         ChatTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
@@ -906,6 +908,9 @@ final class Hilos extends HilosFacade
         ],
         DaemonAgentsPage::PAGE => [
             ChatTableContext::hilosDaemonAgents => [],
+        ],
+        DaemonHttpServerPage::PAGE => [
+            ChatTableContext::hilosDaemonHttpRoutes => [],
         ],
         GuardianPage::PAGE => [
             GuardianAgentStatusesBrowserTable::TABLE => [],

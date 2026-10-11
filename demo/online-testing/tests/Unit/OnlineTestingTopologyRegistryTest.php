@@ -111,6 +111,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -695,6 +696,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             OnlineTestingTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             OnlineTestingTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+            OnlineTestingTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             OnlineTestingTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
@@ -717,6 +719,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonEnvPage::PAGE,
             DaemonPage::PAGE,
             DaemonAgentsPage::PAGE,
+            DaemonHttpServerPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
             LanguagesListPage::PAGE,
@@ -843,6 +846,10 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
         self::assertSame([OnlineTestingTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
+        $this->assertSame(
+            [OnlineTestingTableContext::hilosDaemonHttpRoutes => []],
+            Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE],
+        );
     }
 
     public function testNotificationCenterIsActivatedWithoutDelivery(): void
