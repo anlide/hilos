@@ -1815,6 +1815,7 @@ export {
   daemonAgentLogPath,
   DAEMON_AGENTS_FILTER_NODE,
   DAEMON_AGENT_ID_FIELD,
+  DAEMON_AGENT_RESTARTING_FIELD,
   DAEMON_AGENT_WORKER_INDEX_FIELD,
   DAEMON_AGENT_WORKER_KIND_FIELD,
   DAEMON_AGENT_PLACEMENT_FIELD,
@@ -1833,6 +1834,11 @@ export {
   type HilosDaemonAgentsContext,
   type HilosDaemonAgentsTable,
 } from './admin/daemon/hilosDaemonAgents.js'
+export {
+  createHilosDaemonAgentRestart,
+  HILOS_DAEMON_AGENT_RESTART_ACTION,
+  type HilosDaemonAgentRestart,
+} from './admin/daemon/hilosDaemonAgentRestart.js'
 export {
   resolveHilosDaemonWorkerRow,
   createHilosDaemonWorkersTable,

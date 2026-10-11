@@ -1,3 +1,4 @@
+import { expect, type Page } from '@playwright/test'
 import { createCommandChannel } from '../../../../../framework/frontend/scripts/commandChannel.mjs'
 
 // The daemon command channel — the same socket the CLI test:admin-view-mode command
@@ -36,4 +37,92 @@ const sendCommand = createCommandChannel({
  */
 export async function setAdminViewMode(enabled: boolean): Promise<void> {
   await sendCommand(ADMIN_VIEW_MODE_COMMAND, { enabled })
+}
+
+/** Arm a forged submit before the viewer loads; the product connection stays private. */
+export async function armViewerSubmit(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket
+    const sockets: WebSocket[] = []
+    window.WebSocket = class extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols)
+        sockets.push(this)
+      }
+    }
+    Object.defineProperty(window, '__hilosE2eViewerSubmit', {
+      value: (
+        frame: string,
+        requestId: string,
+      ): Promise<Record<string, unknown>> => {
+        const socket = sockets.at(-1)
+        if (socket?.readyState !== WebSocket.OPEN)
+          throw new Error('The viewer socket is not open')
+        const current = socket
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            current.removeEventListener('message', receive)
+            reject(new Error('The server did not answer the forged submit'))
+          }, 5000)
+          function receive(event: MessageEvent): void {
+            if (typeof event.data !== 'string') return
+            let reply: {
+              type?: string
+              requestId?: string
+              data?: Record<string, unknown>
+            }
+            try {
+              reply = JSON.parse(event.data)
+            } catch {
+              return
+            }
+            if (
+              reply.requestId !== requestId &&
+              reply.data?.requestId !== requestId
+            )
+              return
+            clearTimeout(timer)
+            current.removeEventListener('message', receive)
+            resolve({ type: reply.type, ...reply.data })
+          }
+          current.addEventListener('message', receive)
+          current.send(frame)
+        })
+      },
+    })
+  })
+}
+
+/** Prove both the visible disabled control and the server's refusal of a forged restart. */
+export async function expectViewerRestartRefused(
+  page: Page,
+  agentId: string,
+): Promise<void> {
+  const button = page
+    .getByTestId(`hilos-daemon-agent-restart-${agentId}`)
+    .filter({ visible: true })
+  await expect(button).toBeDisabled()
+  const requestId = 'e2e-forged-daemon-restart'
+  const reply = await page.evaluate(
+    ({ agentId, requestId }) => {
+      const hook = (
+        window as unknown as Record<
+          string,
+          (frame: string, requestId: string) => Promise<Record<string, unknown>>
+        >
+      ).__hilosE2eViewerSubmit
+      return hook(
+        JSON.stringify({
+          type: 'action',
+          action: 'hilos_daemon_agent_restart',
+          data: { agentId, nodeId: 'standalone' },
+          requestId,
+        }),
+        requestId,
+      )
+    },
+    { agentId, requestId },
+  )
+  expect(reply.type).toBe('action_error')
+  expect(reply.errorCode).toBe('view_mode')
 }

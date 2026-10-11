@@ -74,6 +74,7 @@ use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\SocketException;
@@ -137,6 +138,7 @@ use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeDisableDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupJoinDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentRestartRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeEnableDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeCircleDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModePassDTO;
@@ -3523,6 +3525,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * Called before and after browser flush because flushes
      * queue ordinary worker signals into the same router queue.
+     *
+     * @throws LogicException When a restart control payload or its server return address is invalid
      */
     private function dispatchQueuedSignalsToDaemon(): void
     {
@@ -3626,6 +3630,20 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - group leave-all carries invalid data: ' . get_class($signal->data));
                 }
+                continue;
+            }
+
+            if ($signalType === SignalTypeConstants::DAEMON_AGENT_RESTART_REQUEST) {
+                if (!$signal->data instanceof DaemonAgentRestartRequestSignalData) {
+                    throw new LogicException('Agent restart control signal carries an invalid payload');
+                }
+                if ($signal->signalSource->getSource() !== SignalSource::AGENT
+                    || $signal->signalSource->getType() !== $signal->data->replyAgentType
+                    || $signal->signalSource->getIndex() !== $signal->data->replyAgentIndex
+                ) {
+                    throw new LogicException('Agent restart return address differs from its server signal source');
+                }
+                $this->daemonClient->send(new WorkerAgentRestartRequestDTO($signal->data));
                 continue;
             }
 

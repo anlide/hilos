@@ -20,12 +20,14 @@ use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DaemonAgentPicture;
+use Hilos\DaemonSection\DaemonRestartingAgents;
 use Hilos\Hilos;
 use Hilos\Log\AgentLogStream;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 
 /**
- * Started agents of one node, projected from the page worker's daemon picture mirror.
+ * Live and restarting agents of one node, projected from the page worker's daemon picture mirror.
  *
  * Ownership comes from declarations on each agent class, not the picture: all nodes run
  * the same code. A viewport without a node filter is empty. The mirror has no row source,
@@ -87,6 +89,7 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
         return [
             HilosDaemonAgentsTableRow::rowKey => WireField::notPersonal(),
             HilosDaemonAgentsTableRow::agentId => WireField::notPersonal(),
+            HilosDaemonAgentsTableRow::restarting => WireField::notPersonal(),
             HilosDaemonAgentsTableRow::workerIndex => WireField::notPersonal(),
             HilosDaemonAgentsTableRow::workerKind => WireField::notPersonal(),
             HilosDaemonAgentsTableRow::placement => WireField::notPersonal(),
@@ -134,7 +137,7 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
 
     /**
      * @param TableQueryDTO $query Window filter naming one node
-     * @return list<array<string, mixed>> Started agents in natural id order
+     * @return list<array<string, mixed>> Live and restarting agents in natural id order
      */
     private function collectRows(TableQueryDTO $query): array
     {
@@ -143,18 +146,24 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
             return [];
         }
 
-        $roster = ClusterDaemonPictureMirror::picture()?->node(trim($node))?->slot?->picture->processes;
-        if ($roster === null) {
+        $picture = ClusterDaemonPictureMirror::picture();
+        if ($picture === null) {
             return [];
         }
 
+        $nodeId = trim($node);
+        $restarting = [];
+        foreach (DaemonRestartingAgents::forNode($picture, $nodeId) as $agent) {
+            $restarting[$agent->id] = true;
+        }
         $rows = [];
-        foreach ($roster->workers as $worker) {
+        foreach ($picture->node($nodeId)?->slot?->picture->processes?->workers ?? [] as $worker) {
             foreach ($worker->agents as $agent) {
                 $declaration = self::declarationOf(AgentId::fromId($agent->id)->type);
-                $rows[] = [
+                $rows[$agent->id] = [
                     HilosDaemonAgentsTableRow::rowKey => $agent->id,
                     HilosDaemonAgentsTableRow::agentId => $agent->id,
+                    HilosDaemonAgentsTableRow::restarting => isset($restarting[$agent->id]),
                     HilosDaemonAgentsTableRow::workerIndex => $worker->index,
                     HilosDaemonAgentsTableRow::workerKind => $worker->kind,
                     HilosDaemonAgentsTableRow::placement => $agent->placement,
@@ -164,6 +173,26 @@ final class HilosDaemonAgentsTable extends TableDefinition implements ViewportTa
                     HilosDaemonAgentsTableRow::logStream => AgentLogStream::streamName($agent->id, false),
                 ];
             }
+        }
+
+        foreach (array_keys($restarting) as $id) {
+            if (isset($rows[$id])) {
+                continue;
+            }
+            $type = AgentId::fromId($id)->type;
+            $declaration = self::declarationOf($type);
+            $rows[$id] = [
+                HilosDaemonAgentsTableRow::rowKey => $id,
+                HilosDaemonAgentsTableRow::agentId => $id,
+                HilosDaemonAgentsTableRow::restarting => true,
+                HilosDaemonAgentsTableRow::workerIndex => null,
+                HilosDaemonAgentsTableRow::workerKind => null,
+                HilosDaemonAgentsTableRow::placement => DaemonAgentPicture::placementOf(Hilos::appClass()::AGENTS[$type] ?? null),
+                HilosDaemonAgentsTableRow::idle => $declaration[HilosDaemonAgentsTableRow::idle],
+                HilosDaemonAgentsTableRow::ownsRt => $declaration[HilosDaemonAgentsTableRow::ownsRt],
+                HilosDaemonAgentsTableRow::ownsDb => $declaration[HilosDaemonAgentsTableRow::ownsDb],
+                HilosDaemonAgentsTableRow::logStream => AgentLogStream::streamName($id, false),
+            ];
         }
 
         usort($rows, static fn (array $left, array $right): int => strnatcmp(

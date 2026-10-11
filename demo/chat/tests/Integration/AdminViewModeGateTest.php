@@ -105,6 +105,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'communications_delivery_retry',
         'guardian_agent_run_start',
         'guardian_agent_run_stop',
+        'hilos_daemon_agent_restart',
         'hilos_i18n_country_add',
         'hilos_i18n_country_switch_off',
         'hilos_i18n_country_switch_on',

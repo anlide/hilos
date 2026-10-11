@@ -3,12 +3,14 @@
 // empty states belong to the per-framework view.
 
 import { z } from 'zod'
+import { type ActionLifecycle } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,
-  readNumber,
+  readNumberOrNull,
   readString,
+  readStringOrNull,
 } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -30,6 +32,8 @@ export const DAEMON_AGENTS_FILTER_NODE = 'node'
 
 /** Row payload key of the agent instance id. */
 export const DAEMON_AGENT_ID_FIELD = 'agentId'
+/** Row payload key of the master's open restart mark. */
+export const DAEMON_AGENT_RESTARTING_FIELD = 'restarting'
 /** Row payload key of the hosting worker index. */
 export const DAEMON_AGENT_WORKER_INDEX_FIELD = 'workerIndex'
 /** Row payload key of the hosting worker kind. */
@@ -73,8 +77,9 @@ export interface HilosDaemonAgentOwnership {
 export interface HilosDaemonAgentRow {
   readonly rowKey: string
   readonly agentId: string
-  readonly workerIndex: number
-  readonly workerKind: string
+  readonly restarting: boolean
+  readonly workerIndex: number | null
+  readonly workerKind: string | null
   readonly placement: string
   readonly idle: boolean
   readonly ownsRt: readonly HilosDaemonAgentOwnership[]
@@ -86,6 +91,7 @@ export interface HilosDaemonAgentRow {
 export interface HilosDaemonAgentsContext {
   readonly connection: HilosConnection
   readonly scopes: ScopeManager
+  readonly actions: ActionLifecycle
 }
 
 /** Table controller and its view mount lifecycle. */
@@ -112,8 +118,9 @@ export function resolveHilosDaemonAgentRow(row: TableRow): HilosDaemonAgentRow {
   return {
     rowKey: String(row.rowKey),
     agentId: readString(slot, DAEMON_AGENT_ID_FIELD),
-    workerIndex: readNumber(slot, DAEMON_AGENT_WORKER_INDEX_FIELD),
-    workerKind: readString(slot, DAEMON_AGENT_WORKER_KIND_FIELD),
+    restarting: readBoolean(slot, DAEMON_AGENT_RESTARTING_FIELD),
+    workerIndex: readNumberOrNull(slot, DAEMON_AGENT_WORKER_INDEX_FIELD),
+    workerKind: readStringOrNull(slot, DAEMON_AGENT_WORKER_KIND_FIELD),
     placement: readString(slot, DAEMON_AGENT_PLACEMENT_FIELD),
     idle: readBoolean(slot, DAEMON_AGENT_IDLE_FIELD),
     ownsRt: ownsRt.success ? ownsRt.data : [],
@@ -133,7 +140,12 @@ export function createHilosDaemonAgentsTable(
   nodeId: string,
 ): HilosDaemonAgentsTable {
   const columns: HilosTableColumnOf<HilosDaemonAgentRow>[] = [
-    { key: DAEMON_AGENT_ID_FIELD, label: 'Agent', card: 'title' },
+    {
+      key: DAEMON_AGENT_ID_FIELD,
+      label: 'Agent',
+      card: 'title',
+      reads: [DAEMON_AGENT_RESTARTING_FIELD],
+    },
     {
       key: DAEMON_AGENT_WORKER_INDEX_FIELD,
       label: 'Worker',
@@ -150,7 +162,11 @@ export function createHilosDaemonAgentsTable(
     {
       key: HILOS_TABLE_ACTIONS_KEY,
       label: '',
-      reads: [DAEMON_AGENT_ID_FIELD, DAEMON_AGENT_LOG_STREAM_FIELD],
+      reads: [
+        DAEMON_AGENT_ID_FIELD,
+        DAEMON_AGENT_LOG_STREAM_FIELD,
+        DAEMON_AGENT_RESTARTING_FIELD,
+      ],
     },
   ]
   const frame: HilosTableFrame = {
@@ -170,6 +186,12 @@ export function createHilosDaemonAgentsTable(
         HilosPages.DAEMON_AGENTS,
         DAEMON_AGENTS_TABLE,
         rendered,
+      ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.DAEMON_AGENTS,
+        DAEMON_AGENTS_TABLE,
+        rowKey,
       ),
     initialFilter: { [DAEMON_AGENTS_FILTER_NODE]: nodeId },
     frame,
@@ -202,6 +224,9 @@ export function createHilosDaemonAgentsTable(
  * @param row Agent whose worker is labelled.
  */
 export function formatDaemonAgentWorker(row: HilosDaemonAgentRow): string {
+  if (row.workerIndex === null || row.workerKind === null) {
+    return '—'
+  }
   return formatDaemonWorkerName(row.workerIndex, row.workerKind)
 }
 

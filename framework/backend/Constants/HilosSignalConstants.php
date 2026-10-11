@@ -336,6 +336,12 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos daemon agents page. */
     public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_AGENTS = 'subscription_page_hilos_daemon_agents';
 
+    /** Admin page action asking the master to restart one agent. */
+    public const string HILOS_DAEMON_AGENT_RESTART = 'hilos_daemon_agent_restart';
+
+    /** Master outcome returned to the page that admitted the restart. */
+    public const string DAEMON_AGENT_RESTART_DONE = 'daemon_agent_restart_done';
+
     /** Subscription signal for Hilos daemon cron page. */
     public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_CRON = 'subscription_page_hilos_daemon_cron';
 

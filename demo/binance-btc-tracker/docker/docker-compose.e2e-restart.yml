@@ -1,0 +1,5 @@
+# Only the running e2e runner joins the test daemon's PID namespace. Install,
+# check and build keep their usual namespace and can run before the daemon.
+services:
+  binance-btc-tracker-e2e-runner:
+    pid: service:binance-btc-tracker-daemon-test

@@ -24,6 +24,7 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\LeadershipObserver;
 use Hilos\Cluster\MembershipObserver;
 use Hilos\Cluster\NodeLifecycleState;
@@ -136,6 +137,7 @@ use Hilos\DaemonSection\DaemonHttpPicture;
 use Hilos\DaemonSection\DaemonHttpRoutePicture;
 use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
+use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterCronSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterMeasurementsSignalData;
@@ -249,6 +251,7 @@ abstract class DaemonManager extends BaseManager implements
     ContainedFailureSink,
     AbandonedCommandSink,
     AgentRestartDoor,
+    PageAgentRestartDoor,
     AgentSignalSink,
     PlacementVerdictSink,
     AgentLossSink,
@@ -470,6 +473,9 @@ abstract class DaemonManager extends BaseManager implements
     /** Open restarts of agents hosted by this master. */
     private readonly AgentRestarts $agentRestarts;
 
+    /** Browser waiters, separate from the restart records and console connections. */
+    private readonly PageAgentRestarts $pageAgentRestarts;
+
     /** @var ?float Seconds to wait for required agents before opening the WebSocket degraded; null = wait forever */
     protected ?float $readinessTimeout = null;
 
@@ -580,6 +586,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->commandReplyOrigins,
             fn (): ?PeerServer => $this->findPeerServer(),
         );
+        $this->pageAgentRestarts = new PageAgentRestarts($this, $this, $this->onCommandAbandoned(...));
         // The freeze watchdog has to hear an agent stop as it happens: the agent-start gate lets an
         // initiator's type start again under the freeze it left behind, so a later look at the
         // roster would find a fresh instance and read a dead operation as a live one (HIL-482).
@@ -974,6 +981,7 @@ abstract class DaemonManager extends BaseManager implements
             // minute-long whole-frame repair is due. The fast path reads four scalars.
             $this->tickProcessRoster($loopStartTime);
             $this->agentRestarts->tick($loopStartTime);
+            $this->pageAgentRestarts->tick($loopStartTime);
             $this->tickCronFrame($loopStartTime);
             $this->tickStanding($loopStartTime);
             $this->tickHttpFrame($loopStartTime);
@@ -1744,6 +1752,7 @@ abstract class DaemonManager extends BaseManager implements
         // to be told which sockets are still on the wire (HIL-664), and only the master knows.
         if ($server instanceof WorkerServer) {
             $server->setLiveConnectionRoster($this);
+            $server->setPageAgentRestartDoor($this);
         }
     }
 
@@ -2010,6 +2019,17 @@ abstract class DaemonManager extends BaseManager implements
     public function requestAgentRestart(CommandRequestDTO $request): void
     {
         $this->agentRestarts->request($request);
+    }
+
+    /**
+     * @param DaemonAgentRestartRequestSignalData $request Admitted page request with a server-owned return address
+     * @throws EnvException When the local cluster configuration cannot be read
+     * @throws ClusterConfigurationException When this master's node identity is invalid
+     * @throws ClusterDisabledException When an enabled cluster refuses its identity
+     */
+    public function requestPageAgentRestart(DaemonAgentRestartRequestSignalData $request): void
+    {
+        $this->pageAgentRestarts->request($request);
     }
 
     /** @param PeerAgentRestartDTO $frame Authenticated peer restart request */
@@ -3349,13 +3369,13 @@ abstract class DaemonManager extends BaseManager implements
                         continue;
                     }
 
-                    if ($commandServer === null) {
-                        continue;
-                    }
-
                     $reply = $signal->data;
                     if ($reply instanceof CommandReplyDTO) {
-                        $commandServer->deliver($destination->correlationId, $reply);
+                        if ($this->pageAgentRestarts->hasWaiter($reply->correlationId)) {
+                            $this->pageAgentRestarts->acceptReply($reply);
+                            continue;
+                        }
+                        $commandServer?->deliver($destination->correlationId, $reply);
                     }
                 } elseif ($destination instanceof RemoteHttpReplyDestination) {
                     // Carry the agent reply to the node that parked the connection. Same
@@ -4916,7 +4936,7 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Writes a forwarded command reply to this node's held console connection.
+     * Completes a forwarded reply's page wait, or delivers it to this node's held console.
      *
      * @param SignalDTO $signal COMMAND_REPLY signal already addressed by correlation id
      */
@@ -4928,6 +4948,10 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
+        if ($this->pageAgentRestarts->hasWaiter($reply->correlationId)) {
+            $this->pageAgentRestarts->acceptReply($reply);
+            return;
+        }
         $commandServer = $this->findCommandServer();
         if ($commandServer === null) {
             Logger::warning("Forwarded command reply to #{$reply->correlationId} dropped: this node serves no commands");

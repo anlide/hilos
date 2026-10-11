@@ -1,20 +1,31 @@
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import {
+  ActionError,
   DAEMON_NODE_DATA,
   DAEMON_PROCESSES_REPORTED_DATA,
   HilosPages,
   ScopeManager,
   createSignal,
+  type ActionHandle,
+  type ActionLifecycle,
+  type ActionResult,
   type HilosConnection,
-  type HilosDaemonNodeHeading,
   type HilosRouter,
+  type HilosDaemonNodeHeading,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 
 import HilosDaemonAgentsPage from './HilosDaemonAgentsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { hilosAdminViewModeKey } from '../../hilosAdminViewMode.js'
+
+const views: VueWrapper[] = []
+afterEach(() => {
+  for (const view of views.splice(0)) view.unmount()
+  document.body.innerHTML = ''
+})
 
 function router(): HilosRouter {
   return {
@@ -57,14 +68,17 @@ function harness() {
     tableWindowDescriptors: () => ({}),
     sendTableViewport(): void {},
     sendTableRendered(): void {},
+    sendTableRowFocus(): void {},
   } as unknown as HilosConnection
   const view = mount(HilosDaemonAgentsPage, {
-    props: { context: { connection, scopes } },
+    props: { context: { connection, scopes, actions: {} as ActionLifecycle } },
     global: {
       provide: { [hilosRouterKey as symbol]: router() },
       stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
+
+  views.push(view)
 
   return {
     view,
@@ -207,5 +221,267 @@ describe('HilosDaemonAgentsPage', () => {
         ?.text(),
     ).toBe('Lazy')
     h.view.unmount()
+  })
+})
+
+function restartHarness(clustered = false, placement = 'node', viewer = false) {
+  const scopes = new ScopeManager()
+  const scope = scopes.openPage(HilosPages.DAEMON_AGENTS)
+  scope.data.set(DAEMON_NODE_DATA, {
+    clustered,
+    state: clustered ? 'leader' : null,
+    silentSince: null,
+  })
+  scope.data.set(DAEMON_PROCESSES_REPORTED_DATA, true)
+  const listeners = new Map<string, (signal: { data: unknown }) => void>()
+  const connection = {
+    on(event: string, listener: (signal: { data: unknown }) => void) {
+      listeners.set(event, listener)
+      return () => {}
+    },
+    registerTableWindow(): void {},
+    unregisterTableWindow(): void {},
+    tableWindowDescriptors: () => ({}),
+    sendTableViewport(): void {},
+    sendTableRendered(): void {},
+    sendTableRowFocus(): void {},
+  } as unknown as HilosConnection
+  let resolve: (value: ActionResult) => void = () => {}
+  let reject: (reason: unknown) => void = () => {}
+  const dispatch = vi.fn(
+    (): ActionHandle => ({
+      requestId: 'restart-1',
+      loading: createSignal(false),
+      done: new Promise((yes, no) => {
+        resolve = yes
+        reject = no
+      }),
+    }),
+  )
+  const router = {
+    currentRoute: createSignal<PageRouteMatch>({
+      page: HilosPages.DAEMON_AGENTS,
+      params: { nodeId: 'n1' },
+      admin: true,
+    }),
+    currentPath: createSignal('/hilos/daemon/n1/agents'),
+    currentTitle: createSignal(''),
+    pageError: createSignal(null),
+    pageLoading: createSignal(false),
+    pageIdentity: createSignal(undefined),
+    dashboardSections: createSignal(undefined),
+    resolvePath: () => undefined,
+    clearPageError: () => {},
+    denyCurrentPage: () => {},
+    awaitPageAnswer: () => {},
+    onLeave: () => () => {},
+    navigate: () => {},
+    replacePath: () => {},
+    start: () => {},
+    stop: () => {},
+  } as HilosRouter
+  const view = mount(HilosDaemonAgentsPage, {
+    attachTo: document.body,
+    props: {
+      context: {
+        connection,
+        scopes,
+        actions: { dispatch } as unknown as ActionLifecycle,
+      },
+    },
+    global: {
+      provide: {
+        [hilosRouterKey as symbol]: router,
+        [hilosAdminViewModeKey as symbol]: ref(viewer),
+      },
+      stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+    },
+  })
+  views.push(view)
+  const window = (restarting = false, absent = false) =>
+    listeners.get('tableWindow')?.({
+      data: {
+        page: HilosPages.DAEMON_AGENTS,
+        tableKey: 'hilosDaemonAgents',
+        rows: absent
+          ? []
+          : [
+              {
+                rowKey: 'agent:1',
+                slots: {
+                  agent: {
+                    agentId: 'agent:1',
+                    restarting,
+                    workerIndex: restarting ? null : 1,
+                    workerKind: restarting ? null : 'regular',
+                    placement,
+                    idle: false,
+                    ownsRt: [],
+                    ownsDb: [],
+                    logStream: 'agent-agent_1.log',
+                  },
+                },
+              },
+            ],
+        totalCount: absent ? 0 : 1,
+      },
+    })
+  window()
+  return {
+    view,
+    dispatch,
+    scope,
+    window,
+    success: () => resolve({ message: 'Agent agent:1 restarted on node n1.' }),
+    fail: () =>
+      reject(
+        new ActionError(
+          'hilos_daemon_agent_restart',
+          'fail',
+          'Restart refused',
+        ),
+      ),
+    gone: () =>
+      listeners.get('tableViewportDelta')?.({
+        data: {
+          page: HilosPages.DAEMON_AGENTS,
+          tableKey: 'hilosDaemonAgents',
+          rowKey: 'agent:1',
+          kind: 'row_removed',
+          reason: 'left_set',
+        },
+      }),
+  }
+}
+
+function modal(id: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(`[data-id="${id}"]`)
+  if (!element) throw new Error(`Missing modal element ${id}`)
+  return element
+}
+
+async function open(h: ReturnType<typeof restartHarness>): Promise<void> {
+  await nextTick()
+  await h.view
+    .get('[data-id="hilos-daemon-agent-restart-agent:1"]')
+    .trigger('click')
+  await nextTick()
+}
+
+describe('HilosDaemonAgentsPage restart', () => {
+  it.each([
+    [false, 'policy', false],
+    [true, 'node', false],
+    [true, 'leader', false],
+    [true, 'policy', true],
+  ])(
+    'shows its target, CLI and POLICY warning only in a cluster (%s, %s)',
+    async (clustered, placement, warning) => {
+      const h = restartHarness(clustered, placement)
+      await open(h)
+      expect(modal('hilos-daemon-restart-agent').textContent).toBe('agent:1')
+      expect(modal('hilos-daemon-restart-node').textContent).toBe('n1')
+      expect(modal('hilos-daemon-restart-cli').textContent).toBe(
+        `php cli.php agent:restart agent:1${clustered ? ' --node=n1' : ''}`,
+      )
+      expect(
+        document.querySelector('[data-id="hilos-daemon-restart-policy"]') !==
+          null,
+      ).toBe(warning)
+      modal('hilos-daemon-restart-cancel').click()
+      await nextTick()
+      expect(document.querySelector('[data-id="modal"]')).toBeNull()
+      expect(h.dispatch).not.toHaveBeenCalled()
+    },
+  )
+
+  it('blocks repeated confirm and all close paths while busy, then closes only on success', async () => {
+    const h = restartHarness()
+    await open(h)
+    modal('hilos-daemon-restart-confirm').click()
+    await nextTick()
+    expect(h.dispatch).toHaveBeenCalledWith('hilos_daemon_agent_restart', {
+      agentId: 'agent:1',
+      nodeId: 'n1',
+    })
+    expect(
+      (modal('hilos-daemon-restart-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      (modal('hilos-daemon-restart-cancel') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    modal('modal-close').click()
+    modal('modal').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    modal('modal').click()
+    await nextTick()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(h.dispatch).toHaveBeenCalledTimes(1)
+    h.success()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+  })
+
+  it('keeps a refused confirmation open with the standard action error', async () => {
+    const h = restartHarness()
+    await open(h)
+    modal('hilos-daemon-restart-confirm').click()
+    h.fail()
+    await flushPromises()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('Restart refused')
+    expect(
+      (modal('hilos-daemon-restart-confirm') as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+
+  it('shows a live restart badge and disables viewer, silent and restarting rows', async () => {
+    const viewer = restartHarness(false, 'node', true)
+    await nextTick()
+    expect(
+      viewer.view
+        .get('[data-id="hilos-daemon-agent-restart-agent:1"]')
+        .attributes('disabled'),
+    ).toBeDefined()
+    const h = restartHarness()
+    h.window(true)
+    await nextTick()
+    expect(
+      h.view.get('[data-id="hilos-daemon-agent-restarting-agent:1"]').text(),
+    ).toBe('Restarting')
+    expect(
+      h.view
+        .get('[data-id="hilos-daemon-agent-restart-agent:1"]')
+        .attributes('disabled'),
+    ).toBeDefined()
+    expect(h.view.text()).toContain('—')
+    h.window()
+    h.scope.data.set(DAEMON_NODE_DATA, {
+      clustered: true,
+      state: 'silent',
+      silentSince: 10,
+    })
+    await nextTick()
+    expect(
+      h.view
+        .get('[data-id="hilos-daemon-agent-restart-agent:1"]')
+        .attributes('disabled'),
+    ).toBeDefined()
+  })
+
+  it('keeps a disappeared target visible by identity and refuses confirm', async () => {
+    const h = restartHarness()
+    await open(h)
+    h.gone()
+    await nextTick()
+    expect(modal('hilos-daemon-restart-agent').textContent).toBe('agent:1')
+    expect(
+      (modal('hilos-daemon-restart-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      modal('hilos-daemon-restart-unavailable').classList.contains('invisible'),
+    ).toBe(false)
+    expect(h.dispatch).not.toHaveBeenCalled()
   })
 })

@@ -304,11 +304,31 @@ host for a replica or an in-place restart, and the leader for a POLICY move.
 That master's node frame carries `restartingAgents`: each entry names the agent
 and the node that hosted it when the restart began. It remains until the agent
 starts or the restart is refused, even if a command caller's wait has ended.
-Everyone watching the section sees that mark (not in the code yet — HIL-1397).
-The confirmation dialog warns that
-a `POLICY` agent may come back on a different node
-(not in the code yet — HIL-1397). The restart button is disabled for an admin
-view-mode viewer (not in the code yet — HIL-1397).
+The Agents table projects marks from every slot of the cluster picture onto
+their original node, including marks owned by the leader during a POLICY move.
+Everyone watching that node, including a new subscriber, sees `restarting`.
+While no live instance is reported, its row keeps its registry declarations
+and log stream with null `workerIndex` and `workerKind`, drawn as a dash.
+When the mark ends, that temporary row disappears unless the instance is live
+on that node again. Marks are part of the page's roster fingerprint; metrics
+and report times do not resend agent windows.
+
+The Vue confirmation names the agent and the page's node. It says the restart
+starts immediately under the placement rules and leaves neighboring agents
+alone. Only a clustered `POLICY` agent gets a warning that it may come back on
+another node. The equivalent CLI includes `--node` only in cluster mode.
+Restart is disabled while a request is pending, the node is silent, the agent
+is restarting, or the viewer is in the admin view mode. The ordinary ADMIN
+action gate refuses a viewer's forged submit too; restart is not a reading action.
+
+The page sends the typed request through its registered worker's control
+connection to its own master. The master bridge invokes the existing
+`agent:restart` machinery, correlates its outcome with the web waiter and sends
+the page a handover answer. The browser receives the ordinary tracked
+`action_success` or `action_error` only after that outcome. A failed request
+keeps the confirmation open; the client never sets a restart mark optimistically.
+The bridge's thirty-second expiry abandons the caller's waiter without canceling
+the restart itself. Late replies cannot answer a newer request.
 
 ## Measuring The Daemon
 

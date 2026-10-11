@@ -14,6 +14,9 @@ use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
@@ -23,6 +26,7 @@ use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
@@ -32,6 +36,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentRestartRequestDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
@@ -100,10 +105,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param resource $socket Client socket
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
+     * @param ?WorkerServer $workerServer Owning worker server; required for page restart control frames
      * @throws EnvException When socket read buffer env value is missing or invalid
      */
-    public function __construct($socket, AgentManagerDaemon $agentManager)
-    {
+    public function __construct(
+        $socket,
+        AgentManagerDaemon $agentManager,
+        private readonly ?WorkerServer $workerServer = null,
+    ) {
         parent::__construct($socket);
         $this->agentManager = $agentManager;
         $this->connectTime = microtime(true);
@@ -202,6 +211,10 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *     or lacks a field its DTO needs
      * @throws InvalidArgumentException When a frame the master re-queues carries an empty signal name
      * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
+     * @throws LogicException When the page restart entrance was not wired
+     * @throws EnvException When a page restart cannot read the local cluster configuration
+     * @throws ClusterConfigurationException When the local cluster identity is invalid
+     * @throws ClusterDisabledException When an enabled cluster refuses its identity
      */
     private function processMessage(string $message): void
     {
@@ -238,6 +251,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerSourceInterestDTO => $this->handleWorkerSourceInterestMessage($workerDTO),
             $workerDTO instanceof WorkerGroupJoinDTO => $this->handleGroupJoinMessage($workerDTO),
             $workerDTO instanceof WorkerGroupLeaveAllDTO => $this->handleGroupLeaveAllMessage($workerDTO),
+            $workerDTO instanceof WorkerAgentRestartRequestDTO => $this->handleAgentRestartRequestMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeEnableDTO => $this->handleProtectedModeEnableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeDisableDTO => $this->handleProtectedModeDisableMessage($workerDTO),
             $workerDTO instanceof WorkerProtectedModeVerifyDTO => $this->handleProtectedModeVerifyMessage($workerDTO),
@@ -621,6 +635,25 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         }
 
         $this->agentManager->handleWorkerGroupLeaveAll($dto, $this->getWorkerIndex());
+    }
+
+    /**
+     * @param WorkerAgentRestartRequestDTO $dto Page-admitted restart request
+     * @throws InvalidFormatException When an unregistered connection presents this control frame
+     * @throws LogicException When this client or its server has no page restart door
+     * @throws EnvException When the master cannot read the local cluster configuration
+     * @throws ClusterConfigurationException When the local cluster identity is invalid
+     * @throws ClusterDisabledException When an enabled cluster refuses its identity
+     */
+    private function handleAgentRestartRequestMessage(WorkerAgentRestartRequestDTO $dto): void
+    {
+        if (!$this->isRegistered) {
+            throw new InvalidFormatException('Agent restart request requires a registered worker');
+        }
+        if ($this->workerServer === null) {
+            throw new LogicException('Worker client has no owning server for the page agent restart door');
+        }
+        $this->workerServer->getPageAgentRestartDoor()->requestPageAgentRestart($dto->data);
     }
 
     /**

@@ -14,6 +14,7 @@ import {
   type HilosConnection,
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
+import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { type ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
@@ -24,6 +25,7 @@ function row(
   return {
     rowKey: 'bot:1',
     agentId: 'bot:1',
+    restarting: false,
     workerIndex: 1,
     workerKind: 'regular',
     placement: 'node',
@@ -70,12 +72,34 @@ function stubTable(nodeId = 'n1'): {
       },
     } as unknown as HilosConnection,
     scopes: {} as ScopeManager,
+    actions: {} as ActionLifecycle,
   }
 
   return { table: createHilosDaemonAgentsTable(context, nodeId), sent }
 }
 
 describe('daemon agent row', () => {
+  it('keeps unknown worker fields nullable and reads only a boolean restart mark', () => {
+    const restarting = resolveHilosDaemonAgentRow(
+      rawRow('bot:1', {
+        agentId: 'bot:1',
+        workerIndex: null,
+        workerKind: null,
+        restarting: true,
+      }),
+    )
+    expect(restarting.restarting).toBe(true)
+    expect(restarting.workerIndex).toBeNull()
+    expect(restarting.workerKind).toBeNull()
+    expect(formatDaemonAgentWorker(restarting)).toBe('—')
+    expect(
+      resolveHilosDaemonAgentRow(rawRow('bot:1', { restarting: 'true' }))
+        .restarting,
+    ).toBe(false)
+    expect(formatDaemonAgentWorker(row({ workerKind: null }))).toBe('—')
+    expect(formatDaemonAgentWorker(row({ workerIndex: null }))).toBe('—')
+  })
+
   it('reads the inline ownership lists and fragment identity', () => {
     expect(
       resolveHilosDaemonAgentRow(
@@ -184,10 +208,11 @@ describe('daemon agents viewport', () => {
       undefined,
     ])
     expect(columns[0]?.card).toBe('title')
+    expect(columns[0]?.reads).toEqual(['restarting'])
     expect(columns[1]?.reads).toEqual(['workerKind'])
     expect(columns[2]?.card).toBe('badge')
     expect(columns[2]?.reads).toEqual(['idle'])
-    expect(columns[5]?.reads).toEqual(['agentId', 'logStream'])
+    expect(columns[5]?.reads).toEqual(['agentId', 'logStream', 'restarting'])
   })
 })
 

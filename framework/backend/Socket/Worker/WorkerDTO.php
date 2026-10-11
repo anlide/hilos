@@ -22,6 +22,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentRestartRequestDTO;
 use Hilos\Socket\Worker\DTO\DbReHydrateCompleteDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
@@ -141,6 +142,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRtSnapshotMessageDTO::MESSAGE_TYPE => WorkerRtSnapshotMessageDTO::fromArray($data),
             WorkerDbInterestReadyMessageDTO::MESSAGE_TYPE => WorkerDbInterestReadyMessageDTO::fromArray($data),
             WorkerRtStalenessMessageDTO::MESSAGE_TYPE => WorkerRtStalenessMessageDTO::fromArray($data),
+            WorkerAgentRestartRequestDTO::MESSAGE_TYPE => WorkerAgentRestartRequestDTO::fromArray($data),
             WorkerProtectedModeEnableDTO::MESSAGE_TYPE => WorkerProtectedModeEnableDTO::fromArray($data),
             WorkerProtectedModeDisableDTO::MESSAGE_TYPE => WorkerProtectedModeDisableDTO::fromArray($data),
             WorkerProtectedModeVerifyDTO::MESSAGE_TYPE => WorkerProtectedModeVerifyDTO::fromArray($data),

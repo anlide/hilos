@@ -27,6 +27,7 @@ use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\Core\Daemon\LiveConnectionRoster;
 use Hilos\Core\Daemon\Master\MasterFailureUnit;
+use Hilos\Core\Daemon\PageAgentRestartDoor;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -40,6 +41,7 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Agent\Exception\WorkerClientNotFoundException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException as FrameworkLogicException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
@@ -158,6 +160,9 @@ abstract class WorkerServer extends AbstractServer implements
     /** @var ?LiveConnectionRoster Master seam naming the node's live sockets, wired at registration */
     private ?LiveConnectionRoster $liveConnectionRoster = null;
 
+    /** Page-only restart entrance, wired by this server's master at registration. */
+    private ?PageAgentRestartDoor $pageAgentRestartDoor = null;
+
     /**
      * @var array<string, true> Agents this node may not start, keyed by agent id (HIL-696).
      *
@@ -268,6 +273,21 @@ abstract class WorkerServer extends AbstractServer implements
         $this->liveConnectionRoster = $liveConnectionRoster;
     }
 
+    /** @param PageAgentRestartDoor $door This server's master entrance for admitted page requests */
+    public function setPageAgentRestartDoor(PageAgentRestartDoor $door): void
+    {
+        $this->pageAgentRestartDoor = $door;
+    }
+
+    /**
+     * @return PageAgentRestartDoor Registered page restart entrance
+     * @throws FrameworkLogicException When server registration never wired the entrance
+     */
+    public function getPageAgentRestartDoor(): PageAgentRestartDoor
+    {
+        return $this->pageAgentRestartDoor ?? throw new FrameworkLogicException('Worker server has no page agent restart door');
+    }
+
     /**
      * Called when a new worker client connection is accepted.
      *
@@ -277,7 +297,7 @@ abstract class WorkerServer extends AbstractServer implements
      */
     protected function onCreateClient($socket): WorkerClientInterface
     {
-        return new WorkerClient($socket, $this->agentManager);
+        return new WorkerClient($socket, $this->agentManager, $this);
     }
 
     /**

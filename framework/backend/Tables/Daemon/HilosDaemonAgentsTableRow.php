@@ -7,11 +7,12 @@ namespace Hilos\Tables\Daemon;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
-/** One started agent in a node's daemon picture, keyed by its instance id. */
+/** One live or restarting agent in a node's daemon picture, keyed by its instance id. */
 final class HilosDaemonAgentsTableRow extends AbstractTableRow
 {
     public const string rowKey = 'rowKey';
     public const string agentId = 'agentId';
+    public const string restarting = 'restarting';
     public const string workerIndex = 'workerIndex';
     public const string workerKind = 'workerKind';
     public const string placement = 'placement';
@@ -29,8 +30,9 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
     /**
      * @param string $rowKey Agent instance id
      * @param string $agentId Agent instance id
-     * @param int $workerIndex Index of the live worker
-     * @param string $workerKind Regular or monopolistic worker kind
+     * @param bool $restarting Whether the master still holds an open restart
+     * @param ?int $workerIndex Index of the live worker, or null between instances
+     * @param ?string $workerKind Regular or monopolistic worker kind, or null between instances
      * @param string $placement Node, leader, or policy placement
      * @param bool $idle Whether the agent has an idle timeout
      * @param list<array{collection: string, width: string}> $ownsRt Declared runtime ownership
@@ -40,8 +42,9 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
     public function __construct(
         public string $rowKey,
         public string $agentId,
-        public int $workerIndex,
-        public string $workerKind,
+        public bool $restarting,
+        public ?int $workerIndex,
+        public ?string $workerKind,
         public string $placement,
         public bool $idle,
         public array $ownsRt,
@@ -68,6 +71,7 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
         return [
             self::rowKey => $this->rowKey,
             self::agentId => $this->agentId,
+            self::restarting => $this->restarting,
             self::workerIndex => $this->workerIndex,
             self::workerKind => $this->workerKind,
             self::placement => $this->placement,
@@ -85,11 +89,18 @@ final class HilosDaemonAgentsTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        foreach ([self::workerIndex, self::workerKind] as $field) {
+            if (!array_key_exists($field, $data)) {
+                throw new InvalidFormatException('Agent row is missing required nullable field ' . $field);
+            }
+        }
+
         return new static(
             rowKey: self::requireString($data, self::rowKey),
             agentId: self::requireString($data, self::agentId),
-            workerIndex: self::requireInt($data, self::workerIndex),
-            workerKind: self::requireString($data, self::workerKind),
+            restarting: self::requireBool($data, self::restarting),
+            workerIndex: self::optionalInt($data, self::workerIndex),
+            workerKind: self::optionalString($data, self::workerKind),
             placement: self::requireString($data, self::placement),
             idle: self::requireBool($data, self::idle),
             ownsRt: self::ownershipList($data, self::ownsRt),

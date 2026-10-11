@@ -22,6 +22,7 @@ use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonCronRulePicture;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
@@ -110,6 +111,30 @@ final class HilosDaemonAgentsPageWindowTest extends TestCase
         $this->browser()->windows = [];
         $agent->onStop();
         $this->deliver($agent, $changed);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+    }
+
+    public function testLeaderRestartMarkAloneResendsTheOriginalNodesWindowAndCompletionResendsAgain(): void
+    {
+        $this->subscribe(self::VIEWER, 'n1');
+        $agent = new DaemonAgentsWindowTestAgent();
+        $this->deliverNodes($agent, [
+            $this->node('n1', true, $this->roster(1)),
+            $this->node('leader', true, new DaemonProcessRoster([], [], 0)),
+        ]);
+        $this->browser()->pages = [];
+        $this->browser()->windows = [];
+
+        $marked = new DaemonProcessRoster([], [], 0, [new DaemonRestartingAgent('agent:a', 'n1')]);
+        $this->deliverNodes($agent, [$this->node('leader', true, $marked)], false);
+        self::assertSame([], $this->browser()->pages);
+        self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
+        $this->browser()->windows = [];
+        $this->deliverNodes($agent, [$this->node('leader', true, $marked)], false);
+        $this->deliverNodes($agent, [$this->node('n1', true, $this->roster(1, memory: 16384))], false);
+        self::assertSame([], $this->browser()->windows);
+
+        $this->deliverNodes($agent, [$this->node('leader', true, new DaemonProcessRoster([], [], 0))], false);
         self::assertSame([[HilosPageConstants::HILOS_DAEMON_AGENTS, self::VIEWER]], $this->browser()->windows);
     }
 

@@ -11,15 +11,18 @@ use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
+use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use PHPUnit\Framework\TestCase;
 
 /** The agents page answers the node line and roster status in its own page data. */
@@ -70,6 +73,27 @@ final class HilosDaemonAgentsPageAnswerTest extends TestCase
 
         $this->publish(new DaemonProcessRoster([], null, 0));
         self::assertTrue($page->payload($this->address())->data[AbstractHilosDaemonAgentsPage::PROCESSES_REPORTED]);
+    }
+
+    public function testNewSubscriberDuringRestartReadsTheMarkerWithoutAPreviousLiveRow(): void
+    {
+        $this->publish(new DaemonProcessRoster([], null, 0));
+        ClusterDaemonPictureMirror::applyPortion(new DaemonClusterPicturePortionSignalData(false, [
+            new ClusterDaemonNodeView('leader', true, new ClusterDaemonNodeSlot(
+                'leader', new NodeDaemonPicture('leader', NodeRole::Master, 10, new DaemonProcessRoster(
+                    [], [], 0, [new DaemonRestartingAgent('agent:a', 'n1')],
+                )), 10,
+            )),
+        ]));
+        $page = new DaemonAgentsAnswerTestPage(new DaemonCollectorAgent());
+        self::assertTrue($page->payload($this->address())->data[AbstractHilosDaemonAgentsPage::PROCESSES_REPORTED]);
+        $rows = new HilosDaemonAgentsTable()->getPage(new TableQueryDTO(
+            filter: [HilosDaemonAgentsTable::FILTER_NODE => 'n1'],
+        ))->rows;
+        self::assertCount(1, $rows);
+        self::assertSame('agent:a', $rows[0]->getRowKey());
+        self::assertTrue($rows[0]->toArray()['restarting']);
+        self::assertNull($rows[0]->toArray()['workerIndex']);
     }
 
     public function testClusteredAnswerUsesThePicturesStateWord(): void

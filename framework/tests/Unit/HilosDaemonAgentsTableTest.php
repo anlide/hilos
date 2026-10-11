@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -16,6 +17,8 @@ use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonProcessRoster;
+use Hilos\DaemonSection\DaemonRestartingAgents;
+use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
@@ -122,11 +125,111 @@ final class HilosDaemonAgentsTableTest extends TestCase
 
     public function testMalformedOwnershipWidthIsRejected(): void
     {
-        $row = new HilosDaemonAgentsTableRow('x:1', 'x:1', 1, 'regular', 'node', false, [], [], 'agent-x_1.log');
+        $row = new HilosDaemonAgentsTableRow('x:1', 'x:1', false, 1, 'regular', 'node', false, [], [], 'agent-x_1.log');
         $data = $row->toArray();
         $data[HilosDaemonAgentsTableRow::ownsRt] = [['collection' => 'rt_a', 'width' => 'other']];
         $this->expectException(InvalidFormatException::class);
         HilosDaemonAgentsTableRow::fromArray($data);
+    }
+
+    public function testLeaderMarkKeepsAnAbsentInstanceOnItsOriginalNodeUntilMoveCompletes(): void
+    {
+        $worker = new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, 123, 8192, [
+            new DaemonAgentPicture('x:2', DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::PLACEMENT_POLICY),
+        ]);
+        $mark = new DaemonRestartingAgent('x:2', 'n1');
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0)));
+        self::assertFalse($this->rows('n1')[0]->restarting);
+
+        $this->picture(
+            $this->node('n1', new DaemonProcessRoster([$worker], [], 0)),
+            $this->node('leader', new DaemonProcessRoster([], [], 0, [$mark])),
+        );
+        self::assertTrue($this->rows('n1')[0]->restarting);
+        self::assertSame(1, $this->rows('n1')[0]->workerIndex);
+
+        $this->picture(
+            $this->node('n1', new DaemonProcessRoster([], [], 0)),
+            $this->node('leader', new DaemonProcessRoster([], [], 0, [$mark])),
+        );
+        $row = $this->rows('n1')[0];
+        self::assertTrue($row->restarting);
+        self::assertNull($row->workerIndex);
+        self::assertNull($row->workerKind);
+        self::assertSame(DaemonAgentPicture::PLACEMENT_POLICY, $row->placement);
+        self::assertTrue($row->idle);
+        self::assertCount(3, $row->ownsRt);
+        self::assertCount(3, $row->ownsDb);
+        self::assertSame('agent-x_2.log', $row->logStream);
+        self::assertSame($row->toArray(), HilosDaemonAgentsTableRow::fromArray($row->toArray())->toArray());
+        self::assertSame([], $this->rows('leader'));
+        self::assertSame([], $this->rows('another'));
+        self::assertSame([], new HilosDaemonAgentsTable()->getPage(new TableQueryDTO())->rows);
+
+        $table = new HilosDaemonAgentsTable();
+        $query = new TableQueryDTO(search: 'x:2', filter: [HilosDaemonAgentsTable::FILTER_NODE => 'n1']);
+        self::assertSame('x:2', $table->getPage($query)->rows[0]->getRowKey());
+        self::assertTrue($table->containsRow('x:2', $table->scopeSearch($query)));
+
+        $this->picture(
+            $this->node('n1', new DaemonProcessRoster([], [], 0)),
+            $this->node('leader', new DaemonProcessRoster([], [], 0)),
+            $this->node('n2', new DaemonProcessRoster([$worker], [], 0)),
+        );
+        self::assertSame([], $this->rows('n1'));
+        self::assertFalse($this->rows('n2')[0]->restarting);
+    }
+
+    public function testRestartProjectionDeduplicatesAllSlotsAndNaturallySortsOnlyTheSelectedNodesMarks(): void
+    {
+        $this->picture(
+            $this->node('leader', new DaemonProcessRoster([], [], 0, [
+                new DaemonRestartingAgent('x:10', 'n1'),
+                new DaemonRestartingAgent('x:2', 'n1'),
+                new DaemonRestartingAgent('x:3', 'n2'),
+            ])),
+            $this->node('n1', new DaemonProcessRoster([], [], 0, [new DaemonRestartingAgent('x:2', 'n1')])),
+        );
+        self::assertSame(['x:2', 'x:10'], array_map(
+            static fn (DaemonRestartingAgent $agent): string => $agent->id,
+            DaemonRestartingAgents::forNode(ClusterDaemonPictureMirror::picture(), 'n1'),
+        ));
+        self::assertSame(['x:2', 'x:10'], array_map(static fn ($row): string => $row->rowKey, $this->rows('n1')));
+
+        $this->picture($this->node('n1', new DaemonProcessRoster([], [], 0)));
+        self::assertSame([], $this->rows('n1'));
+    }
+
+    public function testRestartFailureClearsTheMarkOnTheStillLiveInstance(): void
+    {
+        $worker = new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, null, null, [
+            new DaemonAgentPicture('x:1', DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::PLACEMENT_NODE),
+        ]);
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0, [new DaemonRestartingAgent('x:1', 'n1')])));
+        self::assertTrue($this->rows('n1')[0]->restarting);
+        $this->picture($this->node('n1', new DaemonProcessRoster([$worker], [], 0)));
+        self::assertFalse($this->rows('n1')[0]->restarting);
+    }
+
+    public function testRequiredNullableWorkerFieldsRejectAbsenceAndWrongTypes(): void
+    {
+        $row = new HilosDaemonAgentsTableRow('x:1', 'x:1', true, null, null, 'node', false, [], [], 'agent-x_1.log');
+        foreach ([HilosDaemonAgentsTableRow::workerIndex, HilosDaemonAgentsTableRow::workerKind] as $field) {
+            foreach (['absent', 'wrong'] as $invalid) {
+                $data = $row->toArray();
+                if ($invalid === 'absent') {
+                    unset($data[$field]);
+                } else {
+                    $data[$field] = false;
+                }
+                try {
+                    HilosDaemonAgentsTableRow::fromArray($data);
+                    self::fail('A required nullable worker field was accepted without its proper value');
+                } catch (InvalidFormatException $exception) {
+                    self::assertStringContainsString($field, $exception->getMessage());
+                }
+            }
+        }
     }
 
     public function testRegistryEntryWithoutAWorkerClassHasNoDeclaration(): void
@@ -184,6 +287,7 @@ abstract class DaemonAgentsTableTestHilos extends Hilos
             AgentRegistryKey::WORKER => DaemonAgentsTableTestAgent::class,
             AgentRegistryKey::INDEXED => true,
             AgentRegistryKey::IDLE_TIMEOUT => 60,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         'absent' => [AgentRegistryKey::WORKER => 'NoSuchDaemonAgent'],
     ];
