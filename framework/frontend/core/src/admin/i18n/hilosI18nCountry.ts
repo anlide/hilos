@@ -19,6 +19,8 @@ export const countryCardSchema = z.strictObject({
     isOwn: z.boolean(),
     defaultLocaleCode: z.string().nullable(),
     defaultLocale: z.enum(['missing', 'off', 'on']),
+    localeCount: z.number().int().nonnegative(),
+    nameCount: z.number().int().nonnegative(),
     canDelete: z.boolean(),
     deleteReason: z.enum(['known', 'locales', 'names']).nullable(),
   }),

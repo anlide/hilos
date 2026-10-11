@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
   HILOS_I18N_COUNTRY_SWITCH_ON_ACTION,
   HILOS_I18N_COUNTRY_SWITCH_ON_COPY,
+  createHilosI18nCountrySwitchOff,
   createHilosI18nCountrySwitchOn,
   hilosI18nCountryLabel,
   hilosI18nCountrySwitchOn,
@@ -24,6 +26,8 @@ const card: HilosI18nCountryCard = {
     isOwn: false,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
+    localeCount: 0,
+    nameCount: 0,
     canDelete: true,
     deleteReason: null,
   },
@@ -122,6 +126,30 @@ describe('country switch-on', () => {
     expect(sent).toEqual([
       {
         action: HILOS_I18N_COUNTRY_SWITCH_ON_ACTION,
+        payload: { countryCode: 'ca' },
+      },
+    ])
+  })
+})
+
+describe('country switch-off', () => {
+  it('dispatches the agreed action and countryCode payload', () => {
+    const sent: Array<{ action: string; payload: unknown }> = []
+    const handle = { requestId: 'switch-off-country-request' }
+    const actions = {
+      dispatch: (action: string, payload: unknown) => {
+        sent.push({ action, payload })
+        return handle
+      },
+    } as unknown as ActionLifecycle
+    const context = { actions } as HilosI18nCountryContext
+
+    expect(createHilosI18nCountrySwitchOff(context).switchOff('ca')).toBe(
+      handle,
+    )
+    expect(sent).toEqual([
+      {
+        action: HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
         payload: { countryCode: 'ca' },
       },
     ])

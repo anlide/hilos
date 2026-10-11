@@ -27,6 +27,8 @@ const initialCard: HilosI18nCountryCard = {
     isOwn: false,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
+    localeCount: 0,
+    nameCount: 0,
     canDelete: false,
     deleteReason: 'known',
   },
@@ -139,6 +141,8 @@ describe('HilosI18nCountryPage', () => {
         isOwn: true,
         defaultLocaleCode: null,
         defaultLocale: 'missing',
+        localeCount: 0,
+        nameCount: 0,
         canDelete: true,
         deleteReason: null,
       },
@@ -185,7 +189,12 @@ describe('HilosI18nCountryPage', () => {
     expect(h.view.find('[data-id="country-card-enabled"]').text()).toBe(
       'Enabled',
     )
-    expect(h.view.findAll('button')).toHaveLength(0)
+    expect(
+      h.view.find('[data-id="country-card-state"]').findAll('button'),
+    ).toHaveLength(1)
+    expect(h.view.find('[data-id="country-card-switch-off"]').exists()).toBe(
+      true,
+    )
 
     h.scope.data.set(COUNTRY_CARD_DATA, {
       ...initialCard,

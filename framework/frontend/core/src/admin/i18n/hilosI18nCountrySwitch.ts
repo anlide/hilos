@@ -4,9 +4,27 @@ import {
   type HilosI18nCountryContext,
 } from './hilosI18nCountry.js'
 
+/** Tracked page action that switches off one country. */
+export const HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION =
+  'hilos_i18n_country_switch_off'
+
 /** Tracked page action that switches on one country. */
 export const HILOS_I18N_COUNTRY_SWITCH_ON_ACTION =
   'hilos_i18n_country_switch_on'
+
+/** Words shared by the country switch-off control and its confirmation window. */
+export const HILOS_I18N_COUNTRY_SWITCH_OFF_COPY = {
+  open: 'Switch off',
+  title: (label: string) => `Switch off country · ${label}`,
+  body: 'Switching a country off is the first step of editing it: while it is off, nothing keeps its fields frozen.',
+  localeCount: 'Locales of this country:',
+  nameCount: 'names:',
+  note: 'Locales and names stay in place and come back with the country.',
+  cancel: 'Cancel',
+  confirm: 'Switch off',
+  refusalTitle: "Couldn't switch off the country",
+  elsewhere: 'Switched off elsewhere just now.',
+} as const
 
 /** Words shared by the country switch-on control and its confirmation window. */
 export const HILOS_I18N_COUNTRY_SWITCH_ON_COPY = {
@@ -67,6 +85,22 @@ export function hilosI18nCountrySwitchOn(card: HilosI18nCountryCard | null): {
     shown: card.enabled === false,
     defaultLocale,
     note,
+  }
+}
+
+/**
+ * The tracked switch-off operation bound to the project action lifecycle.
+ *
+ * @param context The country page context providing the action dispatcher.
+ */
+export function createHilosI18nCountrySwitchOff(
+  context: HilosI18nCountryContext,
+): { switchOff(countryCode: string): ActionHandle } {
+  return {
+    switchOff: (countryCode) =>
+      context.actions.dispatch(HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION, {
+        countryCode,
+      }),
   }
 }
 

@@ -44,6 +44,16 @@ class CountryNames extends DbCollection
     }
 
     /**
+     * @param int $countryId Named country primary id
+     * @return int Number of nonempty base names in every language
+     * @throws DatabaseException When the query fails
+     */
+    public function countBaseNamesForCountry(int $countryId): int
+    {
+        return $this->objectCollection->countBaseNamesForCountry($countryId);
+    }
+
+    /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
      * @return ?CountryName Base row, or null

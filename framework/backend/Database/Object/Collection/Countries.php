@@ -54,7 +54,8 @@ class Countries extends Objects
             isOwn: BuiltInI18nCatalog::country($country->code) === null,
             defaultLocaleCode: $country->defaultLocaleId === null ? null : Hilos::$db->locales[$country->defaultLocaleId]?->code,
             defaultLocaleEnabled: $country->defaultLocaleId === null ? null : Hilos::$db->locales->enabledById($country->defaultLocaleId),
-            hasLocales: Hilos::$db->locales->hasForCountry($countryId),
+            localeCount: Hilos::$db->locales->countForCountry($countryId),
+            nameCount: Hilos::$db->countryNames->countBaseNamesForCountry($countryId),
             hasNames: Hilos::$db->countryNames->hasForCountry($countryId),
         );
     }

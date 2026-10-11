@@ -48,6 +48,20 @@ class CountryNames extends Objects
     }
 
     /**
+     * @param int $countryId Named country primary id
+     * @return int Number of nonempty base names in every language
+     * @throws DatabaseException When the query fails
+     */
+    public function countBaseNamesForCountry(int $countryId): int
+    {
+        return static::entityClass()::count(
+            '`' . EntityCountryName::country_id . '` = ? AND `' . EntityCountryName::locale_id . '` IS NULL AND `'
+                . EntityCountryName::name . '` <> ?',
+            [$countryId, ''],
+        );
+    }
+
+    /**
      * @param int $countryId Named country id
      * @param int $languageId Writing language id
      * @return ?ObjectCountryName Base row, or null

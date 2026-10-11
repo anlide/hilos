@@ -48,12 +48,12 @@ class Locales extends Objects
 
     /**
      * @param int $countryId Country primary id
-     * @return bool Whether any locale refers to it, regardless of enabled state
+     * @return int Number of its locales, regardless of enabled state
      * @throws DatabaseException When the query fails
      */
-    public function hasForCountry(int $countryId): bool
+    public function countForCountry(int $countryId): int
     {
-        return static::entityClass()::count([EntityLocale::country_id => $countryId]) > 0;
+        return static::entityClass()::count([EntityLocale::country_id => $countryId]);
     }
 
     /**

@@ -47,6 +47,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         CliCommands::I18N_TEST_LANGUAGE_OFF,
         CliCommands::I18N_TEST_LOCALE_ON,
         CliCommands::I18N_TEST_COUNTRY_OFF,
+        CliCommands::I18N_TEST_COUNTRY_ON,
     ];
 
     /**
@@ -69,6 +70,9 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 return;
             case CliCommands::I18N_TEST_COUNTRY_OFF:
                 $this->handleCountryOffCommand($data);
+                return;
+            case CliCommands::I18N_TEST_COUNTRY_ON:
+                $this->handleCountryOnCommand($data);
                 return;
             default:
                 $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
@@ -264,16 +268,37 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      * @param CommandRequestDTO $data Request carrying a built-in country code
      * @throws HilosException When the command reply cannot be sent
      */
+    private function handleCountryOnCommand(CommandRequestDTO $data): void
+    {
+        $this->switchBuiltInCountry($data, true);
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request carrying a built-in country code
+     * @throws HilosException When the command reply cannot be sent
+     */
     private function handleCountryOffCommand(CommandRequestDTO $data): void
+    {
+        $this->switchBuiltInCountry($data, false);
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request carrying a built-in country code
+     * @param bool $enabled Target enabled state
+     * @throws HilosException When the command reply cannot be sent
+     */
+    private function switchBuiltInCountry(CommandRequestDTO $data, bool $enabled): void
     {
         $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
         if (!is_string($code)) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Country code must be a string'));
+
             return;
         }
         $definition = BuiltInI18nCatalog::country($code);
         if ($definition === null) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown built-in country code '{$code}'"));
+
             return;
         }
 
@@ -285,7 +310,11 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                     $definition->currencySymbol,
                     $definition->currencyCode,
                 );
-            $country->actions->switchOff();
+            if ($enabled) {
+                $country->actions->switchOn();
+            } else {
+                $country->actions->switchOff();
+            }
             Database::transactionCommit();
         } catch (WiringRefusal $refusal) {
             Database::transactionRollback();
@@ -297,12 +326,13 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 // Preserve the failure that prevented the command.
             }
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
             return;
         }
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             I18nTestCommandConstants::FIELD_CODE => $definition->code,
-            I18nTestCommandConstants::FIELD_ENABLED => false,
+            I18nTestCommandConstants::FIELD_ENABLED => $enabled,
         ]));
     }
 

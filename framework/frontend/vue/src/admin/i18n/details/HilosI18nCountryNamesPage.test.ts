@@ -29,6 +29,8 @@ const initialCard: HilosI18nCountryCard = {
     isOwn: false,
     defaultLocaleCode: null,
     defaultLocale: 'missing',
+    localeCount: 0,
+    nameCount: 0,
     canDelete: false,
     deleteReason: 'known',
   },

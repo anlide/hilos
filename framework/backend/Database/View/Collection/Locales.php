@@ -44,12 +44,12 @@ class Locales extends DbCollection
 
     /**
      * @param int $countryId Country primary id
-     * @return bool Whether any locale refers to it, regardless of enabled state
+     * @return int Number of its locales, regardless of enabled state
      * @throws DatabaseException When the query fails
      */
-    public function hasForCountry(int $countryId): bool
+    public function countForCountry(int $countryId): int
     {
-        return $this->objectCollection->hasForCountry($countryId);
+        return $this->objectCollection->countForCountry($countryId);
     }
 
     /**

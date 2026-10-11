@@ -275,6 +275,9 @@ final class HilosSignalConstants
     /** Client → country page: switch on one country; the page replies with action success or failure. */
     public const string HILOS_I18N_COUNTRY_SWITCH_ON = 'hilos_i18n_country_switch_on';
 
+    /** Client → country page: switch off one country; the page replies with action success or failure. */
+    public const string HILOS_I18N_COUNTRY_SWITCH_OFF = 'hilos_i18n_country_switch_off';
+
     /** Subscription signal for Hilos i18n country names. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_COUNTRY_NAMES = 'subscription_page_hilos_i18n_country_names';
 

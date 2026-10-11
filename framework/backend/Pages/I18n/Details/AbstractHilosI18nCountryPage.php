@@ -16,6 +16,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOnActionDTO;
 
 /**
@@ -31,6 +32,7 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON => HilosI18nCountrySwitchOnActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF => HilosI18nCountrySwitchOffActionDTO::class,
     ];
 
     /** @var list<string> Sources of the main country card */
@@ -67,6 +69,18 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
                     ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
                 $country->actions->switchOn();
                 $this->setActionSuccessMessage('Country switched on.');
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF:
+                if (!$dto instanceof HilosI18nCountrySwitchOffActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nCountrySwitchOffActionDTO::class, $dto);
+                }
+
+                $country = Hilos::$db->countries[$dto->countryCode]
+                    ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
+                $country->actions->switchOff();
+                $this->setActionSuccessMessage('Country switched off.');
 
                 return null;
 

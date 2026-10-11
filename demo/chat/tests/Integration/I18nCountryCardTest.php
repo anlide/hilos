@@ -82,6 +82,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function (): void {
             $english = Hilos::$db->languages->actions->create('en', 'English', false);
             $german = Hilos::$db->languages->actions->create('de', 'Deutsch', false);
+            $french = Hilos::$db->languages->actions->create('fr', 'Français', false);
             $known = Hilos::$db->countries->actions->create('us', '$', 'USD');
             $own = Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
 
@@ -90,6 +91,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'isOwn' => false,
                 'defaultLocaleCode' => null,
                 'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
+                'localeCount' => 0,
+                'nameCount' => 0,
                 'canDelete' => false,
                 'deleteReason' => CountryCardSummary::DELETE_KNOWN,
             ], Hilos::$db->countries->cardSummary($known->id)->toArray());
@@ -101,6 +104,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'isOwn' => true,
                 'defaultLocaleCode' => null,
                 'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
+                'localeCount' => 0,
+                'nameCount' => 0,
                 'canDelete' => true,
                 'deleteReason' => null,
             ], Hilos::$db->countries->cardSummary($own->id)->toArray());
@@ -126,12 +131,33 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 MeasurementSystem::METRIC,
                 'und',
             );
+            $locale->actions->switchOn();
+            $disabledLocale = Hilos::$db->locales->actions->create(
+                $german,
+                $own,
+                'YYYY-MM-DD',
+                'HH:mm:ss',
+                '1,000.00',
+                '+XX-XXXX-XXXX',
+                'Street, House, City, Index',
+                MeasurementSystem::METRIC,
+                'und',
+            );
+            Hilos::$db->countryNames->actions->createManual($own, $french, null, 'Qxlande');
+            Hilos::$db->countryNames->actions->createManual($own, $english, $locale, 'Qxland EN');
+
             Hilos::$db->countries['qx']->actions->update('¤', 'XQX', $locale->id);
             $withLocale = Hilos::$db->countries->cardSummary($own->id);
             self::assertSame('en-QX', $withLocale->defaultLocaleCode);
-            self::assertSame(CountryCardSummary::DEFAULT_LOCALE_OFF, $withLocale->defaultLocale);
+            self::assertSame(CountryCardSummary::DEFAULT_LOCALE_ON, $withLocale->defaultLocale);
+            self::assertSame(2, $withLocale->localeCount);
+            self::assertSame(2, $withLocale->nameCount);
             self::assertSame(CountryCardSummary::DELETE_LOCALES, $withLocale->deleteReason);
             self::assertFalse($withLocale->canDelete);
+
+            $locale->actions->switchOff();
+            $withOffLocale = Hilos::$db->countries->cardSummary($own->id);
+            self::assertSame(CountryCardSummary::DEFAULT_LOCALE_OFF, $withOffLocale->defaultLocale);
 
             Hilos::$db->countries['qx']->actions->switchOn();
             self::assertSame(CountryCardSummary::DELETE_LOCALES, Hilos::$db->countries->cardSummary($own->id)->deleteReason);
@@ -152,6 +178,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'isOwn' => true,
                 'defaultLocaleCode' => 'en-QX',
                 'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_OFF,
+                'localeCount' => 2,
+                'nameCount' => 2,
                 'canDelete' => false,
                 'deleteReason' => CountryCardSummary::DELETE_LOCALES,
             ],
@@ -211,7 +239,10 @@ final class I18nCountryCardTest extends IntegrationTestCase
             [EntityLocale::language_id => Hilos::$db->languages['en']->id, EntityLocale::country_id => $country->id],
         ));
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        $this->assertCardsForBoth(['summary' => ['deleteReason' => CountryCardSummary::DELETE_LOCALES]]);
+        $this->assertCardsForBoth(['summary' => [
+            'localeCount' => 1,
+            'deleteReason' => CountryCardSummary::DELETE_LOCALES,
+        ]]);
 
         $this->underAgent($this->agent, static function () use ($locale): void {
             Hilos::$db->countries['qx']->actions->update('Q', 'QXQ', $locale->id);
@@ -341,6 +372,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                     'isOwn' => false,
                     'defaultLocaleCode' => null,
                     'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
+                    'localeCount' => 0,
+                    'nameCount' => 1,
                     'canDelete' => false,
                     'deleteReason' => CountryCardSummary::DELETE_KNOWN,
                 ],

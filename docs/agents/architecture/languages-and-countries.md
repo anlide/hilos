@@ -195,7 +195,9 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   is needed, and the window notes when it is missing or switched off without
   blocking the switch. Tests switch off a known country with
   `test:i18n:country:off <code>`.
-- Switching a country off keeps its values (not in the code yet — HIL-1497).
+- Switching a country off keeps its values: the button on the card opens a
+  confirmation window with the count of locales and names, and they stay in
+  place. Tests switch on a known country with `test:i18n:country:on <code>`.
 - A locale is switched on from its own modal (not in the code yet — HIL-1493).
 - A locale is switched off from its own modal (not in the code yet — HIL-1494).
 - Switching off the countryless locale of a switched-on language warns;
@@ -458,9 +460,10 @@ Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
 at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the
 name, code, currency, default locale, enabled state, the switch-on window's
-default locale note, and read-only delete verdict: a known country never, else
-locales, else any name row, block deletion. The main card has a Switch on
-control (HIL-1498); its other action controls belong to HIL-1496/1497/1499.
+default locale note, the switch-off window's locale and name counts, and
+read-only delete verdict: a known country never, else locales, else any name
+row, block deletion. The main card has Switch on and Switch off controls
+(HIL-1498, HIL-1497); its other action controls belong to HIL-1496/1499.
 React and Angular stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the

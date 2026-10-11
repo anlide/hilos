@@ -282,6 +282,15 @@ final class CliCommands
     public const string I18N_TEST_COUNTRY_OFF = 'test:i18n:country:off';
 
     /**
+     * Create and switch on a known country through the i18n library (test-only).
+     *
+     * The CLI process has no write ownership; the library answers over the command channel.
+     *
+     * @var string Command: Switch on a built-in country (test-only)
+     */
+    public const string I18N_TEST_COUNTRY_ON = 'test:i18n:country:on';
+
+    /**
      * Append lines to this node's own log through the live daemon (test-only).
      *
      * Doubles as the command-channel wire name routed to {@see LogStoreAgent}, the same

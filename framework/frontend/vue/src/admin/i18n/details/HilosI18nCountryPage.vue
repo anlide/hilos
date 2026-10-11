@@ -12,6 +12,7 @@ import HilosAdminPage from '../../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCountryHeader from './HilosI18nCountryHeader.vue'
+import HilosI18nCountrySwitchOff from './HilosI18nCountrySwitchOff.vue'
 import HilosI18nCountrySwitchOn from './HilosI18nCountrySwitchOn.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
@@ -94,6 +95,7 @@ const loading = useSignal(router.pageLoading)
             </span>
             <div class="mt-2">
               <HilosI18nCountrySwitchOn :context="context" :card="card" />
+              <HilosI18nCountrySwitchOff :context="context" :card="card" />
             </div>
           </dd>
           <dt class="col-sm-4">Delete country</dt>
