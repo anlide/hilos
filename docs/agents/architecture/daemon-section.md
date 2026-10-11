@@ -250,6 +250,14 @@ from different sources, and `per_node` keys, which differ by design. Each key
 has a `known`, `unknown` or `undeclared` cell for every node; a silent node is
 unknown, while a missing declaration on an answering node is a discrepancy.
 
+The Env mismatch page holds two tables, `hilosDaemonEnvDiverged` and
+`hilosDaemonEnvSourcesDiffer`, built by the page agent from that comparison:
+per node a label, a type and a source. The one value they carry is the serving
+node's own, read in the page agent's process as the environment page reads its
+node's: never for a `sensitive` key, hidden for a view-mode viewer unless the
+catalog opens it. Their windows travel whole when a picture portion changes
+the comparison.
+
 The September 16 decision carried fingerprints in synchronized RT; the October 4
 decomposition moved them to the node frame, preserving the boundary on values.
 

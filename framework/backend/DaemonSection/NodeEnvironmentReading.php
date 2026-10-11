@@ -8,7 +8,7 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Environment\EnvResolution;
 use Hilos\Environment\EnvSource;
 
-/** Node-local environment values; only view() may turn them into a wire shape. */
+/** Node-local environment values and the shared masked wire shape for their values. */
 final readonly class NodeEnvironmentReading
 {
     public const string NODE_ID = 'nodeId';
@@ -131,9 +131,9 @@ final readonly class NodeEnvironmentReading
      * @param EnvResolution $resolution Source and raw value
      * @param bool $hidden Whether a viewer must not see a present value
      * @param bool $sensitive Whether an administrator receives only its length
-     * @return array<string, mixed> Masked value on the wire
+     * @return array<string, mixed> Masked value on the wire, also used for the Env mismatch tables' own-node value
      */
-    private static function valueView(EnvResolution $resolution, bool $hidden, bool $sensitive): array
+    public static function valueView(EnvResolution $resolution, bool $hidden, bool $sensitive): array
     {
         if ($resolution->source === EnvSource::MISSING) {
             return [self::KIND => self::KIND_NONE];

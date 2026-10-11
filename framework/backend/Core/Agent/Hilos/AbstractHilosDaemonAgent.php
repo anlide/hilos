@@ -17,6 +17,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonHttpServerPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
@@ -58,6 +59,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
         AbstractHilosDaemonCronPage::onPictureForgotten();
         AbstractHilosDaemonHttpServerPage::onPictureForgotten();
         AbstractHilosDaemonWorkersPage::onPictureForgotten();
+        AbstractHilosDaemonEnvMismatchPage::onPictureForgotten();
         AbstractHilosDaemonPage::onPictureForgotten();
         $this->rosteredViewers = [];
     }
@@ -82,6 +84,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
                     AbstractHilosDaemonCronPage::onPictureChanged();
                     AbstractHilosDaemonHttpServerPage::onPictureChanged();
                     AbstractHilosDaemonWorkersPage::onPictureChanged();
+                    AbstractHilosDaemonEnvMismatchPage::onPictureChanged();
                     AbstractHilosDaemonPage::onPictureChanged();
                 }
 

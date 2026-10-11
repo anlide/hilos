@@ -131,6 +131,8 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -717,6 +719,8 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             PollsTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             PollsTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+            PollsTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
+            PollsTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
             PollsTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             PollsTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
@@ -755,6 +759,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 DaemonEnvPage::PAGE,
                 DaemonPage::PAGE,
                 DaemonAgentsPage::PAGE,
+                DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
@@ -1018,6 +1023,10 @@ final class PollsTopologyRegistryTest extends TestCase
             [PollsTableContext::hilosDaemonAgents => []],
             Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE],
         );
+        $this->assertSame([
+            PollsTableContext::hilosDaemonEnvDiverged => [],
+            PollsTableContext::hilosDaemonEnvSourcesDiffer => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
         $this->assertSame(
             [PollsTableContext::hilosDaemonHttpRoutes => []],
             Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE],

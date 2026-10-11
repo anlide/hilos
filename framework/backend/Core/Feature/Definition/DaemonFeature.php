@@ -18,13 +18,15 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 
-/** The Daemon section's eight pages, three agents, and seven node tables form one feature. */
+/** The Daemon section's eight pages, three agents, node tables and comparison tables form one feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -58,6 +60,8 @@ final class DaemonFeature extends FeatureDefinition
                 HilosDaemonEnvKeysTable::class,
                 HilosDaemonEnvOrphansTable::class,
                 HilosDaemonAgentsTable::class,
+                HilosDaemonEnvDivergedTable::class,
+                HilosDaemonEnvSourcesDifferTable::class,
                 HilosDaemonHttpRoutesTable::class,
                 HilosDaemonPlacementTable::class,
             ],
@@ -66,6 +70,10 @@ final class DaemonFeature extends FeatureDefinition
                 AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
                 AbstractHilosDaemonEnvPage::class => [HilosDaemonEnvKeysTable::class, HilosDaemonEnvOrphansTable::class],
                 AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
+                AbstractHilosDaemonEnvMismatchPage::class => [
+                    HilosDaemonEnvDivergedTable::class,
+                    HilosDaemonEnvSourcesDifferTable::class,
+                ],
                 AbstractHilosDaemonHttpServerPage::class => HilosDaemonHttpRoutesTable::class,
                 AbstractHilosDaemonPage::class => HilosDaemonPlacementTable::class,
             ],

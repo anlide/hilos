@@ -126,6 +126,8 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvDivergedTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvSourcesDifferTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
@@ -723,6 +725,8 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             TasksTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             TasksTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+            TasksTableContext::hilosDaemonEnvDiverged => HilosDaemonEnvDivergedTable::class,
+            TasksTableContext::hilosDaemonEnvSourcesDiffer => HilosDaemonEnvSourcesDifferTable::class,
             TasksTableContext::hilosDaemonHttpRoutes => HilosDaemonHttpRoutesTable::class,
             TasksTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
@@ -762,6 +766,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 DaemonEnvPage::PAGE,
                 DaemonPage::PAGE,
                 DaemonAgentsPage::PAGE,
+                DaemonEnvMismatchPage::PAGE,
                 DaemonHttpServerPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
@@ -974,6 +979,10 @@ final class TasksTopologyRegistryTest extends TestCase
             [TasksTableContext::hilosDaemonAgents => []],
             Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE],
         );
+        $this->assertSame([
+            TasksTableContext::hilosDaemonEnvDiverged => [],
+            TasksTableContext::hilosDaemonEnvSourcesDiffer => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvMismatchPage::PAGE]);
         $this->assertSame(
             [TasksTableContext::hilosDaemonHttpRoutes => []],
             Hilos::PAGE_TABLES[DaemonHttpServerPage::PAGE],
