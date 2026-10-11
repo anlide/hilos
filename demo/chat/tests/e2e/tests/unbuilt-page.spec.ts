@@ -21,10 +21,13 @@ test('draws no card for a page the view layer has not built', async ({
   await signUpAdmin(page)
   await gotoPage(page, '/hilos')
   await expect(page.getByTestId('dashboard-card-hilos_users')).toBeVisible()
-  for (const key of ['hilos_roles', 'hilos_daemon', 'hilos_billing']) {
+  for (const key of [
+    'hilos_roles',
+    'hilos_daemon',
+    'hilos_billing',
+    'hilos_mcp_skills',
+    'hilos_sil',
+  ]) {
     await expect(page.getByTestId(`dashboard-card-${key}`)).toHaveCount(0)
   }
-  await expect(page.getByTestId('dashboard-view')).not.toContainText(
-    'Automation & intelligence',
-  )
 })

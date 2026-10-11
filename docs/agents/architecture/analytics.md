@@ -94,7 +94,8 @@ starts ([legal-documents.md](legal-documents.md)); the project states what it
 collects, how long it keeps it, and what remains after account deletion.
 
 The admin analytics section comes with this same case, with no case of its own;
-see [The Admin Section](#the-admin-section). Its visible overview is HIL-1418.
+see [The Admin Section](#the-admin-section). Its overview opens in Vue; the React
+and Angular views follow in HIL-1421.
 All six demos with accounts — chat, binance-btc-tracker, ecommerce-shop, tasks,
 online-testing and polls — declare it. The owner, 04.10.2026: «Аналитику включить
 во всех 6 demo» — "Turn analytics on in all six demos".
@@ -375,11 +376,12 @@ it inherits `PageAccessLevel::ADMIN` from `AbstractHilosPage`. The framework's
 its pages; chat's subclass only binds that base. The section has no feature case
 of its own. `HilosFeature::ANALYTICS` requires the section agent and page, and
 activation refuses either artifact without the feature. The dashboard's served
-page list controls card availability; the visible overview card is HIL-1418.
+page list controls card availability; the overview card is visible in a view
+layer that has built the section, currently Vue.
 
-- The overview is empty apart from one line explaining that a person's actions
-  open from their admin page, with a link to the users list
-  (not in the code yet — HIL-1418).
+- The Vue overview is empty apart from one line explaining that a person's actions
+  open from their admin page, with an "Open users" link when the users-list path
+  resolves. It carries no values, so an admin-view-mode viewer sees the same line.
 - A browser-session page shows its actions in order — when, on which page, and
   the action's name — with a short browser description in the header
   (not in the code yet — HIL-1419).

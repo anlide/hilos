@@ -70,7 +70,8 @@ where an admin closes the system to visitors by hand
 A framework section may also come with a feature case that is not its own. The
 analytics section has no separate case: `HilosFeature::ANALYTICS` enables both
 collection and the section. Activation requires its agent and base page and
-refuses them without the feature. The visible overview card follows in HIL-1418.
+refuses them without the feature. The overview card and empty overview are built
+in Vue; React and Angular follow in HIL-1421.
 For what the backend reads and the later pages show,
 see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 

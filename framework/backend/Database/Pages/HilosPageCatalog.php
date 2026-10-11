@@ -455,7 +455,7 @@ final class HilosPageCatalog
         // — Automation & intelligence —
         HilosPageConstants::HILOS_ANALYTICS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Analytics',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Visit statistics, traffic sources, and engagement metrics.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'What a browser session did, in order, and which sessions a person signed into.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-bar-chart',
         ],

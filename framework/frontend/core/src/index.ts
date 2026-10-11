@@ -2005,6 +2005,10 @@ export {
   type HilosChangeLogOverview,
 } from './admin/changeLog/hilosChangeLogOverview.js'
 export {
+  ANALYTICS_OVERVIEW_EMPTY_TEXT,
+  ANALYTICS_OVERVIEW_OPEN_USERS_LABEL,
+} from './admin/analytics/hilosAnalyticsOverview.js'
+export {
   ANALYTICS_NO_VALUE,
   formatAnalyticsTime,
   type HilosAnalyticsContext,
