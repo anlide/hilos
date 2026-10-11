@@ -64,4 +64,14 @@ final readonly class JournalReceiptData
     {
         return new self(null, null, null, 'migration', "migration.{$direction}.{$index}", null, basename($file));
     }
+
+    /**
+     * @param string $action Autonomous operation name
+     * @param string $initiatorAgentId Agent that initiated the operation
+     * @return self Autonomous agent attribution
+     */
+    public static function agent(string $action, string $initiatorAgentId): self
+    {
+        return new self(null, null, null, 'agent', $action, $initiatorAgentId, $initiatorAgentId);
+    }
 }

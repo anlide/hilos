@@ -112,7 +112,7 @@ answer: `Session::userAtKeyboard()` in
 |---|---|---|---|---|
 | `web` | The person; both people under impersonation | The page's agent; the agent that wrote, when the page handed the write over | The session | `PageSignalRouter` around the accepted synchronous handler |
 | `migration` | Empty | None — the migration runner | The migration file | `Migration` around one SQL file |
-| `agent` | Empty, shown as “System” | That agent | The agent itself | (not in the code yet — HIL-1450) |
+| `agent` | Empty, shown as “System” | The initiating agent; the actual writer after handover | The initiating agent's id | Explicit `JournalReceiptScope::run()` around one autonomous operation |
 | `cli` | Empty | The executing agent | The command's name; never a value it was given | `WorkerManager` around the agent's `onSignalCommand()` |
 | `cron` | Empty | The job's agent | The job and its time | (not in the code yet — HIL-1456) |
 | `mcp` | The person | — | The tool | Outside phase 1; when the MCP server arrives, HIL-356 |
@@ -168,7 +168,14 @@ so the same number applies when the recipient is on another node. Only a write
 during the handed-over frame belongs to the person's receipt.
 
 An agent that writes later on its own, on a timer, uses its own receipt with the
-`agent` channel (not in the code yet — HIL-1450).
+`agent` channel. Wrap the concrete autonomous work in `JournalReceiptScope::run()`
+with `JournalReceiptData::agent($action, $this->getId())`, not every tick or the
+wait for an asynchronous result. The action is the autonomous operation's code
+name, such as `bot_message`; actor, subject and session stay NULL. The source
+stays the initiating agent's id when work is handed over, while the agent becomes
+the last agent that actually wrote a journaled row. BotAgent opens its scope only
+for a ready, nonempty message sent to ChatAgent. The message stream is not
+journaled, so that empty receipt is deleted when the recipient closes the handover.
 
 When a person has been erased, the soft reference keeps their number. The
 section reader returns the current name when the row still exists and
