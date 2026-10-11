@@ -35,6 +35,18 @@ class Locales extends Objects
     }
 
     /**
+     * @param int $languageId Language primary id
+     * @return ?bool Whether its countryless locale is enabled; null when absent
+     * @throws DatabaseException When the query fails
+     */
+    public function countrylessEnabled(int $languageId): ?bool
+    {
+        $locale = static::entityClass()::get('`language_id` = ? AND `country_id` IS NULL', [$languageId])->first();
+
+        return $locale?->enabled;
+    }
+
+    /**
      * @param int $countryId Country primary id
      * @return bool Whether any locale refers to it, regardless of enabled state
      * @throws DatabaseException When the query fails

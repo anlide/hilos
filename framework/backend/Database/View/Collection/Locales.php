@@ -33,6 +33,16 @@ class Locales extends DbCollection
     }
 
     /**
+     * @param int $languageId Language primary id
+     * @return ?bool Whether its countryless locale is enabled; null when absent
+     * @throws DatabaseException When the query fails
+     */
+    public function countrylessEnabled(int $languageId): ?bool
+    {
+        return $this->objectCollection->countrylessEnabled($languageId);
+    }
+
+    /**
      * @param int $countryId Country primary id
      * @return bool Whether any locale refers to it, regardless of enabled state
      * @throws DatabaseException When the query fails

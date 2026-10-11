@@ -181,8 +181,12 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   The section's language card switches off another language through a confirmation
   window and reports success without a tab count; its locales and names stay in place.
   Tests create and enable a known language with `test:i18n:language:on <code>`.
-- Switching on a language requires no completeness check, but warns when it
-  has no countryless locale (not in the code yet — HIL-1487).
+- The language card switches on a disabled language through a confirmation
+  window. It shows the number of names and whether the countryless locale is
+  missing, switched off or switched on. A missing or switched-off countryless
+  locale raises a warning; neither state blocks switching on the language.
+  Browser tests set the starting state with `test:i18n:language:off <code>` and
+  `test:i18n:locale:on <code>`.
 - A country can be switched on without a default locale
   (not in the code yet — HIL-1498).
 - Switching a country off keeps its values (not in the code yet — HIL-1497).
@@ -335,8 +339,7 @@ value in the error; the library also resolves it from env when starting.
   which can now be switched off; the new default is created and switched on
   at startup.
 - Its countryless locale is created with it at startup if the catalog has
-  one. The ordinary warning when no countryless locale exists belongs to
-  HIL-1487 (not in the code yet — HIL-1487).
+  one. The language card warns when the countryless locale is missing or off.
 - A cluster handshake refuses a node whose env names a different default
   language (not in the code yet — HIL-1505).
 
@@ -437,11 +440,13 @@ serves the section root at `/hilos/i18n` and the languages list at
 `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales at
 `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the
 code, native name, direction, enabled state, locale/name counts, and read-only
-delete verdict. The main card has a Switch off control (HIL-1486); its other
-action controls belong to HIL-1485/1487/1488. The Vue locales page adds a locale
-from a pair without one, edits a switched-off locale, and shows a switched-on
-locale in the same window (HIL-1491). The server actions serve all six demos;
-deletion is HIL-1492 and switching the locale from its window is HIL-1493/1494.
+delete verdict. Its summary also carries whether the countryless locale is
+missing, off or on. The main card has Switch off and Switch on controls
+(HIL-1486/1487); its other action controls belong to HIL-1485/1488.
+The Vue locales page adds a locale from a pair without one, edits a switched-off
+locale, and shows a switched-on locale in the same window (HIL-1491). The server
+actions serve all six demos; deletion is HIL-1492 and switching the locale from
+its window is HIL-1493/1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
 at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the

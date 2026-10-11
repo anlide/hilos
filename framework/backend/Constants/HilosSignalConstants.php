@@ -251,6 +251,9 @@ final class HilosSignalConstants
     /** Client → language page: switch off one language; the page replies with action success or failure. */
     public const string HILOS_I18N_LANGUAGE_SWITCH_OFF = 'hilos_i18n_language_switch_off';
 
+    /** Client → language page: switch on one language; the page replies with action success or failure. */
+    public const string HILOS_I18N_LANGUAGE_SWITCH_ON = 'hilos_i18n_language_switch_on';
+
     /** Client → language locales page: add one switched-off locale. */
     public const string HILOS_I18N_LOCALE_ADD = 'hilos_i18n_locale_add';
 

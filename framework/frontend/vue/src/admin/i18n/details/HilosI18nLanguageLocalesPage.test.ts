@@ -28,6 +28,7 @@ const russianCard: HilosI18nLanguageCard = {
     isOwn: false,
     localeCount: 3,
     nameCount: 5,
+    countrylessLocale: 'missing',
     canDelete: true,
     deleteReason: null,
   },

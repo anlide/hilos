@@ -90,6 +90,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
                 'isOwn' => true,
                 'localeCount' => 0,
                 'nameCount' => 0,
+                'countrylessLocale' => LanguageCardSummary::COUNTRYLESS_MISSING,
                 'canDelete' => true,
                 'deleteReason' => null,
             ], Hilos::$db->languages->cardSummary($own->id)->toArray());
@@ -119,6 +120,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
             $withLocale = Hilos::$db->languages->cardSummary($own->id);
             self::assertSame(1, $withLocale->localeCount);
             self::assertSame(1, $withLocale->nameCount);
+            self::assertSame(LanguageCardSummary::COUNTRYLESS_OFF, $withLocale->countrylessLocale);
             self::assertSame(LanguageCardSummary::DELETE_LOCALES, $withLocale->deleteReason);
         });
 
@@ -137,6 +139,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
                 'isOwn' => true,
                 'localeCount' => 1,
                 'nameCount' => 1,
+                'countrylessLocale' => LanguageCardSummary::COUNTRYLESS_OFF,
                 'canDelete' => false,
                 'deleteReason' => LanguageCardSummary::DELETE_LOCALES,
             ],
@@ -300,6 +303,7 @@ final class I18nLanguageCardTest extends IntegrationTestCase
                     'isOwn' => true,
                     'localeCount' => 0,
                     'nameCount' => 0,
+                    'countrylessLocale' => LanguageCardSummary::COUNTRYLESS_MISSING,
                     'canDelete' => true,
                     'deleteReason' => null,
                 ],

@@ -54,6 +54,8 @@ use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStartCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStopCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageOnCommand;
+use Hilos\Core\CLI\Commands\I18nTestLanguageOffCommand;
+use Hilos\Core\CLI\Commands\I18nTestLocaleOnCommand;
 use Hilos\Core\CLI\Commands\LegalTestHoldCommand;
 use Hilos\Core\CLI\Commands\LlmPingCommand;
 use Hilos\Core\CLI\Commands\LogTestAppendCommand;
@@ -203,6 +205,8 @@ class CliManager
         $this->commands[CliCommands::ACCOUNT_TEST_FORCE_PURGE] = new AccountTestForcePurgeCommand();
         $this->commands[CliCommands::LEGAL_TEST_HOLD] = new LegalTestHoldCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_ON] = new I18nTestLanguageOnCommand();
+        $this->commands[CliCommands::I18N_TEST_LANGUAGE_OFF] = new I18nTestLanguageOffCommand();
+        $this->commands[CliCommands::I18N_TEST_LOCALE_ON] = new I18nTestLocaleOnCommand();
         $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();

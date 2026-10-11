@@ -11,14 +11,20 @@ final readonly class LanguageCardSummary
     public const string DELETE_LOCALES = 'locales';
     public const string DELETE_NAMES = 'names';
 
+    public const string COUNTRYLESS_MISSING = 'missing';
+    public const string COUNTRYLESS_OFF = 'off';
+    public const string COUNTRYLESS_ON = 'on';
+
     public bool $canDelete;
     public ?string $deleteReason;
+    public string $countrylessLocale;
 
     /**
      * @param bool $isDefault Whether this is the installation default
      * @param bool $isOwn Whether the code is absent from the built-in catalog
      * @param int $localeCount All locales, including disabled ones
      * @param int $nameCount Nonempty base names written in other languages
+     * @param ?bool $countrylessLocaleEnabled Whether the language's countryless locale is switched on; null when it has none
      * @param bool $hasManualLanguageName Whether a locked name references this language
      * @param bool $hasLockedCountryName Whether a locked country name is written in this language
      */
@@ -27,9 +33,15 @@ final readonly class LanguageCardSummary
         public bool $isOwn,
         public int $localeCount,
         public int $nameCount,
+        ?bool $countrylessLocaleEnabled,
         bool $hasManualLanguageName,
         bool $hasLockedCountryName,
     ) {
+        $this->countrylessLocale = match ($countrylessLocaleEnabled) {
+            null => self::COUNTRYLESS_MISSING,
+            false => self::COUNTRYLESS_OFF,
+            true => self::COUNTRYLESS_ON,
+        };
         $this->deleteReason = match (true) {
             $isDefault => self::DELETE_DEFAULT,
             $localeCount > 0 => self::DELETE_LOCALES,
@@ -47,6 +59,7 @@ final readonly class LanguageCardSummary
             'isOwn' => $this->isOwn,
             'localeCount' => $this->localeCount,
             'nameCount' => $this->nameCount,
+            'countrylessLocale' => $this->countrylessLocale,
             'canDelete' => $this->canDelete,
             'deleteReason' => $this->deleteReason,
         ];

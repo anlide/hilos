@@ -1,4 +1,4 @@
-<!-- The language main card and its switch-off control share one page-scoped
+<!-- The language main card and its switch controls share one page-scoped
 browser datum for both the initial view and live updates. -->
 <script setup lang="ts">
 import {
@@ -13,6 +13,7 @@ import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 import HilosI18nLanguageSwitchOff from './HilosI18nLanguageSwitchOff.vue'
+import HilosI18nLanguageSwitchOn from './HilosI18nLanguageSwitchOn.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
 const card = useSignal(createHilosI18nLanguageCard(props.context))
@@ -65,8 +66,9 @@ const loading = useSignal(router.pageLoading)
               <span data-id="language-card-enabled">
                 {{ card.enabled ? 'Enabled' : 'Disabled' }}
               </span>
-              <div :class="card.enabled ? 'mt-2' : undefined">
+              <div class="mt-2">
                 <HilosI18nLanguageSwitchOff :context="context" :card="card" />
+                <HilosI18nLanguageSwitchOn :context="context" :card="card" />
               </div>
             </dd>
             <dt class="col-sm-4">Delete language</dt>

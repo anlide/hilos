@@ -81,8 +81,12 @@ export {
 export {
   HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
   HILOS_I18N_LANGUAGE_SWITCH_OFF_COPY,
+  HILOS_I18N_LANGUAGE_SWITCH_ON_ACTION,
+  HILOS_I18N_LANGUAGE_SWITCH_ON_COPY,
   createHilosI18nLanguageSwitchOff,
+  createHilosI18nLanguageSwitchOn,
   hilosI18nLanguageSwitchOff,
+  hilosI18nLanguageSwitchOn,
 } from './admin/i18n/hilosI18nLanguageSwitch.js'
 export {
   HILOS_I18N_COUNTRY_NAMES,

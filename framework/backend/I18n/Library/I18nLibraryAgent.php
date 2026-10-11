@@ -11,11 +11,12 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\View\Item\Language;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
-use Hilos\I18n\I18nLanguageOnCommandConstants;
+use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -40,11 +41,12 @@ final class I18nLibraryAgent extends AbstractHilosAgent
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_I18N_LIBRARY;
 
-    /**
-     * The test-only language setup is answered here because this library owns the language rows.
-     * The `test:` name keeps it unavailable on production-like command sockets.
-     */
-    public const array AGENT_COMMANDS = [CliCommands::I18N_TEST_LANGUAGE_ON];
+    /** The test-only i18n setup is answered here because this library owns the reference rows. */
+    public const array AGENT_COMMANDS = [
+        CliCommands::I18N_TEST_LANGUAGE_ON,
+        CliCommands::I18N_TEST_LANGUAGE_OFF,
+        CliCommands::I18N_TEST_LOCALE_ON,
+    ];
 
     /**
      * @param CommandRequestDTO $data Command request
@@ -54,13 +56,19 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
-        if ($data->command !== CliCommands::I18N_TEST_LANGUAGE_ON) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
-
-            return;
+        switch ($data->command) {
+            case CliCommands::I18N_TEST_LANGUAGE_ON:
+                $this->handleLanguageOnCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LANGUAGE_OFF:
+                $this->handleLanguageOffCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LOCALE_ON:
+                $this->handleLocaleOnCommand($data);
+                return;
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
         }
-
-        $this->handleLanguageOnCommand($data);
     }
 
     /**
@@ -90,22 +98,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             );
             $language->actions->switchOn();
 
-            $localeDefinition = BuiltInI18nCatalog::locale($definition->code);
-            if ($localeDefinition !== null) {
-                $locale = Hilos::$db->locales[$definition->code]
-                    ?? Hilos::$db->locales->actions->create(
-                        $language,
-                        null,
-                        $localeDefinition->dateFormat,
-                        $localeDefinition->timeFormat,
-                        $localeDefinition->numberFormat,
-                        $localeDefinition->phoneFormat,
-                        $localeDefinition->addressFormat,
-                        MeasurementSystem::from($localeDefinition->measurementSystem),
-                        $localeDefinition->collation,
-                    );
-                $locale->actions->switchOn();
-            }
+            $this->switchOnCatalogCountrylessLocale($language);
             if ($created) {
                 Hilos::$db->countryNames->actions->takeAllFromCatalog($language);
             }
@@ -125,7 +118,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
      */
     private function handleLanguageOnCommand(CommandRequestDTO $data): void
     {
-        $code = $data->payload[I18nLanguageOnCommandConstants::FIELD_CODE] ?? null;
+        $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
         if (!is_string($code)) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Language code must be a string'));
 
@@ -162,9 +155,128 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
-            I18nLanguageOnCommandConstants::FIELD_CODE => $definition->code,
-            I18nLanguageOnCommandConstants::FIELD_ENABLED => true,
+            I18nTestCommandConstants::FIELD_CODE => $definition->code,
+            I18nTestCommandConstants::FIELD_ENABLED => true,
         ]));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request carrying a built-in language code
+     * @throws HilosException When the command reply cannot be sent
+     */
+    private function handleLanguageOffCommand(CommandRequestDTO $data): void
+    {
+        $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
+        if (!is_string($code)) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Language code must be a string'));
+            return;
+        }
+        $definition = BuiltInI18nCatalog::language($code);
+        if ($definition === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown built-in language code '{$code}'"));
+            return;
+        }
+
+        try {
+            Database::transactionStart();
+            $language = Hilos::$db->languages[$definition->code]
+                ?? Hilos::$db->languages->actions->create($definition->code, $definition->nativeName, $definition->rtl);
+            $language->actions->switchOff();
+            Database::transactionCommit();
+        } catch (WiringRefusal $refusal) {
+            Database::transactionRollback();
+            throw $refusal;
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Preserve the failure that prevented the command.
+            }
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_CODE => $definition->code,
+            I18nTestCommandConstants::FIELD_ENABLED => false,
+        ]));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request carrying a countryless locale code
+     * @throws HilosException When the command reply cannot be sent
+     */
+    private function handleLocaleOnCommand(CommandRequestDTO $data): void
+    {
+        $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
+        if (!is_string($code)) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Locale code must be a string'));
+            return;
+        }
+        try {
+            $language = Hilos::$db->languages[$code];
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+            return;
+        }
+        if ($language === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Language '{$code}' does not exist"));
+            return;
+        }
+        if (BuiltInI18nCatalog::locale($code) === null) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                "The built-in catalog has no locale without a country for '{$code}'",
+            ));
+            return;
+        }
+
+        try {
+            Database::transactionStart();
+            $this->switchOnCatalogCountrylessLocale($language);
+            Database::transactionCommit();
+        } catch (WiringRefusal $refusal) {
+            Database::transactionRollback();
+            throw $refusal;
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Preserve the failure that prevented the command.
+            }
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_CODE => $code,
+            I18nTestCommandConstants::FIELD_ENABLED => true,
+        ]));
+    }
+
+    /** @param Language $language Language whose catalog locale may be provisioned */
+    private function switchOnCatalogCountrylessLocale(Language $language): void
+    {
+        $localeDefinition = BuiltInI18nCatalog::locale($language->code);
+        if ($localeDefinition === null) {
+            return;
+        }
+
+        $locale = Hilos::$db->locales[$language->code]
+            ?? Hilos::$db->locales->actions->create(
+                $language,
+                null,
+                $localeDefinition->dateFormat,
+                $localeDefinition->timeFormat,
+                $localeDefinition->numberFormat,
+                $localeDefinition->phoneFormat,
+                $localeDefinition->addressFormat,
+                MeasurementSystem::from($localeDefinition->measurementSystem),
+                $localeDefinition->collation,
+            );
+        $locale->actions->switchOn();
     }
 
     /**

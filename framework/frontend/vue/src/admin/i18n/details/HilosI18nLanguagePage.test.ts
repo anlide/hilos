@@ -27,6 +27,7 @@ const initialCard: HilosI18nLanguageCard = {
     isOwn: false,
     localeCount: 2,
     nameCount: 1,
+    countrylessLocale: 'missing',
     canDelete: false,
     deleteReason: 'default',
   },
@@ -152,6 +153,7 @@ describe('HilosI18nLanguagePage', () => {
         isOwn: true,
         localeCount: 0,
         nameCount: 0,
+        countrylessLocale: 'missing',
         canDelete: true,
         deleteReason: null,
       },
@@ -172,6 +174,12 @@ describe('HilosI18nLanguagePage', () => {
     )
     expect(h.view.find('[data-id="language-card-switch-off"]').exists()).toBe(
       false,
+    )
+    expect(
+      h.view.findAll('[data-id="language-card-state"] button'),
+    ).toHaveLength(1)
+    expect(h.view.find('[data-id="language-card-switch-on"]').text()).toBe(
+      'Switch on',
     )
 
     h.scope.data.set(LANGUAGE_CARD_DATA, [])

@@ -18,6 +18,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOffActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOnActionDTO;
 
 /**
  * AbstractHilosI18nLanguagePage - Abstract base for Hilos i18n language page.
@@ -32,6 +33,7 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosI18nLanguageSwitchOffActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosI18nLanguageSwitchOnActionDTO::class,
     ];
 
     /** @var list<string> Sources of the main language card */
@@ -69,6 +71,18 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                     ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
                 $language->actions->switchOff();
                 $this->setActionSuccessMessage('Language switched off.');
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON:
+                if (!$dto instanceof HilosI18nLanguageSwitchOnActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nLanguageSwitchOnActionDTO::class, $dto);
+                }
+
+                $language = Hilos::$db->languages[$dto->languageCode]
+                    ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
+                $language->actions->switchOn();
+                $this->setActionSuccessMessage('Language switched on.');
 
                 return null;
 

@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\I18n;
 
-use Hilos\Constants\CliCommands;
-/** Wire keys shared by the CLI half and the i18n library for {@see CliCommands::I18N_TEST_LANGUAGE_ON}. */
-final class I18nLanguageOnCommandConstants
+/** Payload and reply keys shared by the i18n library's test commands. */
+final class I18nTestCommandConstants
 {
     /** @var string Request and reply key: language code */
     public const string FIELD_CODE = 'code';

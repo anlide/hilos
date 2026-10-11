@@ -255,6 +255,24 @@ final class CliCommands
     public const string I18N_TEST_LANGUAGE_ON = 'test:i18n:language:on';
 
     /**
+     * Create and disable a known language through the i18n library (test-only).
+     *
+     * The CLI process has no write ownership; the library answers over the command channel.
+     *
+     * @var string Command: Create and disable a built-in language (test-only)
+     */
+    public const string I18N_TEST_LANGUAGE_OFF = 'test:i18n:language:off';
+
+    /**
+     * Create and enable a known countryless locale through the i18n library (test-only).
+     *
+     * The CLI process has no write ownership; the library answers over the command channel.
+     *
+     * @var string Command: Create and enable a built-in countryless locale (test-only)
+     */
+    public const string I18N_TEST_LOCALE_ON = 'test:i18n:locale:on';
+
+    /**
      * Append lines to this node's own log through the live daemon (test-only).
      *
      * Doubles as the command-channel wire name routed to {@see LogStoreAgent}, the same

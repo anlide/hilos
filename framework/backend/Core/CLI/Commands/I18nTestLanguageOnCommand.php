@@ -8,7 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\I18n\I18nLanguageOnCommandConstants;
+use Hilos\I18n\I18nTestCommandConstants;
 
 /** Create and enable a built-in language through the live i18n library (test-only). */
 final class I18nTestLanguageOnCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
@@ -59,7 +59,7 @@ HELP;
         }
 
         try {
-            $result = $this->sendCommand($this->getName(), [I18nLanguageOnCommandConstants::FIELD_CODE => $code]);
+            $result = $this->sendCommand($this->getName(), [I18nTestCommandConstants::FIELD_CODE => $code]);
         } catch (EnvException $e) {
             echo "Error: {$e->getMessage()}\n";
 
@@ -73,8 +73,8 @@ HELP;
             return $this->printRefusal($result->reply);
         }
 
-        $replyCode = $result->reply->payload[I18nLanguageOnCommandConstants::FIELD_CODE] ?? null;
-        $enabled = $result->reply->payload[I18nLanguageOnCommandConstants::FIELD_ENABLED] ?? null;
+        $replyCode = $result->reply->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
+        $enabled = $result->reply->payload[I18nTestCommandConstants::FIELD_ENABLED] ?? null;
         if (!is_string($replyCode) || $replyCode !== $code || $enabled !== true) {
             echo "Command failed: the reply carries no enabled language\n";
 

@@ -27,7 +27,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
-use Hilos\I18n\I18nLanguageOnCommandConstants;
+use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOffActionDTO;
@@ -176,7 +176,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
     public function testTestCommandCreatesAndEnablesOnlyKnownLanguages(): void
     {
         $request = new CommandRequestDTO('language-on-1', CliCommands::I18N_TEST_LANGUAGE_ON, [
-            I18nLanguageOnCommandConstants::FIELD_CODE => 'fr',
+            I18nTestCommandConstants::FIELD_CODE => 'fr',
         ]);
         $this->underAgent($this->agent, function () use ($request): void {
             $this->agent->onSignalCommand($request, '', '');
@@ -195,7 +195,7 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
 
         $this->underAgent($this->agent, function (): void {
             $this->agent->onSignalCommand(new CommandRequestDTO('language-on-2', CliCommands::I18N_TEST_LANGUAGE_ON, [
-                I18nLanguageOnCommandConstants::FIELD_CODE => 'zz',
+                I18nTestCommandConstants::FIELD_CODE => 'zz',
             ]), '', '');
         });
         self::assertFalse($this->drainCommandReply()->isOk());
