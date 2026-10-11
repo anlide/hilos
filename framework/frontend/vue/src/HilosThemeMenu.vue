@@ -5,15 +5,18 @@ on; the menu is Light · Dark · System, the current row checked, and a "default
 badge only when the person never picked. Open/close, outside-click, Escape and
 arrow-roving mirror HilosNotificationBell. The panel is a menu of menuitemradio,
 not a listbox: HilosDropdown is a full-width select with a caret, and this
-control is a bare icon. A click on a row closes the menu and does not change
-the pick — that lands in HIL-1436 (guest) and HIL-1437 (signed-in). The shell
-mounts it; a project passes nothing. Bootstrap classes only, no CSS of its own. -->
+control is a bare icon. A guest's choice is applied and remembered immediately;
+signed-in choice lands in HIL-1437. Both close the menu and return focus. The
+shell mounts it; a project passes nothing. Bootstrap classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
   formatHilosThemeLabel,
+  hilosSignedIn,
   hilosThemeChoice,
+  setHilosThemePick,
   THEME_COPY,
   THEME_POSITIONS,
+  type ThemePick,
 } from '@hilos/core'
 import {
   computed,
@@ -123,9 +126,13 @@ function onMenuKeydown(event: KeyboardEvent): void {
   }
 }
 
-function choose(): void {
+function choose(pick: Exclude<ThemePick, null>): void {
+  if (!hilosSignedIn.get() && hilosThemeChoice.get() !== null) {
+    setHilosThemePick(pick)
+  } else if (hilosSignedIn.get()) {
+    // SCAFFOLD: not wired yet — signed-in choice lands in HIL-1437.
+  }
   close(true)
-  // SCAFFOLD: not wired yet — the pick itself lands in HIL-1436 (guest) and HIL-1437 (signed-in)
 }
 
 function onDocumentClick(event: MouseEvent): void {
@@ -186,7 +193,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         role="menuitemradio"
         :aria-checked="row.value === view.position"
         :data-id="`nav-theme-option-${row.value}`"
-        @click="choose"
+        @click="choose(row.value)"
       >
         <i class="bi" :class="row.icon" aria-hidden="true"></i>
         <span class="flex-grow-1">{{ row.label }}</span>

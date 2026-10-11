@@ -1,4 +1,11 @@
-import { ScopeManager, type HilosConnection } from '@hilos/core'
+import {
+  ActionLifecycle,
+  bindSessionScope,
+  bindSignOut,
+  ScopeManager,
+  type HilosConnection,
+  type ProjectSignal,
+} from '@hilos/core'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -21,6 +28,48 @@ function dummyConnection(): HilosConnection {
 }
 
 let releaseTheme: (() => void) | undefined
+let releaseSession: (() => void) | undefined
+
+/** Feed identity through the same session binding the shell uses at boot. */
+function bindSession(): (userId: number | null) => void {
+  const listeners = new Set<(signal: ProjectSignal) => void>()
+  const connection = {
+    on(event: string, listener: (payload: never) => void): () => void {
+      if (event === 'projectSignal') {
+        listeners.add(listener as (signal: ProjectSignal) => void)
+      }
+
+      return () => listeners.delete(listener as (signal: ProjectSignal) => void)
+    },
+  } as unknown as HilosConnection
+  const scopes = new ScopeManager()
+  bindSessionScope(connection, scopes)
+  const actions = new ActionLifecycle({
+    sendAction: () => true,
+    on: () => () => {},
+  })
+  const unbind = bindSignOut(scopes, actions)
+  releaseSession = () => {
+    unbind()
+    listeners.clear()
+  }
+
+  return (userId) => {
+    const signal = {
+      kind: 'project',
+      type: 'handshake_response',
+      data: {
+        entities: {
+          currentUser: userId === null ? null : { id: userId, name: 'Ada' },
+        },
+      },
+      envelope: {},
+    } as unknown as ProjectSignal
+    for (const listener of listeners) {
+      listener(signal)
+    }
+  }
+}
 
 // A store the test fills by construction. Calling the browser's write from this
 // file would be a value left undeclared (BROWSER-VALUE-DECLARED); the real
@@ -65,6 +114,11 @@ function bindSnapshot(
     entries[THEME_PICK_STORAGE_KEY] = pick
   }
   vi.stubGlobal('localStorage', memoryStorage(entries))
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
   releaseTheme = bindThemeState(dummyConnection(), new ScopeManager())
 }
 
@@ -83,7 +137,10 @@ afterEach(() => {
   while (attached.length > 0) {
     attached.pop()?.unmount()
   }
+  releaseSession?.()
+  releaseSession = undefined
   restoreCatalog()
+  vi.restoreAllMocks()
 })
 
 function mountAttached(): VueWrapper {
@@ -154,6 +211,9 @@ describe('HilosThemeMenu', () => {
     const wrapper = mountAttached()
 
     expect(wrapper.find('[data-id="nav-theme"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="nav-theme-menu"]').exists()).toBe(false)
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
   })
 
   it('redraws an open menu and the icon when the choice changes', async () => {
@@ -228,16 +288,127 @@ describe('HilosThemeMenu', () => {
     expect(toggle.attributes('aria-expanded')).toBe('false')
   })
 
-  it('closes on a row and leaves the pick unchanged', async () => {
+  it.each([
+    ['light', 'light', 'bi-sun'],
+    ['dark', 'dark', 'bi-moon-stars'],
+    ['system', 'light', 'bi-circle-half'],
+  ] as const)(
+    'applies and remembers the guest choice %s',
+    async (pick, mode, icon) => {
+      bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, null)
+      const wrapper = mountAttached()
+      const toggle = wrapper.get('[data-id="nav-theme"]')
+      await toggle.trigger('click')
+
+      await wrapper.get(`[data-id="nav-theme-option-${pick}"]`).trigger('click')
+      await nextTick()
+
+      expect(hilosThemePick.get()).toBe(pick)
+      expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe(pick)
+      expect(document.documentElement.getAttribute('data-bs-theme')).toBe(mode)
+      expect(toggle.attributes('data-position')).toBe(pick)
+      expect(toggle.find('i').classes()).toContain(icon)
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(toggle.element)
+      expect(wrapper.get('[data-id="nav-theme-menu"]').isVisible()).toBe(false)
+      for (const position of ['light', 'dark', 'system']) {
+        const option = wrapper.get(`[data-id="nav-theme-option-${position}"]`)
+        expect(option.attributes('aria-checked')).toBe(
+          String(position === pick),
+        )
+        expect(option.classes().includes('active')).toBe(position === pick)
+        expect(option.find('.bi-check2').exists()).toBe(position === pick)
+      }
+    },
+  )
+
+  it('makes the current default light an explicit choice', async () => {
+    bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, null)
+    const wrapper = mountAttached()
+    await wrapper.get('[data-id="nav-theme"]').trigger('click')
+    const light = wrapper.get('[data-id="nav-theme-option-light"]')
+    expect(light.find('.badge').exists()).toBe(true)
+
+    await light.trigger('click')
+
+    expect(hilosThemePick.get()).toBe('light')
+    expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('light')
+    expect(light.find('.badge').exists()).toBe(false)
+  })
+
+  it.each([true, false])(
+    'refuses a signed-in choice (signed in before opening: %s) and permits it after sign-out',
+    async (beforeOpening) => {
+      const handshake = bindSession()
+      bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, 'dark')
+      const wrapper = mountAttached()
+      const toggle = wrapper.get('[data-id="nav-theme"]')
+      if (beforeOpening) {
+        handshake(1)
+      }
+      await toggle.trigger('click')
+      if (!beforeOpening) {
+        handshake(1)
+      }
+
+      await wrapper.get('[data-id="nav-theme-option-light"]').trigger('click')
+
+      expect(hilosThemePick.get()).toBe('dark')
+      expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(toggle.element)
+
+      handshake(null)
+      await toggle.trigger('click')
+      await wrapper.get('[data-id="nav-theme-option-light"]').trigger('click')
+      expect(hilosThemePick.get()).toBe('light')
+      expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('light')
+    },
+  )
+
+  it('refuses a stale open row when switching turns off and closes the menu', async () => {
     bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, 'dark')
+    const wrapper = mountAttached()
+    await wrapper.get('[data-id="nav-theme"]').trigger('click')
+    const light = wrapper.get('[data-id="nav-theme-option-light"]')
+
+    bindSnapshot({ switchingEnabled: false, defaultTheme: 'light' }, 'dark')
+    // Click before Vue removes the old DOM: the action must read the live guard.
+    await light.trigger('click')
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(localStorage.getItem(THEME_PICK_STORAGE_KEY)).toBe('dark')
+    expect(wrapper.find('[data-id="nav-theme-option-light"]').exists()).toBe(
+      false,
+    )
+
+    bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, 'dark')
+    await nextTick()
+    expect(wrapper.get('[data-id="nav-theme-menu"]').isVisible()).toBe(false)
+  })
+
+  it('applies a guest click in memory when localStorage refuses access', async () => {
+    bindSnapshot({ switchingEnabled: true, defaultTheme: 'light' }, null)
+    vi.stubGlobal('localStorage', {
+      ...memoryStorage({}),
+      getItem: () => {
+        throw new Error('refused')
+      },
+      setItem: () => {
+        throw new Error('refused')
+      },
+      removeItem: () => {
+        throw new Error('refused')
+      },
+    })
     const wrapper = mountAttached()
     const toggle = wrapper.get('[data-id="nav-theme"]')
     await toggle.trigger('click')
-    const pick = hilosThemePick.get()
 
-    await wrapper.get('[data-id="nav-theme-option-light"]').trigger('click')
+    await wrapper.get('[data-id="nav-theme-option-dark"]').trigger('click')
 
-    expect(hilosThemePick.get()).toBe(pick)
+    expect(hilosThemePick.get()).toBe('dark')
+    expect(document.documentElement.getAttribute('data-bs-theme')).toBe('dark')
+    expect(toggle.attributes('data-position')).toBe('dark')
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(toggle.element)
   })
