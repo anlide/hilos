@@ -121,6 +121,29 @@ final readonly class TableWindowPlan
     }
 
     /**
+     * @param int $pageIndex Zero-based requested page
+     * @param int $limit Page size
+     * @param int $total Count, capped at the table ceiling
+     * @param bool $exact Whether the count reached the end
+     * @return ?array{direction: TableAnchorDirection, skip: int, take: int} Nearer edge and slice
+     */
+    public static function numberedSlice(int $pageIndex, int $limit, int $total, bool $exact): ?array
+    {
+        $start = max(0, $pageIndex) * $limit;
+        if (!$exact) {
+            return $start > TableConstants::COUNT_CEILING
+                ? null : ['direction' => TableAnchorDirection::After, 'skip' => $start, 'take' => $limit];
+        }
+        $end = min($total, $start + $limit);
+        if ($start >= $end) {
+            return null;
+        }
+        return $start * 2 >= $total
+            ? ['direction' => TableAnchorDirection::Before, 'skip' => $total - $end, 'take' => $end - $start]
+            : ['direction' => TableAnchorDirection::After, 'skip' => $start, 'take' => $end - $start];
+    }
+
+    /**
      * Answers the place of a window when its address alone makes that place known.
      *
      * A window from an anchor with rows needs its first row counted against the same filtered

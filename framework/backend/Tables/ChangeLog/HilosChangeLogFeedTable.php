@@ -131,7 +131,7 @@ class HilosChangeLogFeedTable extends TableDefinition implements ViewportTable
         $skip = 0;
         $take = $limit;
         if ($query->pageIndex !== null) {
-            $plan = HilosChangeLogTableParts::numberedWindow($query->pageIndex, $limit, $total, $exact);
+            $plan = TableWindowPlan::numberedSlice($query->pageIndex, $limit, $total, $exact);
             if ($plan === null) {
                 return new TableSnapshotDTO(
                     totalCount: $total, totalExact: $exact, limit: $limit,

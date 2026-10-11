@@ -7,6 +7,8 @@ namespace Demo\OnlineTesting\Tables;
 use Demo\OnlineTesting\Hilos;
 use Demo\OnlineTesting\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -50,6 +52,8 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * @property-read HilosI18nCountriesTable $hilosI18nCountries
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
+ * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
+ * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
  */
 final class OnlineTestingTableContext extends TableContext
 {
@@ -73,6 +77,8 @@ final class OnlineTestingTableContext extends TableContext
     public const string hilosI18nCountries = HilosI18nCountriesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
+    public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
+    public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
 
     /**
      * Registers table definitions from the project topology registry.

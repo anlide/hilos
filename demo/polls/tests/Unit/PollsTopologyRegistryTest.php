@@ -25,6 +25,8 @@ use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -740,6 +742,8 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
             PollsTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
             PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
+            PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+            PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -1072,6 +1076,14 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
         $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
         $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosAnalyticsActionsTable::class,
+            Hilos::TABLES[PollsTableContext::hilosAnalyticsActions],
+        );
+        $this->assertSame(
+            HilosAnalyticsBrowserSessionsTable::class,
+            Hilos::TABLES[PollsTableContext::hilosAnalyticsBrowserSessions],
+        );
 
         $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
         $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));

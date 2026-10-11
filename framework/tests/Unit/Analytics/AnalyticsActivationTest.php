@@ -24,6 +24,8 @@ use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSignificance;
 use Hilos\Legal\StandardSetCatalog;
 use Hilos\Pages\AbstractHilosAnalyticsPage;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -52,6 +54,10 @@ final class AnalyticsActivationTest extends TestCase
         self::assertSame([AbstractHilosAnalyticsPage::class], $requirements->requiredPages);
         self::assertSame(HilosFeature::ANALYTICS, (new AnalyticsFeature())->feature());
         self::assertSame([AnalyticsSettingsCatalog::class], $requirements->requiredCatalogFragments);
+        self::assertSame(
+            [HilosAnalyticsActionsTable::class, HilosAnalyticsBrowserSessionsTable::class],
+            $requirements->requiredTables,
+        );
     }
 
     /** @throws IncompleteFeatureActivationException When the fixture has neither section artifact */
@@ -69,6 +75,20 @@ final class AnalyticsActivationTest extends TestCase
         $this->expectExceptionMessage('PAGES registers ' . AnalyticsActivationPage::class
             . ' but HilosFeature::ANALYTICS is not declared in FEATURES');
         AnalyticsActivationPageOnlyHilos::validateFeatureActivation();
+    }
+
+    /** @throws IncompleteFeatureActivationException When either analytics table is registered without its feature */
+    public function testSectionTablesWithoutTheFeatureAreRefused(): void
+    {
+        foreach ([AnalyticsActivationActionsOnlyHilos::class, AnalyticsActivationSessionsOnlyHilos::class] as $facade) {
+            try {
+                $facade::validateFeatureActivation();
+                self::fail('Analytics table registration requires the Analytics feature');
+            } catch (IncompleteFeatureActivationException $exception) {
+                self::assertStringContainsString('TABLES registers', $exception->getMessage());
+                self::assertStringContainsString('HilosFeature::ANALYTICS is not declared in FEATURES', $exception->getMessage());
+            }
+        }
     }
 
     public function testSectionAgentProvidesTheTypedReader(): void
@@ -214,6 +234,18 @@ final class AnalyticsActivationPage extends AbstractHilosAnalyticsPage
 abstract class AnalyticsActivationPageOnlyHilos extends Hilos
 {
     public const array PAGES = [AnalyticsActivationPage::PAGE => AnalyticsActivationPage::class];
+}
+
+/** Analytics actions table without the feature declaration. */
+abstract class AnalyticsActivationActionsOnlyHilos extends Hilos
+{
+    public const array TABLES = [HilosAnalyticsActionsTable::TABLE => HilosAnalyticsActionsTable::class];
+}
+
+/** Analytics browser sessions table without the feature declaration. */
+abstract class AnalyticsActivationSessionsOnlyHilos extends Hilos
+{
+    public const array TABLES = [HilosAnalyticsBrowserSessionsTable::TABLE => HilosAnalyticsBrowserSessionsTable::class];
 }
 
 /** A Privacy catalog with an old declaration and a current revision that omits it. */

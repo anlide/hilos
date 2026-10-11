@@ -2005,6 +2005,35 @@ export {
   type HilosChangeLogOverview,
 } from './admin/changeLog/hilosChangeLogOverview.js'
 export {
+  ANALYTICS_NO_VALUE,
+  formatAnalyticsTime,
+  type HilosAnalyticsContext,
+} from './admin/analytics/hilosAnalytics.js'
+export {
+  ANALYTICS_ACTIONS_FILTER_BROWSER_SESSION,
+  ANALYTICS_ACTION_CREATED_TS_FIELD,
+  ANALYTICS_ACTION_PAGE_NAME_FIELD,
+  ANALYTICS_ACTION_NAME_FIELD,
+  resolveHilosAnalyticsActionRow,
+  createHilosAnalyticsActionsTable,
+  type HilosAnalyticsActionRow,
+  type HilosAnalyticsActionsTable,
+  type HilosAnalyticsActionsOptions,
+} from './admin/analytics/hilosAnalyticsActions.js'
+export {
+  ANALYTICS_BROWSER_SESSIONS_FILTER_USER,
+  ANALYTICS_BROWSER_SESSION_FIRST_SEEN_TS_FIELD,
+  ANALYTICS_BROWSER_SESSION_LAST_SEEN_TS_FIELD,
+  ANALYTICS_BROWSER_SESSION_BROWSER_FIELD,
+  ANALYTICS_BROWSER_SESSION_ACTION_COUNT_FIELD,
+  formatAnalyticsSessionNumber,
+  resolveHilosAnalyticsBrowserSessionRow,
+  createHilosAnalyticsBrowserSessionsTable,
+  type HilosAnalyticsBrowserSessionRow,
+  type HilosAnalyticsBrowserSessionsTable,
+  type HilosAnalyticsBrowserSessionsOptions,
+} from './admin/analytics/hilosAnalyticsBrowserSessions.js'
+export {
   hilosLogSettingsVocabulary,
   formatLogWriteLevel,
   formatLogRotationSchedule,

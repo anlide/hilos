@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Polls\Tables;
 
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -79,6 +81,8 @@ use Hilos\Tables\Security\HilosSecurityImpersonationTable;
  * @property-read HilosI18nCountriesTable $hilosI18nCountries
  * @property-read HilosI18nCountryNamesTable $hilosI18nCountryNames
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
+ * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
+ * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
  */
 final class PollsTableContext extends TableContext
 {
@@ -114,6 +118,8 @@ final class PollsTableContext extends TableContext
     public const string hilosI18nCountries = HilosI18nCountriesTable::TABLE;
     public const string hilosI18nCountryNames = HilosI18nCountryNamesTable::TABLE;
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
+    public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
+    public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
 
     /**
      * Registers polls table definitions from the project topology registry.

@@ -110,6 +110,20 @@ final class TableWindowPlanTest extends TestCase
         $this->assertNull($plan->nearFrame);
     }
 
+    public function testNumberedSliceChoosesNearerEdgeAndStopsAtCeiling(): void
+    {
+        self::assertSame(['direction' => TableAnchorDirection::After, 'skip' => 0, 'take' => 25],
+            TableWindowPlan::numberedSlice(0, 25, 100, true));
+        self::assertSame(['direction' => TableAnchorDirection::After, 'skip' => 25, 'take' => 25],
+            TableWindowPlan::numberedSlice(1, 25, 100, true));
+        self::assertSame(['direction' => TableAnchorDirection::Before, 'skip' => 0, 'take' => 25],
+            TableWindowPlan::numberedSlice(3, 25, 100, true));
+        self::assertNull(TableWindowPlan::numberedSlice(4, 25, 100, true));
+        self::assertSame(['direction' => TableAnchorDirection::After, 'skip' => 25, 'take' => 25],
+            TableWindowPlan::numberedSlice(1, 25, 500, false));
+        self::assertNull(TableWindowPlan::numberedSlice(21, 25, 500, false));
+    }
+
     public function testAnExactCountRefusesAPageThatLiesPastTheEndOfTheSet(): void
     {
         $this->assertNull(TableWindowPlan::forQuery($this->pageQuery(9), self::ORDER, 42, true));

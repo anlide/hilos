@@ -11,7 +11,7 @@ final readonly class AnalyticsSectionBrowserSession
      * @param int $id Analytics browser-session number
      * @param int $firstSeenTs First recorded moment in milliseconds
      * @param int $lastSeenTs Last recorded moment in milliseconds
-     * @param ?string $browserDescription Short current user-agent description
+     * @param ?string $browser Short current browser and operating-system label
      * @param ?int $lastSignedInUserId Last signed-in account, or null for a guest
      * @param ?string $lastSignedInUserLabel Current account name or a deleted-account label
      * @param int $actionCount Actions on connections already attached to this session
@@ -20,7 +20,7 @@ final readonly class AnalyticsSectionBrowserSession
         public int $id,
         public int $firstSeenTs,
         public int $lastSeenTs,
-        public ?string $browserDescription,
+        public ?string $browser,
         public ?int $lastSignedInUserId,
         public ?string $lastSignedInUserLabel,
         public int $actionCount,

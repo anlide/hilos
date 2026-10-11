@@ -30,6 +30,8 @@ use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -437,6 +439,14 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogFeed]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogHistory]);
+        $this->assertSame(
+            HilosAnalyticsActionsTable::class,
+            Hilos::TABLES[ChatTableContext::hilosAnalyticsActions],
+        );
+        $this->assertSame(
+            HilosAnalyticsBrowserSessionsTable::class,
+            Hilos::TABLES[ChatTableContext::hilosAnalyticsBrowserSessions],
+        );
         self::assertSame([ChatTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
         self::assertSame([ChatTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
         self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogDashboardPage::SUBSCRIPTION_AGENT_TYPE);

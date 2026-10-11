@@ -79,6 +79,8 @@ use Hilos\HilosException;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -806,6 +808,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
         $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
         $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosAnalyticsActionsTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosAnalyticsActions],
+        );
+        $this->assertSame(
+            HilosAnalyticsBrowserSessionsTable::class,
+            Hilos::TABLES[EcommerceShopTableContext::hilosAnalyticsBrowserSessions],
+        );
 
         $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
         $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));

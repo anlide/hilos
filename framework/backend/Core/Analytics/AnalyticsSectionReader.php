@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Core\Analytics;
 
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Table\TableAnchorDirection;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
+use Hilos\Database\SqlSortDirection;
 use Hilos\HilosException;
 
 /** Bounded SQL reads of loaded analytics facts for the admin section. */
@@ -13,9 +16,15 @@ final class AnalyticsSectionReader
 {
     public const int MAX_PAGE_ROWS = 50;
 
-    private const int BROWSER_DESCRIPTION_MAX_CHARS = 160;
-
     private const string IDENTITY_TYPE_USER_ID = 'user_id';
+
+    private const string ACTION_MOMENT_SQL = 'a.`created_ts`';
+
+    private const string ACTION_ID_SQL = 'a.`id`';
+
+    private const string SESSION_MOMENT_SQL = 'b.`last_seen_ts`';
+
+    private const string SESSION_ID_SQL = 'b.`id`';
 
     /**
      * @param int $browserSessionId Numeric analytics row key, never a browser token
@@ -25,7 +34,7 @@ final class AnalyticsSectionReader
     public function browserSession(int $browserSessionId): ?AnalyticsSectionBrowserSession
     {
         Database::sql(
-            'SELECT b.`id`, b.`first_seen_ts`, b.`last_seen_ts`, u.`value` AS `browser_description`,
+            'SELECT b.`id`, b.`first_seen_ts`, b.`last_seen_ts`, u.`value` AS `user_agent`,
                     CASE WHEN b.`user_identity_type` = ? THEN b.`user_identity_value` END AS `user_id_value`
              FROM `hilos_analytics_browser_session` b
              LEFT JOIN `hilos_analytics_user_agent` u ON u.`id` = b.`current_user_agent_id`
@@ -49,22 +58,34 @@ final class AnalyticsSectionReader
 
     /**
      * @param int $browserSessionId Numeric analytics row key
-     * @param ?int $afterCreatedTs Source moment of the preceding window's last action
-     * @param ?int $afterId Row number of the preceding window's last action
+     * @param AnalyticsWindowOrder $order Canonical source-time or row-number order
+     * @param ?AnalyticsWindowAnchor $anchor Complete row key, or an edge of the set
+     * @param TableAnchorDirection $direction Side of the anchor in the chosen order
      * @param int $limit Requested number of rows, capped at MAX_PAGE_ROWS
-     * @return list<AnalyticsSectionAction> Actions in source-time and row-number order
-     * @throws InvalidArgumentException When only half of the cursor is supplied
+     * @param int $skip Rows to skip from the chosen edge when there is no anchor
+     * @return list<AnalyticsSectionAction> Actions in the chosen canonical order
+     * @throws InvalidArgumentException When a skip accompanies an anchor or its required moment is missing
      * @throws HilosException When the analytics query fails
      */
-    public function actions(int $browserSessionId, ?int $afterCreatedTs, ?int $afterId, int $limit): array
-    {
-        $this->requireCursorPair($afterCreatedTs, $afterId);
-        $params = [$browserSessionId];
-        $cursor = '';
-        if ($afterCreatedTs !== null) {
-            $cursor = ' AND (a.`created_ts` > ? OR (a.`created_ts` = ? AND a.`id` > ?))';
-            array_push($params, $afterCreatedTs, $afterCreatedTs, $afterId);
+    public function actionWindow(
+        int $browserSessionId,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        int $limit,
+        int $skip = 0,
+    ): array {
+        if ($anchor !== null && $skip !== 0) {
+            throw new InvalidArgumentException('Analytics skip requires an edge');
         }
+        $params = [$browserSessionId];
+        $cursor = $this->anchorClause(self::ACTION_MOMENT_SQL, self::ACTION_ID_SQL, $order, $anchor, $direction, $params);
+        $limit = $this->boundedLimit($limit);
+        $skip = max(0, $skip);
+        if ($limit === 0 || $skip > TableConstants::COUNT_CEILING) {
+            return [];
+        }
+        $sqlOrder = $this->windowOrder(self::ACTION_MOMENT_SQL, self::ACTION_ID_SQL, $order, $direction);
         Database::sql(
             'SELECT a.`id`, a.`created_ts`, p.`page_name`, n.`name` AS `action_name`
              FROM `hilos_analytics_user_action` a
@@ -73,7 +94,7 @@ final class AnalyticsSectionReader
              LEFT JOIN `hilos_analytics_page_session` ps ON ps.`id` = a.`page_session_id`
              LEFT JOIN `hilos_analytics_page` p ON p.`id` = ps.`page_id`
              WHERE w.`browser_session_id` = ?' . $cursor . '
-             ORDER BY a.`created_ts` ASC, a.`id` ASC LIMIT ' . $this->boundedLimit($limit),
+             ORDER BY ' . $sqlOrder . ' LIMIT ' . $limit . ' OFFSET ' . $skip,
             $params,
         );
 
@@ -87,33 +108,74 @@ final class AnalyticsSectionReader
             );
         }
 
-        return $actions;
+        return $direction === TableAnchorDirection::Before ? array_reverse($actions) : $actions;
+    }
+
+    /**
+     * @param int $browserSessionId Numeric analytics row key
+     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
+     * @return int Matching actions, at most ceiling plus one
+     * @throws HilosException When the analytics count query fails
+     */
+    public function actionCount(int $browserSessionId, int $ceiling = TableConstants::COUNT_CEILING): int
+    {
+        return $this->boundedActionCount($browserSessionId, AnalyticsWindowOrder::NUMBER, null, $ceiling);
+    }
+
+    /**
+     * @param int $browserSessionId Numeric analytics row key
+     * @param AnalyticsWindowOrder $order Canonical source-time or row-number order
+     * @param AnalyticsWindowAnchor $anchor Complete row key
+     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
+     * @return int Actions preceding the anchor, at most ceiling plus one
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the analytics count query fails
+     */
+    public function actionCountBefore(
+        int $browserSessionId,
+        AnalyticsWindowOrder $order,
+        AnalyticsWindowAnchor $anchor,
+        int $ceiling = TableConstants::COUNT_CEILING,
+    ): int {
+        return $this->boundedActionCount($browserSessionId, $order, $anchor, $ceiling);
     }
 
     /**
      * @param int $userId Last signed-in account number, not the actor of each action
-     * @param ?int $beforeLastSeenTs Source moment of the preceding window's last session
-     * @param ?int $beforeId Row number of the preceding window's last session
+     * @param AnalyticsWindowOrder $order Canonical last-seen or row-number order
+     * @param ?AnalyticsWindowAnchor $anchor Complete row key, or an edge of the set
+     * @param TableAnchorDirection $direction Side of the anchor in the chosen order
      * @param int $limit Requested number of rows, capped at MAX_PAGE_ROWS
-     * @return list<AnalyticsSectionBrowserSession> Sessions in reverse last-seen and row-number order
-     * @throws InvalidArgumentException When only half of the cursor is supplied
+     * @param int $skip Rows to skip from the chosen edge when there is no anchor
+     * @return list<AnalyticsSectionBrowserSession> Sessions in the chosen canonical order
+     * @throws InvalidArgumentException When a skip accompanies an anchor or its required moment is missing
      * @throws HilosException When an analytics or account lookup fails
      */
-    public function browserSessionsForUser(int $userId, ?int $beforeLastSeenTs, ?int $beforeId, int $limit): array
-    {
-        $this->requireCursorPair($beforeLastSeenTs, $beforeId);
-        $params = [self::IDENTITY_TYPE_USER_ID, (string)$userId];
-        $cursor = '';
-        if ($beforeLastSeenTs !== null) {
-            $cursor = ' AND (b.`last_seen_ts` < ? OR (b.`last_seen_ts` = ? AND b.`id` < ?))';
-            array_push($params, $beforeLastSeenTs, $beforeLastSeenTs, $beforeId);
+    public function browserSessionWindow(
+        int $userId,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        int $limit,
+        int $skip = 0,
+    ): array {
+        if ($anchor !== null && $skip !== 0) {
+            throw new InvalidArgumentException('Analytics skip requires an edge');
         }
+        $params = [self::IDENTITY_TYPE_USER_ID, (string)$userId];
+        $cursor = $this->anchorClause(self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $anchor, $direction, $params);
+        $limit = $this->boundedLimit($limit);
+        $skip = max(0, $skip);
+        if ($limit === 0 || $skip > TableConstants::COUNT_CEILING) {
+            return [];
+        }
+        $sqlOrder = $this->windowOrder(self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $direction);
         Database::sql(
-            'SELECT b.`id`, b.`first_seen_ts`, b.`last_seen_ts`, u.`value` AS `browser_description`
+            'SELECT b.`id`, b.`first_seen_ts`, b.`last_seen_ts`, u.`value` AS `user_agent`
              FROM `hilos_analytics_browser_session` b
              LEFT JOIN `hilos_analytics_user_agent` u ON u.`id` = b.`current_user_agent_id`
              WHERE b.`user_identity_type` = ? AND b.`user_identity_value` = ?' . $cursor . '
-             ORDER BY b.`last_seen_ts` DESC, b.`id` DESC LIMIT ' . $this->boundedLimit($limit),
+             ORDER BY ' . $sqlOrder . ' LIMIT ' . $limit . ' OFFSET ' . $skip,
             $params,
         );
         $rows = Database::rows();
@@ -129,7 +191,36 @@ final class AnalyticsSectionReader
             $sessions[] = $this->sessionFromRow($row, $counts, $userId, $label);
         }
 
-        return $sessions;
+        return $direction === TableAnchorDirection::Before ? array_reverse($sessions) : $sessions;
+    }
+
+    /**
+     * @param int $userId Last signed-in account number
+     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
+     * @return int Matching sessions, at most ceiling plus one
+     * @throws HilosException When the analytics count query fails
+     */
+    public function browserSessionCount(int $userId, int $ceiling = TableConstants::COUNT_CEILING): int
+    {
+        return $this->boundedBrowserSessionCount($userId, AnalyticsWindowOrder::NUMBER, null, $ceiling);
+    }
+
+    /**
+     * @param int $userId Last signed-in account number
+     * @param AnalyticsWindowOrder $order Canonical last-seen or row-number order
+     * @param AnalyticsWindowAnchor $anchor Complete row key
+     * @param int $ceiling Exact-count ceiling; one extra row signals overflow
+     * @return int Sessions preceding the anchor, at most ceiling plus one
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the analytics count query fails
+     */
+    public function browserSessionCountBefore(
+        int $userId,
+        AnalyticsWindowOrder $order,
+        AnalyticsWindowAnchor $anchor,
+        int $ceiling = TableConstants::COUNT_CEILING,
+    ): int {
+        return $this->boundedBrowserSessionCount($userId, $order, $anchor, $ceiling);
     }
 
     /**
@@ -172,8 +263,7 @@ final class AnalyticsSectionReader
             $id,
             (int)$row['first_seen_ts'],
             (int)$row['last_seen_ts'],
-            $row['browser_description'] === null
-                ? null : mb_substr((string)$row['browser_description'], 0, self::BROWSER_DESCRIPTION_MAX_CHARS),
+            $row['user_agent'] === null ? null : AnalyticsBrowserLabel::fromUserAgent((string)$row['user_agent']),
             $userId,
             $label,
             $counts[$id] ?? 0,
@@ -198,15 +288,120 @@ final class AnalyticsSectionReader
     }
 
     /**
-     * @param ?int $moment Cursor source moment
-     * @param ?int $id Cursor row number
-     * @throws InvalidArgumentException When only half of the cursor is supplied
+     * @param string $momentColumn Trusted SQL source-moment column
+     * @param string $idColumn Trusted SQL row-number column
+     * @param AnalyticsWindowOrder $order Canonical window order
+     * @param ?AnalyticsWindowAnchor $anchor Complete row key, or null for an edge
+     * @param TableAnchorDirection $direction Side of the key in canonical order
+     * @param list<mixed> $params Raw SQL parameters extended by this predicate
+     * @return string SQL predicate including leading AND, empty at an edge
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
      */
-    private function requireCursorPair(?int $moment, ?int $id): void
-    {
-        if (($moment === null) !== ($id === null)) {
-            throw new InvalidArgumentException('Analytics cursor requires both source moment and row number');
+    private function anchorClause(
+        string $momentColumn,
+        string $idColumn,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        TableAnchorDirection $direction,
+        array &$params,
+    ): string {
+        if ($anchor === null) {
+            return '';
         }
+        $descending = ($order === AnalyticsWindowOrder::TIME_DESC) === ($direction === TableAnchorDirection::After);
+        $operator = $descending ? '<' : '>';
+        if ($order === AnalyticsWindowOrder::NUMBER) {
+            $params[] = $anchor->id;
+            return " AND {$idColumn} {$operator} ?";
+        }
+        if ($anchor->moment === null) {
+            throw new InvalidArgumentException('Analytics time anchor requires a source moment');
+        }
+        array_push($params, $anchor->moment, $anchor->moment, $anchor->id);
+
+        return " AND ({$momentColumn} {$operator} ? OR ({$momentColumn} = ? AND {$idColumn} {$operator} ?))";
+    }
+
+    /**
+     * @param string $momentColumn Trusted SQL source-moment column
+     * @param string $idColumn Trusted SQL row-number column
+     * @param AnalyticsWindowOrder $order Canonical window order
+     * @param TableAnchorDirection $direction Side the window is taken from
+     * @return string SQL order, inverted when the window is taken before its anchor
+     */
+    private function windowOrder(
+        string $momentColumn,
+        string $idColumn,
+        AnalyticsWindowOrder $order,
+        TableAnchorDirection $direction,
+    ): string {
+        $descending = ($order === AnalyticsWindowOrder::TIME_DESC) === ($direction === TableAnchorDirection::After);
+        $sqlDirection = $descending ? SqlSortDirection::DESC : SqlSortDirection::ASC;
+
+        return $order === AnalyticsWindowOrder::NUMBER
+            ? "{$idColumn} {$sqlDirection}" : "{$momentColumn} {$sqlDirection}, {$idColumn} {$sqlDirection}";
+    }
+
+    /**
+     * @param int $browserSessionId Numeric analytics row key
+     * @param AnalyticsWindowOrder $order Canonical window order
+     * @param ?AnalyticsWindowAnchor $anchor Key to count before, or null for the whole set
+     * @param int $ceiling Exact-count ceiling
+     * @return int Matching actions, capped at ceiling plus one
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the analytics count query fails
+     */
+    private function boundedActionCount(
+        int $browserSessionId,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        int $ceiling,
+    ): int {
+        $params = [$browserSessionId];
+        $cursor = $this->anchorClause(
+            self::ACTION_MOMENT_SQL, self::ACTION_ID_SQL, $order, $anchor, TableAnchorDirection::Before, $params,
+        );
+        $limit = max(0, min($ceiling, TableConstants::COUNT_CEILING)) + 1;
+        Database::sql(
+            'SELECT COUNT(*) AS `total_count` FROM (SELECT 1 FROM `hilos_analytics_user_action` a
+             JOIN `hilos_analytics_ws_connection` w ON w.`id` = a.`ws_connection_id`
+             JOIN `hilos_analytics_action_name` n ON n.`id` = a.`action_name_id`
+             LEFT JOIN `hilos_analytics_page_session` ps ON ps.`id` = a.`page_session_id`
+             LEFT JOIN `hilos_analytics_page` p ON p.`id` = ps.`page_id`
+             WHERE w.`browser_session_id` = ?' . $cursor . ' LIMIT ' . $limit . ') capped',
+            $params,
+        );
+
+        return (int)Database::field('total_count');
+    }
+
+    /**
+     * @param int $userId Last signed-in account number
+     * @param AnalyticsWindowOrder $order Canonical window order
+     * @param ?AnalyticsWindowAnchor $anchor Key to count before, or null for the whole set
+     * @param int $ceiling Exact-count ceiling
+     * @return int Matching sessions, capped at ceiling plus one
+     * @throws InvalidArgumentException When the anchor lacks its required source moment
+     * @throws HilosException When the analytics count query fails
+     */
+    private function boundedBrowserSessionCount(
+        int $userId,
+        AnalyticsWindowOrder $order,
+        ?AnalyticsWindowAnchor $anchor,
+        int $ceiling,
+    ): int {
+        $params = [self::IDENTITY_TYPE_USER_ID, (string)$userId];
+        $cursor = $this->anchorClause(
+            self::SESSION_MOMENT_SQL, self::SESSION_ID_SQL, $order, $anchor, TableAnchorDirection::Before, $params,
+        );
+        $limit = max(0, min($ceiling, TableConstants::COUNT_CEILING)) + 1;
+        Database::sql(
+            'SELECT COUNT(*) AS `total_count` FROM (SELECT 1 FROM `hilos_analytics_browser_session` b
+             WHERE b.`user_identity_type` = ? AND b.`user_identity_value` = ?' . $cursor . ' LIMIT ' . $limit . ') capped',
+            $params,
+        );
+
+        return (int)Database::field('total_count');
     }
 
     /**

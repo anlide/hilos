@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables;
 
 use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalChecksTable;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
@@ -96,6 +98,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosI18nLanguageLocalesTable $hilosI18nLanguageLocales
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
+ * @property-read HilosAnalyticsActionsTable $hilosAnalyticsActions
+ * @property-read HilosAnalyticsBrowserSessionsTable $hilosAnalyticsBrowserSessions
  */
 final class ChatTableContext extends TableContext
 {
@@ -140,6 +144,8 @@ final class ChatTableContext extends TableContext
     public const string hilosI18nLanguageLocales = HilosI18nLanguageLocalesTable::TABLE;
     public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
     public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
+    public const string hilosAnalyticsActions = HilosAnalyticsActionsTable::TABLE;
+    public const string hilosAnalyticsBrowserSessions = HilosAnalyticsBrowserSessionsTable::TABLE;
 
     /**
      * Registers chat table definitions from the project topology registry.

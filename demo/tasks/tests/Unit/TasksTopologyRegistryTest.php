@@ -25,6 +25,8 @@ use Demo\Tasks\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Tasks\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Tasks\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -746,6 +748,8 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
             TasksTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
             TasksTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
+            TasksTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+            TasksTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         ], Hilos::TABLES);
 
         $this->assertSame(
@@ -1028,6 +1032,14 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
         $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
         $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosAnalyticsActionsTable::class,
+            Hilos::TABLES[TasksTableContext::hilosAnalyticsActions],
+        );
+        $this->assertSame(
+            HilosAnalyticsBrowserSessionsTable::class,
+            Hilos::TABLES[TasksTableContext::hilosAnalyticsBrowserSessions],
+        );
 
         $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
         $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));

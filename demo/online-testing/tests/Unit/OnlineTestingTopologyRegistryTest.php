@@ -99,6 +99,8 @@ use Hilos\Log\LogStoreAgent;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -707,6 +709,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
             OnlineTestingTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
             OnlineTestingTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
+            OnlineTestingTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+            OnlineTestingTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
         ], Hilos::TABLES);
         $this->assertSame(
             [HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class],
@@ -902,6 +906,14 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
         $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
         $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosAnalyticsActionsTable::class,
+            Hilos::TABLES[OnlineTestingTableContext::hilosAnalyticsActions],
+        );
+        $this->assertSame(
+            HilosAnalyticsBrowserSessionsTable::class,
+            Hilos::TABLES[OnlineTestingTableContext::hilosAnalyticsBrowserSessions],
+        );
 
         $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
         $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));

@@ -12,6 +12,8 @@ use Demo\Polls\Pages\Hilos\Legal\LegalRevisionPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Polls\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Polls\Tables\HilosLegal\HilosLegalAcceptancesTable;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
@@ -473,6 +475,8 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
         PollsTableContext::hilosI18nLanguages => HilosI18nLanguagesTable::class,
         PollsTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
+        PollsTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
+        PollsTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
     ];
 
     public const array BROWSER_LISTS = [

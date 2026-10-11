@@ -397,14 +397,34 @@ HIL-1402.
 
 `AnalyticsSectionReader` provides bounded, typed reads of the analytics tables
 through raw SQL: no Entity maps these tables. It returns a nullable session
-summary by numeric id, an action window in `(created_ts, id)` order, and a
-last-signed-in account's session window in `(last_seen_ts, id)` reverse order.
-Each window is capped at 50 rows; counts for session summaries cover only
-connections already attached to the selected sessions. The pages and tables
-that consume these results follow in HIL-1417/1419/1420. Keep SQL in the
-analytics data layer, `framework/backend/Core/Analytics/`, never in a page or
-table ([../orm/db-collection.md](../orm/db-collection.md)). The master and the
-collector never read the analytics tables.
+summary by numeric id and key-anchored windows of actions and browser sessions.
+Actions open in `(created_ts, id)` ascending order, sessions in
+`(last_seen_ts, id)` descending order; each time order also serves its reverse.
+A window without an order runs by row number ascending. Each read is capped at
+50 rows and takes a typed anchor, a direction and a bounded skip for a numbered
+page. Counts stop at the framework ceiling of 500, probing one extra row to
+distinguish an exact count from `500+`; the count before an anchor is bounded
+the same way. Counts for session summaries cover only connections already
+attached to the selected sessions.
+
+Two framework tables expose these reads with 25-row opening windows:
+`hilosAnalyticsActions`, filtered by `browserSession`, carries the inline
+`action` slot (`createdTs`, `pageName`, `actionName`), and
+`hilosAnalyticsBrowserSessions`, filtered by `user`, carries the inline
+`browserSession` slot (`firstSeenTs`, `lastSeenTs`, `browser`, `actionCount`).
+The numeric identity belongs to the fragment's `rowKey`, never an `id` in the
+slot. A missing preset gives an empty window without SQL; a value other than a
+positive integer refuses the window. These tables have no search, mutations or
+live source-change frames. The frontend core supplies their controllers,
+column declarations, row readers and local-time labels; pages follow in
+HIL-1419/1420.
+
+`browser` is a short browser/version and operating-system label, not a raw
+User-Agent excerpt of 160 characters. An unrecognized User-Agent falls back to
+its first 60 characters; an absent one is null.
+Keep SQL in the analytics data layer, `framework/backend/Core/Analytics/`,
+never in a page or table ([../orm/db-collection.md](../orm/db-collection.md)).
+The master and the collector never read the analytics tables.
 
 | Fact | Source |
 |---|---|
@@ -465,7 +485,8 @@ browser-session attachment has not been loaded, the action is not visible on
 any browser-session page until that attachment arrives. A file loads in one
 transaction: the reader sees the whole file or none of it.
 
-Phase-1 shows what was recorded when the page opened; live updates belong to
+Phase-1 shows what the writer had loaded when each window was requested;
+paging, sorting or reloading asks for a new snapshot. Live updates belong to
 HIL-1402. Nothing is deleted by age yet — retention is also HIL-1402 — so read a
 window of rows, never all the rows of a session or account at once.
 

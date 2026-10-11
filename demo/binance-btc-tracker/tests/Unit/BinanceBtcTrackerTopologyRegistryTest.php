@@ -109,6 +109,8 @@ use Hilos\Notification\NotificationPreferenceAction;
 use Hilos\Push\PushSubscriptionAction;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgent;
 use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -1101,6 +1103,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
         $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
         $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            HilosAnalyticsActionsTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosAnalyticsActions],
+        );
+        $this->assertSame(
+            HilosAnalyticsBrowserSessionsTable::class,
+            Hilos::TABLES[BinanceBtcTrackerTableContext::hilosAnalyticsBrowserSessions],
+        );
 
         $reader = Hilos::AGENTS[AgentType::HILOS_ANALYTICS];
         $this->assertSame(DemoHilosAnalyticsAgent::class, AgentRegistry::workerClass($reader));

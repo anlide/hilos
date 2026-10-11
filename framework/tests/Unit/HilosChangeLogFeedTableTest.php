@@ -11,7 +11,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTableRow;
 use Hilos\Tables\ChangeLog\HilosChangeLogTableParts;
@@ -80,20 +79,6 @@ final class HilosChangeLogFeedTableTest extends TestCase
         $data[HilosChangeLogFeedTableRow::touched] = ['broken'];
         $this->expectException(InvalidFormatException::class);
         HilosChangeLogFeedTableRow::fromArray($data);
-    }
-
-    public function testNumberedWindowChoosesNearerEdgeAndStopsAtCeiling(): void
-    {
-        self::assertSame(['direction' => TableAnchorDirection::After, 'skip' => 0, 'take' => 25],
-            HilosChangeLogTableParts::numberedWindow(0, 25, 100, true));
-        self::assertSame(['direction' => TableAnchorDirection::After, 'skip' => 25, 'take' => 25],
-            HilosChangeLogTableParts::numberedWindow(1, 25, 100, true));
-        self::assertSame(['direction' => TableAnchorDirection::Before, 'skip' => 0, 'take' => 25],
-            HilosChangeLogTableParts::numberedWindow(3, 25, 100, true));
-        self::assertNull(HilosChangeLogTableParts::numberedWindow(4, 25, 100, true));
-        self::assertSame(['direction' => TableAnchorDirection::After, 'skip' => 25, 'take' => 25],
-            HilosChangeLogTableParts::numberedWindow(1, 25, 500, false));
-        self::assertNull(HilosChangeLogTableParts::numberedWindow(21, 25, 500, false));
     }
 
     public function testViewerSearchAllowsNumbersButNotHiddenNamesWithoutSql(): void

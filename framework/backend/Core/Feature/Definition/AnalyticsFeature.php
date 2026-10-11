@@ -12,6 +12,8 @@ use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Pages\AbstractHilosAnalyticsPage;
+use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
+use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 
 /**
  * Analytics through node journals (HIL-1154) and the cluster's admin reader.
@@ -34,7 +36,7 @@ final class AnalyticsFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The section page and reader, both journal agents, and the settings fragment
+     * @return FeatureRequirements The section page, tables and reader, both journal agents, and the settings fragment
      */
     public function requirements(): FeatureRequirements
     {
@@ -46,6 +48,7 @@ final class AnalyticsFeature extends FeatureDefinition
                 HilosAgentType::HILOS_ANALYTICS_WRITER,
             ],
             requiredCatalogFragments: [AnalyticsSettingsCatalog::class],
+            requiredTables: [HilosAnalyticsActionsTable::class, HilosAnalyticsBrowserSessionsTable::class],
         );
     }
 }

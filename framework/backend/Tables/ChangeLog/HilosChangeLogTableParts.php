@@ -10,8 +10,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\TableAnchorDirection;
-use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableSearchTerm;
 use Hilos\Database\ChangeLog\Section\ChangeLogPerson;
 
@@ -111,29 +109,6 @@ final class HilosChangeLogTableParts
             return $term;
         }
         return preg_match('/\A#?[0-9]+\z/', $term) === 1 ? $term : false;
-    }
-
-    /**
-     * @param int $pageIndex Zero-based requested page
-     * @param int $limit Page size
-     * @param int $total Count, capped at the table ceiling
-     * @param bool $exact Whether the count reached the end
-     * @return ?array{direction: TableAnchorDirection, skip: int, take: int} Nearer edge and slice
-     */
-    public static function numberedWindow(int $pageIndex, int $limit, int $total, bool $exact): ?array
-    {
-        $start = max(0, $pageIndex) * $limit;
-        if (!$exact) {
-            return $start > TableConstants::COUNT_CEILING
-                ? null : ['direction' => TableAnchorDirection::After, 'skip' => $start, 'take' => $limit];
-        }
-        $end = min($total, $start + $limit);
-        if ($start >= $end) {
-            return null;
-        }
-        return $start * 2 >= $total
-            ? ['direction' => TableAnchorDirection::Before, 'skip' => $total - $end, 'take' => $end - $start]
-            : ['direction' => TableAnchorDirection::After, 'skip' => $start, 'take' => $end - $start];
     }
 
     /**

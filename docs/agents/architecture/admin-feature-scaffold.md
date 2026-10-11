@@ -563,9 +563,15 @@ a thin page subclass of `AbstractHilosAnalyticsPage` with
 `SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_ANALYTICS` to `PAGES`; startup
 requires it and refuses that page or the reader agent without the feature.
 
-The backend reader supplies typed, bounded SQL results. Browser tables and SDK
-views are separate leaves (HIL-1417…1421); do not fabricate their binding while
-activating this backend section. For its data and privacy boundaries, read
+Register both framework tables in `TABLES` and the project's `TableContext`:
+`Hilos\Tables\Analytics\HilosAnalyticsActionsTable` under `hilosAnalyticsActions`
+and `Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable` under
+`hilosAnalyticsBrowserSessions`. The feature requires both registrations.
+The backend reader supplies typed, bounded SQL results, and the frontend core
+supplies the controllers and column declarations. The page bindings arrive
+with HIL-1419 / HIL-1420, and the remaining SDK views with HIL-1421; do not
+fabricate their binding while activating this backend section.
+For its data and privacy boundaries, read
 [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
 ### a future framework feature (roles, …)
