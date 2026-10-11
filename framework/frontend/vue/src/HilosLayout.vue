@@ -546,12 +546,13 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             <strong>{{ impersonation.userName }}</strong>
             <span
               v-if="impersonation.viewOnly"
-              class="badge text-bg-dark ms-1"
+              class="badge text-bg-secondary ms-1"
               >{{ IMPERSONATION_STRIP_COPY.viewOnly }}</span
             >
           </span>
           <LoadingButton
-            class="btn-sm btn-outline-dark"
+            class="btn-sm"
+            :class="`btn-${impersonation.tone}`"
             data-id="impersonation-stop"
             :loading="impersonationStopBusy"
             @click="onImpersonationStop"
@@ -573,7 +574,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
             {{ deletionStripText }}
           </span>
           <LoadingButton
-            class="btn-sm btn-outline-dark"
+            class="btn-sm btn-warning"
             data-id="account-deletion-strip-keep"
             :loading="keepAccountBusy"
             @click="onKeepAccount"

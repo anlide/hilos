@@ -36,7 +36,7 @@ defineProps<{
           <div class="col-12 px-3 pt-2 small fw-semibold">
             {{ change.title }}
             <span
-              class="badge text-bg-light border ms-1 text-capitalize"
+              class="badge bg-body-tertiary text-body-emphasis border ms-1 text-capitalize"
               data-id="legal-change-kind"
               >{{ change.kind }}</span
             >
@@ -86,7 +86,7 @@ defineProps<{
           >
             {{ change.title }}
             <span
-              class="badge text-bg-light border ms-1 text-capitalize"
+              class="badge bg-body-tertiary text-body-emphasis border ms-1 text-capitalize"
               data-id="legal-change-kind"
               >{{ change.kind }}</span
             >

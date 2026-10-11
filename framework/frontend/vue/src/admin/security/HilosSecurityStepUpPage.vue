@@ -68,7 +68,7 @@ async function toggleOperation(
         >
       </template>
       <template #cell-owner="{ row }">
-        <span class="badge text-bg-light border">
+        <span class="badge bg-body-tertiary text-body-emphasis border">
           {{
             row.owner === 'framework'
               ? HILOS_STEP_UP_ADMIN_COPY.framework

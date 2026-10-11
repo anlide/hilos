@@ -303,8 +303,8 @@ const countLabel = computed(() =>
 // refused write, not to waiting. Grey comes last of the three: amber and green speak
 // of something that happened to the row and the reader has yet to take in, while grey
 // says only that the reader opened this one themselves. Bootstrap's contextual row
-// classes carry their own dark-mode variants, so they adapt to the active theme with
-// no custom style layer.
+// fills stay light in dark mode, with their own dark text keeping them readable.
+// Keep the stock Bootstrap colors intentionally: Hilos has no palette (HIL-1295).
 function rowClass(view: TableViewportRow<R>): string | undefined {
   if (view.pending !== null) {
     return 'table-warning'

@@ -1,7 +1,7 @@
 <!-- Root view. The application shell is the SDK's HilosLayout; the demo fills
 its brand and user slots and routes the content slot through HilosView, which
 renders the component mapped to the navigator's current page. The live connection
-state, the language/theme switch and the MCP mark are the shell's own. The demo
+state, the theme menu and the MCP mark are the shell's own. The demo
 has no navigation of its own yet and no profile root — its one profile page is
 the notification settings — so the signed-in region is the notification bell and
 the avatar, which is not a link, and a visitor gets one button that opens the

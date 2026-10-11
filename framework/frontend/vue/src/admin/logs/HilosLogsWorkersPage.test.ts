@@ -289,7 +289,7 @@ describe('HilosLogsWorkersPage', () => {
 
     const badges = wrapper.findAll('[data-id^="hilos-table-row-"] .badge')
     expect(badges[0].text()).toBe('Ordinary')
-    expect(badges[0].classes()).toContain('text-bg-light')
+    expect(badges[0].classes()).toContain('bg-body-tertiary')
     const monopolistic = badges.find((badge) => badge.text() === 'Monopolistic')
     expect(monopolistic?.classes()).toContain('text-bg-info-subtle')
   })

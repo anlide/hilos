@@ -137,7 +137,7 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
         >
         <span
           v-else
-          class="badge text-bg-light border text-body-secondary fw-normal"
+          class="badge bg-body-tertiary border text-body-secondary fw-normal"
           :data-id="`i18n-countries-locale-none-${row.code}`"
         >
           <i class="bi bi-dash-circle me-1" aria-hidden="true"></i>Not chosen

@@ -30,7 +30,11 @@ const detail = useSignal(botDetail)
         >
         <span
           class="badge"
-          :class="detail.active ? 'text-bg-primary' : 'text-bg-light'"
+          :class="
+            detail.active
+              ? 'text-bg-primary'
+              : 'bg-body-tertiary text-body-emphasis'
+          "
           data-id="bot-active"
           >{{ detail.active ? 'active' : 'inactive' }}</span
         >

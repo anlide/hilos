@@ -461,7 +461,7 @@ function dismissIfNavigated(event: MouseEvent, id: number): void {
             </div>
             <span
               v-if="toast.repeats > 1"
-              class="badge text-bg-light border"
+              class="badge bg-body-tertiary text-body-emphasis border"
               data-id="hilos-toast-repeats"
               >×{{ toast.repeats }}</span
             >

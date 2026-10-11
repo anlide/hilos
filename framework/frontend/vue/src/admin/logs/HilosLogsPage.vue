@@ -337,7 +337,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
               </span>
               <span
                 v-if="entry.traceFrames !== null"
-                class="badge text-bg-light border flex-shrink-0"
+                class="badge bg-body-tertiary text-body-emphasis border flex-shrink-0"
                 title="This entry carries a stack trace"
                 data-id="hilos-logs-recent-row-trace"
               >
@@ -415,7 +415,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
               :data-id="`hilos-logs-node-${node.nodeId}`"
             >
               <td>
-                <span class="badge text-bg-light border">
+                <span class="badge bg-body-tertiary text-body-emphasis border">
                   {{ node.nodeId }}
                 </span>
                 <!-- The sub-line carries whatever the hidden columns were

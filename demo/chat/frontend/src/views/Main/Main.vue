@@ -418,7 +418,7 @@ onUnmounted(() => {
                 }}</span>
                 <span
                   v-if="bot.status"
-                  class="badge text-bg-light"
+                  class="badge bg-body-tertiary text-body-emphasis"
                   data-id="bot-status"
                   >{{ bot.status }}</span
                 >
@@ -509,7 +509,7 @@ onUnmounted(() => {
         <span
           v-for="d in drafts"
           :key="d.clientUploadId"
-          class="badge rounded-pill text-bg-secondary d-inline-flex align-items-center gap-1"
+          class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle d-inline-flex align-items-center gap-1"
           data-id="attachment-draft"
         >
           <i class="bi bi-paperclip" aria-hidden="true" />
@@ -522,7 +522,7 @@ onUnmounted(() => {
           >
           <button
             type="button"
-            class="btn-close btn-close-white"
+            class="btn-close"
             style="font-size: 0.5rem"
             aria-label="Remove attachment"
             :disabled="isModerating || d.canceling"

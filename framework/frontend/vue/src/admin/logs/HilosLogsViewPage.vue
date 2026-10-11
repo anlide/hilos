@@ -450,7 +450,7 @@ function toggle(entry: HilosLogViewerEntry): void {
         than a button, since it keeps a place and must never take the focus. -->
         <span class="btn btn-sm invisible" aria-hidden="true">
           <i class="bi bi-arrow-down me-1"></i>Back to the tail
-          <span class="badge text-bg-light ms-1">{{
+          <span class="badge bg-body-tertiary text-body-emphasis ms-1">{{
             LOG_VIEWER_PENDING_WIDEST_LABEL
           }}</span>
         </span>
@@ -465,7 +465,7 @@ function toggle(entry: HilosLogViewerEntry): void {
           tail
           <template v-if="pendingLines > 0">
             <span
-              class="badge text-bg-light ms-1"
+              class="badge bg-body-tertiary text-body-emphasis ms-1"
               data-id="hilos-log-back-to-tail-count"
             >
               {{ logViewerPendingLabel(pendingLines) }}

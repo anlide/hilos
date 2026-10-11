@@ -125,7 +125,10 @@ const RETENTION_CLASS: Record<string, string> = {
 }
 
 function retentionClass(row: HilosLogRotationRow): string {
-  return RETENTION_CLASS[row.retentionState] ?? 'text-bg-light border'
+  return (
+    RETENTION_CLASS[row.retentionState] ??
+    'bg-body-tertiary text-body-emphasis border'
+  )
 }
 
 function clearFilters(): void {

@@ -171,10 +171,12 @@ function onDownload(): void {
           {{ entry.name }}
           <span class="text-body-secondary">{{ entry.version }}</span>
         </span>
-        <span class="badge text-bg-light border">
+        <span class="badge bg-body-tertiary text-body-emphasis border">
           {{ licenseLanguageLabel(entry.language) }}
         </span>
-        <span class="badge text-bg-light border">{{ entry.license }}</span>
+        <span class="badge bg-body-tertiary text-body-emphasis border">{{
+          entry.license
+        }}</span>
       </button>
       <p
         v-if="visible.length === 0"

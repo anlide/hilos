@@ -190,7 +190,9 @@ const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
                 class="bi bi-hdd-stack text-body-secondary"
                 aria-hidden="true"
               ></i>
-              <span class="badge text-bg-light border">Daemon</span>
+              <span class="badge bg-body-tertiary text-body-emphasis border"
+                >Daemon</span
+              >
             </div>
             <div class="small mb-2">
               <code>daemon.log</code>, <code>daemon-error.log</code> and the raw
@@ -210,7 +212,9 @@ const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
           <div class="border rounded-3 p-3 h-100">
             <div class="d-flex align-items-center gap-2 mb-1">
               <i class="bi bi-cpu text-body-secondary" aria-hidden="true"></i>
-              <span class="badge text-bg-light border">Agents</span>
+              <span class="badge bg-body-tertiary text-body-emphasis border"
+                >Agents</span
+              >
             </div>
             <div class="small mb-2"><code>agent-*.log</code></div>
             <p class="small text-body-secondary mb-0">
@@ -225,7 +229,9 @@ const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
                 class="bi bi-diagram-3 text-body-secondary"
                 aria-hidden="true"
               ></i>
-              <span class="badge text-bg-light border">Workers</span>
+              <span class="badge bg-body-tertiary text-body-emphasis border"
+                >Workers</span
+              >
             </div>
             <div class="small mb-2">
               <code>worker-*.log</code> and

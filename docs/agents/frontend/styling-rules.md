@@ -265,6 +265,10 @@ one through `data-bs-theme` on `<html>`; what decides it is
 - colored fills — `text-bg-<color>`, `btn-<color>`, `btn-outline-<color>` — of
   `primary`, `secondary`, `success`, `danger`, `warning` and `info`.
 
+`table-<color>` is contextual, but Bootstrap 5.3 does not recolor it in dark
+mode: the row stays light and uses its own readable text color — stock behavior,
+not a class pinned to one mode.
+
 **A class pinned to one mode is forbidden:** the color word `light`, `dark`,
 `white` or `black` in `bg-`, `text-`, `text-bg-`, `btn-`, `btn-outline-`,
 `border-`, `link-`, `table-`, plus `dropdown-menu-dark` and `btn-close-white`.
@@ -306,12 +310,11 @@ it; see [theme.md](../architecture/theme.md). A variable override for one mode
 is the framework's alone, lives in the Sass layer with its WHY, and states what
 the other mode wears.
 
-The tree does not hold this yet: the SDK in its three ports and the chat demo
-still carry pinned classes, `text-bg-light` most of all
-(not in the code yet — HIL-1432, HIL-1440, HIL-1441).
+The Vue SDK and the demos carry no pinned classes.
+The tree does not hold this yet: the React and Angular ports still carry pinned
+classes, recorded in the baseline (not in the code yet — HIL-1440, HIL-1441).
 
-Checked automatically: `STYLE-THEME-PINNED`
-(not in the code yet — HIL-1432, HIL-1440, HIL-1441).
+Checked automatically: `STYLE-THEME-PINNED`.
 
 ## Responsive and mobile
 
