@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosDaemonWorkersTable,
-  daemonWorkersEmptyState,
   daemonWorkerLogPath,
   formatDaemonWorkerAgentCount,
   formatDaemonWorkerKind,
   formatDaemonWorkerMemory,
   formatDaemonWorkerName,
   formatDaemonWorkerPid,
-  readDaemonWorkersProcessesReported,
   resolveHilosDaemonWorkerRow,
   type HilosDaemonWorkerRow,
   type HilosDaemonWorkersContext,
@@ -116,31 +114,6 @@ describe('daemon workers row', () => {
         logStream: 'worker-monopolistic-3.log',
       }),
     )
-  })
-})
-
-describe('daemon workers empty state', () => {
-  it('reads whether the node has reported its process roster', () => {
-    const scopes = new ScopeManager()
-    const page = scopes.openPage(HilosPages.DAEMON_WORKERS)
-    const reported = readDaemonWorkersProcessesReported(scopes)
-
-    expect(reported.get()).toBe(false)
-    page.data.set('processesReported', true)
-    expect(reported.get()).toBe(true)
-    page.data.set('processesReported', false)
-    expect(reported.get()).toBe(false)
-  })
-
-  it('distinguishes a completed empty roster, silence, and waiting', () => {
-    const silent = { clustered: true, state: 'silent', silentSince: 42 }
-    const standby = { clustered: true, state: 'standby', silentSince: null }
-
-    expect(daemonWorkersEmptyState(null, true)).toBe('none')
-    expect(daemonWorkersEmptyState(silent, true)).toBe('none')
-    expect(daemonWorkersEmptyState(silent, false)).toBe('silent')
-    expect(daemonWorkersEmptyState(null, false)).toBe('waiting')
-    expect(daemonWorkersEmptyState(standby, false)).toBe('waiting')
   })
 })
 

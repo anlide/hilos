@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import {
   DAEMON_NODE_DATA,
-  DAEMON_WORKERS_PROCESSES_REPORTED_DATA,
+  DAEMON_PROCESSES_REPORTED_DATA,
   HilosPages,
   ScopeManager,
   createSignal,
@@ -74,7 +74,7 @@ function harness(diagramBuilt = false) {
       scope.data.set(DAEMON_NODE_DATA, value)
     },
     reported(value: boolean): void {
-      scope.data.set(DAEMON_WORKERS_PROCESSES_REPORTED_DATA, value)
+      scope.data.set(DAEMON_PROCESSES_REPORTED_DATA, value)
     },
     window(rows: Record<string, unknown>[]): void {
       for (const listener of listeners) {

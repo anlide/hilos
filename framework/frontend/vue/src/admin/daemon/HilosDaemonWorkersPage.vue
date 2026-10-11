@@ -3,7 +3,7 @@ reported-roster verdict; a server viewport supplies the worker rows. -->
 <script setup lang="ts">
 import {
   createHilosDaemonWorkersTable,
-  daemonWorkersEmptyState,
+  daemonProcessesEmptyState,
   daemonWorkerLogPath,
   formatDaemonNodeSilentSince,
   formatDaemonWorkerAgentCount,
@@ -12,7 +12,7 @@ import {
   formatDaemonWorkerName,
   formatDaemonWorkerPid,
   HilosPages,
-  readDaemonWorkersProcessesReported,
+  readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
 } from '@hilos/core'
@@ -39,12 +39,10 @@ const nodeId =
   (router.currentRoute.get().params.nodeId as string | undefined) ?? ''
 const workers = createHilosDaemonWorkersTable(props.context, nodeId)
 const heading = useSignal(readHilosDaemonNodeHeading(props.context.scopes))
-const reported = useSignal(
-  readDaemonWorkersProcessesReported(props.context.scopes),
-)
+const reported = useSignal(readDaemonProcessesReported(props.context.scopes))
 const rows = useSignal(workers.controller.rows)
 const emptyState = computed(() =>
-  daemonWorkersEmptyState(heading.value, reported.value),
+  daemonProcessesEmptyState(heading.value, reported.value),
 )
 const silentSince = computed(() =>
   formatDaemonNodeSilentSince(heading.value, Date.now()),

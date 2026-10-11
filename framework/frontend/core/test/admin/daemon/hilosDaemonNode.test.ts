@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   daemonNodeDiagramPath,
+  daemonProcessesEmptyState,
   formatDaemonNodeSilentSince,
   formatDaemonNodeState,
+  readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
   type HilosDaemonNodeHeading,
 } from '../../../src/admin/daemon/hilosDaemonNode.js'
@@ -59,6 +61,36 @@ describe('daemon node heading', () => {
       state: 'silent',
       silentSince: 1_700_000_000,
     })
+  })
+})
+
+describe('daemon processes empty state', () => {
+  it('reads the current page roster verdict for workers and agents', () => {
+    for (const pageKey of [
+      HilosPages.DAEMON_WORKERS,
+      HilosPages.DAEMON_AGENTS,
+    ]) {
+      const scopes = new ScopeManager()
+      const page = scopes.openPage(pageKey)
+      const reported = readDaemonProcessesReported(scopes)
+
+      expect(reported.get()).toBe(false)
+      page.data.set('processesReported', true)
+      expect(reported.get()).toBe(true)
+      page.data.set('processesReported', false)
+      expect(reported.get()).toBe(false)
+    }
+  })
+
+  it('distinguishes a completed empty roster, silence, and waiting', () => {
+    const silent = { clustered: true, state: 'silent', silentSince: 42 }
+    const standby = { clustered: true, state: 'standby', silentSince: null }
+
+    expect(daemonProcessesEmptyState(null, true)).toBe('none')
+    expect(daemonProcessesEmptyState(silent, true)).toBe('none')
+    expect(daemonProcessesEmptyState(silent, false)).toBe('silent')
+    expect(daemonProcessesEmptyState(null, false)).toBe('waiting')
+    expect(daemonProcessesEmptyState(standby, false)).toBe('waiting')
   })
 })
 

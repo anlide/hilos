@@ -6,7 +6,6 @@ namespace Hilos\Pages\Daemon;
 
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -16,7 +15,6 @@ use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
-use Hilos\DaemonSection\DaemonNodeHeading;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -36,15 +34,9 @@ abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosDaemonNodePag
 
     public const PageReach REACH = PageReach::ROUTE;
 
-    public const string NODE = 'node';
-    public const string PROCESSES_REPORTED = 'processesReported';
-
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DAEMON_WORKERS,
     ];
-
-    /** @var array<string, string> Last node-line fingerprint by node id */
-    private static array $headingFingerprints = [];
 
     private static ?string $workersFingerprint = null;
 
@@ -58,31 +50,7 @@ abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosDaemonNodePag
      */
     public static function onPictureChanged(): void
     {
-        $resent = [];
-        foreach (ClusterDaemonPictureMirror::picture()?->nodes() ?? [] as $node) {
-            try {
-                $fingerprint = json_encode([
-                    self::headingOf($node->nodeId)->toArray(),
-                    self::processesReportedOf($node->nodeId),
-                ], JSON_THROW_ON_ERROR);
-            } catch (JsonException $exception) {
-                throw new HilosException('Cannot fingerprint the daemon node heading', previous: $exception);
-            }
-            if ($fingerprint === (self::$headingFingerprints[$node->nodeId] ?? null)) {
-                continue;
-            }
-            self::$headingFingerprints[$node->nodeId] = $fingerprint;
-            foreach (Hilos::$sr?->getAcceptKeysForPage(
-                HilosPageConstants::HILOS_DAEMON_WORKERS,
-                HilosPageRouteParams::HILOS_DAEMON_NODE_ID,
-                $node->nodeId,
-            ) ?? [] as $acceptKey) {
-                if (Hilos::$rt?->connectionsSource()?->get($acceptKey) !== null) {
-                    Hilos::$browser?->resendPageWhole(HilosPageConstants::HILOS_DAEMON_WORKERS, $acceptKey);
-                    $resent[$acceptKey] = true;
-                }
-            }
-        }
+        $resent = static::resendChangedNodePages();
 
         $sections = [];
         foreach (ClusterDaemonPictureMirror::picture()?->nodes() ?? [] as $node) {
@@ -120,8 +88,18 @@ abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosDaemonNodePag
     /** Forgets the comparison state when the page agent stops. */
     public static function onPictureForgotten(): void
     {
-        self::$headingFingerprints = [];
+        self::forgetNodePages();
         self::$workersFingerprint = null;
+    }
+
+    /**
+     * @param string $nodeId Node to describe
+     * @return array<string, mixed> Node line and first worker-report verdict
+     * @throws EnvException When cluster mode cannot be read
+     */
+    protected static function nodeData(string $nodeId): array
+    {
+        return parent::nodeData($nodeId) + [self::PROCESSES_REPORTED => self::processesReportedOf($nodeId)];
     }
 
     /**
@@ -135,10 +113,7 @@ abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosDaemonNodePag
     {
         $nodeId = HilosDaemonNodeSubscribeParams::fromPageRouteParams($params)->nodeId;
 
-        return new PagePayload(data: [
-            self::NODE => self::headingOf($nodeId)->toArray(),
-            self::PROCESSES_REPORTED => self::processesReportedOf($nodeId),
-        ]);
+        return new PagePayload(data: static::nodeData($nodeId));
     }
 
     /** @return array<string, WireField> Node and report status carry no personal data */
@@ -148,28 +123,5 @@ abstract class AbstractHilosDaemonWorkersPage extends AbstractHilosDaemonNodePag
             self::NODE => WireField::notPersonal(),
             self::PROCESSES_REPORTED => WireField::notPersonal(),
         ];
-    }
-
-    /**
-     * @param string $nodeId Node to describe
-     * @return DaemonNodeHeading Current node line
-     * @throws EnvException When cluster mode cannot be read
-     */
-    private static function headingOf(string $nodeId): DaemonNodeHeading
-    {
-        return DaemonNodeHeading::of(
-            ClusterDaemonPictureMirror::picture(),
-            $nodeId,
-            Hilos::$cluster?->isEnabled() === true,
-        );
-    }
-
-    /**
-     * @param string $nodeId Node whose worker report is read
-     * @return bool Whether the node has reported its worker roster
-     */
-    private static function processesReportedOf(string $nodeId): bool
-    {
-        return ClusterDaemonPictureMirror::picture()?->node($nodeId)?->slot?->picture->processes !== null;
     }
 }

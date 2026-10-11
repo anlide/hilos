@@ -10,6 +10,9 @@ import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 /** Page-data key of the node heading. */
 export const DAEMON_NODE_DATA = 'node'
 
+/** Page-data key recording whether the node has reported its process roster. */
+export const DAEMON_PROCESSES_REPORTED_DATA = 'processesReported'
+
 export const DAEMON_NODE_STATE_LEADER = 'leader'
 export const DAEMON_NODE_STATE_STANDBY = 'standby'
 export const DAEMON_NODE_STATE_DATA = 'data'
@@ -22,6 +25,9 @@ export const daemonNodeHeadingSchema = z.strictObject({
 })
 
 export type HilosDaemonNodeHeading = z.infer<typeof daemonNodeHeadingSchema>
+
+/** Empty-table explanation for a node's processes. */
+export type HilosDaemonProcessesEmptyState = 'waiting' | 'silent' | 'none'
 
 /**
  * Read the current page's node heading, including whole-page resends.
@@ -36,6 +42,30 @@ export function readHilosDaemonNodeHeading(
     const parsed = daemonNodeHeadingSchema.safeParse(source.get())
     return parsed.success ? parsed.data : null
   })
+}
+
+/** @param scopes The page scope manager. */
+export function readDaemonProcessesReported(
+  scopes: ScopeManager,
+): ReadonlySignal<boolean> {
+  const source = scopes.pageDataSignal(DAEMON_PROCESSES_REPORTED_DATA)
+  return computedSignal(() => source.get() === true)
+}
+
+/**
+ * Choose the message for an empty process table.
+ *
+ * @param heading The current node heading, if it has arrived.
+ * @param processesReported Whether the node has reported its process roster.
+ */
+export function daemonProcessesEmptyState(
+  heading: HilosDaemonNodeHeading | null,
+  processesReported: boolean,
+): HilosDaemonProcessesEmptyState {
+  if (processesReported) {
+    return 'none'
+  }
+  return heading?.state === DAEMON_NODE_STATE_SILENT ? 'silent' : 'waiting'
 }
 
 /** @param state State word from the cluster picture. */

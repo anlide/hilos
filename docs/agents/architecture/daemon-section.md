@@ -101,10 +101,9 @@ schedules on the master loop. Apply
 
 Do not await a reply or retry a frame: the next whole frame repairs a lost one.
 A restarted node agent gets a new full frame after it starts; until then its
-`processes` field is null, distinct from a known `workers: []`. The Workers page
-says the node has not reported its workers yet while `processes` is null. The
-Agents page will say “no picture yet” for an absent node picture
-(not in the code yet — HIL-1392).
+`processes` field is null, distinct from a known `workers: []`. The Workers and
+Agents pages each say the node has not reported their rows yet while `processes`
+is null; an empty reported roster says there are none.
 
 While the node's freeze row holds, the master sends no frames: the freeze has
 stopped the node agent. The precedent is the collector in the master in
@@ -201,12 +200,14 @@ mirror. The page's own `node` data is a `DaemonNodeHeading`: `clustered`,
 the last report arrival time only for a silent node; live reports arrive every
 5–60 seconds, and carrying their time would resend the page for each portion.
 
-When the line changes, the page agent resends the whole page to viewers of that
-node. When only table rows change, it resends the window. The frontend draws a
-link to the diagram only when it has built the root address. Workers is the
-first node page with this line (HIL-1391); Agents, Cron, and HTTP join in their
-own leaves. The environment page is served by the node agent and uses its own
-`nodeSilent` verdict.
+`AbstractHilosDaemonNodePage` lets each page declare its own node data in
+`nodeData()`. The page agent compares its fingerprint per page and node; when
+that data changes, it resends the whole page to live viewers of that node. When
+only table rows change, it resends the window. The frontend draws a link to the
+diagram only when it has built the root address. Workers and Agents carry the
+line; Cron and HTTP join in their own leaves by adding `nodeData()`. The
+environment page is served by the node agent and uses its own `nodeSilent`
+verdict.
 
 ## What Never Leaves A Node
 
@@ -343,9 +344,9 @@ mismatch is a cluster-wide address without one.
 The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. Each key stays in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
-for every frontend that has not built it. Vue builds Workers (HIL-1391) before
-the root, so it serves that staged child by direct address
-(`STAGED_CHILDREN`); React and Angular still leave Workers unbuilt.
+for every frontend that has not built it. Vue builds Workers (HIL-1391) and
+Agents (HIL-1392) before the root, so it serves those staged children by direct
+address (`STAGED_CHILDREN`); React and Angular still leave both unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

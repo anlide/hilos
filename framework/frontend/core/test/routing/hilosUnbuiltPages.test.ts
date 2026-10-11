@@ -19,6 +19,11 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_WORKERS)).toBe(
       true,
     )
+    expect(vue.has(HilosPages.DAEMON_AGENTS)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_AGENTS)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_AGENTS)).toBe(
+      true,
+    )
     expect(vue.has(HilosPages.SECURITY)).toBe(false)
     expect(vue.has(HilosPages.MAINTENANCE)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE)).toBe(false)

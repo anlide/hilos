@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Pages\Daemon;
 
-use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\Daemon\DTO\HilosDaemonNodeSubscribeParams;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use JsonException;
 
@@ -34,14 +40,17 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
     private static ?string $agentsFingerprint = null;
 
     /**
-     * Re-sends open agent windows when a picture portion changes any node's started agents.
+     * Re-sends changed node pages whole or changed agent windows.
      *
      * @throws HilosException When the picture cannot be encoded or a table source refuses a read
+     * @throws EnvException When cluster mode cannot be read
      * @throws InvalidArgumentException When the table-window signal cannot be named
      * @throws TableRowKeyMissingException When a windowed row has no key
      */
     public static function onPictureChanged(): void
     {
+        $resent = static::resendChangedNodePages();
+
         $sections = [];
         foreach (ClusterDaemonPictureMirror::picture()?->nodes() ?? [] as $node) {
             $roster = $node->slot?->picture->processes;
@@ -68,6 +77,9 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
         self::$agentsFingerprint = $fingerprint;
 
         foreach (ClusterDaemonPictureMirror::viewerKeys() as $acceptKey) {
+            if (isset($resent[$acceptKey])) {
+                continue;
+            }
             $viewport = Hilos::$sr?->getTableViewport($acceptKey, HilosDaemonAgentsTable::TABLE);
             if ($viewport === null) {
                 continue;
@@ -79,6 +91,40 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
     /** Forgets the comparison state when the page agent stops. */
     public static function onPictureForgotten(): void
     {
+        self::forgetNodePages();
         self::$agentsFingerprint = null;
+    }
+
+    /**
+     * @param string $nodeId Node to describe
+     * @return array<string, mixed> Node line and first agent-report verdict
+     * @throws EnvException When cluster mode cannot be read
+     */
+    protected static function nodeData(string $nodeId): array
+    {
+        return parent::nodeData($nodeId) + [self::PROCESSES_REPORTED => self::processesReportedOf($nodeId)];
+    }
+
+    /**
+     * @param string $acceptKey Subscribing connection
+     * @param PageRouteParams $params Route params naming the node
+     * @return PagePayload Node line and first agent-report verdict
+     * @throws MissingPageRouteParamException When the node id is absent
+     * @throws EnvException When cluster mode cannot be read
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        $nodeId = HilosDaemonNodeSubscribeParams::fromPageRouteParams($params)->nodeId;
+
+        return new PagePayload(data: static::nodeData($nodeId));
+    }
+
+    /** @return array<string, WireField> Node and report status carry no personal data */
+    protected function dataFields(): array
+    {
+        return [
+            self::NODE => WireField::notPersonal(),
+            self::PROCESSES_REPORTED => WireField::notPersonal(),
+        ];
     }
 }

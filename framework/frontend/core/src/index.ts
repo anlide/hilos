@@ -1803,10 +1803,7 @@ export {
   formatDaemonWorkerMemory,
   formatDaemonWorkerAgentCount,
   daemonWorkerLogPath,
-  readDaemonWorkersProcessesReported,
-  daemonWorkersEmptyState,
   DAEMON_WORKERS_FILTER_NODE,
-  DAEMON_WORKERS_PROCESSES_REPORTED_DATA,
   DAEMON_WORKER_INDEX_FIELD,
   DAEMON_WORKER_KIND_FIELD,
   DAEMON_WORKER_PID_FIELD,
@@ -1819,7 +1816,6 @@ export {
   type HilosDaemonWorkerRow,
   type HilosDaemonWorkersContext,
   type HilosDaemonWorkersTable,
-  type HilosDaemonWorkersEmptyState,
 } from './admin/daemon/hilosDaemonWorkers.js'
 export {
   resolveHilosDaemonEnvKeyRow,
@@ -1857,16 +1853,20 @@ export {
 } from './admin/daemon/hilosDaemonEnv.js'
 export {
   DAEMON_NODE_DATA,
+  DAEMON_PROCESSES_REPORTED_DATA,
   DAEMON_NODE_STATE_LEADER,
   DAEMON_NODE_STATE_STANDBY,
   DAEMON_NODE_STATE_DATA,
   DAEMON_NODE_STATE_SILENT,
   daemonNodeHeadingSchema,
   readHilosDaemonNodeHeading,
+  readDaemonProcessesReported,
+  daemonProcessesEmptyState,
   formatDaemonNodeState,
   formatDaemonNodeSilentSince,
   daemonNodeDiagramPath,
   type HilosDaemonNodeHeading,
+  type HilosDaemonProcessesEmptyState,
 } from './admin/daemon/hilosDaemonNode.js'
 export {
   CHANGE_LOG_FILTER_TABLE,

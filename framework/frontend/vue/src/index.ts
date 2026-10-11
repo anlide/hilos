@@ -120,6 +120,7 @@ export { default as HilosLogsSettingsPage } from './admin/logs/HilosLogsSettings
 export { default as HilosLogsViewPage } from './admin/logs/HilosLogsViewPage.vue'
 export { default as HilosLogsWorkersPage } from './admin/logs/HilosLogsWorkersPage.vue'
 export { default as HilosDaemonWorkersPage } from './admin/daemon/HilosDaemonWorkersPage.vue'
+export { default as HilosDaemonAgentsPage } from './admin/daemon/HilosDaemonAgentsPage.vue'
 export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.vue'
 export { default as HilosI18nLanguagePage } from './admin/i18n/details/HilosI18nLanguagePage.vue'
 export { default as HilosI18nLanguagesPage } from './admin/i18n/lists/HilosI18nLanguagesPage.vue'
