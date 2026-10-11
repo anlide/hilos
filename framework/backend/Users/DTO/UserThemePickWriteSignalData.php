@@ -14,8 +14,9 @@ use Hilos\Theme\ThemeSettingsCatalog;
  * The coordinator → the person's agent: write the theme choice this person submitted (HIL-1427).
  *
  * What {@see HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE} carries. The agent writes the
- * choice and returns this ask whole inside {@see UserThemePickWriteDoneSignalData}; the coordinator
- * then answers the browser and tells the person's sessions.
+ * choice only while it is absent when adoptOnly is true, and returns this ask whole inside
+ * {@see UserThemePickWriteDoneSignalData}. The owner restates the person's sessions on success,
+ * including a conditional skip; the coordinator completes the browser action.
  */
 final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskInterface
 {
@@ -26,6 +27,7 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
     public const string requestId = 'requestId';
     public const string action = 'action';
     public const string successMessage = 'successMessage';
+    public const string adoptOnly = 'adoptOnly';
 
     /**
      * @param int $userId Person whose choice is written and the index of their agent
@@ -35,6 +37,7 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
      * @param ?string $requestId Client-minted request id, or null when untracked
      * @param string $action Browser action name the acknowledgement is addressed to
      * @param ?string $successMessage Sentence to speak on success
+     * @param bool $adoptOnly Whether to write only when the person has no stored choice
      * @throws InvalidFormatException When the person id or theme choice is invalid
      */
     public function __construct(
@@ -45,6 +48,7 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
         public readonly ?string $requestId,
         public readonly string $action,
         public readonly ?string $successMessage,
+        public readonly bool $adoptOnly = false,
     ) {
         if ($userId <= 0) {
             throw new InvalidFormatException('User id must be positive');
@@ -69,10 +73,11 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
             requestId: self::optionalString($data, self::requestId),
             action: self::requireString($data, self::action),
             successMessage: self::optionalString($data, self::successMessage),
+            adoptOnly: array_key_exists(self::adoptOnly, $data) ? self::requireBool($data, self::adoptOnly) : false,
         );
     }
 
-    /** @return array<string, int|string|null> Transport payload */
+    /** @return array<string, int|string|bool|null> Transport payload */
     public function toArray(): array
     {
         return [
@@ -83,6 +88,7 @@ final class UserThemePickWriteSignalData extends BaseDTO implements HandoverAskI
             self::requestId => $this->requestId,
             self::action => $this->action,
             self::successMessage => $this->successMessage,
+            self::adoptOnly => $this->adoptOnly,
         ];
     }
 }

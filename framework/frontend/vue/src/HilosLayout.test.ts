@@ -1365,6 +1365,8 @@ describe('HilosLayout view-mode strip (HIL-1260)', () => {
 describe('HilosLayout theme icon', () => {
   let releaseTheme: (() => void) | undefined
 
+  const themeActions = new ActionLifecycle(new ReplyingSource())
+
   function dummyConnection(): HilosConnection {
     return { on: () => () => {} } as unknown as HilosConnection
   }
@@ -1404,7 +1406,11 @@ describe('HilosLayout theme icon', () => {
         JSON.stringify({ switchingEnabled, defaultTheme: 'light' }),
       ),
     )
-    releaseTheme = bindThemeState(dummyConnection(), new ScopeManager())
+    releaseTheme = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
   }
 
   function mountThemed(connection: HilosConnection) {
@@ -1419,7 +1425,11 @@ describe('HilosLayout theme icon', () => {
 
   beforeEach(() => {
     localStorage.clear()
-    releaseTheme = bindThemeState(dummyConnection(), new ScopeManager())
+    releaseTheme = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
   })
 
   afterEach(() => {
@@ -1427,7 +1437,11 @@ describe('HilosLayout theme icon', () => {
     releaseTheme = undefined
     vi.unstubAllGlobals()
     localStorage.clear()
-    const restore = bindThemeState(dummyConnection(), new ScopeManager())
+    const restore = bindThemeState(
+      dummyConnection(),
+      new ScopeManager(),
+      themeActions,
+    )
     restore()
   })
 

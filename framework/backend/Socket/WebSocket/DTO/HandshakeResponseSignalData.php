@@ -145,6 +145,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string name = 'name';
     public const string admin = 'admin';
     public const string photo = 'photo';
+    public const string themePick = 'themePick';
     public const string data = 'data';
     public const string pendingAck = 'pendingAck';
     public const string serverTimeMs = 'serverTimeMs';
@@ -216,6 +217,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param ?array{switchingEnabled: bool, defaultTheme: string} $themeSettings Theme settings of the installation,
      *     or null before the framework stamp
      * @param ?string $selfPhoto Variant URL of the person's published photo, or null for initials
+     * @param ?string $selfThemePick Stored theme choice, or null when the person never chose
      */
     public function __construct(
         public readonly ?int $selfId = null,
@@ -235,6 +237,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?bool $adminViewMode = null,
         public readonly ?array $impersonationPolicy = null,
         public readonly ?array $themeSettings = null,
+        public readonly ?string $selfThemePick = null,
     ) {
     }
 
@@ -252,6 +255,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function withPendingAck(?string $pendingAck): self
     {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -286,6 +290,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function withAccountBlocked(?array $accountBlocked): self
     {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -323,6 +328,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function withAccountStanding(?array $accountStanding): self
     {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -356,6 +362,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function withAdminViewMode(bool $adminViewMode): self
     {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -389,6 +396,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function withImpersonationPolicy(array $impersonationPolicy): self
     {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -416,6 +424,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function withThemeSettings(array $themeSettings): self
     {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -464,6 +473,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         bool $passkeyAllowsUnproven,
     ): self {
         return new self(
+            selfThemePick: $this->selfThemePick,
             selfId: $this->selfId,
             selfName: $this->selfName,
             selfAdmin: $this->selfAdmin,
@@ -500,6 +510,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                         self::name => $this->selfName,
                         self::admin => $this->selfAdmin,
                         self::photo => $this->selfPhoto,
+                        self::themePick => $this->selfThemePick,
                     ],
                 self::impersonatedBy => $this->impersonatorId === null
                     ? null
@@ -590,6 +601,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             selfName: self::optionalString($currentUser, self::name),
             selfAdmin: self::requireBool($currentUser, self::admin),
             selfPhoto: self::optionalString($currentUser, self::photo),
+            selfThemePick: self::optionalString($currentUser, self::themePick),
             impersonatorId: $impersonatedBy === null ? null : self::requireInt($impersonatedBy, self::id),
             impersonatorName: $impersonatedBy === null ? null : self::optionalString($impersonatedBy, self::name),
             pendingAck: $pendingAck,

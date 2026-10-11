@@ -150,6 +150,41 @@ final class UserEditSignalDataTest extends TestCase
         self::assertEquals($done, $restored);
         self::assertSame($ask->toArray(), $restored->ask->toArray());
         self::assertNull($restored->error);
+        self::assertFalse($restored->ask->adoptOnly);
+    }
+
+    /** The adoption flag rides inside the ask and its answer in either state. */
+    public function testThemeAdoptionFlagRoundTrips(): void
+    {
+        foreach ([true, false] as $adoptOnly) {
+            $ask = new UserThemePickWriteSignalData(7, 'dark', 'theme_pick_done', 'key-1', 'req-1', 'theme_pick', null, $adoptOnly);
+            $done = UserThemePickWriteDoneSignalData::to($ask, null);
+
+            self::assertSame($adoptOnly, UserThemePickWriteSignalData::fromArray($ask->toArray())->adoptOnly);
+            self::assertSame($adoptOnly, UserThemePickWriteDoneSignalData::fromArray($done->toArray())->ask->adoptOnly);
+        }
+    }
+
+    /** A frame predating conditional adoption still asks for an explicit write. */
+    public function testAnOldThemePickFrameDefaultsToExplicitWriting(): void
+    {
+        $ask = new UserThemePickWriteSignalData(7, 'dark', 'theme_pick_done', 'key-1', null, 'theme_pick', null);
+        $payload = $ask->toArray();
+        unset($payload[UserThemePickWriteSignalData::adoptOnly]);
+
+        self::assertFalse($ask->adoptOnly);
+        self::assertFalse(UserThemePickWriteSignalData::fromArray($payload)->adoptOnly);
+    }
+
+    /** A present null flag is malformed rather than an older frame. */
+    public function testAThemePickFrameRefusesANullAdoptionFlag(): void
+    {
+        $ask = new UserThemePickWriteSignalData(7, 'dark', 'theme_pick_done', 'key-1', null, 'theme_pick', null);
+        $payload = $ask->toArray();
+        $payload[UserThemePickWriteSignalData::adoptOnly] = null;
+
+        $this->expectException(InvalidFormatException::class);
+        UserThemePickWriteSignalData::fromArray($payload);
     }
 
     public function testAThemePickForNoPersonIsRefused(): void

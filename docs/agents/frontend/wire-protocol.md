@@ -31,7 +31,8 @@ the server. Because it is `httpOnly`, application code physically cannot read it
 - Non-secret UI state (layout, drafts, a guest's theme) goes in **localStorage**.
   A signed-in person's theme lives in `hilos_user.theme_pick` (HIL-1427), and
   the browser keeps a copy only so the page
-  wears it on its first frame (not in the code yet — HIL-1429); see
+  wears it on its first frame; each valid non-null `currentUser.themePick` in
+  the handshake refreshes that copy (HIL-1429). See
   [theme.md](../architecture/theme.md). Secrets
   never go in localStorage — it is a JS-readable API and cannot be made
   `httpOnly`.

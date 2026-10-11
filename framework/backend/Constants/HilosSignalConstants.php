@@ -126,6 +126,7 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
+use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
@@ -564,6 +565,13 @@ final class HilosSignalConstants
      * answers under the replySignal carried by the ask; the coordinator owns that signal name.
      */
     public const string HILOS_USER_THEME_PICK_WRITE = 'hilos_user_theme_pick_write';
+
+    /**
+     * The person's agent → users library: conditional theme adoption succeeded or was refused (HIL-1429).
+     *
+     * Carried by {@see UserThemePickWriteDoneSignalData}; completes the quiet browser action.
+     */
+    public const string HILOS_USER_THEME_PICK_ADOPT_DONE = 'hilos_user_theme_pick_adopt_done';
 
     /**
      * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).
@@ -1470,6 +1478,13 @@ final class HilosSignalConstants
      * the action is - a project that kept its own would be naming a door it no longer holds.
      */
     public const string HILOS_LOGOUT = 'hilos_logout';
+
+    /**
+     * Client → users library (page-independent): adopt the browser's theme for an account without a choice (HIL-1429).
+     *
+     * Requires an ordinary signed-in session; the person is resolved from the connection, never from the payload.
+     */
+    public const string HILOS_THEME_ADOPT = 'hilos_theme_adopt';
 
     /** Client → sessions library: end one other session owned by the acting user. */
     public const string HILOS_SESSION_END = 'hilos_session_end';

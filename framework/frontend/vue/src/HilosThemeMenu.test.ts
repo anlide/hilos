@@ -27,6 +27,11 @@ function dummyConnection(): HilosConnection {
   return { on: () => () => {} } as unknown as HilosConnection
 }
 
+const themeActions = new ActionLifecycle({
+  sendAction: () => true,
+  on: () => () => {},
+})
+
 let releaseTheme: (() => void) | undefined
 let releaseSession: (() => void) | undefined
 
@@ -119,14 +124,22 @@ function bindSnapshot(
     addEventListener: () => {},
     removeEventListener: () => {},
   }))
-  releaseTheme = bindThemeState(dummyConnection(), new ScopeManager())
+  releaseTheme = bindThemeState(
+    dummyConnection(),
+    new ScopeManager(),
+    themeActions,
+  )
 }
 
 function restoreCatalog(): void {
   releaseTheme?.()
   releaseTheme = undefined
   vi.stubGlobal('localStorage', memoryStorage({}))
-  const restore = bindThemeState(dummyConnection(), new ScopeManager())
+  const restore = bindThemeState(
+    dummyConnection(),
+    new ScopeManager(),
+    themeActions,
+  )
   restore()
   vi.unstubAllGlobals()
 }

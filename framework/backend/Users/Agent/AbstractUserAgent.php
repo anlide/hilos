@@ -112,6 +112,7 @@ use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
+use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\WiringRefusal;
 use Throwable;
 
@@ -469,10 +470,7 @@ abstract class AbstractUserAgent extends AbstractAgent
                 }
 
                 $this->refuseAnotherPerson($themePickWrite->userId, $name);
-                $this->sendToAgent($themePickWrite->replySignal, UserThemePickWriteDoneSignalData::to(
-                    $themePickWrite,
-                    $this->flagRefusal(fn () => $this->writeThemePick($themePickWrite->themePick), 'Theme pick'),
-                ));
+                $this->handleThemePickWrite($themePickWrite);
 
                 return;
 
@@ -1501,6 +1499,35 @@ abstract class AbstractUserAgent extends AbstractAgent
             $ask->replySignal,
             UserRenameDoneSignalData::to($ask, $rename === null ? null : (int)$rename->id, $refusal),
         );
+    }
+
+    /**
+     * Restates the person's sessions after a write or a conditional skip. Announcement failure
+     * leaves the successful outcome intact; a later handshake carries the stored choice.
+     *
+     * @param UserThemePickWriteSignalData $ask Theme choice and the coordinator's waiting action
+     * @throws InvalidArgumentException When the answer frame cannot be named or queued
+     */
+    private function handleThemePickWrite(UserThemePickWriteSignalData $ask): void
+    {
+        $refusal = $this->flagRefusal(function () use ($ask): void {
+            if (!$ask->adoptOnly || $this->personToWrite()->themePick === null) {
+                $this->writeThemePick($ask->themePick);
+            }
+        }, 'Theme pick');
+
+        if ($refusal === null) {
+            try {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE,
+                    new UserSessionsRestateSignalData($this->userId),
+                );
+            } catch (Throwable $failure) {
+                $this->logAgentError("Theme pick restate for #{$this->userId} failed: {$failure->getMessage()}");
+            }
+        }
+
+        $this->sendToAgent($ask->replySignal, UserThemePickWriteDoneSignalData::to($ask, $refusal));
     }
 
     /**

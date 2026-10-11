@@ -2,7 +2,7 @@
 // summary of each section from the page's answer and browser lists, the
 // verified address the Email row shows, and the Theme row line (HIL-1434).
 import { describe, expect, it, vi } from 'vitest'
-import { type ActionLifecycle } from '../../src/connection/actionLifecycle.js'
+import { ActionLifecycle } from '../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../src/connection/HilosConnection.js'
 import { describeHilosNotificationChannels } from '../../src/notifications/notificationPreferences.js'
 import { HILOS_PROFILE_IDENTITIES_LIST } from '../../src/profile/profileIdentities.js'
@@ -269,9 +269,14 @@ describe('profile root store', () => {
     const connection = fakeConnection()
     const scopes = new ScopeManager()
     bindSessionScope(connection as unknown as HilosConnection, scopes)
+    const actions = new ActionLifecycle({
+      sendAction: () => true,
+      on: () => () => {},
+    })
     const releaseTheme = bindThemeState(
       connection as unknown as HilosConnection,
       scopes,
+      actions,
     )
 
     try {

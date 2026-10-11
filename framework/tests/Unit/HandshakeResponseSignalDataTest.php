@@ -109,6 +109,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'name' => 'User 7',
                         'admin' => false,
                         'photo' => null,
+                        'themePick' => null,
                     ],
                     'impersonatedBy' => null,
                 ],
@@ -141,6 +142,44 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->assertNull($restored->impersonatorId);
         $this->assertNull($restored->impersonatorName);
         $this->assertSame($data->toArray(), $restored->toArray());
+    }
+
+    /** Both chosen and unchosen account themes survive the wire and every stamp. */
+    public function testThemePickSurvivesRoundtripAndEveryResponseStamp(): void
+    {
+        foreach (['light', 'dark', 'system', null] as $pick) {
+            $data = new HandshakeResponseSignalData(selfId: 7, selfName: 'User 7', selfThemePick: $pick);
+            $stamped = $data
+                ->withPendingAck(null)
+                ->withAccountBlocked(null)
+                ->withAccountStanding(null)
+                ->withAdminViewMode(false)
+                ->withImpersonationPolicy([
+                    'viewOnly' => true,
+                    'carryAdmin' => false,
+                    'allowed' => true,
+                    'accountAccess' => true,
+                    'blocked' => false,
+                    'frozen' => false,
+                    'equal' => false,
+                ])
+                ->withThemeSettings(['switchingEnabled' => true, 'defaultTheme' => 'system'])
+                ->withSessionContext(123, null, ['email' => true, 'phone' => false], [], false);
+
+            self::assertArrayHasKey('themePick', $stamped->toArray()['entities']['currentUser']);
+            self::assertSame($pick, $stamped->toArray()['entities']['currentUser']['themePick']);
+            self::assertSame($pick, HandshakeResponseSignalData::fromArray($stamped->toArray())->selfThemePick);
+            self::assertSame($pick, HandshakeResponseSignalData::fromArray($data->toArray())->selfThemePick);
+        }
+    }
+
+    /** A guest has no current-user node to carry a theme choice. */
+    public function testAnonymousResponseDoesNotExposeAThemePick(): void
+    {
+        $data = new HandshakeResponseSignalData(selfThemePick: 'dark');
+
+        self::assertNull($data->toArray()['entities']['currentUser']);
+        self::assertNull(HandshakeResponseSignalData::fromArray($data->toArray())->selfThemePick);
     }
 
     /** A photo URL remains on the user through each response stamp. */
@@ -221,6 +260,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                         'name' => 'User 7',
                         'admin' => false,
                         'photo' => null,
+                        'themePick' => null,
                     ],
                     'impersonatedBy' => [
                         'id' => 3,

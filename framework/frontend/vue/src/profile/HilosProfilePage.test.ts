@@ -3,6 +3,7 @@
 // catalog section in the catalog's order with its summary, the placeholder
 // while the name is not known yet, and the Theme row (HIL-1434).
 import {
+  ActionLifecycle,
   bindSessionScope,
   bindThemeState,
   createSignal,
@@ -11,7 +12,6 @@ import {
   resolveHilosProfileSignInMethods,
   ScopeManager,
   setHilosThemePick,
-  type ActionLifecycle,
   type HilosConnection,
   type HilosPageIdentity,
   type HilosProfileBinding,
@@ -28,6 +28,11 @@ import { nextTick } from 'vue'
 import { hilosRouterKey } from '../hilosRouterKey.js'
 import HilosProfilePage from './HilosProfilePage.vue'
 
+const themeActions = new ActionLifecycle({
+  sendAction: () => true,
+  on: () => () => {},
+})
+
 let releaseTheme: (() => void) | undefined
 
 afterEach(() => {
@@ -39,6 +44,7 @@ afterEach(() => {
   const restore = bindThemeState(
     { on: () => () => {} } as unknown as HilosConnection,
     new ScopeManager(),
+    themeActions,
   )
   restore()
 })
@@ -82,7 +88,11 @@ function bindTheme(
   const conn = fakeConnection()
   const scopes = new ScopeManager()
   bindSessionScope(conn as unknown as HilosConnection, scopes)
-  releaseTheme = bindThemeState(conn as unknown as HilosConnection, scopes)
+  releaseTheme = bindThemeState(
+    conn as unknown as HilosConnection,
+    scopes,
+    themeActions,
+  )
   setHilosThemePick(pick)
   conn.emit('hilos_theme_settings', settings)
 

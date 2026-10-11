@@ -82,11 +82,18 @@ other element. A subtree pinned to one mode is a pinned color by another name.
   no choice. Only the person's own agent writes it through
   `hilos_user_theme_pick_write`, like every other edit of their own content; the
   truth source refuses a write from any other process (HIL-1427).
-  A change reaches every session of the person on every device as a frame, and
-  each switches at once (not in the code yet — HIL-1429).
-- **The browser copy:** the app writes the signed-in person's pick into the
-  browser on every handshake so the page can wear it on its first frame
-  (not in the code yet — HIL-1429).
+  After a successful write or a conditional skip, the owner asks for the existing
+  `hilos_user_sessions_restate`. The sessions library publishes session state for
+  every open session of that person on the current node; the project answers each
+  local socket with `handshake_response`, whose `entities.currentUser.themePick`
+  reads the stored choice. A stranger's session receives nothing. Delivery to
+  sessions on other nodes remains pending (not in the code yet — HIL-1443).
+- **The browser copy:** on every valid handshake, a non-null
+  `currentUser.themePick` becomes the tab's choice and is written under
+  `hilos.theme.pick`, so the page can wear it on its first frame. A null account
+  pick keeps the browser's existing choice while adoption is pending. An absent
+  or invalid field preserves the last valid choice. A refused storage write
+  still lets the current tab apply the choice in memory.
 
 Use this table at sign-in:
 
@@ -96,16 +103,32 @@ Use this table at sign-in:
 | not chosen | `light`, `dark` or `system` | the guest's pick, written into the account |
 | not chosen | not chosen | not chosen, which follows the default theme |
 
-Resuming a session follows the same table
-(not in the code yet — HIL-1429). Apply "What The Page Wears" to the resulting
-pick: switching off still means the default, and `system` still resolves to one
-of the two themes.
+Resuming a session and receiving a restate follow the same table. Apply "What
+The Page Wears" to the resulting pick: switching off still means the default,
+and `system` still resolves to one of the two themes.
+
+When the account pick is null and the browser has a choice, `bindThemeState`
+uses the action lifecycle supplied by `bootHilos` to send `hilos_theme_adopt`
+with `{themePick}` once per connection, person and choice. The server resolves
+the person from the live ordinary session belonging to the action's `acceptKey`,
+never from a client-supplied `userId`. Anonymous, expired, missing, impersonated
+and mismatched session/connection identities are refused. The people library
+asks the person's owner with `adoptOnly=true`: the owner writes only while
+`theme_pick` is null. The first choice to reach the owner's sequential queue
+wins; a later proposal keeps that stored choice and restates it too. Closing
+the initiating socket after admission does not retarget or cancel the write.
+
+Adoption completes quietly, with no dialog or success toast. A failed write
+leaves the account unchanged and does not cause a retry loop on repeated
+handshakes; a new connection may try again. A guest tab follows changes of
+`hilos.theme.pick` through `storage`; a signed-in tab follows the authoritative
+account frame, so an older browser value cannot overwrite its account choice.
 
 The browser request that creates an account carries its current `themePick`.
 The people library inserts the person with that choice in the registration
-transaction; no guest pick means not chosen (HIL-1427). Sign-out changes nothing
-on screen
-(not in the code yet — HIL-1429).
+transaction; no guest pick means not chosen (HIL-1427). Sign-out's
+`currentUser=null` keeps the tab's choice and browser copy, so the page keeps
+wearing the same theme.
 
 A cookie never carries the theme; the cookie is the auth credential only. See
 [wire-protocol.md](../frontend/wire-protocol.md).
@@ -192,14 +215,33 @@ The installation settings use `data.themeSettings` in the handshake and
 The browser-value keys are `hilos.theme.pick` and `hilos.theme.settings`
 (HIL-1430). The person's stored choice is `hilos_user.theme_pick`:
 `ENUM('light','dark','system') NULL DEFAULT NULL` (HIL-1427). The agent ask is
-`hilos_user_theme_pick_write` with `UserThemePickWriteSignalData`; its answer is
-`UserThemePickWriteDoneSignalData` under the asking coordinator's `replySignal`.
+`hilos_user_theme_pick_write` with `UserThemePickWriteSignalData`; `adoptOnly`
+is a boolean defaulting to false, and true means write only while the stored
+choice is null. Its answer is `UserThemePickWriteDoneSignalData` under the
+asking coordinator's `replySignal`, carrying the unchanged ask, including
+`adoptOnly`, and `error`, `errorType`, `errorDetail`.
+
+`handshake_response.entities.currentUser.themePick` is always present for a
+signed-in person as `'light'|'dark'|'system'|null`; when `currentUser` is null
+there is no separate theme field. PHP carries it as
+`HandshakeResponseSignalData::themePick` and `?string $selfThemePick`.
+The browser action is `HilosSignalConstants::HILOS_THEME_ADOPT`, whose wire name
+is `hilos_theme_adopt`, with `ThemeAdoptActionDTO` carrying only
+`{themePick: 'light'|'dark'|'system'}`. The people library declares it in `AGENT_ACTIONS`
+and `AUTH_ACTIONS`; no client identity is accepted. Its owner answer is
+`HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE`, whose wire name is
+`hilos_user_theme_pick_adopt_done`, using `UserThemePickWriteDoneSignalData`,
+declared in the library's `AGENT_SIGNALS`. These declarations provide the
+existing action and answer routes. Local delivery reuses
+`hilos_user_sessions_restate` with `UserSessionsRestateSignalData {userId}`,
+session state and `handshake_response`; no new browser live signal or page
+subscription is involved (HIL-1429).
+
 The optional `themePick` key travels on seven account-creating actions:
 `hilos_complete_registration`, `hilos_complete_registration_passwordless`,
 `hilos_complete_registration_passkey`, `hilos_confirm_magic_link`,
 `hilos_confirm_magic_link_code`, `hilos_confirm_phone_code`, and
-`hilos_oauth_create_account`. The frame to the person's sessions is HIL-1429;
-pass its contract gate there. The leaf that lands a remaining surface writes
+`hilos_oauth_create_account`. The leaf that lands a remaining surface writes
 its names into this file in the same commit that clears its marker.
 
 ## Validation

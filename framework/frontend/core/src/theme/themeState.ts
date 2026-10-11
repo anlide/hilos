@@ -1,6 +1,9 @@
+import { z } from 'zod'
 import { onBrowserValueErased } from '../browser/browserValueChanges.js'
+import { type ActionLifecycle } from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { applyTheme } from '../dom/applyTheme.js'
+import { entityFragmentSchema } from '../protocol/scopePayload.js'
 import {
   sessionThemeSettings,
   SIGNAL_HANDSHAKE_RESPONSE,
@@ -29,12 +32,18 @@ import {
   type ThemePick,
 } from './themeRule.js'
 
+const THEME_ADOPT_ACTION = 'hilos_theme_adopt'
+const themePickSchema = z.enum(['light', 'dark', 'system']).nullable()
+const themeSessionSchema = z.object({
+  entities: z.object({ currentUser: entityFragmentSchema.nullable() }),
+})
+
 const pickSignal = createSignal<ThemePick>(null)
 // Catalog true/system until the first bind, the same pair an empty browser reads.
 const settingsSignal = createSignal<ThemeSettings>(DEFAULT_THEME_SETTINGS)
 const modeSignal = createSignal<ThemeMode>('light')
 
-/** The guest's current theme position, including no choice. */
+/** The current tab's theme position, including no choice. */
 export const hilosThemePick: ReadonlySignal<ThemePick> = pickSignal
 
 /** The light or dark mode currently applied to the page. */
@@ -115,15 +124,22 @@ function settingsFromSignal(type: string, data: unknown): ThemeSettings | null {
  *
  * @param connection The application's one connection.
  * @param scopes Its session scope, already bound to the connection.
+ * @param actions The application's one action reply lifecycle.
  * @returns A release for this binding's browser and connection listeners.
  */
 export function bindThemeState(
   connection: HilosConnection,
   scopes: ScopeManager,
+  actions: ActionLifecycle,
 ): () => void {
   activeBinding?.release()
 
   const serverSettings = sessionThemeSettings(scopes)
+  let currentUserId: string | number | null = null
+  const adoptionAttempts = new Map<
+    string | number,
+    Set<NonNullable<ThemePick>>
+  >()
   settingsSignal.set(readThemeSettings())
   let systemDark = false
   let media: MediaQueryList | null = null
@@ -158,7 +174,10 @@ export function bindThemeState(
   }
 
   const onStorage = (event: StorageEvent): void => {
-    if (event.key === THEME_PICK_STORAGE_KEY || event.key === null) {
+    if (
+      currentUserId === null &&
+      (event.key === THEME_PICK_STORAGE_KEY || event.key === null)
+    ) {
       pickSignal.set(readThemePick())
       recompute()
     }
@@ -168,20 +187,62 @@ export function bindThemeState(
   }
 
   const stopErase = onBrowserValueErased((key) => {
-    if (key === THEME_PICK_STORAGE_KEY) {
+    if (currentUserId === null && key === THEME_PICK_STORAGE_KEY) {
       pickSignal.set(readThemePick())
       recompute()
     }
   })
+  const stopState = connection.on('state', (state) => {
+    if (state === 'connected') {
+      adoptionAttempts.clear()
+    }
+  })
   const stopConnection = connection.on('projectSignal', (signal) => {
-    const incoming = settingsFromSignal(signal.type, signal.data)
-    if (incoming === null) {
+    if (
+      signal.type !== SIGNAL_HANDSHAKE_RESPONSE &&
+      signal.type !== SIGNAL_THEME_SETTINGS
+    ) {
       return
     }
-    // bindSessionScope was registered first. Read its typed selector after it
-    // ingests this valid frame so all browser consumers see the same pair.
-    settingsSignal.set(serverSettings.get())
-    writeThemeSettings(settingsSignal.get())
+    const incoming = settingsFromSignal(signal.type, signal.data)
+    if (incoming !== null) {
+      // bindSessionScope was registered first. Read its typed selector after it
+      // ingests this valid frame so all browser consumers see the same pair.
+      settingsSignal.set(serverSettings.get())
+      writeThemeSettings(settingsSignal.get())
+    }
+    if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
+      const session = themeSessionSchema.safeParse(signal.data)
+      if (session.success) {
+        const user = session.data.entities.currentUser
+        currentUserId = user?.id ?? null
+        if (user !== null) {
+          const accountPick = themePickSchema.safeParse(user['themePick'])
+          if (accountPick.success) {
+            if (accountPick.data !== null) {
+              pickSignal.set(accountPick.data)
+              writeThemePick(accountPick.data)
+            } else {
+              const pick = pickSignal.get()
+              const attempted = adoptionAttempts.get(user.id) ?? new Set()
+              if (pick !== null && !attempted.has(pick)) {
+                // Mark before dispatch: restates, including a refusal's later
+                // null answer, cannot start a retry cycle on this socket.
+                attempted.add(pick)
+                adoptionAttempts.set(user.id, attempted)
+                void actions
+                  .dispatch(THEME_ADOPT_ACTION, { themePick: pick })
+                  .done.catch(() => {
+                    // Background adoption keeps the visible choice on refusal,
+                    // timeout or disconnect; no surface owes it a toast.
+                  })
+              }
+            }
+          }
+        }
+        // Anonymous preserves both the tab's memory and the browser copy.
+      }
+    }
     recompute()
   })
 
@@ -193,6 +254,7 @@ export function bindThemeState(
     },
     release(): void {
       stopConnection()
+      stopState()
       stopErase()
       if (typeof globalThis.removeEventListener === 'function') {
         globalThis.removeEventListener('storage', onStorage)

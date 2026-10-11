@@ -120,7 +120,7 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   bindSessionScope(config.connection, config.scopes, config.session)
   // Theme belongs to the common browser shell. It reads cached values and
   // applies the mode before the socket opens, then follows session frames.
-  bindThemeState(config.connection, config.scopes)
+  bindThemeState(config.connection, config.scopes, config.actions)
   // No option to switch on: a project that carries sessions carries their toasts
   // (HIL-768), and a project without them is never sent a frame. One behavior
   // rather than a flag nobody would ever want off.

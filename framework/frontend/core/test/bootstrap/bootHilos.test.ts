@@ -13,6 +13,7 @@ import { hilosImpersonation } from '../../src/session/impersonation.js'
 import { hilosSignedIn } from '../../src/session/signOut.js'
 import { hilosAdminAccess } from '../../src/session/adminAccess.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
+import { createSignal } from '../../src/state/signal.js'
 import { hilosToasts } from '../../src/state/toasts.js'
 import { hilosThemeMode, hilosThemePick } from '../../src/theme/themeState.js'
 import {
@@ -31,6 +32,7 @@ function fakeConnection() {
   return {
     state: 'connected' as ConnectionState,
     connectCalls: 0,
+    listenerEvents: [] as string[],
     sent: [] as Array<Record<string, unknown>>,
     connect(): void {
       this.connectCalls += 1
@@ -45,6 +47,7 @@ function fakeConnection() {
     forgetPageFrames(): void {},
     tableWindowDescriptors: () => ({}),
     on(event: string, listener: (payload: never) => void): () => void {
+      this.listenerEvents.push(event)
       if (event === 'projectSignal') {
         projectListeners.push(listener as (signal: ProjectSignal) => void)
       }
@@ -75,7 +78,10 @@ function fakeNavigation(pathname: string): NavigationEnvironment {
   }
 }
 
-function boot(connection: ReturnType<typeof fakeConnection>) {
+function boot(
+  connection: ReturnType<typeof fakeConnection>,
+  actions = new ActionLifecycle(connection as unknown as HilosConnection),
+) {
   const scopes = new ScopeManager()
   const router = createAppPageRouter(
     { main: { path: '/', admin: false } },
@@ -85,7 +91,7 @@ function boot(connection: ReturnType<typeof fakeConnection>) {
   const hilosRouter = bootHilos({
     viewLayer: 'vue',
     connection: hilosConnection,
-    actions: new ActionLifecycle(hilosConnection),
+    actions,
     scopes,
     router,
     navigationEnvironment: fakeNavigation('/'),
@@ -126,6 +132,47 @@ describe('bootHilos', () => {
 
     vi.stubGlobal('document', undefined)
     expect(() => boot(fakeConnection())).not.toThrow()
+  })
+
+  it('binds theme before connect after session scope, using the supplied action lifecycle', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => (key === 'hilos.theme.pick' ? 'dark' : null),
+      setItem: () => {},
+    })
+    const connection = fakeConnection()
+    const actions = new ActionLifecycle(
+      connection as unknown as HilosConnection,
+    )
+    const dispatch = vi.spyOn(actions, 'dispatch').mockReturnValue({
+      requestId: 'adopt',
+      loading: createSignal(false),
+      done: Promise.resolve({}),
+    })
+    const connect = connection.connect
+    connection.connect = function (): void {
+      connect.call(this)
+      // The first response can arrive as soon as connect starts. Both bindings
+      // must already exist, with the session settings ingested before theme.
+      this.emitProjectSignal('handshake_response', {
+        entities: { currentUser: { id: 1, themePick: null } },
+        data: {
+          themeSettings: { switchingEnabled: false, defaultTheme: 'light' },
+        },
+      })
+      expect(hilosThemePick.get()).toBe('dark')
+      expect(hilosThemeMode.get()).toBe('light')
+      expect(dispatch).toHaveBeenCalledExactlyOnceWith('hilos_theme_adopt', {
+        themePick: 'dark',
+      })
+    }
+    boot(connection, actions)
+    expect(connection.connectCalls).toBe(1)
+    expect(
+      connection.listenerEvents.filter((event) => event === 'actionSuccess'),
+    ).toHaveLength(1)
+    expect(
+      connection.listenerEvents.filter((event) => event === 'actionError'),
+    ).toHaveLength(1)
   })
 
   it.each([false, true])(

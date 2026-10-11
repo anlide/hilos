@@ -38,6 +38,7 @@ use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserSessionsRestateSignalData;
 
 /**
  * The ordinary edits of one person are written by that person's agent and by nobody else (HIL-1404).
@@ -134,6 +135,7 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         $ask = new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, 'req-1', 'theme_pick', 'Saved');
 
         $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
+        $this->assertThemeRestate($userId);
 
         $answer = $this->answer('theme_pick_done');
         self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
@@ -143,15 +145,81 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         self::assertNull(self::personRow($userId)['last_activity']);
 
         $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, $ask));
+        $repeatRestate = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($repeatRestate);
+        self::assertSame(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE, $repeatRestate->signalName->getName());
         $repeatSignal = Hilos::$sr->getNextQueuedSignal();
         self::assertNotNull($repeatSignal);
-        self::assertSame('theme_pick_done', $repeatSignal->signalName->getName(), 'The unchanged choice must not emit a DB update');
+        self::assertSame('theme_pick_done', $repeatSignal->signalName->getName());
         self::assertInstanceOf(AgentSignalData::class, $repeatSignal->data);
         $repeatAnswer = $repeatSignal->data->data;
         self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $repeatAnswer);
         self::assertNull($repeatAnswer->error);
-        self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'The unchanged choice must emit only its answer');
+        self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'The unchanged choice emits only restate and its answer');
         self::assertSame('dark', self::personRow($userId)['theme_pick']);
+    }
+
+    /** @throws HilosException When a fixture row or theme frame fails */
+    public function testTheFirstAdoptionWinsOverAQueuedLaterChoiceAndExplicitWritingCanChangeIt(): void
+    {
+        $userId = self::seedPerson('Ada', admin: false);
+        $first = $this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, new UserThemePickWriteSignalData(
+            $userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, 'first', HilosSignalConstants::HILOS_THEME_ADOPT, null, true,
+        ));
+        $late = $this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, new UserThemePickWriteSignalData(
+            $userId, 'light', 'theme_pick_done', self::ACCEPT_KEY, 'late', HilosSignalConstants::HILOS_THEME_ADOPT, null, true,
+        ));
+
+        $this->deliverToPerson($first);
+        $this->assertThemeRestate($userId);
+        $firstAnswer = $this->answer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $firstAnswer);
+        self::assertNull($firstAnswer->error);
+        self::assertSame('dark', self::personRow($userId)['theme_pick']);
+
+        $this->deliverToPerson($late);
+        $lateRestate = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($lateRestate);
+        self::assertSame(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE, $lateRestate->signalName->getName());
+        $lateAnswer = $this->answer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $lateAnswer);
+        self::assertNull($lateAnswer->error);
+        self::assertTrue($lateAnswer->ask->adoptOnly);
+        self::assertSame('dark', self::personRow($userId)['theme_pick']);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'A conditional skip must not write the row');
+
+        $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, new UserThemePickWriteSignalData(
+            $userId, 'system', 'theme_pick_done', self::ACCEPT_KEY, 'explicit', 'theme_pick', null,
+        )));
+        $this->assertThemeRestate($userId);
+        $explicitAnswer = $this->answer('theme_pick_done');
+        self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $explicitAnswer);
+        self::assertNull($explicitAnswer->error);
+        self::assertSame('system', self::personRow($userId)['theme_pick']);
+        self::assertNull(self::personRow($userId)['last_activity']);
+    }
+
+    /** @throws HilosException When a fixture row or theme frame fails */
+    public function testAdoptionPreservesEachAlreadyChosenPosition(): void
+    {
+        foreach (['light', 'dark', 'system'] as $pick) {
+            $userId = self::seedPerson('Ada', admin: false);
+            Database::sqlRun('UPDATE `hilos_user` SET `theme_pick` = ? WHERE `id` = ?', [$pick, $userId]);
+
+            $this->deliverToPerson($this->frame(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, new UserThemePickWriteSignalData(
+                $userId, $pick === 'dark' ? 'light' : 'dark', 'theme_pick_done', self::ACCEPT_KEY, null,
+                HilosSignalConstants::HILOS_THEME_ADOPT, null, true,
+            )));
+
+            $restate = Hilos::$sr->getNextQueuedSignal();
+            self::assertNotNull($restate);
+            self::assertSame(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE, $restate->signalName->getName());
+            $answer = $this->answer('theme_pick_done');
+            self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
+            self::assertNull($answer->error);
+            self::assertSame($pick, self::personRow($userId)['theme_pick']);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        }
     }
 
     /** @throws HilosException When a fixture row cannot be written or a frame fails */
@@ -166,14 +234,19 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
 
         $this->deliverToPerson($this->frame(
             HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE,
-            new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null),
+            new UserThemePickWriteSignalData($userId, 'dark', 'theme_pick_done', self::ACCEPT_KEY, null, 'theme_pick', null, true),
         ));
 
-        $answer = $this->answer('theme_pick_done');
+        $next = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($next);
+        self::assertSame('theme_pick_done', $next->signalName->getName(), 'A refused adoption must not restate sessions');
+        self::assertInstanceOf(AgentSignalData::class, $next->data);
+        $answer = $next->data->data;
         self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $answer);
         self::assertNotNull($answer->error);
         self::assertStringContainsString('merged', strtolower($answer->error));
         self::assertNull(self::personRow($userId)['theme_pick']);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     /** @throws HilosException When a frame or fixture query fails */
@@ -423,6 +496,16 @@ final class UserAgentPersonEditsIntegrationTest extends HilosSessionIntegrationT
         self::assertNotNull($signal);
 
         return $signal;
+    }
+
+    /**
+     * @param int $userId Person whose sessions must be restated
+     */
+    private function assertThemeRestate(int $userId): void
+    {
+        $restate = $this->answer(HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE);
+        self::assertInstanceOf(UserSessionsRestateSignalData::class, $restate);
+        self::assertSame($userId, $restate->userId);
     }
 
     /**
