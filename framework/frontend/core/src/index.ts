@@ -46,8 +46,11 @@ export {
 } from './admin/i18n/hilosI18nLanguage.js'
 export {
   BUILT_IN_CATALOG_DATA,
+  BUILT_IN_COUNTRY_CODES_DATA,
   builtInCatalogSchema,
+  builtInCountryCodesSchema,
   createHilosI18nBuiltInCatalog,
+  createHilosI18nBuiltInCountryCodes,
   type HilosI18nBuiltInCatalog,
 } from './admin/i18n/hilosI18nBuiltInCatalog.js'
 export {
@@ -77,7 +80,16 @@ export {
   resolveHilosI18nCountryRow,
   type HilosI18nCountryRow,
   type HilosI18nCountriesTable,
+  type HilosI18nCountriesTableView,
 } from './admin/i18n/hilosI18nCountries.js'
+export {
+  HILOS_I18N_COUNTRY_ADD_ACTION,
+  HILOS_I18N_COUNTRY_ADD_COPY,
+  createHilosI18nCountryAdd,
+  hilosI18nCountryCode,
+  hilosI18nCurrencyCode,
+  type HilosI18nCountryAdd,
+} from './admin/i18n/hilosI18nCountryAdd.js'
 export {
   HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
   HILOS_I18N_LANGUAGE_SWITCH_OFF_COPY,

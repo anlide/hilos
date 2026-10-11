@@ -2,7 +2,8 @@
 every country of the system in one table. The code links to the country card
 when that page is built. A missing name shows the code, a missing default
 locale shows "Not chosen", and a custom country carries an icon mark. A
-switched-off country is drawn in the secondary text color. The table, the row
+custom country is created through the "Add country" main action and its
+confirmation. A switched-off country is drawn in the secondary text color. The table, the row
 view-model and the frame are the core headless's
 (createHilosI18nCountriesTable); this view owns only the markup, so a project
 mounts it by passing its HilosI18nCountryContext. Bootstrap classes only
@@ -10,6 +11,8 @@ mounts it by passing its HilosI18nCountryContext. Bootstrap classes only
 <script setup lang="ts">
 import {
   createHilosI18nBuiltInCatalog,
+  createHilosI18nBuiltInCountryCodes,
+  createHilosI18nCountryAdd,
   createHilosI18nCountriesTable,
   HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRY_MARKS,
@@ -25,6 +28,7 @@ import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
+import HilosI18nCountryAdd from './HilosI18nCountryAdd.vue'
 import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
 
 const props = defineProps<{
@@ -38,10 +42,17 @@ if (!router) {
 }
 
 const builtInCatalog = useSignal(createHilosI18nBuiltInCatalog(props.context))
-const countries = createHilosI18nCountriesTable(props.context)
+const codes = createHilosI18nBuiltInCountryCodes(props.context)
+const add = createHilosI18nCountryAdd(props.context, codes)
+const countries = createHilosI18nCountriesTable(props.context, {
+  openAdd: add.open,
+})
 
 onMounted(() => countries.start())
-onUnmounted(() => countries.dispose())
+onUnmounted(() => {
+  countries.dispose()
+  add.dispose()
+})
 
 /** The country card path, or nothing when that page has no address here. */
 const countryPath = (row: HilosI18nCountryRow): string | undefined =>
@@ -60,7 +71,9 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
       names in its {{ builtInCatalog.languageCount }} languages; each of them
       arrives on its own, switched off. Whenever a framework update changes the
       catalog, a country's currency is refreshed while that country is switched
-      off, and its names wherever nobody has edited them.
+      off, and its names wherever nobody has edited them. A code that is not in
+      the catalog can still be added as a country of your own, but keeping it up
+      is on you.
     </HilosI18nCatalogNote>
     <HilosViewportTable :controller="countries.controller">
       <template #cell-code="{ row }">
@@ -146,5 +159,6 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
       data-id="i18n-countries-legend"
       class="mt-4"
     />
+    <HilosI18nCountryAdd :add="add" />
   </HilosAdminPage>
 </template>

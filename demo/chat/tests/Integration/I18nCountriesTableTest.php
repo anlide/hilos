@@ -39,7 +39,9 @@ use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\Language;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\Catalog\CountryDefinition;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
+use Hilos\I18n\DTO\BuiltInCountryCodes;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -365,6 +367,12 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             BuiltInCatalogTally::LANGUAGE_COUNT => iterator_count(BuiltInI18nCatalog::languages()),
             BuiltInCatalogTally::COUNTRY_COUNT => iterator_count(BuiltInI18nCatalog::countries()),
         ], $pageData[BuiltInCatalogTally::DATA] ?? null);
+        $expectedCodes = array_map(
+            static fn (CountryDefinition $country): string => $country->code,
+            iterator_to_array(BuiltInI18nCatalog::countries()),
+        );
+        self::assertCount(51, $expectedCodes);
+        self::assertSame($expectedCodes, $pageData[BuiltInCountryCodes::DATA] ?? null);
     }
 
     public function testAViewerSeesEveryCountryField(): void
@@ -391,6 +399,14 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             self::assertSame($expectedTally, $pageData[BuiltInCatalogTally::DATA] ?? null);
             self::assertFalse(HiddenValue::isMark($pageData[BuiltInCatalogTally::DATA][BuiltInCatalogTally::LANGUAGE_COUNT]));
             self::assertFalse(HiddenValue::isMark($pageData[BuiltInCatalogTally::DATA][BuiltInCatalogTally::COUNTRY_COUNT]));
+            $expectedCodes = array_map(
+                static fn (CountryDefinition $country): string => $country->code,
+                iterator_to_array(BuiltInI18nCatalog::countries()),
+            );
+            self::assertSame($expectedCodes, $pageData[BuiltInCountryCodes::DATA] ?? null);
+            foreach ($pageData[BuiltInCountryCodes::DATA] as $code) {
+                self::assertFalse(HiddenValue::isMark($code));
+            }
 
             $window = $this->windowOf($signals, self::VIEWER);
             $rows = $window[TableWindowSignalData::rows];

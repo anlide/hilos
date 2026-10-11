@@ -7,6 +7,11 @@ import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 /** The page-data key of the built-in catalog tally. */
 export const BUILT_IN_CATALOG_DATA = 'builtInCatalog'
 
+/** The page-data key of the built-in country codes. */
+export const BUILT_IN_COUNTRY_CODES_DATA = 'builtInCountryCodes'
+
+export const builtInCountryCodesSchema = z.array(z.string())
+
 export const builtInCatalogSchema = z.strictObject({
   languageCount: z.number().int().nonnegative(),
   countryCount: z.number().int().nonnegative(),
@@ -26,6 +31,22 @@ export function createHilosI18nBuiltInCatalog(context: {
   const source = context.scopes.pageDataSignal(BUILT_IN_CATALOG_DATA)
   return computedSignal(() => {
     const parsed = builtInCatalogSchema.safeParse(source.get())
+    return parsed.success ? parsed.data : null
+  })
+}
+
+/**
+ * Read the built-in country codes from the countries page response.
+ * Refuses unexpected shapes by returning null.
+ *
+ * @param context The project's page scopes.
+ */
+export function createHilosI18nBuiltInCountryCodes(context: {
+  readonly scopes: ScopeManager
+}): ReadonlySignal<readonly string[] | null> {
+  const source = context.scopes.pageDataSignal(BUILT_IN_COUNTRY_CODES_DATA)
+  return computedSignal(() => {
+    const parsed = builtInCountryCodesSchema.safeParse(source.get())
     return parsed.success ? parsed.data : null
   })
 }

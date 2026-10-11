@@ -11,6 +11,7 @@ import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosI18nCountryContext } from './hilosI18nCountry.js'
+import { HILOS_I18N_COUNTRY_ADD_COPY } from './hilosI18nCountryAdd.js'
 import {
   type HilosI18nLegendRow,
   type HilosI18nMark,
@@ -147,13 +148,20 @@ export interface HilosI18nCountriesTable {
   dispose(): void
 }
 
+/** The countries frame calls the view to open the creation form. */
+export interface HilosI18nCountriesTableView {
+  readonly openAdd: () => void
+}
+
 /**
  * The countries table. Rows resolve through {@link resolveHilosI18nCountryRow}.
  *
  * @param context The project's connection and page scopes.
+ * @param view The view's creation-form opener.
  */
 export function createHilosI18nCountriesTable(
   context: HilosI18nCountryContext,
+  view: HilosI18nCountriesTableView,
 ): HilosI18nCountriesTable {
   const controller = new TableViewportController<HilosI18nCountryRow>({
     resolve: resolveHilosI18nCountryRow,
@@ -169,7 +177,13 @@ export function createHilosI18nCountriesTable(
         HILOS_I18N_COUNTRIES_TABLE,
         rendered,
       ),
-    frame: HILOS_I18N_COUNTRIES_FRAME,
+    frame: {
+      ...HILOS_I18N_COUNTRIES_FRAME,
+      mainAction: {
+        label: HILOS_I18N_COUNTRY_ADD_COPY.open,
+        press: view.openAdd,
+      },
+    },
   })
   let teardown: Array<() => void> = []
 

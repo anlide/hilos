@@ -200,7 +200,9 @@ describe('HilosI18nCountriesPage', () => {
     expect(view.find('[data-id^="i18n-countries-"] button').exists()).toBe(
       false,
     )
-    expect(view.text()).not.toContain('Add country')
+    expect(view.get('[data-id="hilos-table-main-action"]').text()).toBe(
+      'Add country',
+    )
   })
 
   it('renders the catalog callout with counts and omits it when data is absent', async () => {
@@ -223,7 +225,7 @@ describe('HilosI18nCountriesPage', () => {
       'The system knows 3 languages and 4 countries on its own',
     )
     expect(catalog.get('p').text()).toBe(
-      "The framework's built-in catalog holds 4 countries with their currency and their names in its 3 languages; each of them arrives on its own, switched off. Whenever a framework update changes the catalog, a country's currency is refreshed while that country is switched off, and its names wherever nobody has edited them.",
+      "The framework's built-in catalog holds 4 countries with their currency and their names in its 3 languages; each of them arrives on its own, switched off. Whenever a framework update changes the catalog, a country's currency is refreshed while that country is switched off, and its names wherever nobody has edited them. A code that is not in the catalog can still be added as a country of your own, but keeping it up is on you.",
     )
 
     const c2 = context()
@@ -259,5 +261,23 @@ describe('HilosI18nCountriesPage', () => {
     expect(ownRow.get('dd').text()).toBe(
       'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
     )
+  })
+
+  it('opens the country creation form from the table main action', async () => {
+    const c = context([])
+    const view = mount(HilosI18nCountriesPage, {
+      props: { context: c },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+
+    await view.get('[data-id="hilos-table-main-action"]').trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-country-add-code"]'),
+    ).not.toBeNull()
+    view.unmount()
   })
 })

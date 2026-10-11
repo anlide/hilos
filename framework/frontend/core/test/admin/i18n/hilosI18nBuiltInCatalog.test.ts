@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   BUILT_IN_CATALOG_DATA,
+  BUILT_IN_COUNTRY_CODES_DATA,
   createHilosI18nBuiltInCatalog,
+  createHilosI18nBuiltInCountryCodes,
 } from '../../../src/admin/i18n/hilosI18nBuiltInCatalog.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -65,5 +67,27 @@ describe('createHilosI18nBuiltInCatalog', () => {
 
     const signal = createHilosI18nBuiltInCatalog({ scopes })
     expect(signal.get()).toBeNull()
+  })
+})
+
+describe('createHilosI18nBuiltInCountryCodes', () => {
+  it('reads the ordered list of country codes from page data', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.I18N_COUNTRIES)
+    page.data.set(BUILT_IN_COUNTRY_CODES_DATA, ['gb', 'us'])
+
+    expect(createHilosI18nBuiltInCountryCodes({ scopes }).get()).toEqual([
+      'gb',
+      'us',
+    ])
+  })
+
+  it('returns null for missing or malformed data', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.I18N_COUNTRIES)
+    const codes = createHilosI18nBuiltInCountryCodes({ scopes })
+    expect(codes.get()).toBeNull()
+    page.data.set(BUILT_IN_COUNTRY_CODES_DATA, ['us', 42])
+    expect(codes.get()).toBeNull()
   })
 })

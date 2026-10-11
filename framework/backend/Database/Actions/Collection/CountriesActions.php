@@ -23,7 +23,7 @@ class CountriesActions extends DbActions
      * @param string $currencySymbol Symbol displayed with an amount
      * @param string $currencyCode Three uppercase ISO 4217 letters
      * @return Country New switched-off country
-     * @throws ValidationException When the code or currency is malformed
+     * @throws ValidationException When the code or currency is malformed, or the code exists
      * @throws HilosException When ownership, the database or collection refuses the write
      */
     public function create(string $code, string $currencySymbol, string $currencyCode): Country
@@ -32,6 +32,9 @@ class CountriesActions extends DbActions
 
         if (preg_match('/^[a-z]{2}$/', $code) !== 1) {
             throw new ValidationException('Country code must have two lowercase letters');
+        }
+        if ($this->collection[$code] !== null) {
+            throw new ValidationException("Country '{$code}' already exists.");
         }
         if (trim($currencySymbol) === '' || mb_strlen($currencySymbol) > 8) {
             throw new ValidationException('Country currency symbol must have 1..8 characters');

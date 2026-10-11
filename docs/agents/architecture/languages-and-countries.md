@@ -137,15 +137,18 @@ construction.
 - A known locale pair arrives with all seven formats from the catalog;
   the add window prefills them and allows each to be changed before saving.
 - Every known country arrives through reflow, and known countries cannot be
-  deleted, so adding a known country is unreachable: its code is refused as
-  already present (not in the code yet — HIL-1495).
-- An unknown country is added through the same kind of confirmation
-  (not in the code yet — HIL-1495).
+  deleted, so adding a known country is unreachable: `CountriesActions::create()`
+  refuses its code with "Country '<code>' already exists."; all creation doors
+  receive that refusal.
+- An unknown country is added after confirmation. The form distinguishes known
+  and own codes without another request: the countries page response carries
+  `builtInCountryCodes`, the 51 built-in codes. The server uses the same catalog
+  to choose the success message.
 - Phrases of the countries catalog callout regarding adding by code and custom
-  countries appear together with "Add country" (not in the code yet — HIL-1495).
+  countries appear together with "Add country".
 - A newly added language starts switched off (not in the code yet — HIL-1484).
 - A newly added locale starts switched off.
-- A newly added country starts switched off (not in the code yet — HIL-1495).
+- A newly added country starts switched off.
 - For a switched-off country with no default locale, the edit form prefills
   the catalog's default if that locale has been created; the person saves it
   (not in the code yet — HIL-1496).
@@ -398,8 +401,9 @@ the names table opened on that country, standing under the card's shared header
 and tabs fed by the same `countryCard` datum. The Vue countries list is built
 whole with its table (HIL-1475), the catalog tally callout above it
 (`builtInCatalog`), and the marks legend below it (HIL-1481), kept live by the
-table's own fan-out; the callout and legend are the shared components of the
-languages and countries lists. The root shows the Countries card (HIL-1475).
+table's own fan-out. It has an Add country main action with the own-country
+confirmation (HIL-1495). The callout and legend are the shared components of
+the languages and countries lists. The root shows the Countries card (HIL-1475).
 React and Angular remain unbuilt until HIL-1502/1503.
 
 | Page key | Route |

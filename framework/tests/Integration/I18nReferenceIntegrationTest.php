@@ -222,7 +222,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         try {
             Hilos::$db->countries->actions->create('gb', 'Again', 'GBP');
             $this->fail('Expected a duplicate country code to be refused');
-        } catch (DuplicateEntryException) {
+        } catch (ValidationException $error) {
+            $this->assertSame("Country 'gb' already exists.", $error->getMessage());
             $this->assertSame($country->id, Hilos::$db->countries['gb']?->id);
         }
         $country->actions->switchOn();
