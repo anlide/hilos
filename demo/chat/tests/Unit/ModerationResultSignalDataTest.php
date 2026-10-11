@@ -42,6 +42,32 @@ final class ModerationResultSignalDataTest extends TestCase
         $this->assertSame('moderation-ak', $restored->getAcceptKey());
     }
 
+    public function testRoundtripPreservesPictureWhenPresentAndWhenAbsent(): void
+    {
+        $withPicture = new ModerationResultSignalData(
+            acceptKey: 'moderation-ak',
+            userId: 42,
+            message: 'look',
+            allow: false,
+            reason: 'nudity',
+            picture: 'upload-7',
+        );
+        $restored = ModerationResultSignalData::fromArray($withPicture->toArray());
+        $this->assertSame('upload-7', $restored->picture);
+        $this->assertArrayHasKey('picture', $withPicture->toArray());
+
+        $withoutPicture = new ModerationResultSignalData(
+            acceptKey: 'moderation-ak',
+            userId: 42,
+            message: 'look',
+            allow: true,
+            reason: 'ok',
+        );
+        $restoredWithout = ModerationResultSignalData::fromArray($withoutPicture->toArray());
+        $this->assertNull($restoredWithout->picture);
+        $this->assertNull($withoutPicture->toArray()['picture']);
+    }
+
     public function testExposesMessageActionErrorContext(): void
     {
         $data = new ModerationResultSignalData(

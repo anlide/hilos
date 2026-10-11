@@ -24,6 +24,7 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
      * @param string $message Message text
      * @param bool $allow Whether message is allowed
      * @param string $reason Moderation reason
+     * @param ?string $picture Client upload id of a refused picture, or null for a text verdict
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -31,6 +32,7 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
         public readonly string $message,
         public readonly bool $allow,
         public readonly string $reason,
+        public readonly ?string $picture = null,
     ) {
     }
 
@@ -57,7 +59,7 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
     /**
      * Convert DTO to array for transport.
      *
-     * @return array<string, int|string|bool> DTO data as array
+     * @return array<string, int|string|bool|null> DTO data as array
      */
     public function toArray(): array
     {
@@ -67,6 +69,7 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
             'message' => $this->message,
             'allow' => $this->allow,
             'reason' => $this->reason,
+            'picture' => $this->picture,
         ];
     }
 
@@ -85,6 +88,7 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
             message: self::requireString($data, 'message'),
             allow: self::requireBool($data, 'allow'),
             reason: self::requireString($data, 'reason'),
+            picture: self::optionalString($data, 'picture'),
         );
     }
 }

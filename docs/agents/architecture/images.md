@@ -154,6 +154,12 @@ neither enlarges the original. WEBP and PNG keep alpha, JPEG composites on
 white. WEBP quality is 82, JPEG 85 and PNG compression 6. An animated input
 becomes a still copy.
 
+`ImageCopy::draw` is that same step — the pixel ceiling, JPEG orientation and
+the render — for a caller that draws a copy of a file it has not published, in
+its own monopolistic process, such as the chat moderator. `ImageCopy::engine`
+returns the engine of the registered images worker. The caller deletes the
+copy itself.
+
 `ImageRenderException` means the image cannot be decoded or transformed and
 enters the failed-picture memory. `FsException`, including `FileWriteException`
 from the encoder, means the attempt could not write its copy and stays out of

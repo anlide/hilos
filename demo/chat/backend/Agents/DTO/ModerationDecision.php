@@ -24,6 +24,9 @@ final readonly class ModerationDecision
     /** Default reason label when the model omits one for a blocked message. */
     public const string REASON_BLOCKED = 'blocked';
 
+    /** Moderator reason when a picture copy cannot be drawn. The model is not offered this label. */
+    public const string REASON_UNREADABLE = 'unreadable';
+
     public const string SUBJECT_NAME = 'name';
     public const string SUBJECT_MESSAGE = 'message';
 
@@ -42,6 +45,15 @@ final readonly class ModerationDecision
     public const string TAIL_SEXUAL = 'it appears to contain sexual content.';
     public const string TAIL_SPAM = 'it appears to be spam.';
     public const string TAIL_IMPERSONATION = 'it appears to impersonate someone else.';
+
+    public const string TAIL_PICTURE_NUDITY = ' looks like nudity or sexual content.';
+    public const string TAIL_PICTURE_VIOLENCE = ' looks violent.';
+    public const string TAIL_PICTURE_HATE = ' looks like hate imagery.';
+    public const string TAIL_PICTURE_UNREADABLE = ' cannot be checked. Send pictures as JPEG, PNG, WebP or GIF.';
+    public const string TAIL_PICTURE_GENERIC = ' was not accepted.';
+
+    /** File name kept in a picture refusal, counting the ellipsis when the name is shortened. */
+    public const int PICTURE_NAME_MAX_LENGTH = 60;
 
     private const int MAX_NATURAL_PHRASE_LENGTH = 160;
 
@@ -66,6 +78,16 @@ final readonly class ModerationDecision
         'hate_speech' => self::TAIL_HATE_SPEECH,
         'sexual' => self::TAIL_SEXUAL,
         'spam' => self::TAIL_SPAM,
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    private const array PICTURE_CATEGORY_TAILS = [
+        'nudity' => self::TAIL_PICTURE_NUDITY,
+        'violence' => self::TAIL_PICTURE_VIOLENCE,
+        'hate' => self::TAIL_PICTURE_HATE,
+        self::REASON_UNREADABLE => self::TAIL_PICTURE_UNREADABLE,
     ];
 
     public function __construct(
@@ -196,6 +218,74 @@ final readonly class ModerationDecision
         }
 
         return self::TEXT_MESSAGE_GENERIC;
+    }
+
+    /**
+     * Names one attachment for a picture refusal: its place among every file, and its name.
+     *
+     * @param int $ordinal 1-based place of the picture among every attachment
+     * @param ?string $filename Upload file name, or null when the upload is already gone
+     * @return string Label such as `attachment 2 (name)`
+     */
+    public static function pictureLabel(int $ordinal, ?string $filename): string
+    {
+        if ($filename === null) {
+            return 'attachment ' . $ordinal;
+        }
+
+        $shown = mb_strlen($filename) > self::PICTURE_NAME_MAX_LENGTH
+            ? mb_substr($filename, 0, self::PICTURE_NAME_MAX_LENGTH - 1) . '…'
+            : $filename;
+
+        return 'attachment ' . $ordinal . ' (' . $shown . ')';
+    }
+
+    /**
+     * Translates a raw picture refusal into a sentence that names the attachment.
+     *
+     * @param ?string $rawReason Raw model reason or error code
+     * @param ?string $phase Runtime moderation phase if known
+     * @param int $ordinal 1-based place of the picture among every attachment
+     * @param ?string $filename Upload file name, or null when the upload is already gone
+     * @return string Human-readable refusal sentence
+     */
+    public static function publicPictureReason(
+        ?string $rawReason,
+        ?string $phase,
+        int $ordinal,
+        ?string $filename,
+    ): string {
+        $trimmed = $rawReason !== null ? trim($rawReason) : null;
+
+        if (
+            $phase === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE
+            || $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
+            || ($trimmed !== null && in_array($trimmed, ['service_unavailable', 'unknown'], true))
+        ) {
+            return self::TEXT_MESSAGE_UNAVAILABLE;
+        }
+
+        $label = self::pictureLabel($ordinal, $filename);
+        if ($trimmed !== null && isset(self::PICTURE_CATEGORY_TAILS[$trimmed])) {
+            return self::PREFIX_MESSAGE_COLON . $label . self::PICTURE_CATEGORY_TAILS[$trimmed];
+        }
+
+        if ($trimmed !== null && self::isNaturalLanguagePhrase($trimmed)) {
+            return self::PREFIX_MESSAGE_COLON . $label . ' — ' . $trimmed;
+        }
+
+        return self::PREFIX_MESSAGE_COLON . $label . self::TAIL_PICTURE_GENERIC;
+    }
+
+    /**
+     * Whether a refusal is about what the person sent, rather than a check that could not run.
+     *
+     * @param string $reason Raw moderation reason
+     * @return bool False for an unreadable picture and for an unavailable moderator
+     */
+    public static function isAboutTheContent(string $reason): bool
+    {
+        return !in_array($reason, [self::REASON_UNREADABLE, 'service_unavailable', 'unknown'], true);
     }
 
     /**

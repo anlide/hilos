@@ -72,6 +72,9 @@ test('a sent image opens from the feed, and its address refuses a request withou
   const text = `attachment ${key}`
   const filename = `${key}.png`
   await dictateModerationVerdict(key, true, 'ok')
+  // The picture request finds the key in the file name. Without its own
+  // dictation the model answers 503 and the spec sees moderation unavailable.
+  await dictateModerationVerdict(key, true, 'ok')
 
   await attachPng(page, filename)
   await expect(page.getByTestId('upload-error')).toHaveCount(0)
@@ -165,6 +168,9 @@ test('a ready file survives a dropped connection and is sent with the message', 
   const key = modelKey()
   const text = `after drop ${key}`
   const filename = `${key}.png`
+  await dictateModerationVerdict(key, true, 'ok')
+  // The picture request finds the key in the file name. Without its own
+  // dictation the model answers 503 and the spec sees moderation unavailable.
   await dictateModerationVerdict(key, true, 'ok')
   await attachPng(page, filename)
 

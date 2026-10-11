@@ -12,6 +12,7 @@ use Demo\Chat\Constants\ChatNotificationType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Browser\OutboundModerationBrowserPayload;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
@@ -220,7 +221,8 @@ final class MainPage extends AbstractPage
      *
      * Stale connection results fail the agent-signal contract and never publish a message. A
      * message with files stays under moderation until the registry answers
-     * ({@see self::handleAttachmentsPublished()}).
+     * ({@see self::handleAttachmentsPublished()}). A refusal that names a picture is phrased
+     * for that attachment. Only a refusal about the content notifies the author.
      *
      * @param ModerationResultSignalData $result Uploader connection key, allow flag, message body, reason
      * @throws ValidationException When moderation rejects the message or is unavailable
@@ -242,9 +244,19 @@ final class MainPage extends AbstractPage
             Hilos::$rt->selfConnection->actions->failOutboundModeration(
                 $phase,
                 $reason,
+                $result->picture,
             );
-            $publicReason = ModerationDecision::publicMessageReason($reason, $phase);
-            if ($phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED) {
+            $publicReason = $result->picture !== null
+                ? ModerationDecision::publicPictureReason(
+                    $reason,
+                    $phase,
+                    ...OutboundModerationBrowserPayload::pictureOf(Hilos::$rt->selfConnection),
+                )
+                : ModerationDecision::publicMessageReason($reason, $phase);
+            if (
+                $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED
+                && ModerationDecision::isAboutTheContent($reason)
+            ) {
                 $this->notifyMessageRejected(
                     Hilos::$rt->selfConnection->userId,
                     $result->message,
@@ -322,8 +334,8 @@ final class MainPage extends AbstractPage
     /**
      * Notifies the author that moderation refused to publish their message.
      *
-     * Only a verdict about the text notifies: an unavailable moderator is an
-     * infrastructure failure, and there is nothing to tell the author about it. The
+     * Only a verdict about the content notifies: an unavailable moderator, or a picture
+     * that cannot be checked, is not something to tell the author about. The
      * emit is best-effort with respect to the rejection - the action error raised
      * next reaches the author whatever happens to the notification.
      *

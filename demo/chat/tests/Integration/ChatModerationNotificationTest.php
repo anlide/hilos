@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatNotificationType;
+use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -30,6 +31,7 @@ use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationSeverity;
+use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -37,8 +39,8 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * The action error the page raises is a reply to the tab that acted; the notification
  * is the copy that survives, so the author still learns the verdict from another
- * device or after a reload. Only a verdict about the text notifies: an unavailable
- * moderator is an infrastructure failure and says nothing about what was written.
+ * device or after a reload. Only a verdict about the content notifies: an unavailable
+ * moderator, or a picture that cannot be checked, says nothing about what was sent.
  */
 final class ChatModerationNotificationTest extends IntegrationTestCase
 {
@@ -59,6 +61,8 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     {
         ExecutionContext::setCurrentAcceptKey(null);
         $this->deleteChatNotifications();
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
@@ -151,6 +155,72 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
             Hilos::$rt->connections['unavailable-notify-ak']?->outboundModerationPhase,
         );
         self::assertCount(0, $this->notificationsFor($user->id));
+    }
+
+    public function testARejectedPictureNotifiesItsAuthorWithThePicturePhrase(): void
+    {
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        $user = Hilos::$db->users->actions->createWithName('PictureAuthor557');
+        $this->completeUpload('picture-notify-ak', (int)$user->id, 'doc-1', 'notes.pdf', 'application/pdf', 'pdf');
+        $this->completeUpload('picture-notify-ak', (int)$user->id, 'pic-1', 'holiday.png', 'image/png', 'png');
+        Hilos::$rt->connections->actions->register('picture-notify-ak', $user->id);
+        Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+        Hilos::$rt->connections['picture-notify-ak']?->actions->startOutboundModeration(
+            'hello',
+            ['doc-1', 'pic-1'],
+        );
+
+        Hilos::initSignalRouter(new ChatSignalRouter());
+        $this->dispatchTextModerationSignalToMainPage(
+            new ChatAgent(),
+            new ModerationResultSignalData(
+                acceptKey: 'picture-notify-ak',
+                userId: $user->id,
+                message: 'hello',
+                allow: false,
+                reason: 'nudity',
+                picture: 'pic-1',
+            ),
+        );
+
+        $notification = $this->onlyNotificationFor($user->id);
+
+        self::assertSame(ChatNotificationType::MESSAGE_REJECTED, $notification->type);
+        self::assertSame(
+            'Message rejected: attachment 2 (holiday.png) looks like nudity or sexual content.',
+            $notification->body,
+        );
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+    }
+
+    public function testAnUnreadablePictureNotifiesNobody(): void
+    {
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        $user = Hilos::$db->users->actions->createWithName('PictureAuthor557');
+        $this->completeUpload('picture-unreadable-notify-ak', (int)$user->id, 'pic-1', 'broken.png', 'image/png', 'png');
+        Hilos::$rt->connections->actions->register('picture-unreadable-notify-ak', $user->id);
+        Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+        Hilos::$rt->connections['picture-unreadable-notify-ak']?->actions->startOutboundModeration('hello', ['pic-1']);
+
+        Hilos::initSignalRouter(new ChatSignalRouter());
+        $this->dispatchTextModerationSignalToMainPage(
+            new ChatAgent(),
+            new ModerationResultSignalData(
+                acceptKey: 'picture-unreadable-notify-ak',
+                userId: $user->id,
+                message: 'hello',
+                allow: false,
+                reason: 'unreadable',
+                picture: 'pic-1',
+            ),
+        );
+
+        self::assertSame(
+            ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
+            Hilos::$rt->connections['picture-unreadable-notify-ak']?->outboundModerationPhase,
+        );
+        self::assertCount(0, $this->notificationsFor($user->id));
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
     }
 
     public function testRejectedRenameNotifiesTheUserWhoAskedForIt(): void
@@ -247,6 +317,29 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
      * @param ChatAgent $agent Agent the page is built on
      * @param ModerationResultSignalData $result Verdict to deliver
      */
+    private function completeUpload(
+        string $acceptKey,
+        int $userId,
+        string $clientUploadId,
+        string $filename,
+        string $mimeType,
+        string $bytes,
+    ): void {
+        $tmpIndex = Hilos::$fs?->getTmp()->create();
+        self::assertNotNull($tmpIndex);
+        Hilos::$fs?->getTmp()[$tmpIndex]->append($bytes);
+        Hilos::$rt->hilosUploads->actions->open(
+            $acceptKey,
+            $clientUploadId,
+            ChatAttachmentUploadTarget::NAME,
+            $userId,
+            $filename,
+            $mimeType,
+            strlen($bytes),
+            $tmpIndex,
+        )->actions->complete();
+    }
+
     private function dispatchTextModerationSignalToMainPage(
         ChatAgent $agent,
         ModerationResultSignalData $result,

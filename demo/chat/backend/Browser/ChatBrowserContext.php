@@ -9,6 +9,7 @@ use Demo\Chat\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
@@ -107,6 +108,7 @@ final class ChatBrowserContext extends BrowserContext
      * @param string $field Self-connection field name
      * @param string $acceptKey Subscriber accept key
      * @return mixed Self-connection field value, or null when the connection is gone
+     * @throws PageInternalErrorException When the refused picture's upload cannot be read
      */
     private function computeSelfConnectionField(string $field, string $acceptKey): mixed
     {
@@ -120,7 +122,14 @@ final class ChatBrowserContext extends BrowserContext
             return null;
         }
 
-        $payload = SelfConnectionBrowserPayload::forConnection($connection);
+        try {
+            $payload = SelfConnectionBrowserPayload::forConnection($connection);
+        } catch (HilosException $e) {
+            throw new PageInternalErrorException(
+                'Cannot read the refused picture while building the moderation field',
+                $e,
+            );
+        }
 
         return $payload[$field] ?? null;
     }

@@ -29,7 +29,7 @@ class ImagesAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_IMAGES;
     public const array AGENT_SIGNALS = [HilosSignalConstants::HILOS_IMAGE_RENDER => ImageRenderSignalData::class];
-    public const int MAX_PIXELS = 40_000_000;
+    public const int MAX_PIXELS = ImageCopy::MAX_PIXELS;
     public const string MEMORY_LIMIT = '512M';
 
     private const int REMEMBERED_KEYS = 1024;
@@ -128,16 +128,8 @@ class ImagesAgent extends AbstractAgent
 
         $tmpIndex = null;
         try {
-            $probe = $this->engine->probe($bytes);
-            if ($probe === null) {
-                throw new ImageRenderException('not a picture the engine reads');
-            }
-            if ($probe->width * $probe->height > self::MAX_PIXELS) {
-                throw new ImageRenderException("{$probe->width}x{$probe->height} is above the " . self::MAX_PIXELS . '-pixel ceiling');
-            }
-            $orientation = $probe->mimeType === ImageFormat::JPEG->value ? JpegOrientation::read($bytes) : JpegOrientation::NORMAL;
             $tmpIndex = $this->tmp()->create();
-            $size = $this->engine->render($bytes, $probe, $orientation, $variant, $this->tmp()[$tmpIndex]->getPath());
+            $size = ImageCopy::draw($this->engine, $bytes, $variant, $this->tmp()[$tmpIndex]->getPath());
         } catch (ImageRenderException $e) {
             $this->discardTmp($tmpIndex);
             $this->logAgentWarning("Cannot render variant {$render->variant} of file {$render->fileId}: " . $e->getMessage());

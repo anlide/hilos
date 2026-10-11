@@ -63,6 +63,7 @@ final class SelfConnectionBrowserData
                     Connection::outboundModerationMessage,
                     Connection::outboundModerationReason,
                     Connection::outboundModerationUpdatedAt,
+                    Connection::outboundModerationPicture,
                 ],
             ],
             [

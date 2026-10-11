@@ -34,6 +34,7 @@ use Hilos\HilosException;
  * @property-read ?string $outboundModerationReason Rejection or unavailable reason, or null
  * @property-read int $outboundModerationUpdatedAt Last moderation update unix time
  * @property-read list<string> $outboundModerationAttachments Client ids of the uploads the moderated message carries
+ * @property-read ?string $outboundModerationPicture Client id of the picture a refusal is about, or null
  * @property-read string $renameModerationPhase Current rename moderation phase
  * @property-read ?string $renameModerationName Requested display name, or null when none is
  * @property-read ?string $renameModerationReason Rename rejection or unavailable reason, or null
@@ -71,6 +72,7 @@ final class Connection extends HilosSessionConnection
             StateConnection::outboundModerationReason => $this->_state->outboundModerationReason,
             StateConnection::outboundModerationUpdatedAt => $this->_state->outboundModerationUpdatedAt,
             StateConnection::outboundModerationAttachments => $this->_state->outboundModerationAttachments,
+            StateConnection::outboundModerationPicture => $this->_state->outboundModerationPicture,
             StateConnection::renameModerationPhase => $this->_state->renameModerationPhase,
             StateConnection::renameModerationName => $this->_state->renameModerationName,
             StateConnection::renameModerationReason => $this->_state->renameModerationReason,

@@ -38,6 +38,7 @@ final class ConnectionActions extends HilosConnectionActions
         $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
         $this->state->outboundModerationAttachments = $attachmentIds;
+        $this->state->outboundModerationPicture = null;
         $this->state->outboundModerationReason = null;
         $this->state->outboundModerationUpdatedAt = time();
 
@@ -49,16 +50,18 @@ final class ConnectionActions extends HilosConnectionActions
      *
      * @param string $phase Failure phase: rejected or unavailable
      * @param string $reason User-visible reason
+     * @param ?string $picture Client id of the picture the refusal is about, or null for a text refusal
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
-    public function failOutboundModeration(string $phase, string $reason): void
+    public function failOutboundModeration(string $phase, string $reason, ?string $picture = null): void
     {
         $this->ensureCanWrite();
 
         $this->state->outboundModerationPhase = $phase;
         $this->state->outboundModerationReason = $reason;
+        $this->state->outboundModerationPicture = $picture;
         $this->state->outboundModerationUpdatedAt = time();
 
         $this->sync();
@@ -77,6 +80,7 @@ final class ConnectionActions extends HilosConnectionActions
         $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
         $this->state->outboundModerationMessage = null;
         $this->state->outboundModerationAttachments = [];
+        $this->state->outboundModerationPicture = null;
         $this->state->outboundModerationReason = null;
         $this->state->outboundModerationUpdatedAt = time();
 

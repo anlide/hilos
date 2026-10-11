@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
@@ -29,6 +30,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use LogicException as NativeLogicException;
 
@@ -255,6 +257,107 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
+    public function testRejectedPictureNamesItsPlaceAmongEveryAttachment(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+        Hilos::$db->events->actions->deleteAll();
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('User');
+            $this->completeUpload('picture-reject-ak', (int)$user->id, 'doc-1', 'notes.pdf', 'application/pdf', 'pdf');
+            $this->completeUpload('picture-reject-ak', (int)$user->id, 'pic-1', 'shot.png', 'image/png', 'png');
+            Hilos::$rt->connections->actions->register('picture-reject-ak', $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+            Hilos::$rt->connections['picture-reject-ak']?->actions->startOutboundModeration(
+                'hello',
+                ['doc-1', 'pic-1'],
+            );
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $this->dispatchTextModerationSignalToMainPage(
+                new ChatAgent(),
+                new ModerationResultSignalData(
+                    acceptKey: 'picture-reject-ak',
+                    userId: $user->id,
+                    message: 'hello',
+                    allow: false,
+                    reason: 'nudity',
+                    picture: 'pic-1',
+                ),
+            );
+
+            $this->assertSame(
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
+                Hilos::$rt->connections['picture-reject-ak']?->outboundModerationPhase,
+            );
+            $this->assertSame('pic-1', Hilos::$rt->connections['picture-reject-ak']?->outboundModerationPicture);
+            $actionErrorSignal = $this->takeQueuedActionErrorSignal();
+            $this->assertNotNull($actionErrorSignal);
+            $this->assertInstanceOf(PageActionErrorSignalData::class, $actionErrorSignal->data);
+            $this->assertSame(
+                'Message rejected: attachment 2 (shot.png) looks like nudity or sexual content.',
+                $actionErrorSignal->data->reason,
+            );
+        } finally {
+            Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+            Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
+    public function testAnUnreadablePictureIsRejected(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+        Hilos::$db->events->actions->deleteAll();
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('User');
+            $this->completeUpload('picture-unreadable-ak', (int)$user->id, 'pic-1', 'broken.png', 'image/png', 'png');
+            Hilos::$rt->connections->actions->register('picture-unreadable-ak', $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+            Hilos::$rt->connections['picture-unreadable-ak']?->actions->startOutboundModeration('hello', ['pic-1']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $this->dispatchTextModerationSignalToMainPage(
+                new ChatAgent(),
+                new ModerationResultSignalData(
+                    acceptKey: 'picture-unreadable-ak',
+                    userId: $user->id,
+                    message: 'hello',
+                    allow: false,
+                    reason: 'unreadable',
+                    picture: 'pic-1',
+                ),
+            );
+
+            $this->assertSame(
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
+                Hilos::$rt->connections['picture-unreadable-ak']?->outboundModerationPhase,
+            );
+            $actionErrorSignal = $this->takeQueuedActionErrorSignal();
+            $this->assertNotNull($actionErrorSignal);
+            $this->assertInstanceOf(PageActionErrorSignalData::class, $actionErrorSignal->data);
+            $this->assertSame(
+                'Message rejected: attachment 1 (broken.png) cannot be checked. Send pictures as JPEG, PNG, WebP or GIF.',
+                $actionErrorSignal->data->reason,
+            );
+        } finally {
+            Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+            Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
     public function testMainPageRejectsMessageInsideRuntimeRateLimit(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -300,6 +403,29 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         } finally {
             Hilos::$db->events->actions->deleteAll();
         }
+    }
+
+    private function completeUpload(
+        string $acceptKey,
+        int $userId,
+        string $clientUploadId,
+        string $filename,
+        string $mimeType,
+        string $bytes,
+    ): void {
+        $tmpIndex = Hilos::$fs?->getTmp()->create();
+        $this->assertNotNull($tmpIndex);
+        Hilos::$fs?->getTmp()[$tmpIndex]->append($bytes);
+        Hilos::$rt->hilosUploads->actions->open(
+            $acceptKey,
+            $clientUploadId,
+            ChatAttachmentUploadTarget::NAME,
+            $userId,
+            $filename,
+            $mimeType,
+            strlen($bytes),
+            $tmpIndex,
+        )->actions->complete();
     }
 
     private function assertEventTypeExists(ChatEventType $type): void

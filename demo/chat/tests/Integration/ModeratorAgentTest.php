@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
@@ -427,6 +428,356 @@ final class ModeratorAgentTest extends IntegrationTestCase
         }
     }
 
+    public function testAnAllowedMessageSendsItsPictureToTheVisionClientAsAJpeg(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-ok-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-1', 'holiday.png', 'image/png', $this->pngBytes());
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a calm sentence', ['pic-1']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            $chatClient = new CompletedModerationChatClient('{"allow": true, "reason": "ok"}');
+            $photoClient = new CompletedModerationChatClient('{"allow": true, "reason": "ok"}');
+            self::replaceChatClient($agent, $chatClient);
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+            $before = $this->tmpFileNames();
+
+            $agent->onTick();
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame($before, $this->tmpFileNames());
+            $this->assertSame(1, $chatClient->startGenerateCalls);
+            $this->assertSame(1, $photoClient->startGenerateCalls);
+            $this->assertStringContainsString('Picture: name=holiday.png', $photoClient->messages[1]->content);
+            $this->assertStringNotContainsString('a calm sentence', $photoClient->messages[1]->content);
+            $this->assertStringContainsString(
+                'allow ordinary pictures, screenshots and drawings.',
+                $photoClient->messages[0]->content,
+            );
+            $image = $photoClient->messages[1]->images[0];
+            $this->assertSame('image/jpeg', $image->mimeType);
+            $jpeg = base64_decode($image->base64, true);
+            $this->assertNotFalse($jpeg);
+            $info = getimagesizefromstring($jpeg);
+            $this->assertNotFalse($info);
+            $this->assertSame('image/jpeg', $info['mime']);
+            $this->assertLessThanOrEqual(512, $info[0]);
+            $this->assertLessThanOrEqual(512, $info[1]);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertTrue($result->allow);
+            $this->assertNull($result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    public function testANudityRefusalNamesThePicture(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-nudity-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-1', 'holiday.png', 'image/png', $this->pngBytes());
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a calm sentence', ['pic-1']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": true, "reason": "ok"}'));
+            $photoClient = new CompletedModerationChatClient('{"allow": false, "reason": "nudity"}');
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+
+            $agent->onTick();
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame(1, $photoClient->startGenerateCalls);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertFalse($result->allow);
+            $this->assertSame('nudity', $result->reason);
+            $this->assertSame('pic-1', $result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    public function testTheSecondPictureRefusalAsksTwiceAndNamesThatPicture(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-second-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $png = $this->pngBytes();
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-1', 'first.png', 'image/png', $png);
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-2', 'second.png', 'image/png', $png);
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a calm sentence', ['pic-1', 'pic-2']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": true, "reason": "ok"}'));
+            $photoClient = new ScriptedModerationChatClient([
+                '{"allow": true, "reason": "ok"}',
+                '{"allow": false, "reason": "nudity"}',
+            ]);
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+
+            $agent->onTick();
+            $agent->onTick();
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame(2, $photoClient->startGenerateCalls);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertFalse($result->allow);
+            $this->assertSame('nudity', $result->reason);
+            $this->assertSame('pic-2', $result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    public function testTheFirstPictureRefusalDoesNotAskAboutTheNext(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-first-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $png = $this->pngBytes();
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-1', 'first.png', 'image/png', $png);
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-2', 'second.png', 'image/png', $png);
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a calm sentence', ['pic-1', 'pic-2']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": true, "reason": "ok"}'));
+            $photoClient = new CompletedModerationChatClient('{"allow": false, "reason": "nudity"}');
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+
+            $agent->onTick();
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame(1, $photoClient->startGenerateCalls);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertSame('pic-1', $result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    public function testRejectedTextDoesNotAskTheVisionClient(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-text-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-1', 'holiday.png', 'image/png', $this->pngBytes());
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a rude sentence', ['pic-1']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": false, "reason": "insult"}'));
+            $photoClient = new CompletedModerationChatClient('{"allow": false, "reason": "nudity"}');
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame(0, $photoClient->startGenerateCalls);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertFalse($result->allow);
+            $this->assertNull($result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    public function testANonImageAttachmentIsNotSentToTheVisionClient(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-pdf-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $this->completeUpload($acceptKey, (int)$user->id, 'doc-1', 'notes.pdf', 'application/pdf', 'not a picture');
+            $this->completeUpload($acceptKey, (int)$user->id, 'doc-2', 'notes.txt', 'text/plain', 'plain text');
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a calm sentence', ['doc-1', 'doc-2']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": true, "reason": "ok"}'));
+            $photoClient = new CompletedModerationChatClient('{"allow": false, "reason": "nudity"}');
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame(0, $photoClient->startGenerateCalls);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertTrue($result->allow);
+            $this->assertNull($result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    public function testUnreadablePictureBytesAreRefusedWithoutTheModel(): void
+    {
+        $this->beginPictureModeration();
+        $acceptKey = 'moderator-picture-bad-ak';
+
+        try {
+            $user = Hilos::$db->users->actions->createWithName('Picture User');
+            $this->completeUpload($acceptKey, (int)$user->id, 'pic-1', 'broken.png', 'image/png', 'not-a-png');
+            Hilos::$rt->connections->actions->register($acceptKey, $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id);
+            Hilos::$rt->connections[$acceptKey]?->actions->startOutboundModeration('a calm sentence', ['pic-1']);
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $agent = new ModeratorAgent();
+            $agent->onStart();
+            self::replaceChatClient($agent, new CompletedModerationChatClient('{"allow": true, "reason": "ok"}'));
+            $photoClient = new CompletedModerationChatClient('{"allow": true, "reason": "ok"}');
+            self::replaceChatClient($agent, $photoClient, 'photoClient');
+            $before = $this->tmpFileNames();
+
+            $agent->onTick();
+            $agent->onTick();
+
+            $this->assertSame($before, $this->tmpFileNames());
+            $this->assertSame(0, $photoClient->startGenerateCalls);
+            $result = $this->takeQueuedModerationResult();
+            $this->assertNotNull($result);
+            $this->assertFalse($result->allow);
+            $this->assertSame('unreadable', $result->reason);
+            $this->assertSame('pic-1', $result->picture);
+        } finally {
+            if (isset($agent)) {
+                $agent->onStop();
+            }
+            $this->endPictureModeration();
+        }
+    }
+
+    private function beginPictureModeration(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+    }
+
+    private function endPictureModeration(): void
+    {
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+    }
+
+    private function completeUpload(
+        string $acceptKey,
+        int $userId,
+        string $clientUploadId,
+        string $filename,
+        string $mimeType,
+        string $bytes,
+    ): void {
+        $tmpIndex = Hilos::$fs?->getTmp()->create();
+        $this->assertNotNull($tmpIndex);
+        Hilos::$fs?->getTmp()[$tmpIndex]->append($bytes);
+        Hilos::$rt->hilosUploads->actions->open(
+            $acceptKey,
+            $clientUploadId,
+            ChatAttachmentUploadTarget::NAME,
+            $userId,
+            $filename,
+            $mimeType,
+            strlen($bytes),
+            $tmpIndex,
+        )->actions->complete();
+    }
+
+    private function pngBytes(): string
+    {
+        $image = imagecreatetruecolor(800, 600);
+        $this->assertNotFalse($image);
+        ob_start();
+        $written = imagepng($image);
+        $bytes = ob_get_clean();
+        imagedestroy($image);
+        $this->assertTrue($written);
+        $this->assertIsString($bytes);
+        $this->assertNotSame('', $bytes);
+
+        return $bytes;
+    }
+
+    /**
+     * @return list<string> Names of the files currently in the temporary directory
+     */
+    private function tmpFileNames(): array
+    {
+        $path = Hilos::$fs?->getTmp()->getPath();
+        $this->assertNotNull($path);
+        $names = scandir($path);
+        $this->assertNotFalse($names);
+        $files = array_values(array_diff($names, ['.', '..']));
+        sort($files);
+
+        return $files;
+    }
+
     private static function replaceChatClient(
         ModeratorAgent $agent,
         AsyncChatLLMInterface $chatClient,
@@ -611,6 +962,78 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
     public function reset(): void
     {
         $this->resetCalls++;
+        $this->busy = false;
+        $this->hasResult = false;
+    }
+}
+
+final class ScriptedModerationChatClient implements AsyncChatLLMInterface
+{
+    public int $startGenerateCalls = 0;
+
+    /** @var list<list<Message>> */
+    public array $calls = [];
+
+    public ?ChatGenerateOptions $lastOptions = null;
+
+    private bool $busy = false;
+
+    private bool $hasResult = false;
+
+    /**
+     * @param list<string> $results Verdicts returned one per consume, in order
+     */
+    public function __construct(
+        private array $results,
+    ) {
+    }
+
+    public function startGenerate(array $messages, ChatGenerateOptions $options): void
+    {
+        $this->startGenerateCalls++;
+        $this->calls[] = $messages;
+        $this->lastOptions = $options;
+
+        if ($this->busy) {
+            throw new LLMClientBusyException();
+        }
+
+        $this->busy = true;
+    }
+
+    public function tick(float $currentTimeMs): void
+    {
+        if (!$this->busy) {
+            return;
+        }
+
+        $this->busy = false;
+        $this->hasResult = true;
+    }
+
+    public function hasResult(): bool
+    {
+        return $this->hasResult;
+    }
+
+    public function consumeResult(): string
+    {
+        $result = array_shift($this->results);
+        $this->hasResult = false;
+        if (!is_string($result)) {
+            throw new LLMResultUnavailableException('No scripted result is available');
+        }
+
+        return $result;
+    }
+
+    public function isBusy(): bool
+    {
+        return $this->busy;
+    }
+
+    public function reset(): void
+    {
         $this->busy = false;
         $this->hasResult = false;
     }

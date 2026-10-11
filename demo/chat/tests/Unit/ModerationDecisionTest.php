@@ -154,6 +154,84 @@ final class ModerationDecisionTest extends TestCase
         ];
     }
 
+    /**
+     * @param string $rawReason Input raw reason
+     * @param ?string $phase Runtime phase
+     * @param int $ordinal Attachment number among every file
+     * @param ?string $filename Upload file name, or null when the upload is gone
+     * @param string $expected Expected public sentence
+     */
+    #[DataProvider('publicPictureReasonProvider')]
+    public function testPublicPictureReason(
+        string $rawReason,
+        ?string $phase,
+        int $ordinal,
+        ?string $filename,
+        string $expected,
+    ): void {
+        $this->assertSame(
+            $expected,
+            ModerationDecision::publicPictureReason($rawReason, $phase, $ordinal, $filename),
+        );
+    }
+
+    /**
+     * @return list<array{0: string, 1: ?string, 2: int, 3: ?string, 4: string}>
+     */
+    public static function publicPictureReasonProvider(): array
+    {
+        $longName = str_repeat('n', 61);
+        $shownName = str_repeat('n', 59) . '…';
+
+        return [
+            ['nudity', null, 2, 'shot.png', 'Message rejected: attachment 2 (shot.png) looks like nudity or sexual content.'],
+            ['violence', null, 2, 'shot.png', 'Message rejected: attachment 2 (shot.png) looks violent.'],
+            ['hate', null, 1, 'banner.gif', 'Message rejected: attachment 1 (banner.gif) looks like hate imagery.'],
+            [
+                'unreadable',
+                null,
+                3,
+                'scan.png',
+                'Message rejected: attachment 3 (scan.png) cannot be checked. Send pictures as JPEG, PNG, WebP or GIF.',
+            ],
+            [
+                'contains a watermark',
+                null,
+                1,
+                'shot.png',
+                'Message rejected: attachment 1 (shot.png) — contains a watermark',
+            ],
+            ['blocked', null, 1, 'shot.png', 'Message rejected: attachment 1 (shot.png) was not accepted.'],
+            ['', null, 1, 'shot.png', 'Message rejected: attachment 1 (shot.png) was not accepted.'],
+            [
+                'service_unavailable',
+                null,
+                1,
+                'shot.png',
+                'Moderation is unavailable right now. Your message is still here.',
+            ],
+            ['unknown', null, 1, 'shot.png', 'Moderation is unavailable right now. Your message is still here.'],
+            [
+                'nudity',
+                null,
+                1,
+                $longName,
+                'Message rejected: attachment 1 (' . $shownName . ') looks like nudity or sexual content.',
+            ],
+            ['nudity', null, 4, null, 'Message rejected: attachment 4 looks like nudity or sexual content.'],
+        ];
+    }
+
+    public function testIsAboutTheContentRejectsACheckThatCouldNotRun(): void
+    {
+        $this->assertTrue(ModerationDecision::isAboutTheContent('nudity'));
+        $this->assertTrue(ModerationDecision::isAboutTheContent('blocked'));
+        $this->assertTrue(ModerationDecision::isAboutTheContent('contains a watermark'));
+        $this->assertFalse(ModerationDecision::isAboutTheContent(ModerationDecision::REASON_UNREADABLE));
+        $this->assertFalse(ModerationDecision::isAboutTheContent('service_unavailable'));
+        $this->assertFalse(ModerationDecision::isAboutTheContent('unknown'));
+    }
+
     public function testIsNaturalLanguagePhraseRejectsInvalidPatterns(): void
     {
         $this->assertTrue(ModerationDecision::isNaturalLanguagePhrase('this is a natural phrase'));

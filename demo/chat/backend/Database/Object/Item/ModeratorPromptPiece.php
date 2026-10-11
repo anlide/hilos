@@ -27,6 +27,7 @@ final class ModeratorPromptPiece extends Object_
     public const string SECTION_NAME_RULE = 'name_rule';
     public const string SECTION_MESSAGE_RULE = 'message_rule';
     public const string SECTION_PHOTO_RULE = 'photo_rule';
+    public const string SECTION_MESSAGE_PICTURE_RULE = 'message_picture_rule';
 
     public const string id = 'id';
     public const string section = 'section';

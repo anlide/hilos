@@ -13,14 +13,14 @@ User sends message {content, attachments: list<clientUploadId>}
         |
 MainPage checks each id and stores text + ids on the Connection row (`outboundModerationAttachments`)
         |
-ModeratorAgent reads each named upload from `Hilos::$rt->hilosUploads` for its prompt
+ModeratorAgent reads each named upload. The text model sees names, types and sizes; each picture is then checked from a 512-pixel JPEG copy of its bytes
         |
 MainPage receives MODERATION_RESULT
         |
 Approved with files: `Hilos::$files->publishUploads()` -> MainPage receives `chat_attachments_published`
 ```
 
-Moderation content includes the message text plus one line per attachment: `Attachment: name=…, mime=…, size=… bytes.` — the upload's file name, the type read from its content (the declared one when none was read), and its declared size. An upload gone since the send is left out of the prompt; its publication refuses next. The file bytes themselves are not inspected by this flow.
+Moderation content includes the message text plus one line per attachment: `Attachment: name=…, mime=…, size=… bytes.` — the upload's file name, the type read from its content (the declared one when none was read), and its declared size. An upload gone since the send is left out of the prompt; its publication refuses next. After the text is allowed, each picture (a type that starts with `image/`) is drawn as a 512-pixel JPEG and sent to the vision client, one at a time in attach order. The first refusal names that picture by its place among every attachment and by its file name. A picture the engine cannot read is rejected as unreadable. A file that is not a picture is still not opened.
 
 ## Approved
 
@@ -34,7 +34,7 @@ Moderation content includes the message text plus one line per attachment: `Atta
 ## Rejected or Unavailable
 
 1. The uploads stay complete with the uploads agent, so the chips stay and the user can retry.
-2. Set `outboundModerationPhase` to `rejected` or `unavailable` on the originating `Connection`.
+2. Set `outboundModerationPhase` to `rejected` or `unavailable` on the originating `Connection`. A refusal about one picture also sets `outboundModerationPicture` to that upload's client id; a text refusal leaves it null. `unreadable` is rejected: the picture could not be checked, and it does not notify the author. `service_unavailable` and `unknown` stay unavailable.
 3. Browser source fan-out updates the originating connection's `selfConnection` row.
 
 The uploads stay subject to the uploads agent's hour without change and to the life of their connection.

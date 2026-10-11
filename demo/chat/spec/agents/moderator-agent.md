@@ -1,16 +1,22 @@
 # ModeratorAgent
 
-**Type:** `AgentType::MODERATOR` (`'moderator'`) | **Worker:** Regular
+**Type:** `AgentType::MODERATOR` (`'moderator'`) | **Worker:** Monopolistic
 
-Handles LLM-based user content moderation. Runs in a regular worker and communicates via agent-to-agent signals.
+Handles LLM-based user content moderation. The demo runs it in a monopolistic worker
+(`ModeratorAgentDaemon::requiresMonopolisticProcess()` is true) and it communicates
+via agent-to-agent signals.
 
 ## Responsibilities
 
 - Discover user outbound messages from runtime connection state and send `MODERATION_RESULT`.
+- After that text is allowed, draw a 512-pixel JPEG copy of each attached picture and send it to the vision client. A refusal names that picture. The worker raises `memory_limit` to the images budget for the draw and restores it on stop.
 - Discover user-initiated display-name changes from runtime connection state and send `RENAME_MODERATION_RESULT`.
 - Discover completed profile-photo checks from `hilosProfilePhotoChecks`, send the image to the vision profile, and return `HILOS_PROFILE_PHOTO_VERDICT` to the users library.
 
-Attachments on a chat message are described by name, type and size only. A profile
+Attachments on a chat message are described to the text model by name, type and size only.
+Once that text is allowed, each picture — an upload whose type starts with `image/` — is
+drawn as a 512-pixel JPEG and sent to the vision client, one at a time, in attach order.
+The first refusal names the picture and the rest are not checked. A profile
 photo is a separate request: the users library opens a check only for a completed
 upload, and the moderator reads its temporary JPEG and sends the bytes to the
 vision model. `READS_RT` declares both the upload and photo-check collections;
@@ -57,8 +63,15 @@ Requests are not queued inside the agent. Each tick finds a pending outbound
 message first, a pending rename second, or the oldest completed profile-photo
 check third. Only one model request is in flight at a time.
 
+A message that carries pictures is one job until the verdict. The text is asked
+first. When it is allowed and a picture remains, the verdict waits: the agent
+draws the next picture and asks the vision client. A refusal, an unreadable
+copy, or a failure sends the verdict at once and leaves the later pictures
+unchecked.
+
 Only one request is in flight at a time, tracked by accept key, request type,
-request value, user id, and moderation timestamp. After a result signal is
+request value, user id, and moderation timestamp. A picture check also remembers
+the client upload id it is looking at. After a result signal is
 sent, the marker is kept until ChatAgent applies the result back to runtime
 state, which prevents duplicate moderation starts for the same connection. For a
 photo, the snapshot includes its client upload id and `startedAt`; removing or

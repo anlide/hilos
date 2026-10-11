@@ -64,6 +64,25 @@ final class ConnectionModerationRowTest extends TestCase
         $this->assertSame([], Connection::fromRow(self::row([]))->outboundModerationAttachments);
     }
 
+    public function testTheRefusedPictureTravelsInARowAndInADiff(): void
+    {
+        $connection = Connection::fromRow(self::row([Connection::outboundModerationPicture => 'pic-1']));
+        $this->assertSame('pic-1', $connection->outboundModerationPicture);
+
+        $connection->applyDiff([
+            Connection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+        ]);
+        $this->assertSame('pic-1', $connection->outboundModerationPicture, 'A diff without the key leaves the picture');
+
+        $connection->applyDiff([Connection::outboundModerationPicture => null]);
+        $this->assertNull($connection->outboundModerationPicture);
+    }
+
+    public function testAFreshRowNamesNoRefusedPicture(): void
+    {
+        $this->assertNull(Connection::fromRow(self::row([]))->outboundModerationPicture);
+    }
+
     public function testARowCarryingNoMessageReadsAsNone(): void
     {
         $connection = Connection::fromRow(self::row([Connection::outboundModerationMessage => null]));

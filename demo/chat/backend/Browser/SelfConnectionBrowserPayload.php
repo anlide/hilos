@@ -7,6 +7,7 @@ namespace Demo\Chat\Browser;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\HilosException;
 
 /**
  * Builds the browser-safe current connection payload for the main chat page.
@@ -17,6 +18,7 @@ final class SelfConnectionBrowserPayload
      * Builds the current connection summary visible to one WebSocket connection.
      *
      * @return array<string, mixed> Browser-safe selfConnection payload
+     * @throws HilosException When the refused picture's upload cannot be read
      */
     public static function forConnection(Connection $connection): array
     {

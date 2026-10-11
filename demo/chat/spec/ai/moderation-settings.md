@@ -38,4 +38,9 @@ Rationale: context analyzer runs in monopolistic worker that starts before DB se
 Stored in `ChatDbContext::moderatorPromptPieces` table.
 Until framework moderation (P-475), the pieces change only through the seed.
 `ModeratorAgent` builds its system prompt from these pieces on each LLM call.
+The sections are `name_rule`, `message_rule`, `photo_rule`, and `message_picture_rule`.
 Allows dynamic prompt tuning without restart.
+While `message_picture_rule` has no pieces, the picture prompt uses three built-in
+rules: allow ordinary pictures, screenshots and drawings; block only nudity or
+sexual content, graphic violence, and hate symbols; if uncertain, allow.
+There is no seed for that section.

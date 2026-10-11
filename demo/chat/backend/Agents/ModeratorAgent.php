@@ -20,12 +20,21 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Files\Image\ImageCopy;
+use Hilos\Files\Image\ImageEngineInterface;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImageRenderException;
+use Hilos\Files\Image\ImageVariant;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Upload\UploadMime;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
@@ -42,11 +51,13 @@ use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\Runtime\State\Item\HilosProfilePhotoCheck;
 use Hilos\Runtime\View\Item\HilosProfilePhotoCheck as PhotoCheck;
 use Hilos\Users\DTO\ProfilePhotoVerdictSignalData;
+use Hilos\WiringRefusal;
 
 /**
- * Regular agent that discovers runtime user moderation requests and returns decisions.
+ * Monopolistic agent that discovers runtime user moderation requests and returns decisions.
  *
- * Uses async LLM moderation for outbound user messages and user-initiated display names.
+ * Uses async LLM moderation for outbound user messages, a JPEG copy of each picture
+ * attached to an allowed message, and user-initiated display names.
  */
 final class ModeratorAgent extends AbstractAgent
 {
@@ -72,6 +83,9 @@ final class ModeratorAgent extends AbstractAgent
     private const string REQUEST_TYPE_MESSAGE = 'message';
     private const string REQUEST_TYPE_RENAME = 'rename';
     private const string REQUEST_TYPE_PHOTO = 'photo';
+    private const string REQUEST_TYPE_MESSAGE_PICTURE = 'message_picture';
+    private const string PICTURE_COPY_NAME = 'chat_message_picture';
+    private const int PICTURE_COPY_SIDE = 512;
     private const int MODERATION_MAX_TOKENS = 32;
 
     private LlmProfile $profile;
@@ -81,6 +95,10 @@ final class ModeratorAgent extends AbstractAgent
     private LlmProfile $photoProfile;
 
     private AsyncChatLLMInterface $photoClient;
+
+    private ImageEngineInterface $imageEngine;
+
+    private string|false $previousMemoryLimit = false;
 
     private ?string $currentAcceptKey = null;
 
@@ -92,6 +110,12 @@ final class ModeratorAgent extends AbstractAgent
 
     /** Runtime moderation update timestamp observed when the LLM request started. */
     private int $currentModerationUpdatedAt = 0;
+
+    /** @var list<string> Client ids of the message's pictures that are not checked yet */
+    private array $currentPictures = [];
+
+    /** Client id of the picture currently with the vision client, or null. */
+    private ?string $currentPicture = null;
 
     /**
      * Creates a moderator with an LLM client from the chat.moderation profile.
@@ -109,11 +133,29 @@ final class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Cancels any in-flight moderation request owned by this worker.
+     * Reserves the rendering engine and the image memory budget until this agent stops.
+     *
+     * @throws LogicException When images is not declared with an images worker
+     */
+    public function onStart(): void
+    {
+        $this->imageEngine = ImageCopy::engine();
+        $this->previousMemoryLimit = ini_set('memory_limit', ImagesAgent::MEMORY_LIMIT);
+        if ($this->previousMemoryLimit === false) {
+            $this->logAgentWarning('Cannot set image rendering memory_limit to ' . ImagesAgent::MEMORY_LIMIT);
+        }
+    }
+
+    /**
+     * Cancels any in-flight moderation request and restores the memory budget.
      */
     public function onStop(): void
     {
         $this->resetCurrentModerationRequest();
+        if ($this->previousMemoryLimit !== false) {
+            ini_set('memory_limit', $this->previousMemoryLimit);
+            $this->previousMemoryLimit = false;
+        }
     }
 
     /**
@@ -176,6 +218,9 @@ final class ModeratorAgent extends AbstractAgent
     /**
      * Advances one async moderation request and waits for RT sync to confirm result handling.
      *
+     * An allowed message that still has pictures does not send a verdict yet: the next
+     * picture is drawn and asked of the vision client, and the first refusal ends the rest.
+     *
      * @throws HilosException When moderation rule lookup fails
      */
     public function onTick(): void
@@ -215,9 +260,25 @@ final class ModeratorAgent extends AbstractAgent
                 } catch (AgentException|LLMException $e) {
                     $this->logAgentError($e->getMessage());
                     $reason = self::REASON_SERVICE_UNAVAILABLE;
-                } finally {
-                    $this->sendCurrentModerationResult($allow, $reason);
                 }
+
+                if ($allow && $this->currentRequestType === self::REQUEST_TYPE_MESSAGE) {
+                    $this->currentPictures = $this->picturesOfCurrentMessage();
+                    if ($this->currentPictures !== []) {
+                        $this->startNextPicture();
+                        return;
+                    }
+                } elseif ($allow && $this->currentRequestType === self::REQUEST_TYPE_MESSAGE_PICTURE) {
+                    if ($this->currentPictures !== []) {
+                        $this->startNextPicture();
+                        return;
+                    }
+
+                    $this->sendCurrentModerationResult(true, ModerationDecision::REASON_ALLOWED);
+                    return;
+                }
+
+                $this->sendCurrentModerationResult($allow, $reason);
             }
 
             return;
@@ -365,7 +426,10 @@ final class ModeratorAgent extends AbstractAgent
     /** @return AsyncChatLLMInterface Client for the request currently in flight */
     private function activeClient(): AsyncChatLLMInterface
     {
-        return $this->currentRequestType === self::REQUEST_TYPE_PHOTO ? $this->photoClient : $this->chatClient;
+        return $this->currentRequestType === self::REQUEST_TYPE_PHOTO
+            || $this->currentRequestType === self::REQUEST_TYPE_MESSAGE_PICTURE
+            ? $this->photoClient
+            : $this->chatClient;
     }
 
     /**
@@ -441,6 +505,9 @@ final class ModeratorAgent extends AbstractAgent
 
     /**
      * Builds outbound message moderation prompt messages.
+     *
+     * Attachment lines carry names, types and sizes. The picture bytes are checked
+     * afterwards, once this text is allowed.
      *
      * @return list<Message> System and user messages for LLM
      * @throws AgentException When the active connection is stale
@@ -563,6 +630,167 @@ final class ModeratorAgent extends AbstractAgent
     }
 
     /**
+     * Client ids of the message's pictures, in attach order.
+     *
+     * An upload that is already gone is left out. A file whose type does not start
+     * with image/ is not a picture. The declared type is used when none was read
+     * from the content.
+     *
+     * @return list<string> Client upload ids still to check
+     * @throws HilosException When an upload row cannot be read
+     */
+    private function picturesOfCurrentMessage(): array
+    {
+        $acceptKey = $this->currentAcceptKey;
+        if ($acceptKey === null || !isset(Hilos::$rt->connections[$acceptKey])) {
+            return [];
+        }
+
+        $pictureIds = [];
+        foreach (Hilos::$rt->connections[$acceptKey]->outboundModerationAttachments as $clientUploadId) {
+            $upload = Hilos::$rt->hilosUploads->find($acceptKey, $clientUploadId);
+            if ($upload === null) {
+                continue;
+            }
+            $mimeType = UploadMime::normalize($upload->detectedMimeType ?? $upload->mimeType);
+            if (str_starts_with($mimeType, 'image/')) {
+                $pictureIds[] = $clientUploadId;
+            }
+        }
+
+        return $pictureIds;
+    }
+
+    /**
+     * Draws the next picture and asks the vision client, or sends the verdict when none remain.
+     *
+     * A missing, incomplete, or file-less upload is skipped. When every remaining picture
+     * is skipped the message is allowed. A copy that cannot be drawn refuses the picture
+     * as unreadable, and the copy itself is deleted before the method returns.
+     *
+     * @throws WiringRefusal When this process is not a declared reader of the uploads
+     */
+    private function startNextPicture(): void
+    {
+        $this->currentRequestType = self::REQUEST_TYPE_MESSAGE_PICTURE;
+
+        while (true) {
+            $pictureId = array_shift($this->currentPictures);
+            if (!is_string($pictureId)) {
+                $this->currentPicture = null;
+                $this->sendCurrentModerationResult(true, ModerationDecision::REASON_ALLOWED);
+
+                return;
+            }
+            $this->currentPicture = $pictureId;
+
+            try {
+                $acceptKey = $this->currentAcceptKey ?? throw new AgentException('Picture check has no connection');
+                $upload = Hilos::$rt->hilosUploads->find($acceptKey, $pictureId);
+                if ($upload === null || $upload->phase !== UploadPhase::COMPLETE || $upload->tmpIndex === null) {
+                    continue;
+                }
+
+                $tmp = (Hilos::$fs ?? throw new AgentException('Temporary files are unavailable'))->getTmp();
+                $copyIndex = null;
+                try {
+                    $copyIndex = $tmp->create();
+                    ImageCopy::draw(
+                        $this->imageEngine,
+                        FsPath::read($tmp[$upload->tmpIndex]->getPath()),
+                        new ImageVariant(
+                            self::PICTURE_COPY_NAME,
+                            self::PICTURE_COPY_SIDE,
+                            self::PICTURE_COPY_SIDE,
+                            ImageFit::CONTAIN,
+                            ImageFormat::JPEG,
+                        ),
+                        $tmp[$copyIndex]->getPath(),
+                    );
+                    $copy = FsPath::read($tmp[$copyIndex]->getPath());
+                } finally {
+                    if ($copyIndex !== null) {
+                        try {
+                            $tmp[$copyIndex]->unlink();
+                        } catch (FsException $unlinkError) {
+                            $this->logAgentError(
+                                'Cannot delete the picture copy ' . $copyIndex . ': ' . $unlinkError->getMessage(),
+                            );
+                        }
+                    }
+                }
+
+                $this->photoClient->startGenerate(
+                    $this->buildMessagePictureModerationMessages($upload->filename, $copy),
+                    new ChatGenerateOptions(
+                        model: $this->photoProfile->model,
+                        timeoutSec: $this->photoProfile->timeoutSec,
+                        maxTokens: self::MODERATION_MAX_TOKENS,
+                    ),
+                );
+
+                return;
+            } catch (ImageRenderException $e) {
+                $this->logAgentWarning('Cannot draw a copy of picture ' . $pictureId . ': ' . $e->getMessage());
+                $this->sendCurrentModerationResult(false, ModerationDecision::REASON_UNREADABLE);
+
+                return;
+            } catch (FsException $e) {
+                $this->logAgentError('Cannot read picture ' . $pictureId . ': ' . $e->getMessage());
+                $this->sendCurrentModerationResult(false, self::REASON_SERVICE_UNAVAILABLE);
+
+                return;
+            } catch (WiringRefusal $refusal) {
+                throw $refusal;
+            } catch (HilosException $e) {
+                $this->logAgentError($e->getMessage());
+                $this->sendCurrentModerationResult(false, self::REASON_SERVICE_UNAVAILABLE);
+
+                return;
+            }
+        }
+    }
+
+    /**
+     * Builds the image-bearing prompt for one picture attached to the message.
+     *
+     * The message text is not included. The image is the JPEG copy, not the original.
+     *
+     * @param string $filename File name of the upload
+     * @param string $jpeg Encoded JPEG copy
+     * @return list<Message> System rule and the picture
+     * @throws HilosException When the picture rules cannot be read
+     */
+    private function buildMessagePictureModerationMessages(string $filename, string $jpeg): array
+    {
+        $rulesBlock = $this->buildRuleBlock(
+            ObjectModeratorPromptPiece::SECTION_MESSAGE_PICTURE_RULE,
+            [
+                '- Default policy: allow ordinary pictures, screenshots and drawings.',
+                '- Block only nudity or sexual content, graphic violence, and hate symbols.',
+                '- If uncertain, return ' . ModerationDecision::KEY_ALLOW . '=true.',
+            ],
+        );
+        $systemContent = sprintf(implode("\n", [
+            'Moderation of a picture attached to a chat message. JSON only. Output: {"%s":true|false,"%s":"ok|nudity|violence|hate"}',
+            'Rules:',
+            '%s',
+        ]), ModerationDecision::KEY_ALLOW, ModerationDecision::KEY_REASON, $rulesBlock);
+
+        return [
+            new Message(Message::ROLE_SYSTEM, $systemContent),
+            new Message(
+                Message::ROLE_USER,
+                implode("\n\n", [
+                    'User ID: ' . $this->currentUserId,
+                    'Picture: name=' . $filename,
+                ]),
+                [new MessageImage(ImageFormat::JPEG->value, base64_encode($jpeg))],
+            ),
+        ];
+    }
+
+    /**
      * Sends the active request result using the matching signal contract.
      *
      * @param bool $allow Whether the moderated value is allowed
@@ -576,15 +804,22 @@ final class ModeratorAgent extends AbstractAgent
 
         if (
             !$allow
-            && ($this->currentRequestType === self::REQUEST_TYPE_MESSAGE || $this->currentRequestType === self::REQUEST_TYPE_RENAME)
+            && (
+                $this->currentRequestType === self::REQUEST_TYPE_MESSAGE
+                || $this->currentRequestType === self::REQUEST_TYPE_RENAME
+                || $this->currentRequestType === self::REQUEST_TYPE_MESSAGE_PICTURE
+            )
         ) {
-            $this->logAgentInfo(
-                "Moderation refusal for request type '{$this->currentRequestType}': reason={$reason}",
-            );
+            $detail = "Moderation refusal for request type '{$this->currentRequestType}': reason={$reason}";
+            if ($this->currentRequestType === self::REQUEST_TYPE_MESSAGE_PICTURE) {
+                $detail .= ", picture={$this->currentPicture}";
+            }
+            $this->logAgentInfo($detail);
         }
 
         switch ($this->currentRequestType) {
             case self::REQUEST_TYPE_MESSAGE:
+            case self::REQUEST_TYPE_MESSAGE_PICTURE:
                 $this->sendToAgent(
                     ChatSignalConstants::MODERATION_RESULT,
                     new ModerationResultSignalData(
@@ -593,6 +828,9 @@ final class ModeratorAgent extends AbstractAgent
                         message: $this->currentModerationValue,
                         allow: $allow,
                         reason: $reason,
+                        picture: !$allow && $this->currentRequestType === self::REQUEST_TYPE_MESSAGE_PICTURE
+                            ? $this->currentPicture
+                            : null,
                     ),
                 );
                 return;
@@ -650,13 +888,17 @@ final class ModeratorAgent extends AbstractAgent
 
         $connection = Hilos::$rt->connections[$this->currentAcceptKey];
 
+        $messageStillChecking = $connection->userId === $this->currentUserId
+            && $connection->outboundModerationPhase
+                === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+            && $connection->outboundModerationMessage === $this->currentModerationValue
+            && $connection->outboundModerationUpdatedAt === $this->currentModerationUpdatedAt;
+
         return match ($this->currentRequestType) {
-            self::REQUEST_TYPE_MESSAGE =>
-                $connection->userId === $this->currentUserId
-                && $connection->outboundModerationPhase
-                    === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
-                && $connection->outboundModerationMessage === $this->currentModerationValue
-                && $connection->outboundModerationUpdatedAt === $this->currentModerationUpdatedAt,
+            self::REQUEST_TYPE_MESSAGE => $messageStillChecking,
+            self::REQUEST_TYPE_MESSAGE_PICTURE => $messageStillChecking
+                && $this->currentPicture !== null
+                && in_array($this->currentPicture, $connection->outboundModerationAttachments, true),
             self::REQUEST_TYPE_RENAME =>
                 $connection->userId === $this->currentUserId
                 && $connection->renameModerationPhase
@@ -683,5 +925,7 @@ final class ModeratorAgent extends AbstractAgent
         $this->currentUserId = 0;
         $this->currentModerationValue = '';
         $this->currentModerationUpdatedAt = 0;
+        $this->currentPictures = [];
+        $this->currentPicture = null;
     }
 }
