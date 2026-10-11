@@ -1833,6 +1833,26 @@ export {
   type HilosDaemonWorkersTable,
 } from './admin/daemon/hilosDaemonWorkers.js'
 export {
+  resolveHilosDaemonPlacementRow,
+  createHilosDaemonPlacementTable,
+  daemonPlacementNodeColumnKey,
+  formatDaemonPlacementNodeLabel,
+  daemonPlacementCellIds,
+  formatDaemonPlacementCell,
+  formatDaemonPlacementKind,
+  formatDaemonPlacementState,
+  DAEMON_PLACEMENT_TYPE_FIELD,
+  DAEMON_PLACEMENT_PLACEMENT_FIELD,
+  DAEMON_PLACEMENT_IDLE_FIELD,
+  DAEMON_PLACEMENT_NODES_FIELD,
+  DAEMON_PLACEMENT_UNPLACED_FIELD,
+  type HilosDaemonPlacementNode,
+  type HilosDaemonPlacementCell,
+  type HilosDaemonPlacementRow,
+  type HilosDaemonPlacementContext,
+  type HilosDaemonPlacementTable,
+} from './admin/daemon/hilosDaemonPlacement.js'
+export {
   resolveHilosDaemonEnvKeyRow,
   resolveHilosDaemonEnvOrphanRow,
   createHilosDaemonEnvKeysTable,

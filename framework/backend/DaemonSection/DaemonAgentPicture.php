@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\DaemonSection;
 
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Exception\InvalidFormatException;
 
 /** One started agent in a live worker's process roster. */
@@ -14,6 +17,25 @@ final readonly class DaemonAgentPicture
     public const string PLACEMENT_NODE = 'node';
     public const string PLACEMENT_LEADER = 'leader';
     public const string PLACEMENT_POLICY = 'policy';
+
+    /** @return string Node or cluster scope of a registry entry */
+    public static function scopeOf(mixed $registryEntry): string
+    {
+        return AgentRegistry::scope($registryEntry) === AgentScope::NODE ? self::SCOPE_NODE : self::SCOPE_CLUSTER;
+    }
+
+    /** @return string Placement word of a registry entry */
+    public static function placementOf(mixed $registryEntry): string
+    {
+        if (self::scopeOf($registryEntry) === self::SCOPE_NODE) {
+            return self::PLACEMENT_NODE;
+        }
+
+        return match (AgentRegistry::placement($registryEntry)) {
+            AgentPlacement::LEADER => self::PLACEMENT_LEADER,
+            AgentPlacement::POLICY => self::PLACEMENT_POLICY,
+        };
+    }
 
     /**
      * @param string $id Non-empty agent id

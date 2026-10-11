@@ -8,9 +8,6 @@ use Generator;
 use Hilos\Cluster\Placement\PlacementRegistry;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
-use Hilos\Core\Agent\AgentRegistry;
-use Hilos\Core\Agent\Config\AgentPlacement;
-use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\DaemonSection\DaemonAgentPicture;
@@ -228,17 +225,10 @@ final class DaemonProcessRosterBuilder
         if ($registry === null) {
             return;
         }
-        $scope = AgentRegistry::scope($registry);
-        $placement = $scope === AgentScope::NODE
-            ? DaemonAgentPicture::PLACEMENT_NODE
-            : match (AgentRegistry::placement($registry)) {
-                AgentPlacement::LEADER => DaemonAgentPicture::PLACEMENT_LEADER,
-                AgentPlacement::POLICY => DaemonAgentPicture::PLACEMENT_POLICY,
-            };
         $this->agentPictures[$id] = new DaemonAgentPicture(
             $id,
-            $scope === AgentScope::NODE ? DaemonAgentPicture::SCOPE_NODE : DaemonAgentPicture::SCOPE_CLUSTER,
-            $placement,
+            DaemonAgentPicture::scopeOf($registry),
+            DaemonAgentPicture::placementOf($registry),
         );
         $this->agentWorkerIndexes[$id] = $worker->index;
         $this->agentIds->insert($id);

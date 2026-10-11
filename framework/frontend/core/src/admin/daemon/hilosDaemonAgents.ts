@@ -212,7 +212,7 @@ export function formatDaemonAgentWorker(row: HilosDaemonAgentRow): string {
  * @param cluster Whether this installation has cluster leadership.
  */
 export function formatDaemonAgentKind(
-  row: HilosDaemonAgentRow,
+  row: Pick<HilosDaemonAgentRow, 'placement' | 'idle'>,
   cluster: boolean,
 ): string {
   if (!cluster) {

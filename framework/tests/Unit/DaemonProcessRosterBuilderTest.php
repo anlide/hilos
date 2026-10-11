@@ -16,6 +16,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Daemon\WorkerInfo;
 use Hilos\Core\Daemon\DaemonProcessRosterBuilder;
 use Hilos\Core\Daemon\ProcessMetricsReader;
+use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\Hilos;
@@ -132,6 +133,34 @@ final class DaemonProcessRosterBuilderTest extends TestCase
             $builder->result()?->workers[0]->agents ?? [],
         ));
     }
+
+    public function testRegistryPlacementWordsMatchBuiltPictures(): void
+    {
+        $entries = ProcessRosterTestHilos::AGENTS;
+        self::assertSame(DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::scopeOf($entries['replica']));
+        self::assertSame(DaemonAgentPicture::PLACEMENT_NODE, DaemonAgentPicture::placementOf($entries['replica']));
+        self::assertSame(DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::scopeOf($entries['policy']));
+        self::assertSame(DaemonAgentPicture::PLACEMENT_POLICY, DaemonAgentPicture::placementOf($entries['policy']));
+        self::assertSame(DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::scopeOf([]));
+        self::assertSame(DaemonAgentPicture::PLACEMENT_LEADER, DaemonAgentPicture::placementOf([]));
+
+        $server = new ProcessRosterTestWorkerServer();
+        $server->workers = [new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, null, null, [])];
+        $agents = new ProcessRosterTestAgentManagerDaemon();
+        $agents->ids = ['replica:1' => null, 'policy:1' => null, 'leader' => null];
+        $builder = new DaemonProcessRosterBuilder(new ProcessMetricsReader());
+        $builder->start($server, $agents, null, true);
+        $builder->advance(100);
+        $pictures = [];
+        foreach ($builder->result()?->workers[0]->agents ?? [] as $picture) {
+            $pictures[$picture->id] = [$picture->scope, $picture->placement];
+        }
+        self::assertSame([
+            'leader' => [DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::PLACEMENT_LEADER],
+            'policy:1' => [DaemonAgentPicture::SCOPE_CLUSTER, DaemonAgentPicture::PLACEMENT_POLICY],
+            'replica:1' => [DaemonAgentPicture::SCOPE_NODE, DaemonAgentPicture::PLACEMENT_NODE],
+        ], $pictures);
+    }
 }
 
 /** Worker source exposing only its typed roster to the builder. */
@@ -218,5 +247,6 @@ abstract class ProcessRosterTestHilos extends Hilos
     public const array AGENTS = [
         'replica' => [AgentRegistryKey::SCOPE => AgentScope::NODE],
         'policy' => [AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
+        'leader' => [],
     ];
 }

@@ -20,9 +20,10 @@ use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 
-/** The Daemon section's eight pages, three agents, and node environment tables form one feature. */
+/** The Daemon section's eight pages, three agents, node tables, and placement matrix form one feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -56,12 +57,14 @@ final class DaemonFeature extends FeatureDefinition
                 HilosDaemonEnvKeysTable::class,
                 HilosDaemonEnvOrphansTable::class,
                 HilosDaemonAgentsTable::class,
+                HilosDaemonPlacementTable::class,
             ],
             requiredPageTables: [
                 AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
                 AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
                 AbstractHilosDaemonEnvPage::class => [HilosDaemonEnvKeysTable::class, HilosDaemonEnvOrphansTable::class],
                 AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
+                AbstractHilosDaemonPage::class => HilosDaemonPlacementTable::class,
             ],
         );
     }

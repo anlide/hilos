@@ -160,6 +160,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -448,6 +449,7 @@ final class Hilos extends HilosFacade
         PollsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         PollsTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         PollsTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+        PollsTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
         PollsTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -560,6 +562,9 @@ final class Hilos extends HilosFacade
         DaemonEnvPage::PAGE => [
             PollsTableContext::hilosDaemonEnvKeys => [],
             PollsTableContext::hilosDaemonEnvOrphans => [],
+        ],
+        DaemonPage::PAGE => [
+            PollsTableContext::hilosDaemonPlacement => [],
         ],
         DaemonAgentsPage::PAGE => [
             PollsTableContext::hilosDaemonAgents => [],

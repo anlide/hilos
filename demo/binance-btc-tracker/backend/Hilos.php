@@ -141,6 +141,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -426,6 +427,7 @@ final class Hilos extends HilosFacade
         BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         BinanceBtcTrackerTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+        BinanceBtcTrackerTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         BinanceBtcTrackerTableContext::hilosCommunicationsChannels => HilosCommunicationsChannelsTable::class,
         BinanceBtcTrackerTableContext::hilosCommunicationsChannelFields => HilosCommunicationsChannelFieldsTable::class,
         BinanceBtcTrackerTableContext::hilosNotificationDeliveries => HilosNotificationDeliveriesTable::class,
@@ -500,6 +502,9 @@ final class Hilos extends HilosFacade
         DaemonEnvPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => [],
             BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => [],
+        ],
+        DaemonPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosDaemonPlacement => [],
         ],
         DaemonAgentsPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosDaemonAgents => [],

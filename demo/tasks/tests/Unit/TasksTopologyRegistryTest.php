@@ -126,6 +126,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Security\HilosSecurityOAuthProviderFieldsTable;
@@ -721,6 +722,7 @@ final class TasksTopologyRegistryTest extends TestCase
             TasksTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             TasksTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             TasksTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+            TasksTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
             TasksTableContext::hilosSecurityOauthRedirect => HilosSecurityOAuthRedirectTable::class,
@@ -756,6 +758,7 @@ final class TasksTopologyRegistryTest extends TestCase
                 DaemonCronPage::PAGE,
                 DaemonWorkersPage::PAGE,
                 DaemonEnvPage::PAGE,
+                DaemonPage::PAGE,
                 DaemonAgentsPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
@@ -959,6 +962,10 @@ final class TasksTopologyRegistryTest extends TestCase
         $this->assertSame(
             [TasksTableContext::hilosDaemonEnvKeys => [], TasksTableContext::hilosDaemonEnvOrphans => []],
             Hilos::PAGE_TABLES[DaemonEnvPage::PAGE],
+        );
+        $this->assertSame(
+            [TasksTableContext::hilosDaemonPlacement => []],
+            Hilos::PAGE_TABLES[DaemonPage::PAGE],
         );
         $this->assertSame(
             [TasksTableContext::hilosDaemonAgents => []],

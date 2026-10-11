@@ -121,6 +121,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -364,6 +365,7 @@ final class Hilos extends HilosFacade
         OnlineTestingTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
         OnlineTestingTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         OnlineTestingTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+        OnlineTestingTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
         OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
         OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
@@ -423,6 +425,9 @@ final class Hilos extends HilosFacade
         DaemonEnvPage::PAGE => [
             OnlineTestingTableContext::hilosDaemonEnvKeys => [],
             OnlineTestingTableContext::hilosDaemonEnvOrphans => [],
+        ],
+        DaemonPage::PAGE => [
+            OnlineTestingTableContext::hilosDaemonPlacement => [],
         ],
         DaemonAgentsPage::PAGE => [
             OnlineTestingTableContext::hilosDaemonAgents => [],

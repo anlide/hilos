@@ -72,6 +72,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
@@ -409,12 +410,14 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(HilosDaemonEnvKeysTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvKeys]);
         self::assertSame(HilosDaemonEnvOrphansTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonEnvOrphans]);
         self::assertSame(HilosDaemonAgentsTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonAgents]);
+        self::assertSame(HilosDaemonPlacementTable::class, Hilos::TABLES[ChatTableContext::hilosDaemonPlacement]);
         self::assertSame([ChatTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
         self::assertSame([
             ChatTableContext::hilosDaemonEnvKeys => [],
             ChatTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPage::PAGE]);
         self::assertSame([ChatTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
     }
 

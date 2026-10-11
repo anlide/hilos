@@ -111,6 +111,7 @@ use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
 use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -694,6 +695,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
             OnlineTestingTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             OnlineTestingTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
+            OnlineTestingTableContext::hilosDaemonPlacement => HilosDaemonPlacementTable::class,
             OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
             OnlineTestingTableContext::hilosI18nLanguageLocales => HilosI18nLanguageLocalesTable::class,
@@ -713,6 +715,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             DaemonCronPage::PAGE,
             DaemonWorkersPage::PAGE,
             DaemonEnvPage::PAGE,
+            DaemonPage::PAGE,
             DaemonAgentsPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
@@ -838,6 +841,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosDaemonEnvKeys => [],
             OnlineTestingTableContext::hilosDaemonEnvOrphans => [],
         ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
+        self::assertSame([OnlineTestingTableContext::hilosDaemonPlacement => []], Hilos::PAGE_TABLES[DaemonPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
     }
 
