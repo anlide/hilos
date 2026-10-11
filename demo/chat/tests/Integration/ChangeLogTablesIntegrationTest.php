@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\Database;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
+use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
@@ -16,14 +18,21 @@ use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\ChangeLog\JournalTriggerFiles;
 use Hilos\Database\ChangeLog\JournalTriggerInstaller;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Migration;
+use Hilos\Database\Schema\EntitySchemaAudit;
+use Hilos\Database\Schema\JournalColumnMode;
+use Hilos\Database\Schema\JournalColumnPolicy;
+use Hilos\Database\Schema\JournaledTables;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTableRow;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTableRow;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTableRow;
 
-/** The two registered viewport tables read real journal rows through the section reader. */
+/** The three registered viewport tables read real journal data through the section reader. */
 final class ChangeLogTablesIntegrationTest extends IntegrationTestCase
 {
     private const string KEY_PREFIX = 'journal.tables.hil1457.';
@@ -79,6 +88,69 @@ final class ChangeLogTablesIntegrationTest extends IntegrationTestCase
                 . '` FOR EACH ROW ' . $row['ACTION_STATEMENT']);
         }
         parent::tearDown();
+    }
+
+    public function testTableDeclarationsServeLiveSchemaModesAndJournalActivity(): void
+    {
+        JournalReceiptScope::run(
+            JournalReceiptData::web(null, null, 31, 'setting.create', 'table-summary-test'),
+            static function (): void {
+                Database::sqlRun('INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES (?, ?, ?)',
+                    [self::KEY_PREFIX . 'summary', 'string', 'first']);
+            },
+        );
+
+        $table = new HilosChangeLogTablesTable();
+        $window = $table->getPage(new TableQueryDTO());
+        $live = EntitySchemaAudit::liveTables(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        self::assertSame(count($live), $window->totalCount);
+        self::assertTrue($window->totalExact);
+        $rows = [];
+        foreach ($window->rows as $row) {
+            self::assertInstanceOf(HilosChangeLogTablesTableRow::class, $row);
+            $rows[$row->name] = $row;
+        }
+        self::assertEqualsCanonicalizing($live, array_keys($rows));
+        self::assertTrue($rows['hilos_setting']->journaled);
+        self::assertSame('framework', $rows['hilos_setting']->owner);
+        self::assertGreaterThanOrEqual(1, $rows['hilos_setting']->changesLast24h);
+        self::assertNotNull($rows['hilos_setting']->lastChangeAt);
+        self::assertMatchesRegularExpression('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\z/', $rows['hilos_setting']->lastChangeAt);
+
+        $mounted = JournaledTables::mounted();
+        $schemas = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $expectedColumns = array_fill_keys([
+            HilosChangeLogTablesTableRow::columnsValue,
+            HilosChangeLogTablesTableRow::columnsPersonal,
+            HilosChangeLogTablesTableRow::columnsBinary,
+            HilosChangeLogTablesTableRow::columnsSecret,
+            HilosChangeLogTablesTableRow::columnsNoise,
+        ], 0);
+        foreach (JournalColumnPolicy::forTable($mounted[HilosDbContext::settings], $schemas['hilos_setting'], PiiRegistry::collect()) as $placement) {
+            if ($placement->mode !== JournalColumnMode::RECORD_KEY) {
+                $expectedColumns[$placement->mode->value]++;
+            }
+        }
+        self::assertSame($expectedColumns, $rows['hilos_setting']->columns);
+        self::assertFalse($rows['hilos_session']->journaled);
+        self::assertNull($rows['hilos_session']->columns);
+        self::assertNull($rows['hilos_session']->changesLast24h);
+        self::assertNull($rows['hilos_session']->lastChangeAt);
+
+        $tracked = $table->getPage(new TableQueryDTO(filter: [
+            HilosChangeLogTablesTable::FILTER_JOURNAL => HilosChangeLogTablesTable::JOURNAL_TRACKED,
+        ]));
+        $expectedTracked = array_values(array_intersect(
+            array_map(static fn(string $entityClass): string => $entityClass::_table, $mounted), $live,
+        ));
+        self::assertSame(count($expectedTracked), $tracked->totalCount);
+        self::assertTrue($tracked->totalExact);
+        self::assertEqualsCanonicalizing($expectedTracked, array_map(
+            static fn(HilosChangeLogTablesTableRow $row): string => $row->name, $tracked->rows,
+        ));
+        foreach ($tracked->rows as $row) {
+            self::assertTrue($row->journaled);
+        }
     }
 
     public function testFeedAndHistoryServeRealWindowsFiltersAndSorts(): void

@@ -1990,6 +1990,26 @@ export {
   type HilosChangeLogHistoryOptions,
 } from './admin/changeLog/hilosChangeLogHistory.js'
 export {
+  CHANGE_LOG_TABLES_FILTER_JOURNAL,
+  CHANGE_LOG_JOURNAL_OPTIONS,
+  CHANGE_LOG_TABLES_NAME_FIELD,
+  CHANGE_LOG_TABLES_OWNER_FIELD,
+  CHANGE_LOG_TABLES_JOURNALED_FIELD,
+  CHANGE_LOG_TABLES_COLUMNS_FIELD,
+  CHANGE_LOG_TABLES_CHANGES_FIELD,
+  CHANGE_LOG_TABLES_LAST_CHANGE_FIELD,
+  CHANGE_LOG_TABLES_UNTRACKED_NOTE,
+  resolveHilosChangeLogTablesRow,
+  formatChangeLogTableOwner,
+  formatChangeLogColumnCounts,
+  formatChangeLogTableChanges,
+  formatChangeLogTableLastChange,
+  createHilosChangeLogTablesTable,
+  type HilosChangeLogColumnCounts,
+  type HilosChangeLogTablesRow,
+  type HilosChangeLogTablesTable,
+} from './admin/changeLog/hilosChangeLogTables.js'
+export {
   CHANGE_LOG_OVERVIEW_SECTION,
   changeLogOverviewSchema,
   CHANGE_LOG_SECTION_NOTE,

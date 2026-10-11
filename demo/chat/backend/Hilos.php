@@ -108,6 +108,7 @@ use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
@@ -705,6 +706,7 @@ final class Hilos extends HilosFacade
         ChatTableContext::hilosI18nCountries => HilosI18nCountriesTable::class,
         ChatTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
         ChatTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        ChatTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         ChatTableContext::hilosAnalyticsActions => HilosAnalyticsActionsTable::class,
         ChatTableContext::hilosAnalyticsBrowserSessions => HilosAnalyticsBrowserSessionsTable::class,
     ];
@@ -959,6 +961,9 @@ final class Hilos extends HilosFacade
         ],
         ChangeLogDashboardPage::PAGE => [
             ChatTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablesPage::PAGE => [
+            ChatTableContext::hilosChangeLogTables => [],
         ],
         ChangeLogTablePage::PAGE => [
             ChatTableContext::hilosChangeLogHistory => [],

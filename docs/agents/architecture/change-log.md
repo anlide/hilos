@@ -305,6 +305,18 @@ from the start. Their inline row slots have a `rowKey` but no `id` field: an
 `id` would make the frontend normalizer mistake the slot for an entity and
 lose the other row fields.
 
+The framework table `hilosChangeLogTables` serves every live table of the primary
+database from the reader's table list. It holds the complete set in memory and
+reports an exact count, searches by table name, filters the journal label by
+`tracked` or `untracked`, and sorts by name, writes in the last 24 hours, or the
+last change. Non-null ordering keys put untracked tables at the bottom when
+activity or last-change order descends, and at the top when it ascends. This is
+also a frozen window: only a person's window request or reopening reads the list
+again. Its row key is the live table name, which is also the `name` field of its
+inline `table` slot; the slot carries neither `id` nor `rowKey`, and no journal
+dictionary number leaves the reader. The core formats column-mode counts for
+the view, combining personal and binary columns as facts and omitting zero parts.
+
 ## Triggers Are Files
 
 As with procedures in hleb's `main/App/Routines`, each trigger has its own file
