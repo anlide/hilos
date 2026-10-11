@@ -4,6 +4,7 @@ import {
   createSignal,
   HilosPages,
   ScopeManager,
+  type ActionLifecycle,
   type HilosConnection,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
@@ -25,6 +26,7 @@ const initialCard: HilosI18nCountryCard = {
     name: 'United States',
     isOwn: false,
     defaultLocaleCode: null,
+    defaultLocale: 'missing',
     canDelete: false,
     deleteReason: 'known',
   },
@@ -70,6 +72,7 @@ function harness(childrenBuilt = false) {
   const context: HilosI18nCountryContext = {
     connection: {} as HilosConnection,
     scopes,
+    actions: {} as ActionLifecycle,
   }
   const { navigation, pageLoading } = router(childrenBuilt)
   const view = mount(HilosI18nCountryPage, {
@@ -118,7 +121,10 @@ describe('HilosI18nCountryPage', () => {
     expect(tabs.findAll('a')).toHaveLength(1)
     expect(tabs.find('a').attributes('href')).toBe('/hilos/i18n/countries/us')
     expect(tabs.find('a').attributes('aria-current')).toBe('page')
-    expect(h.view.findAll('button')).toHaveLength(0)
+    expect(h.view.findAll('button')).toHaveLength(1)
+    expect(h.view.find('[data-id="country-card-switch-on"]').exists()).toBe(
+      true,
+    )
     expect(h.view.findAll('input')).toHaveLength(0)
     h.view.unmount()
   })
@@ -132,6 +138,7 @@ describe('HilosI18nCountryPage', () => {
         name: null,
         isOwn: true,
         defaultLocaleCode: null,
+        defaultLocale: 'missing',
         canDelete: true,
         deleteReason: null,
       },

@@ -5,6 +5,7 @@ import {
   HILOS_I18N_COUNTRIES_TABLE,
   HilosPages,
   ScopeManager,
+  type ActionLifecycle,
   type HilosConnection,
   type HilosI18nCountryContext,
   type HilosRouter,
@@ -133,6 +134,7 @@ function context(
     connection,
     scopes,
     scope,
+    actions: {} as ActionLifecycle,
   }
 }
 

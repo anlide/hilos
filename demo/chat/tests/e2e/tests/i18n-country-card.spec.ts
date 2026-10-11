@@ -45,7 +45,8 @@ test('opens a reflowed country card directly with read-only details and staged t
   ).toHaveCount(0)
   await expect(
     page.getByTestId('country-card-state').locator('button, input'),
-  ).toHaveCount(0)
+  ).toHaveCount(1)
+  await expect(page.getByTestId('country-card-switch-on')).toBeVisible()
 
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
   await gotoPage(page, '/hilos/i18n', PAGE_READY)

@@ -1,6 +1,7 @@
 // The main country card is one page-scoped browser datum. Its summary is a
 // read-only hint; the server checks any future delete action at write time.
 import { z } from 'zod'
+import { type ActionLifecycle } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
@@ -17,6 +18,7 @@ export const countryCardSchema = z.strictObject({
     name: z.string().nullable(),
     isOwn: z.boolean(),
     defaultLocaleCode: z.string().nullable(),
+    defaultLocale: z.enum(['missing', 'off', 'on']),
     canDelete: z.boolean(),
     deleteReason: z.enum(['known', 'locales', 'names']).nullable(),
   }),
@@ -28,6 +30,8 @@ export type HilosI18nCountryCard = z.infer<typeof countryCardSchema>
 export interface HilosI18nCountryContext {
   readonly connection: HilosConnection
   readonly scopes: ScopeManager
+  /** The tracked action dispatcher for country-card mutations. */
+  readonly actions: ActionLifecycle
 }
 
 /**

@@ -53,6 +53,7 @@ use Hilos\Core\CLI\Commands\DbWaitCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStartCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStopCommand;
+use Hilos\Core\CLI\Commands\I18nTestCountryOffCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageOnCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageOffCommand;
 use Hilos\Core\CLI\Commands\I18nTestLocaleOnCommand;
@@ -207,6 +208,7 @@ class CliManager
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_ON] = new I18nTestLanguageOnCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_OFF] = new I18nTestLanguageOffCommand();
         $this->commands[CliCommands::I18N_TEST_LOCALE_ON] = new I18nTestLocaleOnCommand();
+        $this->commands[CliCommands::I18N_TEST_COUNTRY_OFF] = new I18nTestCountryOffCommand();
         $this->commands[CliCommands::THROTTLE_TEST_RESET] = new ThrottleTestResetCommand();
         $this->commands[CliCommands::BACKUP_VERIFY] = new BackupVerifyCommand();
         $this->commands[CliCommands::BACKUP_RESTORE] = new BackupRestoreCommand();

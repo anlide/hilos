@@ -6,6 +6,7 @@ import {
   HILOS_I18N_COUNTRY_NAMES_TABLE,
   HilosPages,
   ScopeManager,
+  type ActionLifecycle,
   type HilosConnection,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
@@ -27,6 +28,7 @@ const initialCard: HilosI18nCountryCard = {
     name: 'United States',
     isOwn: false,
     defaultLocaleCode: null,
+    defaultLocale: 'missing',
     canDelete: false,
     deleteReason: 'known',
   },
@@ -129,7 +131,7 @@ function seededContext(initialRows: Array<Record<string, unknown>> = []): {
   } as unknown as HilosConnection
 
   return {
-    context: { connection, scopes },
+    context: { connection, scopes, actions: {} as ActionLifecycle },
     scopes,
     receivedFilters,
   }

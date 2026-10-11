@@ -57,6 +57,19 @@ class Locales extends Objects
     }
 
     /**
+     * @param int $localeId Locale primary id
+     * @return ?bool Whether the locale is switched on, or null when it does not exist
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function enabledById(int $localeId): ?bool
+    {
+        $entity = static::entityClass()::get([EntityLocale::id => $localeId])->first();
+
+        return $entity?->enabled;
+    }
+
+    /**
      * @param string $code Locale code
      * @return ?ObjectLocale Locale or null
      * @throws DatabaseException When the query fails

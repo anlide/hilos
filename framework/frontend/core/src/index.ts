@@ -89,6 +89,13 @@ export {
   hilosI18nLanguageSwitchOn,
 } from './admin/i18n/hilosI18nLanguageSwitch.js'
 export {
+  HILOS_I18N_COUNTRY_SWITCH_ON_ACTION,
+  HILOS_I18N_COUNTRY_SWITCH_ON_COPY,
+  createHilosI18nCountrySwitchOn,
+  hilosI18nCountryLabel,
+  hilosI18nCountrySwitchOn,
+} from './admin/i18n/hilosI18nCountrySwitch.js'
+export {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAMES_FILTER,
   HILOS_I18N_COUNTRY_NAMES_TABLE,

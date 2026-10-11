@@ -7,6 +7,7 @@ const REPLY_TIMEOUT_MS = 15_000
 const LANGUAGE_ON_COMMAND = 'test:i18n:language:on'
 const LANGUAGE_OFF_COMMAND = 'test:i18n:language:off'
 const LOCALE_ON_COMMAND = 'test:i18n:locale:on'
+const COUNTRY_OFF_COMMAND = 'test:i18n:country:off'
 
 const sendCommand = createCommandChannel({
   host: COMMAND_HOST,
@@ -39,4 +40,13 @@ export async function switchLanguageOff(code: string): Promise<void> {
  */
 export async function switchLocaleOn(code: string): Promise<void> {
   await sendCommand(LOCALE_ON_COMMAND, { code })
+}
+
+/**
+ * Switch off one built-in country through its owner before a browser test.
+ *
+ * @param code Two-letter country code from the built-in catalog.
+ */
+export async function switchCountryOff(code: string): Promise<void> {
+  await sendCommand(COUNTRY_OFF_COMMAND, { code })
 }

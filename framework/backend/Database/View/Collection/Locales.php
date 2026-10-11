@@ -53,6 +53,17 @@ class Locales extends DbCollection
     }
 
     /**
+     * @param int $localeId Locale primary id
+     * @return ?bool Whether the locale is switched on, or null when it does not exist
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function enabledById(int $localeId): ?bool
+    {
+        return $this->objectCollection->enabledById($localeId);
+    }
+
+    /**
      * @param mixed $offset Locale code or primary id
      * @return bool Whether the locale exists
      * @throws DatabaseException When the lookup fails

@@ -187,8 +187,11 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   locale raises a warning; neither state blocks switching on the language.
   Browser tests set the starting state with `test:i18n:language:off <code>` and
   `test:i18n:locale:on <code>`.
-- A country can be switched on without a default locale
-  (not in the code yet — HIL-1498).
+- A country can be switched on without a default locale. The section's country
+  card switches on a country through a confirmation window; no default locale
+  is needed, and the window notes when it is missing or switched off without
+  blocking the switch. Tests switch off a known country with
+  `test:i18n:country:off <code>`.
 - Switching a country off keeps its values (not in the code yet — HIL-1497).
 - A locale is switched on from its own modal (not in the code yet — HIL-1493).
 - A locale is switched off from its own modal (not in the code yet — HIL-1494).
@@ -450,10 +453,11 @@ its window is HIL-1493/1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
 at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the
-name, code, currency, default locale, enabled state and read-only delete
-verdict: a known country never, else locales, else any name row, block deletion.
-Its future action controls belong to HIL-1496/1497/1498/1499. React and Angular
-stay unbuilt until HIL-1502/1503.
+name, code, currency, default locale, enabled state, the switch-on window's
+default locale note, and read-only delete verdict: a known country never, else
+locales, else any name row, block deletion. The main card has a Switch on
+control (HIL-1498); its other action controls belong to HIL-1496/1497/1499.
+React and Angular stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.

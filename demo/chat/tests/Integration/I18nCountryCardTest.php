@@ -89,6 +89,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'name' => null,
                 'isOwn' => false,
                 'defaultLocaleCode' => null,
+                'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
                 'canDelete' => false,
                 'deleteReason' => CountryCardSummary::DELETE_KNOWN,
             ], Hilos::$db->countries->cardSummary($known->id)->toArray());
@@ -99,6 +100,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'name' => null,
                 'isOwn' => true,
                 'defaultLocaleCode' => null,
+                'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
                 'canDelete' => true,
                 'deleteReason' => null,
             ], Hilos::$db->countries->cardSummary($own->id)->toArray());
@@ -110,6 +112,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
 
             Hilos::$db->countryNames->actions->createManual($own, $english, null, '');
             self::assertNull(Hilos::$db->countries->cardSummary($own->id)->name);
+
+            self::assertSame(CountryCardSummary::DEFAULT_LOCALE_MISSING, Hilos::$db->countries->cardSummary($own->id)->defaultLocale);
 
             $locale = Hilos::$db->locales->actions->create(
                 $english,
@@ -125,6 +129,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
             Hilos::$db->countries['qx']->actions->update('¤', 'XQX', $locale->id);
             $withLocale = Hilos::$db->countries->cardSummary($own->id);
             self::assertSame('en-QX', $withLocale->defaultLocaleCode);
+            self::assertSame(CountryCardSummary::DEFAULT_LOCALE_OFF, $withLocale->defaultLocale);
             self::assertSame(CountryCardSummary::DELETE_LOCALES, $withLocale->deleteReason);
             self::assertFalse($withLocale->canDelete);
 
@@ -146,6 +151,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'name' => null,
                 'isOwn' => true,
                 'defaultLocaleCode' => 'en-QX',
+                'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_OFF,
                 'canDelete' => false,
                 'deleteReason' => CountryCardSummary::DELETE_LOCALES,
             ],
@@ -216,7 +222,23 @@ final class I18nCountryCardTest extends IntegrationTestCase
             [EntityCountry::default_locale_id => $locale->id],
         ));
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        $this->assertCardsForBoth(['summary' => ['defaultLocaleCode' => 'en-QX']]);
+        $this->assertCardsForBoth(['summary' => [
+            'defaultLocaleCode' => 'en-QX',
+            'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_OFF,
+        ]]);
+
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->locales['en-QX']->actions->switchOn();
+        });
+        Hilos::$browser->record(SourceChange::dbUpdated(
+            HilosDbContext::locales,
+            (string)$locale->id,
+            [EntityLocale::enabled => true],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertCardsForBoth(['summary' => [
+            'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_ON,
+        ]]);
 
         $this->underAgent($this->agent, static function (): void {
             Hilos::$db->countries['qx']->actions->switchOn();
@@ -257,7 +279,11 @@ final class I18nCountryCardTest extends IntegrationTestCase
             [EntityLocale::language_id => Hilos::$db->languages['en']->id, EntityLocale::country_id => $country->id],
         ));
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
-        $this->assertCardsForBoth(['summary' => ['defaultLocaleCode' => null, 'deleteReason' => CountryCardSummary::DELETE_NAMES]]);
+        $this->assertCardsForBoth(['summary' => [
+            'defaultLocaleCode' => null,
+            'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
+            'deleteReason' => CountryCardSummary::DELETE_NAMES,
+        ]]);
 
         $this->underAgent($this->agent, static function () use ($country): void {
             Hilos::$db->countryNames->findBase($country->id, Hilos::$db->languages['en']->id)->actions->delete();
@@ -314,6 +340,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
                     'name' => 'United States',
                     'isOwn' => false,
                     'defaultLocaleCode' => null,
+                    'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
                     'canDelete' => false,
                     'deleteReason' => CountryCardSummary::DELETE_KNOWN,
                 ],
