@@ -128,6 +128,8 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -709,6 +711,8 @@ final class PollsTopologyRegistryTest extends TestCase
             PollsTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             PollsTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
             PollsTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+            PollsTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
+            PollsTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             PollsTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
             PollsTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
             PollsTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
@@ -743,6 +747,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 LogsWorkersPage::PAGE,
                 DaemonCronPage::PAGE,
                 DaemonWorkersPage::PAGE,
+                DaemonEnvPage::PAGE,
                 DaemonAgentsPage::PAGE,
                 SecurityOAuthPage::PAGE,
                 SecurityOAuthProviderPage::PAGE,
@@ -993,6 +998,10 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             [PollsTableContext::hilosDaemonWorkers => []],
             Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE],
+        );
+        $this->assertSame(
+            [PollsTableContext::hilosDaemonEnvKeys => [], PollsTableContext::hilosDaemonEnvOrphans => []],
+            Hilos::PAGE_TABLES[DaemonEnvPage::PAGE],
         );
         $this->assertSame(
             [PollsTableContext::hilosDaemonAgents => []],

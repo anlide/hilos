@@ -154,6 +154,8 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -445,6 +447,8 @@ final class Hilos extends HilosFacade
         TasksTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
         TasksTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
         TasksTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+        TasksTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
+        TasksTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
         TasksTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
         TasksTableContext::hilosSecurityOauthProviders => HilosSecurityOAuthProvidersTable::class,
         TasksTableContext::hilosSecurityOauthProviderFields => HilosSecurityOAuthProviderFieldsTable::class,
@@ -529,6 +533,10 @@ final class Hilos extends HilosFacade
         ],
         DaemonWorkersPage::PAGE => [
             TasksTableContext::hilosDaemonWorkers => [],
+        ],
+        DaemonEnvPage::PAGE => [
+            TasksTableContext::hilosDaemonEnvKeys => [],
+            TasksTableContext::hilosDaemonEnvOrphans => [],
         ],
         DaemonAgentsPage::PAGE => [
             TasksTableContext::hilosDaemonAgents => [],

@@ -12,6 +12,8 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
+use Hilos\DaemonSection\LocalNodeEnvironment;
+use Hilos\DaemonSection\NodeEnvironmentReading;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Fs\Watch\FsRescanSchedule;
@@ -83,6 +85,7 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $firstFrame = Hilos::$sr->getNextQueuedSignal()?->data?->data;
         $this->assertInstanceOf(DaemonNodePictureSignalData::class, $firstFrame);
         $this->assertSame(1, $firstFrame->picture->environment?->catalogKeys);
+        $this->assertSame($this->agent->environmentReading(), LocalNodeEnvironment::reading());
 
         Hilos::$sr->subscribeToPage(
             HilosPageConstants::HILOS_DAEMON_ENV,
@@ -100,6 +103,7 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->assertSame('second', $reading?->keys[0]->disk?->value);
         $this->assertSame(1, $reading?->summary()->drifted);
         $this->assertSame([['ak-live', HilosPageConstants::HILOS_DAEMON_ENV]], Hilos::$browser->resent);
+        $this->assertSame($reading, Hilos::$browser->readingAtResend[0]);
 
         $this->forceWatchWindowDue();
         $this->agent->onTick();
@@ -110,6 +114,20 @@ final class DaemonNodeEnvironmentAgentTest extends TestCase
         $this->forceWatchWindowDue();
         $this->agent->onTick();
         $this->assertCount(1, Hilos::$browser->resent);
+    }
+
+    public function testHolderForgetsOnlyItsNodeOnStop(): void
+    {
+        $this->agent = new DaemonNodeAgent();
+        $this->agent->onStart();
+        $reading = $this->agent->environmentReading();
+        $this->assertSame($reading, LocalNodeEnvironment::reading());
+        LocalNodeEnvironment::forget('another-node');
+        $this->assertSame($reading, LocalNodeEnvironment::reading());
+
+        $this->agent->onStop();
+        $this->agent = null;
+        $this->assertNull(LocalNodeEnvironment::reading());
     }
 
     private function forceWatchWindowDue(): void
@@ -126,9 +144,13 @@ final class DaemonNodeEnvironmentTestBrowser extends BrowserContext
     /** @var list<array{string, string}> Page and connection pairs re-answered */
     public array $resent = [];
 
+    /** @var list<?NodeEnvironmentReading> Reading held at the instant of re-answer */
+    public array $readingAtResend = [];
+
     public function resendPageWhole(string $page, string $acceptKey): void
     {
         $this->resent[] = [$acceptKey, $page];
+        $this->readingAtResend[] = LocalNodeEnvironment::reading();
     }
 }
 

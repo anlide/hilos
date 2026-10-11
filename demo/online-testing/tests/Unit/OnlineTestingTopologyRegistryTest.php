@@ -108,6 +108,8 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -688,6 +690,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             OnlineTestingTableContext::hilosLogWorkers => HilosLogWorkersTable::class,
             OnlineTestingTableContext::hilosDaemonCron => HilosDaemonCronTable::class,
             OnlineTestingTableContext::hilosDaemonWorkers => HilosDaemonWorkersTable::class,
+            OnlineTestingTableContext::hilosDaemonEnvKeys => HilosDaemonEnvKeysTable::class,
+            OnlineTestingTableContext::hilosDaemonEnvOrphans => HilosDaemonEnvOrphansTable::class,
             OnlineTestingTableContext::hilosDaemonAgents => HilosDaemonAgentsTable::class,
             OnlineTestingTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
             OnlineTestingTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,
@@ -707,6 +711,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             LogsWorkersPage::PAGE,
             DaemonCronPage::PAGE,
             DaemonWorkersPage::PAGE,
+            DaemonEnvPage::PAGE,
             DaemonAgentsPage::PAGE,
             UsersPage::PAGE,
             UserPage::PAGE,
@@ -828,6 +833,10 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame([OnlineTestingTableContext::hilosLogWorkers => []], Hilos::PAGE_TABLES[LogsWorkersPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosDaemonCron => []], Hilos::PAGE_TABLES[DaemonCronPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosDaemonWorkers => []], Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE]);
+        $this->assertSame([
+            OnlineTestingTableContext::hilosDaemonEnvKeys => [],
+            OnlineTestingTableContext::hilosDaemonEnvOrphans => [],
+        ], Hilos::PAGE_TABLES[DaemonEnvPage::PAGE]);
         $this->assertSame([OnlineTestingTableContext::hilosDaemonAgents => []], Hilos::PAGE_TABLES[DaemonAgentsPage::PAGE]);
     }
 

@@ -18,9 +18,11 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 
-/** The Daemon section's eight pages, three agents, and three tables form one feature. */
+/** The Daemon section's eight pages, three agents, and node environment tables form one feature. */
 final class DaemonFeature extends FeatureDefinition
 {
     /** @return HilosFeature Daemon feature case */
@@ -48,10 +50,17 @@ final class DaemonFeature extends FeatureDefinition
                 HilosAgentType::HILOS_DAEMON_NODE,
                 HilosAgentType::HILOS_DAEMON_COLLECTOR,
             ],
-            requiredTables: [HilosDaemonCronTable::class, HilosDaemonWorkersTable::class, HilosDaemonAgentsTable::class],
+            requiredTables: [
+                HilosDaemonCronTable::class,
+                HilosDaemonWorkersTable::class,
+                HilosDaemonEnvKeysTable::class,
+                HilosDaemonEnvOrphansTable::class,
+                HilosDaemonAgentsTable::class,
+            ],
             requiredPageTables: [
                 AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
                 AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
+                AbstractHilosDaemonEnvPage::class => [HilosDaemonEnvKeysTable::class, HilosDaemonEnvOrphansTable::class],
                 AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
             ],
         );

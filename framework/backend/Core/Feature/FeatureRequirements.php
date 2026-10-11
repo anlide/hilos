@@ -47,8 +47,8 @@ final readonly class FeatureRequirements
      * @param list<string> $requiredSharedAgents Agent types the feature equally cannot work without, but
      *     which a project may legitimately register on its own; only the missing direction is checked
      * @param list<class-string<TableDefinition>> $requiredTables Framework table classes expected among TABLES
-     * @param array<class-string<AbstractPage>, class-string> $requiredPageTables Page base class to the
-     *     table it must be bound to: a table class among TABLES, or a framework browser table among BROWSER_TABLES
+     * @param array<class-string<AbstractPage>, class-string|list<class-string>> $requiredPageTables Page base
+     *     class to one or more tables it must be bound to. A page holding two framework tables names both.
      * @param ?string $requiredCatalogConstant Facade constant the project must point at its own catalog
      * @param list<class-string<CatalogProviderInterface>> $requiredCatalogFragments Framework settings-catalog
      *     fragments the project must fold into its own settings catalog, named by the class that builds them

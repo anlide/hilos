@@ -30,6 +30,8 @@ use Hilos\Tables\Logs\HilosLogKeysTable;
 use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -63,6 +65,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
  * @property-read HilosLogWorkersTable $hilosLogWorkers
  * @property-read HilosDaemonCronTable $hilosDaemonCron
  * @property-read HilosDaemonWorkersTable $hilosDaemonWorkers
+ * @property-read HilosDaemonEnvKeysTable $hilosDaemonEnvKeys
+ * @property-read HilosDaemonEnvOrphansTable $hilosDaemonEnvOrphans
  * @property-read HilosDaemonAgentsTable $hilosDaemonAgents
  * @property-read HilosSecurityOAuthProvidersTable $hilosSecurityOauthProviders
  * @property-read HilosSecurityOAuthProviderFieldsTable $hilosSecurityOauthProviderFields
@@ -102,6 +106,8 @@ final class ChatTableContext extends TableContext
     public const string hilosLogWorkers = HilosLogWorkersTable::TABLE;
     public const string hilosDaemonCron = HilosDaemonCronTable::TABLE;
     public const string hilosDaemonWorkers = HilosDaemonWorkersTable::TABLE;
+    public const string hilosDaemonEnvKeys = HilosDaemonEnvKeysTable::TABLE;
+    public const string hilosDaemonEnvOrphans = HilosDaemonEnvOrphansTable::TABLE;
     public const string hilosDaemonAgents = HilosDaemonAgentsTable::TABLE;
     public const string hilosSecurityOauthProviders = HilosSecurityOAuthProvidersTable::TABLE;
     public const string hilosSecurityOauthProviderFields = HilosSecurityOAuthProviderFieldsTable::TABLE;

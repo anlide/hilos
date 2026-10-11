@@ -28,6 +28,8 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use PHPUnit\Framework\TestCase;
 
@@ -57,11 +59,14 @@ final class DaemonFeatureActivationTest extends TestCase
         self::assertSame([
             HilosDaemonCronTable::class,
             HilosDaemonWorkersTable::class,
+            HilosDaemonEnvKeysTable::class,
+            HilosDaemonEnvOrphansTable::class,
             HilosDaemonAgentsTable::class,
         ], $definition->requirements()->requiredTables);
         self::assertSame([
             AbstractHilosDaemonCronPage::class => HilosDaemonCronTable::class,
             AbstractHilosDaemonWorkersPage::class => HilosDaemonWorkersTable::class,
+            AbstractHilosDaemonEnvPage::class => [HilosDaemonEnvKeysTable::class, HilosDaemonEnvOrphansTable::class],
             AbstractHilosDaemonAgentsPage::class => HilosDaemonAgentsTable::class,
         ], $definition->requirements()->requiredPageTables);
         self::assertSame([], $definition->requirements()->requires);
@@ -108,6 +113,24 @@ final class DaemonFeatureActivationTest extends TestCase
             . HilosDaemonWorkersTable::class);
 
         DaemonFeatureMissingWorkersTableHilos::validateFeatureActivation();
+    }
+
+    public function testMissingOrphansTableRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::DAEMON is declared but no table in TABLES extends '
+            . HilosDaemonEnvOrphansTable::class);
+
+        DaemonFeatureMissingOrphansTableHilos::validateFeatureActivation();
+    }
+
+    public function testMissingEnvironmentKeysBindingRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('HilosFeature::DAEMON is declared but PAGE_TABLES binds no page extending '
+            . AbstractHilosDaemonEnvPage::class . ' to ' . HilosDaemonEnvKeysTable::class);
+
+        DaemonFeatureMissingEnvKeysBindingHilos::validateFeatureActivation();
     }
 
     public function testMissingWorkersPageBindingRefusesStartup(): void
@@ -208,12 +231,18 @@ class DaemonFeatureCompleteHilos extends HilosFacade
     public const array TABLES = [
         HilosDaemonCronTable::TABLE => HilosDaemonCronTable::class,
         HilosDaemonWorkersTable::TABLE => HilosDaemonWorkersTable::class,
+        HilosDaemonEnvKeysTable::TABLE => HilosDaemonEnvKeysTable::class,
+        HilosDaemonEnvOrphansTable::TABLE => HilosDaemonEnvOrphansTable::class,
         HilosDaemonAgentsTable::TABLE => HilosDaemonAgentsTable::class,
     ];
 
     public const array PAGE_TABLES = [
         DaemonFeatureCronPage::PAGE => [HilosDaemonCronTable::TABLE => []],
         DaemonFeatureWorkersPage::PAGE => [HilosDaemonWorkersTable::TABLE => []],
+        DaemonFeatureEnvPage::PAGE => [
+            HilosDaemonEnvKeysTable::TABLE => [],
+            HilosDaemonEnvOrphansTable::TABLE => [],
+        ],
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
     ];
 
@@ -320,6 +349,26 @@ final class DaemonFeatureMissingWorkersBindingHilos extends DaemonFeatureComplet
 {
     public const array PAGE_TABLES = [
         DaemonFeatureCronPage::PAGE => [HilosDaemonCronTable::TABLE => []],
+        DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
+    ];
+}
+
+final class DaemonFeatureMissingOrphansTableHilos extends DaemonFeatureCompleteHilos
+{
+    public const array TABLES = [
+        HilosDaemonCronTable::TABLE => HilosDaemonCronTable::class,
+        HilosDaemonWorkersTable::TABLE => HilosDaemonWorkersTable::class,
+        HilosDaemonEnvKeysTable::TABLE => HilosDaemonEnvKeysTable::class,
+        HilosDaemonAgentsTable::TABLE => HilosDaemonAgentsTable::class,
+    ];
+}
+
+final class DaemonFeatureMissingEnvKeysBindingHilos extends DaemonFeatureCompleteHilos
+{
+    public const array PAGE_TABLES = [
+        DaemonFeatureCronPage::PAGE => [HilosDaemonCronTable::TABLE => []],
+        DaemonFeatureWorkersPage::PAGE => [HilosDaemonWorkersTable::TABLE => []],
+        DaemonFeatureEnvPage::PAGE => [HilosDaemonEnvOrphansTable::TABLE => []],
         DaemonFeatureAgentsPage::PAGE => [HilosDaemonAgentsTable::TABLE => []],
     ];
 }

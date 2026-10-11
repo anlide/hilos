@@ -28,6 +28,7 @@ use Hilos\DaemonSection\DTO\DaemonMasterHttpSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterProcessRosterSignalData;
 use Hilos\DaemonSection\DTO\DaemonMasterStandingSignalData;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
+use Hilos\DaemonSection\LocalNodeEnvironment;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentReader;
 use Hilos\DaemonSection\NodeEnvironmentReading;
@@ -233,6 +234,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
     public function onStop(): void
     {
         $this->closeDirectoryWatch();
+        LocalNodeEnvironment::forget($this->picture->nodeId);
     }
 
     /**
@@ -254,6 +256,7 @@ final class DaemonNodeAgent extends AbstractHilosAgent
         $previous = $this->environment;
         if ($previous === null || !$previous->sameContent($reading)) {
             $this->environment = $reading;
+            LocalNodeEnvironment::hold($reading);
             $this->updatePicture($this->picture->withEnvironment($reading->summary()));
             if (!$initial) {
                 $this->logAgentInfo('Node environment changed; re-answering environment pages');

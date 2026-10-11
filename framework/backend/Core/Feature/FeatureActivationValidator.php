@@ -217,8 +217,10 @@ final class FeatureActivationValidator
             }
         }
 
-        foreach ($requirements->requiredPageTables as $pageClass => $tableClass) {
-            $this->validatePageTableBinding($name, $pageClass, $tableClass, $pages, $tables, $browserTables, $pageTables, $errors);
+        foreach ($requirements->requiredPageTables as $pageClass => $tableClasses) {
+            foreach (is_array($tableClasses) ? $tableClasses : [$tableClasses] as $tableClass) {
+                $this->validatePageTableBinding($name, $pageClass, $tableClass, $pages, $tables, $browserTables, $pageTables, $errors);
+            }
         }
 
         if ($requirements->requiredCatalogConstant !== null

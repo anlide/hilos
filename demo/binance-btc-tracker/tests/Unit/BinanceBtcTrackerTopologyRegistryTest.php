@@ -119,6 +119,8 @@ use Hilos\Tables\Logs\HilosLogRotationsTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\Daemon\HilosDaemonCronTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvKeysTable;
+use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonAgentsTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
@@ -641,6 +643,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(HilosLogWorkersTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosLogWorkers]);
         $this->assertSame(HilosDaemonCronTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonCron]);
         $this->assertSame(HilosDaemonWorkersTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonWorkers]);
+        self::assertSame(HilosDaemonEnvKeysTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvKeys]);
+        self::assertSame(HilosDaemonEnvOrphansTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans]);
         $this->assertSame(HilosDaemonAgentsTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosDaemonAgents]);
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosDaemonCron => []],
@@ -649,6 +653,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosDaemonWorkers => []],
             Hilos::PAGE_TABLES[DaemonWorkersPage::PAGE],
+        );
+        $this->assertSame(
+            [BinanceBtcTrackerTableContext::hilosDaemonEnvKeys => [], BinanceBtcTrackerTableContext::hilosDaemonEnvOrphans => []],
+            Hilos::PAGE_TABLES[DaemonEnvPage::PAGE],
         );
         $this->assertSame(
             [BinanceBtcTrackerTableContext::hilosDaemonAgents => []],
