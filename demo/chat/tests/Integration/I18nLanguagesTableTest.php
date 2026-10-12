@@ -37,6 +37,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Object\Item\Language as ObjectLanguage;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
+use Hilos\I18n\DTO\BuiltInLanguages;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -259,6 +260,13 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             BuiltInCatalogTally::LANGUAGE_COUNT => iterator_count(BuiltInI18nCatalog::languages()),
             BuiltInCatalogTally::COUNTRY_COUNT => iterator_count(BuiltInI18nCatalog::countries()),
         ], $pageData[BuiltInCatalogTally::DATA] ?? null);
+        self::assertCount(50, $pageData[BuiltInLanguages::DATA]);
+        self::assertSame([
+            BuiltInLanguages::CODE => 'en',
+            BuiltInLanguages::NATIVE_NAME => 'English',
+            BuiltInLanguages::RTL => false,
+        ], $pageData[BuiltInLanguages::DATA][0]);
+        self::assertSame(BuiltInLanguages::fromCatalog()->toArray(), $pageData[BuiltInLanguages::DATA]);
     }
 
     public function testAViewerSeesEveryLanguageField(): void
@@ -285,6 +293,14 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             self::assertSame($expectedTally, $pageData[BuiltInCatalogTally::DATA] ?? null);
             self::assertFalse(HiddenValue::isMark($pageData[BuiltInCatalogTally::DATA][BuiltInCatalogTally::LANGUAGE_COUNT]));
             self::assertFalse(HiddenValue::isMark($pageData[BuiltInCatalogTally::DATA][BuiltInCatalogTally::COUNTRY_COUNT]));
+            self::assertSame(BuiltInLanguages::fromCatalog()->toArray(), $pageData[BuiltInLanguages::DATA]);
+            self::assertCount(50, $pageData[BuiltInLanguages::DATA]);
+            self::assertSame([
+                BuiltInLanguages::CODE => 'en',
+                BuiltInLanguages::NATIVE_NAME => 'English',
+                BuiltInLanguages::RTL => false,
+            ], $pageData[BuiltInLanguages::DATA][0]);
+            self::assertStringNotContainsString(HiddenValue::KEY, json_encode($pageData[BuiltInLanguages::DATA], JSON_THROW_ON_ERROR));
 
             $window = $this->windowOf($signals, self::VIEWER);
             $rows = $window[TableWindowSignalData::rows];

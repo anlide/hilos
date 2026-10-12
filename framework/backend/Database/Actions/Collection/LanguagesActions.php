@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Database\Database;
 use Hilos\Database\Object\Collection\Languages as ObjectLanguages;
 use Hilos\Database\View\Collection\Languages as DbCollectionLanguages;
 use Hilos\Database\View\Item\Language;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Throwable;
 
 /**
  * @extends DbActions<Language, ObjectLanguages>
@@ -23,7 +26,7 @@ class LanguagesActions extends DbActions
      * @param string $nativeName Name in the language itself
      * @param bool $rtl Whether writing runs right to left
      * @return Language New switched-off language
-     * @throws ValidationException When the code or name is malformed
+     * @throws ValidationException When the code or name is malformed or the code exists
      * @throws HilosException When ownership, the database or collection refuses the write
      */
     public function create(string $code, string $nativeName, bool $rtl): Language
@@ -36,6 +39,9 @@ class LanguagesActions extends DbActions
         if (trim($nativeName) === '' || mb_strlen($nativeName) > 64) {
             throw new ValidationException('Language native name must have 1..64 characters');
         }
+        if ($this->collection[$code] !== null) {
+            throw new ValidationException("Language '{$code}' already exists.");
+        }
 
         $objectClass = $this->objectCollection::OBJECT_CLASS;
         $language = $objectClass::create();
@@ -47,6 +53,36 @@ class LanguagesActions extends DbActions
         $this->addObjectToCollection($language);
 
         return $this->createDbItemFromObject($language);
+    }
+
+    /**
+     * Adds a switched-off language a person typed in; a known one brings the catalog's base
+     * country names in it, unlocked, in the same transaction.
+     *
+     * @param string $code Two lowercase ISO 639-1 letters
+     * @param string $nativeName Name in the language itself
+     * @param bool $rtl Whether writing runs right to left
+     * @return Language New switched-off language
+     * @throws ValidationException When the code exists or the language or catalog names are invalid
+     * @throws HilosException When ownership, persistence or the transaction refuses the write
+     */
+    public function add(string $code, string $nativeName, bool $rtl): Language
+    {
+        Database::transactionStart();
+        try {
+            $language = $this->create($code, $nativeName, $rtl);
+            Hilos::$db->countryNames->actions->takeAllFromCatalog($language);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Keep the failure that prevented the language addition.
+            }
+            throw $failure;
+        }
+
+        return $language;
     }
 
     /**

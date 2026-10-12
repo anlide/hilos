@@ -121,7 +121,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         }
 
         Hilos::$db->languages->actions->create('en', 'English', false);
-        $this->expectException(DuplicateEntryException::class);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage("Language 'en' already exists.");
         Hilos::$db->languages->actions->create('en', 'Duplicate', false);
     }
 

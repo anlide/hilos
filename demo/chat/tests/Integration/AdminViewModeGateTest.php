@@ -111,6 +111,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_i18n_country_add',
         'hilos_i18n_country_switch_off',
         'hilos_i18n_country_switch_on',
+        'hilos_i18n_language_add',
         'hilos_i18n_language_switch_off',
         'hilos_i18n_language_switch_on',
         'hilos_i18n_locale_add',

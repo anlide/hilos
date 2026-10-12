@@ -124,6 +124,11 @@ export const HILOS_I18N_LANGUAGES_FRAME: HilosTableFrame = {
   columns: HILOS_I18N_LANGUAGES_COLUMNS,
 }
 
+/** The page's modal opener bound into this table's frame. */
+export interface HilosI18nLanguagesTableView {
+  readonly openAdd: () => void
+}
+
 /** The languages table the view drives: the controller plus its mount lifecycle. */
 export interface HilosI18nLanguagesTable {
   /** The server-windowed controller the view renders rows from. */
@@ -138,9 +143,11 @@ export interface HilosI18nLanguagesTable {
  * The languages table. Rows resolve through {@link resolveHilosI18nLanguageRow}.
  *
  * @param context The project's connection and page scopes.
+ * @param view The page's language creation opener.
  */
 export function createHilosI18nLanguagesTable(
   context: HilosI18nLanguageContext,
+  view: HilosI18nLanguagesTableView,
 ): HilosI18nLanguagesTable {
   const controller = new TableViewportController<HilosI18nLanguageRow>({
     resolve: resolveHilosI18nLanguageRow,
@@ -156,7 +163,10 @@ export function createHilosI18nLanguagesTable(
         HILOS_I18N_LANGUAGES_TABLE,
         rendered,
       ),
-    frame: HILOS_I18N_LANGUAGES_FRAME,
+    frame: {
+      ...HILOS_I18N_LANGUAGES_FRAME,
+      mainAction: { label: 'Add language', press: view.openAdd },
+    },
   })
   let teardown: Array<() => void> = []
 

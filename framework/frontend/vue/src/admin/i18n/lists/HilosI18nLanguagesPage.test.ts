@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import {
   BUILT_IN_CATALOG_DATA,
+  BUILT_IN_LANGUAGES_DATA,
   createSignal,
   HILOS_I18N_LANGUAGES_TABLE,
   HilosPages,
@@ -214,7 +215,7 @@ describe('HilosI18nLanguagesPage', () => {
       'The system knows 3 languages and 4 countries on its own',
     )
     expect(catalog.get('p').text()).toBe(
-      "The framework's built-in catalog holds 3 ISO 639-1 codes with their own names and writing direction. A language from it is refreshed whenever a framework update changes the catalog — and only while that language is switched off.",
+      "The framework's built-in catalog holds 3 ISO 639-1 codes with their own names and writing direction. A language from it is added by its code alone — the rest is filled in — and is refreshed whenever a framework update changes the catalog, but only while that language is switched off. A code that is not in the catalog can still be added, but keeping that language up is on you.",
     )
 
     const c2 = context()
@@ -229,6 +230,69 @@ describe('HilosI18nLanguagesPage', () => {
     expect(
       viewWithoutData.find('[data-id="i18n-languages-catalog"]').exists(),
     ).toBe(false)
+  })
+
+  it('opens Add language from the table bar and reads the live page catalog', async () => {
+    const c = context()
+    const view = mount(HilosI18nLanguagesPage, {
+      props: { context: c.context },
+      attachTo: document.body,
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    const open = view.get('[data-id="hilos-table-main-action"]')
+    expect(open.text()).toBe('Add language')
+    expect((open.element as HTMLButtonElement).disabled).toBe(false)
+    await open.trigger('click')
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-id="i18n-language-add-code"]',
+    )!
+    input.value = 'fr'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(
+      (
+        document.querySelector(
+          '[data-id="i18n-language-add-submit"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true)
+    c.scope.data.set(BUILT_IN_LANGUAGES_DATA, [
+      { code: 'fr', nativeName: 'Français', rtl: false },
+    ])
+    await nextTick()
+    expect(
+      document
+        .querySelector('[data-id="i18n-language-add-plate"]')
+        ?.getAttribute('data-kind'),
+    ).toBe('known')
+    input.value = 'f'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    input.value = 'fr'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(
+      (
+        document.querySelector(
+          '[data-id="i18n-language-add-native-name"]',
+        ) as HTMLInputElement
+      ).value,
+    ).toBe('Français')
+    expect(
+      (
+        document.querySelector(
+          '[data-id="i18n-language-add-submit"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false)
+    view.unmount()
+    expect(
+      document.querySelector('[data-id="i18n-language-add-code"]'),
+    ).toBeNull()
   })
 
   it('renders the legend rows even when the languages table is empty', async () => {

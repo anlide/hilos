@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18nLanguage.js'
 import {
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_COLUMNS,
   HILOS_I18N_LANGUAGES_FRAME,
   HILOS_I18N_LANGUAGES_LEGEND,
   HILOS_I18N_LANGUAGES_TABLE,
+  createHilosI18nLanguagesTable,
   resolveHilosI18nLanguageRow,
 } from '../../../src/admin/i18n/hilosI18nLanguages.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
@@ -71,6 +73,26 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
       HILOS_I18N_LANGUAGES_COLUMNS.every((column) => column.sortable),
     ).toBe(true)
     expect(HILOS_I18N_LANGUAGES_COLUMNS[0]?.card).toBe('title')
+  })
+
+  it('binds Add language to the opener of each table instance', () => {
+    const firstOpen = vi.fn()
+    const secondOpen = vi.fn()
+    const context = {} as HilosI18nLanguageContext
+    const first = createHilosI18nLanguagesTable(context, { openAdd: firstOpen })
+    const second = createHilosI18nLanguagesTable(context, {
+      openAdd: secondOpen,
+    })
+    const action = first.controller.frame.declaration?.mainAction
+    expect(action?.label).toBe('Add language')
+    action?.press()
+    expect(firstOpen).toHaveBeenCalledOnce()
+    expect(secondOpen).not.toHaveBeenCalled()
+    second.controller.frame.declaration?.mainAction?.press()
+    expect(secondOpen).toHaveBeenCalledOnce()
+    expect(HILOS_I18N_LANGUAGES_FRAME.mainAction).toBeUndefined()
+    first.dispose()
+    second.dispose()
   })
 })
 

@@ -9,6 +9,8 @@ mounts it by passing its HilosI18nLanguageContext. Bootstrap classes only
 <script setup lang="ts">
 import {
   createHilosI18nBuiltInCatalog,
+  createHilosI18nBuiltInLanguages,
+  createHilosI18nLanguageAdd,
   createHilosI18nLanguagesTable,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_LEGEND,
@@ -24,6 +26,7 @@ import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
+import HilosI18nLanguageAdd from './HilosI18nLanguageAdd.vue'
 import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
 
 const props = defineProps<{
@@ -37,10 +40,18 @@ if (!router) {
 }
 
 const builtInCatalog = useSignal(createHilosI18nBuiltInCatalog(props.context))
-const languages = createHilosI18nLanguagesTable(props.context)
+const catalog = createHilosI18nBuiltInLanguages(props.context)
+const builtInLanguages = useSignal(catalog)
+const add = createHilosI18nLanguageAdd(props.context, catalog)
+const languages = createHilosI18nLanguagesTable(props.context, {
+  openAdd: add.open,
+})
 
 onMounted(() => languages.start())
-onUnmounted(() => languages.dispose())
+onUnmounted(() => {
+  languages.dispose()
+  add.dispose()
+})
 
 /** The language card path, or nothing when that page has no address here. */
 const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
@@ -55,10 +66,12 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
       data-id="i18n-languages-catalog"
     >
       The framework's built-in catalog holds
-      {{ builtInCatalog.languageCount }} ISO 639-1 codes with their own names
-      and writing direction. A language from it is refreshed whenever a
-      framework update changes the catalog — and only while that language is
-      switched off.
+      {{ builtInLanguages?.length ?? builtInCatalog.languageCount }} ISO 639-1
+      codes with their own names and writing direction. A language from it is
+      added by its code alone — the rest is filled in — and is refreshed
+      whenever a framework update changes the catalog, but only while that
+      language is switched off. A code that is not in the catalog can still be
+      added, but keeping that language up is on you.
     </HilosI18nCatalogNote>
     <HilosViewportTable :controller="languages.controller">
       <template #cell-code="{ row }">
@@ -145,5 +158,6 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
       data-id="i18n-languages-legend"
       class="mt-4"
     />
+    <HilosI18nLanguageAdd :add="add" :context="context" />
   </HilosAdminPage>
 </template>

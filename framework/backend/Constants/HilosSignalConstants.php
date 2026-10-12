@@ -261,6 +261,12 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos i18n language detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_LANGUAGE = 'subscription_page_hilos_i18n_language';
 
+    /**
+     * Client → languages list page: add one switched-off language by its code;
+     * the page replies with action success or failure.
+     */
+    public const string HILOS_I18N_LANGUAGE_ADD = 'hilos_i18n_language_add';
+
     /** Client → language page: switch off one language; the page replies with action success or failure. */
     public const string HILOS_I18N_LANGUAGE_SWITCH_OFF = 'hilos_i18n_language_switch_off';
 

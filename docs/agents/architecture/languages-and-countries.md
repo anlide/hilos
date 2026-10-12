@@ -124,16 +124,21 @@ walks the catalog rather than the database, so own rows are unreachable by
 construction.
 
 - Adding a known language prefills `native_name` and `rtl` from the catalog;
-  the person may edit them before adding it (not in the code yet — HIL-1484).
+  the person may edit them before adding it.
 - Adding it also brings the catalog's base country names in that language,
-  unlocked, through `CountryNamesActions::takeAllFromCatalog()` — the piece the
-  default language created at startup already uses (not in the code yet — HIL-1484).
+  unlocked: `LanguagesActions::add()` creates the language and calls
+  `CountryNamesActions::takeAllFromCatalog()` in one transaction — the piece the
+  default language created at startup already uses.
 - An unknown language code is allowed after confirmation that its own name
   and direction will not be refreshed, no country names will arrive for it,
   and framework updates will add nothing for it; the confirmation catches a
-  typo such as `ez` instead of `es` (not in the code yet — HIL-1484).
+  typo such as `ez` instead of `es`.
 - Phrases of the languages catalog callout regarding adding by code and custom
-  languages appear together with "Add language" (not in the code yet — HIL-1484).
+  languages appear together with "Add language".
+- The add form tells known from own by the page data `builtInLanguages` of the
+  languages list (the 50 catalog entries), with no request; the server picks
+  the success text by the same catalog. A repeated code is refused by
+  `LanguagesActions::create()`, so every door refuses it.
 - A known locale pair arrives with all seven formats from the catalog;
   the add window prefills them and allows each to be changed before saving.
 - Every known country arrives through reflow, and known countries cannot be
@@ -146,7 +151,7 @@ construction.
   to choose the success message.
 - Phrases of the countries catalog callout regarding adding by code and custom
   countries appear together with "Add country".
-- A newly added language starts switched off (not in the code yet — HIL-1484).
+- A newly added language starts switched off.
 - A newly added locale starts switched off.
 - A newly added country starts switched off.
 - For a switched-off country with no default locale, the edit form prefills

@@ -10,6 +10,17 @@ export const BUILT_IN_CATALOG_DATA = 'builtInCatalog'
 /** The page-data key of the built-in country codes. */
 export const BUILT_IN_COUNTRY_CODES_DATA = 'builtInCountryCodes'
 
+/** The page-data key of the built-in languages. */
+export const BUILT_IN_LANGUAGES_DATA = 'builtInLanguages'
+
+export const builtInLanguageSchema = z.strictObject({
+  code: z.string(),
+  nativeName: z.string(),
+  rtl: z.boolean(),
+})
+
+export type HilosI18nBuiltInLanguage = z.infer<typeof builtInLanguageSchema>
+
 export const builtInCountryCodesSchema = z.array(z.string())
 
 export const builtInCatalogSchema = z.strictObject({
@@ -47,6 +58,22 @@ export function createHilosI18nBuiltInCountryCodes(context: {
   const source = context.scopes.pageDataSignal(BUILT_IN_COUNTRY_CODES_DATA)
   return computedSignal(() => {
     const parsed = builtInCountryCodesSchema.safeParse(source.get())
+    return parsed.success ? parsed.data : null
+  })
+}
+
+/**
+ * Read the ordered built-in languages from the languages page response.
+ * Refuses unexpected shapes by returning null.
+ *
+ * @param context The project's page scopes.
+ */
+export function createHilosI18nBuiltInLanguages(context: {
+  readonly scopes: ScopeManager
+}): ReadonlySignal<readonly HilosI18nBuiltInLanguage[] | null> {
+  const source = context.scopes.pageDataSignal(BUILT_IN_LANGUAGES_DATA)
+  return computedSignal(() => {
+    const parsed = z.array(builtInLanguageSchema).safeParse(source.get())
     return parsed.success ? parsed.data : null
   })
 }
