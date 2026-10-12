@@ -34,7 +34,7 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
   await expect(page.getByTestId('hilos-admin-title')).toHaveText('Appearance')
   expect(new URL(page.url()).pathname).toBe('/hilos/appearance')
   await expect(currentValue(page, SWITCHING_KEY)).toHaveText('On')
-  await expect(currentValue(page, DEFAULT_KEY)).toHaveText('As the system')
+  await expect(currentValue(page, DEFAULT_KEY)).toHaveText('System')
 
   await setAdminViewMode(true)
   const viewerContext = await browser.newContext()
@@ -49,10 +49,10 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
       'Appearance',
     )
     await expect(currentValue(viewer, SWITCHING_KEY)).toHaveText('On')
-    await expect(currentValue(viewer, DEFAULT_KEY)).toHaveText('As the system')
+    await expect(currentValue(viewer, DEFAULT_KEY)).toHaveText('System')
     await expect(
       shownByTestId(viewer, `appearance-setting-default-${DEFAULT_KEY}`),
-    ).toHaveText('As the system')
+    ).toHaveText('System')
     await expect(
       viewer.getByTestId(`hilos-settings-edit-${DEFAULT_KEY}`),
     ).toHaveCount(0)
@@ -72,6 +72,37 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
     await switching.check()
     await viewer.getByTestId('appearance-switching-cancel').click()
     await expect(dialog).toBeHidden()
+
+    await shownByTestId(
+      viewer,
+      `appearance-setting-edit-${DEFAULT_KEY}`,
+    ).click()
+    const themeDialog = viewer.getByRole('dialog', {
+      name: 'Edit · Default theme',
+    })
+    await expect(themeDialog).toBeVisible()
+    const system = viewer.getByTestId('appearance-default-theme-system')
+    const dark = viewer.getByTestId('appearance-default-theme-dark')
+    for (const position of ['light', 'dark', 'system']) {
+      await expect(
+        viewer.getByTestId(`appearance-default-theme-${position}`),
+      ).toBeEnabled()
+    }
+    await expect(system).toBeChecked()
+    await dark.check()
+    await expect(dark).toBeChecked()
+    await expect(system).not.toBeChecked()
+    const themeSave = viewer.getByTestId('appearance-default-theme-save')
+    await expect(themeSave).toBeDisabled()
+    await expect(themeSave).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+    await expect(viewer.getByTestId('view-mode-banner')).toBeVisible()
+    await expect(viewer.locator('#hilos-view-mode-strip-text')).toBeVisible()
+    await system.check()
+    await viewer.getByTestId('appearance-default-theme-cancel').click()
+    await expect(themeDialog).toBeHidden()
     const loadsBeforeChange = viewerLoads
 
     await gotoPage(page, '/hilos/settings')
@@ -86,9 +117,116 @@ test('Appearance card, typed settings and live value remain visible to a viewer'
     expect(viewerLoads).toBe(loadsBeforeChange)
 
     await clearCustomSetting(page, DEFAULT_KEY)
-    await expect(currentValue(viewer, DEFAULT_KEY)).toHaveText('As the system')
+    await expect(currentValue(viewer, DEFAULT_KEY)).toHaveText('System')
   } finally {
-    await viewerContext.close()
+    try {
+      await gotoPage(page, '/hilos/settings')
+      const search = page.getByTestId('hilos-table-search')
+      await search.fill('')
+      await search.pressSequentially(DEFAULT_KEY, { delay: 10 })
+      await expect(
+        page.getByTestId(`hilos-table-row-${DEFAULT_KEY}`),
+      ).toBeVisible()
+      await clearCustomSetting(page, DEFAULT_KEY)
+    } finally {
+      await viewerContext.close()
+    }
+  }
+})
+
+test('Appearance default theme reaches guests and accounts without overriding a personal Light choice', async ({
+  browser,
+}) => {
+  const adminContext = await browser.newContext({ colorScheme: 'light' })
+  const guestContext = await browser.newContext({ colorScheme: 'light' })
+  const personContext = await browser.newContext({ colorScheme: 'light' })
+  const lightGuestContext = await browser.newContext({ colorScheme: 'light' })
+  const admin = await adminContext.newPage()
+  try {
+    await signUpAdmin(admin)
+    await gotoPage(admin, '/hilos/appearance')
+    await expect(currentValue(admin, SWITCHING_KEY)).toHaveText('On')
+    await expect(currentValue(admin, DEFAULT_KEY)).toHaveText('System')
+
+    const guest = await guestContext.newPage()
+    const person = await personContext.newPage()
+    const lightGuest = await lightGuestContext.newPage()
+    const visitors = [guest, person, lightGuest]
+    const loads = new Map<Page, number>()
+    for (const visitor of visitors) {
+      loads.set(visitor, 0)
+      visitor.on('load', () => {
+        loads.set(visitor, (loads.get(visitor) ?? 0) + 1)
+      })
+      await gotoPage(visitor, '/')
+    }
+    await lightGuest.evaluate((key) => {
+      localStorage.setItem(key, 'light')
+    }, PICK_KEY)
+    await lightGuest.reload()
+    await expectPageReady(lightGuest)
+    await signUpPerson(person)
+    for (const visitor of visitors) {
+      await expect(visitor.locator('html')).toHaveAttribute(
+        'data-bs-theme',
+        'light',
+      )
+      expect(
+        await visitor.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+      ).toBe(visitor === lightGuest ? 'light' : null)
+    }
+    const loadsBeforeChange = new Map(loads)
+
+    await shownByTestId(admin, `appearance-setting-edit-${DEFAULT_KEY}`).click()
+    const dialog = admin.getByRole('dialog', {
+      name: 'Edit · Default theme',
+    })
+    await expect(dialog).toBeVisible()
+    await expect(
+      admin.getByTestId('appearance-default-theme-system'),
+    ).toBeChecked()
+    const save = admin.getByTestId('appearance-default-theme-save')
+    await expect(save).toBeDisabled()
+    await admin.getByTestId('appearance-default-theme-dark').check()
+    await save.scrollIntoViewIfNeeded()
+    await expect(save).toBeVisible()
+    await expect(save).toBeEnabled()
+    await save.focus()
+    await save.click()
+    await expect(dialog).toBeHidden()
+    await expect(
+      admin.getByTestId('hilos-toasts').getByText('Default theme saved.'),
+    ).toBeVisible()
+    await expect(currentValue(admin, DEFAULT_KEY)).toHaveText('Dark')
+
+    for (const visitor of visitors) {
+      await expect(visitor.locator('html')).toHaveAttribute(
+        'data-bs-theme',
+        visitor === lightGuest ? 'light' : 'dark',
+      )
+      expect(loads.get(visitor)).toBe(loadsBeforeChange.get(visitor))
+    }
+    expect(
+      await lightGuest.evaluate((key) => localStorage.getItem(key), PICK_KEY),
+    ).toBe('light')
+  } finally {
+    try {
+      await gotoPage(admin, '/hilos/settings')
+      const search = admin.getByTestId('hilos-table-search')
+      await search.fill('')
+      await search.pressSequentially(DEFAULT_KEY, { delay: 10 })
+      await expect(
+        admin.getByTestId(`hilos-table-row-${DEFAULT_KEY}`),
+      ).toBeVisible()
+      await clearCustomSetting(admin, DEFAULT_KEY)
+    } finally {
+      await Promise.all([
+        adminContext.close(),
+        guestContext.close(),
+        personContext.close(),
+        lightGuestContext.close(),
+      ])
+    }
   }
 })
 
@@ -103,7 +241,7 @@ test('Appearance switching restores guest and account Dark choices without reloa
     await signUpAdmin(admin)
     await gotoPage(admin, '/hilos/appearance')
     await expect(currentValue(admin, SWITCHING_KEY)).toHaveText('On')
-    await expect(currentValue(admin, DEFAULT_KEY)).toHaveText('As the system')
+    await expect(currentValue(admin, DEFAULT_KEY)).toHaveText('System')
 
     const guest = await guestContext.newPage()
     const person = await personContext.newPage()

@@ -14,8 +14,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalRouter;
@@ -25,6 +27,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
 use Hilos\Pages\Security\DTO\HilosImpersonationScopeSetActionDTO;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
@@ -36,7 +39,7 @@ final class AppearancePageActionTest extends IntegrationTestCase
 {
     private const string SETTINGS_AGENT_ID = 'test-appearance-page-writer';
     private const string ACCEPT_KEY = 'appearance-page-ak';
-    private const string REQUEST_ID = 'appearance-switching-request';
+    private const string REQUEST_ID = 'appearance-setting-request';
 
     /** Prepares the router that a worker normally supplies. */
     protected function setUp(): void
@@ -49,10 +52,73 @@ final class AppearancePageActionTest extends IntegrationTestCase
     {
         $this->withSettingsWriter(function (): void {
             foreach ([false, true] as $enabled) {
-                $this->submit($enabled);
+                $this->submit(
+                    new HilosAppearanceThemeSwitchingSetActionDTO($enabled),
+                    ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
+                    $enabled,
+                    'Theme switching saved.',
+                );
                 self::assertSame($enabled, Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool());
                 self::assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
                 self::assertNull(Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]);
+            }
+        });
+    }
+
+    public function testDefaultThemeSystemToDarkToLightToSystemWritesOnlyItsKeyAndBroadcastsOncePerChange(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            self::assertSame(ThemeSettingsCatalog::SYSTEM, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
+            foreach ([ThemeSettingsCatalog::DARK, ThemeSettingsCatalog::LIGHT, ThemeSettingsCatalog::SYSTEM] as $defaultTheme) {
+                $this->submit(
+                    HilosAppearanceDefaultThemeSetActionDTO::fromArray([
+                        HilosAppearanceDefaultThemeSetActionDTO::defaultTheme => $defaultTheme,
+                        'key' => ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
+                    ]),
+                    ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+                    $defaultTheme,
+                    'Default theme saved.',
+                );
+                self::assertSame($defaultTheme, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
+                self::assertTrue(Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool());
+                self::assertNull(Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]);
+            }
+        });
+    }
+
+    public function testUnchangedDefaultThemeAnswersWithoutBroadcasting(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->submit(
+                new HilosAppearanceDefaultThemeSetActionDTO(ThemeSettingsCatalog::SYSTEM),
+                ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+                ThemeSettingsCatalog::SYSTEM,
+                'Default theme saved.',
+            );
+        });
+    }
+
+    public function testInvalidDefaultThemeIsRefusedByTheCatalogWithoutChangingOrBroadcasting(): void
+    {
+        $this->withSettingsWriter(function (): void {
+            $this->submit(
+                new HilosAppearanceDefaultThemeSetActionDTO(ThemeSettingsCatalog::DARK),
+                ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+                ThemeSettingsCatalog::DARK,
+                'Default theme saved.',
+            );
+            foreach (['', 'sepia', 'Dark', ' dark ', 'SYSTEM'] as $defaultTheme) {
+                $this->submit(
+                    HilosAppearanceDefaultThemeSetActionDTO::fromArray([
+                        HilosAppearanceDefaultThemeSetActionDTO::defaultTheme => $defaultTheme,
+                    ]),
+                    ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+                    $defaultTheme,
+                    'Default theme saved.',
+                    ThemeSettingsCatalog::THEME_VALUE_REFUSAL,
+                );
+                self::assertSame(ThemeSettingsCatalog::DARK, Hilos::$setting[ThemeSettingsCatalog::DEFAULT_THEME_KEY]->string());
+                self::assertNull(Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]);
             }
         });
     }
@@ -70,6 +136,47 @@ final class AppearancePageActionTest extends IntegrationTestCase
             self::assertSame($enabled, HilosAppearanceThemeSwitchingSetActionDTO::fromArray($dto->toArray())->enabled);
             self::assertSame(HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET, $dto->getAction());
         }
+    }
+
+    public function testDefaultThemePayloadRoundtripKeepsOnlyTheStringInEveryPosition(): void
+    {
+        foreach (ThemeSettingsCatalog::THEME_VALUES as $defaultTheme) {
+            $dto = HilosAppearanceDefaultThemeSetActionDTO::fromArray([
+                SignalPayloadConstants::FIELD_DATA => [
+                    HilosAppearanceDefaultThemeSetActionDTO::defaultTheme => $defaultTheme,
+                    'key' => ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
+                ],
+            ]);
+            self::assertSame(['defaultTheme' => $defaultTheme], $dto->toArray());
+            self::assertSame($defaultTheme, HilosAppearanceDefaultThemeSetActionDTO::fromArray($dto->toArray())->defaultTheme);
+            self::assertSame(HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET, $dto->getAction());
+            self::assertSame([], HilosAppearanceDefaultThemeSetActionDTO::SECRET_FIELDS);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>}> Missing and malformed defaultTheme payloads
+     */
+    public static function malformedDefaultThemePayloads(): iterable
+    {
+        yield 'missing' => [[]];
+        yield 'null' => [['defaultTheme' => null]];
+        yield 'boolean' => [['defaultTheme' => false]];
+        yield 'integer' => [['defaultTheme' => 0]];
+        yield 'array' => [['defaultTheme' => []]];
+        yield 'wrapped missing' => [[SignalPayloadConstants::FIELD_DATA => []]];
+        yield 'wrapped non-string' => [[SignalPayloadConstants::FIELD_DATA => ['defaultTheme' => true]]];
+        yield 'invalid wrapper' => [[SignalPayloadConstants::FIELD_DATA => 'dark']];
+    }
+
+    /**
+     * @param array<string, mixed> $payload Missing or malformed defaultTheme field
+     */
+    #[DataProvider('malformedDefaultThemePayloads')]
+    public function testMissingOrNonStringDefaultThemeIsRefused(array $payload): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        HilosAppearanceDefaultThemeSetActionDTO::fromArray($payload);
     }
 
     /**
@@ -106,6 +213,20 @@ final class AppearancePageActionTest extends IntegrationTestCase
         );
     }
 
+    public function testMismatchedDefaultThemePayloadIsRefusedBeforeForwarding(): void
+    {
+        $this->expectException(InvalidActionPayloadException::class);
+        try {
+            new AppearancePage(new DemoHilosAgent())->onAction(
+                self::ACCEPT_KEY,
+                HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET,
+                new HilosAppearanceThemeSwitchingSetActionDTO(false),
+            );
+        } finally {
+            self::assertSame([], $this->consumeQueuedFrames());
+        }
+    }
+
     public function testUnknownActionIsRefused(): void
     {
         $this->expectException(AgentUnknownActionException::class);
@@ -119,24 +240,33 @@ final class AppearancePageActionTest extends IntegrationTestCase
     /**
      * Runs the page, library and page answer with their queued frames carried by the harness.
      *
-     * @param bool $enabled Position of the theme-switching setting
+     * @param ActionPayloadDTO $dto Parsed appearance action payload
+     * @param string $key The one setting key the page must write
+     * @param bool|string $value The exact value the library must receive
+     * @param string $successMessage Server sentence returned after a successful write
+     * @param ?string $expectedError Catalog refusal, or null for success
      */
-    private function submit(bool $enabled): void
-    {
+    private function submit(
+        ActionPayloadDTO $dto,
+        string $key,
+        bool|string $value,
+        string $successMessage,
+        ?string $expectedError = null,
+    ): void {
         $page = new AppearancePage(new DemoHilosAgent());
-        $before = Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool();
+        $before = ThemeSettingsSignalData::current()->toArray();
         $page->beginActionDispatch(self::REQUEST_ID);
         try {
             self::assertNull($page->onAction(
                 self::ACCEPT_KEY,
-                HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET,
-                new HilosAppearanceThemeSwitchingSetActionDTO($enabled),
+                $dto->getAction(),
+                $dto,
             ));
             self::assertTrue($page->actionReplyDeferred());
         } finally {
             $page->endActionDispatch();
         }
-        self::assertSame($before, Hilos::$setting[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]->bool());
+        self::assertSame($before, ThemeSettingsSignalData::current()->toArray());
 
         $requests = $this->consumeQueuedFrames();
         self::assertCount(1, $requests, 'The page owes exactly one write and no immediate client answer');
@@ -145,11 +275,12 @@ final class AppearancePageActionTest extends IntegrationTestCase
         self::assertInstanceOf(AgentSignalData::class, $requests[0]->data);
         $ask = $requests[0]->data->data;
         self::assertInstanceOf(SettingWriteSignalData::class, $ask);
-        self::assertSame(ThemeSettingsCatalog::SWITCHING_ENABLED_KEY, $ask->key);
-        self::assertSame($enabled, $ask->value);
+        self::assertSame($key, $ask->key);
+        self::assertSame($value, $ask->value);
         self::assertSame(self::ACCEPT_KEY, $ask->acceptKey);
         self::assertSame(self::REQUEST_ID, $ask->requestId);
-        self::assertSame(HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET, $ask->action);
+        self::assertSame($dto->getAction(), $ask->action);
+        self::assertSame($successMessage, $ask->successMessage);
         self::assertSame(HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE, $ask->replySignal);
 
         new SettingsLibraryAgent()->onSignalAgent(
@@ -174,9 +305,14 @@ final class AppearancePageActionTest extends IntegrationTestCase
             }
         }
         self::assertCount(1, $answers);
-        self::assertNull($answers[0]->error);
-        self::assertSame('Theme switching saved.', $answers[0]->successMessage);
-        self::assertSame([['switchingEnabled' => $enabled, 'defaultTheme' => 'system']], $themeFrames);
+        self::assertSame($expectedError, $answers[0]->error);
+        self::assertSame($successMessage, $answers[0]->successMessage);
+        $after = $before;
+        if ($expectedError === null) {
+            $after[$key === ThemeSettingsCatalog::SWITCHING_ENABLED_KEY ? 'switchingEnabled' : 'defaultTheme'] = $value;
+        }
+        self::assertSame($after, ThemeSettingsSignalData::current()->toArray());
+        self::assertSame($after === $before ? [] : [$after], $themeFrames);
 
         $page->onSignalAgent(
             new AgentSignalData(HandoverAnswerSignalData::fromArray($answers[0]->toArray())),
@@ -185,13 +321,20 @@ final class AppearancePageActionTest extends IntegrationTestCase
         );
         $replies = $this->consumeQueuedFrames();
         self::assertCount(1, $replies);
-        self::assertSame(SignalConstants::ACTION_SUCCESS, $replies[0]->signalName->getName());
         self::assertInstanceOf(WebSocketSignalData::class, $replies[0]->data);
         self::assertSame(self::ACCEPT_KEY, $replies[0]->data->targetAcceptKey);
-        self::assertInstanceOf(PageActionSuccessSignalData::class, $replies[0]->data->data);
         self::assertSame(self::REQUEST_ID, $replies[0]->data->data->requestId);
-        self::assertSame(HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET, $replies[0]->data->data->action);
-        self::assertSame('Theme switching saved.', $replies[0]->data->data->message);
+        self::assertSame($dto->getAction(), $replies[0]->data->data->action);
+        if ($expectedError === null) {
+            self::assertSame(SignalConstants::ACTION_SUCCESS, $replies[0]->signalName->getName());
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $replies[0]->data->data);
+            self::assertSame($successMessage, $replies[0]->data->data->message);
+        } else {
+            self::assertSame(SignalConstants::ACTION_ERROR, $replies[0]->signalName->getName());
+            self::assertInstanceOf(PageActionErrorSignalData::class, $replies[0]->data->data);
+            self::assertSame($expectedError, $replies[0]->data->data->reason);
+            self::assertSame('fail', $replies[0]->data->data->getEnvelopeOutcome());
+        }
     }
 
     /**
@@ -215,9 +358,11 @@ final class AppearancePageActionTest extends IntegrationTestCase
         TruthSourceRegistry::register(HilosDbContext::settings, TruthSourceKeys::all(), self::SETTINGS_AGENT_ID);
         try {
             Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]?->actions->delete();
+            Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]?->actions->delete();
             $body();
         } finally {
             Hilos::$db->settings[ThemeSettingsCatalog::SWITCHING_ENABLED_KEY]?->actions->delete();
+            Hilos::$db->settings[ThemeSettingsCatalog::DEFAULT_THEME_KEY]?->actions->delete();
             TruthSourceRegistry::unregisterAgent(self::SETTINGS_AGENT_ID);
         }
     }

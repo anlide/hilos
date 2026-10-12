@@ -19,11 +19,13 @@ import {
 } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+import { type ThemePosition } from '../../theme/themeChoice.js'
 
 /** Framework-owned browser table containing the two theme settings. */
 export const HILOS_APPEARANCE_SETTINGS_TABLE = 'hilosAppearanceSettings'
 const SETTING_SLOT = 'setting'
 const SWITCHING_SET_ACTION = 'appearance_theme_switching_set'
+const DEFAULT_THEME_SET_ACTION = 'appearance_default_theme_set'
 
 /** Row payload key of the stable setting key. */
 export const APPEARANCE_ROW_KEY_FIELD = 'rowKey'
@@ -53,6 +55,12 @@ export interface HilosAppearanceActions {
    * @param enabled Whether theme switching is enabled.
    */
   sendSwitchingSet(enabled: boolean): ActionHandle
+  /**
+   * Set the installation's default theme, as a tracked action.
+   *
+   * @param defaultTheme The default position for people without a choice.
+   */
+  sendDefaultThemeSet(defaultTheme: ThemePosition): ActionHandle
 }
 
 /** The two values keep their actual wire types, even when hidden. */
@@ -176,6 +184,11 @@ export function createHilosAppearanceActions(
   return {
     sendSwitchingSet(enabled) {
       return context.actions.dispatch(SWITCHING_SET_ACTION, { enabled })
+    },
+    sendDefaultThemeSet(defaultTheme) {
+      return context.actions.dispatch(DEFAULT_THEME_SET_ACTION, {
+        defaultTheme,
+      })
     },
   }
 }

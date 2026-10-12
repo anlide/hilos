@@ -39,6 +39,7 @@ use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
@@ -470,6 +471,14 @@ final class ChatTopologyRegistryTest extends TestCase
             Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
         );
         self::assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        self::assertSame(
+            HilosAppearanceDefaultThemeSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        self::assertSame(
             HilosAppearanceSettingsTable::class,
             Hilos::TABLES[ChatTableContext::hilosAppearanceSettings],
         );
@@ -814,6 +823,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
             HilosSignalConstants::SETTING_RESET => PageConstants::HILOS_SETTINGS,
             HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET => HilosPageConstants::HILOS_APPEARANCE,
+            HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET => HilosPageConstants::HILOS_APPEARANCE,
             HilosSignalConstants::HILOS_I18N_COUNTRY_ADD => HilosPageConstants::HILOS_I18N_COUNTRIES,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosPageConstants::HILOS_I18N_LANGUAGE,
@@ -879,6 +889,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
             HilosSignalConstants::SETTING_RESET => AgentType::HILOS_INDEX,
             HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_I18N_COUNTRY_ADD => HilosAgentType::HILOS_I18N_LIBRARY,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosAgentType::HILOS_I18N_LIBRARY,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosAgentType::HILOS_I18N_LIBRARY,

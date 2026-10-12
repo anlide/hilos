@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import {
   createHilosAppearanceActions,
+  createHilosAppearanceDefaultThemeEdit,
   createHilosAppearanceSwitchingEdit,
   createHilosAppearanceTable,
   HilosAppearanceSettingKey,
   HilosPages,
+  isHiddenValue,
+  THEME_POSITIONS,
   type HilosAppearanceContext,
   type HilosAppearanceSettingRow,
+  type ThemePosition,
 } from '@hilos/core'
 import { computed, onMounted, onUnmounted } from 'vue'
 import ConflictActions from '../../ConflictActions.vue'
@@ -48,11 +52,49 @@ const noticeKind = computed(() => state.value.notice?.kind ?? null)
 const editAction = useTrackedAction()
 const { loading, busy, run, clearError } = editAction
 
+const defaultThemeEditor = createHilosAppearanceDefaultThemeEdit(
+  table.controller,
+  actions,
+)
+const defaultThemeOpened = useSignal(defaultThemeEditor.opened)
+const defaultThemeOpen = computed({
+  get: () => defaultThemeOpened.value,
+  set: (next: boolean) => {
+    if (!next) defaultThemeEditor.close()
+  },
+})
+const defaultThemeRow = useSignal(defaultThemeEditor.row)
+const defaultThemeForm = useSignal(defaultThemeEditor.form)
+const defaultThemeState = useSignal(defaultThemeEditor.state)
+const defaultThemeNoticeText = useSignal(defaultThemeEditor.noticeText)
+const defaultThemeSaveLabel = useSignal(defaultThemeEditor.saveLabel)
+const defaultThemeCanSave = useSignal(defaultThemeEditor.canSave)
+const defaultThemeHidden = computed(() =>
+  isHiddenValue(defaultThemeForm.value.defaultTheme),
+)
+const defaultTheme = computed({
+  get: () => defaultThemeForm.value.defaultTheme,
+  set: (value: ThemePosition) =>
+    defaultThemeEditor.patchForm({ defaultTheme: value }),
+})
+const defaultThemeNoticeKind = computed(
+  () => defaultThemeState.value.notice?.kind ?? null,
+)
+const defaultThemeAction = useTrackedAction()
+const {
+  loading: defaultThemeLoading,
+  busy: defaultThemeBusy,
+  run: runDefaultTheme,
+  clearError: clearDefaultThemeError,
+} = defaultThemeAction
+
 onMounted(() => {
   table.start()
   editor.start()
+  defaultThemeEditor.start()
 })
 onUnmounted(() => {
+  defaultThemeEditor.dispose()
   editor.dispose()
   table.dispose()
 })
@@ -64,6 +106,15 @@ function openEdit(row: HilosAppearanceSettingRow): void {
 
 function submitEdit(): void {
   void editor.save(run)
+}
+
+function openDefaultThemeEdit(row: HilosAppearanceSettingRow): void {
+  clearDefaultThemeError()
+  defaultThemeEditor.open(row.rowKey)
+}
+
+function submitDefaultThemeEdit(): void {
+  void defaultThemeEditor.save(runDefaultTheme)
 }
 
 function settingLabel(key: string): string {
@@ -82,7 +133,7 @@ function valueLabel(value: boolean | string): string {
     case 'dark':
       return 'Dark'
     case 'system':
-      return 'As the system'
+      return 'System'
     default:
       return value
   }
@@ -124,6 +175,18 @@ function valueLabel(value: boolean | string): string {
           aria-label="Edit Theme switching"
           data-id="appearance-setting-edit-theme.switching_enabled"
           @click="openEdit(setting)"
+        >
+          <i class="bi bi-pencil" aria-hidden="true"></i>
+          <span class="d-md-none ms-1">Edit</span>
+        </button>
+        <button
+          v-if="setting.rowKey === HilosAppearanceSettingKey.defaultTheme"
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          title="Edit Default theme"
+          aria-label="Edit Default theme"
+          data-id="appearance-setting-edit-theme.default"
+          @click="openDefaultThemeEdit(setting)"
         >
           <i class="bi bi-pencil" aria-hidden="true"></i>
           <span class="d-md-none ms-1">Edit</span>
@@ -216,6 +279,108 @@ function valueLabel(value: boolean | string): string {
               @click="onSave"
             >
               {{ saveLabel }}
+            </LoadingButton>
+          </template>
+        </ConflictActions>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      v-model="defaultThemeOpen"
+      :confirm-on-close="defaultThemeState.dirty"
+      aria-label="Edit · Default theme"
+      @cancel="defaultThemeEditor.close()"
+    >
+      <template #header>
+        <ConflictHeader
+          title="Edit · Default theme"
+          :conflict="defaultThemeState.conflict"
+        />
+      </template>
+      <HilosActionError
+        :action="defaultThemeAction"
+        details-title="Couldn't save"
+      />
+      <form v-if="defaultThemeRow" @submit.prevent="submitDefaultThemeEdit">
+        <HilosHiddenMark v-if="defaultThemeHidden" />
+        <template v-else>
+          <fieldset
+            class="mb-2"
+            aria-describedby="appearance-default-theme-hint"
+          >
+            <legend class="form-label fs-6 mb-2">Default theme</legend>
+            <div
+              v-for="position in THEME_POSITIONS"
+              :key="position.value"
+              class="form-check mb-1"
+            >
+              <input
+                :id="`appearance-default-theme-${position.value}-field`"
+                v-model="defaultTheme"
+                class="form-check-input"
+                type="radio"
+                name="appearance-default-theme"
+                :value="position.value"
+                :data-id="`appearance-default-theme-${position.value}`"
+                data-autofocus
+              />
+              <label
+                class="form-check-label d-inline-flex align-items-center gap-2"
+                :for="`appearance-default-theme-${position.value}-field`"
+              >
+                <i :class="['bi', position.icon]" aria-hidden="true"></i>
+                {{ position.label }}
+                <span
+                  v-if="position.value === defaultThemeRow.defaultValue"
+                  class="badge rounded-pill bg-body-tertiary text-body-emphasis border"
+                  >default</span
+                >
+              </label>
+            </div>
+          </fieldset>
+          <p
+            id="appearance-default-theme-hint"
+            class="small text-body-secondary mb-0"
+          >
+            Everyone who has not chosen a theme switches at once, in every open
+            tab. People who chose one keep it.
+          </p>
+        </template>
+        <HilosEditNotice
+          :kind="defaultThemeNoticeKind"
+          :text="defaultThemeNoticeText"
+          data-id="appearance-default-theme-notice"
+        />
+      </form>
+      <template #actions="{ requestClose }">
+        <ConflictActions
+          :conflict="defaultThemeState.conflict"
+          :disable-save="!defaultThemeCanSave"
+          :save-label="defaultThemeSaveLabel"
+          @save="submitDefaultThemeEdit"
+          @accept-mine="defaultThemeEditor.keepMine()"
+          @accept-theirs="defaultThemeEditor.takeTheirs()"
+        >
+          <template #cancel-button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="defaultThemeBusy"
+              data-id="appearance-default-theme-cancel"
+              @click="requestClose"
+            >
+              Cancel
+            </button>
+          </template>
+          <template #save-button="{ disabled, onSave }">
+            <LoadingButton
+              class="btn-primary"
+              :loading="defaultThemeLoading"
+              :disabled="disabled"
+              data-id="appearance-default-theme-save"
+              @click="onSave"
+            >
+              {{ defaultThemeSaveLabel }}
             </LoadingButton>
           </template>
         </ConflictActions>

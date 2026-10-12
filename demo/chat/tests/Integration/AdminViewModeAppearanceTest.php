@@ -144,6 +144,12 @@ final class AdminViewModeAppearanceTest extends IntegrationTestCase
         PageAccessGate::assertAction(AppearancePage::class, self::VISITOR_KEY, HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET);
     }
 
+    public function testViewerCannotWriteDefaultTheme(): void
+    {
+        $this->expectException(ActionViewModeException::class);
+        PageAccessGate::assertAction(AppearancePage::class, self::VISITOR_KEY, HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET);
+    }
+
     public function testNonAdminIsRefusedWhenViewModeIsOff(): void
     {
         Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);

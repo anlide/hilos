@@ -225,6 +225,9 @@ final class HilosSignalConstants
     /** Writes whether people may switch the theme. */
     public const string APPEARANCE_THEME_SWITCHING_SET = 'appearance_theme_switching_set';
 
+    /** Writes the installation's default theme position. */
+    public const string APPEARANCE_DEFAULT_THEME_SET = 'appearance_default_theme_set';
+
     /** Settings library answer routed back to the appearance page. */
     public const string HILOS_APPEARANCE_SETTING_WRITE_DONE = 'hilos_appearance_setting_write_done';
 

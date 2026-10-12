@@ -21,6 +21,7 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Database\Settings\Library\DTO\SettingWriteSignalData;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceThemeSwitchingSetActionDTO;
 use Hilos\Theme\ThemeSettingsCatalog;
 
@@ -33,6 +34,7 @@ abstract class AbstractHilosAppearancePage extends AbstractHilosPage
     public const PageReach REACH = PageReach::ROUTE;
     public const array ACTIONS = [
         HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET => HilosAppearanceThemeSwitchingSetActionDTO::class,
+        HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET => HilosAppearanceDefaultThemeSetActionDTO::class,
     ];
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
@@ -61,6 +63,15 @@ abstract class AbstractHilosAppearancePage extends AbstractHilosPage
                 }
 
                 $this->handleThemeSwitchingSet($acceptKey, $dto);
+
+                return null;
+
+            case HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET:
+                if (!$dto instanceof HilosAppearanceDefaultThemeSetActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosAppearanceDefaultThemeSetActionDTO::class, $dto);
+                }
+
+                $this->handleDefaultThemeSet($acceptKey, $dto);
 
                 return null;
 
@@ -110,6 +121,29 @@ abstract class AbstractHilosAppearancePage extends AbstractHilosPage
                 successMessage: 'Theme switching saved.',
                 key: ThemeSettingsCatalog::SWITCHING_ENABLED_KEY,
                 value: $dto->enabled,
+            ),
+        );
+    }
+
+    /**
+     * The key is fixed here; the settings catalog judges the value in the library.
+     *
+     * @param string $acceptKey Initiating connection accept key
+     * @param HilosAppearanceDefaultThemeSetActionDTO $dto Default-theme setting payload
+     * @throws InvalidArgumentException When the write cannot be handed to the library
+     */
+    private function handleDefaultThemeSet(string $acceptKey, HilosAppearanceDefaultThemeSetActionDTO $dto): void
+    {
+        $this->forward(
+            HilosSignalConstants::HILOS_SETTING_WRITE,
+            new SettingWriteSignalData(
+                replySignal: HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET,
+                successMessage: 'Default theme saved.',
+                key: ThemeSettingsCatalog::DEFAULT_THEME_KEY,
+                value: $dto->defaultTheme,
             ),
         );
     }

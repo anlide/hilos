@@ -195,9 +195,11 @@ Neither value is secret — every guest receives both. The admin view mode shows
 the Appearance section and its values and refuses changes
 in Vue (HIL-1435); React and Angular remain to be built in HIL-1440 and
 HIL-1441. The Vue page edits switching through
-`appearance_theme_switching_set` (HIL-1438). Editing the default theme is
-still pending (not in the code yet — HIL-1439); follow
-[admin-view-mode.md](admin-view-mode.md).
+`appearance_theme_switching_set` (HIL-1438) and the default theme through
+`appearance_default_theme_set` (HIL-1439). Both open a row-edit modal; the
+default theme offers Light, Dark and System, marking the catalog default.
+A viewer may open either window and change its draft, while Save stays disabled;
+follow [admin-view-mode.md](admin-view-mode.md).
 
 ## Not In Hilos
 
@@ -215,12 +217,17 @@ The installation settings use `data.themeSettings` in the handshake and
 `hilos_theme_settings` as the live frame. Both carry the complete pair
 `{switchingEnabled: bool, defaultTheme: 'light'|'dark'|'system'}` (HIL-1428).
 The Appearance page action `appearance_theme_switching_set` carries
-`{enabled: bool}` through `HilosAppearanceThemeSwitchingSetActionDTO`. The
-ADMIN page forwards the existing `hilos_setting_write` with
+`{enabled: bool}` through `HilosAppearanceThemeSwitchingSetActionDTO` (HIL-1438).
+`appearance_default_theme_set` carries `{defaultTheme: string}` through
+`HilosAppearanceDefaultThemeSetActionDTO`; the DTO checks presence and type,
+and the catalog's `ThemeDefaultRule` accepts only `light`, `dark` or `system`
+(HIL-1439). The ADMIN page forwards the existing `hilos_setting_write` with
 `SettingWriteSignalData` to the settings library and answers the action after
 `hilos_appearance_setting_write_done` returns with `HandoverAnswerSignalData`.
-The library writes only `theme.switching_enabled`; DB and RT shapes and the
-`hilos_appearance` route stay unchanged (HIL-1438).
+The library writes `theme.switching_enabled` or `theme.default`, then broadcasts
+the complete settings pair once when it changed. A successful default-theme write
+answers with `Default theme saved.`; a refusal leaves the modal and its draft open.
+DB and RT shapes and the `hilos_appearance` route stay unchanged.
 The browser-value keys are `hilos.theme.pick` and `hilos.theme.settings`
 (HIL-1430). The person's stored choice is `hilos_user.theme_pick`:
 `ENUM('light','dark','system') NULL DEFAULT NULL` (HIL-1427). The agent ask is

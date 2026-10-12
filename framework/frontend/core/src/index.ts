@@ -1387,6 +1387,10 @@ export {
   type HilosAppearanceSwitchingEditForm,
 } from './admin/appearance/hilosAppearanceSwitchingEdit.js'
 export {
+  createHilosAppearanceDefaultThemeEdit,
+  type HilosAppearanceDefaultThemeEditFields,
+} from './admin/appearance/hilosAppearanceDefaultThemeEdit.js'
+export {
   settingPresetsSignalSchemas,
   createHilosSettingPresets,
   createHilosSettingPresetsActions,

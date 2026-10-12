@@ -113,6 +113,7 @@ use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
+use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -524,6 +525,18 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(
             AgentType::HILOS_INDEX,
             Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
+        );
+        $this->assertSame(
+            HilosAppearanceDefaultThemeSetActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::APPEARANCE_DEFAULT_THEME_SET],
         );
         $this->assertSame(
             HilosAppearanceSettingsTable::class,

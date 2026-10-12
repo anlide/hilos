@@ -12,6 +12,7 @@ import {
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableViewportController } from '../../../src/table/TableViewportController.js'
+import { type ThemePosition } from '../../../src/theme/themeChoice.js'
 
 const ROW_KEY = HilosAppearanceSettingKey.switchingEnabled
 
@@ -59,6 +60,23 @@ describe('Appearance switching actions', () => {
       ['appearance_theme_switching_set', { enabled: true }],
     ])
   })
+
+  it.each<ThemePosition>(['light', 'dark', 'system'])(
+    'dispatches the approved default theme action and payload for %s',
+    (defaultTheme) => {
+      const handle = {} as ActionHandle
+      const dispatch = vi.fn(() => handle)
+      const actions = createHilosAppearanceActions({
+        actions: { dispatch } as unknown as ActionLifecycle,
+      })
+
+      expect(actions.sendDefaultThemeSet(defaultTheme)).toBe(handle)
+      expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+        'appearance_default_theme_set',
+        { defaultTheme },
+      )
+    },
+  )
 })
 
 describe('Appearance switching window', () => {

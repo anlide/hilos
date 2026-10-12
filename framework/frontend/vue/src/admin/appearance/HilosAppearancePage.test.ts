@@ -7,6 +7,7 @@ import {
   bindSessionScope,
   createSignal,
   hilosToasts,
+  HIDDEN_VALUE,
   HilosAppearanceSettingKey,
   HILOS_APPEARANCE_SETTINGS_TABLE,
   HilosPages,
@@ -15,11 +16,13 @@ import {
   type HilosConnection,
   type HilosRouter,
   type ProjectSignal,
+  type Hideable,
+  type ThemePosition,
 } from '@hilos/core'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosAppearancePage from './HilosAppearancePage.vue'
 
-type SettingValue = boolean | string
+type SettingValue = Hideable<boolean | string>
 
 function harness() {
   const scopes = new ScopeManager()
@@ -124,7 +127,12 @@ function harness() {
       } as unknown as ProjectSignal
       for (const listener of sessionListeners) listener(signal)
     },
-    window(enabled = true, defaultEnabled = true) {
+    window(
+      enabled = true,
+      defaultEnabled = true,
+      defaultTheme: SettingValue = 'system',
+      catalogDefault: SettingValue = 'system',
+    ) {
       const frame = {
         data: {
           page: HilosPages.APPEARANCE,
@@ -135,7 +143,11 @@ function harness() {
               enabled,
               defaultEnabled,
             ),
-            row(HilosAppearanceSettingKey.defaultTheme, 'system', 'system'),
+            row(
+              HilosAppearanceSettingKey.defaultTheme,
+              defaultTheme,
+              catalogDefault,
+            ),
           ],
           totalCount: 2,
           totalExact: true,
@@ -247,13 +259,13 @@ describe('Appearance page', () => {
           `[data-id="appearance-setting-default-${HilosAppearanceSettingKey.defaultTheme}"]`,
         )
         .text(),
-    ).toBe('As the system')
+    ).toBe('System')
     expect(view.text()).toContain('Theme switching')
     expect(view.text()).toContain('Default theme')
     const pencils = view.findAll(
       'table button[data-id^="appearance-setting-edit-"]',
     )
-    expect(pencils).toHaveLength(1)
+    expect(pencils).toHaveLength(2)
     expect(pencils[0]!.attributes('data-id')).toBe(
       'appearance-setting-edit-theme.switching_enabled',
     )
@@ -261,10 +273,25 @@ describe('Appearance page', () => {
     expect(pencils[0]!.attributes('title')).toBe('Edit Theme switching')
     expect(pencils[0]!.find('i').attributes('aria-hidden')).toBe('true')
     expect(pencils[0]!.get('span').classes()).toContain('d-md-none')
+    expect(pencils[1]!.attributes('data-id')).toBe(
+      'appearance-setting-edit-theme.default',
+    )
+    expect(pencils[1]!.attributes('aria-label')).toBe('Edit Default theme')
+    expect(pencils[1]!.attributes('title')).toBe('Edit Default theme')
+    expect(pencils[1]!.find('i').attributes('aria-hidden')).toBe('true')
+    expect(pencils[1]!.get('span').text()).toBe('Edit')
+    expect(pencils[1]!.get('span').classes()).toContain('d-md-none')
     expect(
       view
         .find(
           '[data-id="hilos-table-cards"] button[data-id="appearance-setting-edit-theme.switching_enabled"]',
+        )
+        .exists(),
+    ).toBe(true)
+    expect(
+      view
+        .find(
+          '[data-id="hilos-table-cards"] button[data-id="appearance-setting-edit-theme.default"]',
         )
         .exists(),
     ).toBe(true)
@@ -413,5 +440,305 @@ describe('Appearance page', () => {
         '[data-id="appearance-switching-cancel"]',
       )!.disabled,
     ).toBe(false)
+  })
+})
+
+function themeRadio(position: ThemePosition): HTMLInputElement {
+  return document.querySelector<HTMLInputElement>(
+    `[data-id="appearance-default-theme-${position}"]`,
+  )!
+}
+
+function themeSave(): HTMLButtonElement {
+  return document.querySelector<HTMLButtonElement>(
+    '[data-id="appearance-default-theme-save"]',
+  )!
+}
+
+async function openDefaultThemeEdit(
+  h: ReturnType<typeof harness>,
+  value: SettingValue = 'system',
+  catalogDefault: SettingValue = 'system',
+): Promise<HTMLButtonElement> {
+  mountPage(h)
+  h.window(true, true, value, catalogDefault)
+  await nextTick()
+  const pencil = document.querySelector<HTMLButtonElement>(
+    'table [data-id="appearance-setting-edit-theme.default"]',
+  )!
+  pencil.focus()
+  pencil.click()
+  await settle()
+  return pencil
+}
+
+async function chooseTheme(position: ThemePosition): Promise<void> {
+  const radio = themeRadio(position)
+  radio.checked = true
+  radio.dispatchEvent(new Event('change', { bubbles: true }))
+  await nextTick()
+}
+
+describe('Appearance default theme window', () => {
+  it.each<ThemePosition>(['light', 'dark', 'system'])(
+    'opens with %s checked, named radios, the catalog default and Save locked',
+    async (position) => {
+      const h = harness()
+      await openDefaultThemeEdit(h, position)
+      const modal = document.querySelector('[data-id="modal"]')!
+      expect(modal.textContent).toContain('Edit · Default theme')
+      expect(modal.querySelector('legend')?.textContent).toBe('Default theme')
+      expect(modal.querySelectorAll('input[type="radio"]')).toHaveLength(3)
+      for (const [value, label, icon] of [
+        ['light', 'Light', 'bi-sun'],
+        ['dark', 'Dark', 'bi-moon-stars'],
+        ['system', 'System', 'bi-circle-half'],
+      ] as const) {
+        const radio = themeRadio(value)
+        expect(radio.checked).toBe(value === position)
+        expect(radio.disabled).toBe(false)
+        expect(radio.name).toBe('appearance-default-theme')
+        expect(radio.hasAttribute('data-autofocus')).toBe(true)
+        const named = modal.querySelector(`label[for="${radio.id}"]`)!
+        expect(named.textContent).toContain(label)
+        expect(
+          named.querySelector(`i.${icon}`)?.getAttribute('aria-hidden'),
+        ).toBe('true')
+        expect(named.querySelector('.badge') !== null).toBe(value === 'system')
+      }
+      expect(
+        modal.querySelector('.badge')?.classList.contains('bg-body-tertiary'),
+      ).toBe(true)
+      expect(modal.querySelector('.badge')?.textContent?.trim()).toBe('default')
+      expect(
+        modal.querySelector('fieldset')?.getAttribute('aria-describedby'),
+      ).toBe('appearance-default-theme-hint')
+      expect(
+        modal.querySelector('#appearance-default-theme-hint')?.textContent,
+      ).toContain(
+        'Everyone who has not chosen a theme switches at once, in every open tab. People who chose one keep it.',
+      )
+      expect(
+        modal.querySelector('[data-id="hilos-action-error-slot"]'),
+      ).not.toBeNull()
+      expect(
+        modal.querySelector('[data-id="appearance-default-theme-notice-slot"]'),
+      ).not.toBeNull()
+      expect(themeSave().disabled).toBe(true)
+      expect(h.focus).toEqual([
+        {
+          page: HilosPages.APPEARANCE,
+          tableKey: HILOS_APPEARANCE_SETTINGS_TABLE,
+          rowKey: HilosAppearanceSettingKey.defaultTheme,
+        },
+      ])
+      expect(h.sent).toEqual([])
+    },
+  )
+
+  it('marks the catalog default rather than the saved position', async () => {
+    const h = harness()
+    await openDefaultThemeEdit(h, 'dark', 'light')
+    const badge = document.querySelector('[data-id="modal"] .badge')!
+    expect(badge.closest('label')?.getAttribute('for')).toBe(
+      themeRadio('light').id,
+    )
+    expect(themeRadio('dark').checked).toBe(true)
+  })
+
+  it('waits for success, preserves the table until echo, returns focus and toasts the server sentence', async () => {
+    const h = harness()
+    const pencil = await openDefaultThemeEdit(h)
+    await chooseTheme('dark')
+    expect(themeSave().disabled).toBe(false)
+    themeSave().click()
+    await nextTick()
+    expect(h.sent).toEqual([
+      {
+        action: 'appearance_default_theme_set',
+        payload: { defaultTheme: 'dark' },
+        requestId: expect.any(String),
+      },
+    ])
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(themeSave().disabled).toBe(true)
+    expect(
+      document.querySelector(
+        'table [data-id="appearance-setting-value-theme.default"]',
+      )?.textContent,
+    ).toBe('System')
+    h.change(HilosAppearanceSettingKey.defaultTheme, 'dark', 'system')
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    h.answer('success', 'Default theme saved.')
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(h.focus.at(-1)?.rowKey).toBe('')
+    expect(document.activeElement).toBe(pencil)
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['success', 'Default theme saved.']])
+  })
+
+  it('keeps a refused choice and shows the server error', async () => {
+    const h = harness()
+    await openDefaultThemeEdit(h)
+    await chooseTheme('dark')
+    themeSave().click()
+    await nextTick()
+    h.answer('fail', 'The setting could not be saved.')
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).not.toBeNull()
+    expect(themeRadio('dark').checked).toBe(true)
+    expect(
+      document.querySelector('[data-id="hilos-action-error"]')?.textContent,
+    ).toContain('The setting could not be saved.')
+    expect(themeSave().disabled).toBe(false)
+    expect(
+      hilosToasts.toasts.get().map((toast) => [toast.severity, toast.message]),
+    ).toEqual([['error', 'The setting could not be saved.']])
+  })
+
+  it('takes a pristine incoming value and clears its notice when the draft changes', async () => {
+    const h = harness()
+    await openDefaultThemeEdit(h)
+    h.change(HilosAppearanceSettingKey.defaultTheme, 'light', 'system')
+    await settle()
+    expect(themeRadio('light').checked).toBe(true)
+    expect(
+      document.querySelector('[data-id="appearance-default-theme-notice"]')
+        ?.textContent,
+    ).toContain('Updated just now')
+    expect(themeSave().disabled).toBe(true)
+    await chooseTheme('dark')
+    expect(
+      document.querySelector('[data-id="appearance-default-theme-notice"]'),
+    ).toBeNull()
+  })
+
+  it.each(['mine', 'theirs'] as const)(
+    'blocks a conflict, offers both values and accepts %s',
+    async (choice) => {
+      const h = harness()
+      await openDefaultThemeEdit(h)
+      await chooseTheme('dark')
+      h.change(HilosAppearanceSettingKey.defaultTheme, 'light', 'system')
+      await settle()
+      expect(themeRadio('dark').checked).toBe(true)
+      expect(themeSave().disabled).toBe(true)
+      expect(
+        document.querySelector('[data-id="appearance-default-theme-notice"]')
+          ?.textContent,
+      ).toContain('Changed elsewhere to "Light".')
+      expect(
+        document.querySelector('[data-id="conflict-accept-mine"]')?.textContent,
+      ).toContain('Keep mine')
+      expect(
+        document.querySelector('[data-id="conflict-accept-theirs"]')
+          ?.textContent,
+      ).toContain('Take theirs')
+      expect(document.querySelector('[data-id="conflict-merge"]')).toBeNull()
+      themeSave().click()
+      expect(h.sent).toEqual([])
+      document
+        .querySelector<HTMLButtonElement>(
+          `[data-id="conflict-accept-${choice}"]`,
+        )!
+        .click()
+      await settle()
+      expect(document.querySelector('[data-id="conflict-choices"]')).toBeNull()
+      expect(themeRadio(choice === 'mine' ? 'dark' : 'light').checked).toBe(
+        true,
+      )
+      expect(themeSave().disabled).toBe(choice === 'theirs')
+    },
+  )
+
+  it('asks to discard a dirty choice and releases focus only after confirmation', async () => {
+    const h = harness()
+    const pencil = await openDefaultThemeEdit(h)
+    await chooseTheme('dark')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="appearance-default-theme-cancel"]',
+      )!
+      .click()
+    await settle()
+    expect(
+      document.querySelector('[data-id="modal-confirm"]')?.textContent,
+    ).toContain('Discard changes?')
+    expect(h.focus.at(-1)?.rowKey).toBe(HilosAppearanceSettingKey.defaultTheme)
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-cancel"]')!
+      .click()
+    await settle()
+    expect(themeRadio('dark').checked).toBe(true)
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="appearance-default-theme-cancel"]',
+      )!
+      .click()
+    await settle()
+    document
+      .querySelector<HTMLButtonElement>('[data-id="modal-confirm-discard"]')!
+      .click()
+    await settle()
+    expect(document.querySelector('[data-id="modal"]')).toBeNull()
+    expect(h.focus.at(-1)?.rowKey).toBe('')
+    expect(document.activeElement).toBe(pencil)
+    expect(h.sent).toEqual([])
+  })
+
+  it('lets a viewer move the radios while Save stays disabled and described by the banner', async () => {
+    const h = harness()
+    h.viewer()
+    await openDefaultThemeEdit(h)
+    await chooseTheme('dark')
+    expect(themeRadio('dark').disabled).toBe(false)
+    expect(themeRadio('dark').checked).toBe(true)
+    expect(themeSave().disabled).toBe(true)
+    expect(themeSave().getAttribute('aria-describedby')).toContain(
+      'hilos-view-mode-strip-text',
+    )
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-id="appearance-default-theme-cancel"]',
+      )!.disabled,
+    ).toBe(false)
+    themeSave().click()
+    await nextTick()
+    expect(h.sent).toEqual([])
+  })
+
+  it('shows a hidden mark instead of radios for a hidden value', async () => {
+    const h = harness()
+    h.viewer()
+    await openDefaultThemeEdit(h, HIDDEN_VALUE)
+    const modal = document.querySelector('[data-id="modal"]')!
+    expect(modal.textContent).toContain('Hidden')
+    expect(modal.querySelector('input')).toBeNull()
+    expect(themeSave().disabled).toBe(true)
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="appearance-default-theme-cancel"]',
+      )!
+      .click()
+    await settle()
+    expect(document.querySelector('[data-id="modal-confirm"]')).toBeNull()
+    expect(h.sent).toEqual([])
+  })
+
+  it('never checks a fallback radio or writes an unknown value', async () => {
+    const h = harness()
+    await openDefaultThemeEdit(h, 'sepia')
+    for (const position of ['light', 'dark', 'system'] as const) {
+      expect(themeRadio(position).checked).toBe(false)
+    }
+    expect(themeSave().disabled).toBe(true)
+    document
+      .querySelector('[data-id="modal"] form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(h.sent).toEqual([])
   })
 })
