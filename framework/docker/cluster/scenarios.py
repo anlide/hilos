@@ -2317,7 +2317,9 @@ def scenario_32_another_admin_view_mode_refused():
 def scenario_30_ready_copy_outlives_its_node():
     """The export agent builds a copy on one slave and finds it after moving to another.
 
-    A preparing database row asks the real agent to build it. On start the replacement agent
+    A preparing database row asks the real agent to build it. The agent reads that queue when it
+    starts, not on its ticks - in production only its own order() writes one - so the row written
+    here past its owner is followed by a restart of the agent. On start the replacement agent
     removes a ready row if its file is missing, so the unchanged ready row after failover proves
     that the new host could see the shared file before it started work.
     """
@@ -2343,6 +2345,8 @@ def scenario_30_ready_copy_outlives_its_node():
     try:
         db_sql(f"INSERT INTO hilos_data_export (user_id, state, requested_at) "
                f"VALUES ({user_id}, 'preparing', UTC_TIMESTAMP())")
+        assert client(placement["nodeId"], "agent:restart", agent_id), \
+            f"could not restart {agent_id} to pick up the preparing row"
 
         def ready(_views):
             nonlocal stored_name

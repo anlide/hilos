@@ -628,6 +628,29 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     }
 
     /**
+     * An idle tick does not ask the database for orders: only an order through the agent, a start, or an
+     * erasure dropping the build in progress sends it there. An order written behind the agent's back,
+     * which nothing in production does, waits for the next start.
+     *
+     * @throws HilosException When a fixture, a tick or the start fails
+     */
+    public function testAnIdleTickLeavesTheQueueUnreadUntilTheNextStart(): void
+    {
+        $agent = self::startedAgent();
+        $agent->onTick();
+        $agent->onTick();
+        Hilos::$db->legalAcceptanceExports->actions->order(self::ADMIN_ID, null, null, null, self::PAST);
+        $agent->onTick();
+        $agent->onTick();
+        self::assertSame(LegalAcceptancesExportState::PREPARING, self::exportOf(self::ADMIN_ID)?->state);
+        self::assertSame([], $this->files());
+
+        LegalAcceptancesExports::reset();
+        $this->finish(self::startedAgent(), self::ADMIN_ID);
+        self::assertSame(LegalAcceptancesExportState::READY, self::exportOf(self::ADMIN_ID)?->state);
+    }
+
+    /**
      * A build that cannot go on removes what it wrote, records the order failed and warns the ordering browser.
      *
      * @throws HilosException When a fixture, the order, a tick or a request fails

@@ -452,6 +452,29 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     }
 
     /**
+     * An idle tick does not ask the database for requests: only an order through the agent or a start
+     * sends it there. A request written behind the agent's back, which nothing in production does,
+     * waits for the next start.
+     *
+     * @throws HilosException When the fixture or build fails
+     */
+    public function testAnIdleTickLeavesTheQueueUnreadUntilTheNextStart(): void
+    {
+        $agent = new DataExportTestAgent();
+        $agent->onStart();
+        $agent->onTick();
+        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $agent->onTick();
+        $agent->onTick();
+        self::assertSame(DataExportState::PREPARING, Hilos::$db->dataExports->ofUser(7)?->state);
+
+        $restarted = new DataExportTestAgent();
+        $restarted->onStart();
+        $restarted->onTick();
+        self::assertSame(DataExportState::READY, Hilos::$db->dataExports->ofUser(7)?->state);
+    }
+
+    /**
      * Erasure commits during the project export, while the worker cannot consume its sync frame.
      *
      * @throws HilosException When the fixture or build fails

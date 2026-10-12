@@ -80,6 +80,13 @@ final class LegalAcceptancesExports
 
     private static ?LegalAcceptancesExportBuild $build = null;
 
+    /**
+     * Whether a preparing order may be waiting: raised on start, by an order and when erasure drops the
+     * build in progress, lowered once the queue reads empty. Only {@see order()} writes an order, so
+     * nothing else adds one behind the agent's back, and an idle tick does not ask the database.
+     */
+    private static bool $preparingMayWait = false;
+
     /** @var array<int, string> Hash of the session token of the browser that placed each order, keyed by order id */
     private static array $toastSessions = [];
 
@@ -101,6 +108,7 @@ final class LegalAcceptancesExports
             }
         }
         self::expire($agent);
+        self::$preparingMayWait = true;
     }
 
     /**
@@ -170,6 +178,7 @@ final class LegalAcceptancesExports
             self::$toastSessions[$export->id] = ProtectedModeRuntime::hashSessionToken($sessionToken);
         }
         self::$orderReplyPending = true;
+        self::$preparingMayWait = true;
         self::sendState($agent, $userId);
     }
 
@@ -194,6 +203,7 @@ final class LegalAcceptancesExports
         if (self::$build !== null) {
             FsPath::delete(self::directory()[self::$build->buildingName]->getPath());
             self::$build = null;
+            self::$preparingMayWait = true;
         }
         self::expire($agent);
         $touched[$userId] = true;
@@ -273,6 +283,7 @@ final class LegalAcceptancesExports
         self::$expireRule = null;
         self::$orderReplyPending = false;
         self::$build = null;
+        self::$preparingMayWait = false;
         self::$toastSessions = [];
     }
 
@@ -286,10 +297,16 @@ final class LegalAcceptancesExports
     {
         $build = self::$build;
         if ($build === null) {
-            $export = Hilos::$db->legalAcceptanceExports->nextPreparing();
-            if ($export !== null) {
-                self::startBuild($agent, $export);
+            if (!self::$preparingMayWait) {
+                return;
             }
+            $export = Hilos::$db->legalAcceptanceExports->nextPreparing();
+            if ($export === null) {
+                self::$preparingMayWait = false;
+
+                return;
+            }
+            self::startBuild($agent, $export);
 
             return;
         }

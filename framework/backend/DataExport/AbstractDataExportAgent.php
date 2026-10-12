@@ -95,6 +95,13 @@ abstract class AbstractDataExportAgent extends AbstractAgent
     private bool $orderReplyPending = false;
 
     /**
+     * Whether a preparing request may be waiting: raised on start and by an order, lowered once the
+     * queue reads empty. Only this agent's {@see order()} writes a request, so nothing else adds one
+     * behind its back, and an idle tick does not ask the database.
+     */
+    private bool $preparingMayWait = false;
+
+    /**
      * Reconciles persisted requests with storage before resuming unfinished copies.
      *
      * @throws HilosException When storage, reconciliation or publication fails
@@ -111,6 +118,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             }
         }
         $this->expireCopies();
+        $this->preparingMayWait = true;
     }
 
     /**
@@ -309,6 +317,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         }
         Hilos::$db->dataExports->actions->order($person, TimeHelper::getSqlDateTime());
         $this->orderReplyPending = true;
+        $this->preparingMayWait = true;
         $this->publishState($person);
     }
 
@@ -329,8 +338,13 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      */
     private function buildNext(): void
     {
+        if (!$this->preparingMayWait) {
+            return;
+        }
         $export = Hilos::$db->dataExports->nextPreparing();
         if ($export === null) {
+            $this->preparingMayWait = false;
+
             return;
         }
         try {

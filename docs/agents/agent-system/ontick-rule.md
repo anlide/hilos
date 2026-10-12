@@ -44,6 +44,9 @@ public function onTick(): void {
     // ❌ Heavy DB query
     $rows = Hilos::$db->events->findAll(); // might be slow
 
+    // ❌ Asking the database on every tick whether there is work - even a light query
+    $next = Hilos::$db->dataExports->nextPreparing(); // ten to a hundred queries a second, idle
+
     // ❌ sleep / usleep
     sleep(1);
 
@@ -51,6 +54,9 @@ public function onTick(): void {
     foreach ($this->millionItems as $item) { ... }
 }
 ```
+
+Work reaches an agent through an event — its own action, a signal — so raise a flag or fill an
+in-memory queue where it arrives, and read the database in `onStart()` only for what a restart left.
 
 ## Handling long operations
 
