@@ -45,6 +45,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     public const array AGENT_COMMANDS = [
         CliCommands::I18N_TEST_LANGUAGE_ON,
         CliCommands::I18N_TEST_LANGUAGE_OFF,
+        CliCommands::I18N_TEST_LANGUAGE_DELETE,
         CliCommands::I18N_TEST_LOCALE_ON,
         CliCommands::I18N_TEST_COUNTRY_OFF,
         CliCommands::I18N_TEST_COUNTRY_ON,
@@ -64,6 +65,9 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 return;
             case CliCommands::I18N_TEST_LANGUAGE_OFF:
                 $this->handleLanguageOffCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LANGUAGE_DELETE:
+                $this->handleLanguageDeleteCommand($data);
                 return;
             case CliCommands::I18N_TEST_LOCALE_ON:
                 $this->handleLocaleOnCommand($data);
@@ -207,6 +211,45 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             I18nTestCommandConstants::FIELD_CODE => $definition->code,
             I18nTestCommandConstants::FIELD_ENABLED => false,
+        ]));
+    }
+
+    /**
+     * Removes only the fixture row; existing default-language and foreign-key guards still apply.
+     * An absent fixture is already clean, so teardown may follow a failed setup too.
+     *
+     * @param CommandRequestDTO $data Request carrying a built-in language code
+     * @throws HilosException When wiring refuses the read or the command reply cannot be sent
+     */
+    private function handleLanguageDeleteCommand(CommandRequestDTO $data): void
+    {
+        $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
+        if (!is_string($code) || BuiltInI18nCatalog::language($code) === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'A built-in language code is required'));
+
+            return;
+        }
+
+        try {
+            Database::transactionStart();
+            Hilos::$db->languages[$code]?->actions->delete();
+            Database::transactionCommit();
+        } catch (WiringRefusal $refusal) {
+            Database::transactionRollback();
+            throw $refusal;
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Preserve the failure that prevented fixture removal.
+            }
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_CODE => $code,
         ]));
     }
 

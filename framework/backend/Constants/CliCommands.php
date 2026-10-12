@@ -273,6 +273,13 @@ final class CliCommands
     public const string I18N_TEST_LANGUAGE_OFF = 'test:i18n:language:off';
 
     /**
+     * Remove a built-in test language through its owner and existing item action.
+     *
+     * @var string Command: Delete a built-in language fixture (test-only)
+     */
+    public const string I18N_TEST_LANGUAGE_DELETE = 'test:i18n:language:delete';
+
+    /**
      * Create and enable a known countryless locale through the i18n library (test-only).
      *
      * The CLI process has no write ownership; the library answers over the command channel.

@@ -17,12 +17,16 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInLanguages;
+use Hilos\I18n\Exception\I18nRowFrozenException;
+use Hilos\Pages\I18n\HilosI18nLanguageUpdateTrait;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageAddActionDTO;
+use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageRowUpdateActionDTO;
 
 /**
  * AbstractHilosI18nLanguagesListPage - Abstract base for Hilos i18n languages list page.
@@ -31,12 +35,15 @@ use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageAddActionDTO;
  */
 abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
 {
+    use HilosI18nLanguageUpdateTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGES;
 
     public const PageReach REACH = PageReach::ROUTE;
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_LANGUAGE_ADD => HilosI18nLanguageAddActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_UPDATE => HilosI18nLanguageRowUpdateActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -51,6 +58,8 @@ abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
      * @throws AgentUnknownActionException When the action is unknown
      * @throws InvalidActionPayloadException When the payload has the wrong DTO type
      * @throws ValidationException When the code exists or the language or catalog names are invalid
+     * @throws TableActionException When the edited language does not exist
+     * @throws I18nRowFrozenException When the edited language is switched on
      * @throws HilosException When ownership, persistence or the transaction refuses the write
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -65,6 +74,15 @@ abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
                 $this->setActionSuccessMessage(BuiltInI18nCatalog::language($dto->languageCode) === null
                     ? "Custom language {$dto->languageCode} added and switched off for now."
                     : 'Language added and switched off for now.');
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_UPDATE:
+                if (!$dto instanceof HilosI18nLanguageRowUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nLanguageRowUpdateActionDTO::class, $dto);
+                }
+
+                $this->updateLanguage($dto);
 
                 return null;
 

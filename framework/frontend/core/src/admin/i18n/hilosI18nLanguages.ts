@@ -6,7 +6,10 @@ import { z } from 'zod'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosI18nLanguageContext } from './hilosI18nLanguage.js'
@@ -112,6 +115,18 @@ export const HILOS_I18N_LANGUAGES_COLUMNS: readonly HilosTableColumnOf<HilosI18n
       label: 'Enabled',
       sortable: true,
     },
+    {
+      key: HILOS_TABLE_ACTIONS_KEY,
+      label: '',
+      reads: [
+        HilosI18nLanguageRowKey.enabled,
+        HilosI18nLanguageRowKey.nativeName,
+        HilosI18nLanguageRowKey.rtl,
+        HilosI18nLanguageRowKey.isOwn,
+      ],
+      headerClass: 'text-end',
+      cellClass: 'text-end text-nowrap',
+    },
   ]
 
 /**
@@ -162,6 +177,12 @@ export function createHilosI18nLanguagesTable(
         HilosPages.I18N_LANGUAGES,
         HILOS_I18N_LANGUAGES_TABLE,
         rendered,
+      ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.I18N_LANGUAGES,
+        HILOS_I18N_LANGUAGES_TABLE,
+        rowKey,
       ),
     frame: {
       ...HILOS_I18N_LANGUAGES_FRAME,

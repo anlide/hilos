@@ -58,6 +58,7 @@ use Hilos\Core\CLI\Commands\I18nTestCountryOffCommand;
 use Hilos\Core\CLI\Commands\I18nTestCountryOnCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageOnCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageOffCommand;
+use Hilos\Core\CLI\Commands\I18nTestLanguageDeleteCommand;
 use Hilos\Core\CLI\Commands\I18nTestLocaleOnCommand;
 use Hilos\Core\CLI\Commands\LegalTestHoldCommand;
 use Hilos\Core\CLI\Commands\LlmPingCommand;
@@ -210,6 +211,7 @@ class CliManager
         $this->commands[CliCommands::LEGAL_TEST_HOLD] = new LegalTestHoldCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_ON] = new I18nTestLanguageOnCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_OFF] = new I18nTestLanguageOffCommand();
+        $this->commands[CliCommands::I18N_TEST_LANGUAGE_DELETE] = new I18nTestLanguageDeleteCommand();
         $this->commands[CliCommands::I18N_TEST_LOCALE_ON] = new I18nTestLocaleOnCommand();
         $this->commands[CliCommands::I18N_TEST_COUNTRY_OFF] = new I18nTestCountryOffCommand();
         $this->commands[CliCommands::I18N_TEST_COUNTRY_ON] = new I18nTestCountryOnCommand();

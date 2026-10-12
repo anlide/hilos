@@ -113,6 +113,18 @@ export {
   hilosI18nLanguageSwitchOn,
 } from './admin/i18n/hilosI18nLanguageSwitch.js'
 export {
+  HILOS_I18N_LANGUAGE_UPDATE_ACTION,
+  HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
+  HILOS_I18N_LANGUAGE_NATIVE_NAME_MAX,
+  HILOS_I18N_LANGUAGE_WINDOW_COPY,
+  createHilosI18nLanguageRowWindow,
+  createHilosI18nLanguageCardWindow,
+  type HilosI18nLanguageEditable,
+  type HilosI18nLanguageEditFields,
+  type HilosI18nLanguageWindowMode,
+  type HilosI18nLanguageWindow,
+} from './admin/i18n/hilosI18nLanguageWindow.js'
+export {
   HILOS_I18N_COUNTRY_SWITCH_OFF_ACTION,
   HILOS_I18N_COUNTRY_SWITCH_OFF_COPY,
   HILOS_I18N_COUNTRY_SWITCH_ON_ACTION,

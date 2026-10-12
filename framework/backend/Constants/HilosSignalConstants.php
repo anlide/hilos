@@ -273,6 +273,18 @@ final class HilosSignalConstants
     /** Client → language page: switch on one language; the page replies with action success or failure. */
     public const string HILOS_I18N_LANGUAGE_SWITCH_ON = 'hilos_i18n_language_switch_on';
 
+    /**
+     * Client → language card page: save a switched-off language's native name and writing direction;
+     * the page replies with action success or failure.
+     */
+    public const string HILOS_I18N_LANGUAGE_UPDATE = 'hilos_i18n_language_update';
+
+    /**
+     * Client → languages list page: the same save from a row of the languages table —
+     * one action cannot belong to two pages.
+     */
+    public const string HILOS_I18N_LANGUAGE_ROW_UPDATE = 'hilos_i18n_language_row_update';
+
     /** Client → language locales page: add one switched-off locale. */
     public const string HILOS_I18N_LOCALE_ADD = 'hilos_i18n_locale_add';
 

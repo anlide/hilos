@@ -6,6 +6,7 @@ const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 const REPLY_TIMEOUT_MS = 15_000
 const LANGUAGE_ON_COMMAND = 'test:i18n:language:on'
 const LANGUAGE_OFF_COMMAND = 'test:i18n:language:off'
+const LANGUAGE_DELETE_COMMAND = 'test:i18n:language:delete'
 const LOCALE_ON_COMMAND = 'test:i18n:locale:on'
 const COUNTRY_ON_COMMAND = 'test:i18n:country:on'
 const COUNTRY_OFF_COMMAND = 'test:i18n:country:off'
@@ -32,6 +33,15 @@ export async function switchLanguageOn(code: string): Promise<void> {
  */
 export async function switchLanguageOff(code: string): Promise<void> {
   await sendCommand(LANGUAGE_OFF_COMMAND, { code })
+}
+
+/**
+ * Remove a browser test's built-in language fixture through its owner.
+ *
+ * @param code Two-letter language code of the fixture to remove.
+ */
+export async function deleteLanguage(code: string): Promise<void> {
+  await sendCommand(LANGUAGE_DELETE_COMMAND, { code })
 }
 
 /**

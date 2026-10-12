@@ -171,9 +171,15 @@ The item actions of all three tables refuse edits of switched-on rows, whoever
 calls them. The section and reflow share that write door; switching on or off
 always remains available.
 
-- The server refuses to edit a switched-on language, and its edit form is
-  disabled with the instruction to switch off, edit and switch on
-  (not in the code yet — HIL-1485).
+- The server refuses to edit a switched-on language (`LanguageActions::update()`);
+  the language window shows its form disabled with the instruction to switch off,
+  edit and switch on. The window opens from a row of the languages table and from
+  the Main section of the language card. One action cannot belong to two pages,
+  so the card sends `hilos_i18n_language_update` and the row
+  `hilos_i18n_language_row_update`; both save through one page trait into the same
+  door. For a known language the window says in one line that the reflow brings
+  the catalog's values back while the language stays off; an own language is
+  never refreshed.
 - The same server refusal and disabled form apply to a switched-on country
   (not in the code yet — HIL-1496).
 - The same server refusal and disabled form apply to a switched-on locale.
@@ -189,6 +195,10 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   The section's language card switches off another language through a confirmation
   window and reports success without a tab count; its locales and names stay in place.
   Tests create and enable a known language with `test:i18n:language:on <code>`.
+  A test removes its language fixture in teardown with `test:i18n:language:delete <code>`:
+  the library calls the existing item delete action, answers after commit, and accepts
+  an already absent fixture. The default-language and database reference guards still
+  apply; the command neither removes dependent rows nor supplies the section's delete UI.
 - The language card switches on a disabled language through a confirmation
   window. It shows the number of names and whether the countryless locale is
   missing, switched off or switched on. A missing or switched-off countryless
@@ -456,7 +466,9 @@ serves the section root at `/hilos/i18n` and the languages list at
 code, native name, direction, enabled state, locale/name counts, and read-only
 delete verdict. Its summary also carries whether the countryless locale is
 missing, off or on. The main card has Switch off and Switch on controls
-(HIL-1486/1487); its other action controls belong to HIL-1485/1488.
+(HIL-1486/1487) and the edit or view control of its Main section, which also
+carries the frozen mark (HIL-1485); its other action controls belong to HIL-1488.
+A row of the languages table carries the same edit or view control (HIL-1485).
 The Vue locales page adds a locale from a pair without one, edits a switched-off
 locale, and shows a switched-on locale in the same window (HIL-1491). The server
 actions serve all six demos; deletion is HIL-1492 and switching the locale from

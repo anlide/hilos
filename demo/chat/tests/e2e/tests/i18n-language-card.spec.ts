@@ -51,7 +51,10 @@ test('opens the default language card directly with read-only details and staged
   ).toHaveAttribute('href', '/hilos/i18n/languages/en/locales')
   await expect(
     page.getByTestId('language-card-main').locator('button, input'),
-  ).toHaveCount(0)
+  ).toHaveCount(1)
+  await expect(
+    page.getByTestId('language-card-main').getByTestId('language-card-view'),
+  ).toBeVisible()
   await expect(
     page.getByTestId('language-card-state').locator('button'),
   ).toHaveCount(1)

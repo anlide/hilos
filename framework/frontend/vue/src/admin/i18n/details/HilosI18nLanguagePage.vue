@@ -3,6 +3,8 @@ browser datum for both the initial view and live updates. -->
 <script setup lang="ts">
 import {
   createHilosI18nLanguageCard,
+  createHilosI18nLanguageCardWindow,
+  HILOS_I18N_LANGUAGE_WINDOW_COPY,
   HilosPages,
   type HilosI18nLanguageContext,
 } from '@hilos/core'
@@ -14,9 +16,16 @@ import { useSignal } from '../../../useSignal.js'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 import HilosI18nLanguageSwitchOff from './HilosI18nLanguageSwitchOff.vue'
 import HilosI18nLanguageSwitchOn from './HilosI18nLanguageSwitchOn.vue'
+import HilosI18nLanguageWindow from './HilosI18nLanguageWindow.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
-const card = useSignal(createHilosI18nLanguageCard(props.context))
+const cardSignal = createHilosI18nLanguageCard(props.context)
+const card = useSignal(cardSignal)
+const languageWindow = createHilosI18nLanguageCardWindow(
+  cardSignal,
+  props.context,
+)
+const copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error('HilosI18nLanguagePage requires a provided Hilos router.')
@@ -33,7 +42,38 @@ const loading = useSignal(router.pageLoading)
       />
 
       <section class="mb-4" data-id="language-card-main">
-        <h2 class="h5">Main</h2>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h2 class="h5 mb-0 flex-grow-1">Main</h2>
+          <p
+            v-if="card.enabled"
+            class="badge text-bg-warning mb-0"
+            data-id="language-card-frozen"
+          >
+            Language enabled — frozen
+          </p>
+          <button
+            v-if="card.enabled"
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :title="copy.open.view"
+            :aria-label="copy.open.view"
+            data-id="language-card-view"
+            @click="languageWindow.open()"
+          >
+            <i class="bi bi-eye" aria-hidden="true"></i>
+          </button>
+          <button
+            v-else
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            :title="copy.open.edit"
+            :aria-label="copy.open.edit"
+            data-id="language-card-edit"
+            @click="languageWindow.open()"
+          >
+            <i class="bi bi-pencil" aria-hidden="true"></i>
+          </button>
+        </div>
         <dl class="row mb-0 border rounded-3 p-3">
           <dt class="col-sm-4">Code</dt>
           <dd class="col-sm-8 text-uppercase" data-id="language-card-code">
@@ -53,13 +93,6 @@ const loading = useSignal(router.pageLoading)
       <section class="mb-4" data-id="language-card-state">
         <h2 class="h5">State</h2>
         <div class="border rounded-3 p-3">
-          <p
-            v-if="card.enabled"
-            class="badge text-bg-warning mb-3"
-            data-id="language-card-frozen"
-          >
-            Language enabled — frozen
-          </p>
           <dl class="row mb-0">
             <dt class="col-sm-4">Availability</dt>
             <dd class="col-sm-8">
@@ -105,5 +138,6 @@ const loading = useSignal(router.pageLoading)
     >
       Language details are no longer available.
     </p>
+    <HilosI18nLanguageWindow :window="languageWindow" />
   </HilosAdminPage>
 </template>

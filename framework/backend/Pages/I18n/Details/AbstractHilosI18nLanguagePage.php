@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -17,8 +18,11 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
+use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOnActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageUpdateActionDTO;
+use Hilos\Pages\I18n\HilosI18nLanguageUpdateTrait;
 
 /**
  * AbstractHilosI18nLanguagePage - Abstract base for Hilos i18n language page.
@@ -27,6 +31,8 @@ use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOnActionDTO;
  */
 abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCodePage
 {
+    use HilosI18nLanguageUpdateTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGE;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -34,6 +40,7 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosI18nLanguageSwitchOffActionDTO::class,
         HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosI18nLanguageSwitchOnActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_LANGUAGE_UPDATE => HilosI18nLanguageUpdateActionDTO::class,
     ];
 
     /** @var list<string> Sources of the main language card */
@@ -57,6 +64,8 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
      * @throws InvalidActionPayloadException When the action payload has the wrong type
      * @throws TableActionException When the language does not exist
      * @throws DefaultLanguageProtectedException When the language is the configured default
+     * @throws I18nRowFrozenException When the edited language is switched on
+     * @throws ValidationException When the native name is invalid
      * @throws HilosException When the lookup or write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -83,6 +92,15 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                     ?? throw new TableActionException('Unknown language: ' . $dto->languageCode);
                 $language->actions->switchOn();
                 $this->setActionSuccessMessage('Language switched on.');
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_LANGUAGE_UPDATE:
+                if (!$dto instanceof HilosI18nLanguageUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nLanguageUpdateActionDTO::class, $dto);
+                }
+
+                $this->updateLanguage($dto);
 
                 return null;
 

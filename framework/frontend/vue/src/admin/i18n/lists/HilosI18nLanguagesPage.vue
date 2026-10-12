@@ -11,7 +11,9 @@ import {
   createHilosI18nBuiltInCatalog,
   createHilosI18nBuiltInLanguages,
   createHilosI18nLanguageAdd,
+  createHilosI18nLanguageRowWindow,
   createHilosI18nLanguagesTable,
+  HILOS_I18N_LANGUAGE_WINDOW_COPY,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_LEGEND,
   HilosPages,
@@ -25,6 +27,7 @@ import HilosLink from '../../../HilosLink.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
+import HilosI18nLanguageWindow from '../details/HilosI18nLanguageWindow.vue'
 import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
 import HilosI18nLanguageAdd from './HilosI18nLanguageAdd.vue'
 import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
@@ -46,6 +49,11 @@ const add = createHilosI18nLanguageAdd(props.context, catalog)
 const languages = createHilosI18nLanguagesTable(props.context, {
   openAdd: add.open,
 })
+const languageWindow = createHilosI18nLanguageRowWindow(
+  languages.controller,
+  props.context,
+)
+const copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
 
 onMounted(() => languages.start())
 onUnmounted(() => {
@@ -152,6 +160,30 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
           :data-id="`i18n-languages-enabled-${row.code}`"
         />
       </template>
+      <template #cell-actions="{ row }">
+        <button
+          v-if="row.enabled"
+          type="button"
+          class="btn btn-sm btn-outline-secondary"
+          :title="copy.open.view"
+          :aria-label="copy.open.view"
+          :data-id="`i18n-languages-view-${row.code}`"
+          @click="languageWindow.open(row.code)"
+        >
+          <i class="bi bi-eye" aria-hidden="true"></i>
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn btn-sm btn-outline-primary"
+          :title="copy.open.edit"
+          :aria-label="copy.open.edit"
+          :data-id="`i18n-languages-edit-${row.code}`"
+          @click="languageWindow.open(row.code)"
+        >
+          <i class="bi bi-pencil" aria-hidden="true"></i>
+        </button>
+      </template>
     </HilosViewportTable>
     <HilosI18nMarksLegend
       :rows="HILOS_I18N_LANGUAGES_LEGEND"
@@ -159,5 +191,6 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
       class="mt-4"
     />
     <HilosI18nLanguageAdd :add="add" :context="context" />
+    <HilosI18nLanguageWindow :window="languageWindow" />
   </HilosAdminPage>
 </template>

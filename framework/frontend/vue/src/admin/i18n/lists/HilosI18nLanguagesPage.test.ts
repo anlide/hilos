@@ -113,6 +113,9 @@ function context(rows: LanguageSlot[] = [ENGLISH, OWN]) {
     sendTableRendered(): boolean {
       return true
     },
+    sendTableRowFocus(): boolean {
+      return true
+    },
     on(event: string, listener: Listener): () => void {
       if (event === 'tableWindow') {
         windowListeners.add(listener)
@@ -193,6 +196,33 @@ describe('HilosI18nLanguagesPage', () => {
     ).toBe(true)
     expect(view.text()).toContain('Qx own tongue')
     expect(view.html()).toContain('text-body-secondary')
+    const eye = view.get('[data-id="i18n-languages-view-en"]')
+    expect(eye.attributes('aria-label')).toBe('View language: nothing to edit')
+    await eye.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-language-edit-title"]')
+        ?.textContent,
+    ).toContain('Language · English')
+    expect(
+      document.querySelector('[data-id="i18n-language-edit-submit"]'),
+    ).toBeNull()
+    document
+      .querySelector<HTMLButtonElement>('[data-id="i18n-language-edit-close"]')
+      ?.click()
+    await nextTick()
+    const pencil = view.get('[data-id="i18n-languages-edit-qx"]')
+    expect(pencil.attributes('aria-label')).toBe('Edit language')
+    await pencil.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-language-edit-title"]')
+        ?.textContent,
+    ).toContain('Edit language · Qx own tongue')
+    expect(
+      document
+        .querySelector('[data-id="i18n-language-edit-plate"]')
+        ?.getAttribute('data-kind'),
+    ).toBe('own')
+    view.unmount()
   })
 
   it('renders the catalog callout with counts and omits it when data is absent', async () => {

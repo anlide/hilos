@@ -202,6 +202,73 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
         self::assertNull(Hilos::$db->languages['zz']);
     }
 
+    public function testDeleteCommandRemovesEditedFixtureAndAllowsRepeatedCleanup(): void
+    {
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->languages->actions->create('fr', 'Français', false);
+            Hilos::$db->languages['fr']->actions->update('Edited fixture', true);
+        });
+
+        for ($attempt = 0; $attempt < 2; ++$attempt) {
+            $this->underAgent($this->agent, function (): void {
+                $this->agent->onSignalCommand(new CommandRequestDTO('language-delete', CliCommands::I18N_TEST_LANGUAGE_DELETE, [
+                    I18nTestCommandConstants::FIELD_CODE => 'fr',
+                ]), '', '');
+            });
+            $reply = $this->drainCommandReply();
+            self::assertTrue($reply->isOk());
+            self::assertSame(['code' => 'fr'], $reply->payload);
+            self::assertNull(Hilos::$db->languages['fr']);
+        }
+    }
+
+    public function testDeleteCommandKeepsDefaultAndReferencedLanguage(): void
+    {
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->languages->actions->create('en', 'English', false)->actions->switchOn();
+            Hilos::$db->languages->actions->create('fr', 'Français', false);
+            Hilos::$db->locales->actions->create(
+                Hilos::$db->languages['fr'],
+                null,
+                'YYYY-MM-DD',
+                'HH:mm:ss',
+                '1,000.00',
+                '+XX-XXXX-XXXX',
+                'Street, House, City, Index',
+                MeasurementSystem::METRIC,
+                'und',
+            );
+        });
+
+        foreach (['en', 'fr'] as $code) {
+            $this->underAgent($this->agent, function () use ($code): void {
+                $this->agent->onSignalCommand(new CommandRequestDTO('language-delete-guard', CliCommands::I18N_TEST_LANGUAGE_DELETE, [
+                    I18nTestCommandConstants::FIELD_CODE => $code,
+                ]), '', '');
+            });
+            $reply = $this->drainCommandReply();
+            self::assertFalse($reply->isOk());
+            if ($code === 'en') {
+                self::assertStringContainsString('cannot be deleted', $reply->payload['message']);
+            }
+            self::assertNotNull(Hilos::$db->languages[$code]);
+        }
+        self::assertNotNull(Hilos::$db->locales['fr']);
+        self::assertTrue(Hilos::$db->languages['en']->enabled);
+    }
+
+    public function testDeleteCommandRefusesMissingMalformedAndUnknownCodes(): void
+    {
+        foreach ([[], ['code' => 42], ['code' => 'FR'], ['code' => 'zz']] as $payload) {
+            $this->underAgent($this->agent, function () use ($payload): void {
+                $this->agent->onSignalCommand(
+                    new CommandRequestDTO('language-delete-invalid', CliCommands::I18N_TEST_LANGUAGE_DELETE, $payload), '', '',
+                );
+            });
+            self::assertFalse($this->drainCommandReply()->isOk());
+        }
+    }
+
     private function drainCommandReply(): CommandReplyDTO
     {
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {

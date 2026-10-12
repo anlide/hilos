@@ -11,6 +11,8 @@ import {
   resolveHilosI18nLanguageRow,
 } from '../../../src/admin/i18n/hilosI18nLanguages.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
 
 /** A language row as the backend sends it, its slot keyed `language`. */
 function languageRow(
@@ -68,11 +70,59 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
       'nativeName',
       'rtl',
       'enabled',
+      'actions',
     ])
     expect(
-      HILOS_I18N_LANGUAGES_COLUMNS.every((column) => column.sortable),
+      HILOS_I18N_LANGUAGES_COLUMNS.slice(0, 4).every(
+        (column) => column.sortable,
+      ),
     ).toBe(true)
+    expect(HILOS_I18N_LANGUAGES_COLUMNS[4]?.sortable).toBeUndefined()
+    expect(HILOS_I18N_LANGUAGES_COLUMNS[4]?.reads).toEqual([
+      'enabled',
+      'nativeName',
+      'rtl',
+      'isOwn',
+    ])
     expect(HILOS_I18N_LANGUAGES_COLUMNS[0]?.card).toBe('title')
+  })
+
+  it('takes the edited row into server focus and releases it when the window closes', () => {
+    const sendTableRowFocus = vi.fn()
+    const context = {
+      connection: { sendTableRowFocus } as unknown as HilosConnection,
+    } as HilosI18nLanguageContext
+    const table = createHilosI18nLanguagesTable(context, { openAdd: vi.fn() })
+    table.controller.ingestWindow(
+      [
+        languageRow('uk', {
+          code: 'uk',
+          nativeName: 'Українська',
+          rtl: false,
+          enabled: false,
+          isDefault: false,
+          isOwn: false,
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      100,
+    )
+    expect(table.controller.focusRow('uk')?.code).toBe('uk')
+    expect(sendTableRowFocus).toHaveBeenCalledWith(
+      HilosPages.I18N_LANGUAGES,
+      HILOS_I18N_LANGUAGES_TABLE,
+      'uk',
+    )
+    table.controller.releaseFocus()
+    expect(sendTableRowFocus).toHaveBeenLastCalledWith(
+      HilosPages.I18N_LANGUAGES,
+      HILOS_I18N_LANGUAGES_TABLE,
+      '',
+    )
+    table.dispose()
   })
 
   it('binds Add language to the opener of each table instance', () => {

@@ -136,6 +136,29 @@ describe('HilosI18nLanguagePage', () => {
         .attributes('disabled'),
     ).toBeDefined()
     expect(h.view.findAll('input')).toHaveLength(0)
+    const main = h.view.get('[data-id="language-card-main"]')
+    expect(main.get('[data-id="language-card-frozen"]').text()).toBe(
+      'Language enabled — frozen',
+    )
+    expect(
+      h.view
+        .find(
+          '[data-id="language-card-state"] [data-id="language-card-frozen"]',
+        )
+        .exists(),
+    ).toBe(false)
+    expect(
+      main.get('[data-id="language-card-view"]').attributes('aria-label'),
+    ).toBe('View language: nothing to edit')
+    expect(main.find('[data-id="language-card-edit"]').exists()).toBe(false)
+    await main.get('[data-id="language-card-view"]').trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-language-edit-title"]')
+        ?.textContent,
+    ).toContain('Language · First name')
+    expect(
+      document.querySelector('[data-id="i18n-language-edit-submit"]'),
+    ).toBeNull()
     h.view.unmount()
   })
 
@@ -181,6 +204,19 @@ describe('HilosI18nLanguagePage', () => {
     expect(h.view.find('[data-id="language-card-switch-on"]').text()).toBe(
       'Switch on',
     )
+    expect(h.view.find('[data-id="language-card-view"]').exists()).toBe(false)
+    const edit = h.view.get('[data-id="language-card-edit"]')
+    expect(edit.attributes('aria-label')).toBe('Edit language')
+    await edit.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-language-edit-title"]')
+        ?.textContent,
+    ).toContain('Edit language · Changed name')
+    expect(
+      document
+        .querySelector('[data-id="i18n-language-edit-plate"]')
+        ?.getAttribute('data-kind'),
+    ).toBe('own')
 
     h.scope.data.set(LANGUAGE_CARD_DATA, [])
     await nextTick()
