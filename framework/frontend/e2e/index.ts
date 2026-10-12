@@ -20,6 +20,7 @@
 // any demo runner does.
 
 export {
+  fitsInScrollport,
   liesAbove,
   overlapSpot,
   shareOneRow,

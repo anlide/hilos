@@ -9,29 +9,4 @@ export interface StagedChild {
   child: string
   leaf: string
 }
-export const STAGED_CHILDREN: readonly StagedChild[] = [
-  {
-    layer: 'vue',
-    parent: 'hilos_daemon',
-    child: 'hilos_daemon_workers',
-    leaf: 'HIL-1391',
-  },
-  {
-    layer: 'vue',
-    parent: 'hilos_daemon',
-    child: 'hilos_daemon_agents',
-    leaf: 'HIL-1392',
-  },
-  {
-    layer: 'vue',
-    parent: 'hilos_daemon',
-    child: 'hilos_daemon_cron',
-    leaf: 'HIL-1393',
-  },
-  {
-    layer: 'vue',
-    parent: 'hilos_daemon',
-    child: 'hilos_daemon_http_server',
-    leaf: 'HIL-1394',
-  },
-]
+export const STAGED_CHILDREN: readonly StagedChild[] = []

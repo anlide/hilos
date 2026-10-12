@@ -404,10 +404,15 @@ mismatch is a cluster-wide address without one.
 The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. Each key stays in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
-for every frontend that has not built it. Vue builds Workers (HIL-1391),
-Agents (HIL-1392), Cron (HIL-1393) and HTTP (HIL-1394) before the root, so it
-serves those staged children by direct address (`STAGED_CHILDREN`); React and
-Angular still leave all four unbuilt.
+for every frontend that has not built it. Vue builds the root (HIL-1389),
+Workers (HIL-1391), Agents (HIL-1392), Cron (HIL-1393) and HTTP (HIL-1394).
+The root reads its node overview and safe primary database address from one
+whole page answer, alongside its catalog identity and placement windows. Its
+local node selection supplies child-card addresses and the inspector's log
+link, without another subscription or action. Chat and binance-btc-tracker mount
+it through a thin wrapper with their `connection` and `scopes` context; the
+built Vue children no longer need staged rows under the root. React and Angular
+still leave these five pages unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

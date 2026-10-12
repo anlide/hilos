@@ -249,6 +249,97 @@ describe('unbuilt pages', () => {
   })
 })
 
+describe('route parameter roundtrip through navigation', () => {
+  it.each(['node-1', '42', 'node /?#%', '%2F', 'узел🌍'])(
+    'keeps %s raw on cold start, navigate, popstate and replacePath',
+    (value) => {
+      const { env, pop } = fakeEnvironment(router.path('user', { id: value })!)
+      const { pages, calls } = fakePages()
+      const navigator = createHilosRouter(router, pages, env)
+      navigator.start()
+      expect(calls).toEqual([{ page: 'user', params: { id: value } }])
+      expect(navigator.currentRoute.get().params).toEqual({ id: value })
+      navigator.navigate(navigator.resolvePath('main')!)
+      navigator.navigate(navigator.resolvePath('user', { id: value })!)
+      expect(calls.at(-1)).toEqual({ page: 'user', params: { id: value } })
+      pop('/')
+      pop(navigator.resolvePath('user', { id: value })!)
+      expect(calls.at(-1)).toEqual({ page: 'user', params: { id: value } })
+      const count = calls.length
+      navigator.replacePath(navigator.resolvePath('user', { id: '%2F' })!)
+      expect(navigator.currentRoute.get().params).toEqual({ id: '%2F' })
+      expect(calls).toHaveLength(count)
+      navigator.stop()
+    },
+  )
+
+  it('keeps optional captures raw on the subscription and address replacement', () => {
+    const params = {
+      nodeId: 'node /?#%',
+      source: 'live',
+      stream: 'worker /?#%2F.log',
+    }
+    const { env, pop } = fakeEnvironment(viewerRouter.path('viewer', params)!)
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(viewerRouter, pages, env)
+    navigator.start()
+    expect(calls).toEqual([{ page: 'viewer', params }])
+    navigator.navigate(
+      navigator.resolvePath('viewer', {
+        nodeId: params.nodeId,
+        source: 'live',
+      })!,
+    )
+    expect(calls.at(-1)?.params).toEqual({
+      nodeId: params.nodeId,
+      source: 'live',
+    })
+    pop(navigator.resolvePath('viewer', params)!)
+    expect(calls.at(-1)?.params).toEqual(params)
+    const count = calls.length
+    navigator.replacePath(navigator.resolvePath('viewer', params)!)
+    expect(navigator.currentRoute.get().params).toEqual(params)
+    expect(calls).toHaveLength(count)
+    navigator.stop()
+  })
+
+  it('subscribes only the configured fallback for malformed captures', () => {
+    const { env } = fakeEnvironment('/user/%ED%A0%80')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    expect(calls).toEqual([{ page: 'main', params: {} }])
+    expect(navigator.currentRoute.get()).toEqual({
+      page: 'main',
+      params: {},
+      admin: false,
+    })
+    expect(navigator.resolvePath('user', { id: '\ud800' })).toBeUndefined()
+    navigator.stop()
+  })
+
+  it('keeps the unbuilt gate closed for encoded optional captures', () => {
+    const { env } = fakeEnvironment(
+      viewerRouter.path('viewer', { nodeId: 'node /?#%' })!,
+    )
+    const { pages, calls, refused } = fakePages()
+    const navigator = createHilosRouter(
+      viewerRouter,
+      pages,
+      env,
+      undefined,
+      new Set(['viewer']),
+    )
+    navigator.start()
+    expect(calls).toEqual([])
+    expect(refused).toEqual(['viewer'])
+    expect(
+      navigator.resolvePath('viewer', { nodeId: 'node /?#%' }),
+    ).toBeUndefined()
+    navigator.stop()
+  })
+})
+
 describe('createHilosRouter', () => {
   it('announces start, navigation, and history before publishing or subscribing', () => {
     const { env, pop } = fakeEnvironment('/')

@@ -1,4 +1,5 @@
 import {
+  type HilosDaemonContext,
   type HilosDaemonAgentsContext,
   type HilosDaemonCronContext,
   type HilosDaemonHttpContext,
@@ -6,6 +7,12 @@ import {
 } from '@hilos/core'
 import { actions, connection } from '../../../bootstrap/connection.js'
 import { scopes } from '../../../bootstrap/session.js'
+
+/** The tracker demo's binding for the Daemon root. */
+export const hilosDaemonContext: HilosDaemonContext = {
+  connection,
+  scopes,
+}
 
 /** The tracker demo's binding for the Daemon workers page. */
 export const hilosDaemonWorkersContext: HilosDaemonWorkersContext = {

@@ -43,7 +43,8 @@ export interface PageRouter {
    * segments into params, and leaves a `{name?}` segment the path stopped short
    * of out of params entirely. An unmatched path resolves to the configured
    * fallback page with no params, carrying that page's own declared surface
-   * type.
+   * type. Captures are decoded exactly once after matching the path structure;
+   * malformed percent encoding or UTF-8 resolves to the same fallback.
    *
    * @param pathname The location pathname to resolve.
    */
@@ -52,7 +53,8 @@ export interface PageRouter {
    * The path a page key names, with each `{name}` slot filled from `params`. An
    * unfilled `{name?}` slot is cut together with the slash in front of it, so a
    * page entered with none of its optional tail resolves to the bare path rather
-   * than to one with empty segments.
+   * than to one with empty segments. Every supplied raw value is encoded as one
+   * path segment; an unencodable value returns `undefined`.
    *
    * `undefined` for a page the router does not carry, and for one whose required
    * slot `params` does not cover: a link with no target is drawn as no link,
@@ -169,15 +171,18 @@ export function createPageRouter(
           continue
         }
         const params: Record<string, string> = {}
-        route.paramNames.forEach((name, index) => {
-          // An optional slot the path stopped short of captures nothing, and is
-          // left out of params entirely rather than added as an empty string —
-          // the page reads it as absent, not as present and blank.
-          const value = captured[index + 1]
-          if (value !== undefined) {
-            params[name] = value
-          }
-        })
+        try {
+          route.paramNames.forEach((name, index) => {
+            // Decode only captures: an encoded slash belongs to the value,
+            // while an absent optional capture stays absent.
+            const value = captured[index + 1]
+            if (value !== undefined) {
+              params[name] = decodeURIComponent(value)
+            }
+          })
+        } catch {
+          return { page: options.fallback, params: {}, admin: fallbackAdmin }
+        }
         return { page: route.page, params, admin: route.admin }
       }
       return { page: options.fallback, params: {}, admin: fallbackAdmin }
@@ -194,28 +199,32 @@ export function createPageRouter(
       // not by reading the result back: the result of dropping one is an address
       // that still looks like an address and names another page's row.
       let covered = true
-      const resolved = template
-        .replace(OPTIONAL_ROUTE_SLOT_PATTERN, (_match, name: string) => {
-          const value = params[name]
-
-          return value === undefined ? '' : `/${value}`
-        })
-        .replace(
-          ROUTE_SLOT_PATTERN,
-          (_match, name: string, optional: string) => {
+      try {
+        const resolved = template
+          .replace(OPTIONAL_ROUTE_SLOT_PATTERN, (_match, name: string) => {
             const value = params[name]
-            if (value !== undefined) {
-              return value
-            }
-            if (optional !== '?') {
-              covered = false
-            }
 
-            return ''
-          },
-        )
+            return value === undefined ? '' : `/${encodeURIComponent(value)}`
+          })
+          .replace(
+            ROUTE_SLOT_PATTERN,
+            (_match, name: string, optional: string) => {
+              const value = params[name]
+              if (value !== undefined) {
+                return encodeURIComponent(value)
+              }
+              if (optional !== '?') {
+                covered = false
+              }
 
-      return covered ? resolved : undefined
+              return ''
+            },
+          )
+
+        return covered ? resolved : undefined
+      } catch {
+        return undefined
+      }
     },
   }
 }

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { signUpAdmin } from '../helpers/adminGrant'
-import { gotoPage, PAGE_REFUSED } from '../helpers/page'
+import { signUpAdmin } from '../helpers/adminGrant.js'
+import { gotoPage, PAGE_REFUSED } from '../helpers/page.js'
 
 test('answers 404 for a page the view layer has not built', async ({
   page,
@@ -21,9 +21,11 @@ test('draws no card for a page the view layer has not built', async ({
   await signUpAdmin(page)
   await gotoPage(page, '/hilos')
   await expect(page.getByTestId('dashboard-card-hilos_users')).toBeVisible()
+  const daemonCard = page.getByTestId('dashboard-card-hilos_daemon')
+  await expect(daemonCard).toBeVisible()
+  await expect(daemonCard).toHaveAttribute('href', '/hilos/daemon')
   for (const key of [
     'hilos_roles',
-    'hilos_daemon',
     'hilos_billing',
     'hilos_mcp_skills',
     'hilos_sil',

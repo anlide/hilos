@@ -317,3 +317,108 @@ describe('PageRouter.path', () => {
     }
   })
 })
+
+describe('route parameter codec', () => {
+  const router = createPageRouter(
+    {
+      fallback: { path: '/', admin: true },
+      fixed: { path: '/required/fixed', admin: false },
+      required: { path: '/required/{id}/{detail}', admin: false },
+      optional: { path: '/optional/{nodeId?}/{stream?}', admin: true },
+    },
+    { fallback: 'fallback' },
+  )
+
+  it.each([
+    'node-1',
+    '42',
+    'with space',
+    '/?#',
+    '%',
+    '%2F',
+    '%252F',
+    'узел🌍',
+    '{id}',
+  ])('roundtrips every required and optional capture for %s', (value) => {
+    for (const [page, params, expected, admin] of [
+      [
+        'required',
+        { id: value, detail: value },
+        `/required/${encodeURIComponent(value)}/${encodeURIComponent(value)}`,
+        false,
+      ],
+      [
+        'optional',
+        { nodeId: value, stream: value },
+        `/optional/${encodeURIComponent(value)}/${encodeURIComponent(value)}`,
+        true,
+      ],
+      [
+        'optional',
+        { nodeId: value },
+        `/optional/${encodeURIComponent(value)}`,
+        true,
+      ],
+    ] as const) {
+      const path = router.path(page, params)
+      expect(path).toBe(expected)
+      expect(router.match(path!)).toEqual({ page, params, admin })
+    }
+  })
+
+  it('decodes a captured encoded slash once without changing path structure', () => {
+    expect(router.match('/required/a%2Fb/%252F').params).toEqual({
+      id: 'a/b',
+      detail: '%2F',
+    })
+    expect(router.match('/optional').params).toEqual({})
+    expect(router.match('/required/fixed')).toEqual({
+      page: 'fixed',
+      params: {},
+      admin: false,
+    })
+  })
+
+  it.each(['%', '%2', '%GG', '%C0%AF', '%ED%A0%80', '%E2%82', '%FF'])(
+    'refuses malformed percent encoding and UTF-8 %s without partial params',
+    (value) => {
+      expect(router.match(`/required/valid/${value}`)).toEqual({
+        page: 'fallback',
+        params: {},
+        admin: true,
+      })
+      expect(router.match(`/optional/valid/${value}`)).toEqual({
+        page: 'fallback',
+        params: {},
+        admin: true,
+      })
+      const publicFallback = createPageRouter(
+        {
+          home: { path: '/', admin: false },
+          user: { path: '/user/{id}', admin: true },
+        },
+        { fallback: 'home' },
+      )
+      expect(publicFallback.match(`/user/${value}`)).toEqual({
+        page: 'home',
+        params: {},
+        admin: false,
+      })
+    },
+  )
+
+  it.each(['\ud800', '\udfff'])(
+    'resolves no link for an unencodable value',
+    (value) => {
+      expect(
+        router.path('required', { id: value, detail: 'valid' }),
+      ).toBeUndefined()
+      expect(
+        router.path('required', { id: 'valid', detail: value }),
+      ).toBeUndefined()
+      expect(
+        router.path('optional', { nodeId: 'valid', stream: value }),
+      ).toBeUndefined()
+    },
+  )
+})

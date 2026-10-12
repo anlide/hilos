@@ -6,6 +6,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createSignal,
+  createAppPageRouter,
 } from '@hilos/core'
 import type {
   HilosConnection,
@@ -143,6 +144,62 @@ describe('HilosAdminPage', () => {
     expect(wrapper.find('[data-id="hilos-admin-children"]').exists()).toBe(
       false,
     )
+  })
+
+  it('merges child params for cards while keeping breadcrumbs on route params', async () => {
+    const identity: HilosPageIdentity = {
+      label: 'Daemon',
+      lead: '',
+      breadcrumb: [
+        { page: HilosPages.DAEMON_WORKERS, label: 'Route node' },
+        { page: HilosPages.DAEMON, label: 'Daemon' },
+      ],
+      children: [
+        {
+          page: HilosPages.DAEMON_WORKERS,
+          label: 'Workers',
+          lead: '',
+          icon: null,
+        },
+      ],
+    }
+    const matcher = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
+    const navigation: HilosRouter = {
+      ...router(identity),
+      currentRoute: createSignal<PageRouteMatch>({
+        page: HilosPages.DAEMON,
+        params: { nodeId: 'route-node' },
+        admin: true,
+      }),
+      resolvePath: matcher.path,
+    }
+    const wrapper = mount(HilosAdminPage, {
+      props: { page: HilosPages.DAEMON },
+      global: { provide: { [hilosRouterKey as symbol]: navigation } },
+    })
+    const child = () =>
+      wrapper.find('[data-id="hilos-admin-child-hilos_daemon_workers"]')
+    expect(child().attributes('href')).toBe('/hilos/daemon/route-node/workers')
+    await wrapper.setProps({ childParams: { nodeId: 'selected-node' } })
+    expect(child().attributes('href')).toBe(
+      '/hilos/daemon/selected-node/workers',
+    )
+    expect(
+      wrapper.find('[data-id="hilos-breadcrumb"] a').attributes('href'),
+    ).toBe('/hilos/daemon/route-node/workers')
+    await wrapper.setProps({ childParams: { nodeId: 'next' } })
+    expect(child().attributes('href')).toBe('/hilos/daemon/next/workers')
+    const nodeId = 'node /?#%2F🌍'
+    await wrapper.setProps({ childParams: { nodeId } })
+    const href = child().attributes('href')!
+    expect(href).toBe(`/hilos/daemon/${encodeURIComponent(nodeId)}/workers`)
+    expect(matcher.match(href).params).toEqual({ nodeId })
+    expect(
+      wrapper.find('[data-id="hilos-breadcrumb"] a').attributes('href'),
+    ).toBe('/hilos/daemon/route-node/workers')
+    await wrapper.setProps({ childParams: undefined })
+    expect(child().attributes('href')).toBe('/hilos/daemon/route-node/workers')
+    wrapper.unmount()
   })
 })
 

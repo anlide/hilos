@@ -13,7 +13,9 @@ describe('hilosUnbuiltPages', () => {
   it('selects the view layer without hiding a section with built children', () => {
     const vue = hilosUnbuiltPages('vue')
     expect(vue.has(HilosPages.ROLES)).toBe(true)
-    expect(vue.has(HilosPages.DAEMON)).toBe(true)
+    expect(vue.has(HilosPages.DAEMON)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON)).toBe(true)
     expect(vue.has(HilosPages.DAEMON_WORKERS)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_WORKERS)).toBe(true)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_WORKERS)).toBe(

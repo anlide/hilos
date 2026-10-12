@@ -52,6 +52,7 @@ import HilosLogsWorkers from './views/Hilos/Logs/Workers.vue'
 import HilosLogsRotations from './views/Hilos/Logs/Rotations.vue'
 import HilosLogsSettings from './views/Hilos/Logs/Settings.vue'
 import HilosLogsView from './views/Hilos/Logs/View.vue'
+import HilosDaemon from './views/Hilos/Daemon/Daemon.vue'
 import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.vue'
 import HilosDaemonAgents from './views/Hilos/Daemon/Agents.vue'
 import HilosDaemonCron from './views/Hilos/Daemon/Cron.vue'
@@ -92,6 +93,7 @@ const pages: Record<string, Component> = {
   [HilosPages.LOGS_ROTATIONS]: HilosLogsRotations,
   [HilosPages.LOGS_SETTINGS]: HilosLogsSettings,
   [HilosPages.LOGS_VIEW]: HilosLogsView,
+  [HilosPages.DAEMON]: HilosDaemon,
   [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkers,
   [HilosPages.DAEMON_AGENTS]: HilosDaemonAgents,
   [HilosPages.DAEMON_CRON]: HilosDaemonCron,

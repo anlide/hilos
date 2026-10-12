@@ -37,8 +37,12 @@ import { type ActionSuccessSignal } from '../../../src/protocol/parseSignal.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { type ConnectionState } from '../../../src/connection/HilosConnection.js'
 import { type PageRouteMatch } from '../../../src/routing/PageRouter.js'
+import { createAppPageRouter } from '../../../src/routing/appPageRouter.js'
+import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
+
+const pageRouter = createAppPageRouter({}, { fallback: HilosPages.DASHBOARD })
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000
@@ -281,13 +285,7 @@ function fakeAddress(pathname = '/hilos/logs/view'): FakeAddress {
 
 /** The route params the viewer route captures out of one address. */
 function paramsOf(pathname: string): Record<string, string> {
-  const tail = pathname
-    .replace('/hilos/logs/view', '')
-    .split('/')
-    .filter(Boolean)
-  const names = ['nodeId', 'source', 'stream', 'anchor']
-
-  return Object.fromEntries(tail.map((value, index) => [names[index], value]))
+  return pageRouter.match(pathname).params
 }
 
 function viewer(pathname = '/hilos/logs/view'): {
@@ -380,6 +378,39 @@ describe('readLogViewerAddress', () => {
 })
 
 describe('logViewerPath', () => {
+  it.each(['node-1', 'node /?#%', '%2F', 'узел🌍'])(
+    'roundtrips %s and a raw stream through the real matcher',
+    (nodeId) => {
+      const chosen = selection({
+        nodeId,
+        stream: 'worker /?#%2F🌍.log',
+        anchorAtMs: 1788000000250,
+      })
+      const path = logViewerPath(chosen)
+      expect(path).toBe(
+        `/hilos/logs/view/${encodeURIComponent(nodeId)}/live/worker%20%2F%3F%23%252F%F0%9F%8C%8D.log/1788000000250`,
+      )
+      expect(readLogViewerAddress(pageRouter.match(path).params)).toEqual(
+        chosen,
+      )
+      const address = fakeAddress()
+      address.replacePath(path)
+      expect(readLogViewerAddress(address.currentRoute.get().params)).toEqual(
+        chosen,
+      )
+      const partial = pageRouter.path(HilosPages.LOGS_VIEW, {
+        nodeId,
+        source: 'live',
+      })!
+      expect(readLogViewerAddress(pageRouter.match(partial).params)).toEqual({
+        nodeId,
+        source: 'live',
+        stream: null,
+        anchorAtMs: null,
+      })
+    },
+  )
+
   it('builds the address of the file being read', () => {
     expect(logViewerPath(selection({ nodeId: 'node-2', source: BATCH }))).toBe(
       `/hilos/logs/view/node-2/${BATCH}/worker-0.log`,

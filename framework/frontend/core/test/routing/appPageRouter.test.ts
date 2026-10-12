@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
+import { HilosPages } from '../../src/routing/hilosPages.js'
 
 describe('createAppPageRouter', () => {
+  it('shares one codec between project routes and the framework catalog', () => {
+    const router = createAppPageRouter(
+      {
+        main: { path: '/', admin: false },
+        project: { path: '/project/{id}', admin: false },
+      },
+      { fallback: 'main' },
+    )
+    const value = 'raw /?#%2F🌍'
+    for (const [page, params] of [
+      ['project', { id: value }],
+      [HilosPages.DAEMON_WORKERS, { nodeId: value }],
+      [HilosPages.LOGS_VIEW, { nodeId: value, source: 'live' }],
+    ] as const) {
+      const path = router.path(page, params)!
+      expect(path).toContain(encodeURIComponent(value))
+      expect(router.match(path).params).toEqual(params)
+      expect(router.match(path).page).toBe(page)
+    }
+  })
+
   it('matches the project routes it is given', () => {
     const router = createAppPageRouter(
       {

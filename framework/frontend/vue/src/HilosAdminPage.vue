@@ -38,7 +38,11 @@ import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import { hilosRouterKey } from './hilosRouterKey.js'
 import { useSignal } from './useSignal.js'
 
-defineProps<{ page: string }>()
+const props = defineProps<{
+  page: string
+  /** Extra context for child cards; breadcrumbs keep the current route params. */
+  childParams?: Record<string, string>
+}>()
 
 const router = inject(hilosRouterKey)
 if (!router) {
@@ -68,7 +72,7 @@ const crumbs = computed(() =>
 const children = computed(() =>
   hilosChildLinks(
     identity.value?.children ?? [],
-    params.value,
+    { ...params.value, ...props.childParams },
     router.resolvePath,
   ),
 )

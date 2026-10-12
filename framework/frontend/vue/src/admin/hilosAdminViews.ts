@@ -8,12 +8,12 @@
 // the router answers 404 and no card links to them.
 //
 // The users / user / settings / backup / maintenance, communications hub /
-// channel, Change Log, Daemon Workers, Agents, Cron and HTTP, and log pages that read
+// channel, Change Log, Daemon root, Workers, Agents, Cron and HTTP, and log pages that read
 // live data are intentionally absent: they are
 // real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
 // HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
 // HilosCommunicationsChannelPage / HilosChangeLogPage / HilosLogsKeysPage / HilosLogsRotationsPage /
-// HilosLogsViewPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /
+// HilosLogsViewPage / HilosDaemonPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /
 // HilosDaemonCronPage / HilosDaemonHttpServerPage) that require a project-supplied context, so a project
 // mounts them directly rather than through this default map.
 //
@@ -49,7 +49,6 @@ import HilosBillingProviderPage from './billing/HilosBillingProviderPage.vue'
 import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
 import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
 import HilosOperationsPage from './operations/HilosOperationsPage.vue'
-import HilosDaemonPage from './daemon/HilosDaemonPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
 import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
 import HilosChangeLogTablePage from './changeLog/HilosChangeLogTablePage.vue'
@@ -114,7 +113,6 @@ export function hilosAdminViews(): Record<string, Component> {
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
     [HilosPages.OPERATIONS]: HilosOperationsPage,
-    [HilosPages.DAEMON]: HilosDaemonPage,
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the

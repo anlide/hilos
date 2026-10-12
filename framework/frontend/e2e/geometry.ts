@@ -243,6 +243,63 @@ async function readBox(
 }
 
 /**
+ * Refuse an element clipped by the viewport or a scrolling ancestor.
+ *
+ * Call after scrolling the element into view and waiting for its live state.
+ * Unlike an area ratio of exactly one, this uses the toolbox's 1px allowance
+ * for fractional scroll rounding while still rejecting a clipped control.
+ *
+ * @param element The control or label that must fit in its visible scrollport.
+ */
+export async function fitsInScrollport(element: Locator): Promise<void> {
+  await element.evaluate(
+    (node, { slack, what }) => {
+      if (!node.checkVisibility({ visibilityProperty: true })) {
+        throw new Error(`${what}: the element is not visible`)
+      }
+      const box = node.getBoundingClientRect()
+      let left = 0
+      let top = 0
+      let right = document.documentElement.clientWidth
+      let bottom = document.documentElement.clientHeight
+      for (
+        let parent = node.parentElement;
+        parent;
+        parent = parent.parentElement
+      ) {
+        const style = getComputedStyle(parent)
+        const clipsX = /^(auto|scroll|hidden|clip)$/.test(style.overflowX)
+        const clipsY = /^(auto|scroll|hidden|clip)$/.test(style.overflowY)
+        if (!clipsX && !clipsY) continue
+        const bounds = parent.getBoundingClientRect()
+        if (clipsX) {
+          const start = bounds.left + parent.clientLeft
+          left = Math.max(left, start)
+          right = Math.min(right, start + parent.clientWidth)
+        }
+        if (clipsY) {
+          const start = bounds.top + parent.clientTop
+          top = Math.max(top, start)
+          bottom = Math.min(bottom, start + parent.clientHeight)
+        }
+      }
+      const clipped = {
+        left: Math.max(0, left - box.left),
+        top: Math.max(0, top - box.top),
+        right: Math.max(0, box.right - right),
+        bottom: Math.max(0, box.bottom - bottom),
+      }
+      if (Object.values(clipped).some((pixels) => pixels > slack)) {
+        throw new Error(
+          `${what}: clipped by ${JSON.stringify(clipped)} px; allowance ${slack}px`,
+        )
+      }
+    },
+    { slack: SLACK_PX, what: element.toString() },
+  )
+}
+
+/**
  * Watch how far below the top of the table's root its first row stands.
  *
  * A live message over the table takes room that was held before it arrived, so

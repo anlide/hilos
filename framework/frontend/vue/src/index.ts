@@ -119,6 +119,7 @@ export { default as HilosLogsRotationsPage } from './admin/logs/HilosLogsRotatio
 export { default as HilosLogsSettingsPage } from './admin/logs/HilosLogsSettingsPage.vue'
 export { default as HilosLogsViewPage } from './admin/logs/HilosLogsViewPage.vue'
 export { default as HilosLogsWorkersPage } from './admin/logs/HilosLogsWorkersPage.vue'
+export { default as HilosDaemonPage } from './admin/daemon/HilosDaemonPage.vue'
 export { default as HilosDaemonWorkersPage } from './admin/daemon/HilosDaemonWorkersPage.vue'
 export { default as HilosDaemonAgentsPage } from './admin/daemon/HilosDaemonAgentsPage.vue'
 export { default as HilosDaemonCronPage } from './admin/daemon/HilosDaemonCronPage.vue'
