@@ -418,9 +418,28 @@ will give those refusals their user-facing text.
 - Deleting a locale removes its seven formats; texts for that pair take the
   language's countryless locale (not in the code yet — HIL-1492).
 - A known country is never deleted — reflow would bring it back; switch it
-  off instead (not in the code yet — HIL-1499).
+  off instead.
 - An own country can be deleted only while no locale or name references it
-  (not in the code yet — HIL-1499).
+  — any locale, on or off, and any name row, including an empty base name or
+  a locale override. The country's enabled state does not block deletion.
+- The country item action checks the built-in catalog and every dependency
+  again at write time; it removes no referencing rows. A refusal leaves the
+  country and its cached data intact, and foreign keys protect a late reference.
+  Both page actions — `hilos_i18n_country_delete` on the card and
+  `hilos_i18n_country_row_delete` on the list — take only `countryCode` and
+  call that item action. Success acknowledges `Country deleted.`
+- The Vue list's last actions column and the card's State section open one
+  shared confirmation dialog. The list focuses the fresh row on open and
+  releases it on close or unmount. The row and card expose the live server
+  hint `canDelete` / `deleteReason`, ordered known, locales, names. Any locale
+  or name change refreshes the row hint, including deletion of the last
+  reference; the hint never replaces the server's write-time check.
+- A late blocked hint leaves an open confirmation available for the server's
+  refusal. An idle dialog whose source disappears stays open with
+  `Deleted elsewhere.` and Cancel. During its own request, the dialog keeps
+  its chosen target and tracked handle through the deletion echo, closes only
+  on success, and only then navigates from the card to the list. Any failure
+  remains in the dialog. A viewer can open it, but cannot confirm deletion.
 
 For names, see *The Lock On An Edited Name*. The checks for a language chosen
 by someone or referenced by a translation string belong to HIL-1424.

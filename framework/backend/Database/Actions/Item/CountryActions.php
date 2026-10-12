@@ -13,6 +13,7 @@ use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\View\Item\Country;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 
 /**
@@ -85,6 +86,7 @@ class CountryActions extends DbActions
     /**
      * @throws ItemNotFoundForDeleteException When the row has no persisted id
      * @throws ObjectCollectionNullException When the item is detached from its collection
+     * @throws ValidationException When the catalog or a dependent locale or name protects the country
      * @throws HilosException When ownership, the database or collection refuses removal
      */
     public function delete(): void
@@ -92,6 +94,18 @@ class CountryActions extends DbActions
         $this->ensureCanWrite(TruthSourceOperation::Remove);
         if ($this->object->id === null) {
             throw new ItemNotFoundForDeleteException('Country not found for delete (id is null)');
+        }
+
+        $summary = Hilos::$db->countries->cardSummary($this->object->id);
+        switch ($summary->deleteReason) {
+            case CountryCardSummary::DELETE_KNOWN:
+                throw new ValidationException(
+                    "Country '{$this->object->code}' cannot be deleted: the built-in catalog would bring it back.",
+                );
+            case CountryCardSummary::DELETE_LOCALES:
+                throw new ValidationException("Country '{$this->object->code}' cannot be deleted: locales refer to it.");
+            case CountryCardSummary::DELETE_NAMES:
+                throw new ValidationException("Country '{$this->object->code}' cannot be deleted: names refer to it.");
         }
 
         $objectCollection = $this->getObjectCollection()

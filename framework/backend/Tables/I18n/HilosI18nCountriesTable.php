@@ -78,6 +78,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                     HilosI18nCountriesTableRow::name,
                     HilosI18nCountriesTableRow::defaultLocaleCode,
                     HilosI18nCountriesTableRow::isOwn,
+                    HilosI18nCountriesTableRow::canDelete,
+                    HilosI18nCountriesTableRow::deleteReason,
                 ],
             ],
             [
@@ -134,10 +136,9 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     }
 
     /**
-     * A country change redraws that country. A base name in the default language redraws its
-     * country. A locale, a language, and every other name are ignored: a locale code never
-     * changes, a default locale is not removed, and the default language changes only with the
-     * environment and a restart.
+     * A country, any of its names, or any of its locales redraws that country and its deletion
+     * verdict. Language changes are ignored: the default language changes with the environment
+     * and a restart.
      *
      * A deletion of a country names the code the removed row published. A create or an update
      * is read back by the row's id, and a row that is already gone is ignored.
@@ -157,6 +158,9 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         }
         if ($change->sourceKey === HilosDbContext::countryNames) {
             return $this->mutationForCountryName($change);
+        }
+        if ($change->sourceKey === HilosDbContext::locales) {
+            return $this->mutationForLocale($change);
         }
 
         return null;
@@ -180,7 +184,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     /**
      * The stored country fields are columns of hilos_country, the name is a column of
      * hilos_country_name, and the locale code is a column of hilos_locale. None of them is
-     * personal. The "own" mark is computed from the built-in catalog.
+     * personal. The "own" mark and the deletion verdict are computed from the catalog and references.
      *
      * @return array<string, WireField> Row field to where it comes from
      */
@@ -203,6 +207,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                 ObjectLocale::code,
             ),
             HilosI18nCountriesTableRow::isOwn => WireField::notPersonal(),
+            HilosI18nCountriesTableRow::canDelete => WireField::notPersonal(),
+            HilosI18nCountriesTableRow::deleteReason => WireField::notPersonal(),
         ];
     }
 
@@ -240,8 +246,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     /**
      * Every country, searched and ordered in memory.
      *
-     * The default language is read once, and every base name in that language is read once,
-     * rather than once per country.
+     * Row labels use a grouped read of base names in the default language. Each country's
+     * deletion verdict comes from its current card summary.
      *
      * @param TableQueryDTO $query Window query, its search already scoped
      * @return TableSnapshotDTO Countries window
@@ -334,10 +340,11 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     }
 
     /**
-     * A base name in the default language redraws its country. Any other name does not.
+     * Any name, including an empty base or a locale override, changes its country's deletion verdict.
+     * A deleted name carries its country id in the published row, without other name fields.
      *
      * @param SourceChange $change Country-name collection change
-     * @return ?TableRowMutationDTO Update of the named country, or null when the name is not that base
+     * @return ?TableRowMutationDTO Update of the named country, or null when it no longer exists
      * @throws DatabaseException When a country, a name or a locale cannot be read
      * @throws LogicException When a collection is not configured
      * @throws InvalidArgumentException When a loaded row has the wrong type
@@ -346,18 +353,10 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      */
     private function mutationForCountryName(SourceChange $change): ?TableRowMutationDTO
     {
-        $facts = $this->nameFacts($change);
-        $defaultLanguageId = $this->defaultLanguageId();
-        if (
-            $facts === null
-            || $defaultLanguageId === null
-            || $facts[ObjectCountryName::languageId] !== $defaultLanguageId
-            || $facts[ObjectCountryName::localeId] !== null
-        ) {
-            return null;
-        }
-
-        $country = Hilos::$db->countries[$facts[ObjectCountryName::countryId]];
+        $countryId = $change->mutationType === TableMutationType::Delete
+            ? self::rowInt($change->row, ObjectCountryName::countryId)
+            : Hilos::$db->countryNames[(int) $change->sourceId]?->countryId;
+        $country = Hilos::$db->countries[$countryId];
         if ($country === null) {
             return null;
         }
@@ -365,7 +364,36 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         return $this->mutation(
             TableMutationType::Update,
             $country->code,
-            $this->rowForCountry($country, $defaultLanguageId),
+            $this->rowForCountry($country, $this->defaultLanguageId()),
+        );
+    }
+
+    /**
+     * A locale changes its country's deletion verdict, regardless of its enabled state.
+     * Deleted locales publish the country id before leaving their collection.
+     *
+     * @param SourceChange $change Locale collection change
+     * @return ?TableRowMutationDTO Update of the country, or null for a countryless or vanished row
+     * @throws DatabaseException When a country, a name or a locale cannot be read
+     * @throws LogicException When a collection is not configured
+     * @throws InvalidArgumentException When a loaded row has the wrong type
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
+     */
+    private function mutationForLocale(SourceChange $change): ?TableRowMutationDTO
+    {
+        $countryId = $change->mutationType === TableMutationType::Delete
+            ? self::rowInt($change->row, ObjectLocale::countryId)
+            : Hilos::$db->locales[(int) $change->sourceId]?->countryId;
+        $country = Hilos::$db->countries[$countryId];
+        if ($country === null) {
+            return null;
+        }
+
+        return $this->mutation(
+            TableMutationType::Update,
+            $country->code,
+            $this->rowForCountry($country, $this->defaultLanguageId()),
         );
     }
 
@@ -377,9 +405,13 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws DatabaseException When a name or a locale cannot be read
      * @throws LogicException When a collection is not configured
      * @throws InvalidArgumentException When a loaded row has the wrong type
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
      */
     private function rowForCountry(Country $country, ?int $defaultLanguageId, ?array $baseNames = null): HilosI18nCountriesTableRow
     {
+        $summary = Hilos::$db->countries->cardSummary((int) $country->id);
+
         return new HilosI18nCountriesTableRow(
             code: $country->code,
             name: $this->nameOf($country, $defaultLanguageId, $baseNames),
@@ -390,6 +422,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                 : Hilos::$db->locales[$country->defaultLocaleId]?->code,
             enabled: $country->enabled,
             isOwn: BuiltInI18nCatalog::country($country->code) === null,
+            canDelete: $summary->canDelete,
+            deleteReason: $summary->deleteReason,
         );
     }
 
@@ -459,46 +493,6 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     private function defaultLanguageId(): ?int
     {
         return Hilos::$db->languages[DefaultLanguage::code()]?->id;
-    }
-
-    /**
-     * Country, language and locale of the announced name, from the row the change published
-     * or, where that row is silent, from the name still stored.
-     *
-     * @param SourceChange $change Country-name collection change
-     * @return ?array{countryId: int, languageId: int, localeId: ?int} Facts of the name, or null when they cannot be read
-     * @throws DatabaseException When the stored name cannot be read
-     * @throws LogicException When the name collection is not configured
-     * @throws InvalidArgumentException When a loaded name has the wrong type
-     */
-    private function nameFacts(SourceChange $change): ?array
-    {
-        $row = $change->row;
-        $countryId = self::rowInt($row, ObjectCountryName::countryId);
-        $languageId = self::rowInt($row, ObjectCountryName::languageId);
-        $localeKnown = array_key_exists(ObjectCountryName::localeId, $row)
-            && ($row[ObjectCountryName::localeId] === null || is_int($row[ObjectCountryName::localeId]));
-        $localeId = $localeKnown && is_int($row[ObjectCountryName::localeId] ?? null)
-            ? $row[ObjectCountryName::localeId]
-            : null;
-
-        if ($countryId === null || $languageId === null || !$localeKnown) {
-            $stored = Hilos::$db->countryNames[(int) $change->sourceId];
-            if ($stored === null) {
-                return null;
-            }
-            $countryId ??= $stored->countryId;
-            $languageId ??= $stored->languageId;
-            if (!$localeKnown) {
-                $localeId = $stored->localeId;
-            }
-        }
-
-        return [
-            ObjectCountryName::countryId => $countryId,
-            ObjectCountryName::languageId => $languageId,
-            ObjectCountryName::localeId => $localeId,
-        ];
     }
 
     /**

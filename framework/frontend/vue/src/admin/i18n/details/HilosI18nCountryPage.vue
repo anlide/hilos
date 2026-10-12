@@ -3,14 +3,20 @@ page-scoped browser datum supplies both the initial view and live updates. -->
 <script setup lang="ts">
 import {
   createHilosI18nCountryCard,
+  createHilosI18nCountryDelete,
+  HILOS_I18N_COUNTRY_DELETE_COPY,
+  hilosI18nCountryDeleteFromCard,
+  hilosI18nCountryDeleteReason,
   HilosPages,
   type HilosI18nCountryContext,
+  type HilosI18nCountryDeleteTarget,
 } from '@hilos/core'
-import { inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
+import HilosI18nCountryDelete from './HilosI18nCountryDelete.vue'
 import HilosI18nCountryHeader from './HilosI18nCountryHeader.vue'
 import HilosI18nCountrySwitchOff from './HilosI18nCountrySwitchOff.vue'
 import HilosI18nCountrySwitchOn from './HilosI18nCountrySwitchOn.vue'
@@ -22,6 +28,21 @@ if (!router) {
   throw new Error('HilosI18nCountryPage requires a provided Hilos router.')
 }
 const loading = useSignal(router.pageLoading)
+const { deleteCountry } = createHilosI18nCountryDelete(props.context)
+const deleteOpen = ref(false)
+const deleteTarget = ref<HilosI18nCountryDeleteTarget | null>(null)
+const deleteSource = computed(() => hilosI18nCountryDeleteFromCard(card.value))
+
+function openDelete(): void {
+  if (deleteSource.value?.canDelete !== true) return
+  deleteTarget.value = deleteSource.value
+  deleteOpen.value = true
+}
+
+const deleted = (): void => {
+  const path = router.resolvePath(HilosPages.I18N_COUNTRIES)
+  if (path !== undefined) router.navigate(path)
+}
 </script>
 
 <template>
@@ -100,17 +121,26 @@ const loading = useSignal(router.pageLoading)
           </dd>
           <dt class="col-sm-4">Delete country</dt>
           <dd class="col-sm-8 mb-0" data-id="country-card-delete-verdict">
-            <template v-if="card.summary.deleteReason === 'known'">
-              Cannot delete: the built-in catalog knows this country and the
-              reflow would bring it back; switch it off instead
-            </template>
-            <template v-else-if="card.summary.deleteReason === 'locales'">
-              Cannot delete: locales refer to this country
-            </template>
-            <template v-else-if="card.summary.deleteReason === 'names'">
-              Cannot delete: names refer to this country
-            </template>
-            <template v-else>Can be deleted: nothing refers to it yet</template>
+            <span id="country-card-delete-reason">{{
+              hilosI18nCountryDeleteReason(deleteSource)
+            }}</span>
+            <div class="mt-2">
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="
+                  card.summary.canDelete
+                    ? 'btn-outline-danger'
+                    : 'border border-secondary text-body-secondary'
+                "
+                :aria-disabled="!card.summary.canDelete || undefined"
+                aria-describedby="country-card-delete-reason"
+                data-id="country-card-delete"
+                @click="openDelete"
+              >
+                {{ HILOS_I18N_COUNTRY_DELETE_COPY.open }}
+              </button>
+            </div>
           </dd>
         </dl>
       </section>
@@ -132,5 +162,12 @@ const loading = useSignal(router.pageLoading)
     >
       Country details are no longer available.
     </p>
+    <HilosI18nCountryDelete
+      v-model="deleteOpen"
+      :target="deleteTarget"
+      :source="deleteSource"
+      :delete-country="deleteCountry"
+      @deleted="deleted"
+    />
   </HilosAdminPage>
 </template>

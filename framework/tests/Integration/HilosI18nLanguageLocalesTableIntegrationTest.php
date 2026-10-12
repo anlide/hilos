@@ -341,30 +341,32 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
      */
     public function testACountryAddsAndRemovesItsRowInEveryWindow(): void
     {
-        $ireland = Hilos::$db->countries->actions->create('ie', '€', 'EUR');
-        $this->assertSame([['create', 'en-IE', null, null]], $this->mutations('en'));
-        $this->assertSame([['create', 'de-IE', null, null]], $this->mutations('de'));
+        $customCountry = Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
+        $this->assertSame([['create', 'en-QX', null, null]], $this->mutations('en'));
+        $this->assertSame([['create', 'de-QX', null, null]], $this->mutations('de'));
 
         $this->changes->taken = [];
-        Hilos::$db->countryNames->actions->createManual($ireland, $this->german, null, 'Irland');
+        Hilos::$db->countryNames->actions->createManual($customCountry, $this->german, null, 'Testland');
         $this->assertSame([], $this->built('en'));
         $built = $this->built('de');
         $this->assertCount(1, $built);
-        $this->assertSame('Irland', $built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::countryName]);
+        $this->assertSame('Testland', $built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::countryName]);
 
         $this->changes->taken = [];
-        $ireland->actions->update('EUR', 'EUR', null);
-        $this->assertSame([['update', 'en-IE', null, null]], $this->mutations('en'));
+        $customCountry->actions->update('QX', 'XQX', null);
+        $this->assertSame([['update', 'en-QX', null, null]], $this->mutations('en'));
+        $this->assertSame([['update', 'de-QX', null, null]], $this->mutations('de'));
 
         $this->changes->taken = [];
-        Hilos::$db->countryNames->findBase((int) $ireland->id, (int) $this->german->id)?->actions->delete();
+        Hilos::$db->countryNames->findBase((int) $customCountry->id, (int) $this->german->id)?->actions->delete();
         $built = $this->built('de');
         $this->assertCount(1, $built);
         $this->assertNull($built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::countryName]);
 
         $this->changes->taken = [];
-        $ireland->actions->delete();
-        $this->assertSame([['delete', 'de-IE', null, null]], $this->mutations('de'));
+        $customCountry->actions->delete();
+        $this->assertSame([['delete', 'en-QX', null, null]], $this->mutations('en'));
+        $this->assertSame([['delete', 'de-QX', null, null]], $this->mutations('de'));
     }
 
     /**

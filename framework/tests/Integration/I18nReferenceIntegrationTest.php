@@ -334,7 +334,7 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
     public function testReferencesPreventDeletionUntilTheDefaultIsCleared(): void
     {
         $language = Hilos::$db->languages->actions->create('en', 'English', false);
-        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $country = Hilos::$db->countries->actions->create('qx', '£', 'GBP');
         $locale = self::createLocale($language, $country);
         $country->actions->update('£', 'GBP', $locale->id);
 

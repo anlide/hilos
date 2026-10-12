@@ -11,6 +11,7 @@ use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -26,6 +27,7 @@ use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -36,12 +38,15 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Item\Country as ObjectCountry;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
+use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Item\Country;
+use Hilos\Database\View\Item\CountryName;
 use Hilos\Database\View\Item\Language;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Catalog\CountryDefinition;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInCountryCodes;
+use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
@@ -151,6 +156,21 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertTrue($named->enabled);
         self::assertTrue($named->isOwn);
         self::assertFalse($known->isOwn);
+        self::assertSame([
+            'code' => 'qx', 'name' => null, 'currencySymbol' => '¤', 'currencyCode' => 'XQX',
+            'defaultLocaleCode' => 'en-QX', 'enabled' => false, 'isOwn' => true,
+            'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_LOCALES,
+        ], $own->toArray());
+        self::assertSame([
+            'code' => 'qy', 'name' => 'Qy Land', 'currencySymbol' => '¤', 'currencyCode' => 'XQY',
+            'defaultLocaleCode' => null, 'enabled' => true, 'isOwn' => true,
+            'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_NAMES,
+        ], $named->toArray());
+        self::assertSame([
+            'code' => 'us', 'name' => null, 'currencySymbol' => '$', 'currencyCode' => 'USD',
+            'defaultLocaleCode' => null, 'enabled' => false, 'isOwn' => false,
+            'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_KNOWN,
+        ], $known->toArray());
 
         $byCode = $table->getPage(new TableQueryDTO(sort: $sort));
         self::assertSame(['qx', 'qy'], $this->picked($this->codes($byCode->rows), ['qx', 'qy']));
@@ -259,7 +279,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertInstanceOf(HilosI18nCountriesTableRow::class, $cleared);
         self::assertNull($cleared->name);
 
-        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbCreated(
+        $foreignUpdate = $table->buildMutationForSourceEvent(SourceChange::dbCreated(
             HilosDbContext::countryNames,
             (string) $created['foreign'],
             [
@@ -267,7 +287,12 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                 ObjectCountryName::languageId => $created['foreignLanguageId'],
                 ObjectCountryName::localeId => null,
             ],
-        )));
+        ));
+        self::assertInstanceOf(TableRowMutationDTO::class, $foreignUpdate);
+        self::assertSame(TableMutationType::Update, $foreignUpdate->type);
+        self::assertSame('qx', $foreignUpdate->rowKey);
+        self::assertFalse($foreignUpdate->row->canDelete);
+        self::assertSame(CountryCardSummary::DELETE_NAMES, $foreignUpdate->row->deleteReason);
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
             HilosDbContext::locales,
             '1',
@@ -421,6 +446,8 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                     HilosI18nCountriesTableRow::defaultLocaleCode,
                     HilosI18nCountriesTableRow::enabled,
                     HilosI18nCountriesTableRow::isOwn,
+                    HilosI18nCountriesTableRow::canDelete,
+                    HilosI18nCountriesTableRow::deleteReason,
                 ] as $field) {
                     self::assertFalse(HiddenValue::isMark($country[$field]), $field);
                 }
@@ -429,6 +456,156 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         } finally {
             Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
             RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
+        }
+    }
+
+    /** @throws HilosException When the table fixture or payload cannot be read */
+    public function testFreeCountryRowRoundtripRequiresAValidDeletionVerdict(): void
+    {
+        $this->underAgent($this->agent, function (): void {
+            $this->language('en', 'English');
+            $this->country('qx', '¤', 'XQX');
+        });
+        $table = new HilosI18nCountriesTable();
+        $payload = $this->rowByCode($table->getPage(new TableQueryDTO(search: 'qx'))->rows, 'qx')->toArray();
+        self::assertSame([
+            'code' => 'qx', 'name' => null, 'currencySymbol' => '¤', 'currencyCode' => 'XQX',
+            'defaultLocaleCode' => null, 'enabled' => false, 'isOwn' => true,
+            'canDelete' => true, 'deleteReason' => null,
+        ], $payload);
+        foreach ([null, CountryCardSummary::DELETE_KNOWN, CountryCardSummary::DELETE_LOCALES, CountryCardSummary::DELETE_NAMES] as $reason) {
+            $valid = array_replace($payload, ['canDelete' => $reason === null, 'deleteReason' => $reason]);
+            self::assertSame($valid, HilosI18nCountriesTableRow::fromArray($valid)->toArray());
+        }
+        $missingBool = $payload;
+        unset($missingBool['canDelete']);
+        $missingReason = $payload;
+        unset($missingReason['deleteReason']);
+        foreach ([$missingBool, $missingReason,
+            array_replace($payload, ['canDelete' => 1]),
+            array_replace($payload, ['deleteReason' => 'enabled']),
+            array_replace($payload, ['deleteReason' => false]),
+        ] as $invalid) {
+            try {
+                HilosI18nCountriesTableRow::fromArray($invalid);
+                self::fail('An incomplete or invalid deletion verdict must be refused');
+            } catch (InvalidFormatException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    /** @throws HilosException When a reference fixture or browser delivery fails */
+    public function testLocalesAndEveryNameReferenceUpdateBothAdminAndViewerWindows(): void
+    {
+        $this->underAgent($this->agent, function (): void {
+            $this->language('en', 'English');
+            $this->language('de', 'Deutsch');
+            $this->country('qx', '¤', 'XQX');
+        });
+        $admin = Hilos::$db->users->actions->createWithName('Country verdict admin');
+        $admin->actions->setAdmin(true);
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__), 0, 32));
+        $session->actions->bindUser($admin->id);
+        Hilos::$rt->connections->actions->register(self::OPEN, $admin->id, $session->token, $session->id);
+        $viewerSession = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . '-viewer'), 0, 32));
+        Hilos::$rt->connections->actions->register(self::VIEWER, null, $viewerSession->token, $viewerSession->id);
+        RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
+        Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
+        try {
+            foreach ([self::OPEN, self::VIEWER] as $acceptKey) {
+                $this->subscribe($acceptKey, new TableWindowDescriptorDTO(filter: [TableConstants::FILTER_KEY_SEARCH => 'qx']));
+                $window = $this->windowOf($this->drain(), $acceptKey);
+                self::assertTrue($window['rows'][0]['slots']['country']['canDelete']);
+                self::assertNull($window['rows'][0]['slots']['country']['deleteReason']);
+            }
+            $countryId = Hilos::$db->countries['qx']->id;
+            $foreign = $this->underAgent($this->agent, static fn () => Hilos::$db->countryNames->actions->createManual(
+                Hilos::$db->countries['qx'], Hilos::$db->languages['de'], null, '',
+            ));
+            $this->assertLiveDeleteVerdict(SourceChange::dbCreated(HilosDbContext::countryNames, (string) $foreign->id, []),
+                false, CountryCardSummary::DELETE_NAMES);
+            $this->underAgent($this->agent, static fn () => Hilos::$db->countryNames[$foreign->id]->actions->delete());
+            $this->assertLiveDeleteVerdict(SourceChange::dbDeleted(HilosDbContext::countryNames, (string) $foreign->id,
+                [ObjectCountryName::countryId => $countryId]), true, null);
+
+            $locale = $this->underAgent($this->agent, static fn () => Hilos::$db->locales->actions->create(
+                Hilos::$db->languages['en'], Hilos::$db->countries['qx'], 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00',
+                '+XX-XXXX-XXXX', 'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            ));
+            $this->assertLiveDeleteVerdict(SourceChange::dbCreated(HilosDbContext::locales, (string) $locale->id, []),
+                false, CountryCardSummary::DELETE_LOCALES);
+            $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$locale->id]->actions->switchOn());
+            $switched = new HilosI18nCountriesTable()->buildMutationForSourceEvent(
+                SourceChange::dbUpdated(HilosDbContext::locales, (string) $locale->id, []),
+            );
+            self::assertSame(TableMutationType::Update, $switched->type);
+            self::assertSame(CountryCardSummary::DELETE_LOCALES, $switched->row->deleteReason);
+            $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$locale->id]->actions->delete());
+            $this->assertLiveDeleteVerdict(SourceChange::dbDeleted(HilosDbContext::locales, (string) $locale->id,
+                [ObjectLocale::countryId => $countryId]), true, null);
+
+            $countryless = $this->underAgent($this->agent, static fn () => Hilos::$db->locales->actions->create(
+                Hilos::$db->languages['en'], null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            ));
+            self::assertNull(new HilosI18nCountriesTable()->buildMutationForSourceEvent(
+                SourceChange::dbCreated(HilosDbContext::locales, (string) $countryless->id, []),
+            ));
+            $override = $this->underAgent($this->agent, static function () use ($countryless): CountryName {
+                $base = Hilos::$db->countryNames->actions->createManual(
+                    Hilos::$db->countries['qx'], Hilos::$db->languages['en'], null, '',
+                );
+                $override = Hilos::$db->countryNames->actions->createManual(
+                    Hilos::$db->countries['qx'], Hilos::$db->languages['en'], $countryless, '',
+                );
+                // Leave an override alone: the normal base deletion also removes its overrides.
+                Database::sqlRun('DELETE FROM hilos_country_name WHERE id = ?', [$base->id]);
+                Hilos::$db->countryNames->getObjectCollection()->reHydrate();
+                Hilos::$db->countryNames->clearCache();
+                return $override;
+            });
+            $this->assertLiveDeleteVerdict(SourceChange::dbCreated(HilosDbContext::countryNames, (string) $override->id, []),
+                false, CountryCardSummary::DELETE_NAMES);
+            $this->underAgent($this->agent, static fn () => Hilos::$db->countryNames[$override->id]->actions->edit('Override'));
+            $edited = new HilosI18nCountriesTable()->buildMutationForSourceEvent(
+                SourceChange::dbUpdated(HilosDbContext::countryNames, (string) $override->id, []),
+            );
+            self::assertSame(TableMutationType::Update, $edited->type);
+            self::assertSame(CountryCardSummary::DELETE_NAMES, $edited->row->deleteReason);
+            $this->underAgent($this->agent, static fn () => Hilos::$db->countryNames[$override->id]->actions->delete());
+            $this->assertLiveDeleteVerdict(SourceChange::dbDeleted(HilosDbContext::countryNames, (string) $override->id,
+                [ObjectCountryName::countryId => $countryId]), true, null);
+        } finally {
+            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+            RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
+        }
+    }
+
+    /**
+     * @param SourceChange $change Reference created or its last row deleted
+     * @param bool $canDelete Expected deletion permission
+     * @param ?string $reason Expected refusal reason
+     * @throws HilosException When a source change or delivery cannot be built
+     */
+    private function assertLiveDeleteVerdict(SourceChange $change, bool $canDelete, ?string $reason): void
+    {
+        $mutation = new HilosI18nCountriesTable()->buildMutationForSourceEvent($change);
+        self::assertSame(TableMutationType::Update, $mutation->type);
+        self::assertSame('qx', $mutation->rowKey);
+        self::assertSame($canDelete, $mutation->row->canDelete);
+        self::assertSame($reason, $mutation->row->deleteReason);
+        Hilos::$browser->record($change);
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $live = $this->drain();
+        foreach ([self::OPEN, self::VIEWER] as $acceptKey) {
+            $deltas = array_values(array_filter($live, static fn (array $signal): bool =>
+                $signal['accept'] === $acceptKey && $signal['data'] instanceof TableViewportDeltaDTO));
+            self::assertCount(1, $deltas, $this->signalTrace($live));
+            $delta = $deltas[0]['data'];
+            self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+            self::assertSame($canDelete, $delta->row['slots']['country']['canDelete']);
+            self::assertSame($reason, $delta->row['slots']['country']['deleteReason']);
         }
     }
 

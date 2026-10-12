@@ -5,6 +5,14 @@ import { gotoPage, PAGE_READY } from '../helpers/page.js'
 test('opens a reflowed country card directly with read-only details and staged tabs', async ({
   page,
 }) => {
+  let deleteRequests = 0
+  page.on('websocket', (socket) => {
+    socket.on('framesent', ({ payload }) => {
+      if (payload.toString().includes('hilos_i18n_country_delete')) {
+        deleteRequests += 1
+      }
+    })
+  })
   await signUpAdmin(page)
   await gotoPage(page, '/hilos/i18n/countries/us', PAGE_READY)
 
@@ -45,9 +53,29 @@ test('opens a reflowed country card directly with read-only details and staged t
   ).toHaveCount(0)
   await expect(
     page.getByTestId('country-card-state').locator('button, input'),
-  ).toHaveCount(1)
+  ).toHaveCount(2)
   await expect(page.getByTestId('country-card-switch-on')).toBeVisible()
+
+  const deleteCountry = page.getByTestId('country-card-delete')
+  const deleteReason =
+    'Cannot delete: the built-in catalog knows this country and the reflow would bring it back; switch it off instead'
+  await expect(deleteCountry).toBeVisible()
+  await expect(deleteCountry).toHaveAccessibleName('Delete country')
+  await expect(deleteCountry).toHaveAttribute('aria-disabled', 'true')
+  await expect(deleteCountry).toHaveClass(/text-body-secondary/)
+  await expect(deleteCountry).toHaveAttribute(
+    'aria-describedby',
+    'country-card-delete-reason',
+  )
+  await expect(deleteCountry).toHaveAccessibleDescription(deleteReason)
+  await deleteCountry.scrollIntoViewIfNeeded()
+  await deleteCountry.focus()
+  await deleteCountry.press('Enter')
+  await deleteCountry.press('Space')
+  await expect(page.getByTestId('i18n-country-delete-window')).toHaveCount(0)
+  await expect(page.getByTestId('country-card-code')).toHaveText('us')
 
   await gotoPage(page, '/hilos/i18n/countries', PAGE_READY)
   await gotoPage(page, '/hilos/i18n', PAGE_READY)
+  expect(deleteRequests).toBe(0)
 })

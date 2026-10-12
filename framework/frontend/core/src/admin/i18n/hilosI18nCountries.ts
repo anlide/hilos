@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
+import { HILOS_TABLE_ACTIONS_KEY } from '../../table/hilosTableColumn.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
@@ -32,6 +33,8 @@ export const HilosI18nCountryRowKey = {
   defaultLocaleCode: 'defaultLocaleCode',
   enabled: 'enabled',
   isOwn: 'isOwn',
+  canDelete: 'canDelete',
+  deleteReason: 'deleteReason',
 } as const
 
 const countrySlotSchema = z.object({
@@ -42,6 +45,10 @@ const countrySlotSchema = z.object({
   [HilosI18nCountryRowKey.defaultLocaleCode]: z.string().nullable(),
   [HilosI18nCountryRowKey.enabled]: z.boolean(),
   [HilosI18nCountryRowKey.isOwn]: z.boolean(),
+  [HilosI18nCountryRowKey.canDelete]: z.boolean(),
+  [HilosI18nCountryRowKey.deleteReason]: z
+    .enum(['known', 'locales', 'names'])
+    .nullable(),
 })
 
 /** One row of the countries table. */
@@ -60,6 +67,10 @@ export interface HilosI18nCountryRow {
   readonly enabled: boolean
   /** Whether the code is absent from the built-in catalog. */
   readonly isOwn: boolean
+  /** The server's live deletion hint; the write checks it again. */
+  readonly canDelete: boolean
+  /** Why deletion is blocked, in server-defined order. */
+  readonly deleteReason: 'known' | 'locales' | 'names' | null
 }
 
 /**
@@ -83,6 +94,8 @@ export function resolveHilosI18nCountryRow(row: TableRow): HilosI18nCountryRow {
     defaultLocaleCode: null,
     enabled: false,
     isOwn: false,
+    canDelete: false,
+    deleteReason: null,
   }
 }
 
@@ -125,6 +138,16 @@ export const HILOS_I18N_COUNTRIES_COLUMNS: readonly HilosTableColumnOf<HilosI18n
       key: HilosI18nCountryRowKey.enabled,
       label: 'Enabled',
       sortable: true,
+    },
+    {
+      key: HILOS_TABLE_ACTIONS_KEY,
+      label: '',
+      reads: [
+        HilosI18nCountryRowKey.canDelete,
+        HilosI18nCountryRowKey.deleteReason,
+        HilosI18nCountryRowKey.name,
+        HilosI18nCountryRowKey.code,
+      ],
     },
   ]
 
@@ -177,6 +200,12 @@ export function createHilosI18nCountriesTable(
         HILOS_I18N_COUNTRIES_TABLE,
         rendered,
       ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.I18N_COUNTRIES,
+        HILOS_I18N_COUNTRIES_TABLE,
+        rowKey,
+      ),
     frame: {
       ...HILOS_I18N_COUNTRIES_FRAME,
       mainAction: {
@@ -203,6 +232,7 @@ export function createHilosI18nCountriesTable(
       ]
     },
     dispose() {
+      controller.releaseFocus()
       for (const off of teardown.splice(0)) {
         off()
       }
@@ -213,11 +243,17 @@ export function createHilosI18nCountriesTable(
 /** Pre-defined marks for country rows in the table and legend. */
 export const HILOS_I18N_COUNTRY_MARKS: Readonly<{
   readonly own: HilosI18nMark
+  readonly deleteBlocked: HilosI18nMark
 }> = {
   own: {
     icon: 'bi-question-circle',
     tone: 'text-bg-warning-subtle text-warning-emphasis',
     label: 'Custom country',
+  },
+  deleteBlocked: {
+    icon: 'bi-trash',
+    tone: 'border border-secondary text-body-secondary',
+    label: 'Deletion blocked',
   },
 }
 
@@ -228,5 +264,11 @@ export const HILOS_I18N_COUNTRIES_LEGEND: ReadonlyArray<HilosI18nLegendRow> = [
     mark: HILOS_I18N_COUNTRY_MARKS.own,
     meaning:
       'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+  },
+  {
+    key: 'deleteBlocked',
+    mark: HILOS_I18N_COUNTRY_MARKS.deleteBlocked,
+    meaning:
+      'a built-in country can only be switched off: the reflow would bring it back; references also protect a custom country',
   },
 ]

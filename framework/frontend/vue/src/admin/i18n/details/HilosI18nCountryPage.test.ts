@@ -1,21 +1,28 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   COUNTRY_CARD_DATA,
   createSignal,
   HilosPages,
   ScopeManager,
+  ActionError,
+  hilosToasts,
   type ActionLifecycle,
+  type ActionResult,
   type HilosConnection,
   type HilosI18nCountryCard,
   type HilosI18nCountryContext,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 
 import HilosI18nCountryPage from './HilosI18nCountryPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
+
+enableAutoUnmount(afterEach)
+afterEach(() => hilosToasts.clear())
 
 const initialCard: HilosI18nCountryCard = {
   code: 'us',
@@ -50,6 +57,7 @@ function router(childrenBuilt = false) {
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
+      if (page === HilosPages.I18N_COUNTRIES) return '/hilos/i18n/countries'
       if (!childrenBuilt && page !== HilosPages.I18N_COUNTRY) return undefined
       const base = `/hilos/i18n/countries/${params?.countryCode}`
       if (page === HilosPages.I18N_COUNTRY) return base
@@ -68,23 +76,31 @@ function router(childrenBuilt = false) {
   return { navigation, pageLoading }
 }
 
-function harness(childrenBuilt = false) {
+function harness(
+  childrenBuilt = false,
+  actions = {} as ActionLifecycle,
+  viewer = false,
+) {
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.I18N_COUNTRY)
   const context: HilosI18nCountryContext = {
     connection: {} as HilosConnection,
     scopes,
-    actions: {} as ActionLifecycle,
+    actions,
   }
   const { navigation, pageLoading } = router(childrenBuilt)
   const view = mount(HilosI18nCountryPage, {
     props: { context },
+    attachTo: document.body,
     global: {
-      provide: { [hilosRouterKey as symbol]: navigation },
+      provide: {
+        [hilosRouterKey as symbol]: navigation,
+        [hilosAdminViewModeKey as symbol]: ref(viewer),
+      },
       stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
-  return { scope, view, pageLoading }
+  return { scope, view, pageLoading, navigation }
 }
 
 describe('HilosI18nCountryPage', () => {
@@ -114,16 +130,16 @@ describe('HilosI18nCountryPage', () => {
     expect(h.view.find('[data-id="country-card-enabled"]').text()).toBe(
       'Disabled',
     )
-    expect(
-      h.view.find('[data-id="country-card-delete-verdict"]').text(),
-    ).toContain('the built-in catalog knows this country')
+    expect(h.view.find('#country-card-delete-reason').text()).toContain(
+      'the built-in catalog knows this country',
+    )
     const tabs = h.view.find('[data-id="country-card-tabs"]')
     expect(tabs.text()).toContain('Main')
     expect(tabs.text()).toContain('Names')
     expect(tabs.findAll('a')).toHaveLength(1)
     expect(tabs.find('a').attributes('href')).toBe('/hilos/i18n/countries/us')
     expect(tabs.find('a').attributes('aria-current')).toBe('page')
-    expect(h.view.findAll('button')).toHaveLength(1)
+    expect(h.view.findAll('button')).toHaveLength(2)
     expect(h.view.find('[data-id="country-card-switch-on"]').exists()).toBe(
       true,
     )
@@ -157,7 +173,7 @@ describe('HilosI18nCountryPage', () => {
     expect(h.view.find('[data-id="country-card-own"]').text()).toBe(
       'Custom country',
     )
-    expect(h.view.find('[data-id="country-card-delete-verdict"]').text()).toBe(
+    expect(h.view.find('#country-card-delete-reason').text()).toBe(
       'Can be deleted: nothing refers to it yet',
     )
     h.view.unmount()
@@ -191,7 +207,7 @@ describe('HilosI18nCountryPage', () => {
     )
     expect(
       h.view.find('[data-id="country-card-state"]').findAll('button'),
-    ).toHaveLength(1)
+    ).toHaveLength(2)
     expect(h.view.find('[data-id="country-card-switch-off"]').exists()).toBe(
       true,
     )
@@ -205,7 +221,7 @@ describe('HilosI18nCountryPage', () => {
       },
     })
     await nextTick()
-    expect(h.view.find('[data-id="country-card-delete-verdict"]').text()).toBe(
+    expect(h.view.find('#country-card-delete-reason').text()).toBe(
       'Cannot delete: locales refer to this country',
     )
     h.scope.data.set(COUNTRY_CARD_DATA, {
@@ -213,7 +229,7 @@ describe('HilosI18nCountryPage', () => {
       summary: { ...initialCard.summary, isOwn: true, deleteReason: 'names' },
     })
     await nextTick()
-    expect(h.view.find('[data-id="country-card-delete-verdict"]').text()).toBe(
+    expect(h.view.find('#country-card-delete-reason').text()).toBe(
       'Cannot delete: names refer to this country',
     )
 
@@ -238,5 +254,148 @@ describe('HilosI18nCountryPage', () => {
       '/hilos/i18n/countries/us/names',
     ])
     h.view.unmount()
+  })
+
+  it('keeps the modal and handle when its own card disappears and navigates only after success', async () => {
+    let settle: (result: ActionResult) => void = () => {}
+    const done = new Promise<ActionResult>((resolve) => {
+      settle = resolve
+    })
+    const dispatch = vi.fn(() => ({
+      requestId: 'delete-card',
+      loading: createSignal(false),
+      done,
+    }))
+    const h = harness(false, { dispatch } as unknown as ActionLifecycle)
+    const navigate = vi.spyOn(h.navigation, 'navigate')
+    h.pageLoading.set(false)
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      code: 'qy',
+      summary: {
+        ...initialCard.summary,
+        name: null,
+        isOwn: true,
+        canDelete: true,
+        deleteReason: null,
+      },
+    })
+    await nextTick()
+    await h.view.get('[data-id="country-card-delete"]').trigger('click')
+    expect(document.body.textContent).toContain('Delete country · QY')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-delete-confirm"]',
+      )!
+      .click()
+    await nextTick()
+    expect(dispatch).toHaveBeenCalledWith('hilos_i18n_country_delete', {
+      countryCode: 'qy',
+    })
+    h.scope.data.set(COUNTRY_CARD_DATA, [])
+    await nextTick()
+    expect(h.view.find('[data-id="country-card-unavailable"]').exists()).toBe(
+      true,
+    )
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).not.toBeNull()
+    expect(document.body.textContent).not.toContain('Deleted elsewhere.')
+    expect(navigate).not.toHaveBeenCalled()
+    settle({ message: 'Country deleted.' })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).toBeNull()
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('/hilos/i18n/countries')
+  })
+
+  it('keeps a refused card deletion open without navigating, including a late hint', async () => {
+    let refuse: (error: ActionError) => void = () => {}
+    const done = new Promise<ActionResult>((_resolve, reject) => {
+      refuse = reject
+    })
+    const dispatch = vi.fn(() => ({
+      requestId: 'refused',
+      loading: createSignal(false),
+      done,
+    }))
+    const h = harness(false, { dispatch } as unknown as ActionLifecycle)
+    const navigate = vi.spyOn(h.navigation, 'navigate')
+    const own = {
+      ...initialCard,
+      code: 'qy',
+      summary: { ...initialCard.summary, canDelete: true, deleteReason: null },
+    }
+    h.scope.data.set(COUNTRY_CARD_DATA, own)
+    await nextTick()
+    await h.view.get('[data-id="country-card-delete"]').trigger('click')
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...own,
+      summary: { ...own.summary, canDelete: false, deleteReason: 'locales' },
+    })
+    await nextTick()
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-country-delete-confirm"]',
+    )!
+    expect(confirm.disabled).toBe(false)
+    confirm.click()
+    refuse(
+      new ActionError(
+        'hilos_i18n_country_delete',
+        'fail',
+        'Cannot delete: locales refer to this country',
+      ),
+    )
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-error"]')
+        ?.textContent,
+    ).toContain('locales refer')
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).not.toBeNull()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('opens a free card for a viewer and blocks an idle dialog after a foreign deletion', async () => {
+    const dispatch = vi.fn()
+    const h = harness(false, { dispatch } as unknown as ActionLifecycle, true)
+    h.pageLoading.set(false)
+    h.scope.data.set(COUNTRY_CARD_DATA, {
+      ...initialCard,
+      code: 'qy',
+      summary: { ...initialCard.summary, canDelete: true, deleteReason: null },
+    })
+    await nextTick()
+    await h.view.get('[data-id="country-card-delete"]').trigger('click')
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-country-delete-confirm"]',
+    )!
+    expect(confirm.disabled).toBe(true)
+    confirm.click()
+    expect(dispatch).not.toHaveBeenCalled()
+    h.scope.data.set(COUNTRY_CARD_DATA, [])
+    await nextTick()
+    expect(document.body.textContent).toContain('Deleted elsewhere.')
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-delete-cancel"]',
+      )!.disabled,
+    ).toBe(false)
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-delete-cancel"]',
+      )!
+      .click()
+    await nextTick()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).toBeNull()
   })
 })

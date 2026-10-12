@@ -1,21 +1,27 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
   BUILT_IN_CATALOG_DATA,
   createSignal,
   HILOS_I18N_COUNTRIES_TABLE,
   HilosPages,
   ScopeManager,
+  hilosToasts,
   type ActionLifecycle,
+  type ActionResult,
   type HilosConnection,
   type HilosI18nCountryContext,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 
 import HilosI18nCountriesPage from './HilosI18nCountriesPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
+
+enableAutoUnmount(afterEach)
+afterEach(() => hilosToasts.clear())
 
 interface CountrySlot {
   code: string
@@ -25,6 +31,8 @@ interface CountrySlot {
   defaultLocaleCode: string | null
   enabled: boolean
   isOwn: boolean
+  canDelete: boolean
+  deleteReason: 'known' | 'locales' | 'names' | null
 }
 
 const UNITED_STATES: CountrySlot = {
@@ -35,6 +43,8 @@ const UNITED_STATES: CountrySlot = {
   defaultLocaleCode: null,
   enabled: false,
   isOwn: false,
+  canDelete: false,
+  deleteReason: 'known',
 }
 
 const OWN: CountrySlot = {
@@ -45,6 +55,8 @@ const OWN: CountrySlot = {
   defaultLocaleCode: 'en-QX',
   enabled: true,
   isOwn: true,
+  canDelete: true,
+  deleteReason: null,
 }
 
 type Listener = (signal: { data: unknown }) => void
@@ -79,12 +91,17 @@ function router(): HilosRouter {
 
 function context(
   rows: CountrySlot[] = [UNITED_STATES, OWN],
+  actions = {} as ActionLifecycle,
 ): HilosI18nCountryContext & {
   scope: ReturnType<ScopeManager['openPage']>
+  focused: string[]
+  delta(country: CountrySlot, removed?: boolean): void
 } {
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.I18N_COUNTRIES)
   const windowListeners = new Set<Listener>()
+  const deltaListeners = new Set<Listener>()
+  const focused: string[] = []
   const tableRows = rows.map((country) => ({
     rowKey: country.code,
     slots: { country },
@@ -119,7 +136,17 @@ function context(
     sendTableRendered(): boolean {
       return true
     },
+    sendTableRowFocus(_page: string, _table: string, code: string): boolean {
+      focused.push(code)
+      return true
+    },
     on(event: string, listener: Listener): () => void {
+      if (event === 'tableViewportDelta') {
+        deltaListeners.add(listener)
+        return () => {
+          deltaListeners.delete(listener)
+        }
+      }
       if (event === 'tableWindow') {
         windowListeners.add(listener)
 
@@ -134,7 +161,22 @@ function context(
     connection,
     scopes,
     scope,
-    actions: {} as ActionLifecycle,
+    actions,
+    focused,
+    delta(country, removed = false) {
+      for (const listener of deltaListeners)
+        listener({
+          data: {
+            page: HilosPages.I18N_COUNTRIES,
+            tableKey: HILOS_I18N_COUNTRIES_TABLE,
+            kind: removed ? 'row_removed' : 'row_updated',
+            rowKey: country.code,
+            ...(removed
+              ? { reason: 'deleted' }
+              : { row: { rowKey: country.code, slots: { country } } }),
+          },
+        })
+    },
   }
 }
 
@@ -197,9 +239,9 @@ describe('HilosI18nCountriesPage', () => {
           .element as HTMLInputElement
       ).checked,
     ).toBe(true)
-    expect(view.find('[data-id^="i18n-countries-"] button').exists()).toBe(
-      false,
-    )
+    expect(
+      view.get('[data-id="i18n-countries-delete-qx"]').attributes('aria-label'),
+    ).toBe('Delete country QX')
     expect(view.get('[data-id="hilos-table-main-action"]').text()).toBe(
       'Add country',
     )
@@ -279,5 +321,186 @@ describe('HilosI18nCountriesPage', () => {
       document.querySelector('[data-id="i18n-country-add-code"]'),
     ).not.toBeNull()
     view.unmount()
+  })
+
+  it.each(['known', 'locales', 'names'] as const)(
+    'explains a blocked %s basket to keyboard readers without sending or opening',
+    async (deleteReason) => {
+      const dispatch = vi.fn()
+      const c = context([{ ...OWN, canDelete: false, deleteReason }], {
+        dispatch,
+      } as unknown as ActionLifecycle)
+      const view = mount(HilosI18nCountriesPage, {
+        props: { context: c },
+        global: {
+          provide: { [hilosRouterKey as symbol]: router() },
+          stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+        },
+      })
+      await nextTick()
+      const buttons = view.findAll('[data-id="i18n-countries-delete-qx"]')
+      const ids = buttons.map((button) => button.attributes('aria-describedby'))
+      expect(new Set(ids).size).toBe(buttons.length)
+      for (const button of buttons) {
+        expect(button.attributes('aria-disabled')).toBe('true')
+        expect((button.element as HTMLButtonElement).disabled).toBe(false)
+        const reason = view.find(
+          `[id="${button.attributes('aria-describedby')}"]`,
+        )
+        expect(reason.text()).toContain(
+          deleteReason === 'known'
+            ? 'built-in catalog'
+            : `${deleteReason} refer`,
+        )
+        await button.trigger('click')
+      }
+      expect(c.focused).toEqual([])
+      expect(dispatch).not.toHaveBeenCalled()
+      expect(
+        document.querySelector('[data-id="i18n-country-delete-window"]'),
+      ).toBeNull()
+    },
+  )
+
+  it('opens the fresh focused row, survives its own deletion echo and releases only after success', async () => {
+    let settle: (result: ActionResult) => void = () => {}
+    const done = new Promise<ActionResult>((resolve) => {
+      settle = resolve
+    })
+    const dispatch = vi.fn(() => ({
+      requestId: 'delete',
+      loading: createSignal(false),
+      done,
+    }))
+    const c = context([OWN], { dispatch } as unknown as ActionLifecycle)
+    const navigation = router()
+    const navigate = vi.spyOn(navigation, 'navigate')
+    const view = mount(HilosI18nCountriesPage, {
+      props: { context: c },
+      attachTo: document.body,
+      global: {
+        provide: { [hilosRouterKey as symbol]: navigation },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    const opener = view.get('[data-id="i18n-countries-delete-qx"]')
+    c.delta({ ...OWN, name: 'Fresh name' })
+    await opener.trigger('click')
+    expect(c.focused).toEqual(['qx'])
+    expect(document.body.textContent).toContain('Delete country · Fresh name')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-delete-confirm"]',
+      )!
+      .click()
+    await nextTick()
+    expect(dispatch).toHaveBeenCalledWith('hilos_i18n_country_row_delete', {
+      countryCode: 'qx',
+    })
+    c.delta(OWN, true)
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).not.toBeNull()
+    expect(document.body.textContent).not.toContain('Deleted elsewhere.')
+    expect(c.focused).toEqual(['qx'])
+    settle({ message: 'Country deleted.' })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).toBeNull()
+    expect(c.focused).toEqual(['qx', ''])
+    expect(navigate).not.toHaveBeenCalled()
+    expect(
+      hilosToasts.toasts
+        .get()
+        .some((toast) => toast.message === 'Country deleted.'),
+    ).toBe(true)
+    view.unmount()
+  })
+
+  it('does not open a pending deleted or newly blocked row, and releases on cancel and disposal', async () => {
+    const c = context([OWN])
+    const view = mount(HilosI18nCountriesPage, {
+      props: { context: c },
+      attachTo: document.body,
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    const opener = view.get('[data-id="i18n-countries-delete-qx"]')
+    c.delta({ ...OWN, canDelete: false, deleteReason: 'names' })
+    await opener.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).toBeNull()
+    expect(c.focused).toEqual(['qx', ''])
+    c.delta(OWN)
+    await nextTick()
+    await opener.trigger('click')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-delete-cancel"]',
+      )!
+      .click()
+    await nextTick()
+    await nextTick()
+    expect(c.focused).toEqual(['qx', '', 'qx', ''])
+    await opener.trigger('click')
+    view.unmount()
+    expect(c.focused).toEqual(['qx', '', 'qx', '', 'qx', ''])
+
+    const c2 = context([OWN])
+    const view2 = mount(HilosI18nCountriesPage, {
+      props: { context: c2 },
+      global: {
+        provide: { [hilosRouterKey as symbol]: router() },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    c2.delta(OWN, true)
+    await view2.get('[data-id="i18n-countries-delete-qx"]').trigger('click')
+    expect(c2.focused).toEqual([])
+    expect(
+      document.querySelector('[data-id="i18n-country-delete-window"]'),
+    ).toBeNull()
+  })
+
+  it('lets a viewer open a free country and cancel while confirmation is disabled', async () => {
+    const dispatch = vi.fn()
+    const c = context([OWN], { dispatch } as unknown as ActionLifecycle)
+    const view = mount(HilosI18nCountriesPage, {
+      props: { context: c },
+      attachTo: document.body,
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(),
+          [hilosAdminViewModeKey as symbol]: ref(true),
+        },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    await view.get('[data-id="i18n-countries-delete-qx"]').trigger('click')
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-country-delete-confirm"]',
+    )!
+    expect(confirm.disabled).toBe(true)
+    confirm.click()
+    expect(dispatch).not.toHaveBeenCalled()
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-delete-cancel"]',
+      )!
+      .click()
+    await nextTick()
+    await nextTick()
+    expect(c.focused).toEqual(['qx', ''])
   })
 })

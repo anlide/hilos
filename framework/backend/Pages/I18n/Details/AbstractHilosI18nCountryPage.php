@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -16,6 +17,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryDeleteActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOnActionDTO;
 
@@ -33,6 +35,7 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON => HilosI18nCountrySwitchOnActionDTO::class,
         HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF => HilosI18nCountrySwitchOffActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_COUNTRY_DELETE => HilosI18nCountryDeleteActionDTO::class,
     ];
 
     /** @var list<string> Sources of the main country card */
@@ -55,6 +58,7 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
      * @throws AgentUnknownActionException When the action is unknown
      * @throws InvalidActionPayloadException When the action payload has the wrong type
      * @throws TableActionException When the country does not exist
+     * @throws ValidationException When the catalog or references protect the country from deletion
      * @throws HilosException When the lookup or write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -84,8 +88,30 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
 
                 return null;
 
+            case HilosSignalConstants::HILOS_I18N_COUNTRY_DELETE:
+                if (!$dto instanceof HilosI18nCountryDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nCountryDeleteActionDTO::class, $dto);
+                }
+                $this->handleCountryDelete($dto);
+
+                return null;
+
             default:
                 throw new AgentUnknownActionException($action, static::class);
         }
+    }
+
+    /**
+     * @param HilosI18nCountryDeleteActionDTO $dto Country address
+     * @throws TableActionException When the country does not exist
+     * @throws ValidationException When the catalog or references protect the country
+     * @throws HilosException When the canonical deletion check or write refuses removal
+     */
+    private function handleCountryDelete(HilosI18nCountryDeleteActionDTO $dto): void
+    {
+        $country = Hilos::$db->countries[$dto->countryCode]
+            ?? throw new TableActionException('Unknown country: ' . $dto->countryCode);
+        $country->actions->delete();
+        $this->setActionSuccessMessage('Country deleted.');
     }
 }

@@ -243,6 +243,9 @@ final class HilosSignalConstants
     /** Client → countries list page: add one switched-off country by its code; the page replies with action success or failure. */
     public const string HILOS_I18N_COUNTRY_ADD = 'hilos_i18n_country_add';
 
+    /** Client → countries list page: remove one country; success carries no reply data. */
+    public const string HILOS_I18N_COUNTRY_ROW_DELETE = 'hilos_i18n_country_row_delete';
+
     /** Subscription signal for Hilos i18n entities list. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_ENTITIES = 'subscription_page_hilos_i18n_entities';
 
@@ -317,6 +320,9 @@ final class HilosSignalConstants
 
     /** Client → country page: switch off one country; the page replies with action success or failure. */
     public const string HILOS_I18N_COUNTRY_SWITCH_OFF = 'hilos_i18n_country_switch_off';
+
+    /** Client → country card page: remove one country; success carries no reply data. */
+    public const string HILOS_I18N_COUNTRY_DELETE = 'hilos_i18n_country_delete';
 
     /** Subscription signal for Hilos i18n country names. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_COUNTRY_NAMES = 'subscription_page_hilos_i18n_country_names';

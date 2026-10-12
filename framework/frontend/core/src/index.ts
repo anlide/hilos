@@ -142,6 +142,18 @@ export {
   hilosI18nCountrySwitchOn,
 } from './admin/i18n/hilosI18nCountrySwitch.js'
 export {
+  HILOS_I18N_COUNTRY_DELETE_ACTION,
+  HILOS_I18N_COUNTRY_ROW_DELETE_ACTION,
+  HILOS_I18N_COUNTRY_DELETE_COPY,
+  createHilosI18nCountryDelete,
+  createHilosI18nCountryRowDelete,
+  hilosI18nCountryDeleteLabel,
+  hilosI18nCountryDeleteReason,
+  hilosI18nCountryDeleteFromRow,
+  hilosI18nCountryDeleteFromCard,
+  type HilosI18nCountryDeleteTarget,
+} from './admin/i18n/hilosI18nCountryDelete.js'
+export {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAMES_FILTER,
   HILOS_I18N_COUNTRY_NAMES_TABLE,

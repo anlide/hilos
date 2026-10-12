@@ -306,13 +306,13 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
     /** @throws HilosException When the subject cannot be removed or a change built */
     public function testRemovingTheSubjectEmptiesItsWindow(): void
     {
-        $ireland = Hilos::$db->countries->actions->create('ie', '€', 'EUR');
+        $customCountry = Hilos::$db->countries->actions->create('qx', '¤', 'XQX');
         $this->changes->taken = [];
-        $ireland->actions->delete();
+        $customCountry->actions->delete();
 
         $this->assertSame(
             [['delete', 'de', null], ['delete', 'en', null], ['delete', 'fr', null]],
-            $this->mutations(new HilosI18nCountryNamesTable(), 'ie'),
+            $this->mutations(new HilosI18nCountryNamesTable(), 'qx'),
         );
         $this->assertSame([], $this->mutations(new HilosI18nCountryNamesTable(), 'gb'));
     }

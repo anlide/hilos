@@ -6,6 +6,7 @@ namespace Hilos\Tables\I18n;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\I18n\DTO\CountryCardSummary;
 
 /**
  * Backend row of the countries table (HIL-1475).
@@ -24,6 +25,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
     public const string defaultLocaleCode = 'defaultLocaleCode';
     public const string enabled = 'enabled';
     public const string isOwn = 'isOwn';
+    public const string canDelete = 'canDelete';
+    public const string deleteReason = 'deleteReason';
 
     /**
      * @param string $code Country code, which is also the row key
@@ -33,6 +36,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      * @param ?string $defaultLocaleCode Code of the country's default locale, or null when none is chosen
      * @param bool $enabled Whether the country is switched on
      * @param bool $isOwn Whether the code is absent from the built-in catalog
+     * @param bool $canDelete Whether the current summary permits deletion
+     * @param ?string $deleteReason Catalog or dependency refusal, or null when deletion is permitted
      */
     public function __construct(
         public string $code,
@@ -42,6 +47,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
         public ?string $defaultLocaleCode,
         public bool $enabled,
         public bool $isOwn,
+        public bool $canDelete,
+        public ?string $deleteReason,
     ) {
     }
 
@@ -74,16 +81,31 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
             self::defaultLocaleCode => $this->defaultLocaleCode,
             self::enabled => $this->enabled,
             self::isOwn => $this->isOwn,
+            self::canDelete => $this->canDelete,
+            self::deleteReason => $this->deleteReason,
         ];
     }
 
     /**
      * @param array<string, mixed> $data Raw row payload
      * @return static Reconstructed countries table row
-     * @throws InvalidFormatException When the payload is missing a field the row is built from
+     * @throws InvalidFormatException When a required field is missing or the deletion verdict is invalid
      */
     public static function fromArray(array $data): static
     {
+        if (!array_key_exists(self::deleteReason, $data)) {
+            throw new InvalidFormatException('Missing country deleteReason');
+        }
+        $deleteReason = self::optionalString($data, self::deleteReason);
+        if (!in_array($deleteReason, [
+            null,
+            CountryCardSummary::DELETE_KNOWN,
+            CountryCardSummary::DELETE_LOCALES,
+            CountryCardSummary::DELETE_NAMES,
+        ], true)) {
+            throw new InvalidFormatException('Invalid country deleteReason');
+        }
+
         return new static(
             code: self::requireString($data, self::code),
             name: self::optionalString($data, self::name),
@@ -92,6 +114,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
             defaultLocaleCode: self::optionalString($data, self::defaultLocaleCode),
             enabled: self::requireBool($data, self::enabled),
             isOwn: self::requireBool($data, self::isOwn),
+            canDelete: self::requireBool($data, self::canDelete),
+            deleteReason: $deleteReason,
         );
     }
 }

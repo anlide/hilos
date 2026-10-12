@@ -14,21 +14,26 @@ import {
   createHilosI18nBuiltInCountryCodes,
   createHilosI18nCountryAdd,
   createHilosI18nCountriesTable,
+  createHilosI18nCountryRowDelete,
   HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRY_MARKS,
+  hilosI18nCountryDeleteFromRow,
   HilosPages,
   type HilosI18nCountryContext,
+  type HilosI18nCountryDeleteTarget,
   type HilosI18nCountryRow,
 } from '@hilos/core'
-import { inject, onMounted, onUnmounted } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosLink from '../../../HilosLink.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
+import HilosI18nCountryDelete from '../details/HilosI18nCountryDelete.vue'
 import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
 import HilosI18nCountryAdd from './HilosI18nCountryAdd.vue'
+import HilosI18nCountryRowActions from './HilosI18nCountryRowActions.vue'
 import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
 
 const props = defineProps<{
@@ -46,6 +51,32 @@ const codes = createHilosI18nBuiltInCountryCodes(props.context)
 const add = createHilosI18nCountryAdd(props.context, codes)
 const countries = createHilosI18nCountriesTable(props.context, {
   openAdd: add.open,
+})
+const { deleteCountry } = createHilosI18nCountryRowDelete(props.context)
+const deleteOpen = ref(false)
+const deleteTarget = ref<HilosI18nCountryDeleteTarget | null>(null)
+const focusedRow = useSignal(countries.controller.focusedRow)
+const deleteSource = computed(() =>
+  focusedRow.value?.code === deleteTarget.value?.code
+    ? hilosI18nCountryDeleteFromRow(focusedRow.value)
+    : null,
+)
+
+function openDelete(code: string): void {
+  const fresh = countries.controller.focusRow(code)
+  if (fresh?.canDelete !== true) {
+    countries.controller.releaseFocus()
+    return
+  }
+  deleteTarget.value = hilosI18nCountryDeleteFromRow(fresh)
+  deleteOpen.value = true
+}
+
+watch(deleteOpen, (open) => {
+  if (!open) {
+    countries.controller.releaseFocus()
+    deleteTarget.value = null
+  }
 })
 
 onMounted(() => countries.start())
@@ -153,6 +184,9 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
           :data-id="`i18n-countries-enabled-${row.code}`"
         />
       </template>
+      <template #cell-actions="{ row }">
+        <HilosI18nCountryRowActions :row="row" @delete="openDelete(row.code)" />
+      </template>
     </HilosViewportTable>
     <HilosI18nMarksLegend
       :rows="HILOS_I18N_COUNTRIES_LEGEND"
@@ -160,5 +194,11 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
       class="mt-4"
     />
     <HilosI18nCountryAdd :add="add" />
+    <HilosI18nCountryDelete
+      v-model="deleteOpen"
+      :target="deleteTarget"
+      :source="deleteSource"
+      :delete-country="deleteCountry"
+    />
   </HilosAdminPage>
 </template>

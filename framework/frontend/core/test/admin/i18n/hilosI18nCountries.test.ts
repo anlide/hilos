@@ -30,6 +30,8 @@ describe('resolveHilosI18nCountryRow', () => {
           defaultLocaleCode: null,
           enabled: false,
           isOwn: false,
+          canDelete: false,
+          deleteReason: 'known',
         }),
       ),
     ).toEqual({
@@ -40,6 +42,8 @@ describe('resolveHilosI18nCountryRow', () => {
       defaultLocaleCode: null,
       enabled: false,
       isOwn: false,
+      canDelete: false,
+      deleteReason: 'known',
     })
   })
 
@@ -52,6 +56,8 @@ describe('resolveHilosI18nCountryRow', () => {
       defaultLocaleCode: null,
       enabled: false,
       isOwn: false,
+      canDelete: false,
+      deleteReason: null,
     })
   })
 })
@@ -70,11 +76,19 @@ describe('HILOS_I18N_COUNTRIES_FRAME', () => {
       'currencyCode',
       'defaultLocaleCode',
       'enabled',
+      'actions',
     ])
     expect(
-      HILOS_I18N_COUNTRIES_COLUMNS.every((column) => column.sortable),
+      HILOS_I18N_COUNTRIES_COLUMNS.slice(0, -1).every(
+        (column) => column.sortable,
+      ),
     ).toBe(true)
     expect(HILOS_I18N_COUNTRIES_COLUMNS[0]?.card).toBe('title')
+    expect(HILOS_I18N_COUNTRIES_COLUMNS.at(-1)).toEqual({
+      key: 'actions',
+      label: '',
+      reads: ['canDelete', 'deleteReason', 'name', 'code'],
+    })
   })
 })
 
@@ -86,6 +100,12 @@ describe('HILOS_I18N_COUNTRIES_LEGEND', () => {
         mark: HILOS_I18N_COUNTRY_MARKS.own,
         meaning:
           'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+      },
+      {
+        key: 'deleteBlocked',
+        mark: HILOS_I18N_COUNTRY_MARKS.deleteBlocked,
+        meaning:
+          'a built-in country can only be switched off: the reflow would bring it back; references also protect a custom country',
       },
     ])
     expect(HILOS_I18N_COUNTRIES_LEGEND[0]?.mark).toBe(
