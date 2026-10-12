@@ -120,12 +120,13 @@ answer: `Session::userAtKeyboard()` in
 The CLI command channel has no person by design; see
 [Who may call a command — nobody is asked](command-server.md#who-may-call-a-command--nobody-is-asked).
 
-A CLI scope opens in the worker after the command payload is parsed and covers
-one onSignalCommand(); the action and the source are the command's wire name; a
-command handed to another agent stays one receipt (join); commands the master
-answers, cli-offline-write commands and daemon-spawned children write without a
-cli receipt — migrations under their own; a command's own address in the source
-(the setting key of settings:set) — (not in the code yet — HIL-1514).
+A CLI receipt scope opens in the worker once the command payload is parsed, and
+covers one `onSignalCommand()` call. Its action and its source are the command's
+wire name, and a command handed on to another agent stays under that one receipt
+(join). Commands the master answers itself, `cli-offline-write` commands and
+`daemon-spawned` children write without a `cli` receipt; migrations write under a
+receipt of their own. The source does not carry a command's own address yet, such
+as the setting key of `settings:set` (not in the code yet — HIL-1514).
 
 The action is the name the server knows — `bot.update`, `settings.set` — not the
 button's label.
