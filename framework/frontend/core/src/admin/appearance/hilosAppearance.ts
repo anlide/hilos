@@ -1,4 +1,8 @@
-// The read-only Appearance table over the installation's two theme settings.
+// The Appearance table and writes over the installation's two theme settings.
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -9,13 +13,17 @@ import { type Hideable } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 
 /** Framework-owned browser table containing the two theme settings. */
 export const HILOS_APPEARANCE_SETTINGS_TABLE = 'hilosAppearanceSettings'
 const SETTING_SLOT = 'setting'
+const SWITCHING_SET_ACTION = 'appearance_theme_switching_set'
 
 /** Row payload key of the stable setting key. */
 export const APPEARANCE_ROW_KEY_FIELD = 'rowKey'
@@ -30,10 +38,21 @@ export const HilosAppearanceSettingKey = {
   defaultTheme: 'theme.default',
 } as const
 
-/** The page reads from the project connection and its page scopes. */
+/** The page reads from the project connection and dispatches tracked writes. */
 export interface HilosAppearanceContext {
   readonly connection: HilosConnection
   readonly scopes: ScopeManager
+  readonly actions: ActionLifecycle
+}
+
+/** The Appearance writes a view binds to. */
+export interface HilosAppearanceActions {
+  /**
+   * Set whether people may choose a theme, as a tracked action.
+   *
+   * @param enabled Whether theme switching is enabled.
+   */
+  sendSwitchingSet(enabled: boolean): ActionHandle
 }
 
 /** The two values keep their actual wire types, even when hidden. */
@@ -73,6 +92,13 @@ const COLUMNS: HilosTableColumnOf<HilosAppearanceSettingRow>[] = [
   { key: APPEARANCE_ROW_KEY_FIELD, label: 'Setting' },
   { key: APPEARANCE_VALUE_FIELD, label: 'Current value' },
   { key: APPEARANCE_DEFAULT_VALUE_FIELD, label: 'Default' },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    reads: [APPEARANCE_VALUE_FIELD],
+  },
 ]
 
 const FRAME: HilosTableFrame = {
@@ -108,6 +134,12 @@ export function createHilosAppearanceTable(
         HILOS_APPEARANCE_SETTINGS_TABLE,
         rendered,
       ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        HilosPages.APPEARANCE,
+        HILOS_APPEARANCE_SETTINGS_TABLE,
+        rowKey,
+      ),
     frame: FRAME,
   })
   const teardown: Array<() => void> = []
@@ -129,6 +161,21 @@ export function createHilosAppearanceTable(
     },
     dispose() {
       for (const off of teardown.splice(0)) off()
+    },
+  }
+}
+
+/**
+ * Dispatch Appearance writes over the project's action lifecycle.
+ *
+ * @param context The action lifecycle the writes dispatch over.
+ */
+export function createHilosAppearanceActions(
+  context: Pick<HilosAppearanceContext, 'actions'>,
+): HilosAppearanceActions {
+  return {
+    sendSwitchingSet(enabled) {
+      return context.actions.dispatch(SWITCHING_SET_ACTION, { enabled })
     },
   }
 }

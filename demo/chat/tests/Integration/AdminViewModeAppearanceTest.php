@@ -8,7 +8,6 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\AppearancePage;
-use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
@@ -41,7 +40,7 @@ use Hilos\Tables\Appearance\HilosAppearanceSettingsTableRow;
 use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
-/** Integration contract for the read-only Appearance page and its two live setting rows. */
+/** Integration contract for the Appearance page and its two live setting rows. */
 final class AdminViewModeAppearanceTest extends IntegrationTestCase
 {
     private const string VISITOR_KEY = 'appearance-viewer';
@@ -139,10 +138,10 @@ final class AdminViewModeAppearanceTest extends IntegrationTestCase
         }
     }
 
-    public function testViewerCannotWriteAndNonAdminCannotOpenWithoutViewMode(): void
+    public function testViewerCannotWriteThemeSwitching(): void
     {
         $this->expectException(ActionViewModeException::class);
-        PageAccessGate::assertAction(SettingsPage::class, self::VISITOR_KEY, HilosSignalConstants::SETTING_UPDATE);
+        PageAccessGate::assertAction(AppearancePage::class, self::VISITOR_KEY, HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET);
     }
 
     public function testNonAdminIsRefusedWhenViewModeIsOff(): void

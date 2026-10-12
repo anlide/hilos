@@ -194,7 +194,9 @@ Switching off has three consequences everywhere at once:
 Neither value is secret — every guest receives both. The admin view mode shows
 the Appearance section and its values and refuses changes
 in Vue (HIL-1435); React and Angular remain to be built in HIL-1440 and
-HIL-1441. The page has no write actions yet (HIL-1438, HIL-1439); follow
+HIL-1441. The Vue page edits switching through
+`appearance_theme_switching_set` (HIL-1438). Editing the default theme is
+still pending (not in the code yet — HIL-1439); follow
 [admin-view-mode.md](admin-view-mode.md).
 
 ## Not In Hilos
@@ -212,6 +214,13 @@ The catalog keys are `theme.switching_enabled` and `theme.default` (HIL-1426).
 The installation settings use `data.themeSettings` in the handshake and
 `hilos_theme_settings` as the live frame. Both carry the complete pair
 `{switchingEnabled: bool, defaultTheme: 'light'|'dark'|'system'}` (HIL-1428).
+The Appearance page action `appearance_theme_switching_set` carries
+`{enabled: bool}` through `HilosAppearanceThemeSwitchingSetActionDTO`. The
+ADMIN page forwards the existing `hilos_setting_write` with
+`SettingWriteSignalData` to the settings library and answers the action after
+`hilos_appearance_setting_write_done` returns with `HandoverAnswerSignalData`.
+The library writes only `theme.switching_enabled`; DB and RT shapes and the
+`hilos_appearance` route stay unchanged (HIL-1438).
 The browser-value keys are `hilos.theme.pick` and `hilos.theme.settings`
 (HIL-1430). The person's stored choice is `hilos_user.theme_pick`:
 `ENUM('light','dark','system') NULL DEFAULT NULL` (HIL-1427). The agent ask is

@@ -222,6 +222,12 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos appearance page. */
     public const string SUBSCRIPTION_PAGE_HILOS_APPEARANCE = 'subscription_page_hilos_appearance';
 
+    /** Writes whether people may switch the theme. */
+    public const string APPEARANCE_THEME_SWITCHING_SET = 'appearance_theme_switching_set';
+
+    /** Settings library answer routed back to the appearance page. */
+    public const string HILOS_APPEARANCE_SETTING_WRITE_DONE = 'hilos_appearance_setting_write_done';
+
     /** Subscription signal for Hilos i18n hub page. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N = 'subscription_page_hilos_i18n';
 

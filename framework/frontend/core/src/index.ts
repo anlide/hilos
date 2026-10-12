@@ -1373,12 +1373,19 @@ export {
   APPEARANCE_DEFAULT_VALUE_FIELD,
   HILOS_APPEARANCE_SETTINGS_TABLE,
   HilosAppearanceSettingKey,
+  createHilosAppearanceActions,
   createHilosAppearanceTable,
   resolveHilosAppearanceSettingRow,
+  type HilosAppearanceActions,
   type HilosAppearanceContext,
   type HilosAppearanceSettingRow,
   type HilosAppearanceTable,
 } from './admin/appearance/hilosAppearance.js'
+export {
+  createHilosAppearanceSwitchingEdit,
+  type HilosAppearanceSwitchingEditFields,
+  type HilosAppearanceSwitchingEditForm,
+} from './admin/appearance/hilosAppearanceSwitchingEdit.js'
 export {
   settingPresetsSignalSchemas,
   createHilosSettingPresets,

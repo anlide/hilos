@@ -518,6 +518,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
         $this->assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
         $this->assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
+            AgentType::HILOS_INDEX,
+            Hilos::getActionAgentRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        $this->assertSame(
             HilosAppearanceSettingsTable::class,
             Hilos::TABLES[BinanceBtcTrackerTableContext::hilosAppearanceSettings],
         );

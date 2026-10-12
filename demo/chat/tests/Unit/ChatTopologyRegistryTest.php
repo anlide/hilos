@@ -466,6 +466,10 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(AppearancePage::class, Hilos::PAGES[AppearancePage::PAGE]);
         self::assertSame(AgentType::HILOS_INDEX, AppearancePage::SUBSCRIPTION_AGENT_TYPE);
         self::assertSame(
+            HilosPageConstants::HILOS_APPEARANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET],
+        );
+        self::assertSame(
             HilosAppearanceSettingsTable::class,
             Hilos::TABLES[ChatTableContext::hilosAppearanceSettings],
         );
@@ -809,6 +813,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
             HilosSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
             HilosSignalConstants::SETTING_RESET => PageConstants::HILOS_SETTINGS,
+            HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET => HilosPageConstants::HILOS_APPEARANCE,
             HilosSignalConstants::HILOS_I18N_COUNTRY_ADD => HilosPageConstants::HILOS_I18N_COUNTRIES,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosPageConstants::HILOS_I18N_LANGUAGE,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosPageConstants::HILOS_I18N_LANGUAGE,
@@ -873,6 +878,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_UPDATE => AgentType::HILOS_INDEX,
             HilosSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
             HilosSignalConstants::SETTING_RESET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::APPEARANCE_THEME_SWITCHING_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_I18N_COUNTRY_ADD => HilosAgentType::HILOS_I18N_LIBRARY,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosAgentType::HILOS_I18N_LIBRARY,
             HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosAgentType::HILOS_I18N_LIBRARY,
@@ -932,6 +938,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
                 ChatSignalConstants::ATTACHMENTS_PUBLISHED => PageConstants::MAIN,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => HilosPageConstants::HILOS_SETTINGS,
+                HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE => HilosPageConstants::HILOS_APPEARANCE,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => HilosPageConstants::HILOS_BACKUP,
                 HilosSignalConstants::DAEMON_AGENT_RESTART_DONE => HilosPageConstants::HILOS_DAEMON_AGENTS,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE
@@ -963,6 +970,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
                 ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
                 HilosSignalConstants::HILOS_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::DAEMON_AGENT_RESTART_DONE => AgentType::HILOS_DAEMON,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,

@@ -90,6 +90,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
      * @var list<string>
      */
     private const array REFUSED_ACTIONS = [
+        'appearance_theme_switching_set',
         'backup_bulk_delete',
         'backup_create',
         'backup_delete',
