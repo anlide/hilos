@@ -57,8 +57,26 @@ test('opens the default language card directly with read-only details and staged
   ).toBeVisible()
   await expect(
     page.getByTestId('language-card-state').locator('button'),
-  ).toHaveCount(1)
+  ).toHaveCount(2)
   await expect(page.getByTestId('language-card-switch-off')).toBeDisabled()
+  const deleteButton = page.getByTestId('language-card-delete')
+  const deleteReason = page.getByTestId('language-card-delete-reason')
+  await expect(deleteButton).toHaveRole('button')
+  await expect(deleteButton).toBeVisible()
+  await expect(deleteButton).toBeDisabled()
+  await expect(deleteButton).toHaveText('Delete language')
+  await expect(deleteReason).toBeVisible()
+  await expect(deleteReason).toHaveText(
+    'Cannot delete: this is the default language.',
+  )
+  await expect(deleteReason).toHaveAttribute(
+    'id',
+    'language-card-delete-reason',
+  )
+  await expect(deleteButton).toHaveAttribute(
+    'aria-describedby',
+    (await deleteReason.getAttribute('id'))!,
+  )
   await expect(
     page.getByTestId('language-card-state').locator('input'),
   ).toHaveCount(0)

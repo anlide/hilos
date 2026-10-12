@@ -26,6 +26,7 @@ use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableViewportAnnounceDTO;
 use Hilos\Core\Table\DTO\TableViewportAppendDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -34,11 +35,15 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
+use Hilos\Database\Entity\Item\LanguageName as EntityLanguageName;
+use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Item\Language as ObjectLanguage;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInLanguages;
 use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\MeasurementSystem;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
@@ -111,11 +116,16 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
         self::assertTrue($english->enabled);
         self::assertTrue($english->isDefault);
         self::assertFalse($english->isOwn);
+        self::assertFalse($english->canDelete);
+        self::assertSame('default', $english->deleteReason);
         self::assertSame('Qx own tongue', $own->nativeName);
         self::assertTrue($own->rtl);
         self::assertFalse($own->enabled);
         self::assertFalse($own->isDefault);
         self::assertTrue($own->isOwn);
+        self::assertTrue($own->canDelete);
+        self::assertNull($own->deleteReason);
+        self::assertSame($own->toArray(), HilosI18nLanguagesTableRow::fromArray($own->toArray())->toArray());
         self::assertSame(['en', 'qx'], $this->picked($this->codes($rows->rows), ['en', 'qx']));
 
         $byEnabled = $table->getPage(new TableQueryDTO(
@@ -314,6 +324,8 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
                     HilosI18nLanguagesTableRow::enabled,
                     HilosI18nLanguagesTableRow::isDefault,
                     HilosI18nLanguagesTableRow::isOwn,
+                    HilosI18nLanguagesTableRow::canDelete,
+                    HilosI18nLanguagesTableRow::deleteReason,
                 ] as $field) {
                     self::assertFalse(HiddenValue::isMark($language[$field]), $field);
                 }
@@ -323,6 +335,174 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
             RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         }
+    }
+
+    public function testOneManualNameUpdatesBothLanguagesInBothOpenListsAndItsDeletionReleasesThem(): void
+    {
+        $this->openTwoLists();
+        $name = $this->underAgent($this->agent, static fn () => Hilos::$db->languageNames->actions->createManual(
+            Hilos::$db->languages['qx'], Hilos::$db->languages['zz'], null, 'Named language',
+        ));
+        $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::languageNames, (string) $name->id, []), [
+            'qx' => [false, 'names'], 'zz' => [false, 'names'],
+        ]);
+
+        $deletedRow = $name->toArray();
+        $this->underAgent($this->agent, static fn () => $name->actions->delete());
+        $this->assertLiveVerdicts(SourceChange::dbDeleted(HilosDbContext::languageNames, (string) $name->id, $deletedRow), [
+            'qx' => [true, null], 'zz' => [true, null],
+        ]);
+
+        $sameLanguage = $this->underAgent($this->agent, static fn () => Hilos::$db->languageNames->actions->createManual(
+            Hilos::$db->languages['qx'], Hilos::$db->languages['qx'], null, 'Self name',
+        ));
+        $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::languageNames, (string) $sameLanguage->id, []), [
+            'qx' => [false, 'names'],
+        ]);
+    }
+
+    public function testLocaleAndCountryNameKeepLiveDeletionVerdictsAndLanguageDeletionKeepsItsNormalDelta(): void
+    {
+        $this->openTwoLists();
+        $locale = $this->underAgent($this->agent, static fn () => Hilos::$db->locales->actions->create(
+            Hilos::$db->languages['qx'], null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+        ));
+        $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::locales, (string) $locale->id, []), [
+            'qx' => [false, 'locales'],
+        ]);
+        $localeRow = $locale->toArray();
+        $this->underAgent($this->agent, static fn () => $locale->actions->delete());
+        $this->assertLiveVerdicts(SourceChange::dbDeleted(HilosDbContext::locales, (string) $locale->id, $localeRow), [
+            'qx' => [true, null],
+        ]);
+
+        $catalog = $this->underAgent($this->agent, static function () {
+            if (Hilos::$db->countries['gb'] === null) {
+                Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+            }
+            return Hilos::$db->countryNames->actions->createCatalogBase(
+                Hilos::$db->countries['gb'], Hilos::$db->languages['qx'], 'Catalog Britain',
+            );
+        });
+        $table = new HilosI18nLanguagesTable();
+        $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbCreated(HilosDbContext::countryNames, (string) $catalog->id, []));
+        self::assertCount(1, $mutations);
+        self::assertTrue($mutations[0]->row->canDelete);
+        Hilos::$browser->record(SourceChange::dbCreated(HilosDbContext::countryNames, (string) $catalog->id, []));
+        Hilos::$browser->flushToSignalRouter();
+        self::assertSame([], $this->deltasOf($this->drain(), self::OPEN));
+
+        $this->underAgent($this->agent, static fn () => $catalog->actions->edit('Manual Britain'));
+        $this->assertLiveVerdicts(SourceChange::dbUpdated(HilosDbContext::countryNames, (string) $catalog->id, [
+            EntityCountryName::locked => true,
+        ]), ['qx' => [false, 'names']]);
+        $countryRow = $catalog->toArray();
+        $this->underAgent($this->agent, static fn () => $catalog->actions->delete());
+        $this->assertLiveVerdicts(SourceChange::dbDeleted(HilosDbContext::countryNames, (string) $catalog->id, $countryRow), [
+            'qx' => [true, null],
+        ]);
+
+        $languageId = Hilos::$db->languages['qx']->id;
+        $this->underAgent($this->agent, static fn () => Hilos::$db->languages['qx']->actions->delete());
+        Hilos::$browser->record(SourceChange::dbDeleted(HilosDbContext::languages, (string) $languageId, [ObjectLanguage::code => 'qx']));
+        Hilos::$browser->flushToSignalRouter();
+        $signals = $this->drain();
+        foreach ([self::OPEN, self::SEARCH_HIT] as $acceptKey) {
+            $deltas = $this->deltasOf($signals, $acceptKey);
+            self::assertCount(1, $deltas);
+            self::assertSame('qx', $deltas[0]->rowKey);
+            self::assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $deltas[0]->kind);
+            self::assertSame(TableViewportDeltaDTO::REASON_DELETED, $deltas[0]->reason);
+        }
+        self::assertSame([], $table->buildMutationsForSourceEvent(SourceChange::dbDeleted(
+            HilosDbContext::locales, 'absent', [EntityLocale::language_id => $languageId],
+        )));
+    }
+
+    public function testDependencyUpdateUsesLiveAndPreviousIdsAndDeletedSourceUsesItsRecordedIds(): void
+    {
+        $this->openTwoLists();
+        $qx = Hilos::$db->languages['qx']->id;
+        $zz = Hilos::$db->languages['zz']->id;
+        $table = new HilosI18nLanguagesTable();
+        $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbUpdated(
+            HilosDbContext::languageNames, '999999', [EntityLanguageName::language_id => $qx],
+            previous: [EntityLanguageName::in_language_id => $zz],
+        ));
+        self::assertSame(['qx', 'zz'], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
+        $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbDeleted(
+            HilosDbContext::languageNames, '999999', [EntityLanguageName::language_id => $qx, EntityLanguageName::in_language_id => $zz],
+        ));
+        self::assertSame(['qx', 'zz'], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
+
+        $name = $this->underAgent($this->agent, static fn () => Hilos::$db->languageNames->actions->createManual(
+            Hilos::$db->languages['qx'], Hilos::$db->languages['zz'], null, 'Live name',
+        ));
+        $mutations = $table->buildMutationsForSourceEvent(SourceChange::dbUpdated(
+            HilosDbContext::languageNames, (string) $name->id, [EntityLanguageName::name => 'Live name'],
+        ));
+        self::assertSame(['qx', 'zz'], array_map(static fn ($mutation) => $mutation->rowKey, $mutations));
+        self::assertSame([], $table->buildMutationsForSourceEvent(SourceChange::rtUpdated(HilosDbContext::languageNames, '1', [])));
+    }
+
+    /** Creates the same two language rows in two real subscribed windows. */
+    private function openTwoLists(): void
+    {
+        $admin = Hilos::$db->users->actions->createWithName('Live deletion verdict admin');
+        $admin->actions->setAdmin(true);
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . uniqid('', true)), 0, 32));
+        $session->actions->bindUser($admin->id);
+        foreach ([self::OPEN, self::SEARCH_HIT] as $acceptKey) {
+            Hilos::$rt->connections->actions->register($acceptKey, $admin->id, $session->token, $session->id);
+        }
+        $this->underAgent($this->agent, static function (): void {
+            Hilos::$db->languages->actions->create('en', 'English', false);
+            Hilos::$db->languages->actions->create('qx', 'Qx own tongue', false);
+            Hilos::$db->languages->actions->create('zz', 'Zz own tongue', false);
+        });
+        $this->subscribe(self::OPEN, null);
+        $this->subscribe(self::SEARCH_HIT, null);
+        $this->drain();
+    }
+
+    /**
+     * @param SourceChange $change Dependency fact
+     * @param array<string, array{bool, ?string}> $expected Verdicts by code
+     */
+    private function assertLiveVerdicts(SourceChange $change, array $expected): void
+    {
+        Hilos::$browser->record($change);
+        Hilos::$browser->flushToSignalRouter();
+        $signals = $this->drain();
+        foreach ([self::OPEN, self::SEARCH_HIT] as $acceptKey) {
+            $deltas = $this->deltasOf($signals, $acceptKey);
+            self::assertCount(count($expected), $deltas, $this->signalTrace($signals));
+            $actual = [];
+            foreach ($deltas as $delta) {
+                self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+                $row = $delta->row[PagePayload::slots][HilosI18nLanguagesTable::ROW_SLOT];
+                $actual[$delta->rowKey] = [$row[HilosI18nLanguagesTableRow::canDelete], $row[HilosI18nLanguagesTableRow::deleteReason]];
+            }
+            self::assertSame($expected, $actual);
+        }
+        foreach ($signals as $signal) {
+            self::assertNotSame(SignalTypeConstants::TABLE_WINDOW, $signal['name']);
+            self::assertNotSame(SignalTypeConstants::PAGE_RESPONSE, $signal['name']);
+        }
+    }
+
+    /**
+     * @param list<array{accept: ?string, name: string, data: SignalDataInterface}> $signals Live frames
+     * @param string $acceptKey Subscribed connection
+     * @return list<TableViewportDeltaDTO> Row deltas addressed to this connection
+     */
+    private function deltasOf(array $signals, string $acceptKey): array
+    {
+        return array_values(array_map(
+            static fn ($signal) => $signal['data'],
+            array_filter($signals, static fn ($signal) => $signal['accept'] === $acceptKey && $signal['data'] instanceof TableViewportDeltaDTO),
+        ));
     }
 
     private function subscribe(string $acceptKey, ?TableWindowDescriptorDTO $window): void
@@ -485,6 +665,8 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
             . " OR in_language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'qx', 'zz'))");
         Database::sqlRun("DELETE FROM hilos_locale WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'qx', 'zz'))");
         Database::sqlRun("DELETE FROM hilos_language WHERE code IN ('en', 'qx', 'zz')");
+        Hilos::$db->countryNames->getObjectCollection()?->reHydrate();
+        Hilos::$db->countryNames->clearCache();
         Hilos::$db->languageNames->getObjectCollection()?->reHydrate();
         Hilos::$db->languageNames->clearCache();
         Hilos::$db->locales->getObjectCollection()?->reHydrate();

@@ -22,7 +22,9 @@ use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOnActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageUpdateActionDTO;
+use Hilos\Pages\I18n\HilosI18nLanguageDeleteTrait;
 use Hilos\Pages\I18n\HilosI18nLanguageUpdateTrait;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageDeleteActionDTO;
 
 /**
  * AbstractHilosI18nLanguagePage - Abstract base for Hilos i18n language page.
@@ -31,6 +33,7 @@ use Hilos\Pages\I18n\HilosI18nLanguageUpdateTrait;
  */
 abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCodePage
 {
+    use HilosI18nLanguageDeleteTrait;
     use HilosI18nLanguageUpdateTrait;
 
     public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGE;
@@ -41,6 +44,7 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
         HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_OFF => HilosI18nLanguageSwitchOffActionDTO::class,
         HilosSignalConstants::HILOS_I18N_LANGUAGE_SWITCH_ON => HilosI18nLanguageSwitchOnActionDTO::class,
         HilosSignalConstants::HILOS_I18N_LANGUAGE_UPDATE => HilosI18nLanguageUpdateActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE => HilosI18nLanguageDeleteActionDTO::class,
     ];
 
     /** @var list<string> Sources of the main language card */
@@ -65,7 +69,7 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
      * @throws TableActionException When the language does not exist
      * @throws DefaultLanguageProtectedException When the language is the configured default
      * @throws I18nRowFrozenException When the edited language is switched on
-     * @throws ValidationException When the native name is invalid
+     * @throws ValidationException When the native name is invalid or dependencies prevent removal
      * @throws HilosException When the lookup or write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -101,6 +105,15 @@ abstract class AbstractHilosI18nLanguagePage extends AbstractHilosI18nLanguageCo
                 }
 
                 $this->updateLanguage($dto);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_LANGUAGE_DELETE:
+                if (!$dto instanceof HilosI18nLanguageDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nLanguageDeleteActionDTO::class, $dto);
+                }
+
+                $this->deleteLanguage($dto);
 
                 return null;
 

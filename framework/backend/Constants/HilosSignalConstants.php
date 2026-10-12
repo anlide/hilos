@@ -285,6 +285,12 @@ final class HilosSignalConstants
      */
     public const string HILOS_I18N_LANGUAGE_ROW_UPDATE = 'hilos_i18n_language_row_update';
 
+    /** Client → languages list page: remove one language; success carries no reply data. */
+    public const string HILOS_I18N_LANGUAGE_ROW_DELETE = 'hilos_i18n_language_row_delete';
+
+    /** Client → language card page: remove one language; success carries no reply data. */
+    public const string HILOS_I18N_LANGUAGE_DELETE = 'hilos_i18n_language_delete';
+
     /** Client → language locales page: add one switched-off locale. */
     public const string HILOS_I18N_LOCALE_ADD = 'hilos_i18n_locale_add';
 

@@ -102,6 +102,25 @@ class CountryNameActions extends DbActions
         }
     }
 
+    /**
+     * Joins the caller's open transaction and removes only this unlocked base row.
+     *
+     * @throws ItemNotFoundForDeleteException When the row has no persisted id
+     * @throws ValidationException When the row is locked or is a locale override
+     * @throws HilosException When ownership or deletion fails
+     */
+    public function deleteUnlockedBaseInTransaction(): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForDeleteException('Name has no persisted id');
+        }
+        if ($this->object->locked || $this->object->localeId !== null) {
+            throw new ValidationException('Language removal can delete only unlocked base country names');
+        }
+        $this->deleteOne();
+    }
+
     /** @throws HilosException When ownership or deletion fails */
     private function deleteOne(): void
     {

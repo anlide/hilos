@@ -32,6 +32,8 @@ export const HilosI18nLanguageRowKey = {
   enabled: 'enabled',
   isDefault: 'isDefault',
   isOwn: 'isOwn',
+  canDelete: 'canDelete',
+  deleteReason: 'deleteReason',
 } as const
 
 const languageSlotSchema = z.object({
@@ -41,6 +43,10 @@ const languageSlotSchema = z.object({
   [HilosI18nLanguageRowKey.enabled]: z.boolean(),
   [HilosI18nLanguageRowKey.isDefault]: z.boolean(),
   [HilosI18nLanguageRowKey.isOwn]: z.boolean(),
+  [HilosI18nLanguageRowKey.canDelete]: z.boolean(),
+  [HilosI18nLanguageRowKey.deleteReason]: z
+    .enum(['default', 'locales', 'names'])
+    .nullable(),
 })
 
 /** One row of the languages table. */
@@ -57,6 +63,10 @@ export interface HilosI18nLanguageRow {
   readonly isDefault: boolean
   /** Whether the code is absent from the built-in catalog. */
   readonly isOwn: boolean
+  /** Whether the current server verdict permits deletion. */
+  readonly canDelete: boolean
+  /** The first blocking dependency, or null when deletion is allowed. */
+  readonly deleteReason: 'default' | 'locales' | 'names' | null
 }
 
 /**
@@ -81,6 +91,8 @@ export function resolveHilosI18nLanguageRow(
     enabled: false,
     isDefault: false,
     isOwn: false,
+    canDelete: false,
+    deleteReason: null,
   }
 }
 
@@ -123,6 +135,8 @@ export const HILOS_I18N_LANGUAGES_COLUMNS: readonly HilosTableColumnOf<HilosI18n
         HilosI18nLanguageRowKey.nativeName,
         HilosI18nLanguageRowKey.rtl,
         HilosI18nLanguageRowKey.isOwn,
+        HilosI18nLanguageRowKey.canDelete,
+        HilosI18nLanguageRowKey.deleteReason,
       ],
       headerClass: 'text-end',
       cellClass: 'text-end text-nowrap',

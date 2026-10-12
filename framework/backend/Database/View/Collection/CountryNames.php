@@ -34,6 +34,25 @@ class CountryNames extends DbCollection
     }
 
     /**
+     * @param int $languageId Writing language primary id
+     * @return list<CountryName> All unlocked base names written in the language
+     * @throws DatabaseException When the query fails
+     * @throws LogicException When collection classes are not configured
+     * @throws InvalidArgumentException When the query is invalid or a loaded object has the wrong type
+     */
+    public function unlockedBaseNamesInLanguage(int $languageId): array
+    {
+        $names = [];
+        foreach ($this->objectCollection->unlockedBaseNamesInLanguage($languageId) as $object) {
+            $name = $this->wrap($object);
+            if ($name !== null) {
+                $names[] = $name;
+            }
+        }
+        return $names;
+    }
+
+    /**
      * @param int $countryId Named country primary id
      * @return bool Whether any name row, base or override, even empty, names it
      * @throws DatabaseException When the query fails

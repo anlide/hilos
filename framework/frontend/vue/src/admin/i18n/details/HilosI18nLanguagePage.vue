@@ -5,14 +5,18 @@ import {
   createHilosI18nLanguageCard,
   createHilosI18nLanguageCardWindow,
   HILOS_I18N_LANGUAGE_WINDOW_COPY,
+  HILOS_I18N_LANGUAGE_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_DELETE_COPY,
+  hilosI18nLanguageDelete,
   HilosPages,
   type HilosI18nLanguageContext,
 } from '@hilos/core'
-import { inject } from 'vue'
+import { computed, inject, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
+import HilosI18nLanguageDelete from './HilosI18nLanguageDelete.vue'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 import HilosI18nLanguageSwitchOff from './HilosI18nLanguageSwitchOff.vue'
 import HilosI18nLanguageSwitchOn from './HilosI18nLanguageSwitchOn.vue'
@@ -26,11 +30,30 @@ const languageWindow = createHilosI18nLanguageCardWindow(
   props.context,
 )
 const copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
+const deleteCopy = HILOS_I18N_LANGUAGE_DELETE_COPY
+const deleteOpen = ref(false)
+const deleteVerdict = computed(() =>
+  hilosI18nLanguageDelete(card.value?.summary ?? null),
+)
+const deleteSource = computed(() =>
+  card.value === null
+    ? null
+    : {
+        code: card.value.code,
+        nativeName: card.value.nativeName,
+        canDelete: card.value.summary.canDelete,
+        deleteReason: card.value.summary.deleteReason,
+      },
+)
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error('HilosI18nLanguagePage requires a provided Hilos router.')
 }
 const loading = useSignal(router.pageLoading)
+
+const deleted = (): void => {
+  router.navigate(router.resolvePath(HilosPages.I18N_LANGUAGES, {})!)
+}
 </script>
 
 <template>
@@ -106,16 +129,28 @@ const loading = useSignal(router.pageLoading)
             </dd>
             <dt class="col-sm-4">Delete language</dt>
             <dd class="col-sm-8" data-id="language-card-delete-verdict">
-              <template v-if="card.summary.canDelete">Can be deleted</template>
-              <template v-else-if="card.summary.deleteReason === 'default'">
-                Cannot delete: this is the default language
-              </template>
-              <template v-else-if="card.summary.deleteReason === 'locales'">
-                Cannot delete: the language has locales
-              </template>
-              <template v-else
-                >Cannot delete: manual names reference the language</template
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                :disabled="deleteVerdict.disabled"
+                :aria-describedby="
+                  deleteVerdict.reason
+                    ? 'language-card-delete-reason'
+                    : undefined
+                "
+                data-id="language-card-delete"
+                @click="deleteOpen = true"
               >
+                {{ deleteCopy.open }}
+              </button>
+              <p
+                v-if="deleteVerdict.reason"
+                id="language-card-delete-reason"
+                class="small text-body-secondary mt-1 mb-0"
+                data-id="language-card-delete-reason"
+              >
+                {{ deleteVerdict.reason }}
+              </p>
             </dd>
           </dl>
         </div>
@@ -131,7 +166,7 @@ const loading = useSignal(router.pageLoading)
       <span class="placeholder col-4 d-block rounded"></span>
     </div>
     <p
-      v-else
+      v-else-if="!deleteOpen"
       class="alert alert-secondary"
       role="status"
       data-id="language-card-unavailable"
@@ -139,5 +174,12 @@ const loading = useSignal(router.pageLoading)
       Language details are no longer available.
     </p>
     <HilosI18nLanguageWindow :window="languageWindow" />
+    <HilosI18nLanguageDelete
+      v-model="deleteOpen"
+      :context="context"
+      :source="deleteSource"
+      :action-name="HILOS_I18N_LANGUAGE_DELETE_ACTION"
+      @deleted="deleted"
+    />
   </HilosAdminPage>
 </template>

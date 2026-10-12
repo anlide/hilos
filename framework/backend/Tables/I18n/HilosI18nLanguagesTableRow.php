@@ -22,6 +22,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
     public const string enabled = 'enabled';
     public const string isDefault = 'isDefault';
     public const string isOwn = 'isOwn';
+    public const string canDelete = 'canDelete';
+    public const string deleteReason = 'deleteReason';
 
     /**
      * @param string $code Language code, which is also the row key
@@ -30,6 +32,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
      * @param bool $enabled Whether the language is switched on
      * @param bool $isDefault Whether this is the installation default
      * @param bool $isOwn Whether the code is absent from the built-in catalog
+     * @param bool $canDelete Whether the current deletion verdict permits removal
+     * @param ?string $deleteReason Default, locales or names; null when deletion is allowed
      */
     public function __construct(
         public string $code,
@@ -38,6 +42,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
         public bool $enabled,
         public bool $isDefault,
         public bool $isOwn,
+        public bool $canDelete,
+        public ?string $deleteReason,
     ) {
     }
 
@@ -69,6 +75,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
             self::enabled => $this->enabled,
             self::isDefault => $this->isDefault,
             self::isOwn => $this->isOwn,
+            self::canDelete => $this->canDelete,
+            self::deleteReason => $this->deleteReason,
         ];
     }
 
@@ -86,6 +94,8 @@ final class HilosI18nLanguagesTableRow extends AbstractTableRow
             enabled: self::requireBool($data, self::enabled),
             isDefault: self::requireBool($data, self::isDefault),
             isOwn: self::requireBool($data, self::isOwn),
+            canDelete: self::requireBool($data, self::canDelete),
+            deleteReason: self::optionalString($data, self::deleteReason),
         );
     }
 }

@@ -377,12 +377,16 @@ or while a country selects the locale as its default. The deletion checks below
 will give those refusals their user-facing text.
 
 - A language can be deleted only when it has no locales and no names written
-  by a person, whether naming that language or written in it
-  (not in the code yet — HIL-1488).
+  by a person, whether naming that language or written in it. Locked country
+  names written in it also refuse deletion.
 - Catalog country names in that language do not block deletion and go with
-  it (not in the code yet — HIL-1488).
-- The language item action refuses deleting the default language. The
-  section's delete action and its other checks follow in HIL-1488.
+  it: the unlocked base names and the language are removed in one transaction.
+  A refusal or failed write rolls back both the rows and their ORM memory.
+- The language item action refuses deleting the default language and checks
+  every dependency again inside that transaction. Both page actions —
+  `hilos_i18n_language_delete` on the card and
+  `hilos_i18n_language_row_delete` on the list — take only `languageCode` and
+  call that item action. They acknowledge success with `Language deleted.`
 - Deleting a locale is refused while it is switched on or selected as any
   country's default locale (not in the code yet — HIL-1492).
 - Deleting a locale removes its seven formats; texts for that pair take the
@@ -463,12 +467,24 @@ serves the section root at `/hilos/i18n` and the languages list at
 `/hilos/i18n/languages/{languageCode}` (HIL-1478), its names at
 `/hilos/i18n/languages/{languageCode}/names` (HIL-1477) and its locales at
 `/hilos/i18n/languages/{languageCode}/locales` (HIL-1476). The card shows the
-code, native name, direction, enabled state, locale/name counts, and read-only
-delete verdict. Its summary also carries whether the countryless locale is
+code, native name, direction, enabled state, locale/name counts, and a delete
+control with its verdict. Its summary also carries whether the countryless locale is
 missing, off or on. The main card has Switch off and Switch on controls
 (HIL-1486/1487) and the edit or view control of its Main section, which also
-carries the frozen mark (HIL-1485); its other action controls belong to HIL-1488.
-A row of the languages table carries the same edit or view control (HIL-1485).
+carries the frozen mark (HIL-1485). A row of the languages table carries the
+same edit or view control (HIL-1485), with a trash button beside it. The card
+summary and live table fields `canDelete` / `deleteReason` are hints: the
+opening controls explain default, locales, then manual names with visible
+text, while the server judges again after the window opens.
+Both Vue entries open the same delete modal, fixing the code and native name
+on open; the list first takes the fresh row into focus and follows it live.
+A dependency appearing under the open window leaves confirmation available
+for a server refusal, drawn in the modal's reserved error row. Busy blocks
+closing and another submit. A vanished idle source says `Deleted elsewhere.`;
+an own deletion keeps its action alive until acknowledgement. Success closes
+the modal; the card then navigates to the languages list, and the list keeps
+its address and the table's normal removal/Apply model. An admin-view reader
+may open a free language's modal, with confirmation disabled.
 The Vue locales page adds a locale from a pair without one, edits a switched-off
 locale, and shows a switched-on locale in the same window (HIL-1491). The server
 actions serve all six demos; deletion is HIL-1492 and switching the locale from

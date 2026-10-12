@@ -26,6 +26,8 @@ const original: HilosI18nLanguageRow = {
   enabled: false,
   isDefault: false,
   isOwn: false,
+  canDelete: true,
+  deleteReason: null,
 }
 const originalCard: HilosI18nLanguageCard = {
   code: original.code,

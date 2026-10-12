@@ -9,12 +9,16 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
+use Hilos\Database\Database;
 use Hilos\Database\Object\Item\Language as ObjectLanguage;
 use Hilos\Database\View\Item\Language;
+use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\DTO\LanguageCardSummary;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
+use Throwable;
 
 /**
  * @extends DbActions<Language, ObjectLanguage>
@@ -81,9 +85,12 @@ class LanguageActions extends DbActions
     }
 
     /**
+     * Removes the language and its unlocked base country names in one transaction.
+     *
      * @throws ItemNotFoundForDeleteException When the row has no persisted id
      * @throws ObjectCollectionNullException When the item is detached from its collection
      * @throws DefaultLanguageProtectedException When this is the configured default language
+     * @throws ValidationException When locales or manual names reference the language
      * @throws HilosException When ownership, the database or collection refuses removal
      */
     public function delete(): void
@@ -101,8 +108,30 @@ class LanguageActions extends DbActions
         $objectCollection = $this->getObjectCollection()
             ?? throw new ObjectCollectionNullException('Object collection is null');
         $idString = $this->object->getIdString();
-        $this->object->delete();
-        unset($objectCollection[$idString]);
-        $this->item->getCollection()?->forgetCachedItem($idString);
+        Database::transactionStart();
+        try {
+            $summary = Hilos::$db->languages->cardSummary($this->object->id);
+            if ($summary->deleteReason === LanguageCardSummary::DELETE_LOCALES) {
+                throw new ValidationException("Language '{$this->object->code}' cannot be deleted: it has locales.");
+            }
+            if ($summary->deleteReason === LanguageCardSummary::DELETE_NAMES) {
+                throw new ValidationException("Language '{$this->object->code}' cannot be deleted: manual names reference it.");
+            }
+
+            foreach (Hilos::$db->countryNames->unlockedBaseNamesInLanguage($this->object->id) as $countryName) {
+                $countryName->actions->deleteUnlockedBaseInTransaction();
+            }
+            $this->object->delete();
+            unset($objectCollection[$idString]);
+            $this->item->getCollection()?->forgetCachedItem($idString);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Preserve the failure that prevented language removal.
+            }
+            throw $failure;
+        }
     }
 }

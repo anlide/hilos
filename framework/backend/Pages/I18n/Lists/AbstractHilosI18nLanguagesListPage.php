@@ -23,8 +23,11 @@ use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInLanguages;
+use Hilos\I18n\Exception\DefaultLanguageProtectedException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
+use Hilos\Pages\I18n\HilosI18nLanguageDeleteTrait;
 use Hilos\Pages\I18n\HilosI18nLanguageUpdateTrait;
+use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageRowDeleteActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageAddActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageRowUpdateActionDTO;
 
@@ -35,6 +38,7 @@ use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageRowUpdateActionDTO;
  */
 abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
 {
+    use HilosI18nLanguageDeleteTrait;
     use HilosI18nLanguageUpdateTrait;
 
     public const string PAGE = HilosPageConstants::HILOS_I18N_LANGUAGES;
@@ -44,6 +48,7 @@ abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_LANGUAGE_ADD => HilosI18nLanguageAddActionDTO::class,
         HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_UPDATE => HilosI18nLanguageRowUpdateActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE => HilosI18nLanguageRowDeleteActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -57,8 +62,9 @@ abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
      * @return ?ActionReplyDTO No reply data; success travels in the action acknowledgement
      * @throws AgentUnknownActionException When the action is unknown
      * @throws InvalidActionPayloadException When the payload has the wrong DTO type
-     * @throws ValidationException When the code exists or the language or catalog names are invalid
-     * @throws TableActionException When the edited language does not exist
+     * @throws ValidationException When the code exists, names are invalid or dependencies prevent removal
+     * @throws DefaultLanguageProtectedException When the removed language is the default
+     * @throws TableActionException When the language does not exist
      * @throws I18nRowFrozenException When the edited language is switched on
      * @throws HilosException When ownership, persistence or the transaction refuses the write
      */
@@ -83,6 +89,15 @@ abstract class AbstractHilosI18nLanguagesListPage extends AbstractHilosPage
                 }
 
                 $this->updateLanguage($dto);
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_LANGUAGE_ROW_DELETE:
+                if (!$dto instanceof HilosI18nLanguageRowDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nLanguageRowDeleteActionDTO::class, $dto);
+                }
+
+                $this->deleteLanguage($dto);
 
                 return null;
 

@@ -8,6 +8,7 @@ const LANGUAGE_ON_COMMAND = 'test:i18n:language:on'
 const LANGUAGE_OFF_COMMAND = 'test:i18n:language:off'
 const LANGUAGE_DELETE_COMMAND = 'test:i18n:language:delete'
 const LOCALE_ON_COMMAND = 'test:i18n:locale:on'
+const LOCALE_DELETE_COMMAND = 'test:i18n:locale:delete'
 const COUNTRY_ON_COMMAND = 'test:i18n:country:on'
 const COUNTRY_OFF_COMMAND = 'test:i18n:country:off'
 
@@ -51,6 +52,15 @@ export async function deleteLanguage(code: string): Promise<void> {
  */
 export async function switchLocaleOn(code: string): Promise<void> {
   await sendCommand(LOCALE_ON_COMMAND, { code })
+}
+
+/**
+ * Remove a non-default built-in countryless locale fixture through its owner.
+ *
+ * @param code Two-letter code of the countryless locale to remove.
+ */
+export async function deleteLocale(code: string): Promise<void> {
+  await sendCommand(LOCALE_DELETE_COMMAND, { code })
 }
 
 /**

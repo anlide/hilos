@@ -46,6 +46,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         CliCommands::I18N_TEST_LANGUAGE_ON,
         CliCommands::I18N_TEST_LANGUAGE_OFF,
         CliCommands::I18N_TEST_LANGUAGE_DELETE,
+        CliCommands::I18N_TEST_LOCALE_DELETE,
         CliCommands::I18N_TEST_LOCALE_ON,
         CliCommands::I18N_TEST_COUNTRY_OFF,
         CliCommands::I18N_TEST_COUNTRY_ON,
@@ -68,6 +69,9 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 return;
             case CliCommands::I18N_TEST_LANGUAGE_DELETE:
                 $this->handleLanguageDeleteCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LOCALE_DELETE:
+                $this->handleLocaleDeleteCommand($data);
                 return;
             case CliCommands::I18N_TEST_LOCALE_ON:
                 $this->handleLocaleOnCommand($data);
@@ -215,7 +219,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     }
 
     /**
-     * Removes only the fixture row; existing default-language and foreign-key guards still apply.
+     * The item action removes the fixture and its catalog country names in its own transaction.
      * An absent fixture is already clean, so teardown may follow a failed setup too.
      *
      * @param CommandRequestDTO $data Request carrying a built-in language code
@@ -231,8 +235,44 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         try {
-            Database::transactionStart();
             Hilos::$db->languages[$code]?->actions->delete();
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
+            I18nTestCommandConstants::FIELD_CODE => $code,
+        ]));
+    }
+
+    /**
+     * Cleanup is limited to a non-default built-in countryless locale; an absent fixture is clean.
+     *
+     * @param CommandRequestDTO $data Request carrying the fixture's locale code
+     * @throws HilosException When wiring refuses the read or the command reply cannot be sent
+     */
+    private function handleLocaleDeleteCommand(CommandRequestDTO $data): void
+    {
+        $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
+        if (!is_string($code) || preg_match('/^[a-z]{2}$/D', $code) !== 1 || BuiltInI18nCatalog::locale($code) === null) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'A built-in countryless locale code is required'));
+
+            return;
+        }
+
+        try {
+            if ($code === DefaultLanguage::code()) {
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The default locale cannot be removed by test cleanup'));
+
+                return;
+            }
+            Database::transactionStart();
+            Hilos::$db->locales[$code]?->actions->switchOff();
+            Hilos::$db->locales[$code]?->actions->delete();
             Database::transactionCommit();
         } catch (WiringRefusal $refusal) {
             Database::transactionRollback();
@@ -241,7 +281,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             try {
                 Database::transactionRollback();
             } catch (HilosException) {
-                // Preserve the failure that prevented fixture removal.
+                // Preserve the failure that prevented cleanup.
             }
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
 

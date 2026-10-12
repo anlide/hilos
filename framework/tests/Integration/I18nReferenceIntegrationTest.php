@@ -347,7 +347,8 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         try {
             $language->actions->delete();
             $this->fail('Expected a language with a locale to be protected');
-        } catch (ForeignKeyConstraintException) {
+        } catch (ValidationException $failure) {
+            $this->assertSame("Language 'en' cannot be deleted: it has locales.", $failure->getMessage());
             $this->assertNotNull(Hilos::$db->languages[$language->id]);
         }
 

@@ -1,5 +1,5 @@
 // The main language card is one page-scoped browser datum. Its summary is a
-// read-only hint; the server checks any future delete action at write time.
+// read-only hint; the server checks deletion again at write time.
 import { z } from 'zod'
 import { type ActionLifecycle } from '../../connection/actionLifecycle.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'

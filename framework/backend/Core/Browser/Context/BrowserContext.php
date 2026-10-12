@@ -68,6 +68,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Definition\MultiRowViewportTable;
 use Hilos\Core\Table\Definition\ViewportTable;
 use Hilos\Core\Table\Definition\WindowScopedViewportTable;
 use Hilos\Core\Table\DTO\TableProgressDTO;
@@ -3453,9 +3454,9 @@ abstract class BrowserContext
      * Builds the row mutations one source change makes in one connection's window.
      *
      * An ordinary viewport table builds one mutation per change and knows nothing of the window,
-     * so its answer is that mutation or nothing. A {@see WindowScopedViewportTable} draws its rows
-     * from the subject the window is opened on, and is asked about this window by the query the
-     * window was served by — the one place the subject lives.
+     * so its answer is that mutation or nothing. A MultiRowViewportTable answers with several rows,
+     * identical in every window. A WindowScopedViewportTable draws its rows from the subject the
+     * window is opened on, and is asked by the query that window was served by.
      *
      * @param ViewportTable $table Viewport table the window is on
      * @param TableViewportSubscription $viewport Connection's window
@@ -3467,6 +3468,10 @@ abstract class BrowserContext
     {
         if ($table instanceof WindowScopedViewportTable) {
             return $table->buildMutationsForWindow($change, $this->viewportQuery($viewport));
+        }
+
+        if ($table instanceof MultiRowViewportTable) {
+            return $table->buildMutationsForSourceEvent($change);
         }
 
         $mutation = $table->buildMutationForSourceEvent($change);

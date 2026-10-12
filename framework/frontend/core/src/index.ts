@@ -113,6 +113,13 @@ export {
   hilosI18nLanguageSwitchOn,
 } from './admin/i18n/hilosI18nLanguageSwitch.js'
 export {
+  HILOS_I18N_LANGUAGE_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_DELETE_COPY,
+  createHilosI18nLanguageDelete,
+  hilosI18nLanguageDelete,
+} from './admin/i18n/hilosI18nLanguageDelete.js'
+export {
   HILOS_I18N_LANGUAGE_UPDATE_ACTION,
   HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
   HILOS_I18N_LANGUAGE_NATIVE_NAME_MAX,

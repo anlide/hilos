@@ -13,23 +13,26 @@ import {
   createHilosI18nLanguageAdd,
   createHilosI18nLanguageRowWindow,
   createHilosI18nLanguagesTable,
-  HILOS_I18N_LANGUAGE_WINDOW_COPY,
+  HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION,
+  hilosI18nLanguageDelete,
   HILOS_I18N_LANGUAGE_MARKS,
   HILOS_I18N_LANGUAGES_LEGEND,
   HilosPages,
   type HilosI18nLanguageContext,
   type HilosI18nLanguageRow,
 } from '@hilos/core'
-import { inject, onMounted, onUnmounted } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosLink from '../../../HilosLink.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
+import HilosI18nLanguageDelete from '../details/HilosI18nLanguageDelete.vue'
 import HilosI18nLanguageWindow from '../details/HilosI18nLanguageWindow.vue'
 import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
 import HilosI18nLanguageAdd from './HilosI18nLanguageAdd.vue'
+import HilosI18nLanguageRowActions from './HilosI18nLanguageRowActions.vue'
 import HilosI18nMarksLegend from './HilosI18nMarksLegend.vue'
 
 const props = defineProps<{
@@ -53,7 +56,27 @@ const languageWindow = createHilosI18nLanguageRowWindow(
   languages.controller,
   props.context,
 )
-const copy = HILOS_I18N_LANGUAGE_WINDOW_COPY
+const deleteOpen = ref(false)
+const deleteCode = ref('')
+const focusedRow = useSignal(languages.controller.focusedRow)
+const deleteSource = computed(() =>
+  focusedRow.value?.code === deleteCode.value ? focusedRow.value : null,
+)
+
+async function openDelete(code: string): Promise<void> {
+  await languages.controller.focusRow(code)
+  const fresh = languages.controller.focusedRow.get()
+  if (fresh?.code !== code || hilosI18nLanguageDelete(fresh).disabled) {
+    languages.controller.releaseFocus()
+    return
+  }
+  deleteCode.value = fresh.code
+  deleteOpen.value = true
+}
+
+watch(deleteOpen, (open) => {
+  if (!open) languages.controller.releaseFocus()
+})
 
 onMounted(() => languages.start())
 onUnmounted(() => {
@@ -161,28 +184,11 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
         />
       </template>
       <template #cell-actions="{ row }">
-        <button
-          v-if="row.enabled"
-          type="button"
-          class="btn btn-sm btn-outline-secondary"
-          :title="copy.open.view"
-          :aria-label="copy.open.view"
-          :data-id="`i18n-languages-view-${row.code}`"
-          @click="languageWindow.open(row.code)"
-        >
-          <i class="bi bi-eye" aria-hidden="true"></i>
-        </button>
-        <button
-          v-else
-          type="button"
-          class="btn btn-sm btn-outline-primary"
-          :title="copy.open.edit"
-          :aria-label="copy.open.edit"
-          :data-id="`i18n-languages-edit-${row.code}`"
-          @click="languageWindow.open(row.code)"
-        >
-          <i class="bi bi-pencil" aria-hidden="true"></i>
-        </button>
+        <HilosI18nLanguageRowActions
+          :row="row"
+          @edit="languageWindow.open(row.code)"
+          @delete="openDelete(row.code)"
+        />
       </template>
     </HilosViewportTable>
     <HilosI18nMarksLegend
@@ -192,5 +198,11 @@ const languagePath = (row: HilosI18nLanguageRow): string | undefined =>
     />
     <HilosI18nLanguageAdd :add="add" :context="context" />
     <HilosI18nLanguageWindow :window="languageWindow" />
+    <HilosI18nLanguageDelete
+      v-model="deleteOpen"
+      :context="context"
+      :source="deleteSource"
+      :action-name="HILOS_I18N_LANGUAGE_ROW_DELETE_ACTION"
+    />
   </HilosAdminPage>
 </template>

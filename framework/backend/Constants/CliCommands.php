@@ -280,6 +280,13 @@ final class CliCommands
     public const string I18N_TEST_LANGUAGE_DELETE = 'test:i18n:language:delete';
 
     /**
+     * Remove a non-default built-in countryless locale fixture through its owner.
+     *
+     * @var string Command: Delete a countryless locale fixture (test-only)
+     */
+    public const string I18N_TEST_LOCALE_DELETE = 'test:i18n:locale:delete';
+
+    /**
      * Create and enable a known countryless locale through the i18n library (test-only).
      *
      * The CLI process has no write ownership; the library answers over the command channel.

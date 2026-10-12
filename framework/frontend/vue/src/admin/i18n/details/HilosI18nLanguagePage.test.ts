@@ -1,21 +1,24 @@
 import { mount } from '@vue/test-utils'
 import {
   createSignal,
+  HILOS_I18N_LANGUAGE_DELETE_ACTION,
   HilosPages,
   LANGUAGE_CARD_DATA,
   ScopeManager,
   type ActionLifecycle,
+  type ActionResult,
   type HilosConnection,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
 
 import HilosI18nLanguagePage from './HilosI18nLanguagePage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+import { hilosAdminViewModeKey } from '../../../hilosAdminViewMode.js'
 
 const initialCard: HilosI18nLanguageCard = {
   code: 'qx',
@@ -48,6 +51,7 @@ function router(childrenBuilt = false): HilosRouter {
     pageIdentity: createSignal(undefined),
     dashboardSections: createSignal(undefined),
     resolvePath: (page, params) => {
+      if (page === HilosPages.I18N_LANGUAGES) return '/hilos/i18n/languages'
       if (!childrenBuilt && page !== HilosPages.I18N_LANGUAGE) return undefined
       const base = `/hilos/i18n/languages/${params?.languageCode}`
       if (page === HilosPages.I18N_LANGUAGE) return base
@@ -66,19 +70,29 @@ function router(childrenBuilt = false): HilosRouter {
   }
 }
 
-function harness(childrenBuilt = false) {
+function harness(
+  childrenBuilt = false,
+  actions = {} as ActionLifecycle,
+  viewMode = false,
+) {
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.I18N_LANGUAGE)
   const context: HilosI18nLanguageContext = {
     connection: {} as HilosConnection,
     scopes,
-    actions: {} as ActionLifecycle,
+    actions,
   }
-  const navigation = router(childrenBuilt)
+  const navigation = {
+    ...router(childrenBuilt),
+    pageLoading: createSignal(true),
+  }
   const view = mount(HilosI18nLanguagePage, {
     props: { context },
     global: {
-      provide: { [hilosRouterKey as symbol]: navigation },
+      provide: {
+        [hilosRouterKey as symbol]: navigation,
+        [hilosAdminViewModeKey as symbol]: ref(viewMode),
+      },
       stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
@@ -86,6 +100,102 @@ function harness(childrenBuilt = false) {
 }
 
 describe('HilosI18nLanguagePage', () => {
+  it.each(['default', 'locales', 'names'] as const)(
+    'shows the %s delete reason beside the disabled card control',
+    async (deleteReason) => {
+      const h = harness()
+      h.scope.data.set(LANGUAGE_CARD_DATA, {
+        ...initialCard,
+        summary: { ...initialCard.summary, canDelete: false, deleteReason },
+      })
+      await nextTick()
+      const opener = h.view.get('[data-id="language-card-delete"]')
+      expect((opener.element as HTMLButtonElement).disabled).toBe(true)
+      expect(opener.attributes('aria-describedby')).toBe(
+        'language-card-delete-reason',
+      )
+      expect(
+        h.view.get('[data-id="language-card-delete-reason"]').text(),
+      ).toMatch(/^Cannot delete: .+\.$/)
+      h.view.unmount()
+    },
+  )
+
+  it('lets a card viewer read the delete modal and keeps an idle vanished source there', async () => {
+    const h = harness(false, {} as ActionLifecycle, true)
+    h.scope.data.set(LANGUAGE_CARD_DATA, {
+      ...initialCard,
+      summary: { ...initialCard.summary, canDelete: true, deleteReason: null },
+    })
+    await nextTick()
+    const opener = h.view.get('[data-id="language-card-delete"]')
+    expect((opener.element as HTMLButtonElement).disabled).toBe(false)
+    await opener.trigger('click')
+    const confirm = document.querySelector<HTMLButtonElement>(
+      '[data-id="i18n-language-delete-confirm"]',
+    )!
+    expect(confirm.disabled).toBe(true)
+    h.scope.data.set(LANGUAGE_CARD_DATA, [])
+    await nextTick()
+    expect(document.body.textContent).toContain('Deleted elsewhere.')
+    expect(
+      document.querySelector('[data-id="i18n-language-delete-confirm"]'),
+    ).toBe(confirm)
+    h.view.unmount()
+  })
+
+  it('keeps deletion alive across source-null and redirects only after acknowledgement', async () => {
+    let settle: (result: ActionResult) => void = () => {}
+    const done = new Promise<ActionResult>((resolve) => {
+      settle = resolve
+    })
+    const dispatch = vi.fn(() => ({
+      requestId: 'delete-card',
+      loading: createSignal(false),
+      done,
+    }))
+    const h = harness(false, { dispatch } as unknown as ActionLifecycle)
+    const navigate = vi.spyOn(h.navigation, 'navigate')
+    h.navigation.pageLoading.set(false)
+    h.scope.data.set(LANGUAGE_CARD_DATA, {
+      ...initialCard,
+      summary: {
+        ...initialCard.summary,
+        canDelete: true,
+        deleteReason: null,
+        isDefault: false,
+      },
+    })
+    await nextTick()
+    await h.view.get('[data-id="language-card-delete"]').trigger('click')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-language-delete-confirm"]',
+      )!
+      .click()
+    expect(dispatch).toHaveBeenCalledWith(HILOS_I18N_LANGUAGE_DELETE_ACTION, {
+      languageCode: 'qx',
+    })
+    h.scope.data.set(LANGUAGE_CARD_DATA, [])
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-language-delete-confirm"]'),
+    ).not.toBeNull()
+    expect(h.view.find('[data-id="language-card-unavailable"]').exists()).toBe(
+      false,
+    )
+    expect(navigate).not.toHaveBeenCalled()
+    settle({ message: 'Language deleted.' })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('/hilos/i18n/languages')
+    expect(
+      document.querySelector('[data-id="i18n-language-delete-confirm"]'),
+    ).toBeNull()
+    h.view.unmount()
+  })
+
   it('waits for the first card, then shows its read-only fields and three tab names', async () => {
     const h = harness()
     expect(h.view.find('[data-id="language-card-header"]').exists()).toBe(false)
@@ -129,7 +239,7 @@ describe('HilosI18nLanguagePage', () => {
     ).toBe('page')
     expect(
       h.view.findAll('[data-id="language-card-state"] button'),
-    ).toHaveLength(1)
+    ).toHaveLength(2)
     expect(
       h.view
         .find('[data-id="language-card-switch-off"]')
@@ -193,14 +303,14 @@ describe('HilosI18nLanguagePage', () => {
       'Custom language',
     )
     expect(h.view.find('[data-id="language-card-delete-verdict"]').text()).toBe(
-      'Can be deleted',
+      'Delete language',
     )
     expect(h.view.find('[data-id="language-card-switch-off"]').exists()).toBe(
       false,
     )
     expect(
       h.view.findAll('[data-id="language-card-state"] button'),
-    ).toHaveLength(1)
+    ).toHaveLength(2)
     expect(h.view.find('[data-id="language-card-switch-on"]').text()).toBe(
       'Switch on',
     )

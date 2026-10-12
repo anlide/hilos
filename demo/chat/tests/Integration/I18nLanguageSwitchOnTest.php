@@ -189,6 +189,26 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
             "Language 'qq' does not exist");
     }
 
+    public function testCountrylessFixtureCleanupDeletesOnlyNonDefaultBuiltInLocales(): void
+    {
+        $this->assertCommand(CliCommands::I18N_TEST_LANGUAGE_OFF, 'es', true, ['code' => 'es', 'enabled' => false]);
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'es', true, ['code' => 'es', 'enabled' => true]);
+        self::assertFalse(Hilos::$db->languages->cardSummary(Hilos::$db->languages['es']->id)->canDelete);
+        $this->assertCommand(CliCommands::I18N_TEST_LANGUAGE_DELETE, 'es', false, "Language 'es' cannot be deleted: it has locales.");
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'es', true, ['code' => 'es']);
+        self::assertNull(Hilos::$db->locales['es']);
+        self::assertTrue(Hilos::$db->languages->cardSummary(Hilos::$db->languages['es']->id)->canDelete);
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'es', true, ['code' => 'es']);
+        $this->assertCommand(CliCommands::I18N_TEST_LANGUAGE_DELETE, 'es', true, ['code' => 'es']);
+        self::assertNull(Hilos::$db->languages['es']);
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'en', false,
+            'The default locale cannot be removed by test cleanup');
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'en-US', false,
+            'A built-in countryless locale code is required');
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_DELETE, 'zz', false,
+            'A built-in countryless locale code is required');
+    }
+
     /** @param array<string, mixed>|string $expected Successful reply payload or refusal message */
     private function assertCommand(string $command, string $code, bool $ok, array|string $expected): void
     {

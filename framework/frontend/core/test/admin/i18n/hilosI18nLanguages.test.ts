@@ -33,6 +33,8 @@ describe('resolveHilosI18nLanguageRow', () => {
           enabled: true,
           isDefault: true,
           isOwn: false,
+          canDelete: false,
+          deleteReason: 'default',
         }),
       ),
     ).toEqual({
@@ -42,7 +44,51 @@ describe('resolveHilosI18nLanguageRow', () => {
       enabled: true,
       isDefault: true,
       isOwn: false,
+      canDelete: false,
+      deleteReason: 'default',
     })
+  })
+
+  it.each(['default', 'locales', 'names', null] as const)(
+    'reads deletion verdict %s without adding a sortable column',
+    (deleteReason) => {
+      const resolved = resolveHilosI18nLanguageRow(
+        languageRow('uk', {
+          code: 'uk',
+          nativeName: 'Українська',
+          rtl: false,
+          enabled: true,
+          isDefault: false,
+          isOwn: false,
+          canDelete: deleteReason === null,
+          deleteReason,
+        }),
+      )
+      expect(resolved.canDelete).toBe(deleteReason === null)
+      expect(resolved.deleteReason).toBe(deleteReason)
+    },
+  )
+
+  it('refuses a malformed or missing verdict with the safe fallback', () => {
+    for (const verdict of [
+      { canDelete: true, deleteReason: 'unknown' },
+      { canDelete: 'true', deleteReason: null },
+      {},
+    ]) {
+      const resolved = resolveHilosI18nLanguageRow(
+        languageRow('uk', {
+          code: 'uk',
+          nativeName: 'Українська',
+          rtl: false,
+          enabled: false,
+          isDefault: false,
+          isOwn: false,
+          ...verdict,
+        }),
+      )
+      expect(resolved.canDelete).toBe(false)
+      expect(resolved.deleteReason).toBeNull()
+    }
   })
 
   it('keeps a row whose slot the schema refuses, named by its key', () => {
@@ -53,6 +99,8 @@ describe('resolveHilosI18nLanguageRow', () => {
       enabled: false,
       isDefault: false,
       isOwn: false,
+      canDelete: false,
+      deleteReason: null,
     })
   })
 })
@@ -83,6 +131,8 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
       'nativeName',
       'rtl',
       'isOwn',
+      'canDelete',
+      'deleteReason',
     ])
     expect(HILOS_I18N_LANGUAGES_COLUMNS[0]?.card).toBe('title')
   })
@@ -102,6 +152,8 @@ describe('HILOS_I18N_LANGUAGES_FRAME', () => {
           enabled: false,
           isDefault: false,
           isOwn: false,
+          canDelete: true,
+          deleteReason: null,
         }),
       ],
       1,

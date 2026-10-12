@@ -38,6 +38,31 @@ class CountryNames extends Objects
     }
 
     /**
+     * @param int $languageId Writing language primary id
+     * @return list<ObjectCountryName> All unlocked base names written in the language
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the query is invalid
+     */
+    public function unlockedBaseNamesInLanguage(int $languageId): array
+    {
+        $rows = static::entityClass()::get(
+            '`' . EntityCountryName::language_id . '` = ? AND `' . EntityCountryName::locked . '` = ?'
+                . ' AND `' . EntityCountryName::locale_id . '` IS NULL',
+            [$languageId, 0],
+        );
+        $names = [];
+        foreach ($rows as $row) {
+            if ($row->id !== null) {
+                if (!isset($this->objects[$row->id])) {
+                    $this->hydrate($row->id, static::OBJECT_CLASS::fromEntity($row));
+                }
+                $names[] = $this->objects[$row->id];
+            }
+        }
+        return $names;
+    }
+
+    /**
      * @param int $countryId Named country primary id
      * @return bool Whether any name row, base or override, even empty, names it
      * @throws DatabaseException When the query fails

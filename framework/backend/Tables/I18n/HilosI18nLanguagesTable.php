@@ -14,7 +14,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Definition\MultiRowViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -28,7 +28,13 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
+use Hilos\Database\Entity\Item\LanguageName as EntityLanguageName;
+use Hilos\Database\Entity\Item\Locale as EntityLocale;
+use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\Object\Item\Language as ObjectLanguage;
+use Hilos\Database\Object\Item\LanguageName as ObjectLanguageName;
+use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Item\Language;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
@@ -43,7 +49,7 @@ use Hilos\I18n\DefaultLanguage;
  * A project activates the table by registering it under {@see self::TABLE} and binding it
  * to the languages list page in {@see Hilos::PAGE_TABLES}.
  */
-final class HilosI18nLanguagesTable extends TableDefinition implements ViewportTable
+final class HilosI18nLanguagesTable extends TableDefinition implements MultiRowViewportTable
 {
     /** Canonical table key under which a project registers this table in its TableContext. */
     public const string TABLE = 'hilosI18nLanguages';
@@ -61,6 +67,9 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
     public const array BROWSER = [
         BrowserTableConfigKey::SOURCES => [
             self::LANGUAGES_SOURCE,
+            [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::locales],
+            [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::languageNames],
+            [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::countryNames],
         ],
         BrowserTableConfigKey::ROWS => [
             [
@@ -75,6 +84,8 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
                 BrowserTableFieldKey::COMPUTED => [
                     HilosI18nLanguagesTableRow::isDefault,
                     HilosI18nLanguagesTableRow::isOwn,
+                    HilosI18nLanguagesTableRow::canDelete,
+                    HilosI18nLanguagesTableRow::deleteReason,
                 ],
             ],
         ],
@@ -140,6 +151,72 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
     }
 
     /**
+     * Dependent rows redraw every language they reference, by primary id in either row vocabulary.
+     * Previous coordinates also release languages a dependency moved away from.
+     *
+     * @param SourceChange $change Source fact from the language or its dependencies
+     * @return list<TableRowMutationDTO> Current language rows, without duplicates or vanished languages
+     * @throws DatabaseException When a source or summary cannot be read
+     * @throws LogicException When a collection is not configured
+     * @throws InvalidArgumentException When a loaded item has the wrong type
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
+     */
+    public function buildMutationsForSourceEvent(SourceChange $change): array
+    {
+        if ($change->kind !== SourceChange::KIND_DB) {
+            return [];
+        }
+        if ($change->sourceKey === HilosDbContext::languages) {
+            $mutation = $this->buildMutationForSourceEvent($change);
+
+            return $mutation === null ? [] : [$mutation];
+        }
+
+        $fields = match ($change->sourceKey) {
+            HilosDbContext::locales => [ObjectLocale::languageId => EntityLocale::language_id],
+            HilosDbContext::countryNames => [ObjectCountryName::languageId => EntityCountryName::language_id],
+            HilosDbContext::languageNames => [
+                ObjectLanguageName::languageId => EntityLanguageName::language_id,
+                ObjectLanguageName::inLanguageId => EntityLanguageName::in_language_id,
+            ],
+            default => [],
+        };
+        if ($fields === []) {
+            return [];
+        }
+
+        $source = $change->mutationType === TableMutationType::Delete ? null : match ($change->sourceKey) {
+            HilosDbContext::locales => Hilos::$db->locales[(int) $change->sourceId],
+            HilosDbContext::countryNames => Hilos::$db->countryNames[(int) $change->sourceId],
+            HilosDbContext::languageNames => Hilos::$db->languageNames[(int) $change->sourceId],
+        };
+        $languageIds = [];
+        foreach ([$source?->toArray() ?? [], $change->row, $change->previous] as $row) {
+            foreach ($fields as $field => $column) {
+                $id = $row[$field] ?? $row[$column] ?? null;
+                if (is_int($id) || (is_string($id) && ctype_digit($id))) {
+                    $languageIds[(int) $id] = true;
+                }
+            }
+        }
+
+        $mutations = [];
+        foreach (array_keys($languageIds) as $languageId) {
+            $language = Hilos::$db->languages[$languageId];
+            if ($language !== null) {
+                $mutations[] = $this->mutation(
+                    TableMutationType::Update,
+                    $language->code,
+                    $this->rowForLanguage($language, DefaultLanguage::code()),
+                );
+            }
+        }
+
+        return $mutations;
+    }
+
+    /**
      * @param AbstractTableRow $row Language row from this table's window or mutation
      * @return array{rowKey: int|string, sources: array<string, mixed>} Internal browser-row envelope
      * @throws TableRowKeyMissingException When the row is a placeholder and carries no key
@@ -156,7 +233,7 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
 
     /**
      * The four stored fields are columns of hilos_language, none of them personal.
-     * The two marks are computed from the environment and the built-in catalog.
+     * The marks and deletion verdict are computed, nonpersonal facts.
      *
      * @return array<string, WireField> Row field to where it comes from
      */
@@ -172,6 +249,8 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
             HilosI18nLanguagesTableRow::enabled => WireField::column(HilosDbContext::languages, ObjectLanguage::enabled),
             HilosI18nLanguagesTableRow::isDefault => WireField::notPersonal(),
             HilosI18nLanguagesTableRow::isOwn => WireField::notPersonal(),
+            HilosI18nLanguagesTableRow::canDelete => WireField::notPersonal(),
+            HilosI18nLanguagesTableRow::deleteReason => WireField::notPersonal(),
         ];
     }
 
@@ -271,9 +350,16 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
      * @param Language $language Language to project
      * @param string $defaultCode Installation default, read once for the query
      * @return HilosI18nLanguagesTableRow Language table row
+     * @throws DatabaseException When the summary query fails
+     * @throws LogicException When a collection is not configured
+     * @throws InvalidArgumentException When the language no longer exists
+     * @throws EnvException When the default language setting is absent
+     * @throws EnvInvalidValueException When its configured code is unknown
      */
     private function rowForLanguage(Language $language, string $defaultCode): HilosI18nLanguagesTableRow
     {
+        $summary = Hilos::$db->languages->cardSummary($language->id);
+
         return new HilosI18nLanguagesTableRow(
             code: $language->code,
             nativeName: $language->nativeName,
@@ -281,6 +367,8 @@ final class HilosI18nLanguagesTable extends TableDefinition implements ViewportT
             enabled: $language->enabled,
             isDefault: $language->code === $defaultCode,
             isOwn: BuiltInI18nCatalog::language($language->code) === null,
+            canDelete: $summary->canDelete,
+            deleteReason: $summary->deleteReason,
         );
     }
 }
