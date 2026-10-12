@@ -14,6 +14,8 @@ use Hilos\API\Exception\AsyncHttpTimeoutException;
 use Hilos\API\Exception\AsyncHttpTlsHandshakeException;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Daemon\TickDrivenIo;
+use Hilos\Core\Daemon\TickDrivenIoRegistry;
 use Hilos\Socket\Exception\SocketConnectException;
 use Hilos\Socket\Exception\SocketReadException;
 use Hilos\Socket\Exception\SocketSelectException;
@@ -29,7 +31,7 @@ use Hilos\Utils\Helpers\HttpHeaderHelper;
  * startNewRequest() or tick(); successful responses are consumed explicitly
  * with consumeResult().
  */
-class AsyncHttpClient
+class AsyncHttpClient implements TickDrivenIo
 {
     /**
      * User-Agent every request carries unless the caller names its own.
@@ -118,6 +120,7 @@ class AsyncHttpClient
         $this->defaultPath = $pathStr;
         $this->requestPath = $pathStr;
         $this->state = AsyncHttpState::DONE;
+        TickDrivenIoRegistry::track($this);
     }
 
     /**
@@ -219,6 +222,12 @@ class AsyncHttpClient
     public function isBusy(): bool
     {
         return $this->state !== AsyncHttpState::DONE;
+    }
+
+    /** @return bool True while a request is in progress or its result has not been taken */
+    public function isInFlight(): bool
+    {
+        return $this->isBusy() || $this->hasResult();
     }
 
     /**

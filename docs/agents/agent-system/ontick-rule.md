@@ -1,6 +1,8 @@
 # onTick Rule: < 0.1s
 
-`onTick()` is called on **every worker loop iteration**. It must complete in under 0.1 seconds.
+`onTick()` is called on **every worker loop iteration**: every 10 ms while the worker has work in hand,
+at most 100 ms apart while it is idle (see [Timing](../architecture/event-loop.md#timing)). It must
+complete in under 0.1 seconds.
 
 ## Why this matters
 

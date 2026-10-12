@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\API;
 
 use Hilos\API\Exception\AsyncCommandResultUnavailableException;
+use Hilos\Core\Daemon\TickDrivenIo;
+use Hilos\Core\Daemon\TickDrivenIoRegistry;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Core\Exception\NonArrayPayloadException;
@@ -27,7 +29,7 @@ use Hilos\Socket\SocketException;
  * tick()/hasResult() and render a spinner while waiting. The caller owns the
  * wall-clock timeout, mirroring the StatusCommand poll loop.
  */
-class AsyncCommandClient
+class AsyncCommandClient implements TickDrivenIo
 {
     /** @var string Target host */
     private string $host;
@@ -63,6 +65,7 @@ class AsyncCommandClient
     {
         $this->host = $host;
         $this->port = $port;
+        TickDrivenIoRegistry::track($this);
     }
 
     /**
@@ -158,6 +161,12 @@ class AsyncCommandClient
         $this->lastReply = null;
 
         return $reply;
+    }
+
+    /** @return bool True while a request is in progress or its reply has not been taken */
+    public function isInFlight(): bool
+    {
+        return $this->isBusy() || $this->hasResult();
     }
 
     /**

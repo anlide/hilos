@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core;
 
+use Hilos\Core\Daemon\TickDrivenIo;
+use Hilos\Core\Daemon\TickDrivenIoRegistry;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
 use Hilos\Core\Exception\Process\FailedToGetStatusException;
@@ -21,7 +23,7 @@ use Throwable;
  * on POSIX platforms. PHP's proc_open pipes are always blocking on Windows, so the
  * non-blocking guarantees of this class hold on Linux/macOS only.
  */
-class Process
+class Process implements TickDrivenIo
 {
     // Process status keys (subset of proc_get_status() keys)
     public const string STATUS_RUNNING = 'running';
@@ -144,6 +146,7 @@ class Process
                 throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stderr on streams.');
             }
         }
+        TickDrivenIoRegistry::track($this);
     }
 
     /**
@@ -266,6 +269,12 @@ class Process
 
         $this->lastStatus = $status;
         return $status;
+    }
+
+    /** @return bool True until the child has been reaped and its handle closed */
+    public function isInFlight(): bool
+    {
+        return !$this->closed;
     }
 
     /**

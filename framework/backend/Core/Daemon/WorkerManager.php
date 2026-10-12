@@ -181,8 +181,11 @@ use Throwable;
  */
 abstract class WorkerManager extends BaseManager implements PageResender
 {
-    /** Seconds between parent-process checks; the loop itself spins every 10 ms. */
+    /** Seconds between parent-process checks; a busy loop turns every 10 ms, an idle one waits on its socket. */
     private const float PARENT_CHECK_INTERVAL_SECONDS = 1.0;
+
+    /** Longest wait of an idle pass on the daemon socket: the "about every 100 ms" an agent's onTick is promised. */
+    private const float IDLE_WAIT_SECONDS = 0.1;
 
     /** What a wait with no consumer of its own is parked under: the daemon link, waiting for the framework's own rows. */
     private const string PARKED_LINK_KEY = 'link';
@@ -345,6 +348,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         // Main loop
         while (!$this->shouldExit) {
             $loopStartTime = microtime(true);
+            $handledMessage = false;
 
             // Check connection status if not yet connected
             if ($this->daemonClient !== null && !$this->daemonClient->isConnected()) {
@@ -389,6 +393,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 // every unit starts with Database::handlerStart(), so a commit inside it holds a
                 // failed announcement for the unit's card.
                 while (($message = $this->daemonClient->getNextMessage()) !== null) {
+                    $handledMessage = true;
                     Database::handlerStart();
                     try {
                         $this->handleDaemonMessage($message);
@@ -443,7 +448,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 break;
             }
 
-            $this->sleepWithPreciseTiming($loopStartTime);
+            $this->waitForWork($loopStartTime, $handledMessage);
 
             // Process signals
             pcntl_signal_dispatch();
@@ -453,6 +458,33 @@ abstract class WorkerManager extends BaseManager implements PageResender
         $this->cleanup();
 
         Logger::info("Worker #{$this->workerIndex} stopped");
+    }
+
+    /**
+     * Ends a loop pass: the short pause while there is work, otherwise a wait on the daemon socket.
+     *
+     * A pass that handled a message, left bytes for the daemon, or has a tick-driven operation in
+     * flight ({@see TickDrivenIoRegistry}) keeps the 10 ms rhythm: the next pass has something to
+     * read, flush or drive. Any other pass waits until the daemon sends something, no longer than
+     * IDLE_WAIT_SECONDS, so an idle worker no longer wakes a hundred times a second. A link with no
+     * socket to wait on - a stand-in for the daemon in a test - keeps the short pause too.
+     *
+     * @param float $loopStartTime Timestamp of the current loop iteration
+     * @param bool $handledMessage Whether this pass handled a message from the daemon
+     */
+    private function waitForWork(float $loopStartTime, bool $handledMessage): void
+    {
+        $client = $this->daemonClient;
+        if ($client === null || !$client->isConnected() || $client->getSocket() === null || $handledMessage
+            || $client->hasPendingWrite() || TickDrivenIoRegistry::anyInFlight()) {
+            $this->sleepWithPreciseTiming($loopStartTime);
+            return;
+        }
+
+        $remaining = self::IDLE_WAIT_SECONDS - (microtime(true) - $loopStartTime);
+        if ($remaining > 0) {
+            $client->awaitReadable($remaining);
+        }
     }
 
     /**

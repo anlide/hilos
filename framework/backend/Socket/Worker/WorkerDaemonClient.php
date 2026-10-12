@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker;
 
+use Event;
+use EventBase;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -36,6 +38,12 @@ class WorkerDaemonClient extends AbstractSocket
 
     /** @var array<WorkerDTO> Message queue for received messages */
     private array $messageQueue = [];
+
+    /** Event base of the idle wait, built at the first wait. */
+    private ?EventBase $waitBase = null;
+
+    /** Read watch on the daemon socket for the idle wait; off the watch before the socket closes. */
+    private ?Event $waitEvent = null;
 
     /**
      * Connect to daemon WorkerServer (non-blocking)
@@ -257,6 +265,35 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
+     * Wait until the daemon sends something, no longer than the given time.
+     *
+     * Returns either way - data waiting or out of time - and reads nothing: the caller reads
+     * on its next pass. Does nothing unless connected and holding a socket: a stand-in for the
+     * daemon link that reports itself connected without one has nothing to wait on.
+     *
+     * The wait is libevent's, as the master's loop is, and not `socket_select()`: a select cut
+     * short by a signal raises its own warning, PHP calls the error handler for it even under
+     * `@`, and an asynchronous signal handler then runs inside that call, where a warning of its
+     * own no longer reaches the handler. libevent takes the interruption in silence and waits
+     * on; a signal is handled once the wait is over, at most the given time later.
+     *
+     * @param float $timeoutSeconds Longest wait, in seconds
+     */
+    public function awaitReadable(float $timeoutSeconds): void
+    {
+        if (!$this->isConnected() || $this->socket === null) {
+            return;
+        }
+
+        $this->waitBase ??= new EventBase();
+        $this->waitEvent ??= new Event($this->waitBase, $this->socket, Event::READ, static function (): void {
+        });
+        $this->waitEvent->add($timeoutSeconds);
+        $this->waitBase->loop(EventBase::LOOP_ONCE);
+        $this->waitEvent->del();
+    }
+
+    /**
      * Send message to daemon (appends to write buffer).
      *
      * @param WorkerDTO|array<string, mixed> $data Message DTO or array to encode as JSON
@@ -350,6 +387,10 @@ class WorkerDaemonClient extends AbstractSocket
      */
     private function closeSocket(): void
     {
+        if ($this->waitEvent !== null) {
+            $this->waitEvent->free();
+            $this->waitEvent = null;
+        }
         if ($this->socket !== null) {
             socket_close($this->socket);
             $this->socket = null;

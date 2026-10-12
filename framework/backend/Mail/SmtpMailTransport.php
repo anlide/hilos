@@ -6,6 +6,8 @@ namespace Hilos\Mail;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Daemon\TickDrivenIo;
+use Hilos\Core\Daemon\TickDrivenIoRegistry;
 use Hilos\Mail\Exception\MailBusyException;
 use Hilos\Mail\Exception\MailResultUnavailableException;
 use Hilos\Mail\Smtp\SmtpAction;
@@ -28,7 +30,7 @@ use Hilos\Mail\Smtp\SmtpReply;
  * Per the interface contract a send failure never throws: a timeout, a dropped socket, or
  * a rejecting reply settles a failed {@see MailSendOutcome}. Only contract misuse throws.
  */
-class SmtpMailTransport implements MailTransportInterface
+class SmtpMailTransport implements MailTransportInterface, TickDrivenIo
 {
     /** Line terminator on the SMTP wire (RFC 5321). */
     private const string CRLF = "\r\n";
@@ -75,6 +77,7 @@ class SmtpMailTransport implements MailTransportInterface
         private readonly MailTransportConfig $config,
     ) {
         $this->encoder = new MailMessageEncoder();
+        TickDrivenIoRegistry::track($this);
     }
 
     /**
@@ -143,6 +146,12 @@ class SmtpMailTransport implements MailTransportInterface
     public function isBusy(): bool
     {
         return $this->phase !== SmtpConnectionPhase::IDLE;
+    }
+
+    /** @return bool True while a send is in flight or its outcome has not been taken */
+    public function isInFlight(): bool
+    {
+        return $this->isBusy() || $this->hasResult();
     }
 
     /**

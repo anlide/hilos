@@ -49,5 +49,23 @@ Any synchronous blocking operation in a callback or `onTick()` blocks all I/O:
 
 ## Timing
 
-After each main loop iteration, daemon sleeps to maintain a precise tick interval.
-This keeps CPU usage low while still being responsive.
+The master: after each main loop iteration it sleeps the rest of a 10 ms tick
+(`BaseManager::sleepWithPreciseTiming()`).
+
+A worker has no event loop of its own and does not sleep on a clock while it is
+idle. A pass that handled a message, left bytes for the daemon, or has a
+tick-driven operation in flight keeps the 10 ms tick. Any other pass waits on the
+daemon socket (`WorkerDaemonClient::awaitReadable()`) until the daemon sends
+something, at most 100 ms (`WorkerManager::waitForWork()`). A worker that woke a
+hundred times a second for nothing cost about 1 % of a core per process.
+
+That wait is libevent's, like the master's, and never `socket_select()`: a select
+cut short by a signal raises a warning of its own, PHP calls the error handler for
+it even under `@`, and an asynchronous signal handler then runs inside that call,
+where its own warning bypasses the handler.
+
+A tick-driven operation is one that moves only when its owner ticks it — an
+`AsyncHttpClient`, `AsyncCommandClient`, `SmtpMailTransport` or child `Process`.
+Each registers itself with `TickDrivenIoRegistry` when built and answers
+`isInFlight()`; nothing wakes the worker's wait when its socket or pipe becomes
+ready, so while one is in flight the worker keeps the short tick.
