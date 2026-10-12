@@ -4,6 +4,8 @@ import {
   createSignal,
   HILOS_I18N_LOCALE_ADD_ACTION,
   HILOS_I18N_LOCALE_UPDATE_ACTION,
+  HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+  HILOS_I18N_LOCALE_COPY,
   type ActionHandle,
   type ActionLifecycle,
   type ActionResult,
@@ -159,6 +161,329 @@ async function settled(): Promise<void> {
 }
 
 describe('HilosI18nLocaleWindow', () => {
+  it('keeps step twins outside locators, forms and the focus trap', async () => {
+    harness(editable, 'edit')
+    await nextTick()
+    const twins = document.querySelectorAll('.hilos-stack.invisible')
+    expect(twins.length).toBeGreaterThan(0)
+    for (const twin of twins) {
+      expect(twin.getAttribute('aria-hidden')).toBe('true')
+      expect(twin.hasAttribute('inert')).toBe(true)
+      expect(twin.hasAttribute('data-id')).toBe(false)
+      expect(
+        twin.querySelector(
+          '[data-id], [data-autofocus], form, input, select, textarea, button',
+        ),
+      ).toBeNull()
+    }
+    expect(
+      document.querySelectorAll('[data-id="i18n-locale-title"]'),
+    ).toHaveLength(1)
+    expect(
+      document.querySelectorAll('[data-id="i18n-locale-submit"]'),
+    ).toHaveLength(1)
+  })
+
+  it.each(['add', 'view'] as const)(
+    'has no switch-on opener in %s',
+    async (mode) => {
+      harness(mode === 'add' ? known : visible, mode)
+      await nextTick()
+      expect(el('i18n-locale-switch-on')).toBeNull()
+    },
+  )
+
+  it('opens confirmation inside the same modal, holding the error and notice slots', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    expect((el('i18n-locale-switch-on') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    expect(h.dispatched).toHaveLength(0)
+    expect(document.querySelectorAll('[data-id="modal"]')).toHaveLength(1)
+    expect(el('i18n-locale-title')?.textContent).toContain(
+      'Switch on locale · English in United Kingdom',
+    )
+    expect(el('i18n-locale-title')?.querySelector('h5')).not.toBeNull()
+    expect(el('i18n-locale-code')?.textContent).toBe('en-GB')
+    expect(el('i18n-locale-switch-on-body')?.textContent).toContain(
+      HILOS_I18N_LOCALE_COPY.switchOn.body,
+    )
+    expect(el('i18n-locale-switch-on-note')?.textContent).toContain(
+      HILOS_I18N_LOCALE_COPY.switchOn.catalogNote,
+    )
+    expect(el('i18n-locale-switch-on-unsaved')).toBeNull()
+    expect(el('i18n-locale-error')).not.toBeNull()
+    expect(el('i18n-locale-notice-slot')).not.toBeNull()
+    expect(el('i18n-locale-field-date')).toBeNull()
+    expect(el('i18n-locale-plate')).toBeNull()
+    el('i18n-locale-switch-on-back')?.click()
+    await nextTick()
+    expect(el('i18n-locale-field-date')).not.toBeNull()
+    expect(h.view.emitted('close')).toBeUndefined()
+  })
+
+  it('omits the catalog note for an own pair and uses its country code', async () => {
+    harness({ ...own, localeCode: own.rowKey, formats, enabled: false }, 'edit')
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    expect(el('i18n-locale-title')?.textContent).toContain(
+      'Switch on locale · English in AD',
+    )
+    expect(el('i18n-locale-switch-on-note')).toBeNull()
+  })
+
+  it.each([false, true])(
+    'keeps the unsaved draft and conflict on Back (conflict: %s)',
+    async (conflict) => {
+      const h = harness(editable, 'edit')
+      await nextTick()
+      const date = el('i18n-locale-field-date') as HTMLSelectElement
+      date.value = 'YYYY-MM-DD'
+      date.dispatchEvent(new Event('change', { bubbles: true }))
+      if (conflict)
+        h.focused.set({
+          ...editable,
+          formats: { ...formats, date: 'DD.MM.YYYY' },
+        })
+      await nextTick()
+      expect((el('i18n-locale-switch-on') as HTMLButtonElement).disabled).toBe(
+        false,
+      )
+      el('i18n-locale-switch-on')?.click()
+      await nextTick()
+      expect(el('i18n-locale-switch-on-unsaved')?.textContent).toContain(
+        HILOS_I18N_LOCALE_COPY.switchOn.unsaved,
+      )
+      expect(
+        (el('i18n-locale-switch-on-confirm') as HTMLButtonElement).disabled,
+      ).toBe(true)
+      expect(el('conflict-badge')).toBeNull()
+      el('i18n-locale-switch-on-confirm')?.click()
+      expect(h.dispatched).toHaveLength(0)
+      el('modal-close')?.click()
+      await nextTick()
+      expect(el('modal-confirm')).not.toBeNull()
+      el('modal-confirm-cancel')?.click()
+      await nextTick()
+      el('i18n-locale-switch-on-back')?.click()
+      await nextTick()
+      expect((el('i18n-locale-field-date') as HTMLSelectElement).value).toBe(
+        'YYYY-MM-DD',
+      )
+      expect(el('conflict-badge') !== null).toBe(conflict)
+      expect(h.view.emitted('close')).toBeUndefined()
+    },
+  )
+
+  it.each(['gb', null])(
+    'dispatches and closes on success for country %s, without an own-echo race',
+    async (countryCode) => {
+      const locale =
+        countryCode === null ? { ...visible, enabled: false } : editable
+      const h = harness(locale, 'edit')
+      await nextTick()
+      el('i18n-locale-switch-on')?.click()
+      await nextTick()
+      const notices: string[] = []
+      const observer = new MutationObserver(() =>
+        notices.push(el('i18n-locale-notice')?.textContent ?? ''),
+      )
+      observer.observe(el('i18n-locale-window')!, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      })
+      try {
+        el('i18n-locale-switch-on-confirm')?.click()
+        el('i18n-locale-switch-on-confirm')?.click()
+        expect(h.dispatched).toHaveLength(1)
+        expect(h.dispatched[0]).toMatchObject({
+          name: HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+          payload: { languageCode: 'en', countryCode },
+        })
+        h.focused.set({ ...locale, enabled: true })
+        await nextTick()
+        expect(el('i18n-locale-notice-slot')?.textContent).not.toContain(
+          'Switched on elsewhere',
+        )
+        h.dispatched[0]?.settle({ message: 'Locale switched on.' })
+        await settled()
+        expect(h.view.emitted('close')).toHaveLength(1)
+        expect(
+          notices.some((notice) => notice.includes('Switched on elsewhere')),
+        ).toBe(false)
+      } finally {
+        observer.disconnect()
+      }
+    },
+  )
+
+  it('keeps refusal in confirmation, clears it on re-entry, and permits retry', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    el('i18n-locale-switch-on-confirm')?.click()
+    h.dispatched[0]?.refuse(
+      new ActionError(
+        HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+        'fail',
+        'Locale refused.',
+      ),
+    )
+    await settled()
+    expect(el('i18n-locale-error')?.textContent).toContain('Locale refused.')
+    expect(el('i18n-locale-switch-on-body')).not.toBeNull()
+    expect(h.view.emitted('close')).toBeUndefined()
+    el('i18n-locale-switch-on-back')?.click()
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    expect(el('i18n-locale-error')?.textContent).not.toContain(
+      'Locale refused.',
+    )
+    el('i18n-locale-switch-on-confirm')?.click()
+    expect(h.dispatched).toHaveLength(2)
+  })
+
+  it('locks confirmation on an external switch-on and returns to the locked form', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    h.focused.set({ ...editable, enabled: true })
+    await nextTick()
+    expect(el('i18n-locale-notice')?.textContent).toContain(
+      'Switched on elsewhere just now.',
+    )
+    expect(
+      (el('i18n-locale-switch-on-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    el('i18n-locale-switch-on-back')?.click()
+    await nextTick()
+    expect((el('i18n-locale-switch-on') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect(el('i18n-locale-plate')?.textContent).toContain(
+      HILOS_I18N_LOCALE_COPY.plate.view,
+    )
+  })
+
+  it.each(['locale', 'language'] as const)(
+    'keeps the step open when the %s is deleted',
+    async (deleted) => {
+      const h = harness(editable, 'edit')
+      await nextTick()
+      el('i18n-locale-switch-on')?.click()
+      await nextTick()
+      h.focused.set(deleted === 'locale' ? { ...known } : undefined)
+      await nextTick()
+      expect(el('i18n-locale-notice')?.textContent).toContain(
+        'Deleted elsewhere — your text stays to copy.',
+      )
+      expect(el('i18n-locale-switch-on-confirm')?.textContent).toContain(
+        'Deleted',
+      )
+      expect(
+        (el('i18n-locale-switch-on-confirm') as HTMLButtonElement).disabled,
+      ).toBe(true)
+      el('i18n-locale-switch-on-back')?.click()
+      await nextTick()
+      expect((el('i18n-locale-switch-on') as HTMLButtonElement).disabled).toBe(
+        true,
+      )
+      expect((el('i18n-locale-field-date') as HTMLSelectElement).value).toBe(
+        formats.date,
+      )
+      expect(h.view.emitted('close')).toBeUndefined()
+    },
+  )
+
+  it('merges external formats in the step and returns their values to the form', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    h.focused.set({ ...editable, formats: { ...formats, date: 'YYYY-MM-DD' } })
+    await nextTick()
+    expect(el('i18n-locale-notice')?.textContent).toContain('Updated just now')
+    expect(el('i18n-locale-switch-on-unsaved')).toBeNull()
+    el('i18n-locale-switch-on-back')?.click()
+    await nextTick()
+    expect((el('i18n-locale-field-date') as HTMLSelectElement).value).toBe(
+      'YYYY-MM-DD',
+    )
+  })
+
+  it('leaves the opener live for a viewer and disables confirmation through LoadingButton', async () => {
+    const h = harness(editable, 'edit', true)
+    await nextTick()
+    expect((el('i18n-locale-switch-on') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    expect(
+      (el('i18n-locale-switch-on-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    el('i18n-locale-switch-on-confirm')?.click()
+    expect(h.dispatched).toHaveLength(0)
+  })
+
+  it('blocks Back, Esc, the close button and the backdrop while switching on', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    el('i18n-locale-switch-on-confirm')?.click()
+    await nextTick()
+    expect(
+      (el('i18n-locale-switch-on-back') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    el('i18n-locale-switch-on-back')?.click()
+    el('modal')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    el('modal-close')?.click()
+    el('modal')?.click()
+    await nextTick()
+    expect(h.view.emitted('close')).toBeUndefined()
+    expect(el('modal-confirm')).toBeNull()
+    expect(el('i18n-locale-switch-on-body')).not.toBeNull()
+    h.dispatched[0]?.refuse(
+      new ActionError(HILOS_I18N_LOCALE_SWITCH_ON_ACTION, 'fail', 'Refused'),
+    )
+    await settled()
+    el('modal')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    await nextTick()
+    expect(h.view.emitted('close')).toBeDefined()
+  })
+
+  it('resets the step and error each time the window reopens', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    el('i18n-locale-switch-on-confirm')?.click()
+    h.dispatched[0]?.refuse(
+      new ActionError(HILOS_I18N_LOCALE_SWITCH_ON_ACTION, 'fail', 'Refused'),
+    )
+    await settled()
+    await h.view.setProps({ opened: null })
+    await h.view.setProps({ opened: { rowKey: editable.rowKey, mode: 'edit' } })
+    await nextTick()
+    expect(el('i18n-locale-switch-on-body')).toBeNull()
+    el('i18n-locale-switch-on')?.click()
+    await nextTick()
+    expect(el('i18n-locale-error')?.textContent).not.toContain('Refused')
+  })
+
   it('prefills a known pair, blocks an unknown pair until all choices, and closes on success', async () => {
     const knownWindow = harness(known, 'add')
     await nextTick()
@@ -210,6 +535,10 @@ describe('HilosI18nLocaleWindow', () => {
         formats: { ...formats, date: 'YYYY-MM-DD' },
       },
     })
+    await nextTick()
+    expect((el('i18n-locale-switch-on') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
     h.dispatched[0]?.refuse(
       new ActionError(HILOS_I18N_LOCALE_UPDATE_ACTION, 'fail', 'Refused'),
     )

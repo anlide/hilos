@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   HILOS_I18N_LOCALE_ADD_ACTION,
   HILOS_I18N_LOCALE_UPDATE_ACTION,
+  HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
   HILOS_I18N_LOCALE_COPY,
   LOCALE_TEMPLATES_DATA,
   createHilosI18nLocaleAdd,
   createHilosI18nLocaleEdit,
+  createHilosI18nLocaleSwitchOn,
   createHilosI18nLocaleTemplates,
   hilosI18nLocaleCountryLabel,
   hilosI18nLocaleWindowMode,
@@ -87,6 +89,34 @@ function setup(rows: HilosI18nLocaleRow[]) {
 }
 
 describe('locale window core', () => {
+  it('names the switch-on step with and without a country', () => {
+    expect(HILOS_I18N_LOCALE_COPY.switchOn.title('English', 'Australia')).toBe(
+      'Switch on locale · English in Australia',
+    )
+    expect(HILOS_I18N_LOCALE_COPY.switchOn.title('English', null)).toBe(
+      'Switch on locale · English without a country',
+    )
+  })
+
+  it('dispatches switch-on for the current language and either country address', () => {
+    const { context, sent } = setup([])
+    const languageCode = createSignal('en')
+    const switcher = createHilosI18nLocaleSwitchOn(context, languageCode)
+    switcher.switchOn('au')
+    languageCode.set('uk')
+    switcher.switchOn(null)
+    expect(sent).toEqual([
+      [
+        HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+        { languageCode: 'en', countryCode: 'au' },
+      ],
+      [
+        HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+        { languageCode: 'uk', countryCode: null },
+      ],
+    ])
+  })
+
   it('reads the page templates and chooses a fixed mode and country heading', () => {
     const { context } = setup([])
     expect(createHilosI18nLocaleTemplates(context).get()).toEqual(templates)

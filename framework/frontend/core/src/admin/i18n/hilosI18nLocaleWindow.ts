@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type ActionHandle } from '../../connection/actionLifecycle.js'
 import {
   createHilosRowEdit,
   hilosTableRowEditSource,
@@ -21,6 +22,7 @@ import {
 /** Tracked page actions of the locale window. */
 export const HILOS_I18N_LOCALE_ADD_ACTION = 'hilos_i18n_locale_add'
 export const HILOS_I18N_LOCALE_UPDATE_ACTION = 'hilos_i18n_locale_update'
+export const HILOS_I18N_LOCALE_SWITCH_ON_ACTION = 'hilos_i18n_locale_switch_on'
 
 /** Page-data key carrying the server's closed format lists. */
 export const LOCALE_TEMPLATES_DATA = 'localeTemplates'
@@ -48,6 +50,11 @@ export function createHilosI18nLocaleTemplates(
   })
 }
 
+/** The pair's shared suffix in the form and confirmation headings. */
+function localeTitleSuffix(nativeName: string, country: string | null): string {
+  return `${nativeName}${country === null ? ' without a country' : ` in ${country}`}`
+}
+
 /** The one locale window's words across its add, edit and view cases. */
 export const HILOS_I18N_LOCALE_COPY = {
   open: {
@@ -60,7 +67,20 @@ export const HILOS_I18N_LOCALE_COPY = {
     nativeName: string,
     country: string | null,
   ) =>
-    `${mode === 'add' ? 'Add locale' : mode === 'edit' ? 'Edit locale' : 'Locale'} · ${nativeName}${country === null ? ' without a country' : ` in ${country}`}`,
+    `${mode === 'add' ? 'Add locale' : mode === 'edit' ? 'Edit locale' : 'Locale'} · ${localeTitleSuffix(nativeName, country)}`,
+  switchOn: {
+    open: 'Switch on',
+    title: (nativeName: string, country: string | null) =>
+      `Switch on locale · ${localeTitleSuffix(nativeName, country)}`,
+    body: 'Switching a locale on freezes its seven formats for everyone: to edit them again, switch it off first.',
+    catalogNote:
+      'Once it is on, a framework update leaves these formats alone.',
+    unsaved:
+      'Your changes are not saved, and switching on freezes what is saved: go back and save them first.',
+    back: 'Back',
+    confirm: 'Switch on',
+    refusalTitle: "Couldn't switch on the locale",
+  },
   countryLabel: 'Country:',
   noCountry: '— no country',
   codeLabel: 'Code:',
@@ -100,6 +120,20 @@ export const HILOS_I18N_LOCALE_COPY = {
     switchedOff: 'Switched off elsewhere just now.',
   },
 } as const
+
+/** The tracked switch-on operation bound to the language's current address. */
+export function createHilosI18nLocaleSwitchOn(
+  context: HilosI18nLanguageContext,
+  languageCode: ReadonlySignal<string>,
+): { switchOn(countryCode: string | null): ActionHandle } {
+  return {
+    switchOn: (countryCode) =>
+      context.actions.dispatch(HILOS_I18N_LOCALE_SWITCH_ON_ACTION, {
+        languageCode: languageCode.get(),
+        countryCode,
+      }),
+  }
+}
 
 export type HilosI18nLocaleWindowMode = 'add' | 'edit' | 'view'
 

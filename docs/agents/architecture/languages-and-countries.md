@@ -213,7 +213,9 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
 - Switching a country off keeps its values: the button on the card opens a
   confirmation window with the count of locales and names, and they stay in
   place. Tests switch on a known country with `test:i18n:country:on <code>`.
-- A locale is switched on from its own modal (not in the code yet — HIL-1493).
+- A switched-off locale is switched on from its edit window: Switch on next to
+  Save turns the same modal into a confirmation step. Unsaved changes must be
+  saved first; switching on an enabled locale succeeds without a write.
 - A locale is switched off from its own modal (not in the code yet — HIL-1494).
 - Switching off the countryless locale of a switched-on language warns;
   doing so for the default language is refused (not in the code yet — HIL-1494).
@@ -487,8 +489,8 @@ its address and the table's normal removal/Apply model. An admin-view reader
 may open a free language's modal, with confirmation disabled.
 The Vue locales page adds a locale from a pair without one, edits a switched-off
 locale, and shows a switched-on locale in the same window (HIL-1491). The server
-actions serve all six demos; deletion is HIL-1492 and switching the locale from
-its window is HIL-1493/1494.
+actions serve all six demos; deletion is HIL-1492. The edit window switches a
+locale on (HIL-1493); switching off from the view window is HIL-1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
 at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the
