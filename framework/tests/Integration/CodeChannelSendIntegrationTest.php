@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\PhoneCodeCommands;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
 use Hilos\Auth\Code\DTO\CodeSendStepSignalData;
@@ -90,6 +95,9 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
 
     /** @var array<string, string> Number each session was said to wait on, by session token */
     private array $waitsHeld = [];
+
+    /** @var list<SignalDTO> Progress and wait frames retained while carrying the mint exchange */
+    private array $reported = [];
 
     /**
      * @throws HilosException When a stub statement fails or the context cannot be configured
@@ -230,6 +238,46 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         $this->request($agent, $this->uniquePhone(), 'no-such-channel');
 
         self::assertSame([HilosCodeSendAttempt::STATE_FAILED], $this->takeReportedSteps());
+    }
+
+    /**
+     * A node's code agent can receive an order for a probe another agent performed.
+     * The channel below refuses probes; adopting the minted order must go straight to send.
+     *
+     * @throws HilosException When the order cannot be adopted or its outcome reported
+     */
+    public function testAMintedOrderNeedsNoOriginalOperationAndDoesNotProbeAgain(): void
+    {
+        $phone = $this->uniquePhone();
+        $channel = new CodeChannelTestChannel('carrier', reachable: false);
+        $agent = new CodeChannelTestAgent($channel);
+        $agent->onSignalAgent(new AgentSignalData(new AuthCodeMintedSignalData(
+            new AuthCodeSendSignalData(
+                self::ACCEPT_KEY, self::SESSION_TOKEN, $phone, 'carrier', VerificationType::SMS_LOGIN, self::PROGRESS_TICKET,
+            ),
+            'probe-handle', '123456', null, 123000, 456000, true,
+        )), '', HilosSignalConstants::HILOS_AUTH_CODE_MINTED);
+        $agent->onTick();
+
+        self::assertSame(HilosCodeSendAttempt::REASON_CODE_SENT, $this->takeResultReason());
+        self::assertSame([$phone], $channel->handedOff);
+        self::assertSame($phone, $this->waitOf(self::SESSION_TOKEN));
+    }
+
+    /** @throws HilosException When the unavailable-channel outcome cannot be reported */
+    public function testAMintedOrderWhoseChannelDisappearedClosesTheLine(): void
+    {
+        $agent = new CodeChannelTestAgent(new CodeChannelTestChannel('carrier', reachable: true));
+        $agent->onSignalAgent(new AgentSignalData(new AuthCodeMintedSignalData(
+            new AuthCodeSendSignalData(
+                self::ACCEPT_KEY, self::SESSION_TOKEN, $this->uniquePhone(), 'removed',
+                VerificationType::SMS_LOGIN, self::PROGRESS_TICKET,
+            ),
+            null, '123456', null, 123000, 456000, true,
+        )), '', HilosSignalConstants::HILOS_AUTH_CODE_MINTED);
+
+        self::assertSame(HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE, $this->takeResultReason());
+        self::assertNull($this->waitOf(self::SESSION_TOKEN));
     }
 
     /**
@@ -491,9 +539,19 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
         // session the master already resolved.
         $this->deliver($agent, $phone, $channel, $sessionToken, $acceptedRevisions);
 
-        // Every channel in this case answers reachability without the network, so a
-        // single tick carries the operation through probe, mint, send and outcome.
+        // The probe yields a mint request; the users library issues and the code agent
+        // adopts the complete order on a separate frame (HIL-1411).
         $agent->onTick();
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof AuthCodeMintSignalData) {
+                new PhoneCodeCommands(new CodeChannelTestUsersLibrary())->mintForSend($signal->data->data);
+            } elseif ($signal->data instanceof AgentSignalData && $signal->data->data instanceof AuthCodeMintedSignalData) {
+                $agent->onSignalAgent($signal->data, '', HilosSignalConstants::HILOS_AUTH_CODE_MINTED);
+                $agent->onTick();
+            } else {
+                $this->reported[] = $signal;
+            }
+        }
     }
 
     /**
@@ -544,7 +602,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
      */
     private function takeResultReason(): ?string
     {
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        while (($signal = array_shift($this->reported) ?? Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $payload = $signal->data;
             if (!$payload instanceof AgentSignalData) {
                 continue;
@@ -574,7 +632,7 @@ final class CodeChannelSendIntegrationTest extends FrameworkIntegrationTestCase
     private function takeReportedSteps(): array
     {
         $states = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        while (($signal = array_shift($this->reported) ?? Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $payload = $signal->data;
             if (!$payload instanceof AgentSignalData || !$payload->data instanceof CodeSendStepSignalData) {
                 continue;
@@ -713,4 +771,9 @@ final class CodeChannelTestChannel extends CodeChannel
 abstract class CodeChannelConsentHilos extends Hilos
 {
     protected const ?string LEGAL_CATALOG = LegalCatalogStub::class;
+}
+
+/** Users library whose phone commands keep their production write path. */
+final class CodeChannelTestUsersLibrary extends AbstractUsersLibraryAgent
+{
 }

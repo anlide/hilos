@@ -99,11 +99,11 @@ and knowing the code is not guessing.
 **The guard is temporary, and is meant to stay small enough to remove** (owner's
 call, 2026-08-26). Verification codes are outside the person's set (P-163,
 2026-08-30); SMS-login and registration challenges carry no `user_id` at all.
-The people library becomes their only writer after the code agent and sessions
-holder give up their writes (not in the code yet — HIL-1411). Removing the guard
-is a separate decision after that leaf, with no removal leaf assigned yet. Until
-then it must not grow a transaction, a row lock, a broadcast frame or a cache of
-its own. See [instance-owners.md](instance-owners.md).
+The people library is their only full writer since HIL-1411; the sessions holder
+retains only borrowed `Remove` for account erasure in its one transaction.
+Removing the HIL-715 attempt guard is a separate decision, with no removal leaf
+assigned yet. Until then it must not grow a transaction, a row lock, a broadcast
+frame or a cache of its own. See [instance-owners.md](instance-owners.md).
 
 ## What Is Not Protected: The Send Cap
 
@@ -192,6 +192,32 @@ the collection (`OWNS_RT` on the project's `SessionsLibraryAgent`, beside the tw
 waits, because `AuthFeature::mount()` is what mounts it). Everything that carries
 a code — the sign-in commands, the per-channel mail queue, the code agent —
 reports its step over `HILOS_CODE_SEND_STEP` and writes nothing.
+
+**The code agent writes no database table** (HIL-1411). It probes the channel,
+then sends `hilos_auth_code_mint` to the people library. The library checks
+registration consent, holds a free number for that browser and issues the code;
+`hilos_auth_code_minted` hands delivery, or a refusal, to the code agent. The
+order remains probe → mint → send, so an unreachable channel consumes neither
+a hold nor a code's send allowance. The library is the only full owner of codes
+and registration holds; the sessions holder's borrowed `Remove` of verification
+rows during account erasure remains the declared exception.
+
+The minted frame is a self-contained order, not a reply matched to an operation
+in memory. It reaches the code agent on the library's node, which may differ
+from the probing node after the library moves. The probing agent drops its
+operation after sending the mint request; the receiving agent starts delivery
+from the frame alone. Between those frames the operation is in neither pool.
+A lost frame leaves the progress line waiting for expiry or resend, under the
+same rule as a silent transport below. The code agent still sends the registration
+wait before its closing progress step.
+
+The people library also releases a forgotten browser's hold on
+`hilos_auth_registration_hold_release` and sweeps expired holds once a minute.
+Each removed hold produces `hilos_auth_registration_hold_expired` with its
+session and identifier; the sessions holder rolls back that session's wait.
+Another browser holding the same address keeps its own live hold. The first
+library tick catches holds that expired while it was stopped. A frame that cannot
+be queued is logged; the next handshake settles the waiting browser's step.
 
 **The mail subsystem learns nothing about auth.** The order for a letter carries
 an opaque progress ticket (`CodeSendTicket`, 16 hex, minted per SEND) which the

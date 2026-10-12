@@ -453,6 +453,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AGENTS_GONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -509,6 +510,8 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -889,16 +892,11 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     }
 
     /**
-     * The length of the shared-ownership debt, so no receipt can be written in silence.
-     *
-     * A ceiling and not the exact rows: an addition paints this red, a removal passes quietly,
-     * because nothing should stand in the way of a debt getting smaller. Three database
-     * collections carry it today, all of them the tables of signing in, and no runtime
-     * collection is shared here at all.
+     * No database ownership receipts remain since HIL-1411; any new receipt fails this test.
      */
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
-        $this->assertLessThanOrEqual(3, count(Hilos::SHARED_DB_OWNERS));
+        $this->assertSame([], Hilos::SHARED_DB_OWNERS);
         $this->assertSame([], Hilos::SHARED_RT_OWNERS);
     }
 

@@ -268,30 +268,6 @@ final class Hilos extends HilosFacade
     ];
 
     /**
-     * The collections this demo still lets two owners hold, and who will part them.
-     *
-     * Receipts, not permissions: every pair here is a place where two agents write the same rows
-     * today, and startup refuses both a pair that is missing from this list and a row whose
-     * owners no longer collide.
-     *
-     * One row, and it is signing in: the registration holds, shared by the sessions and the users
-     * library. It stands the same way in every demo that
-     * switches the feature on; the rows the provider and the code agents add elsewhere do not
-     * arise here, because this demo runs neither. The people are no longer among them: an edit of
-     * one person is that person's agent's, and the libraries' shares of the row no longer collide
-     * (HIL-1404). Nor are the step-up proofs: the person's agent records them, and the sessions
-     * library only removes them with an erased account (HIL-1407). The row is parted by its own
-     * leaf: registrationReservations by HIL-1411.
-     * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
-     */
-    public const array SHARED_DB_OWNERS = [
-        HilosDbContext::registrationReservations => [
-            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-1411',
-        ],
-    ];
-
-    /**
      * The one runtime collection this demo lets two owners hold - on purpose.
      *
      * A receipt, not a permission: the claimer holds the whole status collection while every fleet

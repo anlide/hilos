@@ -55,20 +55,13 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
     /**
-     * The chat tables this library writes on its way through a person, and the holds a
-     * registration parks on.
+     * The chat tables this library writes on its way through a person.
      *
      * The chat pair is borrowed and narrow, and the reason the rights have to be said out loud at
      * all is HIL-716: they used to be asked only of a collection loaded whole, so a lazily loaded
      * table was written by anybody in silence. They are asked of every table now, and the registry
      * is per process - so this library holds its own grant rather than leaning on the one the
      * owner registered in some other worker.
-     *
-     * The registration holds are the framework library's claim, made here because only a project
-     * knows whether it has a sign-in surface at all. The table is mounted by
-     * {@see AuthFeature::mount()} and written by the hold sweep the library arms behind the same
-     * question, and a class constant has no way to ask it - so the demo that has the surface says
-     * so, and one that has none claims a table it never writes.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -85,10 +78,19 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         // Borrowed to erase the person's registration events in the account erasure transaction, whoever owns the room.
         // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
         ChatDbContext::eventUserRegistrations => [TruthSourceOperation::Remove],
-        // TODO(HIL-1411): borrowed claim - the users library owns the reservation table. The hold
-        // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
-        // sessions library's row; the sweep itself belongs with the table.
-        HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
+    ];
+
+    /**
+     * Registration holds read at handshake and when finding sessions waiting on an address.
+     *
+     * Only the users library writes these holds (HIL-1411). The read is declared in the project
+     * because only {@see AuthFeature::mount()} mounts the registration reservation table.
+     *
+     * @var list<string>
+     */
+    public const array READS_DB = [
+        ...parent::READS_DB,
+        HilosDbContext::registrationReservations,
     ];
 
     /**

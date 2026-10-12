@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Code;
 
+use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\DTO\AsyncHttpRequest;
 use Hilos\API\DTO\AsyncHttpResponse;
@@ -14,29 +16,15 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthRegistrationWaitHeldSignalData;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelProbe;
-use Hilos\Auth\MagicLink\MagicLinkService;
-use Hilos\Auth\Registration\RegistrationReservationService;
-use Hilos\Auth\Registration\RegistrationConsent;
-use Hilos\Legal\Exception\LegalException;
-use Hilos\Auth\Verification\VerificationIssuedCode;
-use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\SignalSource;
-use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Identity\IdentityType;
-use Hilos\Database\Verification\VerificationType;
-use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
 use Hilos\Socket\SocketException;
 use Throwable;
@@ -65,19 +53,10 @@ use Throwable;
  * {@see AsyncHttpClient} is one-request-per-instance and a burst of sign-ins must not
  * serialize behind one slow messenger.
  *
- * It is CONCRETE, where the OAuth agent is abstract, and the difference says what this
- * agent does not do: nothing here touches a project table. It mints through
- * {@see VerificationService}, delivers through a {@see CodeChannel} the project
- * registered, and signals an accept key. Whoever the code belongs to is decided later,
- * on the confirm action, by the project.
- *
- * Two framework auth tables it does write, and both for the same reason - only this
- * process knows what became of the send (HIL-486). A number nobody owns is HELD before
- * the mint, so a second person cannot register it while the code travels; and a code
- * that really went out is REMEMBERED against the asking session, so a reload lands back
- * on the code screen instead of an empty form. Neither can be done by the page action:
- * it returned the moment it handed the request over, long before there was a probe
- * verdict, a code, or a delivery.
+ * It writes no database table: the users library holds a free number and issues its code
+ * on the request sent after the probe (HIL-1411). This agent alone knows whether the channel
+ * can reach the number, and then delivers through the registered CodeChannel. The closing
+ * step and registration wait leave from this same sender, in their established order.
  *
  * A monopolistic singleton ({@see AuthCodeAgentDaemon}). Ops live only in its memory,
  * so a restart loses in-flight requests - correct for this operation: a code request is
@@ -86,32 +65,15 @@ use Throwable;
  */
 class AuthCodeAgent extends AbstractAgent
 {
-    /**
-     * The three tables a send writes, all of them somebody else's.
-     *
-     * The class comment above names why the writes are here and not in the page action: only
-     * this process learns what became of the send. The claims are the same statement said to
-     * the guard, which since HIL-716 asks on every table rather than on the four eager ones.
-     *
-     * TODO(HIL-1411): borrowed claim - the users library owns the challenge and the hold; this
-     * agent mints one and takes the other because a code that was never delivered must cost
-     * neither.
-     *
-     * @var array<string, list<TruthSourceOperation>>
-     */
-    public const array OWNS_DB = [
-        HilosDbContext::verifications => TruthSourceOperation::BY_KIND,
-        HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
-    ];
-
     public const string AGENT_TYPE = HilosAgentType::HILOS_AUTH_CODE;
 
     /**
-     * Page action → agent route for one code request. A singleton signal (this agent
-     * is monopolistic), so it maps straight to its payload DTO with no index field.
+     * Requests start a probe; minted orders start delivery or close the send with a refusal.
+     * Both are singleton DTO routes, with no node field (HIL-1411).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_CODE_MINTED => AuthCodeMintedSignalData::class,
     ];
 
     /** Default ceiling on operations holding a socket at once (outbound sockets, not CPU). */
@@ -127,57 +89,30 @@ class AuthCodeAgent extends AbstractAgent
     private int $nextId = 0;
 
     /**
-     * Adopts one handed-off code request, resolving its channel up front.
+     * Adopts a request for a probe, or a self-contained delivery order from the users library.
+     * The latter may reach an agent that never held the probe operation (HIL-1411).
      *
-     * The single intake. An unknown signal name is refused loudly so a routing mistake
-     * surfaces; a malformed payload is dropped with a log, and a channel the registry
-     * does not carry - or one that does not serve this verification type - is answered
-     * as an unavailable channel rather than dropped, because a guest is holding a
-     * spinner that only a signal can end.
-     *
-     * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
-     * @param string $name Routed agent-signal name
-     * @throws AgentUnknownSignalException When the signal name is not the code-request handoff
-     * @throws InvalidArgumentException When the outcome signal cannot be named or queued
+     * @param AgentSignalData $data Wrapped payload parsed by the topology
+     * @param string $sender Sender description (unused)
+     * @param string $name Routed signal name
+     * @throws AgentUnknownSignalException When the name is not declared by this agent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== HilosSignalConstants::HILOS_AUTH_CODE_SEND) {
-            throw new AgentUnknownSignalException($name);
+        switch ($name) {
+            case HilosSignalConstants::HILOS_AUTH_CODE_SEND:
+                $this->adoptRequest($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_CODE_MINTED:
+                $this->adoptMinted($data->data);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
         }
-        if (!$data->data instanceof AuthCodeSendSignalData) {
-            $this->logAgentWarning(
-                HilosSignalConstants::HILOS_AUTH_CODE_SEND . ' payload must be ' . AuthCodeSendSignalData::class,
-            );
-
-            return;
-        }
-
-        $request = $data->data;
-        $channel = $this->resolveChannel($request->channel);
-        if ($channel === null || !$channel->supportsType($request->type)) {
-            $this->logAgentWarning(
-                "code request refused: channel '{$request->channel}' does not serve type '{$request->type}'",
-            );
-            // The line opened when the person picked the channel, and nothing is going to
-            // travel over it - so it stops promising here rather than sitting on "queued"
-            // until the next send replaces it (HIL-826).
-            $this->reportCodeSendStep(
-                $request,
-                HilosCodeSendAttempt::STATE_FAILED,
-                null,
-                HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE,
-            );
-
-            return;
-        }
-
-        $this->operations[$this->nextId++] = new AuthCodeOperation(
-            $request,
-            $channel,
-            AuthCodeOperation::STAGE_PROBE,
-        );
     }
 
     /**
@@ -215,6 +150,8 @@ class AuthCodeAgent extends AbstractAgent
      * clock left to end its wait, and a send this agent drops without a word is a line saying
      * "sending" forever. The refusal leaves in the same tick, ahead of the stop, as every frame
      * of an ordinary stop does.
+     * Between mint and minted the operation is outside this pool: its line waits for code
+     * expiry or a resend, as on a silent transport (HIL-1411).
      * On a node's stop the holder may be leaving in the same wave, and the refusal finds it gone;
      * the holder then fails the send itself, on its own stop
      * ({@see AbstractSessionsLibraryAgent::onStop()}, HIL-1207).
@@ -256,6 +193,61 @@ class AuthCodeAgent extends AbstractAgent
         return Hilos::codeChannelRegistryClass()::get($channel);
     }
 
+    /** @param AuthCodeSendSignalData $request Request to probe before asking for a code */
+    private function adoptRequest(AuthCodeSendSignalData $request): void
+    {
+        $channel = $this->resolveChannel($request->channel);
+        if ($channel === null || !$channel->supportsType($request->type)) {
+            $this->logAgentWarning(
+                "code request refused: channel '{$request->channel}' does not serve type '{$request->type}'",
+            );
+            $this->reportCodeSendStep(
+                $request,
+                HilosCodeSendAttempt::STATE_FAILED,
+                null,
+                HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE,
+            );
+
+            return;
+        }
+
+        $this->operations[$this->nextId++] = new AuthCodeOperation($request, $channel, AuthCodeOperation::STAGE_PROBE);
+    }
+
+    /** @param AuthCodeMintedSignalData $minted Delivery order independent of the original probe's agent */
+    private function adoptMinted(AuthCodeMintedSignalData $minted): void
+    {
+        $channel = $this->resolveChannel($minted->request->channel);
+        if ($channel === null || !$channel->supportsType($minted->request->type)) {
+            $this->logAgentWarning(
+                "minted code refused: channel '{$minted->request->channel}' does not serve type '{$minted->request->type}'",
+            );
+            $this->reportCodeSendStep(
+                $minted->request,
+                HilosCodeSendAttempt::STATE_FAILED,
+                null,
+                HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE,
+            );
+
+            return;
+        }
+
+        $id = $this->nextId++;
+        $operation = new AuthCodeOperation($minted->request, $channel, AuthCodeOperation::STAGE_SEND);
+        $operation->probeToken = $minted->probeToken;
+        $operation->code = $minted->code;
+        $operation->resendAt = $minted->resendAt;
+        $operation->expiresAt = $minted->expiresAt;
+        $operation->registration = $minted->registration;
+        if ($minted->code === null) {
+            $this->finish($id, $operation, $minted->reason, $minted->resendAt);
+
+            return;
+        }
+
+        $this->operations[$id] = $operation;
+    }
+
     /**
      * Advances one operation by its stage.
      *
@@ -264,13 +256,7 @@ class AuthCodeAgent extends AbstractAgent
      * @param float $nowMs Current time in milliseconds
      * @throws AsyncHttpException When a stage request cannot start, times out, or answers malformed
      * @throws SocketException When an underlying socket operation fails
-     * @throws InvalidArgumentException When an outcome signal cannot be named or queued
-     * @throws EmptyValueException When the identifier the request names is empty
-     * @throws DatabaseException When an identity, reservation or verification query fails
-     * @throws LogicException When an object collection the hold or the mint needs is unavailable
-     * @throws EnvException When a reservation or verification env key is missing, outside the
-     *   catalog, or of the wrong type
-     * @throws LegalException When the registration consent catalog cannot be read
+     * @throws HilosException When the channel configuration or probe response is refused
      */
     private function advance(int $id, AuthCodeOperation $operation, float $nowMs): void
     {
@@ -297,13 +283,7 @@ class AuthCodeAgent extends AbstractAgent
      * @param float $nowMs Current time in milliseconds
      * @throws AsyncHttpException When the probe cannot start, times out, or answers malformed
      * @throws SocketException When an underlying socket operation fails
-     * @throws InvalidArgumentException When an outcome signal cannot be named or queued
-     * @throws EmptyValueException When the identifier the request names is empty
-     * @throws DatabaseException When an identity, reservation or verification query fails
-     * @throws LogicException When an object collection the hold or the mint needs is unavailable
-     * @throws EnvException When a reservation or verification env key is missing, outside the
-     *   catalog, or of the wrong type
-     * @throws LegalException When the registration consent catalog cannot be read
+     * @throws HilosException When the channel configuration or probe response is refused
      */
     private function advanceProbe(int $id, AuthCodeOperation $operation, float $nowMs): void
     {
@@ -312,7 +292,7 @@ class AuthCodeAgent extends AbstractAgent
             if ($request === null) {
                 $reaches = $operation->channel->reaches($operation->request->identifier);
                 $probe = $reaches ? CodeChannelProbe::reachable() : CodeChannelProbe::unreachable();
-                $this->settleProbe($id, $operation, $probe, $nowMs);
+                $this->settleProbe($id, $operation, $probe);
 
                 return;
             }
@@ -328,148 +308,39 @@ class AuthCodeAgent extends AbstractAgent
             return;
         }
 
-        $this->settleProbe($id, $operation, $operation->channel->readProbe($response), $nowMs);
+        $this->settleProbe($id, $operation, $operation->channel->readProbe($response));
     }
 
     /**
-     * Acts on a settled probe: report an unreachable channel, or mint and move to the send.
+     * A reachable probe hands the mint to the users library and leaves the pool.
+     * An unreachable channel leaves neither a hold nor a code (HIL-1411).
      *
-     * The mint is here rather than at intake precisely because it must not happen for a
-     * channel that cannot deliver: a refused probe leaves no challenge row and spends no
-     * cooldown, so the person can pick another channel and still get their first code.
-     * The hold on the identifier keeps that company for the same reason - an unreachable
-     * channel reserves nothing either (HIL-486).
-     *
-     * @param int $id Op id in the pool
+     * @param int $id Operation id in the pool
      * @param AuthCodeOperation $operation Operation whose probe settled
-     * @param CodeChannelProbe $probe Probe result carrying reachability and the send's handle
-     * @param float $nowMs Current time in milliseconds
-     * @throws AsyncHttpException When the send cannot start
-     * @throws SocketException When an underlying socket operation fails
-     * @throws InvalidArgumentException When an outcome signal cannot be named or queued
-     * @throws EmptyValueException When the identifier the request names is empty
-     * @throws DatabaseException When an identity, reservation or verification query fails
-     * @throws LogicException When an object collection the hold or the mint needs is unavailable
-     * @throws EnvException When a reservation or verification env key is missing, outside the
-     *   catalog, or of the wrong type
-     * @throws LegalException When the registration consent catalog cannot be read
+     * @param CodeChannelProbe $probe Reachability and the delivery handle
+     * @throws InvalidArgumentException When reporting the failed handoff fails
      */
-    private function settleProbe(int $id, AuthCodeOperation $operation, CodeChannelProbe $probe, float $nowMs): void
+    private function settleProbe(int $id, AuthCodeOperation $operation, CodeChannelProbe $probe): void
     {
-        $operation->closeClient();
-
         if (!$probe->reachable) {
             $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CHANNEL_UNAVAILABLE);
 
             return;
         }
 
-        $this->holdIdentifier($id, $operation);
-        if (!isset($this->operations[$id])) {
-            return;
-        }
-
-        $issued = $this->issue($operation);
-        if ($issued->code === null) {
-            $this->reportRefusedIssue($id, $operation, $issued);
-
-            return;
-        }
-
-        $operation->probeToken = $probe->token;
-        $operation->code = $issued->code;
-        $operation->resendAt = $issued->outcome->resendAt();
-        $operation->expiresAt = $this->liveExpiresAt($operation);
-        $operation->stage = AuthCodeOperation::STAGE_SEND;
-
-        $this->advanceSend($id, $operation, $nowMs);
-    }
-
-    /**
-     * Holds a free identifier for the registration this code is about to start (HIL-486).
-     *
-     * The shape {@see MagicLinkService::send()} established, one layer down: an
-     * identifier nobody owns is reserved before its code is minted, so a second person
-     * cannot take it while this one reads the message, and the confirm has something to
-     * check the code against. An identifier that already resolves to an account holds
-     * nothing - there is nothing left to reserve - and the same lookup answers the
-     * other question this operation needs later: whether a registration is what is
-     * waiting on this code.
-     *
-     * Only a LOGIN code reserves. A code that adds a number to an account somebody is
-     * already signed into ({@see VerificationType::SMS_ADD}) proves possession and
-     * starts no registration, so a hold there would strand a number nobody is
-     * registering behind a wait nobody can finish.
-     *
-     * The hold is the ASKING BROWSER's, symmetric with the address (HIL-608): a second
-     * session asking for a code on the same number gets a hold of its own, its code is
-     * refused by the send gate as a cooldown, and the number goes to whoever confirms
-     * first. An asymmetry here would mean the capture is closed for mail and open for
-     * a number.
-     *
-     * @param int $id Op id to finish when consent is refused
-     * @param AuthCodeOperation $operation Operation whose identifier is being held
-     * @throws EmptyValueException When the identifier the request names is empty
-     * @throws DatabaseException When an identity or reservation query fails
-     * @throws LogicException When the identities or reservations object collection is unavailable
-     * @throws EnvException When the reservation TTL key is missing, outside the catalog, or not an int
-     * @throws LegalException When the registration consent catalog cannot be read
-     * @throws InvalidArgumentException When the consent refusal cannot be routed
-     */
-    private function holdIdentifier(int $id, AuthCodeOperation $operation): void
-    {
-        $identifier = $operation->request->identifier;
-        if ($operation->request->type !== VerificationType::SMS_LOGIN
-            || Hilos::$db?->identities->findByIdentity(IdentityType::SMS, $identifier) !== null) {
-            return;
-        }
-
-        $service = new RegistrationReservationService();
-        $accepted = $operation->request->acceptedRevisions
-            ?? $service->ownAcceptance($operation->request->sessionToken, $identifier);
-        $refusal = RegistrationConsent::refusalCode($accepted);
-        if ($refusal !== null) {
-            $this->finish($id, $operation, $refusal);
+        try {
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_AUTH_CODE_MINT,
+                new AuthCodeMintSignalData($operation->request, $probe->token),
+            );
+        } catch (InvalidArgumentException $failure) {
+            $this->fail($id, $operation, 'mint handoff failed: ' . $failure->getMessage());
 
             return;
         }
 
-        $operation->registration = true;
-        $service->hold(IdentityType::SMS, $operation->request->sessionToken, $identifier, $accepted);
-    }
-
-    /**
-     * Reports a mint the send gate refused, without minting or sending anything.
-     *
-     * The two refusals are told apart because the surface owes different things: a
-     * cooldown is a countdown to draw, a cap is a sentence to show - so the cap
-     * carries no seconds, which would otherwise promise a button that is not coming
-     * back this window.
-     *
-     * @param int $id Op id in the pool
-     * @param AuthCodeOperation $operation Operation being refused
-     * @param VerificationIssuedCode $issued Refused issue carrying the gate's verdict
-     * @throws InvalidArgumentException When the outcome signal cannot be named or queued
-     */
-    private function reportRefusedIssue(int $id, AuthCodeOperation $operation, VerificationIssuedCode $issued): void
-    {
-        if ($issued->outcome->capReached) {
-            $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CAP_REACHED);
-
-            return;
-        }
-
-        // A cooldown refusal still opens the code screen - the code it held back is the
-        // one already on its way - so that screen is owed the life of THAT code, which
-        // is shorter than a fresh one by however long ago it went out (HIL-486).
-        $operation->expiresAt = $this->liveExpiresAt($operation);
-
-        $this->finish(
-            $id,
-            $operation,
-            HilosCodeSendAttempt::REASON_RATE_LIMITED,
-            $issued->outcome->resendAt(),
-        );
+        $operation->closeClient();
+        unset($this->operations[$id]);
     }
 
     /**
@@ -559,48 +430,6 @@ class AuthCodeAgent extends AbstractAgent
         }
 
         $this->finish($id, $operation, HilosCodeSendAttempt::REASON_CODE_SENT, $operation->resendAt);
-    }
-
-    /**
-     * Mints a code for the operation through the verification layer.
-     *
-     * The owning user is null on purpose: a phone-login code is issued before anyone
-     * knows whose phone it is, and the account is find-or-created on the confirm.
-     *
-     * @param AuthCodeOperation $operation Operation to mint for
-     * @return VerificationIssuedCode The gate's verdict, and the code when one was minted
-     */
-    private function issue(AuthCodeOperation $operation): VerificationIssuedCode
-    {
-        return new VerificationService()->issueForChannel(
-            $operation->request->type,
-            $operation->request->identifier,
-            null,
-            $operation->channel->name(),
-        );
-    }
-
-    /**
-     * When the code this operation left live stops being good (HIL-486).
-     *
-     * Read from the challenge rather than computed from the mint, because the arm
-     * that needs it most did not mint anything: a send the cooldown held back leaves
-     * an EARLIER code in play, and the screen that is about to ask for it counts down
-     * that one's remaining life.
-     *
-     * @param AuthCodeOperation $operation Operation whose target is asked about
-     * @return ?int Epoch milliseconds the live code expires at, or null when none is live
-     * @throws DatabaseException When a verification query fails
-     * @throws LogicException When the verifications object collection is unavailable
-     * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
-     *   or not an int
-     */
-    private function liveExpiresAt(AuthCodeOperation $operation): ?int
-    {
-        return new VerificationService()->activeExpiresAt(
-            $operation->request->type,
-            $operation->request->identifier,
-        );
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
 use Hilos\DataExport\DTO\DataExportStateSignalData;
 use Hilos\DataExport\DataExportNotifier;
 use Hilos\DataExport\DataExportStateProjector;
@@ -60,7 +62,6 @@ use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\Recovery\PasswordRecoveryService;
 use Hilos\Auth\Registration\RegistrationReservationService;
-use Hilos\Auth\Registration\RegistrationReservationSweeper;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
@@ -152,7 +153,6 @@ use Hilos\Database\Entity\Item\UserPhoto as EntityUserPhoto;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificationDeliveries;
-use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Schema\Schema;
@@ -310,9 +310,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * life, removed with an erased account and moved to the survivor of a merge - all of it here.
      * Unconditional for the reason the identity entry is.
      *
-     * The registration holds are NOT here. They are the users library's row and are claimed only
-     * where a sign-in surface exists, which a class constant cannot ask - so the project subclass
-     * that has one declares them itself, under the same condition that arms the hold sweep.
+     * Registration holds are neither claimed nor written here: their only writer is the users
+     * library (HIL-1411). The project subclass with a sign-in surface declares their read,
+     * because the sign-in feature alone mounts their table.
      *
      * The browsers trusted to skip the second-factor step (HIL-494) are claimed outright too. A
      * trust is keyed by the session row and written when a sign-in this library grants is let
@@ -488,6 +488,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * finished. The record of how far it got is the session's, so it is written here, and
      * {@see HilosSignalConstants::HILOS_PROFILE_FLOWS} is absent for the usual reason: it is what
      * this library sends on to the tabs.
+     * The users library reports expired registration holds so this holder clears only the
+     * named session's wait and tells its tabs (HIL-1411).
      */
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => AuthSessionGrantSignalData::class,
@@ -510,6 +512,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => OAuthTripEndedSignalData::class,
         HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => AuthRegistrationWaitHeldSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED => AuthRegistrationHoldExpiredSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
         HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
@@ -665,9 +668,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Name of the cron rule that clears abandoned registrations off session rows. */
     private const string PENDING_REGISTRATION_SWEEP_RULE = 'hilos_sweep_pending_registrations';
 
-    /** Name of the cron rule that frees the registration holds whose deadline passed. */
-    private const string RESERVATION_SWEEP_RULE = 'hilos_sweep_registration_reservations';
-
     /** Name of the cron rule that removes ended session rows. */
     private const string SESSION_SWEEP_RULE = 'hilos_sessions_expire';
 
@@ -679,16 +679,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** Age after which an anonymous browser with one handshake is considered abandoned. */
     private const int NEVER_RETURNED_GRACE_SECONDS = 7 * TimeConstants::SECONDS_PER_DAY;
-
-    /**
-     * How often the expired registration holds are swept.
-     *
-     * Not an env value and not a project's to schedule, unlike the sweep below it: an
-     * expired hold leaves a person looking at a code screen for a code that can no longer
-     * confirm anything, so the sweep answers somebody and cannot be switched off. Every
-     * minute is what the chat demo scheduled by hand before this became the library's.
-     */
-    private const string RESERVATION_SWEEP_CRON = '* * * * *';
 
     /** Name of the cron rule that erases the accounts whose deletion fell due (HIL-302). */
     private const string ACCOUNT_DELETION_SWEEP_RULE = 'hilos_account_deletion_sweep';
@@ -721,9 +711,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** @var ?CronRule Schedule of the abandoned-registration sweep, or null when it is switched off */
     private ?CronRule $pendingRegistrationSweepRule = null;
-
-    /** @var ?CronRule Schedule of the expired-hold sweep, or null when this project has no registration */
-    private ?CronRule $reservationSweepRule = null;
 
     /** @var ?CronRule Schedule that removes ended session rows */
     private ?CronRule $sessionSweepRule = null;
@@ -776,7 +763,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->armPendingRegistrationSweep();
-        $this->armReservationSweep();
         $this->armSessionSweep();
         $this->armAccountDeletionSweep();
         $this->armAccessLogSweep();
@@ -839,9 +825,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * The one question three of the sweeps below have to ask, named once so they ask it the
      * same way. Sessions are NOT a feature - the tasks and polls demos carry them with
      * no login at all - but the browsers parked on a confirmation code are: the collections
-     * holding them are mounted by {@see AuthFeature::mount()}, and the reservation table the
-     * hold sweep reads is declared by the same feature. Asked of the registry rather than of
-     * an artifact, because the registry is what a project actually declares.
+     * holding them are mounted by {@see AuthFeature::mount()}. Asked of the registry rather
+     * than of an artifact, because the registry is what a project actually declares.
      *
      * @return bool True when {@see HilosFeature::AUTH} is declared by this project
      */
@@ -912,7 +897,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $this->sweepPendingRegistrations();
-        $this->sweepRegistrationReservations();
         $this->sweepRegistrationWaiters();
         $this->sweepRecoveryWaiters();
         $this->sweepCodeSendAttempts();
@@ -927,7 +911,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         return array_values(array_filter([
             $this->pendingRegistrationSweepRule,
-            $this->reservationSweepRule,
             $this->sessionSweepRule,
             $this->accountDeletionSweepRule,
             $this->accessLogSweepRule,
@@ -1071,57 +1054,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             HilosSignalConstants::HILOS_SESSIONS_SWEPT,
             new SessionsSweptSignalData($sessionTokens),
         );
-    }
-
-    /**
-     * Arms the schedule of the expired-hold sweep (HIL-415), where there are holds to sweep.
-     *
-     * Asked of the feature registry rather than of an artifact, which is the one way the
-     * question may be asked: a project without {@see HilosFeature::AUTH} has no reservation
-     * table, and a sweep armed there would fail every minute over rows that were never meant
-     * to exist. It is the first framework gate to read the registry, and the reason the
-     * registry was built.
-     */
-    private function armReservationSweep(): void
-    {
-        if (!$this->hasSignInSurface()) {
-            return;
-        }
-
-        $rule = new CronRule(self::RESERVATION_SWEEP_RULE, self::RESERVATION_SWEEP_CRON);
-        // Never run rather than just run, which is what a fresh rule claims by default. That
-        // default guards a BOOTING DAEMON from firing every rule it holds at once; this is
-        // one rule in one agent, and the holds that ran out while nobody held the collection
-        // are exactly the ones nobody answered - the browsers waiting on them have been
-        // waiting longest, and asking them to wait out the rest of the minute is backwards.
-        $rule->lastRun = 0.0;
-        $this->reservationSweepRule = $rule;
-    }
-
-    /**
-     * Frees the registration holds whose deadline passed, and rolls back who was waiting.
-     *
-     * The one sweep that answers somebody: an expired hold means the browser that made it is
-     * waiting for a code that can no longer confirm anything, so each freed hold rolls back
-     * its own session the moment its row goes. Its own, and not the address: since HIL-608
-     * another browser may be registering the same address with a hold of its own, and that
-     * one is still good.
-     *
-     * @throws HilosException On database or runtime failure
-     * @throws InvalidArgumentException When a converge signal of the rollback cannot be named
-     */
-    private function sweepRegistrationReservations(): void
-    {
-        if ($this->reservationSweepRule?->shouldRun() !== true) {
-            return;
-        }
-
-        foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
-            $this->rollBackRegistrationWaiters(
-                $freed[ObjectRegistrationReservation::sessionToken],
-                $freed[ObjectRegistrationReservation::identifier],
-            );
-        }
     }
 
     /**
@@ -1284,7 +1216,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             SessionToastsSignalData::fromStack($stacks[$sessionTokenHash]),
         );
     }
-
 
     /**
      * Opens a socket's session and tells the project what that socket now is.
@@ -3067,8 +2998,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * Three moves: sign out in place first, because erasure replaces the row and issues its
      * own ticket, and a browser has only one ticket cookie. Then the
      * half-finished registration this browser was holding, if it was holding one - and that
-     * is two writes rather than the one the plan named, because the session's own memory of
-     * the flow and the HOLD ON THE ADDRESS are separate records:
+     * is its own memory write and a release frame to the users library, because the flow
+     * and the hold on the address are separate records (HIL-1411):
      * {@see SessionActions::releasePendingRegistration()} says nothing about the address by
      * its own contract, and the address is what somebody else is waiting for. A browser that
      * has just asked to be forgotten must not go on reserving one.
@@ -3101,7 +3032,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $session = Hilos::$db->sessions->findByToken($sessionToken);
         if ($session !== null && $session->pendingRegistrationIdentifier !== null) {
             $session->actions->releasePendingRegistration();
-            new RegistrationReservationService()->release($sessionToken);
+            $this->sendToAgent(
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE,
+                new AuthRegistrationHoldReleaseSignalData($sessionToken),
+            );
         }
 
         $session = $this->mintAnonymousSession();
@@ -4117,6 +4051,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 }
 
                 $this->endOAuthTrip($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED:
+                $this->rollBackRegistrationWaiters($data->data->sessionToken, $data->data->identifier);
 
                 return;
 
@@ -5952,7 +5891,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Only where a sign-in surface exists: an account deletion is asked for from a signed-in
      * profile, and a project without one has no request table to read. Never run rather than
-     * just run, as the hold sweep is armed and for its reason: the first tick of a restarted
+     * just run: the first tick of a restarted
      * holder catches up with what fell due while nobody held it.
      */
     private function armAccountDeletionSweep(): void
@@ -6313,7 +6252,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Moves ONE browser's expired registration onto the expired-code screen (HIL-415).
+     * Handles the users library's expired-hold frame for one browser (HIL-1411).
      *
      * What an expired hold owes the person waiting on it. They are about to type a code
      * into a registration that no longer exists, and "invalid code" would read as their

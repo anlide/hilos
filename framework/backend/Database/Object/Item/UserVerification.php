@@ -186,9 +186,9 @@ class UserVerification extends Object_
      *
      * The guard is TEMPORARY and stays small enough to remove. Verification codes are outside
      * the person's set (P-163, 2026-08-30); SMS-login and registration challenges carry no
-     * `user_id` at all. The people library becomes their only writer after HIL-1411 removes
-     * the code agent's and sessions holder's writes. Removing this guard is a separate decision
-     * after that leaf, with no removal leaf assigned yet. Until then it must not grow a
+     * `user_id` at all. The people library is their only full writer since HIL-1411; the sessions
+     * holder retains only borrowed Remove for account erasure. Removing this guard is a separate
+     * decision, with no removal leaf assigned yet. Until then it must not grow a
      * transaction, a row lock, a broadcast frame or a cache of its own.
      * See docs/agents/architecture/verification-codes.md and docs/agents/architecture/instance-owners.md.
      *

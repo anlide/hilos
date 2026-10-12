@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use Hilos\Auth\Registration\RegistrationReservationService;
+use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
+use Hilos\Auth\Registration\RegistrationReservationSweeper;
+use Hilos\Database\Object\Item\RegistrationReservation as ObjectRegistrationReservation;
 use Closure;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCancelActionDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionCodeActionDTO;
@@ -267,8 +273,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * are lazy (HIL-716). Every write to them goes through a command of this library - a code is
      * issued and spent, a hold is taken and released - so the operation set is spelled out per entry
      * rather than left to {@see self::defaultTruthSourceOperations()}: that default is what a
-     * library does to a row it SHARES, and these rows are edited in place (their move to the
-     * person's agent is HIL-1411).
+     * library does to a row it SHARES, and these rows are edited in place. Since HIL-1411 this
+     * library is their only full writer: it issues a phone code on the code agent's frame after
+     * the channel probe, and takes, releases and sweeps registration holds here. The session
+     * holder retains only the borrowed removal of an erased person's verification rows.
      *
      * The ways in and the passkey credentials are claimed for creation alone (HIL-1405). A
      * registration, an added password, phone or key is born here, and born whole - the secret and
@@ -370,8 +378,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * for a deletion called off and for a photo set or removed (HIL-1409): the person's own action
      * is resumed, an administrator's card is answered, and a published file is bound once the row
      * is written.
+     * Code mint requests reach the writer of the code and hold after a reachable probe.
+     * Hold releases reach that same writer when the session holder forgets a browser (HIL-1411).
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
+        HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => UserThemePickWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
@@ -652,6 +664,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         CliCommands::SECOND_FACTOR_UNLOCK,
     ];
 
+    /** Name of the cron rule that frees the registration holds whose deadline passed. */
+    private const string RESERVATION_SWEEP_RULE = 'hilos_sweep_registration_reservations';
+
+    /** Once a minute: expired holds notify the sessions waiting on them and cannot be left unswept. */
+    private const string RESERVATION_SWEEP_CRON = '* * * * *';
+
     /** Name of the cron rule of the second-factor removal sweep (HIL-494). */
     private const string SECOND_FACTOR_RESET_SWEEP_RULE = 'hilos_second_factor_reset_sweep';
 
@@ -718,6 +736,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** Profile photo commands, built on first use. */
     private ?ProfilePhotoCommands $profilePhotoCommands = null;
 
+    /** @var ?CronRule Schedule of the expired-hold sweep, or null when this project has no registration */
+    private ?CronRule $reservationSweepRule = null;
+
     /** Schedule of the second-factor removal sweep, armed on start (HIL-494). */
     private ?CronRule $secondFactorResetSweepRule = null;
 
@@ -759,7 +780,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Arms the once-a-minute sweep of second-factor removals (HIL-494).
+     * Arms the second-factor removal and registration-hold sweeps (HIL-494, HIL-1411).
      *
      * Never run rather than just run: removals whose time came while no library held the table
      * are the ones waiting longest, and the first tick carries them out.
@@ -769,11 +790,12 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         $rule = new CronRule(self::SECOND_FACTOR_RESET_SWEEP_RULE, self::SECOND_FACTOR_RESET_SWEEP_CRON);
         $rule->lastRun = 0.0;
         $this->secondFactorResetSweepRule = $rule;
+        $this->armReservationSweep();
     }
 
     /**
      * Hands due second-factor removals and reminders to the people's agents, and runs a bounded
-     * verification-code sweep.
+     * verification-code sweep plus the expired registration holds (HIL-1411).
      *
      * @throws HilosException When a lookup, a write, a frame or an announcement fails
      */
@@ -783,16 +805,68 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             new SecondFactorResetSweeper($this)->sweep();
         }
 
+        $this->sweepRegistrationReservations();
         $this->sweepVerifications();
         if (Hilos::hasFeature(HilosFeature::PROFILE_PHOTO)) {
             $this->profilePhotoCommands()->sweepClosedConnections();
         }
     }
 
-    /** @return list<CronRule> Current verification and second-factor sweep schedules */
+    /** @return list<CronRule> Current verification, second-factor and registration-hold sweep schedules */
     protected function cronRules(): array
     {
-        return array_values(array_filter([$this->secondFactorResetSweepRule, $this->verificationSweepRule]));
+        return array_values(array_filter([
+            $this->secondFactorResetSweepRule,
+            $this->verificationSweepRule,
+            $this->reservationSweepRule,
+        ]));
+    }
+
+    /**
+     * Arms the hold sweep only where AUTH mounts the reservation table (HIL-1411).
+     * The first tick handles holds that expired while the library was stopped.
+     */
+    private function armReservationSweep(): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::AUTH)) {
+            return;
+        }
+
+        $rule = new CronRule(self::RESERVATION_SWEEP_RULE, self::RESERVATION_SWEEP_CRON);
+        // Never run rather than just run, which is what a fresh rule claims by default. That
+        // default guards a BOOTING DAEMON from firing every rule it holds at once; this is
+        // one rule in one agent, and the holds that ran out while nobody held the collection
+        // are exactly the ones nobody answered - the browsers waiting on them have been
+        // waiting longest, and asking them to wait out the rest of the minute is backwards.
+        $rule->lastRun = 0.0;
+        $this->reservationSweepRule = $rule;
+    }
+
+    /**
+     * Frees expired holds and names each owning session to its holder (HIL-1411).
+     * Other sessions holding the same address keep their own live reservation.
+     *
+     * @throws HilosException When the reservation sweep fails
+     */
+    private function sweepRegistrationReservations(): void
+    {
+        if ($this->reservationSweepRule?->shouldRun() !== true) {
+            return;
+        }
+
+        foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
+            try {
+                $this->sendToAgent(
+                    HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED,
+                    new AuthRegistrationHoldExpiredSignalData(
+                        $freed[ObjectRegistrationReservation::sessionToken],
+                        $freed[ObjectRegistrationReservation::identifier],
+                    ),
+                );
+            } catch (InvalidArgumentException $failure) {
+                $this->logAgentWarning('Expired registration hold could not be reported: ' . $failure->getMessage());
+            }
+        }
     }
 
     /**
@@ -853,10 +927,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Handles one frame the OAuth agent addressed to this library.
+     * Handles the frames addressed to this library.
      *
-     * The only frame it takes: the provider answered, and turning that answer into an
-     * account is this library's half of the login ({@see OAuthCommands::completeLogin()}).
+     * An OAuth provider answered, and turning that answer into an account is this library's
+     * half of the login ({@see OAuthCommands::completeLogin()}).
      * The throttle verdict is addressed here only to reach the router underneath, which is
      * what holds the parked action waiting on it; the library itself has nothing to do
      * with it.
@@ -889,6 +963,8 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * resumed here (HIL-1409). An administrator's cancel is answered to the card once the agent
      * has written. A published photo is bound on the agent's answer; that action was already
      * answered when the upload was sent.
+     * Code mint requests write the hold and challenge after the code agent's probe; release
+     * requests remove only the forgotten browser's hold (HIL-1411).
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
@@ -903,6 +979,16 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_AUTH_CODE_MINT:
+                $this->phoneCodeCommands()->mintForSend($data->data);
+
+                return;
+
+            case HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE:
+                new RegistrationReservationService()->release($data->data->sessionToken);
+
+                return;
+
             case HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT:
                 return;
 
@@ -2157,7 +2243,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     {
         return null;
     }
-
 
     /**
      * Runs the group that owns one action name and returns what it answered.

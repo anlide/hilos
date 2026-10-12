@@ -322,10 +322,9 @@ final class ChatAgent extends AbstractAgent
      * removes each one at once, rather than leaving it to hold its place in the storage limit
      * until the janitor's day runs out (HIL-144).
      *
-     * The expired-registration-hold sweep used to be here too. It went with the sessions
-     * (HIL-710): what it frees is a hold on a session row, and it is scheduled by
-     * {@see SessionsLibraryAgent} on a rule of its own rather than by this demo's daemon,
-     * which has one cron addressee for every name it schedules.
+     * The expired-registration-hold sweep belongs to the users library (HIL-1411), scheduled
+     * by its own rule. It tells the sessions holder which browser's hold expired so that
+     * the holder can roll back its wait.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)

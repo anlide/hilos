@@ -148,7 +148,8 @@ final class AgentTruthSourceOperationsTest extends TestCase
      * The library only creates a way in or a passkey: every later edit is the person's agent's (HIL-1405).
      *
      * Read off the class the way a start reads it. The codes and the holds of a registration stay
-     * the library's whole until HIL-1411 moves them.
+     * the library's whole; since HIL-1411 only the sessions holder's borrowed Remove for account
+     * erasure remains beside that full claim.
      */
     public function testLibraryAgentOnlyCreatesWaysInAndPasskeys(): void
     {

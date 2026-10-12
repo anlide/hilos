@@ -28,9 +28,9 @@ use Hilos\Hilos;
  * back the session that owned it and leaves the others waiting for their own codes.
  *
  * The sweep itself is deliberately dumb (delete what expired, say which) and lives
- * in the framework, while the cron rule that calls it and the broadcast that
- * follows are the project's - the same split as every other framework mechanism a
- * project schedules.
+ * in the framework. The users library owns its cron rule and removes the holds;
+ * it sends each freed pair to the sessions holder, which rolls back that browser's
+ * wait (HIL-1411).
  */
 final class RegistrationReservationSweeper
 {

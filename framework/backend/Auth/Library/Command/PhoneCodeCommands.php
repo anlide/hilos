@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
+use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Runtime\State\Item\HilosCodeSendAttempt;
+use Hilos\Utils\Logger;
+use Hilos\WiringRefusal;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Code\AuthCodeAgent;
 use Hilos\Auth\Code\DTO\AuthCodeSendSignalData;
@@ -64,7 +70,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * A well-formed request is handed over whether or not the number has an `sms`
      * identity - the account is find-or-created on confirm, so accepting
      * unconditionally reveals nothing about who has one. The send gate (HIL-421)
-     * answers inside the agent, on the same (type, identifier) key as before.
+     * answers in this library after the probe, on the same (type, identifier) key as before.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param RequestPhoneCodeActionDTO $dto Parsed request payload (phone, channel)
@@ -114,6 +120,73 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
         );
 
         return new CodeSendOrderReplyDTO($ticket);
+    }
+
+    /**
+     * Issues under the users library's claim, keeping one writer for codes and holds (HIL-1411).
+     * The code agent has already probed; delivery starts only after this order reaches it,
+     * so the order remains probe → mint → send.
+     *
+     * @param AuthCodeMintSignalData $mint Request whose channel proved reachable
+     * @throws InvalidArgumentException When the minted order cannot be named or queued
+     * @throws InvalidFormatException When the order carries inconsistent outcomes
+     */
+    public function mintForSend(AuthCodeMintSignalData $mint): void
+    {
+        $request = $mint->request;
+        $registration = false;
+        $code = null;
+        $reason = null;
+        $resendAt = null;
+        $expiresAt = null;
+
+        try {
+            if ($request->type === VerificationType::SMS_LOGIN
+                && Hilos::$db->identities->findByIdentity(IdentityType::SMS, $request->identifier) === null) {
+                $reservations = new RegistrationReservationService();
+                $accepted = $request->acceptedRevisions
+                    ?? $reservations->ownAcceptance($request->sessionToken, $request->identifier);
+                $reason = RegistrationConsent::refusalCode($accepted);
+                if ($reason === null) {
+                    $reservations->hold(IdentityType::SMS, $request->sessionToken, $request->identifier, $accepted);
+                    $registration = true;
+                }
+            }
+
+            if ($reason === null) {
+                $verification = new VerificationService();
+                $issued = $verification->issueForChannel($request->type, $request->identifier, null, $request->channel);
+                $code = $issued->code;
+                if ($code === null && $issued->outcome->capReached) {
+                    $reason = HilosCodeSendAttempt::REASON_CAP_REACHED;
+                } else {
+                    $resendAt = $issued->outcome->resendAt();
+                    $expiresAt = $verification->activeExpiresAt($request->type, $request->identifier);
+                    if ($code === null) {
+                        $reason = HilosCodeSendAttempt::REASON_RATE_LIMITED;
+                    }
+                }
+            }
+        } catch (WiringRefusal $failure) {
+            Logger::logAgentWarning(
+                $this->library->getId(),
+                "code mint wiring refused (channel={$request->channel}, type={$request->type}): " . $failure->getMessage(),
+            );
+            $code = null;
+            $reason = HilosCodeSendAttempt::REASON_SEND_FAILED;
+        } catch (HilosException | RandomException $failure) {
+            Logger::logAgentWarning(
+                $this->library->getId(),
+                "code mint failed (channel={$request->channel}, type={$request->type}): " . $failure->getMessage(),
+            );
+            $code = null;
+            $reason = HilosCodeSendAttempt::REASON_SEND_FAILED;
+        }
+
+        $this->library->sendToAgent(
+            HilosSignalConstants::HILOS_AUTH_CODE_MINTED,
+            new AuthCodeMintedSignalData($request, $mint->probeToken, $code, $reason, $resendAt, $expiresAt, $registration),
+        );
     }
 
     /**

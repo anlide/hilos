@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
 use Demo\Chat\Agents\Hilos\DemoHilosLegalAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
@@ -1057,6 +1061,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1105,6 +1111,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AGENTS_GONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1174,6 +1181,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => AgentType::HILOS_AUTH_THROTTLE,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AgentType::HILOS_AUTH_CODE,
+            HilosSignalConstants::HILOS_AUTH_CODE_MINTED => AgentType::HILOS_AUTH_CODE,
         ], Hilos::getAgentSignalRoutes());
     }
 
@@ -1351,6 +1359,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_REMOVE => UserPushRemoveSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_CODE_MINT => AuthCodeMintSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => UserThemePickWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
@@ -1399,6 +1409,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED => OAuthTripEndedSignalData::class,
             HilosSignalConstants::HILOS_AGENTS_GONE => AgentsGoneSignalData::class,
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD => AuthRegistrationWaitHeldSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED => AuthRegistrationHoldExpiredSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED => AuthSecondFactorMissedSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN => AuthSecondFactorSetupProvenSignalData::class,
             HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF => AuthSecondFactorOffSignalData::class,
@@ -1468,6 +1479,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK => ThrottleCheckSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED => ThrottleSuccessSignalData::class,
             HilosSignalConstants::HILOS_AUTH_CODE_SEND => AuthCodeSendSignalData::class,
+            HilosSignalConstants::HILOS_AUTH_CODE_MINTED => AuthCodeMintedSignalData::class,
         ], $declaredRoutes);
         $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
     }
@@ -1896,17 +1908,11 @@ final class ChatTopologyRegistryTest extends TestCase
     }
 
     /**
-     * The length of the shared-ownership debt, so no receipt can be written in silence.
-     *
-     * A ceiling and not the exact rows: an addition paints this red, a removal passes quietly,
-     * because nothing should stand in the way of a debt getting smaller. Asserting the exact
-     * contents instead would paint this test red on every PARTING - the one move the list
-     * exists to bring about. Five database collections carry it today, and no runtime collection
-     * is shared here at all.
+     * No database ownership receipts remain since HIL-1411; any new receipt fails this test.
      */
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
-        $this->assertLessThanOrEqual(5, count(Hilos::SHARED_DB_OWNERS));
+        $this->assertSame([], Hilos::SHARED_DB_OWNERS);
         $this->assertSame([], Hilos::SHARED_RT_OWNERS);
     }
 

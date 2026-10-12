@@ -125,7 +125,6 @@ use Hilos\Core\Analytics\AnalyticsWriterAgent;
 use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Table\Context\TableContext;
-use Hilos\Core\TruthSource\SharedOwnersKey;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseGuarantee;
@@ -411,35 +410,6 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => AuthCodeAgent::class,
             AgentRegistryKey::DAEMON => AuthCodeAgentDaemon::class,
             AgentRegistryKey::SCOPE => AgentScope::NODE,
-        ],
-    ];
-
-    /**
-     * The collections this demo still lets two owners hold, and who will part them.
-     *
-     * Receipts, not permissions: every pair here is a place where two agents write the same rows
-     * today, and startup refuses both a pair that is missing from this list and a row whose
-     * owners no longer collide. The rights of nobody changed when the list was written - what
-     * writes today goes on writing, out loud instead of by eye.
-     *
-     * Two rows, and both of them are signing in: the framework tables the auth libraries share
-     * with the code agent. They stand the same way in every demo that switches the feature on.
-     * The people table is no longer among them: an edit of one person is that person's agent's,
-     * and the libraries' shares of the row no longer collide (HIL-1404). Nor are the ways in: the
-     * users library and the OAuth agent only create them, and an edit is the person's agent's
-     * (HIL-1405). Nor are the step-up confirmations: the person's agent records them, and the
-     * sessions library only removes them with an erased account (HIL-1407). The rows are parted by
-     * their own leaf: verifications and registrationReservations by HIL-1411.
-     * See docs/agents/architecture/instance-owners.md#where-the-pieces-land.
-     */
-    public const array SHARED_DB_OWNERS = [
-        HilosDbContext::verifications => [
-            SharedOwnersKey::OWNERS => [UsersLibraryAgent::class, AuthCodeAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-1411',
-        ],
-        HilosDbContext::registrationReservations => [
-            SharedOwnersKey::OWNERS => [SessionsLibraryAgent::class, UsersLibraryAgent::class, AuthCodeAgent::class],
-            SharedOwnersKey::DEBT => 'HIL-1411',
         ],
     ];
 

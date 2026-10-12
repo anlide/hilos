@@ -34,21 +34,16 @@ use Hilos\Users\AccountErasure;
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
     /**
-     * The registration holds this library manages.
+     * Registration holds read at handshake and when finding sessions waiting on an address.
      *
-     * The registration holds are the framework library's claim, made here because only a project
-     * knows whether it has a sign-in surface at all. The table is mounted by
-     * {@see AuthFeature::mount()} and written by the hold sweep the library arms behind the same
-     * question, and a class constant has no way to ask it - so the demo that has the surface says
-     * so, and one that has none claims a table it never writes.
+     * Only the users library writes these holds (HIL-1411). The read is declared in the project
+     * because only {@see AuthFeature::mount()} mounts the registration reservation table.
      *
-     * @var array<string, list<TruthSourceOperation>>
+     * @var list<string>
      */
-    public const array OWNS_DB = [
-        // TODO(HIL-1411): borrowed claim - the users library owns the reservation table. The hold
-        // sweep is armed here because the expiry it announces rolls back a WAIT, which is the
-        // sessions library's row; the sweep itself belongs with the table.
-        HilosDbContext::registrationReservations => TruthSourceOperation::BY_KIND,
+    public const array READS_DB = [
+        ...parent::READS_DB,
+        HilosDbContext::registrationReservations,
     ];
 
     /**

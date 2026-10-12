@@ -983,10 +983,11 @@ final class MainPageRegisterTest extends IntegrationTestCase
         try {
             $this->ageReservationOut($email);
 
-            // The sweep is the sessions library's own tick rule since HIL-710, not a cron
-            // name this demo schedules; the rollback it produces reaches the tabs on the
-            // frames that follow it.
-            $this->sessionsLibrary()->onTick();
+            // The users library sweeps expired holds on its own tick since HIL-1411.
+            // Its hold-expired frame asks the sessions library to roll the waiter back;
+            // the frames that follow carry that rollback to the browser.
+            $library = $this->usersLibrary();
+            $this->underAgent($library, static fn () => $library->onTick());
             $this->deliverLibraryFrames($agent);
 
             $this->assertSame(0, $this->reservationRowCount($email), 'The expired hold is deleted');

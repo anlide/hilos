@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Constants;
 
+use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
+use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
 use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionOpeningReplyDTO;
 use Hilos\Auth\AccountDeletion\DTO\AccountDeletionStateSignalData;
@@ -1848,6 +1852,20 @@ final class HilosSignalConstants
     public const string HILOS_AUTH_REGISTRATION_WAIT_HELD = 'hilos_auth_registration_wait_held';
 
     /**
+     * Users library → sessions holder: roll back the session whose hold expired.
+     *
+     * Carried by {@see AuthRegistrationHoldExpiredSignalData} (HIL-1411).
+     */
+    public const string HILOS_AUTH_REGISTRATION_HOLD_EXPIRED = 'hilos_auth_registration_hold_expired';
+
+    /**
+     * Sessions holder → users library: release the forgotten browser's hold.
+     *
+     * Carried by {@see AuthRegistrationHoldReleaseSignalData} (HIL-1411).
+     */
+    public const string HILOS_AUTH_REGISTRATION_HOLD_RELEASE = 'hilos_auth_registration_hold_release';
+
+    /**
      * Users library → the session holder: this recovery is granted, move its tabs along.
      *
      * The recovery counterpart of {@see HILOS_AUTH_REGISTRATION_LANDED}: the code was
@@ -1948,11 +1966,25 @@ final class HilosSignalConstants
      * of them, and a page action may not wait on the network. The action validates
      * only what costs nothing (a well-formed number, a channel that exists and serves
      * this kind of identifier), hands the rest over this signal and acks; the agent
-     * probes, mints and delivers across ticks. Carried by
+     * probes and delivers across ticks; the users library issues the code between them (HIL-1411). Carried by
      * {@see AuthCodeSendSignalData}; a singleton route, since the code agent is
      * monopolistic.
      */
     public const string HILOS_AUTH_CODE_SEND = 'hilos_auth_code_send';
+
+    /**
+     * Code agent → users library: issue a code after a reachable probe.
+     *
+     * Carried by {@see AuthCodeMintSignalData} (HIL-1411).
+     */
+    public const string HILOS_AUTH_CODE_MINT = 'hilos_auth_code_mint';
+
+    /**
+     * Users library → code agent of its node: deliver the code or report the refusal.
+     *
+     * Carried by {@see AuthCodeMintedSignalData} (HIL-1411).
+     */
+    public const string HILOS_AUTH_CODE_MINTED = 'hilos_auth_code_minted';
 
     /**
      * Settings library → every connection: the installation's enabled sign-in methods (HIL-427).
