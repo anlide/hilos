@@ -1807,6 +1807,17 @@ export {
   type HilosDaemonHttpRoutesTable,
 } from './admin/daemon/hilosDaemonHttpRoutes.js'
 export {
+  DAEMON_HTTP_DATA,
+  daemonHttpSummarySchema,
+  readHilosDaemonHttpSummary,
+  daemonHttpEmptyState,
+  formatDaemonHttpAddress,
+  formatDaemonHttpPeriod,
+  type HilosDaemonHttpSummary,
+  type HilosDaemonHttpEmptyState,
+  type HilosDaemonHttpContext,
+} from './admin/daemon/hilosDaemonHttp.js'
+export {
   resolveHilosDaemonAgentRow,
   createHilosDaemonAgentsTable,
   formatDaemonAgentWorker,

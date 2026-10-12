@@ -1,6 +1,7 @@
 import {
   type HilosDaemonAgentsContext,
   type HilosDaemonCronContext,
+  type HilosDaemonHttpContext,
   type HilosDaemonWorkersContext,
 } from '@hilos/core'
 import { actions, connection } from '../../../bootstrap/connection.js'
@@ -21,6 +22,12 @@ export const hilosDaemonAgentsContext: HilosDaemonAgentsContext = {
 
 /** The tracker demo's binding for the Daemon cron page. */
 export const hilosDaemonCronContext: HilosDaemonCronContext = {
+  connection,
+  scopes,
+}
+
+/** The tracker demo's binding for the Daemon HTTP page. */
+export const hilosDaemonHttpContext: HilosDaemonHttpContext = {
   connection,
   scopes,
 }

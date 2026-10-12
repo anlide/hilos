@@ -27,6 +27,13 @@ describe('hilosUnbuiltPages', () => {
     expect(vue.has(HilosPages.DAEMON_CRON)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_CRON)).toBe(true)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_CRON)).toBe(true)
+    expect(vue.has(HilosPages.DAEMON_HTTP_SERVER)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_HTTP_SERVER)).toBe(
+      true,
+    )
+    expect(
+      hilosUnbuiltPages('angular').has(HilosPages.DAEMON_HTTP_SERVER),
+    ).toBe(true)
     expect(vue.has(HilosPages.SECURITY)).toBe(false)
     expect(vue.has(HilosPages.MAINTENANCE)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE)).toBe(false)

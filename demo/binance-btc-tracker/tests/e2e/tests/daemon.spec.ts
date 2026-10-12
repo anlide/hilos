@@ -72,6 +72,40 @@ test('shows the standalone node and its schedule', async ({ page }) => {
   await expect(page.getByTestId('hilos-daemon-cron-not-leader')).toHaveCount(0)
 })
 
+// Framework HTTP reporting: the listener and totals arrive through the page
+// response, and the registered routes through its real socket viewport.
+test('shows the standalone HTTP listener, counters and routes', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/daemon/standalone/http', PAGE_READY)
+
+  await expect(page.getByTestId('hilos-daemon-node-id')).toHaveText(
+    'standalone',
+  )
+  await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
+  await expect(page.getByTestId('hilos-daemon-http-address')).toBeVisible()
+  await expect(page.getByTestId('hilos-daemon-http-address')).toHaveText(
+    /^(?:\[[^\]]+\]|[^:\s]+):\d+$/,
+  )
+  for (const tile of ['requests', 'errors', 'slow']) {
+    await expect(page.getByTestId(`hilos-daemon-http-${tile}`)).toBeVisible()
+    await expect(page.getByTestId(`hilos-daemon-http-${tile}`)).toHaveText(
+      /^\d[\d,.\s]*$/,
+    )
+  }
+  await expect(page.getByTestId('hilos-daemon-http-period')).toHaveText(
+    /^(?:Since start, (?:<1|\d+) h|Last 24 h)$/,
+  )
+  await expect(page.getByTestId('hilos-daemon-http-status')).toHaveCount(0)
+  const status = page.getByTestId('hilos-table-row-GET/%2Fstatus')
+  await expect(status).toBeVisible()
+  await expect(status).toContainText('/status')
+  const unrouted = page.getByTestId('hilos-table-row-unrouted')
+  await expect(unrouted).toBeVisible()
+  await expect(unrouted).toContainText('No route')
+})
+
 test.describe('restarting an agent', () => {
   // The master's 13-second caller window must be judged on the first attempt.
   test.describe.configure({ retries: 0 })

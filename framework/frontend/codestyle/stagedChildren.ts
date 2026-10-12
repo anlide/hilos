@@ -28,4 +28,10 @@ export const STAGED_CHILDREN: readonly StagedChild[] = [
     child: 'hilos_daemon_cron',
     leaf: 'HIL-1393',
   },
+  {
+    layer: 'vue',
+    parent: 'hilos_daemon',
+    child: 'hilos_daemon_http_server',
+    leaf: 'HIL-1394',
+  },
 ]

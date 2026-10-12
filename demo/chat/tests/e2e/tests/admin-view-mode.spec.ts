@@ -89,6 +89,43 @@ test('a guest reads the view-mode strip on the admin screens and the personal da
   }
 })
 
+// The framework Daemon HTTP page declares both its summary and route rows
+// not personal, so an anonymous viewer reads the actual report in full.
+test('a guest reads the Daemon HTTP counters and routes without hidden fields', async ({
+  page,
+}) => {
+  await setAdminViewMode(true)
+  await gotoPage(page, '/hilos/daemon/standalone/http', PAGE_READY)
+  await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+  await expect(page.getByTestId('view-mode-banner')).toHaveText(
+    VIEW_MODE_STRIP_TEXT,
+  )
+  await expect(page.getByTestId('hilos-daemon-node-id')).toHaveText(
+    'standalone',
+  )
+  await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
+  await expect(page.getByTestId('hilos-daemon-http-address')).toBeVisible()
+  await expect(page.getByTestId('hilos-daemon-http-address')).toHaveText(
+    /^(?:\[[^\]]+\]|[^:\s]+):\d+$/,
+  )
+  for (const tile of ['requests', 'errors', 'slow']) {
+    await expect(page.getByTestId(`hilos-daemon-http-${tile}`)).toBeVisible()
+    await expect(page.getByTestId(`hilos-daemon-http-${tile}`)).toHaveText(
+      /^\d[\d,.\s]*$/,
+    )
+  }
+  const status = page.getByTestId('hilos-table-row-GET/%2Fstatus')
+  await expect(status).toBeVisible()
+  await expect(status).toContainText('/status')
+  const unrouted = page.getByTestId('hilos-table-row-unrouted')
+  await expect(unrouted).toBeVisible()
+  await expect(unrouted).toContainText('No route')
+  await expect(
+    page.getByTestId('hilos-admin-page').getByTestId('hilos-hidden'),
+  ).toHaveCount(0)
+  await expect(page.getByTestId('page-error')).toHaveCount(0)
+})
+
 test('a viewer sees open framework settings while a project key stays hidden', async ({
   page,
 }) => {

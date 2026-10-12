@@ -161,6 +161,19 @@ after the node agent starts or a freeze lifts. Until it arrives, `http` is null;
 a section full of zero counts is a known, different state. A daemon without an
 HTTP server sends no part.
 
+The HTTP page reads its summary from the full node slot in the page worker's
+mirror, summing every registered route and `unrouted`, independently of the
+visible table window. Its `http` data carries `host`, `port`, `countingHours`,
+`requests`, `serverErrors` and `slow`. A missing node, slot or HTTP part gives
+null, drawn as a dash in all four tiles; reported zero counts remain zero.
+`countingHours` is the number of full hours from `countingSince` to the picture's
+`sampledAt`, clamped to 0–24. The period belongs to that report, not the browser's
+clock: “Since start, <1 h”, “Since start, N h”, or “Last 24 h”.
+The address says “Listening” for a current report and “Last report” for a silent
+node with a retained summary. The latter keeps its values and period and says
+when the node fell silent; silence without a summary says no HTTP metrics have
+been reported. Neither waiting nor silence invents zero counts.
+
 ## The Circulation
 
 Use the whole-copy chain in [logs.md](logs.md), *The Circulation*:
@@ -211,9 +224,12 @@ the last report arrival time only for a silent node; live reports arrive every
 that data changes, it resends the whole page to live viewers of that node. When
 only table rows change, it resends the window. The frontend draws a link to the
 diagram only when it has built the root address. Workers, Agents and Cron carry
-the line; Cron adds its own `cronReported` flag through `nodeData()`. HTTP joins
-in its own leaf by adding `nodeData()`. The environment page is served by the
-node agent and uses its own `nodeSilent` verdict.
+the line; Cron adds its own `cronReported` flag through `nodeData()`. HTTP carries
+both `node` and `http` through `nodeData()`: a changed heading or summary resends
+the whole page to viewers of that node, without a second table window in that
+pass. With unchanged node data, changed routes resend their window. The
+environment page is served by the node agent and uses its own `nodeSilent`
+verdict.
 
 ## What Never Leaves A Node
 
@@ -389,9 +405,9 @@ The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. Each key stays in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
 for every frontend that has not built it. Vue builds Workers (HIL-1391),
-Agents (HIL-1392) and Cron (HIL-1393) before the root, so it serves those staged
-children by direct address (`STAGED_CHILDREN`); React and Angular still leave
-all three unbuilt.
+Agents (HIL-1392), Cron (HIL-1393) and HTTP (HIL-1394) before the root, so it
+serves those staged children by direct address (`STAGED_CHILDREN`); React and
+Angular still leave all four unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

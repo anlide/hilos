@@ -50,7 +50,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.DAEMON_AGENTS]: ['react', 'angular'],
   [HilosPages.DAEMON_CRON]: ['react', 'angular'],
   [HilosPages.DAEMON_WEBSOCKETS]: ['vue', 'react', 'angular'],
-  [HilosPages.DAEMON_HTTP_SERVER]: ['vue', 'react', 'angular'],
+  [HilosPages.DAEMON_HTTP_SERVER]: ['react', 'angular'],
   [HilosPages.DAEMON_ENV]: ['vue', 'react', 'angular'],
   [HilosPages.DAEMON_ENV_MISMATCH]: ['vue', 'react', 'angular'],
   [HilosPages.MCP_SKILLS]: ['vue', 'react', 'angular'],
