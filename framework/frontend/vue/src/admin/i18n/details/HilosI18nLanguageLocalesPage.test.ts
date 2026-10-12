@@ -158,6 +158,7 @@ function pair(
     countryName,
     localeCode: enabled === null ? null : rowKey,
     enabled,
+    isCountryDefault: false,
     formats: enabled === null ? null : formats,
     catalogFormats: rowKey === 'ru-AD' ? null : formats,
   }

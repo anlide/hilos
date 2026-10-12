@@ -19,10 +19,12 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\Exception\DefaultLocaleProtectedException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleAddActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleSwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleSwitchOnActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleUpdateActionDTO;
 
@@ -39,6 +41,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
         HilosSignalConstants::HILOS_I18N_LOCALE_ADD => HilosI18nLocaleAddActionDTO::class,
         HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE => HilosI18nLocaleUpdateActionDTO::class,
         HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_ON => HilosI18nLocaleSwitchOnActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF => HilosI18nLocaleSwitchOffActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -54,6 +57,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
      * @throws InvalidActionPayloadException When the payload has the wrong DTO type
      * @throws TableActionException When the addressed language, country or locale is unknown
      * @throws I18nRowFrozenException When the locale is switched on
+     * @throws DefaultLocaleProtectedException When switching off the default language's countryless locale
      * @throws ValidationException When the pair exists or a format is not a known template
      * @throws HilosException When the lookup or write fails
      */
@@ -105,6 +109,13 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
 
                 return null;
 
+            case HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF:
+                if (!$dto instanceof HilosI18nLocaleSwitchOffActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nLocaleSwitchOffActionDTO::class, $dto);
+                }
+
+                return $this->handleLocaleSwitchOff($dto);
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
@@ -124,5 +135,23 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
     protected function dataFields(): array
     {
         return [self::LOCALE_TEMPLATES_DATA => WireField::notPersonal()];
+    }
+
+    /**
+     * @param HilosI18nLocaleSwitchOffActionDTO $dto Locale address
+     * @return ?ActionReplyDTO No reply data; success travels in the action acknowledgement
+     * @throws TableActionException When the locale is unknown
+     * @throws DefaultLocaleProtectedException When this is the default language's countryless locale
+     * @throws HilosException When the lookup or write fails
+     */
+    private function handleLocaleSwitchOff(HilosI18nLocaleSwitchOffActionDTO $dto): ?ActionReplyDTO
+    {
+        $code = ObjectLocale::codeFor($dto->languageCode, $dto->countryCode);
+        $locale = Hilos::$db->locales[$code]
+            ?? throw new TableActionException('Unknown locale: ' . $code);
+        $locale->actions->switchOff();
+        $this->setActionSuccessMessage('Locale switched off.');
+
+        return null;
     }
 }

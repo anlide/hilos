@@ -9,8 +9,12 @@ use Demo\Chat\Pages\Hilos\I18n\Details\LanguageLocalesPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -18,9 +22,11 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\LocaleFormats;
+use Hilos\I18n\Exception\DefaultLocaleProtectedException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleAddActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleSwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleSwitchOnActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleUpdateActionDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -162,6 +168,134 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         }
     }
 
+    public function testSwitchOffSelectedCountryLocalePreservesItsReferencesAndAllowsEditing(): void
+    {
+        $formats = LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en-GB'));
+        $page = new LanguageLocalesPage($this->agent);
+        $previousDefault = Hilos::$db->countries['gb']->defaultLocaleId;
+        $this->underAgent($this->agent, static function () use ($page, $formats): void {
+            $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
+                new HilosI18nLocaleAddActionDTO('en', 'gb', $formats));
+            Hilos::$db->locales['en-GB']->actions->switchOn();
+            Hilos::$db->countries['gb']->actions->update('£', 'GBP', Hilos::$db->locales['en-GB']->id);
+            Hilos::$db->countryNames->actions->createManual(
+                Hilos::$db->countries['gb'], Hilos::$db->languages['en'], null, 'Britain',
+            );
+        });
+        try {
+            $names = Database::sql('SELECT * FROM hilos_country_name ORDER BY id')->rows();
+            $this->underAgent($this->agent, static function () use ($page): void {
+                self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
+                    new HilosI18nLocaleSwitchOffActionDTO('en', 'gb')));
+            });
+            self::assertFalse(Hilos::$db->locales['en-GB']->enabled);
+            self::assertSame(Hilos::$db->locales['en-GB']->id, Hilos::$db->countries['gb']->defaultLocaleId);
+            self::assertSame($formats->toArray(), LocaleFormats::ofLocale(Hilos::$db->locales['en-GB'])->toArray());
+            self::assertSame($names, Database::sql('SELECT * FROM hilos_country_name ORDER BY id')->rows());
+            $page->sendActionSuccess('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF, 'switch-off-request');
+            do {
+                $success = Hilos::$sr->getNextQueuedSignal();
+            } while ($success !== null && $success->signalName->getName() !== SignalConstants::ACTION_SUCCESS);
+            self::assertSame(SignalConstants::ACTION_SUCCESS, $success?->signalName->getName());
+            self::assertInstanceOf(WebSocketSignalData::class, $success->data);
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $success->data->data);
+            self::assertSame(HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF, $success->data->data->action);
+            self::assertSame('switch-off-request', $success->data->data->requestId);
+            self::assertSame('Locale switched off.', $success->data->data->message);
+            self::assertNull($success->data->data->reply);
+
+            $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_update'")->firstRow()['Value'];
+            $this->underAgent($this->agent, static function () use ($page): void {
+                self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
+                    new HilosI18nLocaleSwitchOffActionDTO('en', 'gb')));
+            });
+            self::assertSame($before, (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_update'")->firstRow()['Value']);
+            $updated = new LocaleFormats(
+                'YYYY-MM-DD', $formats->time, $formats->number, $formats->phone,
+                $formats->address, $formats->measurement, $formats->collation,
+            );
+            $this->underAgent($this->agent, static function () use ($page, $updated): void {
+                $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
+                    new HilosI18nLocaleUpdateActionDTO('en', 'gb', $updated));
+            });
+            self::assertSame($updated->toArray(), LocaleFormats::ofLocale(Hilos::$db->locales['en-GB'])->toArray());
+        } finally {
+            $this->underAgent($this->agent, static function () use ($previousDefault): void {
+                Hilos::$db->countries['gb']->actions->update('£', 'GBP', $previousDefault);
+            });
+        }
+    }
+
+    public function testSwitchOffNonDefaultCountrylessLocaleLeavesLanguageEnabled(): void
+    {
+        $formats = LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en'));
+        $page = new LanguageLocalesPage($this->agent);
+        $this->underAgent($this->agent, static function () use ($page, $formats): void {
+            Hilos::$db->languages->actions->create('zz', 'Test language', false)->actions->switchOn();
+            $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
+                new HilosI18nLocaleAddActionDTO('zz', null, $formats));
+            Hilos::$db->locales['zz']->actions->switchOn();
+            self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
+                new HilosI18nLocaleSwitchOffActionDTO('zz', null)));
+        });
+        self::assertFalse(Hilos::$db->locales['zz']->enabled);
+        self::assertTrue(Hilos::$db->languages['zz']->enabled);
+        self::assertSame($formats->toArray(), LocaleFormats::ofLocale(Hilos::$db->locales['zz'])->toArray());
+    }
+
+    public function testDefaultCountrylessLocaleIsProtectedBeforeIdempotentReturnOnBothEntrances(): void
+    {
+        $formats = LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en'));
+        $page = new LanguageLocalesPage($this->agent);
+        $this->underAgent($this->agent, static function () use ($page, $formats): void {
+            $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_ADD,
+                new HilosI18nLocaleAddActionDTO('en', null, $formats));
+        });
+        foreach ([false, true] as $enabled) {
+            if ($enabled) {
+                $this->underAgent($this->agent, static function (): void {
+                    Hilos::$db->locales['en']->actions->switchOn();
+                });
+            }
+            foreach ([false, true] as $viaPage) {
+                try {
+                    $this->underAgent($this->agent, static function () use ($page, $viaPage): void {
+                        if ($viaPage) {
+                            $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
+                                new HilosI18nLocaleSwitchOffActionDTO('en', null));
+                        } else {
+                            Hilos::$db->locales['en']->actions->switchOff();
+                        }
+                    });
+                    self::fail('The default countryless locale must be protected');
+                } catch (DefaultLocaleProtectedException $error) {
+                    self::assertSame("Default language locale 'en' cannot be switched off", $error->getMessage());
+                }
+                self::assertSame($enabled, Hilos::$db->locales['en']->enabled);
+                self::assertSame($formats->toArray(), LocaleFormats::ofLocale(Hilos::$db->locales['en'])->toArray());
+            }
+        }
+    }
+
+    public function testSwitchOffUnknownAddressesAndMismatchedDtoAreRefused(): void
+    {
+        $page = new LanguageLocalesPage($this->agent);
+        foreach ([['en', 'gb', 'Unknown locale: en-GB'], ['zz', null, 'Unknown locale: zz']] as [$language, $country, $message]) {
+            try {
+                $this->underAgent($this->agent, static function () use ($page, $language, $country): void {
+                    $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
+                        new HilosI18nLocaleSwitchOffActionDTO($language, $country));
+                });
+                self::fail('Unknown locale should be refused');
+            } catch (TableActionException $error) {
+                self::assertSame($message, $error->getMessage());
+            }
+        }
+        $this->expectException(InvalidActionPayloadException::class);
+        $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_SWITCH_OFF,
+            new HilosI18nLocaleSwitchOnActionDTO('en', null));
+    }
+
     public function testDuplicateAndUnknownAddressesAreRefused(): void
     {
         $formats = LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en-GB'));
@@ -228,11 +362,13 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
 
     private function clearFixtures(): void
     {
-        Database::sqlRun("DELETE FROM hilos_country_name WHERE language_id IN (SELECT id FROM hilos_language WHERE code = 'en')");
-        Database::sqlRun("DELETE FROM hilos_language_name WHERE language_id IN (SELECT id FROM hilos_language WHERE code = 'en')"
-            . " OR in_language_id IN (SELECT id FROM hilos_language WHERE code = 'en')");
-        Database::sqlRun("DELETE FROM hilos_locale WHERE language_id IN (SELECT id FROM hilos_language WHERE code = 'en')");
-        Database::sqlRun("DELETE FROM hilos_language WHERE code = 'en'");
+        Database::sqlRun("UPDATE hilos_country SET default_locale_id = NULL WHERE default_locale_id IN"
+            . " (SELECT id FROM hilos_locale WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'zz')))");
+        Database::sqlRun("DELETE FROM hilos_country_name WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'zz'))");
+        Database::sqlRun("DELETE FROM hilos_language_name WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'zz'))"
+            . " OR in_language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'zz'))");
+        Database::sqlRun("DELETE FROM hilos_locale WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('en', 'zz'))");
+        Database::sqlRun("DELETE FROM hilos_language WHERE code IN ('en', 'zz')");
         if ($this->createdBritain) {
             Database::sqlRun("DELETE FROM hilos_country WHERE code = 'gb'");
         }

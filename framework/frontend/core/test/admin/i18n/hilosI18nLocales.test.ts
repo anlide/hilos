@@ -43,6 +43,7 @@ function recordingContext(
     on: () => () => {},
     registerTableWindow: () => {},
     unregisterTableWindow: () => {},
+    sendTableRowFocus: () => {},
     sendTableViewport: (
       page: string,
       tableKey: string,
@@ -70,6 +71,7 @@ describe('resolveHilosI18nLocaleRow', () => {
         countryName: 'Украина',
         localeCode: 'ru-UA',
         enabled: false,
+        isCountryDefault: true,
         formats,
         catalogFormats: null,
       }),
@@ -81,6 +83,7 @@ describe('resolveHilosI18nLocaleRow', () => {
       countryName: 'Украина',
       localeCode: 'ru-UA',
       enabled: false,
+      isCountryDefault: true,
       formats,
       catalogFormats: null,
     })
@@ -94,6 +97,7 @@ describe('resolveHilosI18nLocaleRow', () => {
         countryName: null,
         localeCode: 'ru',
         enabled: true,
+        isCountryDefault: false,
         formats,
         catalogFormats: formats,
       }),
@@ -105,6 +109,7 @@ describe('resolveHilosI18nLocaleRow', () => {
         countryName: null,
         localeCode: null,
         enabled: null,
+        isCountryDefault: false,
         formats: null,
         catalogFormats: null,
       }),
@@ -117,8 +122,29 @@ describe('resolveHilosI18nLocaleRow', () => {
     expect(none.enabled).toBeNull()
     expect(own.formats).toEqual(formats)
     expect(own.catalogFormats).toEqual(formats)
+    expect(own.isCountryDefault).toBe(false)
+    expect(none.isCountryDefault).toBe(false)
     expect(none.formats).toBeNull()
   })
+
+  it.each([undefined, null, 'true', 1])(
+    'refuses a missing or non-boolean isCountryDefault (%s)',
+    (isCountryDefault) => {
+      const slot = {
+        rowKey: 'ru-UA',
+        countryCode: 'ua',
+        countryName: 'Украина',
+        localeCode: 'ru-UA',
+        enabled: true,
+        formats,
+        catalogFormats: null,
+        ...(isCountryDefault === undefined ? {} : { isCountryDefault }),
+      }
+      const resolved = resolveHilosI18nLocaleRow(localeRow('ru-UA', slot))
+      expect(resolved.localeCode).toBeNull()
+      expect(resolved.isCountryDefault).toBe(false)
+    },
+  )
 
   it('shows a row it cannot read by its key with no locale, rather than dropping it', () => {
     expect(resolveHilosI18nLocaleRow({ rowKey: 'ru-UA', slots: {} })).toEqual({
@@ -127,6 +153,7 @@ describe('resolveHilosI18nLocaleRow', () => {
       countryName: null,
       localeCode: null,
       enabled: null,
+      isCountryDefault: false,
       formats: null,
       catalogFormats: null,
     })
@@ -134,6 +161,45 @@ describe('resolveHilosI18nLocaleRow', () => {
 })
 
 describe('createHilosI18nLanguageLocalesTable', () => {
+  it('keeps the country-default verdict live in a focused locale across row updates', () => {
+    const table = createHilosI18nLanguageLocalesTable(
+      recordingContext([]),
+      createSignal('ru'),
+    )
+    const slot = {
+      rowKey: 'ru-UA',
+      countryCode: 'ua',
+      countryName: 'Украина',
+      localeCode: 'ru-UA',
+      enabled: true,
+      isCountryDefault: false,
+      formats,
+      catalogFormats: formats,
+    }
+    table.controller.ingestWindow(
+      [localeRow('ru-UA', slot)],
+      1,
+      true,
+      null,
+      null,
+      20,
+    )
+    expect(table.controller.focusRow('ru-UA')?.isCountryDefault).toBe(false)
+    for (const isCountryDefault of [true, false]) {
+      table.controller.ingestDelta({
+        kind: 'row_updated',
+        rowKey: 'ru-UA',
+        row: localeRow('ru-UA', { ...slot, isCountryDefault }),
+      })
+      expect(table.controller.focusedRow.get()?.isCountryDefault).toBe(
+        isCountryDefault,
+      )
+      expect(table.controller.focusedRow.get()?.localeCode).toBe('ru-UA')
+    }
+    table.controller.releaseFocus()
+    expect(table.controller.focusedRow.get()).toBeUndefined()
+  })
+
   it('declares the country, code, enabled and action columns', () => {
     const table = createHilosI18nLanguageLocalesTable(
       recordingContext([]),
@@ -166,6 +232,7 @@ describe('createHilosI18nLanguageLocalesTable', () => {
       HilosI18nLocaleRowKey.enabled,
       HilosI18nLocaleRowKey.formats,
       HilosI18nLocaleRowKey.catalogFormats,
+      HilosI18nLocaleRowKey.isCountryDefault,
     ])
   })
 

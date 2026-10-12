@@ -216,12 +216,36 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
 - A switched-off locale is switched on from its edit window: Switch on next to
   Save turns the same modal into a confirmation step. Unsaved changes must be
   saved first; switching on an enabled locale succeeds without a write.
-- A locale is switched off from its own modal (not in the code yet — HIL-1494).
+- A switched-on locale is switched off from its view window: Switch off next
+  to Close turns the same modal into a confirmation step, and Back returns to
+  the view without a request. The tracked `hilos_i18n_locale_switch_off` action
+  takes `languageCode` and the required nullable `countryCode`, keeps formats
+  and names, and closes the window on success with `Locale switched off.`.
+  The table removes Enabled and replaces the eye with the edit control in
+  every open tab without a reload; reopening the edit window unlocks the seven
+  formats. Switching off an ordinary disabled locale succeeds without a write.
 - Switching off the countryless locale of a switched-on language warns;
-  doing so for the default language is refused (not in the code yet — HIL-1494).
+  while it is off, formats fall back to the default language. For the default
+  language, the step explains the protection and disables confirmation. The
+  item write door independently refuses with
+  `Default language locale '{code}' cannot be switched off`, even if the locale
+  is already disabled: this guard runs before the idempotent return.
 - Switching off a country's default locale is allowed with a warning: while
   it is off, the country takes formats from the language, and the country's
-  `default_locale_id` is kept (not in the code yet — HIL-1494).
+  `default_locale_id` is kept. The warning applies whether the country is on
+  or off. The table's computed `isCountryDefault` compares the locale id with
+  that choice, is false without a country or locale, and follows country
+  updates in every language window through the existing table source.
+
+The switch-off step reads the live language card and focused locale row.
+Another tab switching the locale off disables confirmation and says
+`Switched off elsewhere just now.`; deletion of the locale, country or language
+says `Deleted elsewhere — your text stays to copy.`. A pair whose locale vanished
+can remain as a table row: a null locale code or formats still closes the write
+door. The action's own source echo is not a foreign change, and its pending
+request blocks closing and another submit until acknowledgement. An admin-view
+reader can open the step, with confirmation disabled. A known locale also warns
+that the next reflow can replace its formats while it stays off.
 
 What a switched-off row hides from people belongs to HIL-1424. In this epic,
 only the section reads the switch.

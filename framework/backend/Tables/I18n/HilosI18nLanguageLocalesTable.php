@@ -85,6 +85,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
                 ],
                 BrowserTableFieldKey::COMPUTED => [
                     HilosI18nLanguageLocalesTableRow::rowKey,
+                    HilosI18nLanguageLocalesTableRow::isCountryDefault,
                 ],
             ],
             [
@@ -260,8 +261,8 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
     /**
      * Declares where each field of a locales row comes from, for a viewer of the admin view mode (HIL-1250).
      *
-     * Every field is a column of an i18n collection, none of them personal (HIL-1468), and the key is
-     * put together of two such codes, so a viewer sees the whole row.
+     * Stored fields come from non-personal i18n columns (HIL-1468). The pair key and country-default
+     * flag are computed from those codes and references, so a viewer receives the whole row.
      *
      * @return array<string, WireField> Row field name to where it comes from
      */
@@ -276,6 +277,8 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
             ),
             HilosI18nLanguageLocalesTableRow::localeCode => WireField::column(HilosDbContext::locales, ObjectLocale::code),
             HilosI18nLanguageLocalesTableRow::enabled => WireField::column(HilosDbContext::locales, ObjectLocale::enabled),
+            // Equality of locales.id and countries.defaultLocaleId, both non-personal i18n references.
+            HilosI18nLanguageLocalesTableRow::isCountryDefault => WireField::notPersonal(),
             HilosI18nLanguageLocalesTableRow::formats => WireField::each([
                 LocaleFormats::date => WireField::column(HilosDbContext::locales, ObjectLocale::dateFormat),
                 LocaleFormats::time => WireField::column(HilosDbContext::locales, ObjectLocale::timeFormat),
@@ -348,7 +351,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
                 }
             }
 
-            $rows[] = self::row($language->code, null, null, $ownLocale)->toArray();
+            $rows[] = self::row($language->code, null, null, $ownLocale, null)->toArray();
             foreach ($this->countriesByCode() as $country) {
                 $countryId = (int) $country->id;
                 $rows[] = self::row(
@@ -356,6 +359,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
                     $country->code,
                     $namesByCountry[$countryId] ?? null,
                     $localesByCountry[$countryId] ?? null,
+                    $country->defaultLocaleId,
                 )->toArray();
             }
         }
@@ -401,11 +405,11 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
      * Builds the mutation a change of one country makes in the window of a language.
      *
      * A country is a row of every language, so a new one adds its row and a removed one takes it
-     * away; an edit of a country changes nothing a row carries, the code never being edited.
+     * away; an edit updates whether the country selects the pair's locale as its default.
      *
      * @param SourceChange $change Change of the countries collection
      * @param DbLanguage $language The window's language
-     * @return list<TableRowMutationDTO> The country's row created or removed, or nothing
+     * @return list<TableRowMutationDTO> The country's row created, updated or removed, or nothing
      * @throws HilosException When an i18n collection cannot be read
      */
     private function countryMutations(SourceChange $change, DbLanguage $language): array
@@ -417,7 +421,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
                 ? [$this->mutation(TableMutationType::Delete, ObjectLocale::codeFor($language->code, $countryCode))]
                 : [];
         }
-        if ($change->mutationType !== TableMutationType::Create) {
+        if ($change->mutationType !== TableMutationType::Create && $change->mutationType !== TableMutationType::Update) {
             return [];
         }
 
@@ -428,7 +432,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
 
         $row = $this->countryRow($language, $country);
 
-        return [$this->mutation(TableMutationType::Create, $row->rowKey, $row)];
+        return [$this->mutation($change->mutationType, $row->rowKey, $row)];
     }
 
     /**
@@ -514,7 +518,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
      */
     private function ownRow(DbLanguage $language): HilosI18nLanguageLocalesTableRow
     {
-        return self::row($language->code, null, null, Hilos::$db->locales[(string) $language->code]);
+        return self::row($language->code, null, null, Hilos::$db->locales[(string) $language->code], null);
     }
 
     /**
@@ -532,6 +536,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
             $country->code,
             Hilos::$db->countryNames->findBase((int) $country->id, (int) $language->id)?->name,
             Hilos::$db->locales[ObjectLocale::codeFor($language->code, $country->code)],
+            $country->defaultLocaleId,
         );
     }
 
@@ -556,6 +561,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
      * @param ?string $countryCode Code of the row's country, null on the language's own row
      * @param ?string $countryName Base name of the country in the window's language, null when none is written
      * @param ?DbLocale $locale The pair's locale, null when the pair has none
+     * @param ?int $defaultLocaleId Country's selected locale, null without a country or a selection
      * @return HilosI18nLanguageLocalesTableRow The row
      */
     private static function row(
@@ -563,6 +569,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
         ?string $countryCode,
         ?string $countryName,
         ?DbLocale $locale,
+        ?int $defaultLocaleId,
     ): HilosI18nLanguageLocalesTableRow {
         $catalog = BuiltInI18nCatalog::locale(ObjectLocale::codeFor($languageCode, $countryCode));
 
@@ -572,6 +579,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
             countryName: $countryName,
             localeCode: $locale?->code,
             enabled: $locale?->enabled,
+            isCountryDefault: $countryCode !== null && $locale !== null && $defaultLocaleId !== null && $locale->id === $defaultLocaleId,
             formats: $locale === null ? null : LocaleFormats::ofLocale($locale),
             catalogFormats: $catalog === null ? null : LocaleFormats::ofCatalog($catalog),
         );

@@ -5,6 +5,7 @@ import {
   HILOS_I18N_LOCALE_ADD_ACTION,
   HILOS_I18N_LOCALE_UPDATE_ACTION,
   HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+  HILOS_I18N_LOCALE_SWITCH_OFF_ACTION,
   HILOS_I18N_LOCALE_COPY,
   type ActionHandle,
   type ActionLifecycle,
@@ -61,6 +62,7 @@ const known: HilosI18nLocaleRow = {
   countryName: 'United Kingdom',
   localeCode: null,
   enabled: null,
+  isCountryDefault: false,
   formats: null,
   catalogFormats: formats,
 }
@@ -70,6 +72,7 @@ const own: HilosI18nLocaleRow = {
   countryName: null,
   localeCode: null,
   enabled: null,
+  isCountryDefault: false,
   formats: null,
   catalogFormats: null,
 }
@@ -159,6 +162,361 @@ async function settled(): Promise<void> {
   await nextTick()
   await nextTick()
 }
+
+describe('HilosI18nLocaleWindow switch-off', () => {
+  const ordinary = { ...editable, enabled: true }
+  const nonDefaultCard = {
+    ...card,
+    summary: { ...card.summary, isDefault: false },
+  }
+
+  it.each(['add', 'edit'] as const)(
+    'has no switch-off opener in %s',
+    async (mode) => {
+      harness(mode === 'add' ? known : editable, mode)
+      await nextTick()
+      expect(el('i18n-locale-switch-off')).toBeNull()
+    },
+  )
+
+  it('opens the step without sending, keeps the slots and returns to read-only view', async () => {
+    const h = harness(ordinary, 'view')
+    await nextTick()
+    expect(el('i18n-locale-close')?.textContent).toContain('Close')
+    expect((el('i18n-locale-switch-off') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    el('i18n-locale-switch-off')?.focus()
+    el('i18n-locale-switch-off')?.click()
+    await settled()
+    expect(h.dispatched).toHaveLength(0)
+    expect(document.querySelectorAll('[data-id="modal"]')).toHaveLength(1)
+    expect(el('i18n-locale-title')?.textContent).toContain(
+      'Switch off locale · English in United Kingdom',
+    )
+    expect(el('i18n-locale-switch-off-body')?.textContent).toContain(
+      'Switching a locale off unlocks its seven formats for editing. Its formats and names stay in place.',
+    )
+    expect(el('i18n-locale-switch-off-note')?.textContent).toContain(
+      'While it is off, the next framework reflow can replace these formats with the built-in ones.',
+    )
+    expect(el('i18n-locale-switch-off-error')).not.toBeNull()
+    expect(el('i18n-locale-error')).not.toBeNull()
+    expect(el('i18n-locale-notice-slot')).not.toBeNull()
+    expect(el('i18n-locale-switch-off-warning')).toBeNull()
+    expect(el('i18n-locale-switch-off-reason')).toBeNull()
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    expect(
+      el('i18n-locale-switch-off-confirm')?.classList.contains('btn-danger'),
+    ).toBe(true)
+    expect(el('i18n-locale-field-date')).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBe(
+      document.activeElement,
+    )
+    for (const twin of document.querySelectorAll('.hilos-stack.invisible')) {
+      expect(twin.getAttribute('aria-hidden')).toBe('true')
+      expect(twin.hasAttribute('inert')).toBe(true)
+      expect(
+        twin.querySelector(
+          '[data-id], [data-autofocus], form, input, select, textarea, button',
+        ),
+      ).toBeNull()
+    }
+    el('i18n-locale-switch-off-back')?.click()
+    await nextTick()
+    expect(el('i18n-locale-title')?.textContent).toContain(
+      'Locale · English in United Kingdom',
+    )
+    expect((el('i18n-locale-field-date') as HTMLSelectElement).disabled).toBe(
+      true,
+    )
+    expect(el('i18n-locale-submit')).toBeNull()
+    expect(h.view.emitted('close')).toBeUndefined()
+    el('i18n-locale-close')?.click()
+    await nextTick()
+    expect(el('modal-confirm')).toBeNull()
+    expect(h.view.emitted('close')).toBeDefined()
+  })
+
+  it('keeps the protected opener live and shows its reason with confirmation disabled', async () => {
+    const h = harness(visible, 'view')
+    await nextTick()
+    expect((el('i18n-locale-switch-off') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    expect(el('i18n-locale-title')?.textContent).toContain(
+      'Switch off locale · English without a country',
+    )
+    expect(el('i18n-locale-switch-off-reason')?.textContent).toContain(
+      'The default language needs its locale without a country: it cannot be switched off.',
+    )
+    expect(el('i18n-locale-switch-off-warning')).toBeNull()
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    el('i18n-locale-switch-off-confirm')?.click()
+    expect(h.dispatched).toHaveLength(0)
+    await h.view.setProps({ card: nonDefaultCard })
+    expect(el('i18n-locale-switch-off-reason')).toBeNull()
+    expect(el('i18n-locale-switch-off-warning')?.textContent).toContain(
+      HILOS_I18N_LOCALE_COPY.switchOff.languageWarning,
+    )
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    await h.view.setProps({ card: { ...nonDefaultCard, enabled: false } })
+    expect(el('i18n-locale-switch-off-warning')).toBeNull()
+  })
+
+  it('follows the live country default without changing the step or permission', async () => {
+    const h = harness({ ...ordinary, isCountryDefault: true }, 'view')
+    await nextTick()
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    expect(el('i18n-locale-switch-off-warning')?.textContent).toContain(
+      HILOS_I18N_LOCALE_COPY.switchOff.countryWarning,
+    )
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    h.focused.set({ ...ordinary, isCountryDefault: false })
+    await nextTick()
+    expect(el('i18n-locale-switch-off-warning')).toBeNull()
+    h.focused.set({ ...ordinary, isCountryDefault: true })
+    await nextTick()
+    expect(el('i18n-locale-switch-off-warning')?.textContent).toContain(
+      HILOS_I18N_LOCALE_COPY.switchOff.countryWarning,
+    )
+    expect(h.dispatched).toHaveLength(0)
+  })
+
+  it('omits the catalog note for an own pair and falls back to its country code', async () => {
+    harness({ ...own, localeCode: own.rowKey, enabled: true, formats }, 'view')
+    await nextTick()
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    expect(el('i18n-locale-title')?.textContent).toContain(
+      'Switch off locale · English in AD',
+    )
+    expect(el('i18n-locale-switch-off-note')).toBeNull()
+  })
+
+  it('lets a viewer open and go Back but disables the write through LoadingButton', async () => {
+    const h = harness(ordinary, 'view', true)
+    await nextTick()
+    expect((el('i18n-locale-switch-off') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      (el('i18n-locale-switch-off-back') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    el('i18n-locale-switch-off-confirm')?.click()
+    expect(h.dispatched).toHaveLength(0)
+    el('i18n-locale-switch-off-back')?.click()
+    await nextTick()
+    expect(el('i18n-locale-switch-off')).not.toBeNull()
+  })
+
+  it.each(['gb', null])(
+    'waits for success and releases focus, suppressing its own off echo (%s)',
+    async (countryCode) => {
+      const locale = countryCode === null ? visible : ordinary
+      const h = harness(locale, 'view')
+      await h.view.setProps({ card: nonDefaultCard })
+      el('i18n-locale-switch-off')?.click()
+      await nextTick()
+      const notices: string[] = []
+      const observer = new MutationObserver(() =>
+        notices.push(el('i18n-locale-notice')?.textContent ?? ''),
+      )
+      observer.observe(el('i18n-locale-window')!, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      })
+      try {
+        el('i18n-locale-switch-off-confirm')?.click()
+        el('i18n-locale-switch-off-confirm')?.click()
+        expect(h.dispatched).toHaveLength(1)
+        expect(h.dispatched[0]).toMatchObject({
+          name: 'hilos_i18n_locale_switch_off',
+          payload: { languageCode: 'en', countryCode },
+        })
+        h.focused.set({ ...locale, enabled: false })
+        await nextTick()
+        expect(el('i18n-locale-notice-slot')?.textContent).not.toContain(
+          'Switched off elsewhere',
+        )
+        expect(h.view.emitted('close')).toBeUndefined()
+        h.dispatched[0]?.settle({ message: 'Locale switched off.' })
+        await settled()
+        expect(h.view.emitted('close')).toHaveLength(1)
+        expect(h.focused.get()).toBeUndefined()
+        expect(
+          notices.some((notice) => notice.includes('Switched off elsewhere')),
+        ).toBe(false)
+      } finally {
+        observer.disconnect()
+      }
+    },
+  )
+
+  it('keeps server refusal in the reserved slot, permits retry, and resets on reopening', async () => {
+    const h = harness(ordinary, 'view')
+    await nextTick()
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    el('i18n-locale-switch-off-confirm')?.click()
+    h.dispatched[0]?.refuse(
+      new ActionError(
+        HILOS_I18N_LOCALE_SWITCH_OFF_ACTION,
+        'fail',
+        'Locale refused.',
+      ),
+    )
+    await settled()
+    expect(el('i18n-locale-switch-off-error')?.textContent).toContain(
+      'Locale refused.',
+    )
+    expect(el('i18n-locale-switch-off-body')).not.toBeNull()
+    expect(h.view.emitted('close')).toBeUndefined()
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    el('i18n-locale-switch-off-back')?.click()
+    await nextTick()
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    expect(el('i18n-locale-switch-off-error')?.textContent).not.toContain(
+      'Locale refused.',
+    )
+    el('i18n-locale-switch-off-confirm')?.click()
+    expect(h.dispatched).toHaveLength(2)
+    h.dispatched[1]?.refuse(
+      new ActionError(
+        HILOS_I18N_LOCALE_SWITCH_OFF_ACTION,
+        'fail',
+        'Refused again.',
+      ),
+    )
+    await settled()
+    await h.view.setProps({ opened: null })
+    await h.view.setProps({ opened: { rowKey: ordinary.rowKey, mode: 'view' } })
+    expect(el('i18n-locale-switch-off-body')).toBeNull()
+    expect(el('i18n-locale-error')?.textContent).not.toContain('Refused again.')
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    expect(el('i18n-locale-switch-off-error')?.textContent).not.toContain(
+      'Refused again.',
+    )
+  })
+
+  it('blocks Back, Esc, the cross and the backdrop until the request settles', async () => {
+    const h = harness(ordinary, 'view')
+    await nextTick()
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    el('i18n-locale-switch-off-confirm')?.click()
+    await nextTick()
+    expect(
+      (el('i18n-locale-switch-off-back') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    el('i18n-locale-switch-off-back')?.click()
+    el('modal')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    el('modal-close')?.click()
+    el('modal')?.click()
+    await nextTick()
+    expect(h.view.emitted('close')).toBeUndefined()
+    expect(el('modal-confirm')).toBeNull()
+    expect(el('i18n-locale-switch-off-body')).not.toBeNull()
+    h.dispatched[0]?.refuse(
+      new ActionError(HILOS_I18N_LOCALE_SWITCH_OFF_ACTION, 'fail', 'Refused'),
+    )
+    await settled()
+    el('modal')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    await nextTick()
+    expect(h.view.emitted('close')).toBeDefined()
+  })
+
+  it('locks on an external off and returns to view without opening an editor', async () => {
+    const h = harness(ordinary, 'view')
+    await nextTick()
+    el('i18n-locale-switch-off')?.click()
+    await nextTick()
+    h.focused.set({ ...ordinary, enabled: false })
+    await nextTick()
+    expect(el('i18n-locale-notice')?.textContent).toContain(
+      'Switched off elsewhere just now.',
+    )
+    expect(
+      (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    el('i18n-locale-switch-off-confirm')?.click()
+    expect(h.dispatched).toHaveLength(0)
+    el('i18n-locale-switch-off-back')?.click()
+    await nextTick()
+    expect((el('i18n-locale-switch-off') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    expect((el('i18n-locale-field-date') as HTMLSelectElement).disabled).toBe(
+      true,
+    )
+    expect(el('i18n-locale-submit')).toBeNull()
+  })
+
+  it.each(['code', 'formats', 'row', 'card'] as const)(
+    'keeps a deleted %s visible and blocks send even when the pair row remains',
+    async (deleted) => {
+      const h = harness(ordinary, 'view')
+      await nextTick()
+      el('i18n-locale-switch-off')?.click()
+      await nextTick()
+      if (deleted === 'card') await h.view.setProps({ card: null })
+      else
+        h.focused.set(
+          deleted === 'row'
+            ? undefined
+            : {
+                ...ordinary,
+                ...(deleted === 'code'
+                  ? { localeCode: null }
+                  : { formats: null }),
+              },
+        )
+      await nextTick()
+      expect(el('i18n-locale-notice')?.textContent).toContain(
+        'Deleted elsewhere — your text stays to copy.',
+      )
+      expect(
+        (el('i18n-locale-switch-off-confirm') as HTMLButtonElement).disabled,
+      ).toBe(true)
+      el('i18n-locale-switch-off-confirm')?.click()
+      expect(h.dispatched).toHaveLength(0)
+      expect(h.view.emitted('close')).toBeUndefined()
+      el('i18n-locale-switch-off-back')?.click()
+      await nextTick()
+      expect((el('i18n-locale-switch-off') as HTMLButtonElement).disabled).toBe(
+        true,
+      )
+      expect((el('i18n-locale-field-date') as HTMLSelectElement).value).toBe(
+        formats.date,
+      )
+    },
+  )
+})
 
 describe('HilosI18nLocaleWindow', () => {
   it('keeps step twins outside locators, forms and the focus trap', async () => {

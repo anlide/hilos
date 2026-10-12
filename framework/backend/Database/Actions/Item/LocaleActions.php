@@ -12,6 +12,8 @@ use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Item\Locale;
 use Hilos\HilosException;
+use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\Exception\DefaultLocaleProtectedException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\I18n\LocaleTemplates;
@@ -76,10 +78,18 @@ class LocaleActions extends DbActions
         $this->object->sync();
     }
 
-    /** @throws HilosException When ownership or persistence refuses the write */
+    /**
+     * @throws DefaultLocaleProtectedException When this is the default language's countryless locale
+     * @throws HilosException When ownership, environment or persistence refuses the write
+     */
     public function switchOff(): void
     {
         $this->ensureCanWrite();
+        if ($this->object->countryId === null && $this->object->code === DefaultLanguage::code()) {
+            throw new DefaultLocaleProtectedException(
+                "Default language locale '{$this->object->code}' cannot be switched off",
+            );
+        }
         if (!$this->object->enabled) {
             return;
         }

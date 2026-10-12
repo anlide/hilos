@@ -3,17 +3,23 @@ import {
   HILOS_I18N_LOCALE_ADD_ACTION,
   HILOS_I18N_LOCALE_UPDATE_ACTION,
   HILOS_I18N_LOCALE_SWITCH_ON_ACTION,
+  HILOS_I18N_LOCALE_SWITCH_OFF_ACTION,
   HILOS_I18N_LOCALE_COPY,
   LOCALE_TEMPLATES_DATA,
   createHilosI18nLocaleAdd,
   createHilosI18nLocaleEdit,
   createHilosI18nLocaleSwitchOn,
+  createHilosI18nLocaleSwitchOff,
   createHilosI18nLocaleTemplates,
   hilosI18nLocaleCountryLabel,
+  hilosI18nLocaleSwitchOff,
   hilosI18nLocaleWindowMode,
 } from '../../../src/admin/i18n/hilosI18nLocaleWindow.js'
 import { type HilosI18nLocaleRow } from '../../../src/admin/i18n/hilosI18nLocales.js'
-import { type HilosI18nLanguageContext } from '../../../src/admin/i18n/hilosI18nLanguage.js'
+import {
+  type HilosI18nLanguageCard,
+  type HilosI18nLanguageContext,
+} from '../../../src/admin/i18n/hilosI18nLanguage.js'
 import {
   type ActionHandle,
   type ActionLifecycle,
@@ -54,6 +60,7 @@ function row(
     countryName: rowKey === 'en-GB' ? 'United Kingdom' : null,
     localeCode: formatsOfRow === null ? null : rowKey,
     enabled: formatsOfRow === null ? null : false,
+    isCountryDefault: false,
     formats: formatsOfRow,
     catalogFormats,
   }
@@ -88,7 +95,122 @@ function setup(rows: HilosI18nLocaleRow[]) {
   return { controller, focused, context, sent }
 }
 
+const card: HilosI18nLanguageCard = {
+  code: 'en',
+  nativeName: 'English',
+  rtl: false,
+  enabled: true,
+  summary: {
+    isDefault: false,
+    isOwn: false,
+    localeCount: 1,
+    nameCount: 0,
+    countrylessLocale: 'on',
+    canDelete: false,
+    deleteReason: 'locales',
+  },
+}
+
 describe('locale window core', () => {
+  it('names the switch-off step with the shared pair suffix', () => {
+    expect(HILOS_I18N_LOCALE_COPY.switchOff.title('English', 'Australia')).toBe(
+      'Switch off locale · English in Australia',
+    )
+    expect(HILOS_I18N_LOCALE_COPY.switchOff.title('English', null)).toBe(
+      'Switch off locale · English without a country',
+    )
+  })
+
+  it('dispatches switch-off with only the language and mandatory nullable country', () => {
+    const { context, sent } = setup([])
+    const switcher = createHilosI18nLocaleSwitchOff(context)
+    switcher.switchOff('en', 'au')
+    switcher.switchOff('uk', null)
+    expect(sent).toEqual([
+      [
+        'hilos_i18n_locale_switch_off',
+        { languageCode: 'en', countryCode: 'au' },
+      ],
+      [
+        'hilos_i18n_locale_switch_off',
+        { languageCode: 'uk', countryCode: null },
+      ],
+    ])
+    expect(HILOS_I18N_LOCALE_SWITCH_OFF_ACTION).toBe(
+      'hilos_i18n_locale_switch_off',
+    )
+  })
+
+  it('allows ordinary locales and protects only the default language without a country', () => {
+    const countryless = { ...row('en', formats, formats), enabled: true }
+    const country = { ...row('en-GB', formats, formats), enabled: true }
+    const defaultCard = {
+      ...card,
+      summary: { ...card.summary, isDefault: true },
+    }
+    expect(hilosI18nLocaleSwitchOff(card, country)).toEqual({
+      disabled: false,
+      reason: null,
+      warning: null,
+    })
+    expect(hilosI18nLocaleSwitchOff(defaultCard, countryless)).toEqual({
+      disabled: true,
+      reason:
+        'The default language needs its locale without a country: it cannot be switched off.',
+      warning: null,
+    })
+    expect(hilosI18nLocaleSwitchOff(defaultCard, country).disabled).toBe(false)
+  })
+
+  it('warns about the language fallback only while the language is enabled', () => {
+    const countryless = { ...row('en', formats, formats), enabled: true }
+    expect(hilosI18nLocaleSwitchOff(card, countryless)).toEqual({
+      disabled: false,
+      reason: null,
+      warning:
+        'This language is switched on. While its locale without a country is off, formats fall back to the default language.',
+    })
+    expect(
+      hilosI18nLocaleSwitchOff({ ...card, enabled: false }, countryless),
+    ).toEqual({
+      disabled: false,
+      reason: null,
+      warning: null,
+    })
+  })
+
+  it('warns about a country default independently of the language being on', () => {
+    const country = {
+      ...row('en-GB', formats, formats),
+      enabled: true,
+      isCountryDefault: true,
+    }
+    for (const enabled of [true, false]) {
+      expect(hilosI18nLocaleSwitchOff({ ...card, enabled }, country)).toEqual({
+        disabled: false,
+        reason: null,
+        warning:
+          "This is the country's default locale. While it is off, the country uses the language's formats; its chosen locale stays in place.",
+      })
+    }
+  })
+
+  it('blocks a missing card, missing locale and an already switched-off row', () => {
+    const country = { ...row('en-GB', formats, formats), enabled: true }
+    const refused = { disabled: true, reason: null, warning: null }
+    expect(hilosI18nLocaleSwitchOff(null, country)).toEqual(refused)
+    for (const live of [
+      undefined,
+      null,
+      { ...country, localeCode: null },
+      { ...country, formats: null },
+      { ...country, enabled: false },
+      row('en-GB', null, formats),
+    ]) {
+      expect(hilosI18nLocaleSwitchOff(card, live)).toEqual(refused)
+    }
+  })
+
   it('names the switch-on step with and without a country', () => {
     expect(HILOS_I18N_LOCALE_COPY.switchOn.title('English', 'Australia')).toBe(
       'Switch on locale · English in Australia',

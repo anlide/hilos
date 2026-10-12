@@ -4,7 +4,10 @@ import {
   createHilosI18nLocaleAdd,
   createHilosI18nLocaleEdit,
   createHilosI18nLocaleSwitchOn,
+  createHilosI18nLocaleSwitchOff,
+  focusInitial,
   hilosI18nLocaleCountryLabel,
+  hilosI18nLocaleSwitchOff,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
   type HilosI18nLocaleFormats,
@@ -13,7 +16,7 @@ import {
   type HilosI18nLocaleWindowMode,
   type TableViewportController,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ConflictActions from '../../../ConflictActions.vue'
 import ConflictHeader from '../../../ConflictHeader.vue'
@@ -54,6 +57,7 @@ const creator = createHilosI18nLocaleAdd(
   address,
 )
 const switcher = createHilosI18nLocaleSwitchOn(props.context, address)
+const offSwitcher = createHilosI18nLocaleSwitchOff(props.context)
 const editOpened = useSignal(editor.opened)
 const editRow = useSignal(editor.row)
 const editForm = useSignal(editor.form)
@@ -70,7 +74,9 @@ const focusedRow = useSignal(props.controller.focusedRow)
 const addAction = useTrackedAction()
 const editAction = useTrackedAction()
 const switchAction = useTrackedAction()
-const step = ref<'form' | 'switchOn'>('form')
+const offAction = useTrackedAction()
+const body = ref<HTMLElement>()
+const step = ref<'form' | 'switchOn' | 'switchOff'>('form')
 const unsavedAtStep = ref(false)
 const openedName = ref('')
 const viewSnapshot = ref<HilosI18nLocaleRow | null>(null)
@@ -97,8 +103,15 @@ const formTitle = computed(() =>
 const switchOnTitle = computed(() =>
   copy.switchOn.title(openedName.value, country.value),
 )
+const switchOffTitle = computed(() =>
+  copy.switchOff.title(openedName.value, country.value),
+)
 const title = computed(() =>
-  step.value === 'switchOn' ? switchOnTitle.value : formTitle.value,
+  step.value === 'switchOn'
+    ? switchOnTitle.value
+    : step.value === 'switchOff'
+      ? switchOffTitle.value
+      : formTitle.value,
 )
 const form = computed(() =>
   mode.value === 'add'
@@ -111,7 +124,20 @@ const form = computed(() =>
 )
 const busy = computed(
   () =>
-    addAction.busy.value || editAction.busy.value || switchAction.busy.value,
+    addAction.busy.value ||
+    editAction.busy.value ||
+    switchAction.busy.value ||
+    offAction.busy.value,
+)
+const viewGone = computed(
+  () =>
+    props.card === null ||
+    !liveRow.value ||
+    liveRow.value.localeCode === null ||
+    liveRow.value.formats === null,
+)
+const offVerdict = computed(() =>
+  hilosI18nLocaleSwitchOff(props.card, liveRow.value),
 )
 const lockedOn = computed(
   () => mode.value === 'edit' && !busy.value && liveRow.value?.enabled === true,
@@ -129,16 +155,12 @@ const noticeKind = computed(() => {
       : lockedOn.value
         ? 'updated'
         : (editState.value.notice?.kind ?? null)
-  return liveRow.value === undefined
-    ? 'deleted'
-    : switchedOff.value
-      ? 'updated'
-      : null
+  return viewGone.value ? 'deleted' : switchedOff.value ? 'updated' : null
 })
 const noticeText = computed(() => {
   if (mode.value === 'add')
     return addGone.value
-      ? 'Deleted elsewhere — your text stays to copy.'
+      ? copy.elsewhere.deleted
       : addElsewhere.value
         ? copy.elsewhere.added
         : ''
@@ -148,8 +170,8 @@ const noticeText = computed(() => {
       : lockedOn.value
         ? copy.elsewhere.switchedOn
         : editNotice.value
-  return liveRow.value === undefined
-    ? 'Deleted elsewhere — your text stays to copy.'
+  return viewGone.value
+    ? copy.elsewhere.deleted
     : switchedOff.value
       ? copy.elsewhere.switchedOff
       : ''
@@ -163,9 +185,11 @@ const plate = computed(() => {
 const activeAction = computed(() =>
   step.value === 'switchOn'
     ? switchAction
-    : mode.value === 'add'
-      ? addAction
-      : editAction,
+    : step.value === 'switchOff'
+      ? offAction
+      : mode.value === 'add'
+        ? addAction
+        : editAction,
 )
 const modalOpen = computed({
   get: () => props.opened !== null,
@@ -195,6 +219,7 @@ watch(
     addAction.clearError()
     editAction.clearError()
     switchAction.clearError()
+    offAction.clearError()
     if (opening.mode === 'add' && !creator.open(opening.rowKey)) emit('close')
     if (opening.mode === 'edit' && !editor.open(opening.rowKey)) emit('close')
     if (opening.mode === 'view') {
@@ -204,6 +229,13 @@ watch(
   },
   { immediate: true },
 )
+
+watch(step, () => {
+  void nextTick(() => {
+    const dialog = body.value?.closest<HTMLElement>('[role="dialog"]')
+    if (props.opened !== null && dialog) focusInitial(dialog, 'dialog')
+  })
+})
 
 function closeWindow(): void {
   if (busy.value) return
@@ -220,6 +252,34 @@ function openSwitchOn(): void {
   unsavedAtStep.value = editState.value.dirty || editState.value.conflict
   switchAction.clearError()
   step.value = 'switchOn'
+}
+
+function openSwitchOff(): void {
+  if (
+    busy.value ||
+    mode.value !== 'view' ||
+    viewGone.value ||
+    liveRow.value?.enabled !== true
+  )
+    return
+  offAction.clearError()
+  step.value = 'switchOff'
+}
+
+function back(): void {
+  if (!busy.value) step.value = 'form'
+}
+
+async function confirmSwitchOff(): Promise<void> {
+  if (busy.value || offVerdict.value.disabled || !props.card || !liveRow.value)
+    return
+  if (
+    await offAction.run(
+      offSwitcher.switchOff(props.card.code, liveRow.value.countryCode),
+    )
+  ) {
+    closeWindow()
+  }
 }
 
 async function confirm(): Promise<void> {
@@ -276,18 +336,23 @@ async function submit(): Promise<void> {
     <template #header>
       <!-- Each part holds its tallest ordinary step: a body twin alone cannot
       keep a wrapped heading or the footer's conflict row from moving Save. -->
-      <div :class="mode === 'edit' ? 'hilos-stack flex-grow-1' : undefined">
+      <div :class="mode !== 'add' ? 'hilos-stack flex-grow-1' : undefined">
         <div
-          v-if="mode === 'edit'"
+          v-if="mode !== 'add'"
           class="hilos-stack invisible"
           aria-hidden="true"
           inert
         >
           <h5 class="modal-title d-inline-flex align-items-center gap-2 mb-0">
             <span>{{ formTitle }}</span>
-            <span class="badge text-bg-danger">conflict</span>
+            <span v-if="mode === 'edit'" class="badge text-bg-danger"
+              >conflict</span
+            >
           </h5>
-          <h5 class="modal-title mb-0">{{ switchOnTitle }}</h5>
+          <h5 v-if="mode === 'edit'" class="modal-title mb-0">
+            {{ switchOnTitle }}
+          </h5>
+          <h5 v-else class="modal-title mb-0">{{ switchOffTitle }}</h5>
         </div>
         <div data-id="i18n-locale-title">
           <ConflictHeader
@@ -299,7 +364,7 @@ async function submit(): Promise<void> {
         </div>
       </div>
     </template>
-    <div data-id="i18n-locale-window">
+    <div ref="body" data-id="i18n-locale-window">
       <div class="d-flex flex-wrap gap-3 mb-2 small">
         <div>
           <span class="text-body-secondary">{{ copy.countryLabel }}</span>
@@ -310,15 +375,17 @@ async function submit(): Promise<void> {
           <code data-id="i18n-locale-code">{{ row?.rowKey }}</code>
         </div>
       </div>
-      <div :class="mode === 'edit' ? 'hilos-stack' : undefined">
+      <div :class="mode !== 'add' ? 'hilos-stack' : undefined">
         <div
-          v-if="mode === 'edit'"
+          v-if="mode !== 'add'"
           class="hilos-stack invisible"
           aria-hidden="true"
           inert
         >
           <p class="small text-body-secondary">{{ copy.lead }}</p>
-          <p class="small text-body-secondary">{{ copy.switchOn.body }}</p>
+          <p class="small text-body-secondary">
+            {{ mode === 'edit' ? copy.switchOn.body : copy.switchOff.body }}
+          </p>
         </div>
         <p
           v-if="step === 'switchOn'"
@@ -327,28 +394,43 @@ async function submit(): Promise<void> {
         >
           {{ copy.switchOn.body }}
         </p>
+        <p
+          v-else-if="step === 'switchOff'"
+          class="small text-body-secondary"
+          data-id="i18n-locale-switch-off-body"
+        >
+          {{ copy.switchOff.body }}
+        </p>
         <p v-else class="small text-body-secondary">{{ copy.lead }}</p>
       </div>
       <div data-id="i18n-locale-error">
-        <HilosActionError
-          :action="activeAction"
-          :details-title="
-            step === 'switchOn'
-              ? copy.switchOn.refusalTitle
-              : mode === 'add'
-                ? copy.refusalTitle.add
-                : copy.refusalTitle.edit
+        <div
+          :data-id="
+            step === 'switchOff' ? 'i18n-locale-switch-off-error' : undefined
           "
-        />
+        >
+          <HilosActionError
+            :action="activeAction"
+            :details-title="
+              step === 'switchOn'
+                ? copy.switchOn.refusalTitle
+                : step === 'switchOff'
+                  ? copy.switchOff.refusalTitle
+                  : mode === 'add'
+                    ? copy.refusalTitle.add
+                    : copy.refusalTitle.edit
+            "
+          />
+        </div>
       </div>
       <HilosEditNotice
         :kind="noticeKind"
         :text="noticeText"
         data-id="i18n-locale-notice"
       />
-      <div :class="mode === 'edit' ? 'hilos-stack' : undefined">
+      <div :class="mode !== 'add' ? 'hilos-stack' : undefined">
         <div
-          v-if="mode === 'edit'"
+          v-if="mode !== 'add'"
           class="hilos-stack invisible"
           aria-hidden="true"
           inert
@@ -379,7 +461,7 @@ async function submit(): Promise<void> {
               {{ plate }}
             </div>
           </div>
-          <div>
+          <div v-if="mode === 'edit'">
             <div
               v-if="row?.catalogFormats !== null"
               class="alert alert-secondary small py-2 mb-0"
@@ -388,6 +470,25 @@ async function submit(): Promise<void> {
             </div>
             <div class="alert alert-warning small py-2 mb-0">
               {{ copy.switchOn.unsaved }}
+            </div>
+          </div>
+          <div v-else>
+            <div
+              v-if="row?.catalogFormats !== null"
+              class="alert alert-secondary small py-2 mb-0"
+            >
+              {{ copy.switchOff.catalogNote }}
+            </div>
+            <div class="hilos-stack">
+              <div class="alert alert-danger small py-2 mb-0">
+                {{ copy.switchOff.defaultReason }}
+              </div>
+              <div class="alert alert-warning small py-2 mb-0">
+                {{ copy.switchOff.languageWarning }}
+              </div>
+              <div class="alert alert-warning small py-2 mb-0">
+                {{ copy.switchOff.countryWarning }}
+              </div>
             </div>
           </div>
         </div>
@@ -405,6 +506,29 @@ async function submit(): Promise<void> {
             data-id="i18n-locale-switch-on-unsaved"
           >
             {{ copy.switchOn.unsaved }}
+          </div>
+        </div>
+        <div v-else-if="step === 'switchOff'">
+          <div
+            v-if="row?.catalogFormats !== null"
+            class="alert alert-secondary small py-2 mb-0"
+            data-id="i18n-locale-switch-off-note"
+          >
+            {{ copy.switchOff.catalogNote }}
+          </div>
+          <div
+            v-if="offVerdict.reason"
+            class="alert alert-danger small py-2 mb-0"
+            data-id="i18n-locale-switch-off-reason"
+          >
+            {{ offVerdict.reason }}
+          </div>
+          <div
+            v-if="offVerdict.warning"
+            class="alert alert-warning small py-2 mb-0"
+            data-id="i18n-locale-switch-off-warning"
+          >
+            {{ offVerdict.warning }}
           </div>
         </div>
         <div v-else>
@@ -512,7 +636,7 @@ async function submit(): Promise<void> {
               class="btn btn-secondary"
               :disabled="busy"
               data-id="i18n-locale-switch-on-back"
-              @click="step = 'form'"
+              @click="back"
             >
               {{ copy.switchOn.back }}
             </button>
@@ -589,15 +713,67 @@ async function submit(): Promise<void> {
         >
       </template>
 
-      <button
-        v-else
-        type="button"
-        class="btn btn-secondary"
-        data-id="i18n-locale-close"
-        @click="requestClose"
-      >
-        {{ copy.close }}
-      </button>
+      <div v-else class="hilos-stack w-100 m-0">
+        <div class="hilos-stack invisible" aria-hidden="true" inert>
+          <div
+            class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+          >
+            <span class="btn btn-secondary">{{ copy.close }}</span>
+            <span class="btn btn-outline-danger">{{
+              copy.switchOff.open
+            }}</span>
+          </div>
+          <div
+            class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+          >
+            <span class="btn btn-secondary">{{ copy.switchOff.back }}</span>
+            <span class="btn btn-danger">{{ copy.switchOff.confirm }}</span>
+          </div>
+        </div>
+        <div
+          class="modal-footer hilos-button-row p-0 m-0 border-0 align-self-end"
+        >
+          <template v-if="step === 'switchOff'">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="busy"
+              data-id="i18n-locale-switch-off-back"
+              @click="back"
+            >
+              {{ copy.switchOff.back }}
+            </button>
+            <LoadingButton
+              class="btn-danger"
+              :loading="offAction.loading.value"
+              :disabled="busy || offVerdict.disabled"
+              data-id="i18n-locale-switch-off-confirm"
+              @click="confirmSwitchOff"
+              >{{ copy.switchOff.confirm }}</LoadingButton
+            >
+          </template>
+          <template v-else>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              :disabled="busy"
+              data-id="i18n-locale-close"
+              @click="requestClose"
+            >
+              {{ copy.close }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-danger"
+              :disabled="busy || viewGone || liveRow?.enabled !== true"
+              data-id="i18n-locale-switch-off"
+              @click="openSwitchOff"
+            >
+              {{ copy.switchOff.open }}
+            </button>
+          </template>
+        </div>
+      </div>
     </template>
   </HilosModal>
 </template>

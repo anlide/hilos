@@ -36,6 +36,7 @@ export const HilosI18nLocaleRowKey = {
   countryName: 'countryName',
   localeCode: 'localeCode',
   enabled: 'enabled',
+  isCountryDefault: 'isCountryDefault',
   formats: 'formats',
   catalogFormats: 'catalogFormats',
 } as const
@@ -61,6 +62,7 @@ const localeSlotSchema = z.object({
   [HilosI18nLocaleRowKey.countryName]: z.string().nullable(),
   [HilosI18nLocaleRowKey.localeCode]: z.string().nullable(),
   [HilosI18nLocaleRowKey.enabled]: z.boolean().nullable(),
+  [HilosI18nLocaleRowKey.isCountryDefault]: z.boolean(),
   [HilosI18nLocaleRowKey.formats]: hilosI18nLocaleFormatsSchema.nullable(),
   [HilosI18nLocaleRowKey.catalogFormats]:
     hilosI18nLocaleFormatsSchema.nullable(),
@@ -78,6 +80,8 @@ export interface HilosI18nLocaleRow {
   readonly localeCode: string | null
   /** Whether the pair's locale is on, or null when the pair has no locale. */
   readonly enabled: boolean | null
+  /** Whether this locale is the country's chosen default, even while the country is off. */
+  readonly isCountryDefault: boolean
   /** Stored formats, or null when the pair has no locale. */
   readonly formats: HilosI18nLocaleFormats | null
   /** Built-in formats, or null when the catalog does not know the pair. */
@@ -103,6 +107,7 @@ export function resolveHilosI18nLocaleRow(row: TableRow): HilosI18nLocaleRow {
     countryName: null,
     localeCode: null,
     enabled: null,
+    isCountryDefault: false,
     formats: null,
     catalogFormats: null,
   }
@@ -136,6 +141,7 @@ export const HILOS_I18N_LANGUAGE_LOCALES_COLUMNS: readonly HilosTableColumnOf<Hi
         HilosI18nLocaleRowKey.enabled,
         HilosI18nLocaleRowKey.formats,
         HilosI18nLocaleRowKey.catalogFormats,
+        HilosI18nLocaleRowKey.isCountryDefault,
       ],
       headerClass: 'text-end',
       cellClass: 'text-end text-nowrap',

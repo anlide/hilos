@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\AdminViewMode\ViewerFields;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
@@ -161,6 +162,7 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
             HilosI18nLanguageLocalesTableRow::countryName => null,
             HilosI18nLanguageLocalesTableRow::localeCode => 'en',
             HilosI18nLanguageLocalesTableRow::enabled => true,
+            HilosI18nLanguageLocalesTableRow::isCountryDefault => false,
             HilosI18nLanguageLocalesTableRow::formats => LocaleFormats::ofLocale(Hilos::$db->locales['en'])->toArray(),
             HilosI18nLanguageLocalesTableRow::catalogFormats => LocaleFormats::ofCatalog(
                 BuiltInI18nCatalog::locale('en'),
@@ -181,6 +183,88 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
         $this->assertNull($german['de'][HilosI18nLanguageLocalesTableRow::localeCode]);
         $this->assertNull($german['de-GB'][HilosI18nLanguageLocalesTableRow::catalogFormats]);
         $this->assertSame('de-US', $german['de-US'][HilosI18nLanguageLocalesTableRow::localeCode]);
+    }
+
+    /** @throws HilosException When the selected locale or window cannot be read or written */
+    public function testCountryDefaultIsComputedInQueryFindRowAndRoundtripEvenWhenSwitchedOff(): void
+    {
+        $this->britain->actions->update('£', 'GBP', (int) $this->britishEnglish->id);
+        $table = new HilosI18nLanguageLocalesTable();
+        foreach (['en' => false, 'en-GB' => true, 'en-US' => false] as $key => $expected) {
+            $payload = $this->rows('en')[$key];
+            $this->assertSame($expected, $payload[HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+            $this->assertSame($expected, $table->findRow($key)?->isCountryDefault);
+            $this->assertSame($payload, HilosI18nLanguageLocalesTableRow::fromArray($payload)->toArray());
+        }
+        $this->assertFalse($table->findRow('de')?->isCountryDefault);
+        $this->assertFalse($table->findRow('de-GB')?->isCountryDefault);
+
+        $this->britishEnglish->actions->switchOn();
+        $this->changes->taken = [];
+        $this->britishEnglish->actions->switchOff();
+        $built = $this->built('en');
+        $this->assertCount(1, $built);
+        $this->assertTrue($built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+        $this->assertFalse($built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::enabled]);
+        $this->assertTrue($this->rows('en')['en-GB'][HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+        $this->assertSame($this->britishEnglish->id, $this->britain->defaultLocaleId);
+    }
+
+    /** @throws HilosException When the row cannot be read */
+    public function testCountryDefaultFlagMustBePresentAndBoolean(): void
+    {
+        $payload = $this->rows('en')['en'];
+        foreach ([null, 'false', 0, []] as $invalid) {
+            $payload[HilosI18nLanguageLocalesTableRow::isCountryDefault] = $invalid;
+            try {
+                HilosI18nLanguageLocalesTableRow::fromArray($payload);
+                $this->fail('Country default must be a boolean');
+            } catch (InvalidFormatException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        unset($payload[HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+        $this->expectException(InvalidFormatException::class);
+        HilosI18nLanguageLocalesTableRow::fromArray($payload);
+    }
+
+    /** @throws HilosException When the country selection or mutation cannot be written or read */
+    public function testChangingCountryDefaultUpdatesBothLanguageWindows(): void
+    {
+        $germanBritish = self::locale($this->german, $this->britain);
+        $this->britain->actions->update('£', 'GBP', (int) $this->britishEnglish->id);
+        $this->assertTrue($this->rows('en')['en-GB'][HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+        $this->assertFalse($this->rows('de')['de-GB'][HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+
+        $this->changes->taken = [];
+        $this->britain->actions->update('£', 'GBP', (int) $germanBritish->id);
+        foreach (['en' => false, 'de' => true] as $language => $expected) {
+            $built = $this->built($language);
+            $this->assertCount(1, $built);
+            $this->assertSame('update', $built[0]->type->value);
+            $this->assertSame($language . '-GB', $built[0]->rowKey);
+            $this->assertSame($expected, $built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+        }
+        $this->changes->taken = [];
+        $this->britain->actions->update('£', 'GBP', null);
+        foreach (['en', 'de'] as $language) {
+            $this->assertFalse($this->built($language)[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::isCountryDefault]);
+        }
+    }
+
+    /** @throws HilosException When the window or SQL counter cannot be read */
+    public function testQueryReadsCountriesInBulk(): void
+    {
+        foreach (['fr', 'it', 'es', 'pt', 'ie', 'nl', 'pl', 'ua'] as $code) {
+            Hilos::$db->countries->actions->create($code, '€', 'EUR');
+        }
+        Hilos::$db->countries->clearCache();
+        $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+        $rows = $this->rows('en');
+        $after = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+        $this->assertCount(11, $rows);
+        // The bulk country page includes a count alongside its rows.
+        $this->assertLessThanOrEqual(5, $after - $before);
     }
 
     /**
@@ -244,9 +328,10 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
         $american->actions->delete();
         $this->assertSame([['update', 'en-US', null, null]], $this->mutations('en'));
 
+        self::locale($this->german, null)->actions->switchOn();
         $this->changes->taken = [];
-        Hilos::$db->locales['en']?->actions->switchOff();
-        $this->assertSame([['update', 'en', 'en', false]], $this->mutations('en'));
+        Hilos::$db->locales['de']->actions->switchOff();
+        $this->assertSame([['update', 'de', 'de', false]], $this->mutations('de'));
     }
 
     /**
@@ -268,8 +353,8 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
         $this->assertSame('Irland', $built[0]->row?->toArray()[HilosI18nLanguageLocalesTableRow::countryName]);
 
         $this->changes->taken = [];
-        $ireland->actions->update('€', 'EUR', null);
-        $this->assertSame([], $this->built('en'));
+        $ireland->actions->update('EUR', 'EUR', null);
+        $this->assertSame([['update', 'en-IE', null, null]], $this->mutations('en'));
 
         $this->changes->taken = [];
         Hilos::$db->countryNames->findBase((int) $ireland->id, (int) $this->german->id)?->actions->delete();
@@ -337,6 +422,7 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
      */
     public function testAViewerOfTheAdminViewModeSeesTheWholeRow(): void
     {
+        $this->britain->actions->update('£', 'GBP', (int) $this->britishEnglish->id);
         $table = new HilosI18nLanguageLocalesTable();
         $notPersonal = [
             HilosDbContext::languages => EntityLanguage::_piiNotPersonal,

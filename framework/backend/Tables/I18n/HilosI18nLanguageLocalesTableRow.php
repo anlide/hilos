@@ -38,6 +38,9 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
     /** Payload key of whether the pair's locale is on, null when the pair has no locale. */
     public const string enabled = 'enabled';
 
+    /** Payload key of whether the country selects the pair's locale as its default. */
+    public const string isCountryDefault = 'isCountryDefault';
+
     /** Payload key of the pair's stored formats, null when the pair has no locale. */
     public const string formats = 'formats';
 
@@ -50,6 +53,7 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
      * @param ?string $countryName Country's base name in the window's language, null when none is written
      * @param ?string $localeCode Code of the pair's locale, null when the pair has no locale
      * @param ?bool $enabled Whether the pair's locale is on, null when the pair has no locale
+     * @param bool $isCountryDefault Whether the country selects the pair's locale as its default
      * @param ?LocaleFormats $formats Stored formats, null when the pair has no locale
      * @param ?LocaleFormats $catalogFormats Built-in formats, null when the catalog does not know the pair
      */
@@ -59,6 +63,7 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
         public ?string $countryName,
         public ?string $localeCode,
         public ?bool $enabled,
+        public bool $isCountryDefault,
         public ?LocaleFormats $formats,
         public ?LocaleFormats $catalogFormats,
     ) {
@@ -93,6 +98,7 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
             self::countryName => $this->countryName,
             self::localeCode => $this->localeCode,
             self::enabled => $this->enabled,
+            self::isCountryDefault => $this->isCountryDefault,
             self::formats => $this->formats?->toArray(),
             self::catalogFormats => $this->catalogFormats?->toArray(),
         ];
@@ -116,6 +122,7 @@ final class HilosI18nLanguageLocalesTableRow extends AbstractTableRow
             countryName: self::optionalString($data, self::countryName),
             localeCode: self::optionalString($data, self::localeCode),
             enabled: self::optionalBool($data, self::enabled),
+            isCountryDefault: self::requireBool($data, self::isCountryDefault),
             formats: $formats === null ? null : LocaleFormats::fromArray($formats),
             catalogFormats: $catalogFormats === null ? null : LocaleFormats::fromArray($catalogFormats),
         );

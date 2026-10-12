@@ -12,7 +12,10 @@ import {
   type ReadonlySignal,
 } from '../../state/signal.js'
 import { type TableViewportController } from '../../table/TableViewportController.js'
-import { type HilosI18nLanguageContext } from './hilosI18nLanguage.js'
+import {
+  type HilosI18nLanguageCard,
+  type HilosI18nLanguageContext,
+} from './hilosI18nLanguage.js'
 import {
   hilosI18nLocaleFormatsSchema,
   type HilosI18nLocaleFormats,
@@ -23,6 +26,8 @@ import {
 export const HILOS_I18N_LOCALE_ADD_ACTION = 'hilos_i18n_locale_add'
 export const HILOS_I18N_LOCALE_UPDATE_ACTION = 'hilos_i18n_locale_update'
 export const HILOS_I18N_LOCALE_SWITCH_ON_ACTION = 'hilos_i18n_locale_switch_on'
+export const HILOS_I18N_LOCALE_SWITCH_OFF_ACTION =
+  'hilos_i18n_locale_switch_off'
 
 /** Page-data key carrying the server's closed format lists. */
 export const LOCALE_TEMPLATES_DATA = 'localeTemplates'
@@ -81,6 +86,23 @@ export const HILOS_I18N_LOCALE_COPY = {
     confirm: 'Switch on',
     refusalTitle: "Couldn't switch on the locale",
   },
+  switchOff: {
+    open: 'Switch off',
+    title: (nativeName: string, country: string | null) =>
+      `Switch off locale · ${localeTitleSuffix(nativeName, country)}`,
+    body: 'Switching a locale off unlocks its seven formats for editing. Its formats and names stay in place.',
+    catalogNote:
+      'While it is off, the next framework reflow can replace these formats with the built-in ones.',
+    defaultReason:
+      'The default language needs its locale without a country: it cannot be switched off.',
+    languageWarning:
+      'This language is switched on. While its locale without a country is off, formats fall back to the default language.',
+    countryWarning:
+      "This is the country's default locale. While it is off, the country uses the language's formats; its chosen locale stays in place.",
+    back: 'Back',
+    confirm: 'Switch off',
+    refusalTitle: "Couldn't switch off the locale",
+  },
   countryLabel: 'Country:',
   noCountry: '— no country',
   codeLabel: 'Code:',
@@ -118,6 +140,7 @@ export const HILOS_I18N_LOCALE_COPY = {
     added: 'Added elsewhere just now.',
     switchedOn: 'Switched on elsewhere just now.',
     switchedOff: 'Switched off elsewhere just now.',
+    deleted: 'Deleted elsewhere — your text stays to copy.',
   },
 } as const
 
@@ -132,6 +155,56 @@ export function createHilosI18nLocaleSwitchOn(
         languageCode: languageCode.get(),
         countryCode,
       }),
+  }
+}
+
+/** The tracked switch-off operation bound to the project action lifecycle. */
+export function createHilosI18nLocaleSwitchOff(
+  context: HilosI18nLanguageContext,
+): {
+  switchOff(languageCode: string, countryCode: string | null): ActionHandle
+} {
+  return {
+    switchOff: (languageCode, countryCode) =>
+      context.actions.dispatch(HILOS_I18N_LOCALE_SWITCH_OFF_ACTION, {
+        languageCode,
+        countryCode,
+      }),
+  }
+}
+
+/**
+ * Read the live protection and fallback warning of one locale.
+ *
+ * @param card The live language card, or null when it disappeared.
+ * @param row The focused pair, or no row when the pair disappeared.
+ */
+export function hilosI18nLocaleSwitchOff(
+  card: HilosI18nLanguageCard | null,
+  row: HilosI18nLocaleRow | null | undefined,
+): { disabled: boolean; reason: string | null; warning: string | null } {
+  if (
+    card === null ||
+    !row ||
+    row.localeCode === null ||
+    row.formats === null ||
+    row.enabled !== true
+  ) {
+    return { disabled: true, reason: null, warning: null }
+  }
+  const copy = HILOS_I18N_LOCALE_COPY.switchOff
+  if (row.countryCode === null && card.summary.isDefault) {
+    return { disabled: true, reason: copy.defaultReason, warning: null }
+  }
+  return {
+    disabled: false,
+    reason: null,
+    warning:
+      row.countryCode === null && card.enabled
+        ? copy.languageWarning
+        : row.isCountryDefault
+          ? copy.countryWarning
+          : null,
   }
 }
 
