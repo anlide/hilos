@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
+  <title id="title">Hilos BTC Tracker — bitcoin</title>
+  <desc id="desc">Three blue Hilos nodes and spokes with a green thematic center.</desc>
+  <!-- HIL-1316: original thematic geometry; Hilos network derived from
+       framework/frontend/brand/favicon.svg. MIT; see ../README.md. -->
+  <g id="hilos-network" fill="#32C5FF">
+    <g fill="none" stroke="#32C5FF" stroke-width="2.6" stroke-linecap="butt">
+      <path d="M16 11V6.5"/>
+      <path d="M20.32 18.53 24.2 20.8"/>
+      <path d="M11.68 18.53 7.8 20.8"/>
+    </g>
+    <circle cx="16" cy="6.5" r="3"/>
+    <circle cx="24.2" cy="20.8" r="3"/>
+    <circle cx="7.8" cy="20.8" r="3"/>
+  </g>
+  <g id="demo-symbol" fill="#00D4AA">
+    <path fill-rule="evenodd" d="M12.5 12H17.6C21.1 12 21.7 15.5 19.2 16.2C22.3 17.2 21.3 21 17.8 21H12.5ZM15 13.8V15.4H17.4C19 15.4 19 13.8 17.4 13.8ZM15 17.3V19.2H17.7C19.5 19.2 19.5 17.3 17.7 17.3Z"/>
+    <path d="M14 10.5H15.7V12.5H14ZM17 10.5H18.7V12.5H17ZM14 20.5H15.7V22.5H14ZM17 20.5H18.7V22.5H17Z"/>
+  </g>
+</svg>

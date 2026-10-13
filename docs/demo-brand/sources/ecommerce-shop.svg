@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
+  <title id="title">Hilos Flowers — four-petal flower</title>
+  <desc id="desc">Three blue Hilos nodes and spokes with a green thematic center.</desc>
+  <!-- HIL-1316: original thematic geometry; Hilos network derived from
+       framework/frontend/brand/favicon.svg. MIT; see ../README.md. -->
+  <g id="hilos-network" fill="#32C5FF">
+    <g fill="none" stroke="#32C5FF" stroke-width="2.6" stroke-linecap="butt">
+      <path d="M16 11V6.5"/>
+      <path d="M20.32 18.53 24.2 20.8"/>
+      <path d="M11.68 18.53 7.8 20.8"/>
+    </g>
+    <circle cx="16" cy="6.5" r="3"/>
+    <circle cx="24.2" cy="20.8" r="3"/>
+    <circle cx="7.8" cy="20.8" r="3"/>
+  </g>
+  <g id="demo-symbol" fill="#00D4AA">
+    <path fill-rule="evenodd" d="M16 12C11 7.5 7.5 13 12 16C7.5 19 11 24.5 16 20C21 24.5 24.5 19 20 16C24.5 13 21 7.5 16 12ZM17.6 16A1.6 1.6 0 1 0 14.4 16A1.6 1.6 0 1 0 17.6 16Z"/>
+  </g>
+</svg>

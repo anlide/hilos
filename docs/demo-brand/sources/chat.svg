@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
+  <title id="title">Hilos Chat — speech bubble</title>
+  <desc id="desc">Three blue Hilos nodes and spokes with a green thematic center.</desc>
+  <!-- HIL-1316: original thematic geometry; Hilos network derived from
+       framework/frontend/brand/favicon.svg. MIT; see ../README.md. -->
+  <g id="hilos-network" fill="#32C5FF">
+    <g fill="none" stroke="#32C5FF" stroke-width="2.6" stroke-linecap="butt">
+      <path d="M16 11V6.5"/>
+      <path d="M20.32 18.53 24.2 20.8"/>
+      <path d="M11.68 18.53 7.8 20.8"/>
+    </g>
+    <circle cx="16" cy="6.5" r="3"/>
+    <circle cx="24.2" cy="20.8" r="3"/>
+    <circle cx="7.8" cy="20.8" r="3"/>
+  </g>
+  <g id="demo-symbol" fill="#00D4AA">
+    <path d="M13 11.5H19A2 2 0 0 1 21 13.5V17.5A2 2 0 0 1 19 19.5H16L12 22V19.3A2 2 0 0 1 11 17.5V13.5A2 2 0 0 1 13 11.5Z"/>
+  </g>
+</svg>

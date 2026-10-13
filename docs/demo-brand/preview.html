@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hilos demo marks — research preview</title>
+  <style>
+    /* Standalone research sheet, outside the SDK and demo builds.
+       Fixed swatch backgrounds are the comparison content, not an app theme. */
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f1f3f5; color: #212529; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 1240px; margin: auto; padding: 32px 24px; }
+    h1 { margin: 0; font-size: 2rem; line-height: 1.2; }
+    h2 { margin: 0; font-size: 1.125rem; }
+    h3 { margin: 0; font-size: 0.875rem; font-weight: 600; }
+    p { margin: 8px 0 0; }
+    a { color: #084298; text-underline-offset: 3px; }
+    code { font-size: 0.875em; overflow-wrap: anywhere; }
+    .intro { max-width: 80ch; margin-bottom: 24px; }
+    .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 20px; }
+    article { min-width: 0; background: #fff; border: 1px solid #ced4da; border-radius: 12px; overflow: hidden; }
+    .label { padding: 16px 20px; }
+    .label p { margin: 2px 0 0; }
+    .themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+    .swatch { padding: 16px 20px; }
+    .light { background: #fff; color: #212529; }
+    .dark { background: #212529; color: #f8f9fa; }
+    .sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+    figure { margin: 0; text-align: center; }
+    .mark { height: 64px; display: flex; align-items: center; justify-content: center; }
+    img { display: block; flex-shrink: 0; }
+    figcaption { margin-top: 8px; font-size: 0.875rem; }
+    .notes { margin-top: 24px; max-width: 80ch; }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="intro">
+      <h1>One family. Six demo marks.</h1>
+      <p>HIL-1316 · Research samples for owner review. The same editable SVG is shown at
+        16, 32 and 64 CSS pixels on both backgrounds. View at 100% browser zoom.</p>
+      <p><a href="README.md">Specification, sources and export instructions</a></p>
+    </header>
+    <div class="gallery">
+      <article aria-labelledby="chat-title">
+        <header class="label">
+          <h2 id="chat-title">Hilos Chat</h2>
+          <p>Speech bubble · <a href="sources/chat.svg">Master SVG</a></p>
+          <p><code>chat</code></p>
+        </header>
+        <div class="themes">
+          <section class="swatch light" aria-labelledby="chat-light">
+            <h3 id="chat-light">Light · #FFFFFF</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/chat.svg" width="16" height="16" alt="Hilos Chat: speech bubble in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/chat.svg" width="32" height="32" alt="Hilos Chat: speech bubble in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/chat.svg" width="64" height="64" alt="Hilos Chat: speech bubble in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="swatch dark" aria-labelledby="chat-dark">
+            <h3 id="chat-dark">Dark · #212529</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/chat.svg" width="16" height="16" alt="Hilos Chat: speech bubble in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/chat.svg" width="32" height="32" alt="Hilos Chat: speech bubble in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/chat.svg" width="64" height="64" alt="Hilos Chat: speech bubble in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+        </div>
+      </article>
+      <article aria-labelledby="tasks-title">
+        <header class="label">
+          <h2 id="tasks-title">Hilos Tasks</h2>
+          <p>Check mark · <a href="sources/tasks.svg">Master SVG</a></p>
+          <p><code>tasks</code></p>
+        </header>
+        <div class="themes">
+          <section class="swatch light" aria-labelledby="tasks-light">
+            <h3 id="tasks-light">Light · #FFFFFF</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/tasks.svg" width="16" height="16" alt="Hilos Tasks: check mark in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/tasks.svg" width="32" height="32" alt="Hilos Tasks: check mark in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/tasks.svg" width="64" height="64" alt="Hilos Tasks: check mark in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="swatch dark" aria-labelledby="tasks-dark">
+            <h3 id="tasks-dark">Dark · #212529</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/tasks.svg" width="16" height="16" alt="Hilos Tasks: check mark in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/tasks.svg" width="32" height="32" alt="Hilos Tasks: check mark in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/tasks.svg" width="64" height="64" alt="Hilos Tasks: check mark in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+        </div>
+      </article>
+      <article aria-labelledby="polls-title">
+        <header class="label">
+          <h2 id="polls-title">Hilos Polls</h2>
+          <p>Answer options · <a href="sources/polls.svg">Master SVG</a></p>
+          <p><code>polls</code></p>
+        </header>
+        <div class="themes">
+          <section class="swatch light" aria-labelledby="polls-light">
+            <h3 id="polls-light">Light · #FFFFFF</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/polls.svg" width="16" height="16" alt="Hilos Polls: answer options in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/polls.svg" width="32" height="32" alt="Hilos Polls: answer options in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/polls.svg" width="64" height="64" alt="Hilos Polls: answer options in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="swatch dark" aria-labelledby="polls-dark">
+            <h3 id="polls-dark">Dark · #212529</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/polls.svg" width="16" height="16" alt="Hilos Polls: answer options in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/polls.svg" width="32" height="32" alt="Hilos Polls: answer options in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/polls.svg" width="64" height="64" alt="Hilos Polls: answer options in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+        </div>
+      </article>
+      <article aria-labelledby="binance-btc-tracker-title">
+        <header class="label">
+          <h2 id="binance-btc-tracker-title">BTC Tracker</h2>
+          <p>Bitcoin · <a href="sources/binance-btc-tracker.svg">Master SVG</a></p>
+          <p><code>binance-btc-tracker</code></p>
+        </header>
+        <div class="themes">
+          <section class="swatch light" aria-labelledby="binance-btc-tracker-light">
+            <h3 id="binance-btc-tracker-light">Light · #FFFFFF</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="16" height="16" alt="BTC Tracker: bitcoin in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="32" height="32" alt="BTC Tracker: bitcoin in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="64" height="64" alt="BTC Tracker: bitcoin in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="swatch dark" aria-labelledby="binance-btc-tracker-dark">
+            <h3 id="binance-btc-tracker-dark">Dark · #212529</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="16" height="16" alt="BTC Tracker: bitcoin in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="32" height="32" alt="BTC Tracker: bitcoin in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="64" height="64" alt="BTC Tracker: bitcoin in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+        </div>
+      </article>
+      <article aria-labelledby="ecommerce-shop-title">
+        <header class="label">
+          <h2 id="ecommerce-shop-title">Hilos Flowers</h2>
+          <p>Flower · <a href="sources/ecommerce-shop.svg">Master SVG</a></p>
+          <p><code>ecommerce-shop</code></p>
+        </header>
+        <div class="themes">
+          <section class="swatch light" aria-labelledby="ecommerce-shop-light">
+            <h3 id="ecommerce-shop-light">Light · #FFFFFF</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/ecommerce-shop.svg" width="16" height="16" alt="Hilos Flowers: flower in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/ecommerce-shop.svg" width="32" height="32" alt="Hilos Flowers: flower in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/ecommerce-shop.svg" width="64" height="64" alt="Hilos Flowers: flower in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="swatch dark" aria-labelledby="ecommerce-shop-dark">
+            <h3 id="ecommerce-shop-dark">Dark · #212529</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/ecommerce-shop.svg" width="16" height="16" alt="Hilos Flowers: flower in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/ecommerce-shop.svg" width="32" height="32" alt="Hilos Flowers: flower in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/ecommerce-shop.svg" width="64" height="64" alt="Hilos Flowers: flower in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+        </div>
+      </article>
+      <article aria-labelledby="online-testing-title">
+        <header class="label">
+          <h2 id="online-testing-title">Hilos Testing</h2>
+          <p>Graduation cap · <a href="sources/online-testing.svg">Master SVG</a></p>
+          <p><code>online-testing</code></p>
+        </header>
+        <div class="themes">
+          <section class="swatch light" aria-labelledby="online-testing-light">
+            <h3 id="online-testing-light">Light · #FFFFFF</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/online-testing.svg" width="16" height="16" alt="Hilos Testing: graduation cap in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/online-testing.svg" width="32" height="32" alt="Hilos Testing: graduation cap in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/online-testing.svg" width="64" height="64" alt="Hilos Testing: graduation cap in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+          <section class="swatch dark" aria-labelledby="online-testing-dark">
+            <h3 id="online-testing-dark">Dark · #212529</h3>
+            <div class="sizes">
+              <figure>
+                <div class="mark"><img src="sources/online-testing.svg" width="16" height="16" alt="Hilos Testing: graduation cap in the Hilos network"></div>
+                <figcaption>16 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/online-testing.svg" width="32" height="32" alt="Hilos Testing: graduation cap in the Hilos network"></div>
+                <figcaption>32 px</figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/online-testing.svg" width="64" height="64" alt="Hilos Testing: graduation cap in the Hilos network"></div>
+                <figcaption>64 px</figcaption>
+              </figure>
+            </div>
+          </section>
+        </div>
+      </article>
+    </div>
+    <section class="notes" aria-labelledby="review-title">
+      <h2 id="review-title">What to review</h2>
+      <p>At 16 px, compare silhouettes first; at 32 and 64 px, check the central detail
+        and the three blue nodes and spokes. Color is shared, so shape must distinguish the demos.</p>
+      <p>All six use their master at every size. The bright palette is softer on white;
+        names stay beside marks. Bitcoin and the graduation cap need the closest small-size review.</p>
+      <p>This sheet loads only local SVG files. It needs no server, JavaScript, web fonts or network.
+        Production favicons and headers are a separate implementation after review.</p>
+    </section>
+  </main>
+</body>
+</html>
