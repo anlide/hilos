@@ -419,6 +419,7 @@ abstract class AbstractPage implements ActionHostInterface
      * everything the page needs to draw itself. It is laid UNDER what the page built: a page that
      * wrote an identity key of its own keeps it, which is how a detail page will one day put the
      * name of its entity where the catalog holds a static caption.
+     * Sending this full answer pays any page debt, including when an update calls this method.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
@@ -436,6 +437,7 @@ abstract class AbstractPage implements ActionHostInterface
             $acceptKey,
             new PageResponseSignalData(static::PAGE, $own->over($snapshot)),
         );
+        Hilos::$sr?->clearPageDeliveryFailure($acceptKey);
         Hilos::$browser?->sendSnapshotFacetCounts(static::PAGE, $acceptKey, $snapshot);
         $this->onSubscribeAfterResponse($acceptKey, $params);
     }

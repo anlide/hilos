@@ -95,8 +95,8 @@ final class SubscriptionRegistry
         // (BrowserContext::subscribeTableWindow()) — and on the worker this write happens AFTER
         // the answer (WorkerManager::rememberPageSubscriptionAfterSubscribe(), the PAGE_SUBSCRIBE
         // case and the method in framework/backend/Core/Daemon/WorkerManager.php), so a reset here
-        // would erase the debt the answer just set.
-        unset($this->pageDeliveryFailures[$acceptKey]);
+        // would erase the debt the answer just set. The page debt follows the same ordering:
+        // the worker clears the old debt before dispatch, and this write preserves the new answer's debt.
     }
 
     /**
@@ -335,6 +335,17 @@ final class SubscriptionRegistry
         $this->pageDeliveryFailures[$acceptKey] = true;
 
         return true;
+    }
+
+    /**
+     * Reads whether the subscription is owed a whole page, without reserving or paying it.
+     *
+     * @param string $acceptKey Client accept key
+     * @return bool Whether the page is owed whole
+     */
+    public function hasPageDeliveryFailure(string $acceptKey): bool
+    {
+        return isset($this->pageDeliveryFailures[$acceptKey]);
     }
 
     /**

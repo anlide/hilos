@@ -143,8 +143,9 @@ Into the page's own answer, assembled on the backend:
   same one frame too. A page owed whole after a failed delivery is the page
   half of the same rule as a table owed its window:
   [Coming Back Without A Reload](../architecture/browser-source-fanout.md#coming-back-without-a-reload).
-  A subscription that failed on its very first answer with an internal error
-  sets that same page debt (not in the code yet — HIL-1351).
+  A subscription that failed on its very first answer sets that same page
+  debt, including a missing resource (404) or denied rights (403). Only a
+  complete answer pays it; the 401 auth gate keeps its separate resume path.
 
 `AbstractPage::withPageIdentity()` is the worked example: the label, lead, and
 breadcrumb that a project's admin page catalog owns are folded into the payload

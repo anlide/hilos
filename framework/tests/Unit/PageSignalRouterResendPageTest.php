@@ -99,10 +99,12 @@ final class PageSignalRouterResendPageTest extends TestCase
         Hilos::initBrowser(new ResendPageTestBrowser(7));
         $this->subscribe(ResendPageTestPage::PAGE);
         $held = Hilos::$sr?->pageSubscription('ak-1');
+        Hilos::$sr?->markPageDeliveryFailure('ak-1');
 
         $outcome = $this->router()->resendPage(ResendPageTestPage::PAGE, 'ak-1', ['tab' => 'all']);
 
         $this->assertSame(PageResendOutcome::Answered, $outcome);
+        $this->assertFalse(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
         $signal = Hilos::$sr?->getNextQueuedSignal();
         $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $signal?->signalName->getName());
         $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
@@ -183,15 +185,28 @@ final class PageSignalRouterResendPageTest extends TestCase
         $this->assertSame(401, $this->onlySubscriptionError()->httpCode);
     }
 
-    public function testAPageThatThrowsIsAnsweredWithTheInternalError(): void
+    public function testAPageThatThrowsIsAnsweredOnceAndItsDebtProbeStaysSilent(): void
     {
         Hilos::initBrowser(new ResendPageTestBrowser(7));
-        $this->subscribe(ResendPageTestThrowingPage::PAGE);
+        $router = $this->router();
+        $router->dispatchPageSubscribe(
+            new WebSocketPageSubscribeSignalDTO('ak-1', ResendPageTestThrowingPage::PAGE),
+            SignalSource::WORKER,
+            ResendPageTestThrowingPage::PAGE,
+        );
+        $this->assertSame('internal_error', $this->onlySubscriptionError()->errorCode);
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
 
-        $outcome = $this->router()->resendPage(ResendPageTestThrowingPage::PAGE, 'ak-1', []);
+        // The worker registers the subscription after its immediate first answer.
+        $this->subscribe(ResendPageTestThrowingPage::PAGE);
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
+        $logged = file_get_contents($this->logFile);
+        $outcome = $router->resendPage(ResendPageTestThrowingPage::PAGE, 'ak-1', []);
 
         $this->assertSame(PageResendOutcome::Failed, $outcome);
-        $this->assertSame('internal_error', $this->onlySubscriptionError()->errorCode);
+        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame($logged, file_get_contents($this->logFile));
     }
 
     /**

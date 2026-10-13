@@ -556,18 +556,6 @@ abstract class BrowserContext
             return false;
         }
 
-        $table = Hilos::$table?->get($viewport->tableKey);
-        if (!$table instanceof ViewportTable) {
-            $this->sendTableWindowRefusal(
-                $page,
-                $acceptKey,
-                $viewport->tableKey,
-                TableWindowRefusalCode::NOT_SERVED,
-            );
-
-            return false;
-        }
-
         // Re-check the page guards before serving the window: a guard-failed
         // subscription (kept alive for live-promotion) gets no table data while the
         // guard fails, and resumes the instant it passes.
@@ -591,16 +579,17 @@ abstract class BrowserContext
                 }
             }
         } catch (Throwable $e) {
-            Logger::error("Browser window skipped a broken declaration: page={$page}, error={$e->getMessage()}");
+            if (!Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
+                Logger::error("Browser window skipped a broken declaration: page={$page}, error={$e->getMessage()}");
+            }
             $this->tellPageDeliveryFailed($page, $acceptKey);
 
             return false;
         }
 
-        // The guards passed, so whatever stopped this connection's page is over. A window
-        // landing on a scope the client wiped would be a table nothing holds, so the page goes
-        // out whole first and the window then has somewhere to arrive.
-        if (Hilos::$sr->clearPageDeliveryFailure($acceptKey)) {
+        // Passing the guards permits a probe, not a partial answer. Keep the debt while the
+        // page is built so a refused or failed probe stays silent and cannot release a window.
+        if (Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
             // Written here rather than handed back: this path answers a bool and has no list for
             // the worker's tick to write, so a re-send that failed would otherwise leave the
             // journal with nothing at all - the very silence the frame above exists to end.
@@ -610,6 +599,21 @@ abstract class BrowserContext
                     . "acceptKey={$acceptKey}, error={$contained->failure->getMessage()}",
                 );
             }
+            if (Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
+                return false;
+            }
+        }
+
+        $table = Hilos::$table?->get($viewport->tableKey);
+        if (!$table instanceof ViewportTable) {
+            $this->sendTableWindowRefusal(
+                $page,
+                $acceptKey,
+                $viewport->tableKey,
+                TableWindowRefusalCode::NOT_SERVED,
+            );
+
+            return false;
         }
 
         $window = $this->buildTableWindow($table, $viewport, $page, $acceptKey);
@@ -1691,11 +1695,13 @@ abstract class BrowserContext
                     // radius is the point and it does not depend on which exception the
                     // row-building happened to reach. The line is not written here: it
                     // belongs to the worker's tick, which is handed this list.
-                    $contained[] = new ContainedFailure(
-                        WorkerTickUnit::BROWSER_SUBSCRIPTION,
-                        "page={$page} acceptKey={$acceptKey}",
-                        $failure,
-                    );
+                    if (!Hilos::$sr->hasPageDeliveryFailure((string) $acceptKey)) {
+                        $contained[] = new ContainedFailure(
+                            WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                            "page={$page} acceptKey={$acceptKey}",
+                            $failure,
+                        );
+                    }
                     $this->tellPageDeliveryFailed((string) $page, (string) $acceptKey);
                     $failedSubscriptions[$acceptKey] = true;
                 }
@@ -1722,11 +1728,13 @@ abstract class BrowserContext
                 } catch (Throwable $failure) {
                     // Contained per subscription for the reason the loop above is: this runs on
                     // the same reactive path, with nothing between a throw and the worker's exit.
-                    $contained[] = new ContainedFailure(
-                        WorkerTickUnit::BROWSER_SUBSCRIPTION,
-                        "page={$page} acceptKey={$acceptKey}",
-                        $failure,
-                    );
+                    if (!Hilos::$sr->hasPageDeliveryFailure((string) $acceptKey)) {
+                        $contained[] = new ContainedFailure(
+                            WorkerTickUnit::BROWSER_SUBSCRIPTION,
+                            "page={$page} acceptKey={$acceptKey}",
+                            $failure,
+                        );
+                    }
                     $this->tellPageDeliveryFailed((string) $page, (string) $acceptKey);
                     $failedSubscriptions[$acceptKey] = true;
                 }
@@ -1752,7 +1760,7 @@ abstract class BrowserContext
 
                 $subscriber = (string) $acceptKey;
                 $pageName = (string) $page;
-                if (Hilos::$sr->clearPageDeliveryFailure($subscriber)) {
+                if (Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
                     $contained = [...$contained, ...$this->resendWholePage($pageName, $subscriber)];
 
                     continue;
@@ -1803,34 +1811,32 @@ abstract class BrowserContext
      * own part, its identity and the browser part. The browser part alone was half a page - the
      * page's own sections were out of reach from here - and the frames the page sends ahead of
      * its answer, wiped with the rest, never came back. The worker does that part
-     * ({@see PageResender}); four outcomes come back:
-     * - answered: the page is whole again, and the mark the caller cleared stays cleared;
-     * - refused: the verdict refused the subscription and said so, which leaves it where a
-     *   refused subscription stands - kept alive, with no mark, promoted by the live road the
-     *   moment its guard passes;
-     * - failed: the internal-error frame went out already, so the mark is set without a second
-     *   frame, and the next delivery that succeeds re-sends the page again;
-     * - unserved: nobody here answers the subscription and nothing went out, so the connection is
-     *   told its page could not be delivered, as a re-send that throws tells it.
+     * ({@see PageResender}). Only Answered clears the debt. Refused, Failed and Unserved keep
+     * it, without repeating the first error or log line. An unserved page or a thrown failure
+     * without an existing debt is reported once and starts that debt.
      *
      * Contained the same way the row build above is, and for the same reason: this runs in the
-     * second loop, where nothing stands between a throw and the worker's exit. A re-send that
-     * fails is not a recovery, so the connection is told again rather than left believing the
-     * page in front of it is live.
+     * second loop, where nothing stands between a throw and the worker's exit.
      *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Subscriber accept key
-     * @return list<ContainedFailure> The re-send's own failure, or an empty list when it landed
+     * @return list<ContainedFailure> A first thrown failure to log; empty for answers and silent debt probes
      */
     private function resendWholePage(string $page, string $acceptKey): array
     {
         $subscription = Hilos::$sr?->getPageSubscriptions()[$acceptKey] ?? [];
         $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+        $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
 
         try {
             $outcome = $this->pageResender?->resendPage($page, $acceptKey, is_array($params) ? $params : [])
                 ?? PageResendOutcome::Unserved;
         } catch (Throwable $failure) {
+            if ($owed) {
+                Hilos::$sr?->markPageDeliveryFailure($acceptKey);
+
+                return [];
+            }
             $this->tellPageDeliveryFailed($page, $acceptKey);
 
             return [new ContainedFailure(
@@ -1840,8 +1846,10 @@ abstract class BrowserContext
             )];
         }
 
-        if ($outcome === PageResendOutcome::Failed) {
-            // The page's router has sent the internal-error frame already; a second would say it twice.
+        if ($outcome === PageResendOutcome::Answered) {
+            Hilos::$sr?->clearPageDeliveryFailure($acceptKey);
+        } elseif ($owed || $outcome === PageResendOutcome::Failed) {
+            // The debt survives every unsuccessful probe, including a refused verdict.
             Hilos::$sr?->markPageDeliveryFailure($acceptKey);
         } elseif ($outcome === PageResendOutcome::Unserved) {
             Logger::error("Browser could not re-send a page nobody serves here: page={$page}, acceptKey={$acceptKey}");
@@ -1933,6 +1941,26 @@ abstract class BrowserContext
         $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
         $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
         if (!$guardAllows[$acceptKey]) {
+            return;
+        }
+
+        if (Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true) {
+            foreach ($this->pageBindings($page) as $pageBinding) {
+                $browserConfig = $this->browserConfig($pageBinding->browserKey);
+                if ($browserConfig === null || !$this->browserObservesChange($browserConfig, $change)) {
+                    continue;
+                }
+
+                // A page can owe its first answer before any viewport exists. Try the full
+                // answer on its own source fact, before a window or progress frame can leave.
+                // The answer includes every change already recorded for this flush.
+                $this->resendPageWhole($page, $acceptKey);
+                $guardAllows[$acceptKey] = false;
+                unset($signalTables[$acceptKey]);
+
+                break;
+            }
+
             return;
         }
 
@@ -2063,6 +2091,16 @@ abstract class BrowserContext
         $pageParams = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY];
         $guardAllows[$acceptKey] ??= $this->pageGuardsAllow($page, $pageConfig, $acceptKey, $pageParams);
         if (!$guardAllows[$acceptKey]) {
+            return;
+        }
+
+        if (Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true) {
+            if (in_array($collectionKey, $this->rtSourceKeysOfPage($page), true)) {
+                $this->resendPageWhole($page, $acceptKey);
+                $guardAllows[$acceptKey] = false;
+                unset($signalTables[$acceptKey]);
+            }
+
             return;
         }
 

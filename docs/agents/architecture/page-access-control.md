@@ -384,15 +384,25 @@ A failed guard does **not** tear the subscription down — preserving it is
 intentional. It enables *live-promotion*: open `/user/10` when only 9 users exist
 → 404 ErrorPage; user #10 is then created → the same live subscription resumes
 delivering on the backend with no re-subscribe. The access case is symmetric: a
-guest on a gated page is granted the flag → delivery resumes.
+person denied access is granted the required flag → delivery resumes.
 
 This rules out both tearing the subscription down and a static "guard passed" tag
 set once at subscribe. The guard is re-evaluated dynamically on each delivery
 (above), so the instant it passes, delivery resumes.
 
-Both halves ship today. On the backend, the moment a guard passes, the fan-out
-delivers again. On the frontend, a `page_response` for the current page clears the
-error view (`PageSubscription.ingestPageResponse`), so the promoted page replaces
+A 404 or 403 clears the client's page scope, so the preserved subscription is
+owed a whole page, just as it is after an internal error on the first answer.
+Once the guard passes, the next eligible source fact or requested window tries
+`PageResender` → `PageSignalRouter::resendPage()`: the page's own data,
+`pageLabel`, `pageLead`, `pageBreadcrumb`, `pageChildren`, and its browser part
+arrive in one complete `page_response`. A failed or refused probe stays silent
+and keeps the debt; a complete answer pays it, and later facts may be deltas.
+The same debt applies when reassessment or a subscription update sends a new
+error that clears the scope. See
+[Coming Back Without A Reload](browser-source-fanout.md#coming-back-without-a-reload).
+
+On the frontend, that `page_response` for the current page clears the error
+view (`PageSubscription.ingestPageResponse`), so the promoted page replaces
 the error surface where the visitor is standing, with no navigate and no refresh.
 
 **The 401 is the one status data does not lift.** It is not a denial waiting to be

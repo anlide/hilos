@@ -71,7 +71,6 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
                 if (Hilos::$browser === null || Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
                     continue;
                 }
-                Hilos::$sr->clearPageDeliveryFailure($acceptKey);
                 Hilos::$browser->resendPageWhole(self::PAGE, $acceptKey);
                 // The void delivery API contains refusals and failures. Suppress a separate window
                 // after every whole attempt: an answer included it, and an error wiped its page scope.
@@ -113,7 +112,7 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
             }
             // A placement fact can pay a page debt too. The generic window road would send
             // the whole page and then another window; keep recovery to the one page answer.
-            if (Hilos::$browser !== null && Hilos::$sr->clearPageDeliveryFailure($acceptKey)) {
+            if (Hilos::$browser !== null && Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
                 Hilos::$browser->resendPageWhole(self::PAGE, $acceptKey);
                 continue;
             }

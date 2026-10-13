@@ -1878,6 +1878,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
                         $this->parkBehind($data, $pageConsumer);
                         break;
                     }
+                    // A real subscribe starts a new answer. Registration follows that answer and
+                    // must preserve any debt it sets, including one set later by a parked frame.
+                    Hilos::$sr?->clearPageDeliveryFailure($signalData->acceptKey);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name, $agent);
@@ -2310,6 +2313,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * The write is unconditional, unlike the update's: a refused subscribe stays alive and
      * gets promoted into the real page the moment its guard starts passing, so the params
      * it was refused on are exactly the ones the next fan-out has to be judged by.
+     * Registration preserves any page or window debt set by the answer just dispatched.
      *
      * The agent that served the subscribe is written beside it - until HIL-1236 only the
      * master wrote it, into its own registry - because a page re-sent after a failed delivery

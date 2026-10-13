@@ -375,10 +375,8 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->browser->admin = true;
         DaemonOverviewTestPage::$fails = true;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:1', 'x:2', 'x:3', 'x:4')))]);
-        $signals = $this->drain();
-        self::assertCount(1, $signals);
-        self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signals[0]->signalName->getName());
-        self::assertSame(500, $signals[0]->data->data->httpCode);
+        self::assertSame([], $this->drain());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
 
         DaemonOverviewTestPage::$fails = false;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:1', 'x:2', 'x:3', 'x:4', 'x:5')))]);
@@ -398,9 +396,8 @@ final class HilosDaemonOverviewPageTest extends TestCase
         Hilos::$sr->markPageDeliveryFailure('root');
         DaemonOverviewTestPage::$fails = true;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:2')))]);
-        $signals = $this->drain();
-        self::assertCount(1, $signals);
-        self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signals[0]->signalName->getName());
+        self::assertSame([], $this->drain());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
         DaemonOverviewTestPage::$fails = false;
         $this->deliver([$this->node($report->withProcesses($this->roster('x:3')))]);
         $this->onlyResponse();

@@ -96,12 +96,12 @@ subscription mirror names: `PageSignalRouter::resendPage()`, the verdict and
 It is not a re-subscribe: nothing is booked, and an empty report of windows
 hands each table the window the mirror is holding. The worker writes the
 serving agent into its mirror on a subscribe and on a re-decision of rights.
-What came back decides the mark: answered — cleared; refused — no mark, the
-subscription stands as a refused one does; failed — the error frame went out
-from the router, so the mark is set silently; unserved — nothing went out, so
-the connection is told its page could not be delivered. What tries the debt of
-a page owed whole, and what else sets it, is in
-[Coming Back Without A Reload](#coming-back-without-a-reload) below.
+Only a complete `page_response` (`Answered`) pays the debt. An unsuccessful
+probe of an existing debt (`Refused`, `Failed`, `Unserved`, or a throw) keeps it
+without another error frame or log line; the first failure is still reported.
+The debt's lifetime, eligible facts, and silent probes are defined in
+[Coming Back Without A Reload](#coming-back-without-a-reload), especially
+[One Try](#one-try).
 
 As a convention, do not use either hook only to send an empty subscription ack
 via `sendToUser()` with blank `SignalData` or `BrowserPageSignalData`. Hub pages
@@ -192,11 +192,13 @@ the refusal arrived as `table_window_refused` in reply to a request or in the
 `refusedWindows` section of `page_response`.
 
 A **page owed whole** is one whose delivery failed and whose connection was
-told `subscription_page_error`. An internal error on the subscription's very
-first answer sets the same debt (not in the code yet — HIL-1351). A page's
-verdict refusing rights or a missing resource is not a debt: it comes back by
+told `subscription_page_error`. The subscription's very first answer sets
+the same debt for an internal error, a missing resource (404), denied rights
+(403), or another error that clears the page scope. The 401 auth gate is the
+exception: it follows its own resume path, described in
 [Preserve-on-fail and live-promotion](page-access-control.md#preserve-on-fail-and-live-promotion)
-when its guard starts passing.
+and acquires no page debt. An error on access reassessment or a subscription
+update owes the same full page until a complete answer is sent.
 
 There is one debt per window and one per page subscription, whoever set it:
 a window that froze and was then refused is still one window owed whole.
@@ -206,7 +208,10 @@ never what the server owes.
 
 A debt lives and dies with what is owed. Remove it where the window or page
 subscription is removed: leaving the page, closing the connection, or
-re-subscribing. A page owed whole carries its windows' debts: its answer
+starting a real new subscription. The new subscription's own error sets a new
+debt: registration after an immediate first answer preserves it; a parked
+first answer sets it when its verdict is reached. A page owed whole carries
+its windows' debts: its answer
 accounts for each table in `windows` or `refusedWindows`. A window in `windows`
 pays its debt; an entry in `refusedWindows` sets it again.
 
@@ -219,7 +224,11 @@ socket — see the three roads in
 [Backend contract surface](../frontend/table-subscription.md#backend-contract-surface-the-gate).
 A page is paid with the same one `page_response` that answers a subscription,
 re-sent on its serving agent (`PageResender` → `PageSignalRouter::resendPage()`;
-see [Page Snapshots](#page-snapshots)).
+see [Page Snapshots](#page-snapshots)). It includes the page's own data,
+`pageLabel`, `pageLead`, `pageBreadcrumb`, `pageChildren`, and its browser part.
+Sending that complete answer pays the page debt, including when an update
+calls `onSubscribe()` directly. A refused or failed probe leaves it standing;
+no partial page or lone requested window may follow that unsuccessful probe.
 
 Any window pays the window's debt. A refusal never pays it: it changes the
 visible state to the tile, and the debt stands.
@@ -238,8 +247,9 @@ drops these frames; that is a defense, not the rule's enforcement.
    without a throw proves that its road is back. It tries a frozen window's
    debt today (HIL-1139), and a refused window's debt too.
    For a page owed whole, the fact is the
-   first successful delivery to it: a fan-out to the subscription or a window
-   it asked for.
+   next eligible delivery to it: a change of its own DB/RT source or a window
+   it asked for, once the page guards allow it. A source fact tries the whole
+   page even when the failed first answer left it without any viewport.
 2. The database came back: the worker's first successful query after it lost
    its database connection tries all that worker's debts — windows and pages
    — once each, in the next flush (not in the code yet — HIL-1352). The fact
@@ -264,7 +274,11 @@ the debt waits for the next fact.
 A try that fails again writes no new log line: the line was written when the
 debt was set. Set aside a window that could
 not be built for the rest of that flush; this already holds for a frozen
-window. The server starts the try. The tab never asks again on its own.
+window. A page tried whole is set aside for the rest of that flush too:
+another row fact sends neither a second full answer nor a partial delta or
+progress frame. Once a full answer pays the debt, the next flush can deliver
+ordinary deltas again. The server starts the try. The tab never asks again
+on its own.
 
 ### The Two Cases That Still Wait
 

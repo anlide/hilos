@@ -285,6 +285,7 @@ class PageSignalRouter
      * subscription mirror is already holding. Unlike the re-decision it skips nothing: a PUBLIC
      * page answers the same thing it answered before, but the client no longer has that answer.
      * And it does not park: the connection was answered once already, so who sent it is known.
+     * An existing debt makes a failed probe silent: its first refusal or failure was already reported.
      *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
@@ -294,12 +295,22 @@ class PageSignalRouter
      */
     public function resendPage(string $page, string $acceptKey, array $params): PageResendOutcome
     {
-        return $this->runPageSubscribeFrame(
+        $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
+        $outcome = $this->runPageSubscribeFrame(
             new WebSocketPageSubscribeSignalDTO(acceptKey: $acceptKey, page: $page, params: $params),
             SignalSource::WORKER,
             $page,
             recordVisit: false,
+            reportFailure: !$owed,
         );
+
+        // The answer pays the debt before after-response hooks run. A hook throwing after it
+        // cannot turn a delivered full answer into a failed silent probe.
+        if ($owed && Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === false) {
+            return PageResendOutcome::Answered;
+        }
+
+        return $outcome;
     }
 
     /**
@@ -333,15 +344,15 @@ class PageSignalRouter
     /**
      * Judges and dispatches one page subscribe frame, parked or not.
      *
-     * The outcome says what went out to the connection. A subscribe and a re-decision of rights
-     * have nothing to do with it; a re-send after a failed delivery does
-     * ({@see self::resendPage()}), because it decides whether the connection still has to be told
-     * that its page failed.
+     * A complete answer pays the page debt. Primary failures are reported and set it; a debt
+     * probe keeps it without repeating the error frame or log line.
      *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
-     * @return PageResendOutcome What went out to the connection
+     * @param bool $recordVisit Whether an accepted answer records a new page visit
+     * @param bool $reportFailure Whether a refusal or failure must be reported to the connection and log
+     * @return PageResendOutcome Whether the whole page was answered, refused, failed, or unserved
      * @throws InvalidArgumentException When the subscription-error signal cannot be named
      */
     private function runPageSubscribeFrame(
@@ -349,15 +360,21 @@ class PageSignalRouter
         string $source,
         string $name,
         bool $recordVisit = true,
+        bool $reportFailure = true,
     ): PageResendOutcome {
         $page = $data->page ?? $name;
         if ($page === '') {
-            Logger::error('Page subscribe without page name');
+            if ($reportFailure) {
+                Logger::error('Page subscribe without page name');
+            }
             return PageResendOutcome::Unserved;
         }
 
-        $pageInstance = $this->resolvePage($page);
+        $pageInstance = $this->resolvePage($page, $reportFailure);
         if ($pageInstance === null) {
+            if (!$reportFailure) {
+                return PageResendOutcome::Refused;
+            }
             $this->sendSubscriptionError(
                 $this->pageFactory->getAgent()->getAgentSignalSource(),
                 $page,
@@ -392,6 +409,9 @@ class PageSignalRouter
 
             return PageResendOutcome::Answered;
         } catch (PageInternalErrorException $e) {
+            if (!$reportFailure) {
+                return PageResendOutcome::Failed;
+            }
             // Ahead of its own base class, because it is not the same event. Every other species
             // below is a verdict about the resource or the rights, reached on purpose and worth
             // an info line and a refusal placeholder to the subscriber. This one says the node is
@@ -411,6 +431,9 @@ class PageSignalRouter
 
             return PageResendOutcome::Failed;
         } catch (PageSubscriptionException $e) {
+            if (!$reportFailure) {
+                return PageResendOutcome::Refused;
+            }
             // The subscription is intentionally KEPT alive, not torn down. A guard
             // failure is a transient state, not a dead end: if the missing resource
             // later appears (e.g. user #10 is created while a client sits on its 404
@@ -433,6 +456,9 @@ class PageSignalRouter
 
             return PageResendOutcome::Refused;
         } catch (Throwable $e) {
+            if (!$reportFailure) {
+                return PageResendOutcome::Failed;
+            }
             Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
             $this->sendSubscriptionError(
                 $pageInstance->getAgent()->getAgentSignalSource(),
@@ -2432,12 +2458,15 @@ class PageSignalRouter
      * started the run has returned.
      *
      * @param string $page Page name
+     * @param bool $reportFailure Whether an unknown page writes a log line
      * @return ?AbstractPage Resolved page instance or null if not found
      */
-    private function resolvePage(string $page): ?AbstractPage
+    private function resolvePage(string $page, bool $reportFailure = true): ?AbstractPage
     {
         if (!$this->pageFactory->hasPage($page)) {
-            Logger::error("Unknown page: {$page}");
+            if ($reportFailure) {
+                Logger::error("Unknown page: {$page}");
+            }
             return null;
         }
 
@@ -2447,7 +2476,9 @@ class PageSignalRouter
 
             return $pageInstance;
         } catch (PageNotFoundException $exception) {
-            Logger::error("Page not found: {$page}");
+            if ($reportFailure) {
+                Logger::error("Page not found: {$page}");
+            }
             return null;
         }
     }
@@ -2474,6 +2505,7 @@ class PageSignalRouter
      *
      * Shared by the subscribe and update-subscription dispatchers so both emit
      * the same SUBSCRIPTION_PAGE_ERROR contract without tearing down the connection.
+     * Every reported error owes the page whole, except the 401 owned by the auth gate.
      *
      * @param SignalSourceInterface $signalSource Page agent source for the refusal
      * @param string $page Page name that failed
@@ -2504,6 +2536,9 @@ class PageSignalRouter
                 targetAcceptKey: $acceptKey,
             ),
         );
+        if ($httpCode !== HttpConstants::HTTP_UNAUTHORIZED) {
+            Hilos::$sr->markPageDeliveryFailure($acceptKey);
+        }
     }
 
     /**

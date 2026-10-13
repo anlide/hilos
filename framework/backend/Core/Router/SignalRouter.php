@@ -908,6 +908,17 @@ class SignalRouter
     }
 
     /**
+     * Reads whether the subscription is owed a whole page, without reserving or paying it.
+     *
+     * @param string $acceptKey Client accept key
+     * @return bool Whether the page is owed whole
+     */
+    public function hasPageDeliveryFailure(string $acceptKey): bool
+    {
+        return $this->subscriptions->hasPageDeliveryFailure($acceptKey);
+    }
+
+    /**
      * Clears the mark after a delivery succeeds, and answers whether one was standing.
      *
      * @param string $acceptKey Client accept key

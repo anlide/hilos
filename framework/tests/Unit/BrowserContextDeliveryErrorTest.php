@@ -161,9 +161,8 @@ final class BrowserContextDeliveryErrorTest extends TestCase
     }
 
     /**
-     * A re-send whose page failed has already told the connection so - the page's router sent the
-     * internal-error frame - so the mark is set without a second frame, and the next delivery
-     * that succeeds owes the page whole once more.
+     * The first failure was already reported. Each failed debt probe stays silent and keeps
+     * the page owed whole for the next delivery.
      */
     public function testAReSendThatFailedIsTriedAgainOnTheNextDeliveryWithoutASecondErrorFrame(): void
     {
@@ -173,17 +172,16 @@ final class BrowserContextDeliveryErrorTest extends TestCase
 
         $this->flush(broken: false, resender: $resender);
 
-        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
+        $this->assertSame([], $this->drain());
         $this->flush(broken: false, resender: $resender);
         $this->assertCount(2, $resender->calls);
-        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
+        $this->assertSame([], $this->drain());
     }
 
     /**
-     * Nobody here to answer the page, and nothing went out: the connection is told its page could
-     * not be delivered, once, and the mark stays for the delivery after.
+     * Nobody here to answer a debt probe: the existing error and mark remain without repetition.
      */
-    public function testAPageNobodyServesHereIsToldAsAFailedDelivery(): void
+    public function testAPageNobodyServesHereKeepsItsExistingFailure(): void
     {
         $this->flush(broken: true);
         $this->drain();
@@ -192,30 +190,23 @@ final class BrowserContextDeliveryErrorTest extends TestCase
         $this->flush(broken: false);
         $logged = (string) ob_get_clean();
 
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        $this->assertNotNull($signal);
-        $this->assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signal->signalName->getName());
-        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
-        $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $signal->data->data);
-        $this->assertSame('internal_error', $signal->data->data->errorCode);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
-        $this->assertStringContainsString('could not re-send a page nobody serves here', $logged);
+        $this->assertSame('', $logged);
         $this->assertFalse(Hilos::$sr?->markPageDeliveryFailure('ak-1'), 'the mark stands');
     }
 
     /**
-     * A re-send the verdict refused leaves the subscription where a refused subscription stands:
-     * told so, kept alive and unmarked, for the live road to promote once its guard passes.
+     * A refused probe leaves the subscription alive and owed whole until a complete answer lands.
      */
-    public function testAReSendTheVerdictRefusedLeavesNoMark(): void
+    public function testAReSendTheVerdictRefusedKeepsTheMark(): void
     {
         $this->flush(broken: true);
         $this->drain();
 
         $this->flush(broken: false, resender: new DeliveryErrorRecordingResender(PageResendOutcome::Refused));
 
-        $this->assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drain());
-        $this->assertTrue(Hilos::$sr?->markPageDeliveryFailure('ak-1'), 'no mark was standing');
+        $this->assertSame([], $this->drain());
+        $this->assertFalse(Hilos::$sr?->markPageDeliveryFailure('ak-1'), 'the page is still owed whole');
     }
 
     /**
@@ -266,6 +257,8 @@ final class BrowserContextDeliveryErrorTest extends TestCase
         $this->flush(broken: true);
         $this->drain();
 
+        // WorkerManager starts a real subscribe by dropping the old answer's debt.
+        Hilos::$sr?->clearPageDeliveryFailure('ak-1');
         Hilos::$sr?->subscribeToPage(
             DeliveryErrorContext::PAGE,
             new WebSocketPageSubscribeSignalDTO('ak-1', DeliveryErrorContext::PAGE),
@@ -438,15 +431,7 @@ final class DeliveryErrorRecordingResender implements PageResender
         $this->calls[] = [$page, $acceptKey, $params];
         $frame = match ($this->outcome) {
             PageResendOutcome::Answered => [SignalTypeConstants::PAGE_RESPONSE, new PageResponseSignalData($page, new PagePayload())],
-            PageResendOutcome::Refused => [
-                SignalConstants::SUBSCRIPTION_PAGE_ERROR,
-                new PageSubscriptionErrorSignalData($page, 401, 'unauthorized', 'Refused'),
-            ],
-            PageResendOutcome::Failed => [
-                SignalConstants::SUBSCRIPTION_PAGE_ERROR,
-                new PageSubscriptionErrorSignalData($page, 500, 'internal_error', 'Failed'),
-            ],
-            PageResendOutcome::Unserved => null,
+            PageResendOutcome::Refused, PageResendOutcome::Failed, PageResendOutcome::Unserved => null,
         };
         if ($frame !== null) {
             Hilos::$sr?->queueSignal(
