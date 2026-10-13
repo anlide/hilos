@@ -3,7 +3,9 @@ page-scoped browser datum supplies both the initial view and live updates. -->
 <script setup lang="ts">
 import {
   createHilosI18nCountryCard,
+  createHilosI18nCountryCardWindow,
   createHilosI18nCountryDelete,
+  HILOS_I18N_COUNTRY_WINDOW_COPY,
   HILOS_I18N_COUNTRY_DELETE_COPY,
   hilosI18nCountryDeleteFromCard,
   hilosI18nCountryDeleteReason,
@@ -11,18 +13,24 @@ import {
   type HilosI18nCountryContext,
   type HilosI18nCountryDeleteTarget,
 } from '@hilos/core'
-import { computed, inject, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCountryDelete from './HilosI18nCountryDelete.vue'
 import HilosI18nCountryHeader from './HilosI18nCountryHeader.vue'
+import HilosI18nCountryWindow from './HilosI18nCountryWindow.vue'
 import HilosI18nCountrySwitchOff from './HilosI18nCountrySwitchOff.vue'
 import HilosI18nCountrySwitchOn from './HilosI18nCountrySwitchOn.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
-const card = useSignal(createHilosI18nCountryCard(props.context))
+const cardSignal = createHilosI18nCountryCard(props.context)
+const card = useSignal(cardSignal)
+const window = createHilosI18nCountryCardWindow(cardSignal, props.context)
+const copy = HILOS_I18N_COUNTRY_WINDOW_COPY
+onMounted(window.start)
+onUnmounted(window.dispose)
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error('HilosI18nCountryPage requires a provided Hilos router.')
@@ -54,7 +62,26 @@ const deleted = (): void => {
       />
 
       <section class="mb-4" data-id="country-card-main">
-        <h2 class="h5">Main</h2>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h2 class="h5 mb-0">Main</h2>
+          <button
+            type="button"
+            class="btn btn-sm ms-auto"
+            :class="
+              card.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'
+            "
+            :title="card.enabled ? copy.open.view : copy.open.edit"
+            :aria-label="card.enabled ? copy.open.view : copy.open.edit"
+            :data-id="card.enabled ? 'country-card-view' : 'country-card-edit'"
+            @click="window.open(card.enabled ? 'view' : 'edit')"
+          >
+            <i
+              class="bi"
+              :class="card.enabled ? 'bi-eye' : 'bi-pencil'"
+              aria-hidden="true"
+            ></i>
+          </button>
+        </div>
         <div class="border rounded-3 p-3">
           <p
             v-if="card.enabled"
@@ -162,6 +189,7 @@ const deleted = (): void => {
     >
       Country details are no longer available.
     </p>
+    <HilosI18nCountryWindow :window="window" />
     <HilosI18nCountryDelete
       v-model="deleteOpen"
       :target="deleteTarget"

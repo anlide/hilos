@@ -10,6 +10,7 @@ import {
   type ActionResult,
   type HilosConnection,
   type HilosI18nCountryContext,
+  type HilosI18nCountryLocaleChoice,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
@@ -31,6 +32,8 @@ interface CountrySlot {
   defaultLocaleCode: string | null
   enabled: boolean
   isOwn: boolean
+  locales: readonly HilosI18nCountryLocaleChoice[]
+  catalogDefaultLocaleCode: string | null
   canDelete: boolean
   deleteReason: 'known' | 'locales' | 'names' | null
 }
@@ -43,6 +46,8 @@ const UNITED_STATES: CountrySlot = {
   defaultLocaleCode: null,
   enabled: false,
   isOwn: false,
+  locales: [],
+  catalogDefaultLocaleCode: 'en-US',
   canDelete: false,
   deleteReason: 'known',
 }
@@ -55,6 +60,8 @@ const OWN: CountrySlot = {
   defaultLocaleCode: 'en-QX',
   enabled: true,
   isOwn: true,
+  locales: [],
+  catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
 }
@@ -303,6 +310,64 @@ describe('HilosI18nCountriesPage', () => {
     expect(ownRow.get('dd').text()).toBe(
       'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
     )
+    expect(legend.findAll('dt')).toHaveLength(4)
+    expect(legend.get('[data-id="i18n-countries-legend-view"] dd').text()).toBe(
+      'the country is switched on and frozen: nobody changes a live row',
+    )
+    expect(legend.get('[data-id="i18n-countries-legend-edit"] dd').text()).toBe(
+      'the country is switched off: edit it freely',
+    )
+    expect(
+      legend.get('[data-id="i18n-countries-legend-deleteBlocked"]').text(),
+    ).toContain('Deletion blocked')
+  })
+
+  it('opens pencil and eye windows for a viewer and follows the row switch live', async () => {
+    const c = context()
+    const view = mount(HilosI18nCountriesPage, {
+      props: { context: c },
+      attachTo: document.body,
+      global: {
+        provide: {
+          [hilosRouterKey as symbol]: router(),
+          [hilosAdminViewModeKey as symbol]: ref(true),
+        },
+        stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
+      },
+    })
+    await nextTick()
+    const pencil = view.get('[data-id="i18n-countries-edit-us"]')
+    expect(pencil.attributes('aria-label')).toBe('Edit country')
+    expect((pencil.element as HTMLButtonElement).disabled).toBe(false)
+    expect(pencil.find('.bi-pencil').exists()).toBe(true)
+    await pencil.trigger('click')
+    expect(c.focused).toContain('us')
+    expect(
+      document.querySelector('[data-id="i18n-country-title"]')?.textContent,
+    ).toContain('Edit country · United States')
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-id="i18n-country-save"]')
+        ?.disabled,
+    ).toBe(true)
+    document
+      .querySelector<HTMLButtonElement>('[data-id="i18n-country-cancel"]')
+      ?.click()
+    await nextTick()
+    const eye = view.get('[data-id="i18n-countries-view-qx"]')
+    expect(eye.attributes('aria-label')).toBe('View country: nothing to edit')
+    expect(eye.find('.bi-eye').exists()).toBe(true)
+    await eye.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-country-title"]')?.textContent,
+    ).toContain('Country · QX')
+    document
+      .querySelector<HTMLButtonElement>('[data-id="i18n-country-close"]')
+      ?.click()
+    await nextTick()
+    c.delta({ ...UNITED_STATES, enabled: true })
+    await nextTick()
+    expect(view.find('[data-id="i18n-countries-edit-us"]').exists()).toBe(false)
+    expect(view.find('[data-id="i18n-countries-view-us"]').exists()).toBe(true)
   })
 
   it('opens the country creation form from the table main action', async () => {

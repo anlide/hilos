@@ -21,10 +21,13 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\CountryUpdate;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInCountryCodes;
+use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryAddActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowDeleteActionDTO;
+use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowUpdateActionDTO;
 
 /**
  * AbstractHilosI18nCountriesListPage - Abstract base for Hilos i18n countries list page.
@@ -39,6 +42,7 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
 
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_COUNTRY_ADD => HilosI18nCountryAddActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_COUNTRY_ROW_UPDATE => HilosI18nCountryRowUpdateActionDTO::class,
         HilosSignalConstants::HILOS_I18N_COUNTRY_ROW_DELETE => HilosI18nCountryRowDeleteActionDTO::class,
     ];
 
@@ -53,8 +57,9 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
      * @return ?ActionReplyDTO No reply data; success travels in the action acknowledgement
      * @throws AgentUnknownActionException When the action is unknown
      * @throws InvalidActionPayloadException When the payload has the wrong DTO type
-     * @throws ValidationException When creation or deletion violates the country policy
-     * @throws TableActionException When the country to remove does not exist
+     * @throws I18nRowFrozenException When an edit targets a switched-on country
+     * @throws ValidationException When creation, editing or deletion violates the country policy
+     * @throws TableActionException When the country to edit or remove does not exist
      * @throws HilosException When ownership, the database or collection refuses the write
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -68,6 +73,14 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
                 $this->setActionSuccessMessage(BuiltInI18nCatalog::country($dto->countryCode) === null
                     ? "Custom country {$dto->countryCode} added and switched off for now."
                     : 'Country added and switched off for now.');
+
+                return null;
+
+            case HilosSignalConstants::HILOS_I18N_COUNTRY_ROW_UPDATE:
+                if (!$dto instanceof HilosI18nCountryRowUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nCountryRowUpdateActionDTO::class, $dto);
+                }
+                $this->handleCountryUpdate($dto);
 
                 return null;
 
@@ -106,6 +119,19 @@ abstract class AbstractHilosI18nCountriesListPage extends AbstractHilosPage
             BuiltInCatalogTally::DATA => WireField::notPersonal(),
             BuiltInCountryCodes::DATA => WireField::notPersonal(),
         ];
+    }
+
+    /**
+     * @param HilosI18nCountryRowUpdateActionDTO $dto Country fields from its table row
+     * @throws TableActionException When the country does not exist
+     * @throws I18nRowFrozenException When the country is switched on
+     * @throws ValidationException When the currency or default locale is invalid
+     * @throws HilosException When the lookup or write fails
+     */
+    private function handleCountryUpdate(HilosI18nCountryRowUpdateActionDTO $dto): void
+    {
+        CountryUpdate::apply($dto);
+        $this->setActionSuccessMessage('Country saved.');
     }
 
     /**

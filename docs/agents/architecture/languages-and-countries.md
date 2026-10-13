@@ -155,8 +155,13 @@ construction.
 - A newly added locale starts switched off.
 - A newly added country starts switched off.
 - For a switched-off country with no default locale, the edit form prefills
-  the catalog's default if that locale has been created; the person saves it
-  (not in the code yet — HIL-1496).
+  the catalog's default if that locale has been created, even when that locale
+  is switched off; the person saves it. The table row and the card summary
+  carry `locales` and `catalogDefaultLocaleCode`, so opening the window needs
+  no extra request. The suggestion alone enables Save but does not ask to
+  discard changes. Locale choices stay live; a vanished selection stays
+  selected and marked as gone until the person changes it or the server
+  refuses the save.
 
 Creation thus never encounters the freeze. The startup default language has
 its own rule below.
@@ -180,8 +185,15 @@ always remains available.
   door. For a known language the window says in one line that the reflow brings
   the catalog's values back while the language stays off; an own language is
   never refreshed.
-- The same server refusal and disabled form apply to a switched-on country
-  (not in the code yet — HIL-1496).
+- The same server refusal applies to a switched-on country. Its view window
+  shows all four fields disabled and explains the freeze. Both the table row
+  and the Main section of the card open the shared edit/view window; the mode
+  is fixed on opening. One action belongs to one page: the card sends
+  `hilos_i18n_country_update`, the row `hilos_i18n_country_row_update`.
+  Both pass through `CountryUpdate::apply()` to `CountryActions::update()`.
+  The edit window keeps its draft if the country is switched on or deleted
+  elsewhere, blocks Save, and offers the shared conflict choices when the
+  same field changed on both sides. A view stays a view after switch-off.
 - The same server refusal and disabled form apply to a switched-on locale.
 - The reflow skips a switched-on row: it checks the switch before it calls the
   item action, so the refusal never rolls a reflow back.
@@ -541,7 +553,13 @@ name, code, currency, default locale, enabled state, the switch-on window's
 default locale note, the switch-off window's locale and name counts, and
 read-only delete verdict: a known country never, else locales, else any name
 row, block deletion. The main card has Switch on and Switch off controls
-(HIL-1498, HIL-1497); its other action controls belong to HIL-1496/1499.
+(HIL-1498, HIL-1497). Its Main section and each row of the list open the shared
+country window: a pencil edits a switched-off country, an eye views a frozen
+one (HIL-1496). The list's legend explains Custom country, View and Edit,
+followed by Deletion blocked. The table row's trash control and the card's
+State section keep their live deletion verdict and open the shared delete
+confirmation (HIL-1499). A viewer may open these windows and fill the edit
+fields; Save and the delete confirmation are disabled by the admin view mode.
 React and Angular stay unbuilt until HIL-1502/1503.
 
 Startup refuses a missing page or agent; the topology tests check that the

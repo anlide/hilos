@@ -33,6 +33,8 @@ export const HilosI18nCountryRowKey = {
   defaultLocaleCode: 'defaultLocaleCode',
   enabled: 'enabled',
   isOwn: 'isOwn',
+  locales: 'locales',
+  catalogDefaultLocaleCode: 'catalogDefaultLocaleCode',
   canDelete: 'canDelete',
   deleteReason: 'deleteReason',
 } as const
@@ -45,11 +47,21 @@ const countrySlotSchema = z.object({
   [HilosI18nCountryRowKey.defaultLocaleCode]: z.string().nullable(),
   [HilosI18nCountryRowKey.enabled]: z.boolean(),
   [HilosI18nCountryRowKey.isOwn]: z.boolean(),
+  [HilosI18nCountryRowKey.locales]: z.array(
+    z.strictObject({ code: z.string(), enabled: z.boolean() }),
+  ),
+  [HilosI18nCountryRowKey.catalogDefaultLocaleCode]: z.string().nullable(),
   [HilosI18nCountryRowKey.canDelete]: z.boolean(),
   [HilosI18nCountryRowKey.deleteReason]: z
     .enum(['known', 'locales', 'names'])
     .nullable(),
 })
+
+/** One locale belonging to a country, whether switched on or off. */
+export interface HilosI18nCountryLocaleChoice {
+  readonly code: string
+  readonly enabled: boolean
+}
 
 /** One row of the countries table. */
 export interface HilosI18nCountryRow {
@@ -67,6 +79,10 @@ export interface HilosI18nCountryRow {
   readonly enabled: boolean
   /** Whether the code is absent from the built-in catalog. */
   readonly isOwn: boolean
+  /** All locales belonging to the country, ordered by code. */
+  readonly locales: readonly HilosI18nCountryLocaleChoice[]
+  /** The built-in default locale code, whether created or not. */
+  readonly catalogDefaultLocaleCode: string | null
   /** The server's live deletion hint; the write checks it again. */
   readonly canDelete: boolean
   /** Why deletion is blocked, in server-defined order. */
@@ -94,6 +110,8 @@ export function resolveHilosI18nCountryRow(row: TableRow): HilosI18nCountryRow {
     defaultLocaleCode: null,
     enabled: false,
     isOwn: false,
+    locales: [],
+    catalogDefaultLocaleCode: null,
     canDelete: false,
     deleteReason: null,
   }
@@ -147,6 +165,13 @@ export const HILOS_I18N_COUNTRIES_COLUMNS: readonly HilosTableColumnOf<HilosI18n
         HilosI18nCountryRowKey.deleteReason,
         HilosI18nCountryRowKey.name,
         HilosI18nCountryRowKey.code,
+        HilosI18nCountryRowKey.enabled,
+        HilosI18nCountryRowKey.currencySymbol,
+        HilosI18nCountryRowKey.currencyCode,
+        HilosI18nCountryRowKey.defaultLocaleCode,
+        HilosI18nCountryRowKey.isOwn,
+        HilosI18nCountryRowKey.locales,
+        HilosI18nCountryRowKey.catalogDefaultLocaleCode,
       ],
     },
   ]
@@ -243,12 +268,24 @@ export function createHilosI18nCountriesTable(
 /** Pre-defined marks for country rows in the table and legend. */
 export const HILOS_I18N_COUNTRY_MARKS: Readonly<{
   readonly own: HilosI18nMark
+  readonly view: HilosI18nMark
+  readonly edit: HilosI18nMark
   readonly deleteBlocked: HilosI18nMark
 }> = {
   own: {
     icon: 'bi-question-circle',
     tone: 'text-bg-warning-subtle text-warning-emphasis',
     label: 'Custom country',
+  },
+  view: {
+    icon: 'bi-eye',
+    tone: 'border border-secondary text-body-secondary',
+    label: 'View',
+  },
+  edit: {
+    icon: 'bi-pencil',
+    tone: 'border border-primary text-primary',
+    label: 'Edit',
   },
   deleteBlocked: {
     icon: 'bi-trash',
@@ -264,6 +301,16 @@ export const HILOS_I18N_COUNTRIES_LEGEND: ReadonlyArray<HilosI18nLegendRow> = [
     mark: HILOS_I18N_COUNTRY_MARKS.own,
     meaning:
       'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+  },
+  {
+    key: 'view',
+    mark: HILOS_I18N_COUNTRY_MARKS.view,
+    meaning: 'the country is switched on and frozen: nobody changes a live row',
+  },
+  {
+    key: 'edit',
+    mark: HILOS_I18N_COUNTRY_MARKS.edit,
+    meaning: 'the country is switched off: edit it freely',
   },
   {
     key: 'deleteBlocked',

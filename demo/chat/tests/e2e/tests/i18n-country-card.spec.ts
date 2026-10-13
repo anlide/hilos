@@ -50,7 +50,8 @@ test('opens a reflowed country card directly with read-only details and staged t
   ).toHaveAttribute('href', '/hilos/i18n/countries/us/names')
   await expect(
     page.getByTestId('country-card-main').locator('button, input'),
-  ).toHaveCount(0)
+  ).toHaveCount(1)
+  await expect(page.getByTestId('country-card-edit')).toBeVisible()
   await expect(
     page.getByTestId('country-card-state').locator('button, input'),
   ).toHaveCount(2)

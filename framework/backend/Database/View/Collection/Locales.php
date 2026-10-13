@@ -10,6 +10,7 @@ use Hilos\Database\Actions\Collection\LocalesActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\Locales as ObjectLocales;
 use Hilos\Database\View\Item\Locale;
+use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Locales support code strings and primary-id integers as offsets.
@@ -50,6 +51,17 @@ class Locales extends DbCollection
     public function countForCountry(int $countryId): int
     {
         return $this->objectCollection->countForCountry($countryId);
+    }
+
+    /**
+     * @param int $countryId Country primary id
+     * @return list<CountryLocaleChoice> Every locale of the country, on or off, by code
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function choicesForCountry(int $countryId): array
+    {
+        return $this->objectCollection->choicesForCountry($countryId);
     }
 
     /**

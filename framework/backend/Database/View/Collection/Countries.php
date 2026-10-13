@@ -13,6 +13,7 @@ use Hilos\Database\View\Item\Country;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\I18n\DTO\CountryCardSummary;
+use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Countries support code strings and primary-id integers as offsets.
@@ -27,6 +28,7 @@ class Countries extends DbCollection
 
     /**
      * @param int $countryId Country primary id
+     * @param ?list<CountryLocaleChoice> $locales Complete choices by code from the current batch, or null to query them
      * @return CountryCardSummary Current read-only card facts
      * @throws DatabaseException When a country or dependent row query fails
      * @throws InvalidArgumentException When the country no longer exists
@@ -34,9 +36,9 @@ class Countries extends DbCollection
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
      */
-    public function cardSummary(int $countryId): CountryCardSummary
+    public function cardSummary(int $countryId, ?array $locales = null): CountryCardSummary
     {
-        return $this->objectCollection->cardSummary($countryId);
+        return $this->objectCollection->cardSummary($countryId, $locales);
     }
 
     /**

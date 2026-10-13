@@ -26,6 +26,8 @@ final readonly class CountryCardSummary
      * @param ?bool $defaultLocaleEnabled Whether the chosen default locale is switched on; null when none is chosen
      * @param int $localeCount All locales of the country, enabled or not
      * @param int $nameCount Nonempty base names of the country in every language
+     * @param list<CountryLocaleChoice> $locales Every locale of the country, on or off, by code
+     * @param ?string $catalogDefaultLocaleCode Built-in catalog suggestion, whether created or not
      * @param bool $hasNames Whether any name row, base or override, even empty, names the country
      */
     public function __construct(
@@ -35,6 +37,8 @@ final readonly class CountryCardSummary
         ?bool $defaultLocaleEnabled,
         public int $localeCount,
         public int $nameCount,
+        public array $locales,
+        public ?string $catalogDefaultLocaleCode,
         bool $hasNames,
     ) {
         $this->defaultLocale = match ($defaultLocaleEnabled) {
@@ -51,7 +55,7 @@ final readonly class CountryCardSummary
         $this->canDelete = $this->deleteReason === null;
     }
 
-    /** @return array<string, bool|int|string|null> Browser payload fields */
+    /** @return array<string, mixed> Browser payload fields including locale choices */
     public function toArray(): array
     {
         return [
@@ -61,6 +65,8 @@ final readonly class CountryCardSummary
             'defaultLocale' => $this->defaultLocale,
             'localeCount' => $this->localeCount,
             'nameCount' => $this->nameCount,
+            'locales' => array_map(static fn (CountryLocaleChoice $locale): array => $locale->toArray(), $this->locales),
+            'catalogDefaultLocaleCode' => $this->catalogDefaultLocaleCode,
             'canDelete' => $this->canDelete,
             'deleteReason' => $this->deleteReason,
         ];

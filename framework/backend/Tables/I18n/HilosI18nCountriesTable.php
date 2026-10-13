@@ -40,12 +40,14 @@ use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Hilos;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Framework table of every country of the system (HIL-1475).
  *
- * Rows are built in memory: the name is read from another table, the "own" mark is computed,
- * and a country set is dozens of rows. The first window is the framework's own twenty-five,
+ * Rows are built in memory: names and locale choices are read from their tables, the "own"
+ * mark and default locale suggestion come from the catalog, and a country set is dozens of rows.
+ * The first window is the framework's own twenty-five,
  * so fifty-one known countries fill three pages. A project activates the table by registering
  * it under {@see self::TABLE} and binding it to the countries list page in {@see Hilos::PAGE_TABLES}.
  */
@@ -78,6 +80,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                     HilosI18nCountriesTableRow::name,
                     HilosI18nCountriesTableRow::defaultLocaleCode,
                     HilosI18nCountriesTableRow::isOwn,
+                    HilosI18nCountriesTableRow::locales,
+                    HilosI18nCountriesTableRow::catalogDefaultLocaleCode,
                     HilosI18nCountriesTableRow::canDelete,
                     HilosI18nCountriesTableRow::deleteReason,
                 ],
@@ -95,6 +99,9 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                 BrowserTableFieldKey::ROW_KEY => ObjectLocale::id,
                 BrowserTableFieldKey::FIELDS => [
                     ObjectLocale::id,
+                    ObjectLocale::countryId,
+                    ObjectLocale::code,
+                    ObjectLocale::enabled,
                 ],
             ],
             [
@@ -137,7 +144,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
 
     /**
      * A country, any of its names, or any of its locales redraws that country and its deletion
-     * verdict. Language changes are ignored: the default language changes with the environment
+     * verdict; a locale created, switched or deleted redraws its country's choices as well.
+     * Language changes are ignored: the default language changes with the environment
      * and a restart.
      *
      * A deletion of a country names the code the removed row published. A create or an update
@@ -183,8 +191,9 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
 
     /**
      * The stored country fields are columns of hilos_country, the name is a column of
-     * hilos_country_name, and the locale code is a column of hilos_locale. None of them is
-     * personal. The "own" mark and the deletion verdict are computed from the catalog and references.
+     * hilos_country_name, and the default code and choices are columns of hilos_locale.
+     * None of them is personal. The "own" mark and suggestion come from the built-in catalog,
+     * and the deletion verdict is computed from the catalog and references.
      *
      * @return array<string, WireField> Row field to where it comes from
      */
@@ -207,6 +216,11 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                 ObjectLocale::code,
             ),
             HilosI18nCountriesTableRow::isOwn => WireField::notPersonal(),
+            HilosI18nCountriesTableRow::locales => WireField::each([
+                CountryLocaleChoice::code => WireField::column(HilosDbContext::locales, ObjectLocale::code),
+                CountryLocaleChoice::enabled => WireField::column(HilosDbContext::locales, ObjectLocale::enabled),
+            ]),
+            HilosI18nCountriesTableRow::catalogDefaultLocaleCode => WireField::notPersonal(),
             HilosI18nCountriesTableRow::canDelete => WireField::notPersonal(),
             HilosI18nCountriesTableRow::deleteReason => WireField::notPersonal(),
         ];
@@ -246,8 +260,9 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     /**
      * Every country, searched and ordered in memory.
      *
-     * Row labels use a grouped read of base names in the default language. Each country's
-     * deletion verdict comes from its current card summary.
+     * Row labels use a grouped read of base names in the default language, and locale choices a
+     * grouped read of all country locales. Each country's deletion verdict comes from its current
+     * card summary, reusing the grouped locale choices.
      *
      * @param TableQueryDTO $query Window query, its search already scoped
      * @return TableSnapshotDTO Countries window
@@ -266,10 +281,14 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         $defaultLanguageId = $this->defaultLanguageId();
         $baseNames = $this->baseNames($defaultLanguageId);
         $result = Hilos::$db->countries->queryPageItems(new TableQueryDTO());
+        $localesByCountry = $this->localesByCountry(array_map(
+            static fn (Country $country): int => $country->id,
+            $result[TableConstants::RESULT_KEY_ROWS],
+        ));
 
         return $this->filterInMemory(
             array_map(
-                fn (Country $country): array => $this->rowForCountry($country, $defaultLanguageId, $baseNames)->toArray(),
+                fn (Country $country): array => $this->rowForCountry($country, $defaultLanguageId, $baseNames, $localesByCountry)->toArray(),
                 $result[TableConstants::RESULT_KEY_ROWS],
             ),
             $query,
@@ -369,7 +388,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
     }
 
     /**
-     * A locale changes its country's deletion verdict, regardless of its enabled state.
+     * A locale changes its country's choices and deletion verdict, regardless of its enabled state.
      * Deleted locales publish the country id before leaving their collection.
      *
      * @param SourceChange $change Locale collection change
@@ -401,6 +420,7 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @param Country $country Country to project
      * @param ?int $defaultLanguageId Id of the installation default language, read once for the query
      * @param ?array<int, string> $baseNames Base names by country id, when the query already read them
+     * @param ?array<int, list<CountryLocaleChoice>> $localesByCountry Choices by country id, when the query already read them
      * @return HilosI18nCountriesTableRow Country table row
      * @throws DatabaseException When a name or a locale cannot be read
      * @throws LogicException When a collection is not configured
@@ -408,9 +428,16 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
      */
-    private function rowForCountry(Country $country, ?int $defaultLanguageId, ?array $baseNames = null): HilosI18nCountriesTableRow
-    {
-        $summary = Hilos::$db->countries->cardSummary((int) $country->id);
+    private function rowForCountry(
+        Country $country,
+        ?int $defaultLanguageId,
+        ?array $baseNames = null,
+        ?array $localesByCountry = null,
+    ): HilosI18nCountriesTableRow {
+        $summary = Hilos::$db->countries->cardSummary(
+            (int) $country->id,
+            $localesByCountry === null ? null : ($localesByCountry[$country->id] ?? []),
+        );
 
         return new HilosI18nCountriesTableRow(
             code: $country->code,
@@ -422,6 +449,8 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
                 : Hilos::$db->locales[$country->defaultLocaleId]?->code,
             enabled: $country->enabled,
             isOwn: BuiltInI18nCatalog::country($country->code) === null,
+            locales: $summary->locales,
+            catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
             canDelete: $summary->canDelete,
             deleteReason: $summary->deleteReason,
         );
@@ -480,6 +509,29 @@ final class HilosI18nCountriesTable extends TableDefinition implements ViewportT
         }
 
         return $names;
+    }
+
+    /**
+     * @param list<int> $countryIds Countries projected in the window
+     * @return array<int, list<CountryLocaleChoice>> Locale choices grouped for the browser boundary, by code
+     * @throws DatabaseException When the locales cannot be read
+     * @throws LogicException When the locale collection is not configured
+     * @throws InvalidArgumentException When a loaded locale has the wrong type
+     * @throws ObjectGetIdStringNotImplementedException When a matched locale cannot name its id
+     * @throws CollectionNotManualException When the locale collection refuses a matched item
+     */
+    private function localesByCountry(array $countryIds): array
+    {
+        $choices = [];
+        foreach (Hilos::$db->locales->whereColumnIn(ObjectLocale::countryId, ...$countryIds) as $locale) {
+            $choices[$locale->countryId][] = new CountryLocaleChoice($locale->code, $locale->enabled);
+        }
+        foreach ($choices as &$countryChoices) {
+            usort($countryChoices, static fn (CountryLocaleChoice $a, CountryLocaleChoice $b): int => strcmp($a->code, $b->code));
+        }
+        unset($countryChoices);
+
+        return $choices;
     }
 
     /**

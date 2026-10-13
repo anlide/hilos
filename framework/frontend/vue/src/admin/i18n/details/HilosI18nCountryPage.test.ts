@@ -36,6 +36,8 @@ const initialCard: HilosI18nCountryCard = {
     defaultLocale: 'missing',
     localeCount: 0,
     nameCount: 0,
+    locales: [],
+    catalogDefaultLocaleCode: 'en-US',
     canDelete: false,
     deleteReason: 'known',
   },
@@ -139,12 +141,46 @@ describe('HilosI18nCountryPage', () => {
     expect(tabs.findAll('a')).toHaveLength(1)
     expect(tabs.find('a').attributes('href')).toBe('/hilos/i18n/countries/us')
     expect(tabs.find('a').attributes('aria-current')).toBe('page')
-    expect(h.view.findAll('button')).toHaveLength(2)
+    expect(h.view.findAll('button')).toHaveLength(3)
+    expect(
+      h.view.get('[data-id="country-card-edit"]').attributes('aria-label'),
+    ).toBe('Edit country')
     expect(h.view.find('[data-id="country-card-switch-on"]').exists()).toBe(
       true,
     )
     expect(h.view.findAll('input')).toHaveLength(0)
     h.view.unmount()
+  })
+
+  it('opens edit and view from Main, including for an admin-view reader', async () => {
+    const h = harness(false, {} as ActionLifecycle, true)
+    h.scope.data.set(COUNTRY_CARD_DATA, initialCard)
+    await nextTick()
+    const edit = h.view.get('[data-id="country-card-edit"]')
+    expect((edit.element as HTMLButtonElement).disabled).toBe(false)
+    await edit.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-country-title"]')?.textContent,
+    ).toContain('Edit country · United States')
+    document
+      .querySelector<HTMLButtonElement>('[data-id="i18n-country-cancel"]')
+      ?.click()
+    await nextTick()
+    h.scope.data.set(COUNTRY_CARD_DATA, { ...initialCard, enabled: true })
+    await nextTick()
+    const eye = h.view.get('[data-id="country-card-view"]')
+    expect(eye.attributes('title')).toBe('View country: nothing to edit')
+    expect(h.view.find('[data-id="country-card-frozen"]').exists()).toBe(true)
+    await eye.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-country-title"]')?.textContent,
+    ).toContain('Country · United States')
+    expect(document.querySelector('[data-id="i18n-country-save"]')).toBeNull()
+    document
+      .querySelector<HTMLButtonElement>('[data-id="i18n-country-close"]')
+      ?.click()
+    await nextTick()
+    expect(document.querySelector('[data-id="i18n-country-window"]')).toBeNull()
   })
 
   it('shows the code as the title when the country has no name in the default language', async () => {
@@ -159,6 +195,8 @@ describe('HilosI18nCountryPage', () => {
         defaultLocale: 'missing',
         localeCount: 0,
         nameCount: 0,
+        locales: [],
+        catalogDefaultLocaleCode: null,
         canDelete: true,
         deleteReason: null,
       },

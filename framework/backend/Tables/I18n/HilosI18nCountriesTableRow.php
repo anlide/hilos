@@ -7,6 +7,7 @@ namespace Hilos\Tables\I18n;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\I18n\DTO\CountryCardSummary;
+use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Backend row of the countries table (HIL-1475).
@@ -25,6 +26,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
     public const string defaultLocaleCode = 'defaultLocaleCode';
     public const string enabled = 'enabled';
     public const string isOwn = 'isOwn';
+    public const string locales = 'locales';
+    public const string catalogDefaultLocaleCode = 'catalogDefaultLocaleCode';
     public const string canDelete = 'canDelete';
     public const string deleteReason = 'deleteReason';
 
@@ -36,6 +39,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      * @param ?string $defaultLocaleCode Code of the country's default locale, or null when none is chosen
      * @param bool $enabled Whether the country is switched on
      * @param bool $isOwn Whether the code is absent from the built-in catalog
+     * @param list<CountryLocaleChoice> $locales Every locale of the country, on or off, by code
+     * @param ?string $catalogDefaultLocaleCode Built-in catalog suggestion, whether created or not
      * @param bool $canDelete Whether the current summary permits deletion
      * @param ?string $deleteReason Catalog or dependency refusal, or null when deletion is permitted
      */
@@ -47,6 +52,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
         public ?string $defaultLocaleCode,
         public bool $enabled,
         public bool $isOwn,
+        public array $locales,
+        public ?string $catalogDefaultLocaleCode,
         public bool $canDelete,
         public ?string $deleteReason,
     ) {
@@ -81,6 +88,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
             self::defaultLocaleCode => $this->defaultLocaleCode,
             self::enabled => $this->enabled,
             self::isOwn => $this->isOwn,
+            self::locales => array_map(static fn (CountryLocaleChoice $locale): array => $locale->toArray(), $this->locales),
+            self::catalogDefaultLocaleCode => $this->catalogDefaultLocaleCode,
             self::canDelete => $this->canDelete,
             self::deleteReason => $this->deleteReason,
         ];
@@ -93,6 +102,16 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        $locales = [];
+        foreach (self::requireArray($data, self::locales) as $locale) {
+            if (!is_array($locale)) {
+                throw new InvalidFormatException('Country locale choice must be an object');
+            }
+            $locales[] = new CountryLocaleChoice(
+                self::requireString($locale, CountryLocaleChoice::code),
+                self::requireBool($locale, CountryLocaleChoice::enabled),
+            );
+        }
         if (!array_key_exists(self::deleteReason, $data)) {
             throw new InvalidFormatException('Missing country deleteReason');
         }
@@ -114,6 +133,8 @@ final class HilosI18nCountriesTableRow extends AbstractTableRow
             defaultLocaleCode: self::optionalString($data, self::defaultLocaleCode),
             enabled: self::requireBool($data, self::enabled),
             isOwn: self::requireBool($data, self::isOwn),
+            locales: $locales,
+            catalogDefaultLocaleCode: self::optionalString($data, self::catalogDefaultLocaleCode),
             canDelete: self::requireBool($data, self::canDelete),
             deleteReason: $deleteReason,
         );

@@ -90,6 +90,7 @@ export {
   HilosI18nCountryRowKey,
   createHilosI18nCountriesTable,
   resolveHilosI18nCountryRow,
+  type HilosI18nCountryLocaleChoice,
   type HilosI18nCountryRow,
   type HilosI18nCountriesTable,
   type HilosI18nCountriesTableView,
@@ -102,6 +103,25 @@ export {
   hilosI18nCurrencyCode,
   type HilosI18nCountryAdd,
 } from './admin/i18n/hilosI18nCountryAdd.js'
+export {
+  HILOS_I18N_COUNTRY_UPDATE_ACTION,
+  HILOS_I18N_COUNTRY_ROW_UPDATE_ACTION,
+  HILOS_I18N_COUNTRY_WINDOW_COPY,
+  createHilosI18nCountryWindow,
+  createHilosI18nCountryRowWindow,
+  createHilosI18nCountryCardWindow,
+  hilosI18nCountryEditableFromRow,
+  hilosI18nCountryEditableFromCard,
+  hilosI18nCountryWindowLabel,
+  hilosI18nCountryWindowMode,
+  hilosI18nCountrySuggestedLocale,
+  hilosI18nCountryLocaleOptions,
+  type HilosI18nCountryEditable,
+  type HilosI18nCountryEditFields,
+  type HilosI18nCountryLocaleOption,
+  type HilosI18nCountryWindow,
+  type HilosI18nCountryWindowMode,
+} from './admin/i18n/hilosI18nCountryWindow.js'
 export {
   HILOS_I18N_LANGUAGE_SWITCH_OFF_ACTION,
   HILOS_I18N_LANGUAGE_SWITCH_OFF_COPY,

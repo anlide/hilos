@@ -20,6 +20,8 @@ const slot = {
   defaultLocaleCode: null,
   enabled: true,
   isOwn: true,
+  locales: [],
+  catalogDefaultLocaleCode: null,
   canDelete: true,
   deleteReason: null,
 }
@@ -72,6 +74,8 @@ describe('country deletion', () => {
           defaultLocale: 'missing',
           localeCount: 0,
           nameCount: 0,
+          locales: [],
+          catalogDefaultLocaleCode: null,
         },
       }),
     ).toEqual(target)

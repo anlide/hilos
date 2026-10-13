@@ -30,6 +30,8 @@ describe('resolveHilosI18nCountryRow', () => {
           defaultLocaleCode: null,
           enabled: false,
           isOwn: false,
+          locales: [],
+          catalogDefaultLocaleCode: 'en-US',
           canDelete: false,
           deleteReason: 'known',
         }),
@@ -42,6 +44,8 @@ describe('resolveHilosI18nCountryRow', () => {
       defaultLocaleCode: null,
       enabled: false,
       isOwn: false,
+      locales: [],
+      catalogDefaultLocaleCode: 'en-US',
       canDelete: false,
       deleteReason: 'known',
     })
@@ -56,6 +60,8 @@ describe('resolveHilosI18nCountryRow', () => {
       defaultLocaleCode: null,
       enabled: false,
       isOwn: false,
+      locales: [],
+      catalogDefaultLocaleCode: null,
       canDelete: false,
       deleteReason: null,
     })
@@ -87,7 +93,19 @@ describe('HILOS_I18N_COUNTRIES_FRAME', () => {
     expect(HILOS_I18N_COUNTRIES_COLUMNS.at(-1)).toEqual({
       key: 'actions',
       label: '',
-      reads: ['canDelete', 'deleteReason', 'name', 'code'],
+      reads: [
+        'canDelete',
+        'deleteReason',
+        'name',
+        'code',
+        'enabled',
+        'currencySymbol',
+        'currencyCode',
+        'defaultLocaleCode',
+        'isOwn',
+        'locales',
+        'catalogDefaultLocaleCode',
+      ],
     })
   })
 })
@@ -100,6 +118,17 @@ describe('HILOS_I18N_COUNTRIES_LEGEND', () => {
         mark: HILOS_I18N_COUNTRY_MARKS.own,
         meaning:
           'its code is not in the built-in catalog: nothing refreshes it, keeping it up is yours',
+      },
+      {
+        key: 'view',
+        mark: HILOS_I18N_COUNTRY_MARKS.view,
+        meaning:
+          'the country is switched on and frozen: nobody changes a live row',
+      },
+      {
+        key: 'edit',
+        mark: HILOS_I18N_COUNTRY_MARKS.edit,
+        meaning: 'the country is switched off: edit it freely',
       },
       {
         key: 'deleteBlocked',

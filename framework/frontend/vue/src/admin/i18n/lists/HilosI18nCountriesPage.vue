@@ -3,7 +3,8 @@ every country of the system in one table. The code links to the country card
 when that page is built. A missing name shows the code, a missing default
 locale shows "Not chosen", and a custom country carries an icon mark. A
 custom country is created through the "Add country" main action and its
-confirmation. A switched-off country is drawn in the secondary text color. The table, the row
+confirmation. Each row opens the shared edit/view window beside its delete control.
+A switched-off country is drawn in the secondary text color. The table, the row
 view-model and the frame are the core headless's
 (createHilosI18nCountriesTable); this view owns only the markup, so a project
 mounts it by passing its HilosI18nCountryContext. Bootstrap classes only
@@ -15,6 +16,8 @@ import {
   createHilosI18nCountryAdd,
   createHilosI18nCountriesTable,
   createHilosI18nCountryRowDelete,
+  createHilosI18nCountryRowWindow,
+  HILOS_I18N_COUNTRY_WINDOW_COPY,
   HILOS_I18N_COUNTRIES_LEGEND,
   HILOS_I18N_COUNTRY_MARKS,
   hilosI18nCountryDeleteFromRow,
@@ -31,6 +34,7 @@ import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCountryDelete from '../details/HilosI18nCountryDelete.vue'
+import HilosI18nCountryWindow from '../details/HilosI18nCountryWindow.vue'
 import HilosI18nCatalogNote from './HilosI18nCatalogNote.vue'
 import HilosI18nCountryAdd from './HilosI18nCountryAdd.vue'
 import HilosI18nCountryRowActions from './HilosI18nCountryRowActions.vue'
@@ -52,6 +56,11 @@ const add = createHilosI18nCountryAdd(props.context, codes)
 const countries = createHilosI18nCountriesTable(props.context, {
   openAdd: add.open,
 })
+const window = createHilosI18nCountryRowWindow(
+  countries.controller,
+  props.context,
+)
+const copy = HILOS_I18N_COUNTRY_WINDOW_COPY
 const { deleteCountry } = createHilosI18nCountryRowDelete(props.context)
 const deleteOpen = ref(false)
 const deleteTarget = ref<HilosI18nCountryDeleteTarget | null>(null)
@@ -79,8 +88,12 @@ watch(deleteOpen, (open) => {
   }
 })
 
-onMounted(() => countries.start())
+onMounted(() => {
+  countries.start()
+  window.start()
+})
 onUnmounted(() => {
+  window.dispose()
   countries.dispose()
   add.dispose()
 })
@@ -185,7 +198,29 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
         />
       </template>
       <template #cell-actions="{ row }">
-        <HilosI18nCountryRowActions :row="row" @delete="openDelete(row.code)" />
+        <div class="d-flex align-items-start gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="
+              row.enabled ? 'btn-outline-secondary' : 'btn-outline-primary'
+            "
+            :title="row.enabled ? copy.open.view : copy.open.edit"
+            :aria-label="row.enabled ? copy.open.view : copy.open.edit"
+            :data-id="`i18n-countries-${row.enabled ? 'view' : 'edit'}-${row.code}`"
+            @click="window.open(row.enabled ? 'view' : 'edit', row.code)"
+          >
+            <i
+              class="bi"
+              :class="row.enabled ? 'bi-eye' : 'bi-pencil'"
+              aria-hidden="true"
+            ></i>
+          </button>
+          <HilosI18nCountryRowActions
+            :row="row"
+            @delete="openDelete(row.code)"
+          />
+        </div>
       </template>
     </HilosViewportTable>
     <HilosI18nMarksLegend
@@ -194,6 +229,7 @@ const countryPath = (row: HilosI18nCountryRow): string | undefined =>
       class="mt-4"
     />
     <HilosI18nCountryAdd :add="add" />
+    <HilosI18nCountryWindow :window="window" />
     <HilosI18nCountryDelete
       v-model="deleteOpen"
       :target="deleteTarget"

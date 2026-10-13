@@ -28,6 +28,8 @@ const card: HilosI18nCountryCard = {
     defaultLocale: 'missing',
     localeCount: 0,
     nameCount: 0,
+    locales: [],
+    catalogDefaultLocaleCode: 'en-CA',
     canDelete: true,
     deleteReason: null,
   },

@@ -11,6 +11,7 @@ use Hilos\Database\Entity\Collection\Locales as EntityLocales;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\Object\Objects;
+use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Locales loaded whole on first read.
@@ -54,6 +55,22 @@ class Locales extends Objects
     public function countForCountry(int $countryId): int
     {
         return static::entityClass()::count([EntityLocale::country_id => $countryId]);
+    }
+
+    /**
+     * @param int $countryId Country primary id
+     * @return list<CountryLocaleChoice> Every locale of the country, on or off, by code
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function choicesForCountry(int $countryId): array
+    {
+        $choices = [];
+        foreach (static::entityClass()::get([EntityLocale::country_id => $countryId], [], [EntityLocale::code => 'ASC']) as $locale) {
+            $choices[] = new CountryLocaleChoice($locale->code, $locale->enabled);
+        }
+
+        return $choices;
     }
 
     /**

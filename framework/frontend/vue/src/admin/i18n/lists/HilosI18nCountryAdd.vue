@@ -11,6 +11,7 @@ import LoadingButton from '../../../LoadingButton.vue'
 import { useLookOnly } from '../../../hilosAdminViewMode.js'
 import { useSignal } from '../../../useSignal.js'
 import { useTrackedAction } from '../../../useTrackedAction.js'
+import HilosI18nCountryFields from '../details/HilosI18nCountryFields.vue'
 
 const props = defineProps<{ add: HilosI18nCountryAdd }>()
 const copy = HILOS_I18N_COUNTRY_ADD_COPY
@@ -46,24 +47,6 @@ watch(step, (next) => {
   if (next === 'confirm') confirmAction.clearError()
 })
 
-function changeCode(event: Event): void {
-  if (event.target instanceof HTMLInputElement) {
-    props.add.setCode(event.target.value)
-  }
-}
-
-function changeCurrencySymbol(event: Event): void {
-  if (event.target instanceof HTMLInputElement) {
-    props.add.setCurrencySymbol(event.target.value)
-  }
-}
-
-function changeCurrencyCode(event: Event): void {
-  if (event.target instanceof HTMLInputElement) {
-    props.add.setCurrencyCode(event.target.value)
-  }
-}
-
 async function submit(): Promise<void> {
   if (locked.value) return
   await props.add.submit(formAction.run)
@@ -80,102 +63,22 @@ async function confirm(): Promise<void> {
     v-model="formOpen"
     :title="copy.title"
     :confirm-on-close="dirty"
+    initial-focus="inner"
     :close-on-backdrop="!formAction.busy.value"
     :close-on-esc="!formAction.busy.value"
     @cancel="add.close"
   >
     <form id="i18n-country-add-form" @submit.prevent="submit">
-      <div class="row g-2">
-        <div class="col-12 col-sm-4">
-          <label
-            class="form-label small fw-semibold"
-            for="i18n-country-add-code"
-          >
-            {{ copy.codeLabel }}
-          </label>
-          <input
-            id="i18n-country-add-code"
-            class="form-control form-control-sm"
-            :value="form.code"
-            :placeholder="copy.codePlaceholder"
-            maxlength="2"
-            aria-describedby="i18n-country-add-code-hint"
-            data-id="i18n-country-add-code"
-            data-autofocus
-            @input="changeCode"
-          />
-          <div id="i18n-country-add-code-hint" class="form-text">
-            {{ copy.codeHint }}
-          </div>
-        </div>
-        <div class="col-12 col-sm-4">
-          <label
-            class="form-label small fw-semibold"
-            for="i18n-country-add-currency-symbol"
-          >
-            {{ copy.currencySymbolLabel }}
-          </label>
-          <input
-            id="i18n-country-add-currency-symbol"
-            class="form-control form-control-sm"
-            :value="form.currencySymbol"
-            :placeholder="copy.currencySymbolPlaceholder"
-            maxlength="8"
-            aria-describedby="i18n-country-add-currency-symbol-hint"
-            data-id="i18n-country-add-currency-symbol"
-            @input="changeCurrencySymbol"
-          />
-          <div id="i18n-country-add-currency-symbol-hint" class="form-text">
-            {{ copy.currencySymbolHint }}
-          </div>
-        </div>
-        <div class="col-12 col-sm-4">
-          <label
-            class="form-label small fw-semibold"
-            for="i18n-country-add-currency-code"
-          >
-            {{ copy.currencyCodeLabel }}
-          </label>
-          <input
-            id="i18n-country-add-currency-code"
-            class="form-control form-control-sm"
-            :value="form.currencyCode"
-            :placeholder="copy.currencyCodePlaceholder"
-            maxlength="3"
-            aria-describedby="i18n-country-add-currency-code-hint"
-            data-id="i18n-country-add-currency-code"
-            @input="changeCurrencyCode"
-          />
-          <div id="i18n-country-add-currency-code-hint" class="form-text">
-            {{ copy.currencyCodeHint }}
-          </div>
-        </div>
-        <div class="col-12">
-          <label
-            class="form-label small fw-semibold"
-            for="i18n-country-add-default-locale"
-          >
-            {{ copy.defaultLocaleLabel }}
-          </label>
-          <select
-            id="i18n-country-add-default-locale"
-            class="form-select form-select-sm"
-            disabled
-            aria-describedby="i18n-country-add-default-locale-hint"
-            data-id="i18n-country-add-default-locale"
-          >
-            <option>{{ copy.defaultLocaleChoice }}</option>
-          </select>
-          <div
-            id="i18n-country-add-default-locale-hint"
-            class="form-text"
-            data-id="i18n-country-add-default-locale-hint"
-          >
-            <i class="bi bi-database-check me-1" aria-hidden="true"></i>
-            {{ copy.defaultLocaleHint }}
-          </div>
-        </div>
-      </div>
+      <HilosI18nCountryFields
+        id-prefix="i18n-country-add"
+        mode="add"
+        :code="form.code"
+        :currency-symbol="form.currencySymbol"
+        :currency-code="form.currencyCode"
+        @update:code="add.setCode"
+        @update:currency-symbol="add.setCurrencySymbol"
+        @update:currency-code="add.setCurrencyCode"
+      />
     </form>
     <div class="mt-3" data-id="i18n-country-add-error">
       <HilosActionError

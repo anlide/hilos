@@ -17,9 +17,12 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\CountryUpdate;
+use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryDeleteActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOffActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOnActionDTO;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryUpdateActionDTO;
 
 /**
  * AbstractHilosI18nCountryPage - Abstract base for Hilos i18n country page.
@@ -35,6 +38,7 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_ON => HilosI18nCountrySwitchOnActionDTO::class,
         HilosSignalConstants::HILOS_I18N_COUNTRY_SWITCH_OFF => HilosI18nCountrySwitchOffActionDTO::class,
+        HilosSignalConstants::HILOS_I18N_COUNTRY_UPDATE => HilosI18nCountryUpdateActionDTO::class,
         HilosSignalConstants::HILOS_I18N_COUNTRY_DELETE => HilosI18nCountryDeleteActionDTO::class,
     ];
 
@@ -58,7 +62,8 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
      * @throws AgentUnknownActionException When the action is unknown
      * @throws InvalidActionPayloadException When the action payload has the wrong type
      * @throws TableActionException When the country does not exist
-     * @throws ValidationException When the catalog or references protect the country from deletion
+     * @throws I18nRowFrozenException When an edit targets a switched-on country
+     * @throws ValidationException When the currency or locale is invalid, or the country cannot be deleted
      * @throws HilosException When the lookup or write fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -88,6 +93,14 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
 
                 return null;
 
+            case HilosSignalConstants::HILOS_I18N_COUNTRY_UPDATE:
+                if (!$dto instanceof HilosI18nCountryUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosI18nCountryUpdateActionDTO::class, $dto);
+                }
+                $this->handleCountryUpdate($dto);
+
+                return null;
+
             case HilosSignalConstants::HILOS_I18N_COUNTRY_DELETE:
                 if (!$dto instanceof HilosI18nCountryDeleteActionDTO) {
                     throw new InvalidActionPayloadException($action, HilosI18nCountryDeleteActionDTO::class, $dto);
@@ -99,6 +112,19 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
             default:
                 throw new AgentUnknownActionException($action, static::class);
         }
+    }
+
+    /**
+     * @param HilosI18nCountryUpdateActionDTO $dto Country fields from its card
+     * @throws TableActionException When the country does not exist
+     * @throws I18nRowFrozenException When the country is switched on
+     * @throws ValidationException When the currency or default locale is invalid
+     * @throws HilosException When the lookup or write fails
+     */
+    private function handleCountryUpdate(HilosI18nCountryUpdateActionDTO $dto): void
+    {
+        CountryUpdate::apply($dto);
+        $this->setActionSuccessMessage('Country saved.');
     }
 
     /**

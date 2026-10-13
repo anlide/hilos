@@ -18,6 +18,7 @@ use Hilos\Hilos;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\DTO\CountryCardSummary;
+use Hilos\I18n\DTO\CountryLocaleChoice;
 
 /**
  * Countries loaded whole on first read.
@@ -33,6 +34,7 @@ class Countries extends Objects
 
     /**
      * @param int $countryId Country primary id
+     * @param ?list<CountryLocaleChoice> $locales Complete choices by code from the current batch, or null to query them
      * @return CountryCardSummary Current read-only card facts
      * @throws InvalidArgumentException When the country no longer exists
      * @throws DatabaseException When a country or dependent row query fails
@@ -40,7 +42,7 @@ class Countries extends Objects
      * @throws EnvException When the default language setting is absent
      * @throws EnvInvalidValueException When its configured code is unknown
      */
-    public function cardSummary(int $countryId): CountryCardSummary
+    public function cardSummary(int $countryId, ?array $locales = null): CountryCardSummary
     {
         $country = $this[$countryId];
         if ($country === null) {
@@ -56,6 +58,8 @@ class Countries extends Objects
             defaultLocaleEnabled: $country->defaultLocaleId === null ? null : Hilos::$db->locales->enabledById($country->defaultLocaleId),
             localeCount: Hilos::$db->locales->countForCountry($countryId),
             nameCount: Hilos::$db->countryNames->countBaseNamesForCountry($countryId),
+            locales: $locales ?? Hilos::$db->locales->choicesForCountry($countryId),
+            catalogDefaultLocaleCode: BuiltInI18nCatalog::defaultLocale($country->code),
             hasNames: Hilos::$db->countryNames->hasForCountry($countryId),
         );
     }

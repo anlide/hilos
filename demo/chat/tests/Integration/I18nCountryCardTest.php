@@ -93,6 +93,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
                 'localeCount' => 0,
                 'nameCount' => 0,
+                'locales' => [],
+                'catalogDefaultLocaleCode' => 'en-US',
                 'canDelete' => false,
                 'deleteReason' => CountryCardSummary::DELETE_KNOWN,
             ], Hilos::$db->countries->cardSummary($known->id)->toArray());
@@ -106,6 +108,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
                 'localeCount' => 0,
                 'nameCount' => 0,
+                'locales' => [],
+                'catalogDefaultLocaleCode' => null,
                 'canDelete' => true,
                 'deleteReason' => null,
             ], Hilos::$db->countries->cardSummary($own->id)->toArray());
@@ -152,6 +156,11 @@ final class I18nCountryCardTest extends IntegrationTestCase
             self::assertSame(CountryCardSummary::DEFAULT_LOCALE_ON, $withLocale->defaultLocale);
             self::assertSame(2, $withLocale->localeCount);
             self::assertSame(2, $withLocale->nameCount);
+            self::assertSame([
+                ['code' => 'de-QX', 'enabled' => false],
+                ['code' => 'en-QX', 'enabled' => true],
+            ], $withLocale->toArray()['locales']);
+            self::assertNull($withLocale->catalogDefaultLocaleCode);
             self::assertSame(CountryCardSummary::DELETE_LOCALES, $withLocale->deleteReason);
             self::assertFalse($withLocale->canDelete);
 
@@ -180,6 +189,11 @@ final class I18nCountryCardTest extends IntegrationTestCase
                 'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_OFF,
                 'localeCount' => 2,
                 'nameCount' => 2,
+                'locales' => [
+                    ['code' => 'de-QX', 'enabled' => false],
+                    ['code' => 'en-QX', 'enabled' => false],
+                ],
+                'catalogDefaultLocaleCode' => null,
                 'canDelete' => false,
                 'deleteReason' => CountryCardSummary::DELETE_LOCALES,
             ],
@@ -241,6 +255,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
         $this->assertCardsForBoth(['summary' => [
             'localeCount' => 1,
+            'locales' => [['code' => 'en-QX', 'enabled' => false]],
+            'catalogDefaultLocaleCode' => null,
             'deleteReason' => CountryCardSummary::DELETE_LOCALES,
         ]]);
 
@@ -269,6 +285,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
         $this->assertCardsForBoth(['summary' => [
             'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_ON,
+            'locales' => [['code' => 'en-QX', 'enabled' => true]],
         ]]);
 
         $this->underAgent($this->agent, static function (): void {
@@ -313,6 +330,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
         $this->assertCardsForBoth(['summary' => [
             'defaultLocaleCode' => null,
             'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
+            'locales' => [],
             'deleteReason' => CountryCardSummary::DELETE_NAMES,
         ]]);
 
@@ -374,6 +392,8 @@ final class I18nCountryCardTest extends IntegrationTestCase
                     'defaultLocale' => CountryCardSummary::DEFAULT_LOCALE_MISSING,
                     'localeCount' => 0,
                     'nameCount' => 1,
+                    'locales' => [],
+                    'catalogDefaultLocaleCode' => 'en-US',
                     'canDelete' => false,
                     'deleteReason' => CountryCardSummary::DELETE_KNOWN,
                 ],

@@ -42,6 +42,7 @@ use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\CountryName;
 use Hilos\Database\View\Item\Language;
+use Hilos\Database\View\Item\Locale;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Catalog\CountryDefinition;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
@@ -117,6 +118,8 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             $known = $this->country('us', '$', 'USD');
             $own = $this->country('qx', '¤', 'XQX');
             $named = $this->country('qy', '¤', 'XQY');
+            $this->locale($english, $known)->actions->switchOn();
+            $this->locale($german, $known);
             Hilos::$db->countryNames->actions->createManual($named, $english, null, 'Qy Land');
             Hilos::$db->countryNames->actions->createManual($own, $german, null, 'Qxland auf Deutsch');
             Hilos::$db->countryNames->actions->createManual($own, $english, null, '');
@@ -157,18 +160,32 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertTrue($named->isOwn);
         self::assertFalse($known->isOwn);
         self::assertSame([
+            ['code' => 'de-US', 'enabled' => false],
+            ['code' => 'en-US', 'enabled' => true],
+        ], $known->toArray()[HilosI18nCountriesTableRow::locales]);
+        self::assertSame('en-US', $known->catalogDefaultLocaleCode);
+        self::assertSame([['code' => 'en-QX', 'enabled' => false]], $own->toArray()[HilosI18nCountriesTableRow::locales]);
+        self::assertNull($own->catalogDefaultLocaleCode);
+        self::assertSame([], $named->locales);
+        self::assertNull($named->catalogDefaultLocaleCode);
+        self::assertSame($known->toArray(), HilosI18nCountriesTableRow::fromArray($known->toArray())->toArray());
+        self::assertSame([
             'code' => 'qx', 'name' => null, 'currencySymbol' => '¤', 'currencyCode' => 'XQX',
             'defaultLocaleCode' => 'en-QX', 'enabled' => false, 'isOwn' => true,
+            'locales' => [['code' => 'en-QX', 'enabled' => false]], 'catalogDefaultLocaleCode' => null,
             'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_LOCALES,
         ], $own->toArray());
         self::assertSame([
             'code' => 'qy', 'name' => 'Qy Land', 'currencySymbol' => '¤', 'currencyCode' => 'XQY',
             'defaultLocaleCode' => null, 'enabled' => true, 'isOwn' => true,
+            'locales' => [], 'catalogDefaultLocaleCode' => null,
             'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_NAMES,
         ], $named->toArray());
         self::assertSame([
             'code' => 'us', 'name' => null, 'currencySymbol' => '$', 'currencyCode' => 'USD',
             'defaultLocaleCode' => null, 'enabled' => false, 'isOwn' => false,
+            'locales' => [['code' => 'de-US', 'enabled' => false], ['code' => 'en-US', 'enabled' => true]],
+            'catalogDefaultLocaleCode' => 'en-US',
             'canDelete' => false, 'deleteReason' => CountryCardSummary::DELETE_KNOWN,
         ], $known->toArray());
 
@@ -295,7 +312,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertSame(CountryCardSummary::DELETE_NAMES, $foreignUpdate->row->deleteReason);
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
             HilosDbContext::locales,
-            '1',
+            '0',
             [],
         )));
         self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbUpdated(
@@ -377,6 +394,73 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertFalse($this->namesRow($live, self::SEARCH_MISS, 'zz'), $this->signalTrace($live));
     }
 
+    public function testCountryLocaleCreationSwitchAndDeletionUpdateItsRow(): void
+    {
+        $this->underAgent($this->agent, function (): void {
+            $this->language('en', 'English');
+            $this->country('qx', '¤', 'XQX');
+        });
+        $admin = Hilos::$db->users->actions->createWithName('Country locale windows admin');
+        $admin->actions->setAdmin(true);
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__), 0, 32));
+        $session->actions->bindUser((int) $admin->id);
+        foreach ([self::OPEN, self::SECOND] as $acceptKey) {
+            Hilos::$rt->connections->actions->register($acceptKey, (int) $admin->id, $session->token, (int) $session->id);
+            $this->subscribe($acceptKey, new TableWindowDescriptorDTO(filter: [TableConstants::FILTER_KEY_SEARCH => 'qx']));
+        }
+        $this->drain();
+        $locale = $this->underAgent($this->agent, function (): Locale {
+            return $this->locale(Hilos::$db->languages['en'], Hilos::$db->countries['qx']);
+        });
+        $countryId = $locale->countryId;
+        $localeId = $locale->id;
+        $table = new HilosI18nCountriesTable();
+        $created = $table->buildMutationForSourceEvent(SourceChange::dbCreated(HilosDbContext::locales, (string) $localeId, []));
+        self::assertInstanceOf(TableRowMutationDTO::class, $created);
+        self::assertSame(TableMutationType::Update, $created->type);
+        self::assertSame('qx', $created->rowKey);
+        self::assertSame([['code' => 'en-QX', 'enabled' => false]], $created->row->toArray()[HilosI18nCountriesTableRow::locales]);
+        $this->assertChoicesForBoth(
+            SourceChange::dbCreated(HilosDbContext::locales, (string) $localeId, [ObjectLocale::countryId => $countryId]),
+            [['code' => 'en-QX', 'enabled' => false]],
+        );
+
+        $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$localeId]->actions->switchOn());
+        $switched = $table->buildMutationForSourceEvent(SourceChange::dbUpdated(HilosDbContext::locales, (string) $localeId, []));
+        self::assertInstanceOf(TableRowMutationDTO::class, $switched);
+        self::assertSame(TableMutationType::Update, $switched->type);
+        self::assertSame('qx', $switched->rowKey);
+        self::assertSame([['code' => 'en-QX', 'enabled' => true]], $switched->row->toArray()[HilosI18nCountriesTableRow::locales]);
+        $this->assertChoicesForBoth(
+            SourceChange::dbUpdated(HilosDbContext::locales, (string) $localeId, [ObjectLocale::enabled => true]),
+            [['code' => 'en-QX', 'enabled' => true]],
+        );
+
+        $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$localeId]->actions->delete());
+        $deleted = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+            HilosDbContext::locales, (string) $localeId, [ObjectLocale::countryId => $countryId],
+        ));
+        self::assertInstanceOf(TableRowMutationDTO::class, $deleted);
+        self::assertSame(TableMutationType::Update, $deleted->type);
+        self::assertSame('qx', $deleted->rowKey);
+        self::assertSame([], $deleted->row->toArray()[HilosI18nCountriesTableRow::locales]);
+        $this->assertChoicesForBoth(
+            SourceChange::dbDeleted(HilosDbContext::locales, (string) $localeId, [ObjectLocale::countryId => $countryId]),
+            [],
+        );
+
+        $countryless = $this->underAgent($this->agent, function (): Locale {
+            return $this->locale($this->language('qz', 'Countryless'), null);
+        });
+        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbCreated(HilosDbContext::locales, (string) $countryless->id, [])));
+        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+            HilosDbContext::locales, '0', [ObjectLocale::countryId => null],
+        )));
+        self::assertNull($table->buildMutationForSourceEvent(SourceChange::dbDeleted(
+            HilosDbContext::locales, '0', [ObjectLocale::countryId => 0],
+        )));
+    }
+
     public function testPageResponseCarriesBuiltInCatalogTallyToAdmin(): void
     {
         $admin = Hilos::$db->users->actions->createWithName('Countries table tally admin');
@@ -403,8 +487,8 @@ final class I18nCountriesTableTest extends IntegrationTestCase
     public function testAViewerSeesEveryCountryField(): void
     {
         $this->underAgent($this->agent, function (): void {
-            $this->language('en', 'English');
-            $this->country('qx', '¤', 'XQX');
+            $english = $this->language('en', 'English');
+            $this->locale($english, $this->country('qx', '¤', 'XQX'));
         });
         $viewer = Hilos::$db->users->actions->createWithName('Countries table viewer');
         $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', __METHOD__ . uniqid('', true)), 0, 32));
@@ -446,10 +530,15 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                     HilosI18nCountriesTableRow::defaultLocaleCode,
                     HilosI18nCountriesTableRow::enabled,
                     HilosI18nCountriesTableRow::isOwn,
+                    HilosI18nCountriesTableRow::locales,
+                    HilosI18nCountriesTableRow::catalogDefaultLocaleCode,
                     HilosI18nCountriesTableRow::canDelete,
                     HilosI18nCountriesTableRow::deleteReason,
                 ] as $field) {
                     self::assertFalse(HiddenValue::isMark($country[$field]), $field);
+                }
+                if ($country[HilosI18nCountriesTableRow::code] === 'qx') {
+                    self::assertSame([['code' => 'en-QX', 'enabled' => false]], $country[HilosI18nCountriesTableRow::locales]);
                 }
             }
             self::assertStringNotContainsString(HiddenValue::KEY, json_encode($rows, JSON_THROW_ON_ERROR));
@@ -471,6 +560,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         self::assertSame([
             'code' => 'qx', 'name' => null, 'currencySymbol' => '¤', 'currencyCode' => 'XQX',
             'defaultLocaleCode' => null, 'enabled' => false, 'isOwn' => true,
+            'locales' => [], 'catalogDefaultLocaleCode' => null,
             'canDelete' => true, 'deleteReason' => null,
         ], $payload);
         foreach ([null, CountryCardSummary::DELETE_KNOWN, CountryCardSummary::DELETE_LOCALES, CountryCardSummary::DELETE_NAMES] as $reason) {
@@ -662,6 +752,41 @@ final class I18nCountriesTableTest extends IntegrationTestCase
         $this->createdCountries[] = $code;
 
         return Hilos::$db->countries->actions->create($code, $symbol, $currency);
+    }
+
+    /**
+     * @param SourceChange $change Locale change to deliver to the open table windows
+     * @param list<array{code: string, enabled: bool}> $choices Expected current choices
+     */
+    private function assertChoicesForBoth(SourceChange $change, array $choices): void
+    {
+        Hilos::$browser->record($change);
+        Hilos::$browser->flushToSignalRouter();
+        $targets = [];
+        foreach ($this->drain() as $signal) {
+            if (!$signal['data'] instanceof TableViewportDeltaDTO) {
+                continue;
+            }
+            self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $signal['data']->kind);
+            self::assertSame('qx', $signal['data']->rowKey);
+            $row = $signal['data']->row[PagePayload::slots][HilosI18nCountriesTable::ROW_SLOT];
+            self::assertSame($choices, $row[HilosI18nCountriesTableRow::locales]);
+            $targets[] = $signal['accept'];
+        }
+        self::assertEqualsCanonicalizing([self::OPEN, self::SECOND], $targets);
+    }
+
+    /**
+     * @param Language $language Locale language
+     * @param ?Country $country Locale country, or null for the language alone
+     * @return Locale New switched-off fixture locale
+     */
+    private function locale(Language $language, ?Country $country): Locale
+    {
+        return Hilos::$db->locales->actions->create(
+            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+        );
     }
 
     /**
