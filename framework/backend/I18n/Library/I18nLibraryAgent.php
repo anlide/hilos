@@ -8,6 +8,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\CliCommands;
 use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -50,7 +51,21 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         CliCommands::I18N_TEST_LOCALE_ON,
         CliCommands::I18N_TEST_COUNTRY_OFF,
         CliCommands::I18N_TEST_COUNTRY_ON,
+        CliCommands::I18N_TEST_LANGUAGE_NAMES_SEED,
+        CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR,
     ];
+
+    private const string LANGUAGE_NAMES_TARGET_CODE = 'qv';
+    private const string LANGUAGE_NAMES_WRITING_CODE = 'qw';
+
+    /** @var array<string, string> Fixed fixture addresses and their ownership markers */
+    private const array LANGUAGE_NAMES_MARKERS = [
+        self::LANGUAGE_NAMES_TARGET_CODE => 'HIL-1490 target',
+        self::LANGUAGE_NAMES_WRITING_CODE => 'HIL-1490 writing',
+    ];
+
+    /** @var array<string, string> Existing country codes and literal correction values */
+    private const array LANGUAGE_NAMES_CORRECTIONS = ['gb' => 'Fixture correction', 'us' => ''];
 
     /**
      * @param CommandRequestDTO $data Command request
@@ -81,6 +96,12 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 return;
             case CliCommands::I18N_TEST_COUNTRY_ON:
                 $this->handleCountryOnCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LANGUAGE_NAMES_SEED:
+                $this->handleLanguageNamesSeedCommand($data);
+                return;
+            case CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR:
+                $this->handleLanguageNamesClearCommand($data);
                 return;
             default:
                 $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
@@ -126,6 +147,127 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         $this->reflowIfChanged();
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request with no arguments
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleLanguageNamesSeedCommand(CommandRequestDTO $data): void
+    {
+        try {
+            if ($data->payload !== []) {
+                throw new ValidationException('The language names fixture command takes no arguments.');
+            }
+            $this->seedLanguageNamesFixture();
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId));
+    }
+
+    /**
+     * Every row is created together; repeat setup requires explicit cleanup first.
+     *
+     * @throws ValidationException When a fixture address is occupied or a required country is missing
+     * @throws HilosException When ownership, persistence or rollback fails
+     */
+    private function seedLanguageNamesFixture(): void
+    {
+        $this->assertLanguageNamesFixtureMarkers();
+        foreach (array_keys(self::LANGUAGE_NAMES_MARKERS) as $code) {
+            if (Hilos::$db->languages[$code] !== null) {
+                throw new ValidationException('The language names fixture already exists. Clear it before seeding again.');
+            }
+        }
+
+        Database::transactionStart();
+        try {
+            $language = Hilos::$db->languages->actions->create(
+                self::LANGUAGE_NAMES_TARGET_CODE,
+                self::LANGUAGE_NAMES_MARKERS[self::LANGUAGE_NAMES_TARGET_CODE],
+                false,
+            );
+            $inLanguage = Hilos::$db->languages->actions->create(
+                self::LANGUAGE_NAMES_WRITING_CODE,
+                self::LANGUAGE_NAMES_MARKERS[self::LANGUAGE_NAMES_WRITING_CODE],
+                false,
+            );
+            Hilos::$db->languageNames->actions->createManual($language, $inLanguage, null, 'Fixture base');
+            foreach (self::LANGUAGE_NAMES_CORRECTIONS as $countryCode => $correction) {
+                $country = Hilos::$db->countries[$countryCode]
+                    ?? throw new ValidationException('Missing fixture country: ' . $countryCode);
+                $locale = Hilos::$db->locales->actions->create(
+                    $inLanguage, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                );
+                Hilos::$db->languageNames->actions->createManual($language, $inLanguage, $locale, $correction);
+            }
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Preserve the failure that prevented the fixture from being created.
+            }
+            throw $failure;
+        }
+    }
+
+    /**
+     * Cleanup is resumable and opens no transaction around the base name's own cascade.
+     * Both markers are checked before the first write; only fixed fixture coordinates are touched.
+     *
+     * @param CommandRequestDTO $data Request with no arguments
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleLanguageNamesClearCommand(CommandRequestDTO $data): void
+    {
+        try {
+            if ($data->payload !== []) {
+                throw new ValidationException('The language names fixture command takes no arguments.');
+            }
+            $this->assertLanguageNamesFixtureMarkers();
+            $language = Hilos::$db->languages[self::LANGUAGE_NAMES_TARGET_CODE];
+            $inLanguage = Hilos::$db->languages[self::LANGUAGE_NAMES_WRITING_CODE];
+            if ($language !== null && $inLanguage !== null) {
+                Hilos::$db->languageNames->findBase($language->id, $inLanguage->id)?->actions->delete();
+            }
+            foreach (array_keys(self::LANGUAGE_NAMES_CORRECTIONS) as $countryCode) {
+                $localeCode = self::LANGUAGE_NAMES_WRITING_CODE . '-' . strtoupper($countryCode);
+                Hilos::$db->locales[$localeCode]?->actions->switchOff();
+                Hilos::$db->locales[$localeCode]?->actions->delete();
+            }
+            foreach (array_keys(self::LANGUAGE_NAMES_MARKERS) as $code) {
+                Hilos::$db->languages[$code]?->actions->delete();
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId));
+    }
+
+    /**
+     * @throws ValidationException When another row occupies either fixture code
+     * @throws HilosException When the marker lookup fails
+     */
+    private function assertLanguageNamesFixtureMarkers(): void
+    {
+        foreach (self::LANGUAGE_NAMES_MARKERS as $code => $marker) {
+            if (Hilos::$db->languages[$code] !== null && Hilos::$db->languages[$code]->nativeName !== $marker) {
+                throw new ValidationException("Language '{$code}' is not the language names fixture.");
+            }
+        }
     }
 
     /**

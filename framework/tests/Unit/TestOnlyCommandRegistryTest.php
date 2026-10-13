@@ -44,6 +44,8 @@ final class TestOnlyCommandRegistryTest extends TestCase
     {
         $this->assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::CLUSTER_TEST_INSPECT));
         $this->assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::DB_TEST_RESET));
+        $this->assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::I18N_TEST_LANGUAGE_NAMES_SEED));
+        $this->assertTrue(TestOnlyCommandRegistry::isTestOnly(CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR));
         $this->assertFalse(TestOnlyCommandRegistry::isTestOnly(CommandConstants::COMMAND_PING));
         $this->assertFalse(TestOnlyCommandRegistry::isTestOnly(CliCommands::CLUSTER_NODES));
         $this->assertFalse(TestOnlyCommandRegistry::isTestOnly(CliCommands::CLUSTER_RELOAD));

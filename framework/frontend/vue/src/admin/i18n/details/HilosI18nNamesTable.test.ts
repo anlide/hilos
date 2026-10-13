@@ -3,6 +3,8 @@ import {
   createHilosI18nNamesTable,
   createSignal,
   HILOS_I18N_LANGUAGE_NAMES,
+  HILOS_I18N_COUNTRY_NAMES,
+  type HilosI18nNamesTarget,
   ScopeManager,
   type ActionLifecycle,
   type HilosConnection,
@@ -29,7 +31,7 @@ function nameRow(
 }
 
 /** The names table of German with English, French and Spanish rows. */
-function mountNames(): {
+function mountNames(target: HilosI18nNamesTarget = HILOS_I18N_LANGUAGE_NAMES): {
   controller: TableViewportController<HilosI18nNameRow>
   wrapper: ReturnType<typeof mount>
 } {
@@ -39,7 +41,7 @@ function mountNames(): {
       scopes: new ScopeManager(),
       actions: {} as ActionLifecycle,
     },
-    HILOS_I18N_LANGUAGE_NAMES,
+    target,
     createSignal('de'),
   )
   table.controller.ingestWindow(
@@ -129,5 +131,25 @@ describe('HilosI18nNamesTable', () => {
     expect(panel.find('[data-id="i18n-names-inherit-en-GB"]').exists()).toBe(
       false,
     )
+  })
+})
+
+describe('optional names actions', () => {
+  it('keeps country names without actions in both table and cards', async () => {
+    const { wrapper, controller } = mountNames(HILOS_I18N_COUNTRY_NAMES)
+    controller.expandRow('en', true)
+    await nextTick()
+    expect(
+      wrapper.find('[data-id="hilos-table-cell-en-actions"]').exists(),
+    ).toBe(false)
+    expect(
+      wrapper
+        .findAll('button')
+        .every((button) =>
+          button.attributes('data-id')?.startsWith('hilos-table-expand-'),
+        ),
+    ).toBe(true)
+    expect(wrapper.text()).not.toContain('Actions')
+    wrapper.unmount()
   })
 })

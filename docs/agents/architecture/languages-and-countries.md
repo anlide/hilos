@@ -276,8 +276,7 @@ state, while the reflow supplies 2,550 country names.
 An empty string saved by a person is their value and is locked too. To give
 a name back to the catalog, delete it:
 
-- Deleting a base language name carries away its locale overrides
-  (not in the code yet — HIL-1490).
+- Deleting a base language name carries away its locale overrides.
 - Deleting a base country name carries away its locale overrides
   (not in the code yet — HIL-1501).
 - A base name of a known country in a known language immediately returns
@@ -286,13 +285,19 @@ a name back to the catalog, delete it:
   (not in the code yet — HIL-1501).
 - A country name for an own country or in an own language disappears entirely
   (not in the code yet — HIL-1501).
-- A deleted language name does not return: the catalog has no language names
-  (not in the code yet — HIL-1490).
+- A deleted language name does not return: the catalog has no language names.
 - Deleting a language-name override removes only that override, which never
-  returns because the catalog supplies no overrides
-  (not in the code yet — HIL-1490).
+  returns because the catalog supplies no overrides.
 - Deleting a country-name override has the same effect: only that override
   disappears and does not return (not in the code yet — HIL-1501).
+
+The ADMIN language names page offers `hilos_i18n_language_name_delete` and
+`hilos_i18n_language_name_override_delete`. Both carry `languageCode`,
+`inLanguageCode` and the literal `expectedName` captured after focusing the row;
+the override also carries `localeCode`. The library refuses a missing or changed
+name before writing. An empty string is a saved value, while `null` means no
+name or inheritance. Names have no `enabled` field: neither the language nor
+the locale needs switching off, and `locked` does not forbid manual deletion.
 
 Immediate restoration of a known country's base name is the owner's decision
 of 2026-10-04; restoration by a later synchronization belongs to HIL-1424.

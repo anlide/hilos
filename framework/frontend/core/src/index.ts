@@ -140,6 +140,13 @@ export {
   hilosI18nLanguageDelete,
 } from './admin/i18n/hilosI18nLanguageDelete.js'
 export {
+  HILOS_I18N_LANGUAGE_NAME_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_NAME_OVERRIDE_DELETE_ACTION,
+  HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
+  createHilosI18nLanguageNameDelete,
+  type HilosI18nLanguageNameDeleteTarget,
+} from './admin/i18n/hilosI18nLanguageNameDelete.js'
+export {
   HILOS_I18N_LANGUAGE_UPDATE_ACTION,
   HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
   HILOS_I18N_LANGUAGE_NATIVE_NAME_MAX,

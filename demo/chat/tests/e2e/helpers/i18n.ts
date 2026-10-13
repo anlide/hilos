@@ -11,6 +11,8 @@ const LOCALE_ON_COMMAND = 'test:i18n:locale:on'
 const LOCALE_DELETE_COMMAND = 'test:i18n:locale:delete'
 const COUNTRY_ON_COMMAND = 'test:i18n:country:on'
 const COUNTRY_OFF_COMMAND = 'test:i18n:country:off'
+const LANGUAGE_NAMES_SEED_COMMAND = 'test:i18n:language-names:seed'
+const LANGUAGE_NAMES_CLEAR_COMMAND = 'test:i18n:language-names:clear'
 
 const sendCommand = createCommandChannel({
   host: COMMAND_HOST,
@@ -79,4 +81,14 @@ export async function switchCountryOn(code: string): Promise<void> {
  */
 export async function switchCountryOff(code: string): Promise<void> {
   await sendCommand(COUNTRY_OFF_COMMAND, { code })
+}
+
+/** Create the fixed language names fixture through its owner and await commit. */
+export async function seedLanguageNamesFixture(): Promise<void> {
+  await sendCommand(LANGUAGE_NAMES_SEED_COMMAND, {})
+}
+
+/** Remove only the fixed language names fixture and await the owner's reply. */
+export async function clearLanguageNamesFixture(): Promise<void> {
+  await sendCommand(LANGUAGE_NAMES_CLEAR_COMMAND, {})
 }

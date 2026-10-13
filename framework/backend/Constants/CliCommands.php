@@ -279,6 +279,12 @@ final class CliCommands
      */
     public const string I18N_TEST_LANGUAGE_DELETE = 'test:i18n:language:delete';
 
+    /** Create the fixed language names fixture through its owner (test-only). */
+    public const string I18N_TEST_LANGUAGE_NAMES_SEED = 'test:i18n:language-names:seed';
+
+    /** Clear the fixed language names fixture through its owner (test-only). */
+    public const string I18N_TEST_LANGUAGE_NAMES_CLEAR = 'test:i18n:language-names:clear';
+
     /**
      * Remove a non-default built-in countryless locale fixture through its owner.
      *

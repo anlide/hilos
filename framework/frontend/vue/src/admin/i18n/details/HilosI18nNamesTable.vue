@@ -41,6 +41,9 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
       >
       <span v-else class="fw-medium">{{ row.name }}</span>
     </template>
+    <template #cell-actions="{ row }">
+      <slot name="name-actions" :row="row" />
+    </template>
     <template #detail-corrections="{ row }">
       <ul class="list-unstyled mb-0">
         <li
@@ -65,6 +68,7 @@ const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
             in “{{ row.nativeName }}”</span
           >
           <span v-else class="fw-medium">{{ correction.name }}</span>
+          <slot name="correction-actions" :row="row" :correction="correction" />
         </li>
       </ul>
     </template>

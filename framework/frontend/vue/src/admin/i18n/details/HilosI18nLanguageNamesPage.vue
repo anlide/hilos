@@ -11,15 +11,28 @@ import {
   createHilosI18nLanguageCard,
   createHilosI18nNamesTable,
   HILOS_I18N_LANGUAGE_NAMES,
+  HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
   HilosPages,
   type HilosI18nLanguageContext,
+  type HilosI18nLanguageNameDeleteTarget,
+  type HilosI18nNameRow,
 } from '@hilos/core'
-import { inject, onMounted, onUnmounted } from 'vue'
+import {
+  computed,
+  inject,
+  onMounted,
+  onUnmounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
+import LoadingButton from '../../../LoadingButton.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
+import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
@@ -40,8 +53,78 @@ const names = createHilosI18nNamesTable(
   HILOS_I18N_LANGUAGE_NAMES,
   language,
 )
+const copy = HILOS_I18N_LANGUAGE_NAME_DELETE_COPY
+const deleteOpen = ref(false)
+const target = shallowRef<HilosI18nLanguageNameDeleteTarget | null>(null)
+const focused = useSignal(names.controller.focusedRow)
+const currentLanguage = useSignal(language)
+const source = computed(() =>
+  card.value?.code === target.value?.languageCode &&
+  currentLanguage.value === target.value?.languageCode &&
+  focused.value?.code === target.value?.inLanguageCode
+    ? (focused.value ?? null)
+    : null,
+)
+let opening = 0
+
+function closeDelete(): void {
+  opening++
+  deleteOpen.value = false
+  names.controller.releaseFocus()
+}
+
+async function openDelete(
+  row: HilosI18nNameRow,
+  localeCode?: string,
+): Promise<void> {
+  if (deleteOpen.value) return
+  const attempt = ++opening
+  const languageCode = language.get()
+  const resolved = await names.controller.focusRow(row.code)
+  if (attempt !== opening) return
+  const fresh = names.controller.focusedRow.get()
+  const subject = card.value
+  if (
+    resolved === null ||
+    language.get() !== languageCode ||
+    subject?.code !== languageCode ||
+    fresh?.code !== row.code ||
+    fresh.name === null
+  ) {
+    closeDelete()
+    return
+  }
+  const expectedName =
+    localeCode === undefined
+      ? fresh.name
+      : fresh.corrections.find((item) => item.localeCode === localeCode)?.name
+  if (expectedName == null) {
+    closeDelete()
+    return
+  }
+  const coordinates = {
+    languageCode,
+    languageNativeName: subject.nativeName,
+    inLanguageCode: fresh.code,
+    inLanguageNativeName: fresh.nativeName,
+    expectedName,
+  }
+  target.value =
+    localeCode === undefined
+      ? { ...coordinates, kind: 'base' }
+      : { ...coordinates, kind: 'override', localeCode }
+  deleteOpen.value = true
+}
+
+watch(currentLanguage, closeDelete, { flush: 'sync' })
+watch(deleteOpen, (open) => {
+  if (!open) names.controller.releaseFocus()
+})
 onMounted(() => names.start())
-onUnmounted(() => names.dispose())
+onUnmounted(() => {
+  closeDelete()
+  names.dispose()
+})
 </script>
 
 <template>
@@ -51,7 +134,28 @@ onUnmounted(() => names.dispose())
         :card="card"
         :active-page="HilosPages.I18N_LANGUAGE_NAMES"
       />
-      <HilosI18nNamesTable :controller="names.controller" />
+      <HilosI18nNamesTable :controller="names.controller">
+        <template #name-actions="{ row }">
+          <LoadingButton
+            v-if="row.name !== null"
+            class="btn-sm btn-outline-danger"
+            :aria-label="copy.baseLabel(row.nativeName)"
+            :data-id="`i18n-names-delete-${row.code}`"
+            @click="openDelete(row)"
+            ><i class="bi bi-trash" aria-hidden="true"></i
+          ></LoadingButton>
+        </template>
+        <template #correction-actions="{ row, correction }">
+          <LoadingButton
+            v-if="correction.name !== null"
+            class="btn-sm btn-outline-danger"
+            :aria-label="copy.overrideLabel(correction.localeCode)"
+            :data-id="`i18n-names-delete-${correction.localeCode}`"
+            @click="openDelete(row, correction.localeCode)"
+            ><i class="bi bi-trash" aria-hidden="true"></i
+          ></LoadingButton>
+        </template>
+      </HilosI18nNamesTable>
     </template>
     <div
       v-else-if="loading"
@@ -70,5 +174,12 @@ onUnmounted(() => names.dispose())
     >
       Language details are no longer available.
     </p>
+    <HilosI18nLanguageNameDelete
+      :key="currentLanguage"
+      v-model="deleteOpen"
+      :context="context"
+      :target="target"
+      :source="source"
+    />
   </HilosAdminPage>
 </template>

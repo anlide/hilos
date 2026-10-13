@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosI18nNamesTable,
@@ -136,7 +136,9 @@ describe('createHilosI18nNamesTable', () => {
     })
     const corrections = HILOS_I18N_LANGUAGE_NAMES.frame.columns
     expect(
-      Array.isArray(corrections) ? corrections.at(-1) : undefined,
+      Array.isArray(corrections)
+        ? corrections.find((column) => column.key === 'corrections')
+        : undefined,
     ).toMatchObject({
       key: 'corrections',
       detail: true,
@@ -194,5 +196,63 @@ describe('createHilosI18nNamesTable', () => {
 
     expect(sent.at(-1)?.filter).toEqual({ country: 'gb' })
     table.dispose()
+  })
+})
+
+describe('names table actions and focus', () => {
+  it('declares the actions and their rendered fields only for language names', () => {
+    const columns = HILOS_I18N_LANGUAGE_NAMES.frame.columns
+    expect(
+      Array.isArray(columns) &&
+        columns.find((column) => column.key === 'actions'),
+    ).toEqual({
+      key: 'actions',
+      label: 'Actions',
+      reads: ['code', 'nativeName', 'name', 'corrections'],
+    })
+    const country = HILOS_I18N_COUNTRY_NAMES.frame.columns
+    expect(
+      Array.isArray(country) &&
+        country.some((column) => column.key === 'actions'),
+    ).toBe(false)
+  })
+
+  it('sends the native focus frames and follows the live row without removing it', () => {
+    const context = recordingContext([])
+    const sendFocus = vi.fn()
+    context.connection.sendTableRowFocus = sendFocus
+    context.connection.sendTableRendered = vi.fn()
+    const { controller } = createHilosI18nNamesTable(
+      context,
+      HILOS_I18N_LANGUAGE_NAMES,
+      createSignal('de'),
+    )
+    const slot = {
+      code: 'en',
+      nativeName: 'English',
+      name: '',
+      corrections: [BRITISH],
+    }
+    controller.ingestWindow([nameRow('en', slot)], 1, true, null, null, 100)
+    expect(controller.focusRow('en')?.name).toBe('')
+    expect(sendFocus).toHaveBeenLastCalledWith(
+      'hilos_i18n_language_names',
+      'hilosI18nLanguageNames',
+      'en',
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'en',
+      row: nameRow('en', { ...slot, name: null, corrections: [] }),
+    })
+    expect(controller.focusedRow.get()?.name).toBeNull()
+    expect(controller.rows.get()).toHaveLength(1)
+    controller.releaseFocus()
+    expect(controller.focusedRow.get()).toBeUndefined()
+    expect(sendFocus).toHaveBeenLastCalledWith(
+      'hilos_i18n_language_names',
+      'hilosI18nLanguageNames',
+      '',
+    )
   })
 })

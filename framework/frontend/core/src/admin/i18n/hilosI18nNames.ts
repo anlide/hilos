@@ -14,7 +14,10 @@ import { HilosPages, type HilosPageKey } from '../../routing/hilosPages.js'
 import { subscribeSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
-import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  type HilosTableColumnOf,
+} from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { type HilosI18nLanguageContext } from './hilosI18nLanguage.js'
@@ -148,7 +151,19 @@ export const HILOS_I18N_LANGUAGE_NAMES: HilosI18nNamesTarget = {
   tableKey: HILOS_I18N_LANGUAGE_NAMES_TABLE,
   filterKey: HILOS_I18N_LANGUAGE_NAMES_FILTER,
   frame: {
-    columns: HILOS_I18N_NAMES_COLUMNS,
+    columns: [
+      ...HILOS_I18N_NAMES_COLUMNS,
+      {
+        key: HILOS_TABLE_ACTIONS_KEY,
+        label: 'Actions',
+        reads: [
+          HilosI18nNameRowKey.code,
+          HilosI18nNameRowKey.nativeName,
+          HilosI18nNameRowKey.name,
+          HilosI18nNameRowKey.corrections,
+        ],
+      },
+    ],
     empty: {
       title: 'No other languages yet',
       hint: 'A name in another language can be written once that language is added.',
@@ -206,6 +221,12 @@ export function createHilosI18nNamesTable(
         target.page,
         target.tableKey,
         rendered,
+      ),
+    sendFocus: (rowKey) =>
+      context.connection.sendTableRowFocus(
+        target.page,
+        target.tableKey,
+        rowKey,
       ),
     initialFilter: { [target.filterKey]: subject.get() },
     frame: target.frame,
