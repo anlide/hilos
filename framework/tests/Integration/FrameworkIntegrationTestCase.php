@@ -16,13 +16,14 @@ use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use Throwable;
 
 /**
  * Base class for framework integration tests that use Hilos\Database\Database.
  *
- * Each test method runs with a fresh configure + connect; tearDown closes the connection so static
- * mysqli state in Database does not leak across tests in the same PHP process.
+ * Each case starts with only a fresh primary connection. Extra connections belong to that case;
+ * teardown closes every link and clears their configurations, including the optional journal.
  */
 abstract class FrameworkIntegrationTestCase extends TestCase
 {
@@ -74,6 +75,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        self::resetDatabaseConnections();
 
         foreach (self::CLAIMED_TABLES as $table) {
             TruthSourceRegistry::register($table, TruthSourceKeys::all(), self::TEST_AGENT_ID);
@@ -122,8 +124,7 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     }
 
     /**
-     * Ends the handler of a failing case - closing the transaction it left open - then connection
-     * index 0 when still open.
+     * Ends the handler of a failing case, then releases all of the case's connection state.
      *
      * The transaction goes first: closed with the connection instead, its levels would stay on
      * the stack as failed and every later case would be refused a start.
@@ -131,10 +132,18 @@ abstract class FrameworkIntegrationTestCase extends TestCase
     protected function tearDown(): void
     {
         Database::handlerEnd();
-        if (Database::isConnected()) {
-            Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
-        }
+        self::resetDatabaseConnections();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
+    }
+
+    /** A closed secondary link must not enable a feature in the next primary-only fixture. */
+    private static function resetDatabaseConnections(): void
+    {
+        foreach (Database::getConfiguredIndices() as $index) {
+            Database::close($index);
+        }
+        new ReflectionProperty(Database::class, 'configurations')->setValue(null, []);
+        new ReflectionProperty(Database::class, 'currentIndex')->setValue(null, DatabaseConnectionDefaults::PRIMARY_INDEX);
     }
 }

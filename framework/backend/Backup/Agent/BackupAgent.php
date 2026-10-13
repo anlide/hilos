@@ -77,6 +77,9 @@ use Hilos\Core\Exception\ProcessException;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
@@ -473,6 +476,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     /** The loaded backup schedule, used to map a fired daemon cron name to its scope. */
     private ?BackupSchedule $schedule = null;
 
+    /** Scheduled CREATE origin survives a failed supervisor tick until the run ends. */
+    private ?JournalReceiptData $cronOrigin = null;
+
+    /** Local hold of an accepted scheduled CREATE; manual creates, restores and shipping have none. */
+    private ?int $cronReceiptId = null;
+
     /**
      * Single in-memory pending slot for a manual create requested while a backup runs
      * (HIL-333). Coalesced (the last manual scope wins) and drained when the current run
@@ -585,14 +594,35 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * the same iteration as the operator command, before the queues: the receipt that pays the
      * debt already lets go from the signal handler, and this pass is the one that expires the wait.
      *
+     * A failed poll closes its receipt attempt but keeps the scheduled run's origin. The next
+     * tick opens a new receipt before continuing that same child; a reset run has no continuation.
+     *
      * @throws ProcessException When the running child cannot be polled, read or terminated
      * @throws EnvException When a backup env value is missing or cannot be read as its type
+     * @throws DatabaseException When starting, applying or releasing the cron receipt fails
      * @throws HilosException Whatever finishing a restore that ended on this tick raises
      * @throws InvalidArgumentException When the failure notice to the initiator, a hand-over frame, or the parked freeze-lift cannot be named
      */
     public function onTick(): void
     {
-        $this->pollRunningBackup();
+        try {
+            if ($this->cronReceiptId === null && $this->cronOrigin !== null) {
+                $this->cronReceiptId = JournalReceiptScope::start($this->cronOrigin);
+            }
+            JournalReceiptScope::runPart($this->cronReceiptId, $this->getId(), fn () => $this->pollRunningBackup());
+        } catch (Throwable $failure) {
+            $this->finishCronAttempt();
+            throw $failure;
+        } finally {
+            if ($this->runKind !== BackupRunKind::CREATE || $this->childProcess === null) {
+                $this->cronOrigin = null;
+                $this->finishCronAttempt();
+            }
+        }
+        // A queued manual CREATE starts after the finished cron part restored the connection.
+        if ($this->childProcess === null && !$this->restoreEngaged()) {
+            $this->drainPendingCreate();
+        }
 
         try {
             $this->pollShipping();
@@ -635,53 +665,60 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      */
     public function onStop(): void
     {
-        if ($this->childProcess !== null) {
-            $this->childProcess->halt();
-        }
-        // A killed transfer loses nothing: the local archive is untouched, the sidecar still says
-        // the copy has not landed, and the next pass starts it over. The staged ciphertext goes
-        // with it - full-size and useless to a resumed transfer, since age writes a different one
-        // every time.
-        if ($this->shipProcess !== null) {
-            $this->shipProcess->halt();
-            $this->discardStagedCiphertext();
-        }
-        if ($this->restoreEngaged()) {
-            // The pending create slot is dropped first: the finalizer drains it into
-            // startBackup, and a stopping agent must not spawn a child nobody will poll.
-            $this->pendingScope = null;
-            $this->pendingInitiator = null;
-            $this->pendingInitiatorRequestId = null;
-            // Only when the child half has not run yet. Past it the outcome is already recorded
-            // and only the barrier is outstanding, and putting the run through the finalizer a
-            // second time would re-announce the swap and overwrite what the child actually did
-            // with "stopped during restore".
-            if (!$this->awaitingRehydrate()) {
-                // A restore admitted but not yet spawned holds the freeze under its pending id
-                // alone, so the finalizer is given that id the same way expireStalePendingRestore()
-                // gives it: without one it refuses to run, and the node stays frozen with nobody
-                // left to lift it.
-                $this->currentBackupId ??= $this->pendingRestoreId;
-                // Through the one finalizer, so a stopping agent records the outcome and lifts
-                // the freeze exactly like any other failed run. Only a child that actually ran
-                // can have been writing: a restore still waiting for its freeze touched nothing,
-                // which is the same answer expireStalePendingRestore() gives in that state.
-                $this->finishRestore(
-                    false,
-                    'backup agent stopped during restore',
-                    databaseTouched: $this->childProcess !== null,
-                );
+        try {
+            if ($this->childProcess !== null) {
+                JournalReceiptScope::runPart($this->cronReceiptId, $this->getId(), fn () => $this->childProcess->halt());
             }
-            // Whether the barrier was already open or the finalizer just opened it, an agent that
-            // is going away cannot wait for it: settled here as unclosed, so the node stays shut -
-            // the same fail-closed answer a timeout would have given.
-            if ($this->awaitingRehydrate()) {
-                $this->completeRestore(false, ['backup agent stopped before every process re-read']);
+            // A killed transfer loses nothing: the local archive is untouched, the sidecar still says
+            // the copy has not landed, and the next pass starts it over. The staged ciphertext goes
+            // with it - full-size and useless to a resumed transfer, since age writes a different one
+            // every time.
+            if ($this->shipProcess !== null) {
+                $this->shipProcess->halt();
+                $this->discardStagedCiphertext();
             }
+            if ($this->restoreEngaged()) {
+                // The pending create slot is dropped first: the finalizer drains it into
+                // startBackup, and a stopping agent must not spawn a child nobody will poll.
+                $this->pendingScope = null;
+                $this->pendingInitiator = null;
+                $this->pendingInitiatorRequestId = null;
+                // Only when the child half has not run yet. Past it the outcome is already recorded
+                // and only the barrier is outstanding, and putting the run through the finalizer a
+                // second time would re-announce the swap and overwrite what the child actually did
+                // with "stopped during restore".
+                if (!$this->awaitingRehydrate()) {
+                    // A restore admitted but not yet spawned holds the freeze under its pending id
+                    // alone, so the finalizer is given that id the same way expireStalePendingRestore()
+                    // gives it: without one it refuses to run, and the node stays frozen with nobody
+                    // left to lift it.
+                    $this->currentBackupId ??= $this->pendingRestoreId;
+                    // Through the one finalizer, so a stopping agent records the outcome and lifts
+                    // the freeze exactly like any other failed run. Only a child that actually ran
+                    // can have been writing: a restore still waiting for its freeze touched nothing,
+                    // which is the same answer expireStalePendingRestore() gives in that state.
+                    $this->finishRestore(
+                        false,
+                        'backup agent stopped during restore',
+                        databaseTouched: $this->childProcess !== null,
+                    );
+                }
+                // Whether the barrier was already open or the finalizer just opened it, an agent that
+                // is going away cannot wait for it: settled here as unclosed, so the node stays shut -
+                // the same fail-closed answer a timeout would have given.
+                if ($this->awaitingRehydrate()) {
+                    $this->completeRestore(false, ['backup agent stopped before every process re-read']);
+                }
+            }
+            $this->closeDirectoryWatch();
+            JournalReceiptScope::runPart($this->cronReceiptId, $this->getId(), function (): void {
+                $this->resetRun();
+                $this->clearRuntime();
+            });
+        } finally {
+            $this->cronOrigin = null;
+            $this->finishCronAttempt();
         }
-        $this->closeDirectoryWatch();
-        $this->resetRun();
-        $this->clearRuntime();
     }
 
     /**
@@ -695,7 +732,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * not a backup schedule entry is ignored, so a shared default-cron owner may forward
      * unrelated names here harmlessly.
      *
-     * @param SignalDataInterface $data Cron signal payload (unused; the name carries the routing)
+     * @param SignalDataInterface $data Cron payload carrying the expression that actually fired, absent on legacy frames
      * @param string $source Signal source (unused)
      * @param string $name Fired cron name, matched against the backup schedule
      * @throws EnvException When a backup env value is missing or cannot be read as its type
@@ -711,7 +748,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
             return;
         }
 
-        $this->startBackup($scope);
+        $this->startScheduledBackup($scope, $name, $data instanceof CronSignalDTO ? $data->cronExpression : null, true);
     }
 
     /**
@@ -3053,6 +3090,12 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
      * Evaluated on the cluster leader (the agent is monopolistic). A due entry calls
      * {@see startBackup()}, which is skipped when a backup is already running, so an overlap is
      * dropped rather than queued. Each rule checks at most once per minute ({@see CronRule}).
+     *
+     * @throws EnvException When a required backup setting cannot be read
+     * @throws FramePopOrderException When the index rescan leaves the execution frame stack imbalanced
+     * @throws InvalidArgumentException When a failure notice cannot be named
+     * @throws DatabaseException When a receipt or the initiator lookup fails
+     * @throws LogicException When the sessions collection is not configured
      */
     private function checkSchedule(): void
     {
@@ -3064,9 +3107,64 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
 
         foreach ($this->agentSchedule as $job) {
             if ($job->rule->shouldRun()) {
-                $this->startBackup($job->scope);
+                $this->startScheduledBackup($job->scope, $job->rule->name, $job->rule->expression);
             }
         }
+    }
+
+    /**
+     * Starts a scheduled CREATE, retaining attribution only if the guarded start accepted it.
+     * A daemon dispatch already owns the receipt; a local rule creates its own attempt.
+     *
+     * @param BackupScope $scope Scheduled backup scope
+     * @param string $ruleName Fired rule name
+     * @param ?string $expression Expression captured at firing, or null for a legacy frame
+     * @param bool $fromDispatch Whether an existing CRON dispatch receipt may be retained
+     * @throws EnvException When a required backup setting cannot be read
+     * @throws FramePopOrderException When the index rescan leaves the execution frame stack imbalanced
+     * @throws InvalidArgumentException When a failure notice cannot be named
+     * @throws DatabaseException When a receipt or the initiator lookup fails
+     * @throws LogicException When the sessions collection is not configured
+     */
+    private function startScheduledBackup(BackupScope $scope, string $ruleName, ?string $expression, bool $fromDispatch = false): void
+    {
+        if ($this->childProcess !== null || $this->restoreEngaged()) {
+            $this->startBackup($scope);
+            return;
+        }
+
+        $origin = JournalReceiptData::cron($ruleName, $expression, $this->getId());
+        if ($fromDispatch && JournalReceiptScope::currentId() !== null) {
+            $this->startBackup($scope);
+            if ($this->childProcess !== null && $this->runKind === BackupRunKind::CREATE) {
+                $this->cronOrigin = $origin;
+                $this->cronReceiptId = JournalReceiptScope::retainCurrent();
+            }
+            return;
+        }
+
+        $receiptId = JournalReceiptScope::start($origin);
+        $accepted = false;
+        try {
+            JournalReceiptScope::runPart($receiptId, $this->getId(), fn () => $this->startBackup($scope));
+            $accepted = $this->childProcess !== null && $this->runKind === BackupRunKind::CREATE;
+            if ($accepted) {
+                $this->cronOrigin = $origin;
+                $this->cronReceiptId = $receiptId;
+            }
+        } finally {
+            if (!$accepted) {
+                JournalReceiptScope::finish($receiptId);
+            }
+        }
+    }
+
+    /** @throws DatabaseException When receipt finalization cannot resolve its connection */
+    private function finishCronAttempt(): void
+    {
+        $receiptId = $this->cronReceiptId;
+        $this->cronReceiptId = null;
+        JournalReceiptScope::finish($receiptId);
     }
 
     /**
@@ -3502,14 +3600,13 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
         }
         $this->resetRun();
         $this->clearRuntime();
-        $this->drainPendingCreate();
     }
 
     /**
      * Runs a manual create coalesced into the pending slot while the last run was busy.
      *
-     * Called once the lock is released at the end of {@see finishRun()}: the slot holds at
-     * most one scope (last manual request wins), so it starts exactly one follow-up backup.
+     * Called after the finished run's receipt scope has closed, or after restore completion.
+     * The slot holds at most one scope (last manual request wins), so it starts one follow-up backup.
      * Its requester travels with it, so a queued create still reports its own failure.
      * @throws FramePopOrderException When a stamped index rescan leaves the execution frame stack imbalanced
      */
@@ -3781,6 +3878,7 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     private function resetRun(): void
     {
         $this->childProcess = null;
+        $this->cronOrigin = null;
         $this->childProgressTail = '';
         $this->lastProgressBeat = 0.0;
         $this->runKind = null;

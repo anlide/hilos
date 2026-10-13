@@ -27,6 +27,8 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Item\DataExport;
 use Hilos\Fs\Context\FsContext;
@@ -137,7 +139,10 @@ abstract class AbstractDataExportAgent extends AbstractAgent
             return;
         }
         if ($this->expireRule?->shouldRun() === true) {
-            $this->expireCopies();
+            JournalReceiptScope::run(
+                JournalReceiptData::cron(self::EXPIRE_RULE, $this->expireRule->expression, $this->getId()),
+                fn () => $this->expireCopies(),
+            );
         }
         $this->buildNext();
     }

@@ -20,6 +20,8 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
@@ -56,6 +58,8 @@ use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Random\RandomException;
+
+use Throwable;
 
 /**
  * The files library: the one owner of the files registry (HIL-336).
@@ -146,6 +150,9 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     /** Whether a full sweep batch that did something asks the next tick to continue immediately */
     private bool $filesSweepBacklog = false;
 
+    /** Receipt retained while the unbound-file sweep has more batches. */
+    private ?int $filesSweepReceiptId = null;
+
     /**
      * Arms the unbound-file sweep.
      */
@@ -165,7 +172,23 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->sweepUnboundFiles();
+        if (!$this->filesSweepBacklog) {
+            $this->filesSweepReceiptId = JournalReceiptScope::start(
+                JournalReceiptData::cron(self::FILES_SWEEP_RULE, $this->filesSweepRule->expression, $this->getId()),
+            );
+        }
+        try {
+            JournalReceiptScope::runPart($this->filesSweepReceiptId, $this->getId(), function (): void {
+                $this->sweepUnboundFiles();
+            });
+        } catch (Throwable $failure) {
+            $this->filesSweepBacklog = false;
+            throw $failure;
+        } finally {
+            if (!$this->filesSweepBacklog) {
+                $this->finishFilesSweep();
+            }
+        }
     }
 
     /** @return list<CronRule> Current unbound-file sweep schedule */
@@ -175,11 +198,13 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     }
 
     /**
-     * The library holds nothing across a stop: its state is the registry table, which outlives
-     * the process that owns it.
+     * Releases an unfinished scheduled sweep; registry rows remain available to the next owner.
+     *
+     * @throws DatabaseException When receipt finalization cannot resolve its connection
      */
     public function onStop(): void
     {
+        $this->finishFilesSweep();
     }
 
     /**
@@ -710,6 +735,15 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
         } catch (FsException $e) {
             $this->logAgentError("Cannot undo the file {$storedName}: {$e->getMessage()}");
         }
+    }
+
+    /** @throws DatabaseException When receipt finalization cannot resolve its connection */
+    private function finishFilesSweep(): void
+    {
+        $receiptId = $this->filesSweepReceiptId;
+        $this->filesSweepReceiptId = null;
+        $this->filesSweepBacklog = false;
+        JournalReceiptScope::finish($receiptId);
     }
 
     /**

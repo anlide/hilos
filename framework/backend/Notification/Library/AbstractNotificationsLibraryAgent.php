@@ -41,6 +41,8 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -297,11 +299,16 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      * Moved here whole from {@see AbstractHilosIndexAgent} (HIL-771), schedule, idempotence
      * and skip-when-unconfigured included: what it does is delete rows from the journal, and
      * the journal is this library's.
+     *
+     * @throws DatabaseException When the cron receipt cannot be opened or closed
      */
     public function onTick(): void
     {
         if ($this->deliveryLogPruneRule !== null && $this->deliveryLogPruneRule->shouldRun()) {
-            $this->pruneDeliveryLog();
+            JournalReceiptScope::run(
+                JournalReceiptData::cron(self::DELIVERY_LOG_PRUNE_RULE, $this->deliveryLogPruneRule->expression, $this->getId()),
+                fn () => $this->pruneDeliveryLog(),
+            );
         }
     }
 

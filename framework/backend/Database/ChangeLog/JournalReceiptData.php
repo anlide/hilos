@@ -74,4 +74,23 @@ final readonly class JournalReceiptData
     {
         return new self(null, null, null, 'agent', $action, $initiatorAgentId, $initiatorAgentId);
     }
+
+    /**
+     * @param string $ruleName Scheduled rule name
+     * @param ?string $cronExpression Schedule captured when this attempt started, or null for legacy signals
+     * @param string $initiatorAgentId Agent that started the attempt
+     * @return self Cron attempt attribution without job parameters or personal identifiers
+     */
+    public static function cron(string $ruleName, ?string $cronExpression, string $initiatorAgentId): self
+    {
+        return new self(
+            null,
+            null,
+            null,
+            'cron',
+            $ruleName,
+            $initiatorAgentId,
+            $cronExpression === null ? $ruleName : $ruleName . ' (' . $cronExpression . ')',
+        );
+    }
 }

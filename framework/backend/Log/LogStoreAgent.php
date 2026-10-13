@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Log;
 
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\Database\DatabaseException;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
@@ -361,6 +364,7 @@ final class LogStoreAgent extends AbstractAgent
      * second time (HIL-480).
      *
      * @throws InvalidArgumentException When a frame to a following viewer or to the aggregator cannot be named
+     * @throws DatabaseException When scheduled rotation cannot open or close its receipt
      */
     public function onTick(): void
     {
@@ -431,6 +435,7 @@ final class LogStoreAgent extends AbstractAgent
      *
      * @param float $now Monotonic-enough wall clock of the walk this check rides
      * @throws InvalidArgumentException When the frame announcing the new batch cannot be named
+     * @throws DatabaseException When a cron receipt cannot be opened or closed
      */
     public function rotateIfDue(float $now): void
     {
@@ -442,26 +447,40 @@ final class LogStoreAgent extends AbstractAgent
         }
 
         $this->refreshPolicy();
-        if (!$this->policy->isActive() || !$this->shouldRotate($now, $rotator)) {
+        if (!$this->policy->isActive()) {
+            return;
+        }
+        $cronDue = $this->cronRule?->shouldRun() ?? false;
+        if (!$cronDue && !$this->shouldRotate($now, $rotator)) {
             return;
         }
 
-        $this->lastRotationAt = $now;
-        $report = $this->rotateOnce($rotator);
-        // Hung on the ATTEMPT and not on its outcome: a node quiet enough to have nothing to move
-        // makes no batch, and a cleanup waiting for one would never run there at all.
-        $this->pruneTakenBatches((int)$now);
-        if ($report?->batchDirName === null) {
-            return;
-        }
+        $rotate = function () use ($now, $rotator): void {
+            $this->lastRotationAt = $now;
+            $report = $this->rotateOnce($rotator);
+            // Hung on the ATTEMPT and not on its outcome: a node quiet enough to have nothing to move
+            // makes no batch, and a cleanup waiting for one would never run there at all.
+            $this->pruneTakenBatches((int)$now);
+            if ($report?->batchDirName === null) {
+                return;
+            }
 
-        $this->logAgentInfo("Log rotation: moved {$report->movedCount} live log file(s)");
-        // Out of turn, both of them: a batch appeared this instant, and the screen would otherwise
-        // learn of it a full walk and a push interval later.
-        $this->lastFullScanAt = $now;
-        $this->lastLiveScanAt = $now;
-        $this->walkStore((int)$now);
-        $this->pushIndex();
+            $this->logAgentInfo("Log rotation: moved {$report->movedCount} live log file(s)");
+            // Out of turn, both of them: a batch appeared this instant, and the screen would otherwise
+            // learn of it a full walk and a push interval later.
+            $this->lastFullScanAt = $now;
+            $this->lastLiveScanAt = $now;
+            $this->walkStore((int)$now);
+            $this->pushIndex();
+        };
+        if ($cronDue) {
+            JournalReceiptScope::run(
+                JournalReceiptData::cron($this->cronRule->name, $this->cronRule->expression, $this->getId()),
+                $rotate,
+            );
+        } else {
+            $rotate();
+        }
     }
 
     /**
@@ -592,7 +611,7 @@ final class LogStoreAgent extends AbstractAgent
     }
 
     /**
-     * Evaluates the axes in cheapest-first order.
+     * Evaluates the numeric axes after the caller has checked the cron axis.
      *
      * @param float $now Current wall clock, the age-axis reference
      * @param LogRotator $rotator Rotator whose kept names the size axis leaves out
@@ -600,9 +619,6 @@ final class LogStoreAgent extends AbstractAgent
      */
     private function shouldRotate(float $now, LogRotator $rotator): bool
     {
-        if ($this->cronRule?->shouldRun() ?? false) {
-            return true;
-        }
         if ($this->policy->ageExceeded($now - $this->lastRotationAt)) {
             return true;
         }

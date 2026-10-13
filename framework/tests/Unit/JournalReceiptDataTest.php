@@ -8,7 +8,7 @@ use Hilos\Database\ChangeLog\JournalReceiptData;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for change log journal receipt attribution factory methods (HIL-1455).
+ * Unit tests for change log journal receipt attribution factory methods (HIL-1455, HIL-1456).
  */
 final class JournalReceiptDataTest extends TestCase
 {
@@ -36,6 +36,33 @@ final class JournalReceiptDataTest extends TestCase
         $this->assertSame('admin:grant', $receipt->action);
         $this->assertNull($receipt->agent);
         $this->assertSame('admin:grant', $receipt->source);
+    }
+
+    /** Pins the immutable source captured at the start of a cron attempt. */
+    public function testCronAttributionCarriesTheRuleAndExpressionWithoutAPerson(): void
+    {
+        $receipt = JournalReceiptData::cron('second_factor_sweep', '*/5 * * * *', 'users_library');
+
+        $this->assertNull($receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
+        $this->assertSame('cron', $receipt->channel);
+        $this->assertSame('second_factor_sweep', $receipt->action);
+        $this->assertSame('users_library', $receipt->agent);
+        $this->assertSame('second_factor_sweep (*/5 * * * *)', $receipt->source);
+    }
+
+    /** Legacy signals must not acquire an invented schedule. */
+    public function testCronAttributionWithoutExpressionUsesOnlyTheRuleName(): void
+    {
+        $receipt = JournalReceiptData::cron('legacy_sweep', null, 'users_library');
+
+        $this->assertSame('legacy_sweep', $receipt->source);
+        $this->assertSame('legacy_sweep', $receipt->action);
+        $this->assertSame('cron', $receipt->channel);
+        $this->assertNull($receipt->actorUserId);
+        $this->assertNull($receipt->subjectUserId);
+        $this->assertNull($receipt->sessionId);
     }
 
     public function testWebAttributionWithSession(): void

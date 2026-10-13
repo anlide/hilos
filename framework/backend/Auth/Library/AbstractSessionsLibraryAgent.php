@@ -139,6 +139,8 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Actions\Item\SessionActions;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
@@ -724,8 +726,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Whether a full sweep batch with removals asks the next tick to continue immediately */
     private bool $sessionSweepBacklog = false;
 
+    /** Receipt of this unfinished local sweep, separate from every other job. */
+    private ?int $sessionSweepReceiptId = null;
+
     /** Whether a full access log batch asks the next tick to continue immediately */
     private bool $accessLogSweepBacklog = false;
+
+    /** Receipt of this unfinished local sweep, separate from every other job. */
+    private ?int $accessLogSweepReceiptId = null;
 
     /** @var array<int, AccountStanding> Standing last sent to every tab of each person with a live tab here (HIL-945) */
     private array $publishedStanding = [];
@@ -863,8 +871,16 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     public function onStop(): void
     {
-        if ($this->hasSignInSurface()) {
-            $this->endOpenSignIns(null);
+        try {
+            if ($this->hasSignInSurface()) {
+                $this->endOpenSignIns(null);
+            }
+        } finally {
+            try {
+                $this->finishSessionSweep();
+            } finally {
+                $this->finishAccessLogSweep();
+            }
         }
     }
 
@@ -964,76 +980,110 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $connections = Hilos::$rt?->sessionConnectionsSource();
-        $liveSessionTokens = [];
-        if ($connections !== null) {
-            foreach ($connections as $connection) {
-                $sessionToken = $connection->sessionToken;
-                if ($sessionToken !== null && $sessionToken !== '') {
-                    $liveSessionTokens[$sessionToken] = true;
-                }
-            }
-        }
-
-        $expired = Hilos::$db->sessions->findExpired(self::SESSION_SWEEP_BATCH);
-        $neverReturned = $connections === null
-            ? []
-            : Hilos::$db->sessions->findNeverReturned(
-                date('Y-m-d H:i:s', time() - self::NEVER_RETURNED_GRACE_SECONDS),
-                self::SESSION_SWEEP_BATCH,
+        if (!$this->sessionSweepBacklog) {
+            $this->sessionSweepReceiptId = JournalReceiptScope::start(
+                JournalReceiptData::cron(self::SESSION_SWEEP_RULE, $this->sessionSweepRule->expression, $this->getId()),
             );
-        $deletedSessionIds = [];
-        $deletedSessionTokens = [];
-        $expiredCount = 0;
-        $neverReturnedCount = 0;
-
+        }
         try {
-            foreach ($expired as $session) {
-                if ($session->id === null
-                    || isset($deletedSessionIds[$session->id])
-                    || isset($liveSessionTokens[$session->token])
-                ) {
-                    continue;
+            JournalReceiptScope::runPart($this->sessionSweepReceiptId, $this->getId(), function (): void {
+                $connections = Hilos::$rt?->sessionConnectionsSource();
+                $liveSessionTokens = [];
+                if ($connections !== null) {
+                    foreach ($connections as $connection) {
+                        $sessionToken = $connection->sessionToken;
+                        if ($sessionToken !== null && $sessionToken !== '') {
+                            $liveSessionTokens[$sessionToken] = true;
+                        }
+                    }
                 }
 
-                $sessionId = $session->id;
-                $sessionToken = $session->token;
-                $session->actions->delete();
-                $deletedSessionIds[$sessionId] = true;
-                $deletedSessionTokens[] = $sessionToken;
-                $expiredCount++;
-            }
+                $expired = Hilos::$db->sessions->findExpired(self::SESSION_SWEEP_BATCH);
+                $neverReturned = $connections === null
+                    ? []
+                    : Hilos::$db->sessions->findNeverReturned(
+                        date('Y-m-d H:i:s', time() - self::NEVER_RETURNED_GRACE_SECONDS),
+                        self::SESSION_SWEEP_BATCH,
+                    );
+                $deletedSessionIds = [];
+                $deletedSessionTokens = [];
+                $expiredCount = 0;
+                $neverReturnedCount = 0;
 
-            foreach ($neverReturned as $session) {
-                if ($session->id === null
-                    || isset($deletedSessionIds[$session->id])
-                    || isset($liveSessionTokens[$session->token])
-                ) {
-                    continue;
+                try {
+                    foreach ($expired as $session) {
+                        if ($session->id === null
+                            || isset($deletedSessionIds[$session->id])
+                            || isset($liveSessionTokens[$session->token])
+                        ) {
+                            continue;
+                        }
+
+                        $sessionId = $session->id;
+                        $sessionToken = $session->token;
+                        $session->actions->delete();
+                        $deletedSessionIds[$sessionId] = true;
+                        $deletedSessionTokens[] = $sessionToken;
+                        $expiredCount++;
+                    }
+
+                    foreach ($neverReturned as $session) {
+                        if ($session->id === null
+                            || isset($deletedSessionIds[$session->id])
+                            || isset($liveSessionTokens[$session->token])
+                        ) {
+                            continue;
+                        }
+
+                        $sessionId = $session->id;
+                        $sessionToken = $session->token;
+                        $session->actions->delete();
+                        $deletedSessionIds[$sessionId] = true;
+                        $deletedSessionTokens[] = $sessionToken;
+                        $neverReturnedCount++;
+                    }
+                } finally {
+                    $this->announceSweptSessions($deletedSessionTokens);
                 }
 
-                $sessionId = $session->id;
-                $sessionToken = $session->token;
-                $session->actions->delete();
-                $deletedSessionIds[$sessionId] = true;
-                $deletedSessionTokens[] = $sessionToken;
-                $neverReturnedCount++;
-            }
+                $deletedCount = $expiredCount + $neverReturnedCount;
+                $this->sessionSweepBacklog = (
+                    count($expired) === self::SESSION_SWEEP_BATCH
+                    || count($neverReturned) === self::SESSION_SWEEP_BATCH
+                ) && $deletedCount > 0;
+
+                if ($deletedCount > 0) {
+                    $this->logAgentInfo(
+                        "Session sweep: removed {$expiredCount} expired, {$neverReturnedCount} never returned",
+                    );
+                }
+            });
+        } catch (Throwable $failure) {
+            $this->sessionSweepBacklog = false;
+            throw $failure;
         } finally {
-            $this->announceSweptSessions($deletedSessionTokens);
+            if (!$this->sessionSweepBacklog) {
+                $this->finishSessionSweep();
+            }
         }
+    }
 
-        $deletedCount = $expiredCount + $neverReturnedCount;
-        $this->sessionSweepBacklog = (
-            count($expired) === self::SESSION_SWEEP_BATCH
-            || count($neverReturned) === self::SESSION_SWEEP_BATCH
-        ) && $deletedCount > 0;
+    /** @throws DatabaseException When receipt finalization cannot resolve its connection */
+    private function finishSessionSweep(): void
+    {
+        $receiptId = $this->sessionSweepReceiptId;
+        $this->sessionSweepReceiptId = null;
+        $this->sessionSweepBacklog = false;
+        JournalReceiptScope::finish($receiptId);
+    }
 
-        if ($deletedCount > 0) {
-            $this->logAgentInfo(
-                "Session sweep: removed {$expiredCount} expired, {$neverReturnedCount} never returned",
-            );
-        }
+    /** @throws DatabaseException When receipt finalization cannot resolve its connection */
+    private function finishAccessLogSweep(): void
+    {
+        $receiptId = $this->accessLogSweepReceiptId;
+        $this->accessLogSweepReceiptId = null;
+        $this->accessLogSweepBacklog = false;
+        JournalReceiptScope::finish($receiptId);
     }
 
     /**
@@ -1079,12 +1129,17 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $released = Hilos::$db?->sessions->actions->sweepStalePendingRegistrations(
-            Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int(),
+        JournalReceiptScope::run(
+            JournalReceiptData::cron(self::PENDING_REGISTRATION_SWEEP_RULE, $this->pendingRegistrationSweepRule->expression, $this->getId()),
+            function (): void {
+                $released = Hilos::$db?->sessions->actions->sweepStalePendingRegistrations(
+                    Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int(),
+                );
+                if ($released !== null && $released > 0) {
+                    $this->logAgentInfo("Pending registration sweep: cleared {$released} abandoned registration(s)");
+                }
+            },
         );
-        if ($released !== null && $released > 0) {
-            $this->logAgentInfo("Pending registration sweep: cleared {$released} abandoned registration(s)");
-        }
     }
 
     /**
@@ -5921,13 +5976,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        foreach (Hilos::$db->accountDeletions->dueBy(TimeHelper::getSqlDateTime()) as $deletion) {
-            try {
-                $this->eraseAccount($deletion);
-            } catch (HilosException | RandomException $e) {
-                $this->logAgentError("Account erasure of user {$deletion->userId} failed, retried next minute: {$e->getMessage()}");
-            }
-        }
+        JournalReceiptScope::run(
+            JournalReceiptData::cron(self::ACCOUNT_DELETION_SWEEP_RULE, $this->accountDeletionSweepRule->expression, $this->getId()),
+            function (): void {
+                foreach (Hilos::$db->accountDeletions->dueBy(TimeHelper::getSqlDateTime()) as $deletion) {
+                    try {
+                        $this->eraseAccount($deletion);
+                    } catch (HilosException | RandomException $e) {
+                        $this->logAgentError("Account erasure of user {$deletion->userId} failed, retried next minute: {$e->getMessage()}");
+                    }
+                }
+            },
+        );
     }
 
     /**
@@ -5962,11 +6022,27 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $before = AccessLogPolicy::keepsLog() ? AccessLogPolicy::cutoff(time()) : TimeHelper::getSqlDateTime();
-        $removed = Hilos::$db->accessLogEntries->actions->deleteOlderThan($before, self::ACCESS_LOG_SWEEP_BATCH);
-        $this->accessLogSweepBacklog = $removed === self::ACCESS_LOG_SWEEP_BATCH;
-        if ($removed > 0) {
-            $this->logAgentInfo("Access log sweep: removed {$removed}");
+        if (!$this->accessLogSweepBacklog) {
+            $this->accessLogSweepReceiptId = JournalReceiptScope::start(
+                JournalReceiptData::cron(self::ACCESS_LOG_SWEEP_RULE, $this->accessLogSweepRule->expression, $this->getId()),
+            );
+        }
+        try {
+            JournalReceiptScope::runPart($this->accessLogSweepReceiptId, $this->getId(), function (): void {
+                $before = AccessLogPolicy::keepsLog() ? AccessLogPolicy::cutoff(time()) : TimeHelper::getSqlDateTime();
+                $removed = Hilos::$db->accessLogEntries->actions->deleteOlderThan($before, self::ACCESS_LOG_SWEEP_BATCH);
+                $this->accessLogSweepBacklog = $removed === self::ACCESS_LOG_SWEEP_BATCH;
+                if ($removed > 0) {
+                    $this->logAgentInfo("Access log sweep: removed {$removed}");
+                }
+            });
+        } catch (Throwable $failure) {
+            $this->accessLogSweepBacklog = false;
+            throw $failure;
+        } finally {
+            if (!$this->accessLogSweepBacklog) {
+                $this->finishAccessLogSweep();
+            }
         }
     }
 

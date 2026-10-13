@@ -172,6 +172,8 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Database\Schema\EntitySchemaAxis;
@@ -748,6 +750,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** A full batch means another pass is due on the next tick. */
     private bool $verificationSweepBacklog = false;
 
+    /** Receipt retained only while this verification sweep has more batches. */
+    private ?int $verificationSweepReceiptId = null;
+
     /** Minute in which the schedule setting was last checked. */
     private int $verificationSweepCheckedMinute = -1;
 
@@ -773,10 +778,13 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * The library holds nothing across a stop: its state is the database.
+     * Releases the unfinished local verification attempt; queued handovers finish at their recipients.
+     *
+     * @throws DatabaseException When receipt finalization cannot resolve its connection
      */
     public function onStop(): void
     {
+        $this->finishVerificationSweep();
     }
 
     /**
@@ -802,7 +810,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public function onTick(): void
     {
         if ($this->secondFactorResetSweepRule?->shouldRun() === true) {
-            new SecondFactorResetSweeper($this)->sweep();
+            JournalReceiptScope::run(
+                JournalReceiptData::cron(self::SECOND_FACTOR_RESET_SWEEP_RULE, $this->secondFactorResetSweepRule->expression, $this->getId()),
+                fn () => new SecondFactorResetSweeper($this)->sweep(),
+            );
         }
 
         $this->sweepRegistrationReservations();
@@ -854,19 +865,24 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             return;
         }
 
-        foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
-            try {
-                $this->sendToAgent(
-                    HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED,
-                    new AuthRegistrationHoldExpiredSignalData(
-                        $freed[ObjectRegistrationReservation::sessionToken],
-                        $freed[ObjectRegistrationReservation::identifier],
-                    ),
-                );
-            } catch (InvalidArgumentException $failure) {
-                $this->logAgentWarning('Expired registration hold could not be reported: ' . $failure->getMessage());
-            }
-        }
+        JournalReceiptScope::run(
+            JournalReceiptData::cron(self::RESERVATION_SWEEP_RULE, $this->reservationSweepRule->expression, $this->getId()),
+            function (): void {
+                foreach (new RegistrationReservationSweeper()->sweep() as $freed) {
+                    try {
+                        $this->sendToAgent(
+                            HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED,
+                            new AuthRegistrationHoldExpiredSignalData(
+                                $freed[ObjectRegistrationReservation::sessionToken],
+                                $freed[ObjectRegistrationReservation::identifier],
+                            ),
+                        );
+                    } catch (InvalidArgumentException $failure) {
+                        $this->logAgentWarning('Expired registration hold could not be reported: ' . $failure->getMessage());
+                    }
+                }
+            },
+        );
     }
 
     /**
@@ -877,25 +893,50 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      */
     private function sweepVerifications(): void
     {
-        $minute = intdiv(time(), 60);
-        if ($minute !== $this->verificationSweepCheckedMinute) {
-            $this->verificationSweepCheckedMinute = $minute;
-            $expression = VerificationSweepSettings::sweepCron();
-            if ($this->verificationSweepRule === null || $this->verificationSweepRule->expression !== $expression) {
-                $this->verificationSweepRule = new CronRule(self::VERIFICATION_SWEEP_RULE, $expression);
+        try {
+            $minute = intdiv(time(), 60);
+            if ($minute !== $this->verificationSweepCheckedMinute) {
+                $this->verificationSweepCheckedMinute = $minute;
+                $expression = VerificationSweepSettings::sweepCron();
+                if ($this->verificationSweepRule === null || $this->verificationSweepRule->expression !== $expression) {
+                    $this->verificationSweepRule = new CronRule(self::VERIFICATION_SWEEP_RULE, $expression);
+                }
+            }
+
+            if (!$this->verificationSweepBacklog && $this->verificationSweepRule?->shouldRun() !== true) {
+                return;
+            }
+
+            if (!$this->verificationSweepBacklog) {
+                $this->verificationSweepReceiptId = JournalReceiptScope::start(
+                    JournalReceiptData::cron(self::VERIFICATION_SWEEP_RULE, $this->verificationSweepRule->expression, $this->getId()),
+                );
+            }
+            JournalReceiptScope::runPart($this->verificationSweepReceiptId, $this->getId(), function (): void {
+                $removed = new VerificationSweeper()->sweep();
+                $this->verificationSweepBacklog = $removed === VerificationSweeper::BATCH;
+                if ($removed > 0) {
+                    $retention = VerificationSweepSettings::retentionSeconds();
+                    $this->logAgentInfo("Verification sweep: removed {$removed} spent or expired codes older than {$retention} s");
+                }
+            });
+        } catch (Throwable $failure) {
+            $this->verificationSweepBacklog = false;
+            throw $failure;
+        } finally {
+            if (!$this->verificationSweepBacklog) {
+                $this->finishVerificationSweep();
             }
         }
+    }
 
-        if (!$this->verificationSweepBacklog && $this->verificationSweepRule?->shouldRun() !== true) {
-            return;
-        }
-
-        $removed = new VerificationSweeper()->sweep();
-        $this->verificationSweepBacklog = $removed === VerificationSweeper::BATCH;
-        if ($removed > 0) {
-            $retention = VerificationSweepSettings::retentionSeconds();
-            $this->logAgentInfo("Verification sweep: removed {$removed} spent or expired codes older than {$retention} s");
-        }
+    /** @throws DatabaseException When receipt finalization cannot resolve its connection */
+    private function finishVerificationSweep(): void
+    {
+        $receiptId = $this->verificationSweepReceiptId;
+        $this->verificationSweepReceiptId = null;
+        $this->verificationSweepBacklog = false;
+        JournalReceiptScope::finish($receiptId);
     }
 
     /**

@@ -19,6 +19,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use LogicException;
 use PHPUnit\Framework\TestCase;
@@ -32,12 +33,14 @@ final class DaemonManagerCronFrameTest extends TestCase
     private string $previousAppClass;
     private ?RtContext $previousRt;
     private ?ClusterContext $previousCluster;
+    private ?SignalRouter $previousRouter;
 
     protected function setUp(): void
     {
         $this->previousAppClass = Hilos::appClass();
         $this->previousRt = Hilos::$rt;
         $this->previousCluster = Hilos::$cluster;
+        $this->previousRouter = Hilos::$sr;
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, CronFrameTestHilos::class);
         Hilos::$rt = null;
         Hilos::$cluster = null;
@@ -48,7 +51,21 @@ final class DaemonManagerCronFrameTest extends TestCase
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->previousAppClass);
         Hilos::$rt = $this->previousRt;
         Hilos::$cluster = $this->previousCluster;
+        Hilos::$sr = $this->previousRouter;
         parent::tearDown();
+    }
+
+    public function testDispatchedCronCarriesTheExpressionThatActuallyFired(): void
+    {
+        $manager = new CronFrameTestDaemonManager();
+        $manager->dispatchRule(new CronRule('scheduled-job', '*/7 * * * *'));
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertInstanceOf(CronSignalDTO::class, $signal->data);
+        self::assertSame('scheduled-job', $signal->signalName->getName());
+        self::assertSame('scheduled-job', $signal->data->cronName);
+        self::assertSame('*/7 * * * *', $signal->data->cronExpression);
+        self::assertSame($signal->data->toArray(), CronSignalDTO::fromArray($signal->data->toArray())->toArray());
     }
 
     public function testRuleChangesLeadershipAndMinuteRepairSendWholeFrames(): void
@@ -147,6 +164,12 @@ final class DaemonManagerCronFrameTest extends TestCase
 
 final class CronFrameTestDaemonManager extends DaemonManager
 {
+    /** @param CronRule $rule Actual scheduler payload to queue through the master's production path */
+    public function dispatchRule(CronRule $rule): void
+    {
+        parent::onCron($rule);
+    }
+
     /** @return CronFrameCaptureServer Capturing local worker server */
     public function addCaptureServer(): CronFrameCaptureServer
     {

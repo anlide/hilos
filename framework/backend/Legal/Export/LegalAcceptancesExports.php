@@ -24,6 +24,8 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\ChangeLog\JournalReceiptData;
+use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Files\Download\PrivateDownloadResponse;
 use Hilos\Fs\Context\FsContext;
@@ -128,7 +130,10 @@ final class LegalAcceptancesExports
             return;
         }
         if (self::$expireRule->shouldRun()) {
-            self::expire($agent);
+            JournalReceiptScope::run(
+                JournalReceiptData::cron(self::EXPIRE_RULE, self::$expireRule->expression, $agent->getId()),
+                static fn () => self::expire($agent),
+            );
 
             return;
         }

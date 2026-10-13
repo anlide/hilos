@@ -7775,7 +7775,7 @@ abstract class DaemonManager extends BaseManager implements
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::CRON),
             new SignalName($rule->name),
-            new CronSignalDTO(cronName: $rule->name),
+            new CronSignalDTO(cronName: $rule->name, cronExpression: $rule->expression),
         );
     }
 

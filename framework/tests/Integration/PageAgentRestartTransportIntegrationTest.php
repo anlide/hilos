@@ -16,11 +16,9 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Database;
-use Hilos\Database\DatabaseConnectionConfig;
-use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -34,7 +32,6 @@ use Hilos\Tests\Unit\Fixtures\PageAgentRestartTestManager;
 use Hilos\Tests\Unit\Fixtures\PageAgentRestartTestPages;
 use Hilos\Tests\Unit\Fixtures\PageAgentRestartTestWorkerManager;
 use Socket;
-use ReflectionProperty;
 
 /**
  * Real typed IPC over a socket pair, from the page dispatcher through the registered worker
@@ -44,8 +41,6 @@ use ReflectionProperty;
  */
 final class PageAgentRestartTransportIntegrationTest extends FrameworkIntegrationTestCase
 {
-    /** @var array<int, DatabaseConnectionConfig> Configuration restored after this transport-only fixture */
-    private array $previousConfigurations = [];
     private ?SignalRouter $previousRouter;
     private ?ClusterContext $previousCluster;
     private ?RtContext $previousRt;
@@ -63,16 +58,10 @@ final class PageAgentRestartTransportIntegrationTest extends FrameworkIntegratio
     private SignalRouter $workerRouter;
     private SignalRouter $masterRouter;
 
+    /** @throws HilosException When the primary fixture or transport endpoints cannot be prepared */
     protected function setUp(): void
     {
         parent::setUp();
-        $configurationProperty = new ReflectionProperty(Database::class, 'configurations');
-        $this->previousConfigurations = $configurationProperty->getValue();
-        $transportConfiguration = $this->previousConfigurations;
-        // The journal integration leaves its secondary configuration after dropping its tables.
-        // This transport fixture runs without that feature and restores the configuration afterward.
-        unset($transportConfiguration[ChangeLogDatabase::CONNECTION_INDEX]);
-        $configurationProperty->setValue(null, $transportConfiguration);
         $this->previousRouter = Hilos::$sr;
         $this->previousCluster = Hilos::$cluster;
         $this->previousRt = Hilos::$rt;
@@ -106,6 +95,7 @@ final class PageAgentRestartTransportIntegrationTest extends FrameworkIntegratio
         Hilos::$sr = $this->workerRouter;
     }
 
+    /** Releases the transport endpoints and restores the facade before the base closes its database links. */
     protected function tearDown(): void
     {
         foreach ($this->sockets as $socket) {
@@ -120,7 +110,6 @@ final class PageAgentRestartTransportIntegrationTest extends FrameworkIntegratio
         foreach ($this->previousClusterEnv as $key => $value) {
             putenv($value === false ? $key : "{$key}={$value}");
         }
-        new ReflectionProperty(Database::class, 'configurations')->setValue(null, $this->previousConfigurations);
         parent::tearDown();
     }
 

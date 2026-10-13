@@ -114,7 +114,7 @@ answer: `Session::userAtKeyboard()` in
 | `migration` | Empty | None — the migration runner | The migration file | `Migration` around one SQL file |
 | `agent` | Empty, shown as “System” | The initiating agent; the actual writer after handover | The initiating agent's id | Explicit `JournalReceiptScope::run()` around one autonomous operation |
 | `cli` | Empty | The executing agent | The command's name; never a value it was given | `WorkerManager` around the agent's `onSignalCommand()` |
-| `cron` | Empty | The job's agent | The job and its time | (not in the code yet — HIL-1456) |
+| `cron` | Empty | The initiating agent; the actual writer after handover | The rule name and its schedule expression | Worker CRON dispatch and explicit scopes around local scheduled work |
 | `mcp` | The person | — | The tool | Outside phase 1; when the MCP server arrives, HIL-356 |
 
 The CLI command channel has no person by design; see
@@ -147,11 +147,13 @@ statement; it never sets it on the journal connection. A failed clear closes
 the primary link, so the next handler cannot inherit its value.
 
 A receipt under which nothing journaled was written is deleted after the scope,
-including a no-op or a handler error, unless the action handed work to an agent.
-Each outgoing agent frame increments `open_handovers`; each recipient decrements
-it after handling the frame and deletes an empty receipt when the count reaches
-zero. A lost frame or failed conclusion can leave an empty receipt hidden from
-the feed until its partition expires; the feed requires a journal row.
+including a no-op or a handler error, unless an agent frame or an unfinished
+local attempt still holds it. Each outgoing agent frame increments
+`open_handovers`; each recipient decrements it after handling the frame. A local
+cron attempt uses the same counter, with one hold until its final part has
+returned. An empty receipt is deleted only when all holds are released. A lost
+frame, interrupted attempt or failed conclusion can leave an empty receipt hidden
+from the feed until its partition expires; the feed requires a journal row.
 
 A web scope starts after the action guards and ends before the success or deferred
 ack. It stores the acting administrator and impersonated person separately, and
@@ -168,15 +170,72 @@ last agent to write is recorded on the receipt. The journal database is shared,
 so the same number applies when the recipient is on another node. Only a write
 during the handed-over frame belongs to the person's receipt.
 
-An agent that writes later on its own, on a timer, uses its own receipt with the
-`agent` channel. Wrap the concrete autonomous work in `JournalReceiptScope::run()`
-with `JournalReceiptData::agent($action, $this->getId())`, not every tick or the
-wait for an asynchronous result. The action is the autonomous operation's code
-name, such as `bot_message`; actor, subject and session stay NULL. The source
-stays the initiating agent's id when work is handed over, while the agent becomes
-the last agent that actually wrote a journaled row. BotAgent opens its scope only
+An agent that writes later on its own uses its own receipt with the `agent`
+channel for a concrete autonomous operation, such as sending a completed bot
+result. A tick or timer by itself assigns no channel; work started by a fired
+cron rule uses `cron`, including a rule the agent checks locally. Wrap the
+concrete autonomous work in `JournalReceiptScope::run()` with
+`JournalReceiptData::agent($action, $this->getId())`, not every tick or the wait
+for an asynchronous result. The action is the autonomous operation's code name,
+such as `bot_message`; actor, subject and session stay NULL. The source stays
+the initiating agent's id when work is handed over, while the agent becomes the
+last agent that actually wrote a journaled row. BotAgent opens its scope only
 for a ready, nonempty message sent to ChatAgent. The message stream is not
 journaled, so that empty receipt is deleted when the recipient closes the handover.
+
+### One Scheduled Attempt Across Parts
+
+`JournalReceiptData::cron($ruleName, $cronExpression, $initiatorAgentId)` assigns
+the `cron` channel with actor, subject and session NULL. The action is the rule's
+name; the source is `ruleName (expression)`, captured when the attempt starts.
+The daemon supplies the expression that fired in `CronSignalDTO::cronExpression`.
+A legacy payload may omit it or carry NULL: then the source is only the rule
+name, with no inferred schedule. Job parameters, user numbers and secrets do not
+belong in the source. `created_at` is the receipt's creation time, and the agent
+becomes the last recipient or local part that actually wrote a journaled row.
+
+The worker parses the CRON payload before opening one scope around its cron
+hook, the agent handler and the page dispatch. Their synchronous writes and
+outgoing agent frames share that receipt. The daemon creates no receipt.
+Local rules wrap only the scheduled operation. Different rules on the same
+agent have separate attempts; a backlog continues its existing attempt rather
+than starting another when the schedule matches again. A schedule edited between
+parts does not change the source of the attempt already in progress.
+
+For work spanning ticks, `JournalReceiptScope::start($data)` creates the receipt
+with one local `open_handovers` hold. `runPart($id, $agentId, $callback)` installs
+it in the scope stack and on the primary connection only while the part runs,
+then restores the previous receipt and active connection index. It accounts for
+outgoing frames without consuming the local hold. The caller keeps the id in
+memory and calls `finish($id)` once on completion, failure or stop, then clears
+its field. Each part's business transaction ends inside its handler; the receipt
+neither extends a transaction across ticks nor makes the whole attempt atomic.
+
+An accepted scheduled backup CREATE already inside the worker's CRON scope uses
+`retainCurrent()` to hold that same id for its later parts. The hold is published
+when the retaining dispatch closes, so release it only after that scope has
+returned. Backup polling likewise closes its `runPart()` before releasing the
+hold or starting a queued manual CREATE. Manual CREATE, RESTORE, shipping,
+directory checks and operator work do not inherit the scheduled attempt's id.
+The external backup children receive no receipt through arguments or environment;
+their migrations keep their own migration receipts. Log rotation uses `cron`
+only when its cron axis fires; size or age alone assigns no cron receipt.
+File-only work produces no journal row and no visible receipt.
+
+After a failed attempt the next attempt gets a new id. A backup supervisor tick
+that throws releases its receipt hold but keeps the accepted CREATE's rule and
+expression while its child remains active. The worker keeps that agent, so its
+next poll opens a new receipt with that original cron source before continuing
+the same child. A failed receipt creation does not run the poll. This does not
+replay earlier writes or restart the child. Completing or stopping the run
+forgets its cron origin; an error after the run was reset creates no new attempt.
+A restart forgets the id and origin; there is no persistent resumption,
+deduplication or exactly-once guarantee.
+Without a configured journal connection, the callback still runs, `start()`
+returns NULL and `finish(NULL)` does nothing. These scopes add no tables or
+columns and do not make the files, verification, sessions or access-log tables
+journaled: their writes are attributed only if the existing entity policy calls
+for journal rows.
 
 When a person has been erased, the soft reference keeps their number. The
 section reader returns the current name when the row still exists and

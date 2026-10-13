@@ -1777,9 +1777,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     if ($apiRequestKey !== null) {
                         Hilos::$ac?->logApiAgentAction($apiRequestKey, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
-                    $this->onCronHandled($name, $signalData);
-                    $agent->onSignalCron($signalData, $source, $name);
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchCron($signalData, $source, $name);
+                    JournalReceiptScope::run(
+                        JournalReceiptData::cron($signalData->cronName, $signalData->cronExpression, $agent->getId()),
+                        function () use ($agentId, $agent, $signalData, $source, $name): void {
+                            $this->onCronHandled($name, $signalData);
+                            $agent->onSignalCron($signalData, $source, $name);
+                            $this->getPageSignalRouter($agentId, $agent)->dispatchCron($signalData, $source, $name);
+                        },
+                    );
                 } else {
                     Logger::error("onSignalCron - invalid signal data type: " . get_class($signalData));
                 }
