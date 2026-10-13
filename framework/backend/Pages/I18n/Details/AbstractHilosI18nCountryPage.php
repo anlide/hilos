@@ -110,7 +110,7 @@ abstract class AbstractHilosI18nCountryPage extends AbstractHilosI18nCountryCode
                 return null;
 
             default:
-                throw new AgentUnknownActionException($action, static::class);
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
     }
 
