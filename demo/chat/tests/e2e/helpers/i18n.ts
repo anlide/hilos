@@ -13,6 +13,8 @@ const COUNTRY_ON_COMMAND = 'test:i18n:country:on'
 const COUNTRY_OFF_COMMAND = 'test:i18n:country:off'
 const LANGUAGE_NAMES_SEED_COMMAND = 'test:i18n:language-names:seed'
 const LANGUAGE_NAMES_CLEAR_COMMAND = 'test:i18n:language-names:clear'
+const COUNTRY_NAMES_SEED_COMMAND = 'test:i18n:country-names:seed'
+const COUNTRY_NAMES_CLEAR_COMMAND = 'test:i18n:country-names:clear'
 
 const sendCommand = createCommandChannel({
   host: COMMAND_HOST,
@@ -91,4 +93,14 @@ export async function seedLanguageNamesFixture(): Promise<void> {
 /** Remove only the fixed language names fixture and await the owner's reply. */
 export async function clearLanguageNamesFixture(): Promise<void> {
   await sendCommand(LANGUAGE_NAMES_CLEAR_COMMAND, {})
+}
+
+/** Create the fixed country names fixture through its owner and await commit. */
+export async function seedCountryNamesFixture(): Promise<void> {
+  await sendCommand(COUNTRY_NAMES_SEED_COMMAND, {})
+}
+
+/** Remove only the fixed country names fixture and await the owner's reply. */
+export async function clearCountryNamesFixture(): Promise<void> {
+  await sendCommand(COUNTRY_NAMES_CLEAR_COMMAND, {})
 }

@@ -10,6 +10,8 @@ use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
@@ -34,6 +36,8 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Reference rows and their action doors against the live framework schema. */
 final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
@@ -625,6 +629,180 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
             $this->assertSame([], $registry->strategiesFor($index, $table));
             $this->assertContains('locale_slot', $registry->notPersonalColumns($index, $table));
         }
+    }
+
+    /** @throws HilosException When the catalog restore or a fixture write fails */
+    public function testCountryNameRestoresCatalogUnlockedAndRemovesAllOverrides(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('us', '$', 'USD');
+        $gb = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $gbLocale = self::createLocale($language, $gb);
+        $usLocale = self::createLocale($language, $country);
+        $base = Hilos::$db->countryNames->actions->createCatalogBase($country, $language, 'Old catalog value');
+        $base->actions->edit('');
+        $gbName = Hilos::$db->countryNames->actions->createManual($country, $language, $gbLocale, 'British correction');
+        $usName = Hilos::$db->countryNames->actions->createManual($country, $language, $usLocale, '');
+        $oldIds = [$base->id, $gbName->id, $usName->id];
+        foreach ([$language, $country, $gbLocale, $usLocale] as $parent) {
+            $parent->actions->switchOn();
+        }
+        $base->actions->deleteAndRestoreCatalog();
+
+        $restored = Hilos::$db->countryNames->findBase($country->id, $language->id);
+        self::assertNotNull($restored);
+        self::assertSame(BuiltInI18nCatalog::countryName('us', 'en'), $restored->name);
+        self::assertFalse($restored->locked);
+        self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+        foreach ($oldIds as $id) {
+            self::assertNull(Hilos::$db->countryNames[$id]);
+        }
+        foreach ([$language, $country, $gbLocale, $usLocale] as $parent) {
+            self::assertTrue($parent->enabled);
+        }
+    }
+
+    /** @return iterable<string, array{string, string}> Pairs without a catalog name */
+    public static function ownNameCoordinates(): iterable
+    {
+        yield 'own country' => ['qj', 'en'];
+        yield 'own writing language' => ['us', 'qk'];
+        yield 'both own' => ['qj', 'qk'];
+    }
+
+    /**
+     * @param string $countryCode Country absent from the catalog, or us
+     * @param string $languageCode Writing language absent from the catalog, or en
+     * @throws HilosException When a fixture write or deletion fails
+     */
+    #[DataProvider('ownNameCoordinates')]
+    public function testCountryNameWithoutCatalogValueDisappears(string $countryCode, string $languageCode): void
+    {
+        $country = Hilos::$db->countries->actions->create($countryCode, '$', 'USD');
+        $language = Hilos::$db->languages->actions->create($languageCode, 'Writing', false);
+        $locale = self::createLocale($language, $country);
+        $base = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Own base');
+        Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'Own correction');
+        $base->actions->deleteAndRestoreCatalog();
+        self::assertNull(Hilos::$db->countryNames->findBase($country->id, $language->id));
+        self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+    }
+
+    /** @throws HilosException When fixture setup or an ordinary deletion fails */
+    public function testOrdinaryCountryNameDeletionNeverRestoresBaseOrCorrection(): void
+    {
+        $country = Hilos::$db->countries->actions->create('us', '$', 'USD');
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $locale = self::createLocale($language, $country);
+        $base = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Own base');
+        $correction = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, '');
+        $correction->actions->delete();
+        self::assertNull(Hilos::$db->countryNames->findOverride($country->id, $language->id, $locale->id));
+        self::assertSame($base->getObject(), Hilos::$db->countryNames->findBase($country->id, $language->id)->getObject());
+        $base->actions->delete();
+        self::assertNull(Hilos::$db->countryNames->findBase($country->id, $language->id));
+    }
+
+    /** @throws HilosException When setup fails or the expected correction refusal is raised */
+    public function testCountryNameRestoreDoorRefusesAnOverride(): void
+    {
+        $country = Hilos::$db->countries->actions->create('us', '$', 'USD');
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $locale = self::createLocale($language, $country);
+        Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Own base');
+        $correction = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, '');
+        $before = $this->countryNameRows();
+        try {
+            $correction->actions->deleteAndRestoreCatalog();
+            self::fail('Only a base may ask for catalog restoration');
+        } catch (ValidationException) {
+            self::assertSame($before, $this->countryNameRows());
+        }
+    }
+
+    /** @return iterable<string, array{string, bool}> Failures before and after the cascade finishes */
+    public static function nameRemovalFailures(): iterable
+    {
+        yield 'known base blocked by foreign key' => ['us', false];
+        yield 'own base blocked by foreign key' => ['qj', false];
+        yield 'known base insert refused after cascade' => ['us', true];
+    }
+
+    /**
+     * SQL is only the failure fixture and an independent persisted-row oracle. The write uses the item door.
+     * The same objects remain usable after rollback, and neither source reactions nor DB-sync frames escape.
+     *
+     * @param string $countryCode Named country
+     * @param bool $insertFailure Fail restoration rather than the base deletion
+     * @throws HilosException When fixture setup, rollback inspection or cleanup fails
+     */
+    #[DataProvider('nameRemovalFailures')]
+    public function testFailedCountryNameRemovalRestoresRowsCachesAndAnnouncements(string $countryCode, bool $insertFailure): void
+    {
+        $country = Hilos::$db->countries->actions->create($countryCode, '$', 'USD');
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $gb = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $gbLocale = self::createLocale($language, $gb);
+        $ownLocale = self::createLocale($language, $country);
+        $base = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Saved base');
+        $gbName = Hilos::$db->countryNames->actions->createManual($country, $language, $gbLocale, 'Saved correction');
+        $ownName = Hilos::$db->countryNames->actions->createManual($country, $language, $ownLocale, '');
+        $before = $this->countryNameRows();
+        $beforeChanges = $this->changes->count;
+        $previousRouter = Hilos::$sr;
+        Hilos::$sr = new SignalRouter();
+        SourceChangeBus::subscribe(new ViewCacheSubscriber());
+        try {
+            if ($insertFailure) {
+                Database::sqlRun('CREATE TRIGGER `test_hil_1501_restore_failure` BEFORE INSERT ON `hilos_country_name` '
+                    . "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced country name restore refusal'");
+            } else {
+                Database::sqlRun('CREATE TABLE `test_hil_1501_name_blocker` ('
+                    . ' `name_id` INT UNSIGNED NOT NULL PRIMARY KEY,'
+                    . ' FOREIGN KEY (`name_id`) REFERENCES `hilos_country_name` (`id`)) ENGINE=InnoDB');
+                Database::sqlRun('INSERT INTO `test_hil_1501_name_blocker` (`name_id`) VALUES (?)', [$base->id]);
+            }
+            try {
+                $base->actions->deleteAndRestoreCatalog();
+                self::fail('The failure fixture must refuse the write');
+            } catch (DatabaseException $failure) {
+                if ($insertFailure) {
+                    self::assertStringContainsString('forced country name restore refusal', $failure->getMessage());
+                } else {
+                    self::assertInstanceOf(ForeignKeyConstraintException::class, $failure);
+                }
+            }
+            self::assertSame($before, $this->countryNameRows());
+            self::assertSame($beforeChanges, $this->changes->count);
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            foreach ([$base, $gbName, $ownName] as $name) {
+                self::assertSame($name->getObject(), Hilos::$db->countryNames[$name->id]->getObject());
+                self::assertTrue($name->locked);
+            }
+            self::assertSame('Saved base', $base->name);
+            self::assertSame('Saved correction', $gbName->name);
+            self::assertSame('', $ownName->name);
+            self::assertSame($base->id, Hilos::$db->countryNames->findBase($country->id, $language->id)->id);
+            self::assertCount(2, Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+        } finally {
+            Database::sqlRun('DROP TRIGGER IF EXISTS `test_hil_1501_restore_failure`');
+            Database::sqlRun('DROP TABLE IF EXISTS `test_hil_1501_name_blocker`');
+            Hilos::$sr = $previousRouter;
+        }
+        $base->actions->deleteAndRestoreCatalog();
+        self::assertSame(BuiltInI18nCatalog::countryName($countryCode, 'en'),
+            Hilos::$db->countryNames->findBase($country->id, $language->id)?->name);
+        self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
+    }
+
+    /**
+     * @return list<array<string, mixed>> Persisted names, independent of the ORM cache
+     * @throws DatabaseException When the test oracle cannot read the table
+     */
+    private function countryNameRows(): array
+    {
+        Database::sql('SELECT * FROM `hilos_country_name` ORDER BY `id`');
+        return Database::rows();
     }
 
     /**

@@ -181,6 +181,13 @@ export {
   type HilosI18nCountryDeleteTarget,
 } from './admin/i18n/hilosI18nCountryDelete.js'
 export {
+  HILOS_I18N_COUNTRY_NAME_DELETE_ACTION,
+  HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE_ACTION,
+  HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
+  createHilosI18nCountryNameDelete,
+  type HilosI18nCountryNameDeleteTarget,
+} from './admin/i18n/hilosI18nCountryNameDelete.js'
+export {
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_COUNTRY_NAMES_FILTER,
   HILOS_I18N_COUNTRY_NAMES_TABLE,

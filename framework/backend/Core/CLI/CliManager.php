@@ -61,6 +61,8 @@ use Hilos\Core\CLI\Commands\I18nTestLanguageOffCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageDeleteCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageNamesSeedCommand;
 use Hilos\Core\CLI\Commands\I18nTestLanguageNamesClearCommand;
+use Hilos\Core\CLI\Commands\I18nTestCountryNamesSeedCommand;
+use Hilos\Core\CLI\Commands\I18nTestCountryNamesClearCommand;
 use Hilos\Core\CLI\Commands\I18nTestLocaleDeleteCommand;
 use Hilos\Core\CLI\Commands\I18nTestLocaleOnCommand;
 use Hilos\Core\CLI\Commands\LegalTestHoldCommand;
@@ -217,6 +219,8 @@ class CliManager
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_DELETE] = new I18nTestLanguageDeleteCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_NAMES_SEED] = new I18nTestLanguageNamesSeedCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR] = new I18nTestLanguageNamesClearCommand();
+        $this->commands[CliCommands::I18N_TEST_COUNTRY_NAMES_SEED] = new I18nTestCountryNamesSeedCommand();
+        $this->commands[CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR] = new I18nTestCountryNamesClearCommand();
         $this->commands[CliCommands::I18N_TEST_LOCALE_DELETE] = new I18nTestLocaleDeleteCommand();
         $this->commands[CliCommands::I18N_TEST_LOCALE_ON] = new I18nTestLocaleOnCommand();
         $this->commands[CliCommands::I18N_TEST_COUNTRY_OFF] = new I18nTestCountryOffCommand();

@@ -346,6 +346,12 @@ final class HilosSignalConstants
     /** Client → country card page: remove one country; success carries no reply data. */
     public const string HILOS_I18N_COUNTRY_DELETE = 'hilos_i18n_country_delete';
 
+    /** Client → country names page: remove a base and restore its catalog value atomically. */
+    public const string HILOS_I18N_COUNTRY_NAME_DELETE = 'hilos_i18n_country_name_delete';
+
+    /** Client → country names page: remove one locale correction. */
+    public const string HILOS_I18N_COUNTRY_NAME_OVERRIDE_DELETE = 'hilos_i18n_country_name_override_delete';
+
     /** Subscription signal for Hilos i18n country names. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_COUNTRY_NAMES = 'subscription_page_hilos_i18n_country_names';
 

@@ -87,16 +87,47 @@ class CountryNameActions extends DbActions
 
         Database::transactionStart();
         try {
-            foreach (Hilos::$db->countryNames->overridesFor($this->object->countryId, $this->object->languageId) as $override) {
-                $override->actions->delete();
-            }
-            $this->deleteOne();
+            $this->deleteBaseAndOverridesInTransaction();
             Database::transactionCommit();
         } catch (Throwable $failure) {
             try {
                 Database::transactionRollback();
             } catch (HilosException) {
                 // Keep the failure that prevented the name removal.
+            }
+            throw $failure;
+        }
+    }
+
+    /**
+     * Removes a base and every current override, then restores its catalog name atomically.
+     *
+     * @throws ItemNotFoundForDeleteException When the row has no persisted id
+     * @throws ValidationException When the row is a locale override
+     * @throws HilosException When ownership, lookup, deletion or restoration fails
+     */
+    public function deleteAndRestoreCatalog(): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForDeleteException('Name has no persisted id');
+        }
+        if ($this->object->localeId !== null) {
+            throw new ValidationException('Only a base country name can be restored from the catalog');
+        }
+        $country = $this->item->country;
+        $language = $this->item->language;
+
+        Database::transactionStart();
+        try {
+            $this->deleteBaseAndOverridesInTransaction();
+            Hilos::$db->countryNames->actions->takeFromCatalog($country, $language);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Keep the failure that prevented the name removal or restoration.
             }
             throw $failure;
         }
@@ -117,6 +148,15 @@ class CountryNameActions extends DbActions
         }
         if ($this->object->locked || $this->object->localeId !== null) {
             throw new ValidationException('Language removal can delete only unlocked base country names');
+        }
+        $this->deleteOne();
+    }
+
+    /** @throws HilosException When lookup or deletion fails inside the caller's transaction */
+    private function deleteBaseAndOverridesInTransaction(): void
+    {
+        foreach (Hilos::$db->countryNames->overridesFor($this->object->countryId, $this->object->languageId) as $override) {
+            $override->actions->delete();
         }
         $this->deleteOne();
     }

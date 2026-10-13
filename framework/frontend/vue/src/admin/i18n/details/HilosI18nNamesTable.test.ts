@@ -13,7 +13,7 @@ import {
   type TableViewportController,
 } from '@hilos/core'
 import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { h, nextTick } from 'vue'
 
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
@@ -31,7 +31,10 @@ function nameRow(
 }
 
 /** The names table of German with English, French and Spanish rows. */
-function mountNames(target: HilosI18nNamesTarget = HILOS_I18N_LANGUAGE_NAMES): {
+function mountNames(
+  target: HilosI18nNamesTarget = HILOS_I18N_LANGUAGE_NAMES,
+  actions = false,
+): {
   controller: TableViewportController<HilosI18nNameRow>
   wrapper: ReturnType<typeof mount>
 } {
@@ -71,6 +74,28 @@ function mountNames(target: HilosI18nNamesTarget = HILOS_I18N_LANGUAGE_NAMES): {
   )
   const wrapper = mount(HilosI18nNamesTable, {
     props: { controller: table.controller },
+    slots: actions
+      ? {
+          'name-actions': ({ row }: { row: HilosI18nNameRow }) =>
+            h(
+              'span',
+              { 'data-id': `test-base-${row.code}` },
+              row.name ?? 'absent',
+            ),
+          'correction-actions': ({
+            row,
+            correction,
+          }: {
+            row: HilosI18nNameRow
+            correction: HilosI18nNameRow['corrections'][number]
+          }) =>
+            h(
+              'span',
+              { 'data-id': `test-correction-${correction.localeCode}` },
+              `${row.code}:${correction.name ?? 'inherited'}`,
+            ),
+        }
+      : {},
   })
 
   return { controller: table.controller, wrapper }
@@ -135,13 +160,13 @@ describe('HilosI18nNamesTable', () => {
 })
 
 describe('optional names actions', () => {
-  it('keeps country names without actions in both table and cards', async () => {
+  it('leaves optional action slots empty in both country table and cards', async () => {
     const { wrapper, controller } = mountNames(HILOS_I18N_COUNTRY_NAMES)
     controller.expandRow('en', true)
     await nextTick()
     expect(
-      wrapper.find('[data-id="hilos-table-cell-en-actions"]').exists(),
-    ).toBe(false)
+      wrapper.get('tr[data-id="hilos-table-row-en"] .d-inline-flex').text(),
+    ).toBe('')
     expect(
       wrapper
         .findAll('button')
@@ -149,7 +174,36 @@ describe('optional names actions', () => {
           button.attributes('data-id')?.startsWith('hilos-table-expand-'),
         ),
     ).toBe(true)
-    expect(wrapper.text()).not.toContain('Actions')
+    expect(wrapper.text()).toContain('Actions')
     wrapper.unmount()
   })
+})
+
+describe('shared names action slots', () => {
+  it.each([HILOS_I18N_LANGUAGE_NAMES, HILOS_I18N_COUNTRY_NAMES])(
+    'passes the row and correction through both projections for $page',
+    async (target) => {
+      const { wrapper, controller } = mountNames(target, true)
+      controller.expandRow('en', true)
+      await nextTick()
+      for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
+        expect(wrapper.get(`${surface} [data-id="test-base-en"]`).text()).toBe(
+          'German',
+        )
+        expect(wrapper.get(`${surface} [data-id="test-base-es"]`).text()).toBe(
+          '',
+        )
+        expect(wrapper.get(`${surface} [data-id="test-base-fr"]`).text()).toBe(
+          'absent',
+        )
+        expect(
+          wrapper.get(`${surface} [data-id="test-correction-en-GB"]`).text(),
+        ).toBe('en:German (UK)')
+        expect(
+          wrapper.get(`${surface} [data-id="test-correction-en-US"]`).text(),
+        ).toBe('en:inherited')
+      }
+      wrapper.unmount()
+    },
+  )
 })

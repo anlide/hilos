@@ -277,19 +277,16 @@ An empty string saved by a person is their value and is locked too. To give
 a name back to the catalog, delete it:
 
 - Deleting a base language name carries away its locale overrides.
-- Deleting a base country name carries away its locale overrides
-  (not in the code yet — HIL-1501).
+- Deleting a base country name carries away its locale overrides.
 - A base name of a known country in a known language immediately returns
   from the catalog as an unlocked row, through
-  `CountryNamesActions::takeFromCatalog()` — the reflow's own piece for one name
-  (not in the code yet — HIL-1501).
-- A country name for an own country or in an own language disappears entirely
-  (not in the code yet — HIL-1501).
+  `CountryNamesActions::takeFromCatalog()` — the reflow's own piece for one name.
+- A country name for an own country or in an own language disappears entirely.
 - A deleted language name does not return: the catalog has no language names.
 - Deleting a language-name override removes only that override, which never
   returns because the catalog supplies no overrides.
 - Deleting a country-name override has the same effect: only that override
-  disappears and does not return (not in the code yet — HIL-1501).
+  disappears and does not return.
 
 The ADMIN language names page offers `hilos_i18n_language_name_delete` and
 `hilos_i18n_language_name_override_delete`. Both carry `languageCode`,
@@ -298,6 +295,21 @@ the override also carries `localeCode`. The library refuses a missing or changed
 name before writing. An empty string is a saved value, while `null` means no
 name or inheritance. Names have no `enabled` field: neither the language nor
 the locale needs switching off, and `locked` does not forbid manual deletion.
+
+The ADMIN country names page offers `hilos_i18n_country_name_delete` and
+`hilos_i18n_country_name_override_delete`, with `countryCode`, `inLanguageCode`,
+the literal `expectedName`, and `localeCode` for the override. Its confirmation
+freezes the fresh focused value, while the live source blocks confirmation if
+the country, base name or correction disappears. A changed name is refused by
+the library; an equal-text replacement is accepted. The base confirmation warns
+that all current corrections go, including those added after it opened.
+
+`CountryNameActions::deleteAndRestoreCatalog()` deletes the base and its
+corrections and calls `CountryNamesActions::takeFromCatalog()` inside one
+transaction. A failed restoration rolls back the rows and their cached state
+and releases no announcements. The existing `delete()` keeps deletion without
+restoration for system calls and fixture cleanup. An override uses its own
+`delete()` and never calls the catalog.
 
 Immediate restoration of a known country's base name is the owner's decision
 of 2026-10-04; restoration by a later synchronization belongs to HIL-1424.

@@ -49,12 +49,16 @@ test('opens the names of a reflowed country directly with the shared header, tab
   await expect(page.getByTestId('i18n-names-none-en')).toHaveCount(0)
 
   const section = page.getByTestId('country-names')
-  const writingControls = section.locator(
-    'button:not([data-id^="hilos-table-expand-"]), input, select, textarea, [contenteditable="true"]',
+  const unavailableControls = section.locator(
+    'button:not([data-id^="hilos-table-expand-"]):not([data-id^="i18n-names-delete-"]), input, select, textarea, form, .bi-plus, .bi-pencil, [contenteditable="true"]',
   )
-  await expect(writingControls).toHaveCount(0)
+  await expect(unavailableControls).toHaveCount(0)
+  await expect(shownByTestId(section, 'i18n-names-delete-en')).toBeEnabled()
+  await expect(
+    shownByTestId(section, 'i18n-names-delete-en'),
+  ).toHaveAccessibleName('Delete country name in English')
 
-  // Every country locale of English may offer a read-only correction, including
+  // Every country locale of English may offer an inherited correction, including
   // en-QZ left by the country deletion scenario. A fresh stand has none.
   const expand = shownByTestId(section, 'hilos-table-expand-en')
   const hasCorrections = (await expand.count()) > 0
@@ -80,7 +84,7 @@ test('opens the names of a reflowed country directly with the shared header, tab
         correction.getByTestId(`i18n-names-inherit-${localeCode}`),
       ).toHaveText('as in “English”')
     }
-    await expect(writingControls).toHaveCount(0)
+    await expect(unavailableControls).toHaveCount(0)
     correctionTexts = await corrections.allTextContents()
 
     await expand.click()
@@ -92,7 +96,7 @@ test('opens the names of a reflowed country directly with the shared header, tab
   await expect(enRow).toContainText('English')
   await expect(enRow).toContainText('United States')
   await expect(page.getByTestId('i18n-names-none-en')).toHaveCount(0)
-  await expect(writingControls).toHaveCount(0)
+  await expect(unavailableControls).toHaveCount(0)
   if (hasCorrections) {
     await expand.scrollIntoViewIfNeeded()
     await expect(expand).toBeVisible()
@@ -103,7 +107,7 @@ test('opens the names of a reflowed country directly with the shared header, tab
     expect(
       await shownByTestId(section, /^i18n-names-correction-/).allTextContents(),
     ).toEqual(correctionTexts)
-    await expect(writingControls).toHaveCount(0)
+    await expect(unavailableControls).toHaveCount(0)
   } else {
     await expect(page.getByTestId('hilos-table-expand-en')).toHaveCount(0)
     await expect(page.getByTestId('i18n-names-correction-en-QZ')).toHaveCount(0)

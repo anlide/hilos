@@ -319,6 +319,12 @@ final class CliCommands
      */
     public const string I18N_TEST_COUNTRY_ON = 'test:i18n:country:on';
 
+    /** Create the fixed country names fixture through its owning library (test-only). */
+    public const string I18N_TEST_COUNTRY_NAMES_SEED = 'test:i18n:country-names:seed';
+
+    /** Clear the fixed country names fixture through its owning library (test-only). */
+    public const string I18N_TEST_COUNTRY_NAMES_CLEAR = 'test:i18n:country-names:clear';
+
     /**
      * Append lines to this node's own log through the live daemon (test-only).
      *

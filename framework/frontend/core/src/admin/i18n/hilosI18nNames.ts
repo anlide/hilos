@@ -177,7 +177,19 @@ export const HILOS_I18N_COUNTRY_NAMES: HilosI18nNamesTarget = {
   tableKey: HILOS_I18N_COUNTRY_NAMES_TABLE,
   filterKey: HILOS_I18N_COUNTRY_NAMES_FILTER,
   frame: {
-    columns: HILOS_I18N_NAMES_COLUMNS,
+    columns: [
+      ...HILOS_I18N_NAMES_COLUMNS,
+      {
+        key: HILOS_TABLE_ACTIONS_KEY,
+        label: 'Actions',
+        reads: [
+          HilosI18nNameRowKey.code,
+          HilosI18nNameRowKey.nativeName,
+          HilosI18nNameRowKey.name,
+          HilosI18nNameRowKey.corrections,
+        ],
+      },
+    ],
     empty: { title: 'No languages yet' },
   },
 }

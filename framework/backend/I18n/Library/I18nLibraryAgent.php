@@ -18,6 +18,7 @@ use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\I18nTestCommandConstants;
+use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -53,6 +54,8 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         CliCommands::I18N_TEST_COUNTRY_ON,
         CliCommands::I18N_TEST_LANGUAGE_NAMES_SEED,
         CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR,
+        CliCommands::I18N_TEST_COUNTRY_NAMES_SEED,
+        CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR,
     ];
 
     private const string LANGUAGE_NAMES_TARGET_CODE = 'qv';
@@ -66,6 +69,15 @@ final class I18nLibraryAgent extends AbstractHilosAgent
 
     /** @var array<string, string> Existing country codes and literal correction values */
     private const array LANGUAGE_NAMES_CORRECTIONS = ['gb' => 'Fixture correction', 'us' => ''];
+
+    private const string COUNTRY_NAMES_TARGET_CODE = 'qj';
+    private const string COUNTRY_NAMES_WRITING_CODE = 'qk';
+    private const string COUNTRY_NAMES_CURRENCY_SYMBOL = 'H1501';
+    private const string COUNTRY_NAMES_CURRENCY_CODE = 'QJJ';
+    private const string COUNTRY_NAMES_WRITING_MARKER = 'HIL-1501 writing';
+
+    /** @var array<string, string> Existing country codes and literal correction values */
+    private const array COUNTRY_NAMES_CORRECTIONS = ['gb' => 'Fixture correction', 'us' => ''];
 
     /**
      * @param CommandRequestDTO $data Command request
@@ -102,6 +114,12 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 return;
             case CliCommands::I18N_TEST_LANGUAGE_NAMES_CLEAR:
                 $this->handleLanguageNamesClearCommand($data);
+                return;
+            case CliCommands::I18N_TEST_COUNTRY_NAMES_SEED:
+                $this->handleCountryNamesSeedCommand($data);
+                return;
+            case CliCommands::I18N_TEST_COUNTRY_NAMES_CLEAR:
+                $this->handleCountryNamesClearCommand($data);
                 return;
             default:
                 $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
@@ -147,6 +165,126 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         $this->reflowIfChanged();
+    }
+
+    /**
+     * @param CommandRequestDTO $data Request with no arguments
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleCountryNamesSeedCommand(CommandRequestDTO $data): void
+    {
+        try {
+            if ($data->payload !== []) {
+                throw new ValidationException('The country names fixture command takes no arguments.');
+            }
+            $this->seedCountryNamesFixture();
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId));
+    }
+
+    /**
+     * @throws ValidationException When a fixture address is occupied or a required country is missing
+     * @throws HilosException When ownership or persistence refuses the fixture
+     */
+    private function seedCountryNamesFixture(): void
+    {
+        if (Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE] !== null
+            || Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE] !== null) {
+            throw new ValidationException('The country names fixture already exists. Clear it before seeding again.');
+        }
+
+        Database::transactionStart();
+        try {
+            $country = Hilos::$db->countries->actions->create(
+                self::COUNTRY_NAMES_TARGET_CODE,
+                self::COUNTRY_NAMES_CURRENCY_SYMBOL,
+                self::COUNTRY_NAMES_CURRENCY_CODE,
+            );
+            $language = Hilos::$db->languages->actions->create(
+                self::COUNTRY_NAMES_WRITING_CODE,
+                self::COUNTRY_NAMES_WRITING_MARKER,
+                false,
+            );
+            Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Fixture base');
+            foreach (self::COUNTRY_NAMES_CORRECTIONS as $countryCode => $correction) {
+                $localeCountry = Hilos::$db->countries[$countryCode]
+                    ?? throw new ValidationException('Missing fixture country: ' . $countryCode);
+                $locale = Hilos::$db->locales->actions->create(
+                    $language, $localeCountry, LocaleTemplates::DATE[0], LocaleTemplates::TIME[0],
+                    LocaleTemplates::NUMBER[0], LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0],
+                    MeasurementSystem::METRIC, LocaleTemplates::COLLATION[0],
+                );
+                Hilos::$db->countryNames->actions->createManual($country, $language, $locale, $correction);
+            }
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            try {
+                Database::transactionRollback();
+            } catch (HilosException) {
+                // Keep the failure that prevented the fixture from being created.
+            }
+            throw $failure;
+        }
+    }
+
+    /**
+     * Checks both markers before writing and resumes cleanup through the ordinary item guards.
+     * No outer transaction encloses the base name's own cascade.
+     *
+     * @param CommandRequestDTO $data Request with no arguments
+     * @throws HilosException When wiring refuses access or the reply cannot be sent
+     */
+    private function handleCountryNamesClearCommand(CommandRequestDTO $data): void
+    {
+        try {
+            if ($data->payload !== []) {
+                throw new ValidationException('The country names fixture command takes no arguments.');
+            }
+            $this->assertCountryNamesFixtureMarkers();
+            $country = Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE];
+            $language = Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE];
+            if ($country !== null && $language !== null) {
+                Hilos::$db->countryNames->findBase($country->id, $language->id)?->actions->delete();
+            }
+            foreach (array_keys(self::COUNTRY_NAMES_CORRECTIONS) as $countryCode) {
+                Hilos::$db->locales[self::COUNTRY_NAMES_WRITING_CODE . '-' . strtoupper($countryCode)]?->actions->delete();
+            }
+            Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]?->actions->delete();
+            Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]?->actions->delete();
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
+            return;
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId));
+    }
+
+    /**
+     * @throws ValidationException When another row occupies either fixture code
+     * @throws HilosException When the marker lookup fails
+     */
+    private function assertCountryNamesFixtureMarkers(): void
+    {
+        if (Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE] !== null
+            && (Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->currencySymbol !== self::COUNTRY_NAMES_CURRENCY_SYMBOL
+                || Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE]->currencyCode !== self::COUNTRY_NAMES_CURRENCY_CODE)) {
+            throw new ValidationException('Country qj is not the country names fixture.');
+        }
+        if (Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE] !== null
+            && (Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]->nativeName !== self::COUNTRY_NAMES_WRITING_MARKER
+                || Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]->rtl)) {
+            throw new ValidationException('Language qk is not the country names fixture.');
+        }
     }
 
     /**
