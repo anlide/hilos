@@ -8,16 +8,20 @@ use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -31,6 +35,8 @@ use Hilos\HilosException;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
@@ -42,8 +48,8 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
  * project activates the section by registering its page and binding {@see HilosVerifierCircleTable}
  * to it in the topology, with no line in FEATURES (docs/agents/architecture/admin-features.md).
  *
- * The page declares two actions: naming a verifier to the circle (HIL-1120) and taking one out
- * (HIL-1121). The circle's window rides the page response because the table is bound to the page;
+ * The page names a verifier to the circle (HIL-1120), takes one out (HIL-1121), and hands manual
+ * entry to the index agent with a deferred answer (HIL-1362). The circle's window rides the page response;
  * its rows follow circle writes. The section also sends the current protected-mode state before
  * that response, then pushes changes while it is open. The hilos index agent
  * ({@see AbstractHilosIndexAgent}) serves the page, owns the circle and marks its state stale on RT sync.
@@ -52,6 +58,8 @@ use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
  */
 abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = HilosPageConstants::HILOS_MAINTENANCE;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -59,6 +67,13 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     public const array ACTIONS = [
         HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
         HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
+    ];
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            HilosSignalConstants::MAINTENANCE_ENABLE_DONE => HandoverAnswerSignalData::class,
+        ],
     ];
 
     public const array BROWSER = [
@@ -211,16 +226,17 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     }
 
     /**
-     * Routes the verifier-circle actions of the section.
+     * Routes circle edits and manual entry; entry answers only after the index agent reports its outcome.
      *
-     * @param string $acceptKey WebSocket accept key for the client (unused: the circle is not per connection)
+     * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
      * @param ActionPayloadDTO $dto Parsed action payload
      * @return ?ActionReplyDTO Always null: the ack carries the success sentence and the row arrives over the table
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
-     * @throws TableActionException When the address cannot be named to the circle, or the membership
-     *     being taken out is no longer there
+     * @throws TableActionException When the circle edit is refused or the initiating browser has no session
+     * @throws InvalidArgumentException When the enable request cannot be named or queued
+     * @throws InvalidFormatException When the initiating browser identity is empty
      * @throws HilosException When an identity lookup, the circle read, the circle write or the delete fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -242,11 +258,67 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
                 break;
 
+            case HilosSignalConstants::MAINTENANCE_ENABLE:
+                if (!$dto instanceof MaintenanceEnableActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenanceEnableActionDTO::class, $dto);
+                }
+                $this->handleEnable($acceptKey);
+
+                break;
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
 
         return null;
+    }
+
+    /**
+     * Answers the initiating submit even when this page was recreated during admission to the window.
+     *
+     * @param AgentSignalData $data Outcome hydrated by the page signal dispatcher
+     * @param string $sender Sending agent identity (unused)
+     * @param string $name Page-owned signal name
+     * @throws AgentUnknownSignalException When the signal is not owned by this page
+     * @throws InvalidArgumentException When the action answer cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::MAINTENANCE_ENABLE_DONE:
+                $this->answerHandover($data->data);
+
+                break;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * @param string $acceptKey Initiating browser connection
+     * @throws TableActionException When the connection carries no session
+     * @throws InvalidArgumentException When the request cannot be named or queued
+     * @throws InvalidFormatException When the browser identity is empty
+     */
+    private function handleEnable(string $acceptKey): void
+    {
+        $sessionHash = self::subscriberSessionTokenHash($acceptKey);
+        if ($sessionHash === null) {
+            throw new TableActionException('A browser session is required to turn on maintenance');
+        }
+
+        $this->forward(
+            HilosSignalConstants::MAINTENANCE_AGENT_ENABLE,
+            new ManualMaintenanceEnableSignalData(
+                acceptKey: $acceptKey,
+                sessionHash: $sessionHash,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::MAINTENANCE_ENABLE,
+                replySignal: HilosSignalConstants::MAINTENANCE_ENABLE_DONE,
+                successMessage: 'Maintenance is on — the system is closed to visitors',
+            ),
+        );
     }
 
     /**

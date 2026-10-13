@@ -10,14 +10,18 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
@@ -60,6 +64,74 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
         Hilos::$cluster = $this->previousCluster;
 
         parent::tearDown();
+    }
+
+    public function testBrowserSignalWaitsForReadyAndAnswersOnlyOnce(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent = new ManualMaintenanceTestAgent();
+        $this->askFromBrowser($agent);
+        $entry = $this->nextSignal(SignalTypeConstants::PROTECTED_MODE_ENABLE);
+        $this->assertInstanceOf(ProtectedModeEnableSignalData::class, $entry);
+        $this->assertSame('browser-key', $entry->initiatorAcceptKey);
+        $this->assertSame('session-hash', $entry->initiatorSessionTokenHash);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent->onTick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'The row alone does not confirm entry');
+        $agent->onProtectedModeReady();
+        $this->assertNull($this->browserAnswer()->error);
+        $agent->onProtectedModeReady();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testBrowserSignalPreservesPreflightAndCoreRefusalReasons(): void
+    {
+        $agent = new ManualMaintenanceTestAgent();
+        Hilos::$rt = null;
+        $this->askFromBrowser($agent);
+        $this->assertSame('protected mode is not mounted on this node', $this->browserAnswer()->error);
+
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $this->askFromBrowser($agent);
+        $this->assertSame('manual maintenance is already active', $this->browserAnswer()->error);
+
+        $this->row(StateProtectedModeRuntime::PHASE_ACTIVE, 'restore');
+        $this->askFromBrowser($agent);
+        $this->assertSame("protected mode is already active for 'restore'", $this->browserAnswer()->error);
+
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $this->askFromBrowser($agent);
+        $this->assertNotNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_ENABLE));
+        $this->askFromBrowser($agent, 'second-submit');
+        $busy = $this->browserAnswer('second-submit');
+        $this->assertSame('another protected-mode request is still in flight', $busy->error);
+        $agent->onProtectedModeRefused('cluster refuses direct entry');
+        $this->assertSame('cluster refuses direct entry', $this->browserAnswer()->error);
+        $agent->onProtectedModeReady();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testBrowserTimeoutIsExplicitlyUnconfirmedAndLateReadyDoesNotAnswerAgain(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent = new ManualMaintenanceTestAgent();
+        $this->askFromBrowser($agent);
+        $this->assertNotNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_ENABLE));
+        $agent->ageManualWait();
+        $agent->onTick();
+        $error = $this->browserAnswer()->error;
+        $this->assertNotNull($error);
+        $this->assertStringStartsWith(
+            'The result of turning on maintenance is unconfirmed. Check the state in Maintenance before trying again. ',
+            $error,
+        );
+        $this->assertStringContainsString('protected mode did not complete enable within 13s', $error);
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING);
+        $agent->onProtectedModeReady();
+        $agent->onTick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
     public function testOnlyProtectedModeRtSyncMarksTheMaintenanceStateStale(): void
@@ -458,6 +530,32 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
         $this->assertNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_DISABLE));
         $this->assertNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_PASS));
         $this->assertNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_REFREEZE));
+    }
+
+    private function askFromBrowser(ManualMaintenanceTestAgent $agent, string $requestId = 'browser-submit'): void
+    {
+        $agent->onSignalAgent(new AgentSignalData(new ManualMaintenanceEnableSignalData(
+            'browser-key', 'session-hash', $requestId, HilosSignalConstants::MAINTENANCE_ENABLE,
+            HilosSignalConstants::MAINTENANCE_ENABLE_DONE, 'Maintenance is on — the system is closed to visitors',
+        )), 'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_ENABLE);
+    }
+
+    private function browserAnswer(string $requestId = 'browser-submit'): HandoverAnswerSignalData
+    {
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_ENABLE_DONE, $signal->signalName->getName());
+        $this->assertInstanceOf(AgentSignalData::class, $signal->data);
+        $this->assertInstanceOf(HandoverAnswerSignalData::class, $signal->data->data);
+        $answer = $signal->data->data;
+        $this->assertSame('browser-key', $answer->acceptKey);
+        $this->assertSame($requestId, $answer->requestId);
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_ENABLE, $answer->action);
+        $this->assertNull($answer->errorType);
+        $this->assertNull($answer->errorDetail);
+        $this->assertArrayNotHasKey('sessionHash', $answer->toArray());
+
+        return $answer;
     }
 
     /**

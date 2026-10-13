@@ -31,6 +31,7 @@ const OPEN_COMMAND = 'test:protected-mode:open'
 const CLOSE_COMMAND = 'test:protected-mode:close'
 const PASS_COMMAND = 'test:protected-mode:pass'
 const INSPECT_COMMAND = 'protected-mode:inspect'
+const MAINTENANCE_DISABLE_COMMAND = 'maintenance:disable'
 
 /**
  * A refusal the daemon answered with, as opposed to a command it never answered.
@@ -124,6 +125,18 @@ export async function openProtectedMode(): Promise<string> {
   const reply = await sendProtectedModeDrive(OPEN_COMMAND, {}, null, [
     'inactive',
   ])
+
+  return String(reply.phase ?? '')
+}
+
+/** Disable manual maintenance through its existing CLI command, for cleanup. */
+export async function disableManualMaintenance(): Promise<string> {
+  const reply = await sendProtectedModeDrive(
+    MAINTENANCE_DISABLE_COMMAND,
+    {},
+    null,
+    ['inactive'],
+  )
 
   return String(reply.phase ?? '')
 }

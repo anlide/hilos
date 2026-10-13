@@ -237,6 +237,30 @@ export function hilosMaintenanceCard(
     circle: `${state.circleNamed} ${HILOS_MAINTENANCE_STATE_COPY.circleNamed} · ${state.circleAdmitted} ${HILOS_MAINTENANCE_STATE_COPY.circleAdmitted}`,
   }
 }
+
+/** Tracked browser action; the server supplies identity and entry options. */
+export const MAINTENANCE_ENABLE_ACTION = 'maintenance_enable'
+
+/** Words of the manual-entry confirmation, shared by every view. */
+export const HILOS_MAINTENANCE_ENABLE_COPY = {
+  enableTitle: 'Turn on maintenance',
+  confirm: 'Turn on',
+  cancel: 'Cancel',
+  lead: 'The system will close to visitors. Every page outside will show the maintenance screen with a fixed message.',
+  outside: 'Outside',
+  outsideNote: 'Anyone who has not been let in sees the maintenance screen.',
+  inside: 'Inside',
+  insideNote:
+    'You in this tab, the verifier circle members currently in the system, and anyone who enters with a code later.',
+  agents: 'Agents',
+  agentsNote: 'Keep working while the system is closed to visitors.',
+  footer:
+    'Any admitted administrator can turn maintenance off in this section.',
+  refusalTitle: "Couldn't turn on maintenance",
+  unconfirmedNote:
+    'The result of turning on maintenance is unconfirmed. Check the state in Maintenance before trying again.',
+} as const
+
 // Wire action names: byte-equal to the backend HilosSignalConstants::MAINTENANCE_CIRCLE_ADD
 // and HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE.
 const MAINTENANCE_CIRCLE_ADD_ACTION = 'maintenance_circle_add'
@@ -259,7 +283,7 @@ export const MAINTENANCE_CIRCLE_ONLINE_FIELD = 'online'
 /**
  * The project-supplied context the maintenance section reads from: the scope-partitioned
  * stores that own the page-scoped circle table, the live connection the table sends its
- * viewport over, and the action lifecycle the circle's tracked actions dispatch over.
+ * viewport over, and the action lifecycle the section's tracked actions dispatch over.
  * Everything else (the table key, slot name, view-model, and words) is the framework's;
  * the circle is produced on its backend.
  */
@@ -268,12 +292,14 @@ export interface HilosMaintenanceContext {
   readonly connection: HilosConnection
   /** The scope manager owning the page scope the table window normalizes into. */
   readonly scopes: ScopeManager
-  /** The action lifecycle the circle's tracked actions dispatch over. */
+  /** The action lifecycle the section's tracked actions dispatch over. */
   readonly actions: ActionLifecycle
 }
 
-/** The verifier circle mutation surface a maintenance view binds to. */
+/** The manual-entry and verifier circle actions a maintenance view binds to. */
 export interface HilosMaintenanceActions {
+  /** Close to visitors, awaiting the server's ready outcome without retrying. */
+  sendMaintenanceEnable(): ActionHandle
   /**
    * Name one more person to the verifier circle, as a tracked action. The address
    * travels as the operator typed it: which identity proves it, and the form it is
@@ -535,7 +561,7 @@ export function createHilosMaintenanceCircleTable(
 }
 
 /**
- * The verifier circle mutation surface: naming a person and taking one out each submit
+ * The maintenance mutation surface: manual entry and circle changes each submit
  * as a tracked action over the lifecycle, returning an ActionHandle whose `done`
  * resolves on the backend's success ack and rejects on its refusal. Each action is
  * answered in its own ack, so no listener for addressed failures is set here, and the
@@ -547,6 +573,9 @@ export function createHilosMaintenanceActions(
   context: HilosMaintenanceContext,
 ): HilosMaintenanceActions {
   return {
+    sendMaintenanceEnable() {
+      return context.actions.dispatch(MAINTENANCE_ENABLE_ACTION, {})
+    },
     sendMaintenanceCircleAdd(identifier) {
       return context.actions.dispatch(MAINTENANCE_CIRCLE_ADD_ACTION, {
         identifier,

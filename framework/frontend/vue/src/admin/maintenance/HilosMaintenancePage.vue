@@ -1,6 +1,7 @@
 <!-- HilosMaintenancePage — the framework Hilos maintenance section
 (HilosPages.MAINTENANCE): the live protected-mode state and verifier circle inside the
-admin shell. The circle says who will check the system
+admin shell. Manual entry is confirmed here and waits for its own tracked answer,
+independently of the live state frame. The circle says who will check the system
 after a freeze. A verifier is named here in a dialog (HIL-1120) and taken out here
 too, from the row's remove button (HIL-1121); the dialog confirming a removal holds
 its row in focus, so a row taken out in another tab is said to be gone before anybody
@@ -14,10 +15,12 @@ markup, so a project mounts it by passing its HilosMaintenanceContext. Bootstrap
 classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
+  ActionError,
   createHilosMaintenanceActions,
   createHilosMaintenanceCircleTable,
   createHilosMaintenanceState,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
   HilosPages,
   hilosMaintenanceCard,
@@ -82,8 +85,37 @@ onUnmounted(() => {
   circle.dispose()
 })
 
-const { sendMaintenanceCircleAdd, sendMaintenanceCircleRemove } =
-  createHilosMaintenanceActions(props.context)
+const {
+  sendMaintenanceEnable,
+  sendMaintenanceCircleAdd,
+  sendMaintenanceCircleRemove,
+} = createHilosMaintenanceActions(props.context)
+
+// A state push may replace the open banner while this action still awaits its ack.
+const enableOpen = ref(false)
+const enableAction = useTrackedAction({
+  describeError: (error) =>
+    error instanceof ActionError && error.outcome === 'fail'
+      ? error.message
+      : HILOS_MAINTENANCE_ENABLE_COPY.unconfirmedNote,
+})
+const { loading: enableLoading, busy: enableBusy } = enableAction
+
+function openEnable(): void {
+  if (enableBusy.value || position.value !== 'open') return
+  enableAction.clearError()
+  enableOpen.value = true
+}
+
+function closeEnable(): void {
+  // The controlled model guards the header's close button as well as Cancel.
+  if (!enableBusy.value) enableOpen.value = false
+}
+
+async function submitEnable(): Promise<void> {
+  if (enableBusy.value || position.value !== 'open') return
+  if (await enableAction.run(sendMaintenanceEnable())) closeEnable()
+}
 
 // The add dialog. It closes on the server's word only: a refusal keeps it open with
 // what was typed, and the named row arrives over the live table, not from here.
@@ -193,18 +225,28 @@ async function submitCircleRemove(): Promise<void> {
     <div aria-live="polite" data-id="hilos-maintenance-state">
       <div
         v-if="position === 'open'"
-        class="alert alert-success d-flex gap-3 align-items-start mb-3"
+        class="alert alert-success d-flex flex-column flex-sm-row gap-3 align-items-start mb-3"
         data-id="hilos-maintenance-state-open"
       >
-        <i class="bi bi-check-circle-fill fs-5" aria-hidden="true"></i>
-        <div>
-          <h2 class="h6 fw-semibold mb-1">
-            {{ HILOS_MAINTENANCE_STATE_COPY.openTitle }}
-          </h2>
-          <p class="small mb-0">
-            {{ HILOS_MAINTENANCE_STATE_COPY.openDescription }}
-          </p>
+        <div class="d-flex gap-3 flex-grow-1">
+          <i class="bi bi-check-circle-fill fs-5" aria-hidden="true"></i>
+          <div>
+            <h2 class="h6 fw-semibold mb-1">
+              {{ HILOS_MAINTENANCE_STATE_COPY.openTitle }}
+            </h2>
+            <p class="small mb-0">
+              {{ HILOS_MAINTENANCE_STATE_COPY.openDescription }}
+            </p>
+          </div>
         </div>
+        <LoadingButton
+          class="btn-warning btn-sm text-nowrap"
+          :disabled="enableBusy"
+          data-id="hilos-maintenance-enable"
+          @click="openEnable"
+        >
+          {{ HILOS_MAINTENANCE_ENABLE_COPY.enableTitle }}
+        </LoadingButton>
       </div>
 
       <section
@@ -277,6 +319,60 @@ async function submitCircleRemove(): Promise<void> {
         </div>
       </section>
     </div>
+
+    <HilosModal
+      :model-value="enableOpen"
+      :title="HILOS_MAINTENANCE_ENABLE_COPY.enableTitle"
+      :close-on-backdrop="!enableBusy"
+      :close-on-esc="!enableBusy"
+      initial-focus="dialog"
+      @update:model-value="closeEnable"
+    >
+      <div data-id="hilos-maintenance-enable-modal">
+        <HilosActionError
+          :action="enableAction"
+          :details-title="HILOS_MAINTENANCE_ENABLE_COPY.refusalTitle"
+        />
+        <p class="mb-2">{{ HILOS_MAINTENANCE_ENABLE_COPY.lead }}</p>
+        <ul class="mb-2 ps-3">
+          <li>
+            <strong>{{ HILOS_MAINTENANCE_ENABLE_COPY.outside }}</strong>
+            — {{ HILOS_MAINTENANCE_ENABLE_COPY.outsideNote }}
+          </li>
+          <li>
+            <strong>{{ HILOS_MAINTENANCE_ENABLE_COPY.inside }}</strong>
+            — {{ HILOS_MAINTENANCE_ENABLE_COPY.insideNote }}
+          </li>
+          <li>
+            <strong>{{ HILOS_MAINTENANCE_ENABLE_COPY.agents }}</strong>
+            — {{ HILOS_MAINTENANCE_ENABLE_COPY.agentsNote }}
+          </li>
+        </ul>
+        <p class="mb-0 text-body-secondary">
+          {{ HILOS_MAINTENANCE_ENABLE_COPY.footer }}
+        </p>
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="enableBusy"
+          data-id="hilos-maintenance-enable-cancel"
+          @click="requestClose"
+        >
+          {{ HILOS_MAINTENANCE_ENABLE_COPY.cancel }}
+        </button>
+        <LoadingButton
+          class="btn-warning"
+          :loading="enableLoading"
+          :disabled="enableBusy || position !== 'open'"
+          data-id="hilos-maintenance-enable-confirm"
+          @click="submitEnable"
+        >
+          {{ HILOS_MAINTENANCE_ENABLE_COPY.confirm }}
+        </LoadingButton>
+      </template>
+    </HilosModal>
 
     <div class="card mb-3" data-id="hilos-maintenance-circle-panel">
       <div class="card-body">

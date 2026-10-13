@@ -63,9 +63,13 @@ such a section by registering its page and table in the topology, with no line
 in `FEATURES`; the first one is `hilos_maintenance`
 (`Hilos\Pages\Maintenance\AbstractHilosMaintenancePage`), which shows the
 verifier circle through the framework's `HilosVerifierCircleTable`. It is also
-where an admin closes the system to visitors by hand
-([protected-mode.md](protected-mode.md), *Manual Maintenance*)
-(not in the code yet — HIL-1362).
+where an admin closes the system to visitors by hand: its `maintenance_enable`
+action hands entry to the index agent and waits for confirmation
+([protected-mode.md](protected-mode.md), *Manual Maintenance*). The Vue open-state
+banner offers a confirmation with no visitor-message field. It stays mounted
+through state pushes, closes only on its tracked success, and holds refusals in
+the dialog; timeout or disconnect asks the administrator to check Maintenance
+before trying again. A view-mode viewer finds the enable button disabled.
 
 A framework section may also come with a feature case that is not its own. The
 analytics section has no separate case: `HilosFeature::ANALYTICS` enables both

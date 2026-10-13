@@ -18,9 +18,11 @@ The mode is unconditional and its only entry is an agent. Do not add a switch �
 not a `HilosFeature` case, not an env variable, not a facade or static method,
 not a second entry "for tests".
 
-An administrator closes visitors out from Maintenance
-(not in the code yet — HIL-1362) or the CLI (`maintenance:enable`); both trigger
-the index agent, which asks through this same entry. There is no second entry:
+An administrator closes visitors out through the Maintenance page's
+`maintenance_enable` action or the CLI (`maintenance:enable`); both trigger
+the index agent, which asks through this same entry. The Vue page offers a
+confirmation dialog from its open-state banner (HIL-1362).
+There is no second entry:
 the core authorizes the recorded agent by type and index; the agent authorizes
 the person.
 
@@ -937,12 +939,57 @@ operation running, the last without manual controls. The page sends a
 `subscription_page_hilos_maintenance` state frame before `page_response` and
 pushes changed frames after protected-mode RT sync through the index agent's tick;
 locked-out subscribers receive none. The frame counts passes and the captured
-circle without sending personal fields. Its controls enable
-(not in the code yet — HIL-1362), disable (not in the code yet — HIL-1363) and
-mint a code (not in the code yet — HIL-1364); each is disabled for a view-mode
-viewer. There is no extra project wiring: the index agent already serves this
-page and owns manual entry. In a cluster all masters close; disable and code
-minting work from any node (not in the code yet — HIL-1367).
+circle without sending personal fields. The enable action is on the `ADMIN`
+page, not in `AGENT_ACTIONS` or its reading-action list: a viewer cannot send it.
+The empty `MaintenanceEnableActionDTO` lets the browser choose no identity,
+operation, entry mode or visitor message. The page resolves the accept key and
+session hash on the server and refuses a missing session before forwarding.
+
+`HandoverGatekeeperTrait` sends `maintenance_agent_enable` with
+`ManualMaintenanceEnableSignalData` to the index agent and defers the tracked
+ack. The agent calls its existing `enableManualMaintenance()` and answers under
+`maintenance_enable_done` with `HandoverAnswerSignalData`. Both routes come
+from their owners' declarations. The correlation travels with the ask and
+answer, so the page may be recreated and re-answered on admission before the
+action completes; no pending request is held on the page instance.
+
+Only `ManualMaintenanceOutcome::SUCCEEDED`, after protected-mode ready, produces
+success and the sentence "Maintenance is on — the system is closed to visitors".
+A state push showing manual maintenance is not the action's answer. `REFUSED`
+carries the agent's reason. `UNCONFIRMED` carries "The result of turning on
+maintenance is unconfirmed. Check the state in Maintenance before trying again."
+followed by the original reason: it does not claim the system stayed open. The
+existing 13-second agent wait remains the only server wait, within the client's
+30-second action timeout, and a late ready produces no second answer. The
+session hash stays inside the request and is absent from the outcome and ack.
+
+The Vue open-state banner carries a yellow **Turn on maintenance** button,
+below its text on a narrow screen. Unknown, manual and operation states carry
+no enable button. Its confirmation explains the visitor screen, the initiating
+tab, the captured circle and later code holders staying inside, and the agents
+continuing to work. There is no visitor-message field; the footer names admitted
+administrators as those who may turn it off.
+
+The core owns `MAINTENANCE_ENABLE_ACTION`, `sendMaintenanceEnable()` and
+`HILOS_MAINTENANCE_ENABLE_COPY`; the action dispatches exactly `{}`. Vue binds
+`useTrackedAction`, `LoadingButton` and `HilosActionError`. Before submission,
+Cancel, the cross, Esc and backdrop close without sending. While waiting, every
+close and repeat submit is blocked. The dialog is mounted outside the open-state
+banner: a manual push replaces the banner without unmounting the pending submit.
+A changed position blocks an unsent confirmation; an already sent action waits
+for its own answer. Success closes and the ordinary tracked lifecycle shows the
+server's one success sentence. A refusal stays readable in the reserved error
+plate, with Cancel available again. Client timeout, disconnect or unreadable reply
+show the unconfirmed instruction above, with no automatic retry or claim that
+the system stayed open.
+
+Enable is disabled for a view-mode viewer, including the button that opens its
+confirmation. Disable (not in the code yet — HIL-1363) and minting a code
+(not in the code yet — HIL-1364) will be disabled too. React and Angular manual
+controls follow separately (not in the code yet — HIL-1365). There is no extra
+project wiring: the index agent already serves this page and owns manual entry.
+In a cluster all masters close; disable and code minting work from any node
+(not in the code yet — HIL-1367).
 
 ## Reading The Runtime Row, And What Null Means
 

@@ -9,9 +9,14 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
@@ -22,6 +27,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Users\AccountStandingAudience;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -52,6 +58,10 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     }
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
+    ];
 
     /**
      * The OAuth provider rows, which the provider page this agent serves writes (HIL-286), and
@@ -136,6 +146,31 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
     /** @var ?string Clear pass held only while its hash is pending */
     private ?string $manualMaintenancePass = null;
+
+    /**
+     * Routes the Maintenance page's request; the page retains the ADMIN gate and the browser action.
+     *
+     * @param AgentSignalData $data Envelope with the topology-hydrated ask
+     * @param string $sender Sending agent identity
+     * @param string $name Routed signal name
+     * @throws AgentUnknownSignalException When the parent refuses an unknown signal
+     * @throws HilosException When the parent handler fails
+     * @throws InvalidArgumentException When the answer cannot be named or queued
+     * @throws LogicException When the parent rejects a runtime row
+     * @throws RandomException When the parent cannot draw from the random source
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case HilosSignalConstants::MAINTENANCE_AGENT_ENABLE:
+                $this->handleManualMaintenanceEnable($data->data);
+
+                break;
+
+            default:
+                parent::onSignalAgent($data, $sender, $name);
+        }
+    }
 
     /**
      * Starts a direct verification window for manual maintenance.
@@ -396,6 +431,28 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         }
 
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Uses the existing wait and reports every outcome as a frame, including late confirmation uncertainty.
+     *
+     * @param ManualMaintenanceEnableSignalData $ask Browser identity and deferred reply address
+     * @throws InvalidArgumentException When an immediate refusal cannot be sent
+     */
+    private function handleManualMaintenanceEnable(ManualMaintenanceEnableSignalData $ask): void
+    {
+        $this->enableManualMaintenance($ask->acceptKey, $ask->sessionHash, function (ManualMaintenanceOutcome $outcome) use ($ask): void {
+            $refusal = match ($outcome->status) {
+                ManualMaintenanceOutcome::SUCCEEDED => null,
+                ManualMaintenanceOutcome::REFUSED => ActionRefusal::said($outcome->reason),
+                ManualMaintenanceOutcome::UNCONFIRMED => ActionRefusal::said(
+                    'The result of turning on maintenance is unconfirmed. Check the state in Maintenance before trying again.'
+                    . ' ' . $outcome->reason,
+                ),
+            };
+
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+        });
     }
 
     /**

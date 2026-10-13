@@ -419,6 +419,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ONLINE_TESTING,
+                HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosSignalConstants::ANALYTICS_JOURNAL_READ => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
@@ -784,6 +785,10 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         $this->assertSame(
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_ENABLE],
         );
     }
 

@@ -24,6 +24,7 @@ import {
 import { signUp } from '../helpers/session'
 import {
   closeProtectedMode,
+  disableManualMaintenance,
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
@@ -70,6 +71,75 @@ test.afterEach(async () => {
   // still land afterwards, a failed assertion can strand the node in any phase,
   // and only the open lifts from all of them.
   await openProtectedModeIfAny()
+})
+
+test('an administrator turns on manual maintenance from the section and stays inside', async ({
+  page,
+  browser,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, MAINTENANCE_URL, PAGE_READY)
+  const publicContext = await browser.newContext()
+  const visitor = await publicContext.newPage()
+  try {
+    await gotoPage(visitor, '/')
+    await expect(visitor.getByTestId('conn-state')).toHaveText('connected')
+    const open = page.getByTestId('hilos-maintenance-enable')
+    await open.scrollIntoViewIfNeeded()
+    await expect(open).toBeVisible()
+    await expect(open).toBeEnabled()
+    await open.focus()
+    await open.click()
+    const modal = page.getByTestId('hilos-maintenance-enable-modal')
+    await expect(modal).toBeVisible()
+    const confirm = page.getByTestId('hilos-maintenance-enable-confirm')
+    await confirm.scrollIntoViewIfNeeded()
+    await expect(confirm).toBeVisible()
+    await expect(confirm).toBeEnabled()
+    await confirm.focus()
+    await confirm.click()
+    await expect(modal).toBeHidden()
+
+    const success = page
+      .getByTestId('hilos-toasts')
+      .getByText('Maintenance is on — the system is closed to visitors', {
+        exact: true,
+      })
+    await expect(success).toHaveCount(1)
+    await expect(success).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-toasts').getByTestId('hilos-toast-repeats'),
+    ).toHaveCount(0)
+    await expect(visitor.getByTestId('maintenance')).toHaveAttribute(
+      'data-operation',
+      'manual_maintenance',
+    )
+    await expect(visitor.getByTestId('maintenance-title')).toHaveText(
+      'Closed for maintenance',
+    )
+    await expect(visitor.getByTestId('maintenance-message')).toHaveText(
+      'The application is closed for maintenance. Please check back later.',
+    )
+    await expect(page.getByTestId('maintenance')).toBeHidden()
+    await expectPageReady(page)
+    await expect(
+      page.getByTestId('hilos-maintenance-state-manual'),
+    ).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-maintenance-circle-panel'),
+    ).toBeVisible()
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect(open).toHaveCount(0)
+  } finally {
+    // Manual entry is tested only through the UI. Its existing CLI exit cleans up even after a failed assertion.
+    try {
+      if ((await inspectProtectedMode()).operation === 'manual_maintenance') {
+        expect(await disableManualMaintenance()).toBe('inactive')
+      }
+    } finally {
+      await publicContext.close()
+    }
+  }
 })
 
 test('a live window shows the maintenance stub while the mode is on', async ({

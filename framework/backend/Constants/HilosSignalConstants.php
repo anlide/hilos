@@ -1081,6 +1081,15 @@ final class HilosSignalConstants
      */
     public const string MAINTENANCE_CIRCLE_REMOVE = 'maintenance_circle_remove';
 
+    /** Browser → Maintenance page: request manual maintenance with an empty payload (HIL-1362). */
+    public const string MAINTENANCE_ENABLE = 'maintenance_enable';
+
+    /** Maintenance page → index agent: enter the manual window with server-resolved browser identity (HIL-1362). */
+    public const string MAINTENANCE_AGENT_ENABLE = 'maintenance_agent_enable';
+
+    /** Index agent → Maintenance page: confirmed entry, refusal or unconfirmed outcome of the deferred action (HIL-1362). */
+    public const string MAINTENANCE_ENABLE_DONE = 'maintenance_enable_done';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

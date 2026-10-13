@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosMaintenanceActions,
@@ -19,7 +19,7 @@ import {
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
-import { type ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
+import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
@@ -259,6 +259,32 @@ describe('createHilosMaintenanceCircleTable', () => {
 })
 
 describe('createHilosMaintenanceActions', () => {
+  it('dispatches one tracked empty enable and never retries an unanswered command', async () => {
+    vi.useFakeTimers()
+    try {
+      const sendAction = vi.fn(() => true)
+      const actions = new ActionLifecycle({
+        sendAction,
+        on: () => () => {},
+      })
+      const handle = createHilosMaintenanceActions({
+        actions,
+      } as HilosMaintenanceContext).sendMaintenanceEnable()
+      const outcome = expect(handle.done).rejects.toMatchObject({
+        outcome: 'timeout',
+      })
+
+      expect(sendAction.mock.calls).toEqual([
+        ['maintenance_enable', {}, handle.requestId],
+      ])
+      await vi.runAllTimersAsync()
+      await outcome
+      expect(sendAction).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   /** A context whose action lifecycle records what was dispatched over it. */
   function dispatchContext(
     sent: Array<{ action: string; payload: unknown }>,

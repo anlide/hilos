@@ -1568,6 +1568,8 @@ export {
   createHilosMaintenanceCircleTable,
   createHilosMaintenanceActions,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_ENABLE_COPY,
+  MAINTENANCE_ENABLE_ACTION,
   MAINTENANCE_CIRCLE_IDENTIFIER_FIELD,
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   type HilosMaintenanceActions,
