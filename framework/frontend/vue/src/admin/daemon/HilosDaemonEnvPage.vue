@@ -227,7 +227,6 @@ onUnmounted(() => {
         v-if="summary.missingRequired.length > 0"
         class="alert alert-danger d-flex align-items-start gap-3 py-2 small"
         data-id="hilos-daemon-env-alarm-missing"
-        role="alert"
       >
         <i
           class="bi bi-exclamation-octagon fs-5 flex-shrink-0"
@@ -255,7 +254,6 @@ onUnmounted(() => {
         v-if="summary.fromExample.length > 0"
         class="alert alert-warning d-flex align-items-start gap-3 py-2 small"
         data-id="hilos-daemon-env-alarm-example"
-        role="alert"
       >
         <i
           class="bi bi-file-earmark-text fs-5 flex-shrink-0"
@@ -280,7 +278,6 @@ onUnmounted(() => {
           v-if="formatDaemonEnvDriftNotice(row) !== null"
           class="alert alert-warning d-flex align-items-start gap-3 py-2 small"
           :data-id="`hilos-daemon-env-alarm-drift-${row.key}`"
-          role="alert"
         >
           <i
             class="bi bi-arrow-repeat fs-5 flex-shrink-0"

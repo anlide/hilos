@@ -245,8 +245,11 @@ collector's picture contains counts and value-free labels. For a silent node the
 section agent answers “node silent” with no values. A directory watch and
 periodic rescan make the node agent re-answer open environment pages after
 `.env` or `.env.example` changes.
-The page's tiles and alarms are computed from that same response (the full masked key list), not from the table window.
-The page's two tables — catalog keys and `.env` orphans — are windows of that same agent: rows are built in its process from the masked view, so a re-answer re-sends them, and a search or the attention filter reads only what the reader is shown.
+The page's tiles and alarms are computed from that same response (the full
+masked key list), not from the table window. The page's two tables — catalog
+keys and `.env` orphans — are windows of that same agent: rows are built in its
+process from the masked view, so a re-answer re-sends them, and a search or the
+attention filter reads only what the reader is shown.
 
 The environment catalog opens a value to an admin view-mode viewer only with
 `admin_view_visible => true`; no current key is open, and `sensitive` forbids
