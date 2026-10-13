@@ -420,6 +420,27 @@ link, without another subscription or action. Chat and binance-btc-tracker mount
 it through a thin wrapper with their `connection` and `scopes` context; the
 built Vue children no longer need staged rows under the root. React and Angular
 still leave these seven pages unbuilt.
+
+The root has two local tabs: Nodes and processes by default, and Agent placement.
+The second draws four totals from the complete `daemon.placement` summary,
+the existing placement viewport, one locally expanded cell and unplaced-type
+alarms. Search narrows the matrix window, never its totals or alarms. Running
+instances count every copy on every online node; any silent node, missing roster
+or empty node list makes the total null. Agent types count the project registry;
+One per cluster counts its declared LEADER and POLICY types, even on standalone.
+Unplaced types come from the leader, or the sole standalone node: null means
+unknown, an empty list means All placed, and each reported type gets one alarm.
+
+Tab switches keep node selection, search and the expanded cell without navigation
+or another subscription. Expansion reads current ids from the selected row/node
+pair; Collapse closes it. A loading search hides the panel until its window
+settles. A missing row, empty or unknown cell, silent or removed node, unknown
+picture, refusal or freeze clears the selection. Both desktop cells and narrow
+cards use the viewport's ordinary slots; ids wrap. Admin view-mode readers have
+the same local controls. A changed summary travels in the existing whole page
+answer with its window; changed ids with unchanged totals use the existing window
+delivery.
+
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

@@ -13,6 +13,7 @@ import {
   type HilosDaemonOverviewNode,
   type HilosDaemonDatabaseData,
   type ProjectSignal,
+  type TableRow,
 } from '@hilos/core'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -64,6 +65,12 @@ function picture(
   return {
     clustered,
     nodes,
+    placement: {
+      instances: null,
+      types: 3,
+      clusterTypes: 2,
+      unplacedTypes: null,
+    },
     consensus: clustered
       ? {
           nodeId: 'n1',
@@ -82,21 +89,42 @@ function picture(
   }
 }
 
-function harness(envBuilt = true) {
+function harness(
+  envBuilt = true,
+  initial?: HilosDaemonOverviewData,
+  initialRows?: readonly TableRow[],
+) {
   const scopes = new ScopeManager()
   const sendAction = vi.fn()
   const send = vi.fn(() => true)
-  const listeners: ((signal: ProjectSignal) => void)[] = []
+  const listeners = new Map<string, Set<(signal: never) => void>>()
+  let lastResponse: ProjectSignal | undefined
+  const emit = (event: string, signal: unknown) => {
+    for (const listener of listeners.get(event) ?? []) listener(signal as never)
+  }
+  const register = vi.fn<HilosConnection['registerTableWindow']>()
+  const unregister = vi.fn()
+  const sendViewport = vi.fn<HilosConnection['sendTableViewport']>(() => true)
+  const sendRendered = vi.fn(() => true)
   const on = vi.fn((event: string, listener: (payload: never) => void) => {
-    if (event === 'projectSignal')
-      listeners.push(listener as (signal: ProjectSignal) => void)
-    return () => {}
+    const group = listeners.get(event) ?? new Set()
+    group.add(listener)
+    listeners.set(event, group)
+    if (event === 'projectSignal' && lastResponse)
+      listener(lastResponse as never)
+    return () => {
+      group.delete(listener)
+    }
   })
   const connection = {
     state: 'connected',
     send,
     sendAction,
     on,
+    registerTableWindow: register,
+    unregisterTableWindow: unregister,
+    sendTableViewport: sendViewport,
+    sendTableRendered: sendRendered,
     forgetPageFrames: () => {},
     tableWindowDescriptors: () => ({}),
   } as unknown as HilosConnection
@@ -138,12 +166,29 @@ function harness(envBuilt = true) {
   const update = (
     value: HilosDaemonOverviewData | null,
     database: HilosDaemonDatabaseData | null = null,
+    rows?: readonly TableRow[],
   ) => {
     const signal = {
       type: 'page_response',
       data: {
         page: HilosPages.DAEMON,
         payload: {
+          ...(rows === undefined
+            ? {}
+            : {
+                windows: {
+                  hilosDaemonPlacement: {
+                    rows,
+                    totalCount: rows.length,
+                    totalExact: true,
+                    firstAnchor: null,
+                    lastAnchor: null,
+                    limit: 25,
+                    sort: [],
+                    rowsBefore: 0,
+                  },
+                },
+              }),
           data: {
             daemon: value,
             database,
@@ -175,9 +220,12 @@ function harness(envBuilt = true) {
         },
       },
     } as unknown as ProjectSignal
-    for (const listener of listeners) listener(signal)
+    lastResponse = signal
+    emit('projectSignal', signal)
   }
+  if (initial) update(initial, null, initialRows)
   const view = mount(HilosDaemonPage, {
+    attachTo: document.body,
     props: {
       context: { scopes, connection },
     },
@@ -195,6 +243,27 @@ function harness(envBuilt = true) {
     navigate,
     replacePath,
     update,
+    emit,
+    register,
+    unregister,
+    sendViewport,
+    sendRendered,
+    listeners,
+    controller: () => register.mock.calls[0]![1],
+    window: (rows: readonly TableRow[]) =>
+      emit('tableWindow', {
+        data: {
+          page: HilosPages.DAEMON,
+          tableKey: 'hilosDaemonPlacement',
+          rows,
+          totalCount: rows.length,
+          totalExact: true,
+          firstAnchor: null,
+          lastAnchor: null,
+          limit: 25,
+          rowsBefore: 0,
+        },
+      }),
   }
 }
 
@@ -302,7 +371,7 @@ describe('HilosDaemonPage', () => {
     ).toBe('Migration: 0')
     expect(h.router.pageLoading.get()).toBe(false)
     expect(h.send).not.toHaveBeenCalled()
-    expect(h.on).not.toHaveBeenCalled()
+    expect(h.register).toHaveBeenCalledTimes(1)
     expect(h.sendAction).not.toHaveBeenCalled()
     h.view.unmount()
   })
@@ -449,7 +518,7 @@ describe('HilosDaemonPage', () => {
     ).toBe('n1')
     expect(h.sendAction).not.toHaveBeenCalled()
     expect(h.send).not.toHaveBeenCalled()
-    expect(h.on).not.toHaveBeenCalled()
+    expect(h.register).toHaveBeenCalledTimes(1)
     expect(h.navigate).not.toHaveBeenCalled()
     expect(h.replacePath).not.toHaveBeenCalled()
     for (const link of h.view.findAll('[data-id^="hilos-admin-child-"]')) {
@@ -522,7 +591,7 @@ describe('HilosDaemonPage', () => {
       h.view
         .find('[data-id="hilos-daemon-placement-tab"]')
         .attributes('disabled'),
-    ).toBeDefined()
+    ).toBeUndefined()
     h.view.unmount()
   })
 
@@ -676,5 +745,345 @@ describe('HilosDaemonPage', () => {
       h.view.find('[data-id="hilos-daemon-database-migration"]').text(),
     ).toBe('Migration: 0')
     h.view.unmount()
+  })
+})
+
+function placementRows(
+  ids: readonly string[] | null = ['chat_room:1', 'chat_room:2'],
+  node2Ids: readonly string[] | null = [],
+): TableRow[] {
+  return [
+    {
+      rowKey: 'chat_room',
+      slots: {
+        type: {
+          agentType: 'chat_room',
+          placement: 'policy',
+          idle: true,
+          nodes: [
+            { nodeId: 'n1', agentIds: ids },
+            { nodeId: 'n2', agentIds: node2Ids },
+          ],
+          unplacedAgentIds: ['chat_room:3'],
+        },
+      },
+    },
+  ]
+}
+
+function placementPicture(clustered = true): HilosDaemonOverviewData {
+  return {
+    ...picture([node('n1', { state: 'leader' }), node('n2')], clustered),
+    placement: {
+      instances: 27,
+      types: 12,
+      clusterTypes: 4,
+      unplacedTypes: ['chat_room', 'unshown_type'],
+    },
+  }
+}
+
+const placementTab = '[data-id="hilos-daemon-placement-tab"]'
+const nodesTab = '[data-id="hilos-daemon-nodes-tab"]'
+const cell = '[data-id="hilos-daemon-placement-cell-chat_room-n1"]'
+const panel = '[data-id="hilos-daemon-placement-selection"]'
+const alerts = '[data-id="hilos-daemon-placement-alerts"]'
+
+describe('HilosDaemonPage placement', () => {
+  it('replays the first window on the root and mounts a single matrix lazily', async () => {
+    const h = harness(false, placementPicture(), placementRows())
+    expect(h.controller().descriptor()).not.toBeNull()
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-view"]').exists(),
+    ).toBe(false)
+    expect(h.register).toHaveBeenCalledTimes(1)
+    expect(h.sendRendered).toHaveBeenCalledTimes(1)
+    await h.view.find('[data-id="hilos-daemon-node-n2"]').trigger('click')
+    await h.view.find(placementTab).trigger('click')
+    expect(h.view.find(placementTab).attributes('aria-pressed')).toBe('true')
+    expect(h.view.find(nodesTab).attributes('aria-pressed')).toBe('false')
+    expect(h.view.find('[data-id="hilos-daemon-nodes-view"]').isVisible()).toBe(
+      false,
+    )
+    expect(h.view.findAll('h1')).toHaveLength(1)
+    expect(h.view.find('h1').text()).toBe('Daemon from catalog')
+    expect(h.view.find('table').text()).toContain('n1 ★')
+    expect(h.view.find('table').text()).toContain('n2')
+    expect(h.view.find('table').text()).toContain('Policy-placed · lazy')
+    expect(h.view.find('table .badge').text()).toBe('Unplaced')
+    expect(h.view.find('table tr.table-danger').exists()).toBe(false)
+    const cards = h.view.find('[data-id="hilos-table-cards"]')
+    expect(cards.text()).toContain('Policy-placed · lazy')
+    expect(cards.text()).toContain('Unplaced')
+    expect(cards.find(cell).attributes('aria-label')).toBe(
+      'chat_room on n1: 2 instances',
+    )
+    expect(h.view.find(nodesTab).element.tagName).toBe('BUTTON')
+    expect(h.view.find(placementTab).element.tagName).toBe('BUTTON')
+    expect(h.view.find(placementTab).attributes('type')).toBe('button')
+    expect(h.view.find(cell).attributes('aria-label')).toBe(
+      'chat_room on n1: 2 instances',
+    )
+    await h.view.find(cell).trigger('keydown', { key: 'Enter' })
+    expect(h.view.find(panel).text()).toContain('chat_room:1')
+    expect(h.view.find(cell).attributes('aria-expanded')).toBe('true')
+    const table = h.view.find('table').element
+    const search = h.view.find('[data-id="hilos-table-search"]')
+    await search.setValue('room:1')
+    h.window(placementRows(['chat_room:1']))
+    await nextTick()
+    await h.view.find(nodesTab).trigger('click')
+    expect(h.view.find(panel).isVisible()).toBe(false)
+    expect(
+      h.view
+        .find('[data-id="hilos-daemon-inspector"]')
+        .attributes('data-node-id'),
+    ).toBe('n2')
+    expect(h.view.find('[data-id="hilos-daemon-database"]').isVisible()).toBe(
+      true,
+    )
+    await h.view.find(placementTab).trigger('click')
+    expect(h.view.find('table').element).toBe(table)
+    expect(
+      (
+        h.view.find('[data-id="hilos-table-search"]')
+          .element as HTMLInputElement
+      ).value,
+    ).toBe('room:1')
+    expect(h.view.find(panel).isVisible()).toBe(true)
+    await h.view.find(cell).trigger('keydown', { key: ' ' })
+    expect(h.view.find(panel).exists()).toBe(true)
+    await h.view
+      .find('[data-id="hilos-daemon-placement-collapse"]')
+      .trigger('click')
+    expect(h.view.find(panel).exists()).toBe(false)
+    expect(h.sendViewport).toHaveBeenCalledTimes(1)
+    expect(h.send).not.toHaveBeenCalled()
+    expect(h.sendAction).not.toHaveBeenCalled()
+    expect(h.navigate).not.toHaveBeenCalled()
+    expect(h.replacePath).not.toHaveBeenCalled()
+    expect(h.register).toHaveBeenCalledTimes(1)
+    h.view.unmount()
+    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonPlacement')
+    // Only the central page binder remains; every per-table listener is gone.
+    for (const [event, group] of h.listeners) {
+      if (event.startsWith('table')) expect(group.size).toBe(0)
+    }
+  })
+
+  it('draws four complete totals and every unplaced type independently of server search', async () => {
+    const h = harness()
+    h.update(placementPicture(), null, placementRows())
+    await nextTick()
+    await h.view.find(placementTab).trigger('click')
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-instances"]').text(),
+    ).toBe('27')
+    expect(h.view.find('[data-id="hilos-daemon-placement-types"]').text()).toBe(
+      '12',
+    )
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-cluster-types"]').text(),
+    ).toBe('4')
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-unplaced"]').text(),
+    ).toBe('2')
+    expect(h.view.find(alerts).text()).toContain('chat_room is unplaced')
+    expect(h.view.find(alerts).text()).toContain('unshown_type is unplaced')
+    const summary = h.view
+      .find('[data-id="hilos-daemon-placement-view"]')
+      .find('.row')
+      .text()
+    await h.view.find('[data-id="hilos-table-search"]').setValue('absent')
+    h.window([])
+    await nextTick()
+    expect(
+      h.view
+        .find('[data-id="hilos-daemon-placement-view"]')
+        .find('.row')
+        .text(),
+    ).toBe(summary)
+    expect(h.view.find(alerts).findAll('p')).toHaveLength(2)
+    expect(h.view.text()).toContain('Nothing found')
+    await h.view.find('[data-id="hilos-table-search-clear"]').trigger('click')
+    expect(h.sendViewport.mock.calls.at(-1)?.[2].filter).toEqual({})
+    h.window(placementRows())
+    await nextTick()
+    h.view.unmount()
+  })
+
+  it('updates current ids, closes empty cells and never discloses an offline node’s old window', async () => {
+    const h = harness()
+    const full = placementPicture()
+    h.update(full, null, placementRows())
+    await nextTick()
+    await h.view.find(placementTab).trigger('click')
+    await h.view.find(cell).trigger('click')
+    const longId = `chat_room:${'a'.repeat(200)}`
+    h.window(placementRows([longId]))
+    await nextTick()
+    expect(h.view.find(panel).text()).toContain(longId)
+    expect(h.view.find(panel).text()).not.toContain('chat_room:1')
+    expect(h.view.find(panel).findAll('a')).toHaveLength(0)
+    expect(h.view.find(panel).find('code.text-break').exists()).toBe(true)
+    h.window(placementRows([longId], ['chat_room:55']))
+    await nextTick()
+    await h.view
+      .find('[data-id="hilos-daemon-placement-cell-chat_room-n2"]')
+      .trigger('click')
+    expect(h.view.findAll(panel)).toHaveLength(1)
+    expect(h.view.find(panel).text()).toContain('chat_room:55')
+    expect(h.view.find(panel).text()).not.toContain(longId)
+    expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')
+    await h.view.find(cell).trigger('click')
+    h.update({
+      ...full,
+      nodes: [node('n1', { online: false, state: 'silent' }), node('n2')],
+    })
+    await nextTick()
+    expect(h.view.find(panel).exists()).toBe(false)
+    expect(h.view.find(cell).exists()).toBe(false)
+    expect(h.view.find('table span[title]').attributes('title')).toBe(
+      'Node is silent or has not reported its agents',
+    )
+    h.update(full)
+    await nextTick()
+    expect(h.view.find(panel).exists()).toBe(false)
+    await h.view.find(cell).trigger('click')
+    h.window(placementRows([]))
+    await nextTick()
+    expect(h.view.find(panel).exists()).toBe(false)
+    expect(h.view.find(cell).exists()).toBe(false)
+    expect(h.view.find('table').text()).toContain('·')
+    h.window(placementRows(null))
+    await nextTick()
+    expect(h.view.find('table').text()).toContain('?')
+    h.view.unmount()
+  })
+
+  it('hides a selected panel while search loads and forgets freeze and refusal', async () => {
+    vi.useFakeTimers()
+    const h = harness()
+    try {
+      h.update(placementPicture(), null, placementRows())
+      await nextTick()
+      await h.view.find(placementTab).trigger('click')
+      await h.view.find(cell).trigger('click')
+      await h.view.find('[data-id="hilos-table-search"]').setValue('99')
+      vi.advanceTimersByTime(1000)
+      await nextTick()
+      expect(h.view.find(panel).exists()).toBe(false)
+      h.window(placementRows(['chat_room:99']))
+      await nextTick()
+      expect(h.view.find(panel).text()).toContain('chat_room:99')
+      h.emit('tableViewportFrozen', {
+        data: {
+          page: HilosPages.DAEMON,
+          tableKey: 'hilosDaemonPlacement',
+          since: 123,
+        },
+      })
+      await nextTick()
+      expect(h.view.find(panel).exists()).toBe(false)
+      h.window(placementRows())
+      await nextTick()
+      expect(h.view.find(panel).exists()).toBe(false)
+      await h.view.find(cell).trigger('click')
+      h.emit('tableWindowRefused', {
+        data: {
+          page: HilosPages.DAEMON,
+          tableKey: 'hilosDaemonPlacement',
+          errorCode: 'unavailable',
+        },
+      })
+      await nextTick()
+      expect(h.view.find(panel).exists()).toBe(false)
+      expect(h.view.text()).toContain('List unavailable')
+      expect(h.view.find(alerts).text()).toContain('unshown_type is unplaced')
+    } finally {
+      h.view.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps unknown, empty and standalone totals distinct, including an empty node picture', async () => {
+    const h = harness()
+    await h.view.find(placementTab).trigger('click')
+    expect(h.view.text()).toContain('Waiting for the node picture')
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-unplaced"]').exists(),
+    ).toBe(false)
+    h.update(picture([]), null, [])
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-instances"]').text(),
+    ).toBe('—')
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-unplaced"]').text(),
+    ).toBe('—')
+    expect(h.view.text()).toContain('Placement status unknown')
+    h.update(
+      {
+        ...picture([node('n1')], false),
+        placement: {
+          instances: 0,
+          types: 0,
+          clusterTypes: 0,
+          unplacedTypes: [],
+        },
+      },
+      null,
+      [],
+    )
+    await nextTick()
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-unplaced"]').text(),
+    ).toBe('0')
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-instances"]').text(),
+    ).toBe('0')
+    expect(h.view.text()).toContain('All placed')
+    expect(h.view.find(alerts).text()).toBe('')
+    h.update(
+      { ...placementPicture(false), nodes: [node('n1', { state: null })] },
+      null,
+      placementRows(),
+    )
+    await nextTick()
+    expect(h.view.find('table').text()).not.toContain('★')
+    expect(h.view.find('table').text()).toContain('Lazy')
+    expect(
+      h.view.find('[data-id="hilos-daemon-placement-cluster-types"]').text(),
+    ).toBe('4')
+    expect(h.view.text()).toContain('Declared in the project')
+    expect(h.view.text()).toContain('Could not place these types')
+    expect(h.view.text()).not.toContain('Leader could not')
+    h.view.unmount()
+  })
+
+  it('lets an admin view mode viewer search, open and collapse cells', async () => {
+    const h = harness()
+    h.scopes.session.data.set('adminViewMode', true)
+    const release = bindAdminAccess(h.scopes)
+    try {
+      h.update(placementPicture(), null, placementRows())
+      await nextTick()
+      await h.view.find(placementTab).trigger('click')
+      expect(hilosAdminAccess.get()).toBe('view')
+      expect(h.view.find(cell).attributes('disabled')).toBeUndefined()
+      await h.view.find(cell).trigger('click')
+      expect(h.view.find(panel).text()).toContain('chat_room:2')
+      await h.view
+        .find('[data-id="hilos-daemon-placement-collapse"]')
+        .trigger('click')
+      expect(h.view.find(panel).exists()).toBe(false)
+      await h.view.find('[data-id="hilos-table-search"]').setValue('room')
+      expect(h.sendViewport).toHaveBeenCalledTimes(1)
+      h.window(placementRows())
+      expect(h.sendAction).not.toHaveBeenCalled()
+    } finally {
+      h.view.unmount()
+      release()
+    }
   })
 })

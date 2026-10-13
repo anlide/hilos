@@ -22,6 +22,14 @@ const ROOT_PATH = '/hilos/daemon'
 const WORKERS_PATH = '/hilos/daemon/standalone/workers'
 const WORKERS_CHILD = 'hilos-admin-child-hilos_daemon_workers'
 const ROOT_CRUMB = 'hilos-breadcrumb-hilos_daemon'
+const PLACEMENT_TYPE = 'hilos_daemon_node'
+const PLACEMENT_CELL = `hilos-daemon-placement-cell-${PLACEMENT_TYPE}-standalone`
+const PLACEMENT_TOTALS = [
+  'instances',
+  'types',
+  'cluster-types',
+  'unplaced',
+] as const
 
 /** The outlet must have mounted the destination before its ready mark counts. */
 async function expectDaemonPage(page: Page, key: string): Promise<void> {
@@ -123,7 +131,11 @@ async function expectStandaloneOverview(page: Page): Promise<void> {
     'href',
     '/hilos/logs/view/standalone/live',
   )
-  await expect(page.getByTestId('hilos-daemon-placement-tab')).toBeDisabled()
+  await expect(page.getByTestId('hilos-daemon-placement-tab')).toBeEnabled()
+  await expect(page.getByTestId('hilos-daemon-placement-tab')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
   const maintenance = page
     .getByTestId('hilos-daemon-maintenance')
     .locator('button')
@@ -135,6 +147,39 @@ async function expectStandaloneOverview(page: Page): Promise<void> {
       'hilos-daemon-maintenance-unavailable',
     )
   }
+}
+
+/** Open the local diagram and wait for its real standalone roster window. */
+async function expectStandalonePlacement(page: Page): Promise<void> {
+  const tab = page.getByTestId('hilos-daemon-placement-tab')
+  await tab.focus()
+  await tab.press('Enter')
+  await expect(tab).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('hilos-daemon-nodes-tab')).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  await expect(page).toHaveURL(new RegExp(`${ROOT_PATH}$`))
+  await expect(page.getByTestId('hilos-daemon-nodes-view')).toBeHidden()
+  await expect(page.getByTestId('hilos-daemon-database')).toBeHidden()
+  await expect(page.getByTestId('hilos-daemon-inspector')).toBeHidden()
+  for (const total of PLACEMENT_TOTALS) {
+    await expect(
+      page.getByTestId(`hilos-daemon-placement-${total}`),
+    ).toHaveText(total === 'unplaced' ? '0' : /^[1-9][\d,]*$/)
+  }
+  const view = page.getByTestId('hilos-daemon-placement-view')
+  await expect(view).toContainText('All placed')
+  await expect(view).toContainText('Declared in the project')
+  await expect(page.getByTestId('hilos-daemon-placement-alerts')).toBeEmpty()
+  const row = shownByTestId(page, `hilos-table-row-${PLACEMENT_TYPE}`)
+  const card = shownByTestId(page, `hilos-table-card-${PLACEMENT_TYPE}`)
+  await expect(row.or(card)).toContainText('Stays up')
+  await expect(view).not.toContainText('★')
+  await expect(shownByTestId(page, PLACEMENT_CELL)).toHaveAccessibleName(
+    `${PLACEMENT_TYPE} on standalone: 1 instances`,
+  )
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
 }
 
 test.describe('daemon overview', () => {
@@ -209,6 +254,86 @@ test.describe('daemon overview', () => {
     await expectStandaloneOverview(page)
   })
 
+  for (const viewer of [false, true]) {
+    test(`searches real placement ids and preserves local selection as ${viewer ? 'a view-mode reader' : 'an admin'}`, async ({
+      page,
+    }) => {
+      if (viewer) {
+        await setAdminViewMode(true)
+      } else {
+        await signUpAdmin(page)
+      }
+      await gotoPage(page, ROOT_PATH, PAGE_READY)
+      await expectStandaloneOverview(page)
+      await expectStandalonePlacement(page)
+      if (viewer) {
+        await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+      }
+      const totals = await Promise.all(
+        PLACEMENT_TOTALS.map((total) =>
+          page.getByTestId(`hilos-daemon-placement-${total}`).innerText(),
+        ),
+      )
+      const cell = shownByTestId(page, PLACEMENT_CELL)
+      const selection = page.getByTestId('hilos-daemon-placement-selection')
+      await cell.click()
+      await expect(cell).toHaveAttribute('aria-expanded', 'true')
+      await expect(selection).toBeVisible()
+      const ids = (await selection.locator('code').allTextContents()).slice(2)
+      expect(ids).toEqual([PLACEMENT_TYPE])
+      await expect(selection.locator('a, button')).toHaveCount(1)
+      await page.getByTestId('hilos-daemon-placement-collapse').click()
+      await expect(selection).toHaveCount(0)
+      await expect(cell).toHaveAttribute('aria-expanded', 'false')
+      await cell.focus()
+      await cell.press('Space')
+      await expect(selection).toContainText(ids[0])
+
+      const search = page.getByTestId('hilos-table-search')
+      await search.fill('')
+      await search.pressSequentially(ids[0], { delay: 10 })
+      await expect(shownByTestId(page, /^hilos-table-row-/)).toHaveCount(1)
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(selection).toContainText(ids[0])
+      for (const [index, total] of PLACEMENT_TOTALS.entries()) {
+        await expect(
+          page.getByTestId(`hilos-daemon-placement-${total}`),
+        ).toHaveText(totals[index])
+      }
+      await expect(
+        page.getByTestId('hilos-daemon-placement-alerts'),
+      ).toBeEmpty()
+
+      await page.getByTestId('hilos-daemon-nodes-tab').click()
+      await expectStandaloneOverview(page)
+      await expect(selection).toBeHidden()
+      await expectStandalonePlacement(page)
+      await expect(search).toHaveValue(ids[0])
+      await expect(selection).toContainText(ids[0])
+      await expect(cell).toHaveAttribute('aria-expanded', 'true')
+      await cell.click()
+      await expect(selection).toBeVisible()
+
+      await search.fill('')
+      await search.pressSequentially('no-such-placement-instance', {
+        delay: 10,
+      })
+      await expect(shownByTestId(page, 'hilos-table-no-matches')).toBeVisible()
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(selection).toHaveCount(0)
+      for (const [index, total] of PLACEMENT_TOTALS.entries()) {
+        await expect(
+          page.getByTestId(`hilos-daemon-placement-${total}`),
+        ).toHaveText(totals[index])
+      }
+      await shownByTestId(page, 'hilos-table-no-matches-reset').click()
+      await expect(search).toHaveValue('')
+      await expect(cell).toBeVisible()
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(selection).toHaveCount(0)
+    })
+  }
+
   for (const theme of ['light', 'dark'] as const) {
     test(`keeps the live root and child controls readable in ${theme} at desktop and 375px`, async ({
       page,
@@ -280,6 +405,47 @@ test.describe('daemon overview', () => {
               ),
             ).toBe(0)
           }
+          await expectStandalonePlacement(page)
+          const projection = width < 768 ? 'card' : 'row'
+          await expect(
+            shownByTestId(page, `hilos-table-${projection}-${PLACEMENT_TYPE}`),
+          ).toBeVisible()
+          const longType = 'hilos_notifications_library'
+          const cell = shownByTestId(
+            page,
+            `hilos-daemon-placement-cell-${longType}-standalone`,
+          )
+          await cell.click()
+          const selection = page.getByTestId('hilos-daemon-placement-selection')
+          await expect(selection.locator('code')).toHaveText([
+            longType,
+            'standalone',
+            longType,
+          ])
+          expect(await sidewaysOverflow(page)).toEqual([0, 0])
+          for (const target of [
+            page.getByTestId('hilos-table-search'),
+            cell,
+            selection,
+            page.getByTestId('hilos-daemon-placement-collapse'),
+            ...(await selection.locator('code').all()),
+          ]) {
+            await target.scrollIntoViewIfNeeded()
+            await fitsInScrollport(target)
+          }
+          // Exercise a long current id, without injecting a fake roster.
+          for (const id of await selection.locator('code').all()) {
+            await expect(id).toHaveCSS('overflow-wrap', 'break-word')
+          }
+          await test.info().attach(`placement-${theme}-${width}`, {
+            body: await page
+              .getByTestId('hilos-daemon-placement-view')
+              .screenshot(),
+            contentType: 'image/png',
+          })
+          await page.getByTestId('hilos-daemon-placement-collapse').click()
+          await page.getByTestId('hilos-daemon-nodes-tab').click()
+          await expectStandaloneOverview(page)
           await page.getByTestId(WORKERS_CHILD).click()
           await expectDaemonPage(page, 'hilos_daemon_workers')
           await expect(page.getByTestId('hilos-daemon-node-id')).toHaveText(

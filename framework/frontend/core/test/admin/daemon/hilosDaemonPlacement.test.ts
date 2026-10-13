@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosDaemonPlacementTable,
+  createHilosDaemonPlacementView,
   daemonPlacementCellIds,
   daemonPlacementNodeColumnKey,
   formatDaemonPlacementCell,
@@ -18,9 +19,13 @@ import {
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
-import { type ScopeManager } from '../../../src/state/ScopeManager.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
+import {
+  type HilosDaemonOverviewData,
+  type HilosDaemonOverviewNode,
+} from '../../../src/admin/daemon/hilosDaemonOverview.js'
 
 function row(
   overrides: Partial<HilosDaemonPlacementRow> = {},
@@ -52,10 +57,16 @@ function stubTable(nodes: readonly HilosDaemonPlacementNode[]) {
     rendered: readonly string[]
   }> = []
   const nodeSignal = createSignal(nodes)
+  const unbind = vi.fn()
+  const on = vi.fn(() => unbind)
+  const unregister = vi.fn()
+  const scopes = new ScopeManager()
+  scopes.openPage(HilosPages.DAEMON)
   const context: HilosDaemonPlacementContext = {
     connection: {
-      registerTableWindow(): void {},
-      unregisterTableWindow(): void {},
+      on,
+      registerTableWindow: vi.fn(),
+      unregisterTableWindow: unregister,
       tableWindowDescriptors: () => ({}),
       sendTableViewport(
         page: string,
@@ -74,7 +85,7 @@ function stubTable(nodes: readonly HilosDaemonPlacementNode[]) {
         return true
       },
     } as unknown as HilosConnection,
-    scopes: {} as ScopeManager,
+    scopes,
   }
 
   return {
@@ -82,6 +93,10 @@ function stubTable(nodes: readonly HilosDaemonPlacementNode[]) {
     nodeSignal,
     sent,
     sentRendered,
+    context,
+    on,
+    unbind,
+    unregister,
   }
 }
 
@@ -276,5 +291,251 @@ describe('daemon placement labels', () => {
     expect(
       formatDaemonPlacementState(row({ unplacedAgentIds: ['chat_room:111'] })),
     ).toBe('Unplaced')
+  })
+})
+
+function viewPicture(
+  overrides: Partial<HilosDaemonOverviewNode> = {},
+): HilosDaemonOverviewData {
+  return {
+    clustered: true,
+    nodes: [
+      {
+        nodeId: 'n1',
+        online: true,
+        role: 'master',
+        state: 'leader',
+        silentSince: null,
+        workers: [],
+        workerRestarts24h: 0,
+        uptimeMinutes: 0,
+        measurements: null,
+        standing: null,
+        environment: null,
+        ...overrides,
+      },
+    ],
+    consensus: null,
+    placement: { instances: 2, types: 1, clusterTypes: 1, unplacedTypes: [] },
+    environmentComparison: {
+      answeringNodes: 1,
+      divergedKeys: null,
+      sourcesDifferKeys: null,
+    },
+  }
+}
+
+function stubView() {
+  const h = stubTable([])
+  const overview = createSignal<HilosDaemonOverviewData | null>(viewPicture())
+  const view = createHilosDaemonPlacementView(h.context, overview)
+  const window = (
+    ids: readonly string[] | null = ['chat_room:1', 'chat_room:2'],
+  ) => {
+    view.controller.ingestWindow(
+      [
+        rawRow('chat_room', {
+          agentType: 'chat_room',
+          placement: 'policy',
+          idle: false,
+          nodes: [{ nodeId: 'n1', agentIds: ids }],
+          unplacedAgentIds: [],
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      25,
+    )
+  }
+  view.start()
+  window()
+  return { ...h, overview, view, window }
+}
+
+describe('daemon placement view', () => {
+  it('derives dynamic columns and leader marks from the complete picture', () => {
+    const h = stubView()
+    expect(h.view.nodes.get()).toEqual([{ nodeId: 'n1', leader: true }])
+    expect(h.view.controller.frame.columns.get()[2]?.label).toBe('n1 ★')
+    h.overview.set({ ...viewPicture(), clustered: false })
+    expect(h.view.nodes.get()).toEqual([{ nodeId: 'n1', leader: false }])
+    h.overview.set(viewPicture({ nodeId: 'n2', state: 'standby' }))
+    expect(h.view.controller.frame.columns.get()[2]?.key).toBe('node:n2')
+    h.view.dispose()
+  })
+
+  it('opens locally, keeps a repeated click open and follows current window ids', () => {
+    const h = stubView()
+    h.view.openCell('chat_room', 'n1')
+    expect(h.view.selectedCell.get()).toEqual({
+      rowKey: 'chat_room',
+      agentType: 'chat_room',
+      nodeId: 'n1',
+      agentIds: ['chat_room:1', 'chat_room:2'],
+    })
+    h.view.openCell('chat_room', 'n1')
+    h.window(['chat_room:99'])
+    expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
+    expect(h.sent).toEqual([])
+    h.view.closeCell()
+    expect(h.view.selectedCell.get()).toBeNull()
+    h.view.dispose()
+  })
+
+  it('replaces the one chosen address when another cell opens', () => {
+    const h = stubView()
+    h.overview.set({
+      ...viewPicture(),
+      nodes: [...viewPicture().nodes, ...viewPicture({ nodeId: 'n2' }).nodes],
+    })
+    h.view.controller.ingestWindow(
+      [
+        rawRow('chat_room', {
+          agentType: 'chat_room',
+          nodes: [
+            { nodeId: 'n1', agentIds: ['chat_room:1'] },
+            { nodeId: 'n2', agentIds: ['chat_room:2'] },
+          ],
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      25,
+    )
+    h.view.openCell('chat_room', 'n1')
+    h.view.openCell('chat_room', 'n2')
+    expect(h.view.selectedCell.get()).toEqual({
+      rowKey: 'chat_room',
+      agentType: 'chat_room',
+      nodeId: 'n2',
+      agentIds: ['chat_room:2'],
+    })
+    expect(h.sent).toEqual([])
+    h.view.dispose()
+  })
+
+  it.each([[], null])(
+    'forgets a selected cell whose new roster is %j',
+    (ids) => {
+      const h = stubView()
+      h.view.openCell('chat_room', 'n1')
+      h.window(ids)
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.openCell('chat_room', 'n1')
+      h.window()
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.dispose()
+    },
+  )
+
+  it('forgets a missing row or node cell and will not revive it later', () => {
+    const h = stubView()
+    h.view.openCell('chat_room', 'n1')
+    h.view.controller.ingestWindow([], 0, true, null, null, 25)
+    h.window()
+    expect(h.view.selectedCell.get()).toBeNull()
+    h.view.openCell('chat_room', 'n1')
+    h.view.controller.ingestWindow(
+      [
+        rawRow('chat_room', {
+          agentType: 'chat_room',
+          nodes: [],
+        }),
+      ],
+      1,
+      true,
+      null,
+      null,
+      25,
+    )
+    h.window()
+    expect(h.view.selectedCell.get()).toBeNull()
+    h.view.dispose()
+  })
+
+  it.each(['removed', 'silent', 'unreported', 'unknown'] as const)(
+    'forgets selection when the node is %s and cannot reopen old ids',
+    (state) => {
+      const h = stubView()
+      h.view.openCell('chat_room', 'n1')
+      h.overview.set(
+        state === 'unknown'
+          ? null
+          : state === 'removed'
+            ? { ...viewPicture(), nodes: [] }
+            : viewPicture(
+                state === 'silent'
+                  ? { online: false, state: 'silent' }
+                  : { workers: null },
+              ),
+      )
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.openCell('chat_room', 'n1')
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.overview.set(viewPicture())
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.dispose()
+    },
+  )
+
+  it('hides loading without judging old search rows, then checks the new window', () => {
+    vi.useFakeTimers()
+    const h = stubView()
+    try {
+      h.view.openCell('chat_room', 'n1')
+      h.view.controller.setSearch('99')
+      vi.advanceTimersByTime(1000)
+      expect(h.view.controller.frame.body.get()).toBe('loading')
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.openCell('chat_room', 'n1')
+      h.window(['chat_room:99'])
+      expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
+      h.view.controller.setSearch('absent')
+      vi.advanceTimersByTime(1000)
+      h.view.controller.ingestWindow([], 0, true, null, null, 25)
+      h.window()
+      expect(h.view.selectedCell.get()).toBeNull()
+    } finally {
+      h.view.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['freeze', 'refusal'] as const)(
+    'forgets selection on %s',
+    (state) => {
+      const h = stubView()
+      h.view.openCell('chat_room', 'n1')
+      if (state === 'freeze') h.view.controller.ingestFrozen(123)
+      else h.view.controller.ingestRefusal('unavailable')
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.openCell('chat_room', 'n1')
+      h.window()
+      expect(h.view.selectedCell.get()).toBeNull()
+      h.view.dispose()
+    },
+  )
+
+  it('binds once and disposes every table and selection subscription', () => {
+    const h = stubView()
+    const bindings = h.on.mock.calls.length
+    expect(bindings).toBeGreaterThan(0)
+    h.view.start()
+    expect(h.on).toHaveBeenCalledTimes(bindings)
+    h.view.openCell('chat_room', 'n1')
+    h.view.dispose()
+    expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.unbind).toHaveBeenCalledTimes(bindings)
+    expect(h.unregister).toHaveBeenCalledWith('hilosDaemonPlacement')
+    // After disposal no validity watcher is left to clear a choice on later changes.
+    h.view.openCell('chat_room', 'n1')
+    h.overview.set(null)
+    h.overview.set(viewPicture())
+    expect(h.view.selectedCell.get()?.rowKey).toBe('chat_room')
+    h.view.closeCell()
   })
 })

@@ -7,12 +7,17 @@ namespace Hilos\Pages\Daemon\DTO;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\TimeConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\AgentId;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPicture;
+use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonNodeHeading;
 use Hilos\DaemonSection\DaemonWorkerPicture;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
+use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 
 /** Value-free boundary projection of the Daemon root's cluster picture. */
 final readonly class HilosDaemonOverviewData
@@ -49,6 +54,11 @@ final readonly class HilosDaemonOverviewData
     public const string answeringNodes = 'answeringNodes';
     public const string divergedKeys = 'divergedKeys';
     public const string sourcesDifferKeys = 'sourcesDifferKeys';
+    public const string placement = 'placement';
+    public const string instances = 'instances';
+    public const string types = 'types';
+    public const string clusterTypes = 'clusterTypes';
+    public const string unplacedTypes = 'unplacedTypes';
 
     /**
      * Arrays here are the final wire projection, not internal picture state.
@@ -59,6 +69,7 @@ final readonly class HilosDaemonOverviewData
      * @param int $answeringNodes Nodes with an online environment report
      * @param ?int $divergedKeys Comparable keys whose values differ
      * @param ?int $sourcesDifferKeys Comparable keys whose equal values come from different sources
+     * @param array{instances: ?int, types: int, clusterTypes: int, unplacedTypes: ?list<string>} $placement Full placement projection
      */
     private function __construct(
         private bool $clustered,
@@ -67,6 +78,7 @@ final readonly class HilosDaemonOverviewData
         private int $answeringNodes,
         private ?int $divergedKeys,
         private ?int $sourcesDifferKeys,
+        private array $placement,
     ) {
     }
 
@@ -76,6 +88,7 @@ final readonly class HilosDaemonOverviewData
      * @param bool $hasFullSnapshot Whether the mirror received a complete snapshot
      * @return ?self Null until the first full snapshot, including after a mirror reset
      * @throws InvalidArgumentException When a generated environment cell contradicts its state
+     * @throws EnvException When placement source cluster mode cannot be read
      */
     public static function fromPicture(?ClusterDaemonPicture $picture, bool $clustered, bool $hasFullSnapshot): ?self
     {
@@ -98,6 +111,7 @@ final readonly class HilosDaemonOverviewData
             $answeringNodes,
             $comparable ? count($comparison->diverged) : null,
             $comparable ? count($comparison->sourcesDiffer) : null,
+            self::placementToArray($picture, $clustered),
         );
     }
 
@@ -113,6 +127,58 @@ final readonly class HilosDaemonOverviewData
                 self::divergedKeys => $this->divergedKeys,
                 self::sourcesDifferKeys => $this->sourcesDifferKeys,
             ],
+            self::placement => $this->placement,
+        ];
+    }
+
+    /**
+     * @param ClusterDaemonPicture $picture Same complete picture as the node projection
+     * @param bool $clustered Installation mode used to select the verdict source
+     * @return array{instances: ?int, types: int, clusterTypes: int, unplacedTypes: ?list<string>} Search-independent wire totals
+     * @throws EnvException When placement source cluster mode cannot be read
+     */
+    private static function placementToArray(ClusterDaemonPicture $picture, bool $clustered): array
+    {
+        $instances = $picture->nodes() === [] ? null : 0;
+        foreach ($picture->nodes() as $node) {
+            if (!$node->online || $node->slot?->picture->processes === null) {
+                $instances = null;
+                break;
+            }
+            foreach ($node->slot->picture->processes->workers as $worker) {
+                $instances += count($worker->agents);
+            }
+        }
+
+        $registry = Hilos::appClass()::AGENTS;
+        $clusterTypes = 0;
+        foreach ($registry as $entry) {
+            if (in_array(DaemonAgentPicture::placementOf($entry), [
+                DaemonAgentPicture::PLACEMENT_LEADER, DaemonAgentPicture::PLACEMENT_POLICY,
+            ], true)) {
+                $clusterTypes++;
+            }
+        }
+
+        $source = $clustered ? $picture->leader() : ($picture->nodes()[0] ?? null);
+        $unplacedTypes = null;
+        if ($source?->online === true && $source->slot?->picture->processes !== null) {
+            $types = [];
+            foreach (HilosDaemonPlacementTable::unplacedOf($picture) as $id) {
+                $type = AgentId::fromId($id)->type;
+                if (array_key_exists($type, $registry)) {
+                    $types[$type] = true;
+                }
+            }
+            $unplacedTypes = array_keys($types);
+            usort($unplacedTypes, strcmp(...));
+        }
+
+        return [
+            self::instances => $instances,
+            self::types => count($registry),
+            self::clusterTypes => $clusterTypes,
+            self::unplacedTypes => $unplacedTypes,
         ];
     }
 

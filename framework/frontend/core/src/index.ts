@@ -1991,6 +1991,7 @@ export {
 export {
   resolveHilosDaemonPlacementRow,
   createHilosDaemonPlacementTable,
+  createHilosDaemonPlacementView,
   daemonPlacementNodeColumnKey,
   formatDaemonPlacementNodeLabel,
   daemonPlacementCellIds,
@@ -2007,6 +2008,8 @@ export {
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementContext,
   type HilosDaemonPlacementTable,
+  type HilosDaemonPlacementView,
+  type HilosDaemonPlacementSelection,
 } from './admin/daemon/hilosDaemonPlacement.js'
 export {
   resolveHilosDaemonEnvKeyRow,

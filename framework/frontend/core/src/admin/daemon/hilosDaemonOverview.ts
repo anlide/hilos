@@ -86,6 +86,14 @@ export const daemonOverviewSchema = z
   .strictObject({
     clustered: z.boolean(),
     nodes: z.array(daemonOverviewNodeSchema).readonly(),
+    placement: z
+      .strictObject({
+        instances: countSchema.nullable(),
+        types: countSchema,
+        clusterTypes: countSchema,
+        unplacedTypes: z.array(z.string()).readonly().nullable(),
+      })
+      .readonly(),
     consensus: z
       .strictObject({
         nodeId: z.string(),

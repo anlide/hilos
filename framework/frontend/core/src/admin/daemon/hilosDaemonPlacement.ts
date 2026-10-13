@@ -6,13 +6,19 @@ import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { readBoolean, readString } from '../../state/fieldReaders.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { type ReadonlySignal } from '../../state/signal.js'
+import {
+  computedSignal,
+  createSignal,
+  subscribeSignal,
+  type ReadonlySignal,
+} from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumn } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { formatDaemonAgentKind } from './hilosDaemonAgents.js'
+import { type HilosDaemonOverviewData } from './hilosDaemonOverview.js'
 
 const DAEMON_PLACEMENT_TABLE = 'hilosDaemonPlacement'
 const DAEMON_PLACEMENT_SLOT = 'type'
@@ -65,6 +71,22 @@ export interface HilosDaemonPlacementTable {
   readonly controller: TableViewportController<HilosDaemonPlacementRow>
   start(): void
   dispose(): void
+}
+
+/** The current permitted cell, resolved afresh from the server window. */
+export interface HilosDaemonPlacementSelection {
+  readonly rowKey: string
+  readonly agentType: string
+  readonly nodeId: string
+  readonly agentIds: readonly string[]
+}
+
+/** One matrix and its local cell selection for the root page's lifetime. */
+export interface HilosDaemonPlacementView extends HilosDaemonPlacementTable {
+  readonly nodes: ReadonlySignal<readonly HilosDaemonPlacementNode[]>
+  readonly selectedCell: ReadonlySignal<HilosDaemonPlacementSelection | null>
+  openCell(rowKey: string, nodeId: string): void
+  closeCell(): void
 }
 
 /**
@@ -164,6 +186,103 @@ export function createHilosDaemonPlacementTable(
       for (const off of teardown.splice(0)) {
         off()
       }
+    },
+  }
+}
+
+/**
+ * Keep only the chosen address; the current window owns every instance id.
+ *
+ * @param context Connection and page scope used by the matrix.
+ * @param overview The root's complete picture, independent of table search.
+ */
+export function createHilosDaemonPlacementView(
+  context: HilosDaemonPlacementContext,
+  overview: ReadonlySignal<HilosDaemonOverviewData | null>,
+): HilosDaemonPlacementView {
+  const nodes = computedSignal(() =>
+    (overview.get()?.nodes ?? []).map((node) => ({
+      nodeId: node.nodeId,
+      leader: overview.get()?.clustered === true && node.state === 'leader',
+    })),
+  )
+  const table = createHilosDaemonPlacementTable(context, nodes)
+  const controller = table.controller
+  const chosen = createSignal<{
+    readonly rowKey: string
+    readonly nodeId: string
+  } | null>(null)
+  const knownNode = (nodeId: string): boolean =>
+    overview
+      .get()
+      ?.nodes.some(
+        (node) =>
+          node.nodeId === nodeId && node.online && node.workers !== null,
+      ) === true
+  const resolveCell = (
+    rowKey: string,
+    nodeId: string,
+  ): HilosDaemonPlacementSelection | null => {
+    const row = controller.rows.get().find((row) => row.rowKey === rowKey)
+    const ids = row?.row && daemonPlacementCellIds(row.row, nodeId)
+    return ids && ids.length > 0 && row?.row
+      ? { rowKey, agentType: row.row.agentType, nodeId, agentIds: ids }
+      : null
+  }
+  const available = computedSignal(
+    () =>
+      controller.frame.body.get() !== 'unavailable' &&
+      controller.frozenSince.get() === null,
+  )
+  const valid = computedSignal(() => {
+    const cell = chosen.get()
+    if (cell === null) return true
+    if (!knownNode(cell.nodeId) || !available.get()) return false
+    // Loading hides the panel but cannot judge the previous search's rows.
+    return (
+      controller.frame.body.get() === 'loading' ||
+      resolveCell(cell.rowKey, cell.nodeId) !== null
+    )
+  })
+  const selectedCell = computedSignal(() => {
+    const cell = chosen.get()
+    return cell !== null &&
+      valid.get() &&
+      controller.frame.body.get() !== 'loading'
+      ? resolveCell(cell.rowKey, cell.nodeId)
+      : null
+  })
+  let off: (() => void) | undefined
+
+  return {
+    controller,
+    nodes,
+    selectedCell,
+    openCell(rowKey, nodeId) {
+      if (
+        knownNode(nodeId) &&
+        available.get() &&
+        controller.frame.body.get() !== 'loading' &&
+        resolveCell(rowKey, nodeId) !== null
+      ) {
+        chosen.set({ rowKey, nodeId })
+      }
+    },
+    closeCell() {
+      chosen.set(null)
+    },
+    start() {
+      if (off !== undefined) return
+      off = subscribeSignal(valid, (current) => {
+        if (!current) chosen.set(null)
+      })
+      table.start()
+    },
+    dispose() {
+      off?.()
+      off = undefined
+      table.dispose()
+      chosen.set(null)
     },
   }
 }

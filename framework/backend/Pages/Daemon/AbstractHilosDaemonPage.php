@@ -49,7 +49,8 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
     private static ?string $placementFingerprint = null;
 
     /**
-     * Re-answers changed root data whole, or changed placement windows on their own.
+     * Re-answers changed root data, including full placement totals, whole.
+     * Instance-id changes with unchanged totals and unplaced types re-answer only the window.
      *
      * @throws HilosException When the picture cannot be encoded or a window cannot be served
      * @throws InvalidArgumentException When the table-window signal cannot be named
@@ -130,7 +131,7 @@ abstract class AbstractHilosDaemonPage extends AbstractHilosDaemonSectionPage
     /**
      * @param string $acceptKey Subscribing connection
      * @param PageRouteParams $params Root route parameters
-     * @return PagePayload Technical overview and primary database metadata
+     * @return PagePayload Technical overview with full placement totals and primary database metadata
      * @throws InvalidArgumentException When a generated environment cell contradicts its state
      * @throws EnvException When cluster mode cannot be read
      * @throws DatabaseException When the previously active database connection cannot be restored

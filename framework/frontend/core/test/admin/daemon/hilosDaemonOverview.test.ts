@@ -72,6 +72,12 @@ function picture(
   return {
     clustered: true,
     nodes,
+    placement: {
+      instances: null,
+      types: 3,
+      clusterTypes: 2,
+      unplacedTypes: null,
+    },
     consensus: {
       nodeId: 'n1',
       term: 7,
@@ -139,6 +145,56 @@ describe('Daemon overview readers', () => {
     expect(read.get()?.nodes[0]?.workers).toBeNull()
     expect(read.get()?.nodes[0]?.standing).toBeNull()
     scopes.openPage('elsewhere')
+    expect(read.get()).toBeNull()
+  })
+
+  it('preserves unknown placement, reported zeros and the unplaced type list', () => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    for (const placement of [
+      { instances: null, types: 3, clusterTypes: 2, unplacedTypes: null },
+      { instances: 0, types: 0, clusterTypes: 0, unplacedTypes: [] },
+      {
+        instances: 5,
+        types: 3,
+        clusterTypes: 2,
+        unplacedTypes: ['leader', 'policy'],
+      },
+    ]) {
+      page.data.set('daemon', { ...picture(), placement })
+      expect(read.get()?.placement).toEqual(placement)
+    }
+  })
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { types: 3, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 0, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 0, types: 3, unplacedTypes: [] },
+    { instances: 0, types: 3, clusterTypes: 2 },
+    { instances: -1, types: 3, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 1.5, types: 3, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 0, types: null, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 0, types: -1, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 0, types: 1.5, clusterTypes: 2, unplacedTypes: [] },
+    { instances: 0, types: 3, clusterTypes: null, unplacedTypes: [] },
+    { instances: 0, types: 3, clusterTypes: -1, unplacedTypes: [] },
+    { instances: 0, types: 3, clusterTypes: 1.5, unplacedTypes: [] },
+    { instances: 0, types: 3, clusterTypes: 2, unplacedTypes: [1] },
+    { instances: 0, types: 3, clusterTypes: 2, unplacedTypes: 'leader' },
+    {
+      instances: 0,
+      types: 3,
+      clusterTypes: 2,
+      unplacedTypes: [],
+      unplacedCount: 0,
+    },
+  ])('rejects missing, malformed or enlarged placement: %j', (placement) => {
+    const { scopes, page } = harness()
+    const read = readHilosDaemonOverview(scopes)
+    page.data.set('daemon', { ...picture(), placement })
     expect(read.get()).toBeNull()
   })
 

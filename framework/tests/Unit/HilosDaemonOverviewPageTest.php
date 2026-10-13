@@ -12,6 +12,9 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Hilos\AbstractHilosDaemonAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
@@ -78,6 +81,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
     private ?BrowserContext $previousBrowser;
     private ?RtContext $previousRt;
     private ?ClusterContext $previousCluster;
+    private string|false $previousClusterEnabled;
     private ?TableContext $previousTable;
     private ?DbContext $previousDb;
     private string $previousAppClass;
@@ -95,6 +99,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->previousBrowser = Hilos::$browser;
         $this->previousRt = Hilos::$rt;
         $this->previousCluster = Hilos::$cluster;
+        $this->previousClusterEnabled = getenv('CLUSTER_ENABLED');
         $this->previousTable = Hilos::$table;
         $this->previousDb = Hilos::$db;
         $this->previousAppClass = Hilos::appClass();
@@ -137,6 +142,9 @@ final class HilosDaemonOverviewPageTest extends TestCase
         Hilos::$browser = $this->previousBrowser;
         Hilos::$rt = $this->previousRt;
         Hilos::$cluster = $this->previousCluster;
+        $this->previousClusterEnabled === false
+            ? putenv('CLUSTER_ENABLED')
+            : putenv('CLUSTER_ENABLED=' . $this->previousClusterEnabled);
         Hilos::$table = $this->previousTable;
         Hilos::$db = $this->previousDb;
         (new ReflectionProperty(Hilos::class, 'appClass'))->setValue(null, $this->previousAppClass);
@@ -165,6 +173,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame([
             'clustered' => false, 'nodes' => [], 'consensus' => null,
             'environmentComparison' => ['answeringNodes' => 0, 'divergedKeys' => null, 'sourcesDifferKeys' => null],
+            'placement' => ['instances' => null, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => null],
         ], $response->payload->data['daemon']);
         self::assertSame([HilosClusterNode::RT_COLLECTION], AbstractHilosDaemonPage::READS_RT);
     }
@@ -222,6 +231,85 @@ final class HilosDaemonOverviewPageTest extends TestCase
         ))))['nodes'][0];
         self::assertSame([], $empty['workers']);
         self::assertSame(0, $empty['workerRestarts24h']);
+    }
+
+    public function testPlacementCountsEveryWorkerAndEveryNodeCopyAndUsesDeclaredKinds(): void
+    {
+        $roster = new DaemonProcessRoster([
+            new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, null, null, [$this->agent('x:1')]),
+            new DaemonWorkerPicture(2, WorkerConstants::TYPE_MONOPOLISTIC, null, null, [$this->agent('leader')]),
+            new DaemonWorkerPicture(3, WorkerConstants::TYPE_REGULAR, null, null, []),
+        ], [], 0);
+        $picture = ClusterDaemonPicture::empty()
+            ->withNode($this->node(new NodeDaemonPicture('a', NodeRole::Master, 100, $roster)))
+            ->withNode($this->node(new NodeDaemonPicture('b', NodeRole::Slave, 100, $this->roster('x:1', 'leader1'))));
+        self::assertSame([
+            'instances' => 4, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => null,
+        ], $this->projection($picture)['placement']);
+        self::assertSame(2, $this->projection($picture, false)['placement']['clusterTypes']);
+
+        foreach (['a', 'b'] as $id) {
+            $picture = $picture->withNode($this->node(new NodeDaemonPicture($id, NodeRole::Master, 100,
+                new DaemonProcessRoster([], [], 0))));
+        }
+        self::assertSame([
+            'instances' => 0, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => [],
+        ], $this->projection($picture, false)['placement']);
+    }
+
+    public function testPlacementNeverReturnsAPartialInstanceSumForUnknownOrSilentNodes(): void
+    {
+        $report = new NodeDaemonPicture('b', NodeRole::Master, 100, $this->roster('x:2'));
+        $known = ClusterDaemonPicture::empty()->withNode($this->node(new NodeDaemonPicture(
+            'a', NodeRole::Master, 100, $this->roster('x:1'),
+        )));
+        foreach ([
+            $this->node($report, false),
+            $this->node(new NodeDaemonPicture('b', NodeRole::Master, 100)),
+            new ClusterDaemonNodeView('b', true, null),
+            new ClusterDaemonNodeView('b', false, null),
+        ] as $unknown) {
+            self::assertNull($this->projection($known->withNode($unknown))['placement']['instances']);
+        }
+        self::assertNull($this->projection(ClusterDaemonPicture::empty())['placement']['instances']);
+    }
+
+    public function testUnplacedTypesAreUniqueSortedDeclaredTypesFromTheCurrentLeaderOnly(): void
+    {
+        $leader = $this->master('z', ConsensusRole::Leader, 5, 'z', 0);
+        $leader = $this->node($leader->slot->picture->withProcesses(new DaemonProcessRoster(
+            [], ['leader', 'undeclared:1', 'x:1', 'x:9'], 0,
+        )));
+        $follower = $this->master('a', ConsensusRole::Follower, 5, 'z', 0);
+        $follower = $this->node($follower->slot->picture->withProcesses(new DaemonProcessRoster([], ['leader1'], 0)));
+        $picture = ClusterDaemonPicture::empty()->withNode($follower)->withNode($leader);
+        self::assertSame(['leader', 'x'], $this->projection($picture)['placement']['unplacedTypes']);
+        self::assertSame(['leader1'], $this->projection($picture, false)['placement']['unplacedTypes']);
+
+        $empty = $this->node($leader->slot->picture->withProcesses(new DaemonProcessRoster([], [], 0)));
+        self::assertSame([], $this->projection($picture->withNode($empty))['placement']['unplacedTypes']);
+        self::assertNull($this->projection($picture->withNode($this->node($leader->slot->picture, false)))
+            ['placement']['unplacedTypes']);
+        self::assertNull($this->projection(ClusterDaemonPicture::empty()->withNode($follower))['placement']['unplacedTypes']);
+        self::assertNull($this->projection($picture->withNode($this->master('z', ConsensusRole::Leader, 5, 'z', 0)))
+            ['placement']['unplacedTypes']);
+    }
+
+    public function testStandaloneUnplacedVerdictKeepsUnknownAndKnownEmptyDistinct(): void
+    {
+        // Sorted instance ids put leader1 before leader:1; sorted types must reverse that pair.
+        $report = new NodeDaemonPicture('solo', NodeRole::Master, 100,
+            new DaemonProcessRoster([], ['leader1', 'leader:1', 'x:1', 'x:2'], 0));
+        self::assertSame(['leader', 'leader1', 'x'], $this->projection(ClusterDaemonPicture::empty()->withNode($this->node($report)), false)
+            ['placement']['unplacedTypes']);
+        foreach ([
+            ClusterDaemonPicture::empty(),
+            ClusterDaemonPicture::empty()->withNode($this->node($report, false)),
+            ClusterDaemonPicture::empty()->withNode(new ClusterDaemonNodeView('solo', true, null)),
+            ClusterDaemonPicture::empty()->withNode($this->node(new NodeDaemonPicture('solo', NodeRole::Master, 100))),
+        ] as $picture) {
+            self::assertNull($this->projection($picture, false)['placement']['unplacedTypes']);
+        }
     }
 
     public function testMeasurementsKeepEveryFieldAndByteUnitAndUptimeUsesTheReportedSample(): void
@@ -355,6 +443,49 @@ final class HilosDaemonOverviewPageTest extends TestCase
         self::assertSame([['hilos_daemon', 'root']], $this->resender->attempts);
     }
 
+    public function testOnlyUnplacedTypesChangeResendsOneWholeAndIdsWithinATypeSendOnlyAWindow(): void
+    {
+        $report = new NodeDaemonPicture('solo', NodeRole::Master, 100, new DaemonProcessRoster([], [], 0));
+        $this->deliver([$this->node($report)]);
+        $this->subscribe('root');
+        $first = $this->onlyResponse();
+        self::assertSame([], $first->payload->data['daemon']['placement']['unplacedTypes']);
+        $this->resender->attempts = [];
+
+        $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['x:1'], 0)))]);
+        $response = $this->onlyResponse();
+        self::assertSame(['x'], $response->payload->data['daemon']['placement']['unplacedTypes']);
+        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
+        self::assertSame([['hilos_daemon', 'root']], $this->resender->attempts);
+
+        $this->resender->attempts = [];
+        $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['x:1', 'x:2'], 0)))]);
+        $signals = $this->drain();
+        self::assertCount(1, $signals);
+        self::assertSame(SignalTypeConstants::TABLE_WINDOW, $signals[0]->signalName->getName());
+        self::assertSame([], $this->resender->attempts);
+
+        $this->browser->admin = false;
+        $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['leader', 'x:1'], 0)))]);
+        $signals = $this->drain();
+        self::assertCount(1, $signals);
+        self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signals[0]->signalName->getName());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
+
+        $this->browser->admin = true;
+        DaemonOverviewTestPage::$fails = true;
+        $this->deliver([$this->node($report)]);
+        self::assertSame([], $this->drain());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('root'));
+
+        DaemonOverviewTestPage::$fails = false;
+        $this->deliver([$this->node($report->withProcesses(new DaemonProcessRoster([], ['leader'], 0)))]);
+        $response = $this->onlyResponse();
+        self::assertSame(['leader'], $response->payload->data['daemon']['placement']['unplacedTypes']);
+        self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $response->payload->windows);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('root'));
+    }
+
     public function testChangedOverviewAndPlacementHaveNoSecondWindowEvenAfterRefusalOrFailure(): void
     {
         $report = new NodeDaemonPicture('n1', NodeRole::Master, 100, $this->roster('x:1'));
@@ -409,7 +540,9 @@ final class HilosDaemonOverviewPageTest extends TestCase
 
     public function testAdminAndViewModeViewerReceiveBothDiagnosticFieldsThroughTheVerdict(): void
     {
-        $this->deliver([$this->node(new NodeDaemonPicture('n1', NodeRole::Master, 100, $this->roster('x:1')))]);
+        $roster = $this->roster('x:1');
+        $this->deliver([$this->node(new NodeDaemonPicture('n1', NodeRole::Master, 100,
+            new DaemonProcessRoster($roster->workers, ['leader', 'x:2'], 0)))]);
         Database::configure(DatabaseConnectionDefaults::PRIMARY_INDEX, 'primary', 'private-user', 'private-password', 'daemon-db');
         $this->subscribe('admin');
         $admin = $this->onlyResponse();
@@ -421,6 +554,9 @@ final class HilosDaemonOverviewPageTest extends TestCase
         $this->subscribe('viewer');
         $viewer = $this->onlyResponse();
         self::assertSame($admin->payload->data['daemon'], $viewer->payload->data['daemon']);
+        self::assertSame([
+            'instances' => 1, 'types' => 3, 'clusterTypes' => 2, 'unplacedTypes' => ['leader', 'x'],
+        ], $viewer->payload->data['daemon']['placement']);
         self::assertSame($admin->payload->data['database'], $viewer->payload->data['database']);
         self::assertArrayHasKey(HilosDaemonPlacementTable::TABLE, $viewer->payload->windows);
         $wire = json_encode($viewer->toArray(), JSON_THROW_ON_ERROR);
@@ -449,6 +585,8 @@ final class HilosDaemonOverviewPageTest extends TestCase
     /** @return array<string, mixed> Root wire projection */
     private function projection(ClusterDaemonPicture $picture, bool $clustered = true): array
     {
+        putenv('CLUSTER_ENABLED=' . ($clustered ? 'true' : 'false'));
+        Hilos::$cluster = $clustered ? new ClusterContext() : null;
         $projection = HilosDaemonOverviewData::fromPicture($picture, $clustered, true);
         self::assertNotNull($projection);
         return $projection->toArray();
@@ -478,6 +616,7 @@ final class HilosDaemonOverviewPageTest extends TestCase
     /** @return DaemonProcessRoster One actual worker with the supplied started instances */
     private function roster(string ...$ids): DaemonProcessRoster
     {
+        sort($ids, SORT_STRING);
         return new DaemonProcessRoster([new DaemonWorkerPicture(1, WorkerConstants::TYPE_REGULAR, 123, 1048576,
             array_map($this->agent(...), $ids))], [], 0);
     }
@@ -598,7 +737,11 @@ final class DaemonOverviewTestBrowser extends BrowserContext
 
 abstract class DaemonOverviewTestHilos extends Hilos
 {
-    public const array AGENTS = ['x' => []];
+    public const array AGENTS = [
+        'x' => [AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
+        'leader1' => [AgentRegistryKey::SCOPE => AgentScope::NODE],
+        'leader' => [],
+    ];
     public const array PAGES = [HilosPageConstants::HILOS_DAEMON => DaemonOverviewTestPage::class];
     public const array PAGE_TABLES = [HilosPageConstants::HILOS_DAEMON => [HilosDaemonPlacementTable::TABLE => []]];
 }
