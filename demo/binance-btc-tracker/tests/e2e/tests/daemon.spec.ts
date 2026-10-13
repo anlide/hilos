@@ -92,12 +92,8 @@ async function expectStandaloneOverview(page: Page): Promise<void> {
   await expect(
     page.getByTestId('hilos-daemon-environment-differences'),
   ).toHaveText('—')
-  const environment = page.getByTestId(
-    /^hilos-daemon-environment-(link|unbuilt)$/,
-  )
-  await expect(environment).toHaveText(
-    /^\s*(On the environment page|Environment page is not available yet)\s*$/,
-  )
+  const environment = page.getByTestId('hilos-daemon-environment-link')
+  await expect(environment).toHaveText('On the environment page')
   const environmentTile = inspector.locator('dl').filter({ has: environment })
   await expect(environmentTile.locator('dt')).toHaveText('APP_ENV')
   await expect(environmentTile.locator('dd')).toHaveText([
@@ -398,6 +394,40 @@ test('shows the standalone HTTP listener, counters and routes', async ({
   const unrouted = page.getByTestId('hilos-table-row-unrouted')
   await expect(unrouted).toBeVisible()
   await expect(unrouted).toContainText('No route')
+})
+
+test('shows the standalone environment, its ladder and only the length of a secret', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, '/hilos/daemon/standalone/env', PAGE_READY)
+
+  await expect(page.getByTestId('hilos-daemon-node-id')).toHaveText(
+    'standalone',
+  )
+  await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
+
+  for (const tile of ['keys', 'missing', 'example', 'drift']) {
+    const el = page.getByTestId(`hilos-daemon-env-${tile}`)
+    await expect(el).toBeVisible()
+    await expect(el).toHaveText(/^\d[\d,]*$/)
+  }
+  const keysCount = await page.getByTestId('hilos-daemon-env-keys').innerText()
+  expect(parseInt(keysCount.replace(/,/g, ''), 10)).toBeGreaterThan(0)
+
+  const ladder = page.getByTestId('hilos-daemon-env-ladder')
+  await expect(ladder).toBeVisible()
+  await expect(ladder.locator('tr')).toHaveCount(5)
+
+  const search = page.getByTestId('hilos-table-search')
+  await search.fill('')
+  await search.pressSequentially('DB_PASSWORD', { delay: 10 })
+
+  const row = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
+  await expect(row).toBeVisible()
+  await expect(row).toContainText(/Set · \d+ chars/)
+
+  await expect(page.locator('body')).not.toContainText('hilos_pass')
 })
 
 test.describe('restarting an agent', () => {

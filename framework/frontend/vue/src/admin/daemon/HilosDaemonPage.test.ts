@@ -107,6 +107,8 @@ function harness(envBuilt = true) {
   if (envBuilt) {
     unbuilt.delete(HilosPages.DAEMON_ENV)
     unbuilt.delete(HilosPages.DAEMON_ENV_MISMATCH)
+  } else {
+    unbuilt.add(HilosPages.DAEMON_ENV)
   }
   let pathname = '/hilos/daemon'
   const router = createHilosRouter(

@@ -228,8 +228,8 @@ the line; Cron adds its own `cronReported` flag through `nodeData()`. HTTP carri
 both `node` and `http` through `nodeData()`: a changed heading or summary resends
 the whole page to viewers of that node, without a second table window in that
 pass. With unchanged node data, changed routes resend their window. The
-environment page is served by the node agent and uses its own `nodeSilent`
-verdict.
+environment page is served by the node agent: its node line reads `clustered`
+from `environment` without a state word, and silence from `nodeSilent` (D-214).
 
 ## What Never Leaves A Node
 
@@ -245,6 +245,7 @@ collector's picture contains counts and value-free labels. For a silent node the
 section agent answers “node silent” with no values. A directory watch and
 periodic rescan make the node agent re-answer open environment pages after
 `.env` or `.env.example` changes.
+The page's tiles and alarms are computed from that same response (the full masked key list), not from the table window.
 The page's two tables — catalog keys and `.env` orphans — are windows of that same agent: rows are built in its process from the masked view, so a re-answer re-sends them, and a search or the attention filter reads only what the reader is shown.
 
 The environment catalog opens a value to an admin view-mode viewer only with
@@ -405,14 +406,14 @@ The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. Each key stays in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
 for every frontend that has not built it. Vue builds the root (HIL-1389),
-Workers (HIL-1391), Agents (HIL-1392), Cron (HIL-1393) and HTTP (HIL-1394).
+Workers (HIL-1391), Agents (HIL-1392), Cron (HIL-1393), HTTP (HIL-1394) and Environment (HIL-1395).
 The root reads its node overview and safe primary database address from one
 whole page answer, alongside its catalog identity and placement windows. Its
 local node selection supplies child-card addresses and the inspector's log
 link, without another subscription or action. Chat and binance-btc-tracker mount
 it through a thin wrapper with their `connection` and `scopes` context; the
 built Vue children no longer need staged rows under the root. React and Angular
-still leave these five pages unbuilt.
+still leave these six pages unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

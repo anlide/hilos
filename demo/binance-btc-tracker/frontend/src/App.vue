@@ -57,6 +57,7 @@ import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.vue'
 import HilosDaemonAgents from './views/Hilos/Daemon/Agents.vue'
 import HilosDaemonCron from './views/Hilos/Daemon/Cron.vue'
 import HilosDaemonHttp from './views/Hilos/Daemon/Http.vue'
+import HilosDaemonEnv from './views/Hilos/Daemon/Env.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -98,6 +99,7 @@ const pages: Record<string, Component> = {
   [HilosPages.DAEMON_AGENTS]: HilosDaemonAgents,
   [HilosPages.DAEMON_CRON]: HilosDaemonCron,
   [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttp,
+  [HilosPages.DAEMON_ENV]: HilosDaemonEnv,
   [HilosPages.COMMUNICATIONS]: HilosCommunications,
   [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
   [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,

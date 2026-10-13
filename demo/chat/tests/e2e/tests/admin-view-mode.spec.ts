@@ -126,6 +126,40 @@ test('a guest reads the Daemon HTTP counters and routes without hidden fields', 
   await expect(page.getByTestId('page-error')).toHaveCount(0)
 })
 
+test('a guest reads the Daemon environment report with hidden secrets', async ({
+  page,
+}) => {
+  await setAdminViewMode(true)
+  await gotoPage(page, '/hilos/daemon/standalone/env', PAGE_READY)
+
+  const banner = page.getByTestId('view-mode-banner')
+  await expect(banner).toBeVisible()
+  await expect(banner).toHaveText(VIEW_MODE_STRIP_TEXT)
+
+  await expect(page.getByTestId('hilos-daemon-node-id')).toHaveText(
+    'standalone',
+  )
+  await expect(page.getByTestId('hilos-daemon-node-solo')).toBeVisible()
+
+  for (const tile of ['keys', 'missing', 'example', 'drift']) {
+    await expect(page.getByTestId(`hilos-daemon-env-${tile}`)).toBeVisible()
+  }
+
+  const search = page.getByTestId('hilos-table-search')
+  await search.fill('')
+  await search.pressSequentially('DB_PASSWORD', { delay: 10 })
+
+  const row = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
+  await expect(row).toBeVisible()
+  const hidden = shownByTestId(row, 'hilos-hidden')
+  await expect(hidden).toBeVisible()
+  await expect(hidden).toHaveText('Hidden')
+  await expect(row).not.toContainText('chars')
+
+  await expect(page.locator('body')).not.toContainText('hilos_pass')
+  await expect(page.getByTestId('page-error')).toHaveCount(0)
+})
+
 test('a viewer sees open framework settings while a project key stays hidden', async ({
   page,
 }) => {

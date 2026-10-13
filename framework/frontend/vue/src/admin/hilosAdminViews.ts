@@ -8,13 +8,13 @@
 // the router answers 404 and no card links to them.
 //
 // The users / user / settings / backup / maintenance, communications hub /
-// channel, Change Log, Daemon root, Workers, Agents, Cron and HTTP, and log pages that read
+// channel, Change Log, Daemon root, Workers, Agents, Cron, HTTP and Environment, and log pages that read
 // live data are intentionally absent: they are
 // real framework pages (HilosUsersPage / HilosUserPage / HilosSettingsPage /
 // HilosBackupPage / HilosMaintenancePage / HilosCommunicationsPage /
 // HilosCommunicationsChannelPage / HilosChangeLogPage / HilosLogsKeysPage / HilosLogsRotationsPage /
 // HilosLogsViewPage / HilosDaemonPage / HilosDaemonWorkersPage / HilosDaemonAgentsPage /
-// HilosDaemonCronPage / HilosDaemonHttpServerPage) that require a project-supplied context, so a project
+// HilosDaemonCronPage / HilosDaemonHttpServerPage / HilosDaemonEnvPage) that require a project-supplied context, so a project
 // mounts them directly rather than through this default map.
 //
 // This is the sanctioned registry form, not a God-map (page-module-structure.md):

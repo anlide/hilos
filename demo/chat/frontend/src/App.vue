@@ -95,6 +95,7 @@ import HilosDaemonWorkers from './views/Hilos/Daemon/Workers.vue'
 import HilosDaemonAgents from './views/Hilos/Daemon/Agents.vue'
 import HilosDaemonCron from './views/Hilos/Daemon/Cron.vue'
 import HilosDaemonHttp from './views/Hilos/Daemon/Http.vue'
+import HilosDaemonEnv from './views/Hilos/Daemon/Env.vue'
 import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
@@ -166,6 +167,7 @@ const pages: Record<string, Component> = {
   [HilosPages.DAEMON_AGENTS]: HilosDaemonAgents,
   [HilosPages.DAEMON_CRON]: HilosDaemonCron,
   [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttp,
+  [HilosPages.DAEMON_ENV]: HilosDaemonEnv,
 }
 
 // The pages that draw a skeleton of their own shape while they wait for their

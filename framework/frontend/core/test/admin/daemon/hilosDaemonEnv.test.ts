@@ -3,25 +3,33 @@ import { describe, expect, it } from 'vitest'
 import {
   createHilosDaemonEnvKeysTable,
   createHilosDaemonEnvOrphansTable,
+  DAEMON_ENV_ENVIRONMENT_DATA,
+  DAEMON_ENV_LADDER,
+  DAEMON_ENV_NODE_SILENT_DATA,
+  daemonEnvNodeHeading,
   daemonEnvSourceBadge,
+  daemonEnvSummary,
   daemonEnvTrouble,
   formatDaemonEnvDeclaredBy,
   formatDaemonEnvDrift,
+  formatDaemonEnvDriftNotice,
   formatDaemonEnvRequired,
   formatDaemonEnvSimilarTo,
   formatDaemonEnvValue,
+  readHilosDaemonEnvPage,
   resolveHilosDaemonEnvKeyRow,
   resolveHilosDaemonEnvOrphanRow,
   type HilosDaemonEnvContext,
   type HilosDaemonEnvKeyRow,
 } from '../../../src/admin/daemon/hilosDaemonEnv.js'
+import { DAEMON_NODE_STATE_SILENT } from '../../../src/admin/daemon/hilosDaemonNode.js'
 import {
   type HilosConnection,
   type TableViewportDescriptor,
 } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
-import { type ScopeManager } from '../../../src/state/ScopeManager.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 function rawRow(
@@ -236,6 +244,7 @@ describe('daemon environment viewports', () => {
         on: true,
       },
     ])
+    expect(frame.declaration?.filteredEmpty).toBe('page')
     const columns = frame.columns.get()
     expect(columns.map(({ key, label }) => [key, label])).toEqual([
       ['key', 'Key'],
@@ -445,5 +454,347 @@ describe('daemon environment cell text', () => {
         similarTo: null,
       }),
     ).toBe('—')
+  })
+})
+
+describe('readHilosDaemonEnvPage', () => {
+  it('reads live node response with parsed keys, rowKey = key, all value forms and hidden marks', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_ENV)
+    const stateSignal = readHilosDaemonEnvPage(scopes)
+
+    expect(stateSignal.get()).toEqual({
+      environment: null,
+      nodeSilent: false,
+    })
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
+      nodeId: 'node-alpha',
+      cluster: true,
+      readAt: 1_700_000_000,
+      keys: [
+        {
+          key: 'APP_ENV',
+          type: 'string',
+          required: true,
+          declaredBy: 'framework',
+          sensitive: false,
+          perNode: false,
+          source: 'process',
+          value: { kind: 'text', text: 'production' },
+          disk: null,
+        },
+        {
+          key: 'APP_SECRET',
+          type: 'string',
+          required: true,
+          declaredBy: 'framework',
+          sensitive: true,
+          perNode: false,
+          source: 'env',
+          value: { kind: 'secret', length: 32 },
+          disk: {
+            source: 'example',
+            value: { kind: 'secret', length: 16 },
+          },
+        },
+        {
+          key: 'UNSET_VAR',
+          type: 'string',
+          required: false,
+          declaredBy: 'project',
+          sensitive: false,
+          perNode: true,
+          source: 'missing',
+          value: { kind: 'none' },
+          disk: null,
+        },
+        {
+          key: 'VIEWER_HIDDEN',
+          type: 'string',
+          required: true,
+          declaredBy: 'framework',
+          sensitive: false,
+          perNode: false,
+          source: 'default',
+          value: { _hidden: true },
+          disk: null,
+        },
+      ],
+      orphans: [{ key: 'OLD_KEY', value: { kind: 'text', text: 'val' } }],
+    })
+    page.data.set(DAEMON_ENV_NODE_SILENT_DATA, false)
+
+    const state = stateSignal.get()
+    expect(state.nodeSilent).toBe(false)
+    expect(state.environment).not.toBeNull()
+    expect(state.environment?.nodeId).toBe('node-alpha')
+    expect(state.environment?.cluster).toBe(true)
+    expect(state.environment?.keys).toHaveLength(4)
+
+    const keys = state.environment!.keys
+    expect(keys[0]).toEqual({
+      rowKey: 'APP_ENV',
+      key: 'APP_ENV',
+      type: 'string',
+      required: true,
+      declaredBy: 'framework',
+      sensitive: false,
+      perNode: false,
+      source: 'process',
+      value: { kind: 'text', text: 'production' },
+      disk: null,
+    })
+    expect(keys[1]).toEqual({
+      rowKey: 'APP_SECRET',
+      key: 'APP_SECRET',
+      type: 'string',
+      required: true,
+      declaredBy: 'framework',
+      sensitive: true,
+      perNode: false,
+      source: 'env',
+      value: { kind: 'secret', length: 32 },
+      disk: {
+        source: 'example',
+        value: { kind: 'secret', length: 16 },
+      },
+    })
+    expect(keys[2]).toEqual({
+      rowKey: 'UNSET_VAR',
+      key: 'UNSET_VAR',
+      type: 'string',
+      required: false,
+      declaredBy: 'project',
+      sensitive: false,
+      perNode: true,
+      source: 'missing',
+      value: { kind: 'none' },
+      disk: null,
+    })
+    expect(keys[3]).toEqual({
+      rowKey: 'VIEWER_HIDDEN',
+      key: 'VIEWER_HIDDEN',
+      type: 'string',
+      required: true,
+      declaredBy: 'framework',
+      sensitive: false,
+      perNode: false,
+      source: 'default',
+      value: HIDDEN_VALUE,
+      disk: null,
+    })
+  })
+
+  it('reads nodeSilent flag when node is silent', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_ENV)
+    const stateSignal = readHilosDaemonEnvPage(scopes)
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, null)
+    page.data.set(DAEMON_ENV_NODE_SILENT_DATA, true)
+
+    expect(stateSignal.get()).toEqual({
+      environment: null,
+      nodeSilent: true,
+    })
+  })
+
+  it('returns null environment when payload is invalid', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_ENV)
+    const stateSignal = readHilosDaemonEnvPage(scopes)
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, 'not-an-object')
+    expect(stateSignal.get().environment).toBeNull()
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, { nodeId: 123 })
+    expect(stateSignal.get().environment).toBeNull()
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
+      nodeId: 'n1',
+      cluster: 'not-bool',
+      keys: [],
+    })
+    expect(stateSignal.get().environment).toBeNull()
+  })
+
+  it('updates state reactively when page data changes entirely', () => {
+    const scopes = new ScopeManager()
+    const page = scopes.openPage(HilosPages.DAEMON_ENV)
+    const stateSignal = readHilosDaemonEnvPage(scopes)
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
+      nodeId: 'node-1',
+      cluster: true,
+      keys: [],
+    })
+    page.data.set(DAEMON_ENV_NODE_SILENT_DATA, false)
+    expect(stateSignal.get()).toEqual({
+      environment: { nodeId: 'node-1', cluster: true, keys: [] },
+      nodeSilent: false,
+    })
+
+    page.data.set(DAEMON_ENV_ENVIRONMENT_DATA, {
+      nodeId: 'node-2',
+      cluster: false,
+      keys: [],
+    })
+    page.data.set(DAEMON_ENV_NODE_SILENT_DATA, false)
+    expect(stateSignal.get()).toEqual({
+      environment: { nodeId: 'node-2', cluster: false, keys: [] },
+      nodeSilent: false,
+    })
+  })
+})
+
+describe('daemonEnvSummary', () => {
+  it('evaluates conditions independently in catalog order and skips optional missing keys', () => {
+    const k1 = keyRow({
+      key: 'K1_REQ_MISSING',
+      required: true,
+      source: 'missing',
+      disk: null,
+    })
+    const k2 = keyRow({
+      key: 'K2_OPT_MISSING',
+      required: false,
+      source: 'missing',
+      disk: null,
+    })
+    const k3 = keyRow({
+      key: 'K3_EXAMPLE_DRIFT',
+      required: false,
+      source: 'example',
+      disk: { source: 'env', value: { kind: 'text', text: 'val' } },
+    })
+    const k4 = keyRow({
+      key: 'K4_NORMAL',
+      required: true,
+      source: 'process',
+      disk: null,
+    })
+    const k5 = keyRow({
+      key: 'K5_DRIFT_ONLY',
+      required: true,
+      source: 'env',
+      disk: { source: 'example', value: { kind: 'none' } },
+    })
+
+    const summary = daemonEnvSummary([k1, k2, k3, k4, k5])
+    expect(summary.keyCount).toBe(5)
+    expect(summary.missingRequired).toEqual(['K1_REQ_MISSING'])
+    expect(summary.fromExample).toEqual(['K3_EXAMPLE_DRIFT'])
+    expect(summary.drifted).toEqual([k3, k5])
+  })
+})
+
+describe('formatDaemonEnvDriftNotice', () => {
+  it('returns null when disk is null', () => {
+    expect(formatDaemonEnvDriftNotice(keyRow({ disk: null }))).toBeNull()
+  })
+
+  it('formats text, empty, secret, none and hidden values for live and disk', () => {
+    expect(
+      formatDaemonEnvDriftNotice(
+        keyRow({
+          key: 'TEXT_TO_EMPTY',
+          value: { kind: 'text', text: 'live' },
+          disk: { source: 'env', value: { kind: 'text', text: '' } },
+        }),
+      ),
+    ).toEqual({
+      key: 'TEXT_TO_EMPTY',
+      process: 'live',
+      disk: 'empty',
+    })
+
+    expect(
+      formatDaemonEnvDriftNotice(
+        keyRow({
+          key: 'SECRET_TO_NONE',
+          value: { kind: 'secret', length: 16 },
+          disk: { source: 'example', value: { kind: 'none' } },
+        }),
+      ),
+    ).toEqual({
+      key: 'SECRET_TO_NONE',
+      process: 'set · 16 chars',
+      disk: 'no value',
+    })
+
+    expect(
+      formatDaemonEnvDriftNotice(
+        keyRow({
+          key: 'HIDDEN_TO_SECRET',
+          value: HIDDEN_VALUE,
+          disk: { source: 'env', value: { kind: 'secret', length: 8 } },
+        }),
+      ),
+    ).toEqual({
+      key: 'HIDDEN_TO_SECRET',
+      process: 'hidden',
+      disk: 'set · 8 chars',
+    })
+  })
+})
+
+describe('daemonEnvNodeHeading', () => {
+  it('derives heading for live cluster, live standalone, silent node, and initial/waiting state', () => {
+    // live cluster
+    expect(
+      daemonEnvNodeHeading({
+        environment: { nodeId: 'n1', cluster: true, keys: [] },
+        nodeSilent: false,
+      }),
+    ).toEqual({
+      clustered: true,
+      state: null,
+      silentSince: null,
+    })
+
+    // live standalone
+    expect(
+      daemonEnvNodeHeading({
+        environment: { nodeId: 'standalone', cluster: false, keys: [] },
+        nodeSilent: false,
+      }),
+    ).toEqual({
+      clustered: false,
+      state: null,
+      silentSince: null,
+    })
+
+    // silent node
+    expect(
+      daemonEnvNodeHeading({
+        environment: null,
+        nodeSilent: true,
+      }),
+    ).toEqual({
+      clustered: true,
+      state: DAEMON_NODE_STATE_SILENT,
+      silentSince: null,
+    })
+
+    // nothing yet / waiting
+    expect(
+      daemonEnvNodeHeading({
+        environment: null,
+        nodeSilent: false,
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('DAEMON_ENV_LADDER', () => {
+  it('contains five sources in index priority order', () => {
+    expect(DAEMON_ENV_LADDER).toEqual([
+      'process',
+      'env',
+      'example',
+      'default',
+      'missing',
+    ])
   })
 })

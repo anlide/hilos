@@ -1,9 +1,12 @@
-// Framework headless environment tables for one Daemon node. Rows come from
-// the node's local reading through server viewports, in catalog or file order.
-// The page header, summaries, and empty states belong to the view.
-// SCAFFOLD: HIL-1395 will mount these tables and draw their cells in Vue.
+// Framework headless environment tables and page response reading for one
+// Daemon node. Rows come from the node's local reading through server
+// viewports or page data, in catalog or file order. Layout belongs to the view.
 
 import { z } from 'zod'
+import {
+  DAEMON_NODE_STATE_SILENT,
+  type HilosDaemonNodeHeading,
+} from './hilosDaemonNode.js'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
@@ -17,11 +20,17 @@ import {
   isHiddenValue,
 } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
+import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
 import { type HilosTableFrame } from '../../table/tableFrame.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
+
+/** Page-data key of the complete environment response. */
+export const DAEMON_ENV_ENVIRONMENT_DATA = 'environment'
+/** Page-data key recording whether the node is silent. */
+export const DAEMON_ENV_NODE_SILENT_DATA = 'nodeSilent'
 
 const DAEMON_ENV_KEYS_TABLE = 'hilosDaemonEnvKeys'
 const DAEMON_ENV_KEYS_SLOT = 'key'
@@ -69,6 +78,15 @@ export type HilosDaemonEnvSource =
   | 'default'
   | 'missing'
 
+/** Resolution order of environment sources from strongest to weakest. */
+export const DAEMON_ENV_LADDER: readonly HilosDaemonEnvSource[] = [
+  'process',
+  'env',
+  'example',
+  'default',
+  'missing',
+]
+
 /** A value as the node may send it to an administrator or viewer. */
 export type HilosDaemonEnvValue =
   | { readonly kind: 'text'; readonly text: string }
@@ -91,6 +109,19 @@ export interface HilosDaemonEnvKeyRow {
     readonly source: HilosDaemonEnvSource
     readonly value: HilosDaemonEnvValue
   } | null
+}
+
+/** Complete environment response as read by the page scope. */
+export interface HilosDaemonEnvironment {
+  readonly nodeId: string
+  readonly cluster: boolean
+  readonly keys: readonly HilosDaemonEnvKeyRow[]
+}
+
+/** Page state holding the parsed node environment or silence indicator. */
+export interface HilosDaemonEnvPageState {
+  readonly environment: HilosDaemonEnvironment | null
+  readonly nodeSilent: boolean
 }
 
 /** One uncataloged line in the selected node's .env file. */
@@ -149,15 +180,11 @@ function readEnvValue(value: unknown): HilosDaemonEnvValue {
   return parsed.success ? parsed.data : { kind: 'none' }
 }
 
-/**
- * Read one catalog key slot; identity comes from the table fragment's row key.
- *
- * @param row The raw row in the page scope.
- */
-export function resolveHilosDaemonEnvKeyRow(
-  row: TableRow,
+/** Read one catalog key slot. */
+function readEnvKey(
+  slot: Readonly<Record<string, unknown>>,
+  rowKey: string,
 ): HilosDaemonEnvKeyRow {
-  const slot = recordSlot(row.slots[DAEMON_ENV_KEYS_SLOT])
   const disk = slot[DAEMON_ENV_DISK_FIELD]
   const diskFields =
     typeof disk === 'object' && disk !== null && !Array.isArray(disk)
@@ -165,7 +192,7 @@ export function resolveHilosDaemonEnvKeyRow(
       : null
 
   return {
-    rowKey: String(row.rowKey),
+    rowKey,
     key: readString(slot, DAEMON_ENV_KEY_FIELD),
     type: readString(slot, DAEMON_ENV_TYPE_FIELD),
     required: readBoolean(slot, DAEMON_ENV_REQUIRED_FIELD),
@@ -182,6 +209,55 @@ export function resolveHilosDaemonEnvKeyRow(
             value: readEnvValue(diskFields[DAEMON_ENV_VALUE_FIELD]),
           },
   }
+}
+
+/**
+ * Read one catalog key slot; identity comes from the table fragment's row key.
+ *
+ * @param row The raw row in the page scope.
+ */
+export function resolveHilosDaemonEnvKeyRow(
+  row: TableRow,
+): HilosDaemonEnvKeyRow {
+  return readEnvKey(
+    recordSlot(row.slots[DAEMON_ENV_KEYS_SLOT]),
+    String(row.rowKey),
+  )
+}
+
+const environmentPayloadSchema = z.object({
+  nodeId: z.string(),
+  cluster: z.boolean(),
+  keys: z.array(z.unknown()),
+})
+
+/**
+ * Read the current node environment page state from the page scope.
+ *
+ * @param scopes The page scope manager.
+ */
+export function readHilosDaemonEnvPage(
+  scopes: ScopeManager,
+): ReadonlySignal<HilosDaemonEnvPageState> {
+  const environmentSignal = scopes.pageDataSignal(DAEMON_ENV_ENVIRONMENT_DATA)
+  const nodeSilentSignal = scopes.pageDataSignal(DAEMON_ENV_NODE_SILENT_DATA)
+
+  return computedSignal(() => {
+    const parsed = environmentPayloadSchema.safeParse(environmentSignal.get())
+    const environment: HilosDaemonEnvironment | null = parsed.success
+      ? {
+          nodeId: parsed.data.nodeId,
+          cluster: parsed.data.cluster,
+          keys: parsed.data.keys.map((rawKey) => {
+            const slot = recordSlot(rawKey)
+            return readEnvKey(slot, readString(slot, DAEMON_ENV_KEY_FIELD))
+          }),
+        }
+      : null
+    const nodeSilent = nodeSilentSignal.get() === true
+
+    return { environment, nodeSilent }
+  })
 }
 
 /**
@@ -290,6 +366,7 @@ export function createHilosDaemonEnvKeysTable(
         on: true,
       },
     ],
+    filteredEmpty: 'page',
     columns,
   }
   return createEnvironmentTable(
@@ -420,6 +497,62 @@ export function daemonEnvSourceBadge(source: HilosDaemonEnvSource): {
   }
 }
 
+/** Summary of environment key discrepancies for the page tiles and notices. */
+export interface HilosDaemonEnvSummary {
+  readonly keyCount: number
+  readonly missingRequired: readonly string[]
+  readonly fromExample: readonly string[]
+  readonly drifted: readonly HilosDaemonEnvKeyRow[]
+}
+
+/**
+ * Summarize catalog keys across missing required, example, and drifted conditions.
+ *
+ * Each condition is evaluated independently in catalog declaration order.
+ *
+ * @param keys Catalog keys from the node environment response.
+ */
+export function daemonEnvSummary(
+  keys: readonly HilosDaemonEnvKeyRow[],
+): HilosDaemonEnvSummary {
+  const missingRequired: string[] = []
+  const fromExample: string[] = []
+  const drifted: HilosDaemonEnvKeyRow[] = []
+
+  for (const row of keys) {
+    if (row.required && row.source === 'missing') {
+      missingRequired.push(row.key)
+    }
+    if (row.source === 'example') {
+      fromExample.push(row.key)
+    }
+    if (row.disk !== null) {
+      drifted.push(row)
+    }
+  }
+
+  return {
+    keyCount: keys.length,
+    missingRequired,
+    fromExample,
+    drifted,
+  }
+}
+
+/** Format a value for drift notices and labels. */
+function daemonEnvValueText(value: HilosDaemonEnvValue): string {
+  if (isHiddenValue(value)) {
+    return 'hidden'
+  }
+  if (value.kind === 'text') {
+    return value.text === '' ? 'empty' : value.text
+  }
+  if (value.kind === 'secret') {
+    return `set · ${value.length} chars`
+  }
+  return 'no value'
+}
+
 /**
  * Name the differing on-disk value and its source, if one exists.
  *
@@ -429,17 +562,58 @@ export function formatDaemonEnvDrift(row: HilosDaemonEnvKeyRow): string | null {
   if (row.disk === null) {
     return null
   }
-  const value = row.disk.value
-  const text = isHiddenValue(value)
-    ? 'hidden'
-    : value.kind === 'text'
-      ? value.text === ''
-        ? 'empty'
-        : value.text
-      : value.kind === 'secret'
-        ? `set · ${value.length} chars`
-        : 'no value'
+  const text = daemonEnvValueText(row.disk.value)
   return `On disk: ${text} · ${daemonEnvSourceBadge(row.disk.source).label}`
+}
+
+/**
+ * Format differing live and on-disk values for a drift notice.
+ *
+ * @param row Catalog key being drawn.
+ */
+export function formatDaemonEnvDriftNotice(row: HilosDaemonEnvKeyRow): {
+  readonly key: string
+  readonly process: string
+  readonly disk: string
+} | null {
+  if (row.disk === null) {
+    return null
+  }
+  return {
+    key: row.key,
+    process: daemonEnvValueText(row.value),
+    disk: daemonEnvValueText(row.disk.value),
+  }
+}
+
+/**
+ * Derive the node heading for the Daemon environment page.
+ *
+ * The environment page has no state word of its own (D-214, docs/agents/architecture/daemon-section.md
+ * "The Node's State"). When the node is silent, the answer comes from the section fallback agent;
+ * in a cluster the diagram link is correct, while on a standalone installation silence is a brief
+ * node agent restart window where the root link is also valid.
+ *
+ * @param state The current environment page state.
+ */
+export function daemonEnvNodeHeading(
+  state: HilosDaemonEnvPageState,
+): HilosDaemonNodeHeading | null {
+  if (state.environment !== null) {
+    return {
+      clustered: state.environment.cluster,
+      state: null,
+      silentSince: null,
+    }
+  }
+  if (state.nodeSilent) {
+    return {
+      clustered: true,
+      state: DAEMON_NODE_STATE_SILENT,
+      silentSince: null,
+    }
+  }
+  return null
 }
 
 /**

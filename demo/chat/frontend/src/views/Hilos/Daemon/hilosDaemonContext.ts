@@ -2,6 +2,7 @@ import {
   type HilosDaemonContext,
   type HilosDaemonAgentsContext,
   type HilosDaemonCronContext,
+  type HilosDaemonEnvContext,
   type HilosDaemonHttpContext,
   type HilosDaemonWorkersContext,
 } from '@hilos/core'
@@ -35,6 +36,12 @@ export const hilosDaemonCronContext: HilosDaemonCronContext = {
 
 /** The chat demo's binding for the Daemon HTTP page. */
 export const hilosDaemonHttpContext: HilosDaemonHttpContext = {
+  connection,
+  scopes,
+}
+
+/** The chat demo's binding for the Daemon environment page. */
+export const hilosDaemonEnvContext: HilosDaemonEnvContext = {
   connection,
   scopes,
 }
