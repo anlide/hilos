@@ -11,6 +11,7 @@ use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use PHPUnit\Framework\TestCase;
@@ -122,7 +123,7 @@ final class WorkerStaleStartReportTest extends TestCase
         $socket = fopen('php://memory', 'r+');
         self::assertIsResource($socket);
 
-        return new StaleStartTestWorkerClient($socket, new StaleStartTestAgentManagerDaemon());
+        return new StaleStartTestWorkerClient($socket, new StaleStartTestAgentManagerDaemon(), $this->createStub(WorkerServer::class));
     }
 }
 
@@ -143,10 +144,11 @@ final class StaleStartTestWorkerClient extends WorkerClient
     /**
      * @param resource $socket Link the client would write to
      * @param StaleStartTestAgentManagerDaemon $manager Roster the client reports into
+     * @param WorkerServer $server Owning server; these tests send it no page restart frame
      */
-    public function __construct($socket, StaleStartTestAgentManagerDaemon $manager)
+    public function __construct($socket, StaleStartTestAgentManagerDaemon $manager, WorkerServer $server)
     {
-        parent::__construct($socket, $manager);
+        parent::__construct($socket, $manager, $server);
         $this->managerDouble = $manager;
         $this->setWorkerIndex(2);
     }

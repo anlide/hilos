@@ -105,13 +105,13 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param resource $socket Client socket
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
-     * @param ?WorkerServer $workerServer Owning worker server; required for page restart control frames
+     * @param WorkerServer $workerServer Owning worker server
      * @throws EnvException When socket read buffer env value is missing or invalid
      */
     public function __construct(
         $socket,
         AgentManagerDaemon $agentManager,
-        private readonly ?WorkerServer $workerServer = null,
+        private readonly WorkerServer $workerServer,
     ) {
         parent::__construct($socket);
         $this->agentManager = $agentManager;
@@ -640,7 +640,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * @param WorkerAgentRestartRequestDTO $dto Page-admitted restart request
      * @throws InvalidFormatException When an unregistered connection presents this control frame
-     * @throws LogicException When this client or its server has no page restart door
+     * @throws LogicException When its server has no page restart door
      * @throws EnvException When the master cannot read the local cluster configuration
      * @throws ClusterConfigurationException When the local cluster identity is invalid
      * @throws ClusterDisabledException When an enabled cluster refuses its identity
@@ -649,9 +649,6 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         if (!$this->isRegistered) {
             throw new InvalidFormatException('Agent restart request requires a registered worker');
-        }
-        if ($this->workerServer === null) {
-            throw new LogicException('Worker client has no owning server for the page agent restart door');
         }
         $this->workerServer->getPageAgentRestartDoor()->requestPageAgentRestart($dto->data);
     }
