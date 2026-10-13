@@ -26,21 +26,21 @@ implementation work.
   Source line numbers below refer to that tree; the adjacent symbol or test
   title is the durable anchor.
 - Design Base: `49d8855` in the operations repository. The inputs were read
-  with `git -C /home/cloud/hilos-ops show 49d8855:<path>`:
+  from the operations repository at `49d8855`:
   `mockups/components/table/index.html`, sections 3–5 and 9, and
   `mockups/foundations/rules/index.html`, especially rules 2, 3 and 5.
   The framework repository does not contain these mockups.
-- Owner evidence: the complete map `/home/cloud/hilos-ops/maps/HIL-1321.md`
-  and the verbatim Data/Flow/Design results in
-  `/home/cloud/hilos-ops/notes/HIL-1321.brief-1.md` and `HIL-1321.brief-2.md`.
-  The first source-map pass is commit `2751c4f21`; the final pass extends it
-  without product changes. D-210 was read through
-  `/home/cloud/hilos-ops/design-debt show D-210`: owner-approved, waiting,
-  recorded by the interview in operations commit `73d9854`.
-- The review correction uses the owner's Q1=A answer of 2026-10-13, recorded
-  in `/home/cloud/hilos-ops/notes/HIL-1321.md`, Jira comment 25820 and the
-  supplied `HIL-1321.brief-3.md` (Telegram 5126, reply to 5123). It updates the
-  report from `a7177deb3`; it does not change the implementation evidence base.
+- Owner evidence: the interview map for HIL-1321 and the verbatim
+  Data/Flow/Design results in its first two briefs, all kept in the operations
+  repository. The first source-map pass is commit `2751c4f21`; the final pass
+  extends it without product changes. D-210 was read from the design-debt
+  record D-210: owner-approved, waiting, recorded by the interview in
+  operations commit `73d9854`.
+- The review correction uses the owner's Q1=A answer of 2026-10-13, recorded in
+  the interview notes for HIL-1321 in the operations repository, Jira comment
+  25820 and the supplied third brief (Telegram 5126, reply to 5123). It updates
+  the report from `a7177deb3`; it does not change the implementation evidence
+  base.
 - A path-limited log and diff from Code Base confirm only union formatting in
   `tableFrame.ts` / `hilosUsers.ts`, the Vue Bootstrap color comment, and the
   styling canon's theme clarification in the relevant implementation inputs.
@@ -49,8 +49,8 @@ implementation work.
   platform specifications. No browser was launched for this research; no
   heights, widths, timing, zoom behavior, or 375 px screenshots were measured.
   Existing test source is evidence of coverage intent, not a fresh test result.
-  The first documentation pass ran `/home/cloud/hilos-ops/with-stand composer
-  run test:framework:unit`: exit 0, 8,765 tests, 325,581 assertions, one skipped
+  The first documentation pass ran the stand-wrapped `composer run
+  test:framework:unit`: exit 0, 8,765 tests, 325,581 assertions, one skipped
   test. Its 70 report/index local file links resolved and `git diff --check`
   passed. This historical check is not browser evidence. Final document
   validation is recorded at the end; no frontend unit or e2e suite is claimed.
@@ -1400,7 +1400,7 @@ Each implementation card runs the narrow composer checks for its own change:
 `test:framework:frontend` for shared SDK/view work (including Angular AOT), the
 applicable demo frontend/check command for demo edits, and that demo's
 `test:e2e-full -- <spec>` for its geometry/a11y scenarios. Tests run only through
-`/home/cloud/hilos-ops/with-stand`; long runs use the line's detached mechanism.
+the line's stand wrapper; long runs use the line's detached mechanism.
 The integration/Verify phase owns the rare full pass prescribed by
 [testing.md](../testing.md); this Research does not launch it. Every card includes
 its behavior tests rather than creating a separate Tooling card to validate
@@ -1419,8 +1419,8 @@ outside its claim of completion.
 
 ## Final research validation
 
-The pre-correction final pass on 2026-10-13 ran
-`/home/cloud/hilos-ops/with-stand composer run test:framework:unit`
+The pre-correction final pass on 2026-10-13 ran the stand-wrapped
+`composer run test:framework:unit`
 and passed with exit 0: **8,765 tests, 325,581 assertions,
 one skipped**, in 23.844 seconds. The skip is the existing unconditional
 `testFollowerOpensDegradedAfterTheSharedTimeout` in
