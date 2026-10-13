@@ -12,6 +12,8 @@ that match the affected subsystem.
 ## Read First
 
 - Framework development rules: `docs/agents/framework-development.md`
+- Writing SQL past `Hilos::$db`, or choosing a static or instance field for
+  state instead of `Hilos::$rt`: `docs/agents/framework-first.md`
 - App topology registry: `docs/agents/app-topology.md`
 - Style and PHPDoc contracts: use `$hilos-code-style-php`
 - Exception families and `@throws`: use `$hilos-exception`

@@ -12,6 +12,9 @@ switch to the focused data-layer skill first.
 
 ## Read First
 
+- About to write a query of your own past `Hilos::$db`, or to hold state on a
+  static or an instance field instead of `Hilos::$rt`: find the framework's
+  mechanism first, `docs/agents/framework-first.md`.
 - DB collections, items, actions, and `Hilos::$db` access: use `$hilos-orm`.
 - Runtime collections, items, truth sources, and `Hilos::$rt` access: use
   `$hilos-runtime`.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Framework First"
+  short_description: "Hilos::$db before SQL, Hilos::$rt before class-local state"
+  default_prompt: "Use $hilos-framework-first before writing a query of your own or holding state on a class: find the Hilos::$db or Hilos::$rt mechanism first."

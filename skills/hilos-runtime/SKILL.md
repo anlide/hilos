@@ -11,6 +11,8 @@ Start with `agents.md`, then read the matching runtime guide.
 ## Read First
 
 - `Hilos::$rt`, runtime collections, worker sync: `docs/agents/runtime/rt-context.md`
+- Choosing a static property or a class field for state instead of a runtime
+  collection — its lifetime and owner first: `docs/agents/framework-first.md`
 - `RtState` subclasses and state item access: `docs/agents/runtime/rt-state.md`
 - Truth sources and shared state ownership: `docs/agents/agent-system/monopolistic-agent.md`
 - Declaring what an agent owns and what it reads, and the operations a claim
