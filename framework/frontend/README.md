@@ -66,9 +66,9 @@ Angular consumer expects. All emit an entry module plus its `.d.ts`.
 
 Unit tests are vitest, colocated with the source as `*.test.ts`
 (`docs/agents/frontend/testing-strategy.md`). The workspace-root
-`vitest.config.ts` aggregates each package as a test project, so one run covers
-the whole SDK; the build tsconfigs exclude test files, so nothing test-related
-reaches `dist/`.
+`vitest.config.mts` aggregates each package as a test project, so one run
+covers the whole SDK; the build tsconfigs exclude test files, so nothing
+test-related reaches `dist/`.
 
 From the repo root every step has a Composer wrapper —
 `composer run test:framework:frontend:<install|build|check|unit|lint|format-check>`

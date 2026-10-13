@@ -79,7 +79,7 @@ its subject and is named after the scenario:
 at all: they are flat packages, and a test sits beside its module in the package
 root (`codestyle/wireKeyCase.ts` -> `codestyle/wireKeyCase.test.ts`). They are
 full vitest projects all the same — both are listed in
-`framework/frontend/vitest.config.ts`.
+`framework/frontend/vitest.config.mts`.
 
 The environment comes from the package config, not from the file: `vue` runs
 happy-dom, `react` and `angular` run jsdom, and every other package runs with

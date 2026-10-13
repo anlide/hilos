@@ -564,7 +564,7 @@ line so a report reads the same whichever produced it.
 The TypeScript half lives in `framework/frontend/codestyle/`, a vitest project of
 its own like `framework/frontend/scripts/` and, like it, not an npm workspace: it
 ships no package and is not type-checked by `npm run check`. Register it by
-adding its directory to `projects` in `framework/frontend/vitest.config.ts`; from
+adding its directory to `projects` in `framework/frontend/vitest.config.mts`; from
 then on it runs inside `test:framework:frontend:unit` with no target of its own.
 Read sources through the TypeScript compiler API (`ts.createSourceFile`) for the
 same reason the PHP half reads tokens — a name quoted inside a string or written
