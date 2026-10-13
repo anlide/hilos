@@ -5946,8 +5946,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * Only where a sign-in surface exists: an account deletion is asked for from a signed-in
      * profile, and a project without one has no request table to read. Never run rather than
-     * just run: the first tick of a restarted
-     * holder catches up with what fell due while nobody held it.
+     * just run: the first tick of a restarted holder catches up with what fell due while
+     * nobody held it.
      */
     private function armAccountDeletionSweep(): void
     {

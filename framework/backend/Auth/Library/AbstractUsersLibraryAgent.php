@@ -685,7 +685,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /** Once a minute: a removal is carried out within a minute of its moment. */
     private const string SECOND_FACTOR_RESET_SWEEP_CRON = '* * * * *';
 
+    /** Refusal of adopting the browser's theme choice without the caller's current signed-in session. */
     private const string THEME_ADOPT_SESSION_REFUSAL = 'Theme adoption requires your current signed-in session';
+
+    /** Refusal of a theme choice without the caller's current signed-in session. */
     private const string THEME_PICK_SESSION_REFUSAL = 'Theme choice requires your current signed-in session';
 
     /**

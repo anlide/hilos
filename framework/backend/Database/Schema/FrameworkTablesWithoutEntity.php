@@ -33,10 +33,9 @@ use Hilos\Database\MigrationClaim;
  *   bulk on the hot path.
  *
  * The separate journal is classified by {@see ChangeLogTablesWithoutEntity}.
- * Whether any analytics table gets an Entity is an Analytics Phase-2 question,
- * HIL-1402; its standing decision
- * is ORM only over aggregate tables, with raw facts staying on raw SQL. Until then,
- * the tables are declared here rather than passing unnoticed.
+ * Whether any analytics table gets an Entity is an Analytics Phase-2 question, HIL-1402;
+ * its standing decision is ORM only over aggregate tables, with raw facts staying on raw
+ * SQL. Until then, the tables are declared here rather than passing unnoticed.
  *
  * Names are spelled out one by one, never matched by a `hilos_analytics_*` prefix: a
  * prefix rule would also wave through a table nobody meant to ship, which is exactly
