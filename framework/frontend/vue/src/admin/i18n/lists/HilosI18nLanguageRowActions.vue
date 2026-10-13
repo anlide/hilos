@@ -18,12 +18,12 @@ const reasonId = useId()
 </script>
 
 <template>
-  <span class="d-inline-flex flex-column w-100">
-    <span class="d-flex gap-1">
+  <span class="d-inline-flex flex-column align-items-end text-end">
+    <span class="d-flex gap-1 justify-content-end">
       <button
         v-if="row.enabled"
         type="button"
-        class="btn btn-sm btn-outline-secondary flex-grow-1"
+        class="btn btn-sm btn-outline-secondary"
         :title="copy.open.view"
         :aria-label="copy.open.view"
         :data-id="`i18n-languages-view-${row.code}`"
@@ -34,7 +34,7 @@ const reasonId = useId()
       <button
         v-else
         type="button"
-        class="btn btn-sm btn-outline-primary flex-grow-1"
+        class="btn btn-sm btn-outline-primary"
         :title="copy.open.edit"
         :aria-label="copy.open.edit"
         :data-id="`i18n-languages-edit-${row.code}`"
@@ -44,7 +44,10 @@ const reasonId = useId()
       </button>
       <button
         type="button"
-        class="btn btn-sm btn-outline-danger flex-grow-1"
+        class="btn btn-sm"
+        :class="
+          verdict.disabled ? 'btn-outline-secondary' : 'btn-outline-danger'
+        "
         :disabled="verdict.disabled"
         :aria-label="deleteCopy.rowLabel(row.nativeName)"
         :aria-describedby="verdict.reason ? reasonId : undefined"
@@ -57,7 +60,7 @@ const reasonId = useId()
     <span
       v-if="verdict.reason"
       :id="reasonId"
-      class="small text-body-secondary text-wrap mt-1 mb-0"
+      class="small text-body-secondary text-wrap text-end mt-1 mb-0"
       :data-id="`i18n-languages-delete-reason-${row.code}`"
     >
       {{ verdict.reason }}
