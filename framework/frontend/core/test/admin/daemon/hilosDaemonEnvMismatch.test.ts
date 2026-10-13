@@ -2,19 +2,25 @@ import { describe, expect, it } from 'vitest'
 
 import {
   createHilosDaemonEnvMismatchTables,
+  DAEMON_ENV_MISMATCH_DATA,
   daemonEnvMismatchCellOf,
   daemonEnvMismatchCellView,
   daemonEnvMismatchDigestLength,
+  daemonEnvMismatchEmptyState,
   daemonEnvMismatchFromExample,
   daemonEnvMismatchNodeColumnKey,
+  daemonEnvMismatchNodes,
   daemonEnvMismatchStandsOut,
+  daemonEnvMismatchSummarySchema,
   daemonEnvMismatchTypesDiffer,
   formatDaemonEnvMismatchNodeLabel,
+  readHilosDaemonEnvMismatchSummary,
   resolveHilosDaemonEnvMismatchRow,
   type HilosDaemonEnvMismatchCell,
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchNode,
   type HilosDaemonEnvMismatchRow,
+  type HilosDaemonEnvMismatchSummary,
 } from '../../../src/admin/daemon/hilosDaemonEnvMismatch.js'
 import {
   type HilosConnection,
@@ -22,7 +28,7 @@ import {
 } from '../../../src/connection/HilosConnection.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
-import { type ScopeManager } from '../../../src/state/ScopeManager.js'
+import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { createSignal } from '../../../src/state/signal.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
@@ -406,5 +412,96 @@ describe('daemon environment mismatch cells', () => {
     expect(daemonEnvMismatchFromExample(comparison, 'n5')).toBe(true)
     expect(daemonEnvMismatchFromExample(comparison, 'n1')).toBe(false)
     expect(daemonEnvMismatchFromExample(comparison, 'n4')).toBe(false)
+  })
+})
+
+describe('daemon environment mismatch summary and helpers', () => {
+  it('validates the complete summary, standalone null comparison, and degrades garbage to null', () => {
+    const fullSummary: HilosDaemonEnvMismatchSummary = {
+      clustered: true,
+      servingNodeId: 'n1',
+      comparison: {
+        nodes: ['n1', 'n2'],
+        answering: ['n1', 'n2'],
+        diverged: 1,
+        sourcesDiffer: 2,
+        perNode: ['CLUSTER_NODE_ID'],
+      },
+    }
+    expect(daemonEnvMismatchSummarySchema.parse(fullSummary)).toEqual(
+      fullSummary,
+    )
+
+    const standaloneSummary: HilosDaemonEnvMismatchSummary = {
+      clustered: false,
+      servingNodeId: 'standalone',
+      comparison: null,
+    }
+    expect(daemonEnvMismatchSummarySchema.parse(standaloneSummary)).toEqual(
+      standaloneSummary,
+    )
+
+    expect(
+      daemonEnvMismatchSummarySchema.safeParse({ invalid: 'object' }).success,
+    ).toBe(false)
+
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage(HilosPages.DAEMON_ENV_MISMATCH)
+    const signal = readHilosDaemonEnvMismatchSummary(scopes)
+    expect(signal.get()).toBeNull()
+
+    scope.data.set(DAEMON_ENV_MISMATCH_DATA, fullSummary)
+    expect(signal.get()).toEqual(fullSummary)
+
+    scope.data.set(DAEMON_ENV_MISMATCH_DATA, 'garbage-string')
+    expect(signal.get()).toBeNull()
+  })
+
+  it('builds node columns marking only the serving node, returning empty on null', () => {
+    const summary: HilosDaemonEnvMismatchSummary = {
+      clustered: true,
+      servingNodeId: 'n2',
+      comparison: {
+        nodes: ['n1', 'n2', 'n3'],
+        answering: ['n1', 'n2'],
+        diverged: 0,
+        sourcesDiffer: 0,
+        perNode: [],
+      },
+    }
+    expect(daemonEnvMismatchNodes(summary)).toEqual([
+      { nodeId: 'n1', serving: false },
+      { nodeId: 'n2', serving: true },
+      { nodeId: 'n3', serving: false },
+    ])
+    expect(daemonEnvMismatchNodes(null)).toEqual([])
+    expect(
+      daemonEnvMismatchNodes({
+        clustered: false,
+        servingNodeId: 'standalone',
+        comparison: null,
+      }),
+    ).toEqual([])
+  })
+
+  it('derives empty state between alone and agree', () => {
+    expect(
+      daemonEnvMismatchEmptyState({
+        nodes: ['n1', 'n2'],
+        answering: ['n1'],
+        diverged: 0,
+        sourcesDiffer: 0,
+        perNode: [],
+      }),
+    ).toBe('alone')
+    expect(
+      daemonEnvMismatchEmptyState({
+        nodes: ['n1', 'n2'],
+        answering: ['n1', 'n2'],
+        diverged: 0,
+        sourcesDiffer: 0,
+        perNode: [],
+      }),
+    ).toBe('agree')
   })
 })

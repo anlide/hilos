@@ -52,7 +52,7 @@ export const HILOS_UNBUILT_PAGES: Readonly<
   [HilosPages.DAEMON_WEBSOCKETS]: ['vue', 'react', 'angular'],
   [HilosPages.DAEMON_HTTP_SERVER]: ['react', 'angular'],
   [HilosPages.DAEMON_ENV]: ['react', 'angular'],
-  [HilosPages.DAEMON_ENV_MISMATCH]: ['vue', 'react', 'angular'],
+  [HilosPages.DAEMON_ENV_MISMATCH]: ['react', 'angular'],
   [HilosPages.MCP_SKILLS]: ['vue', 'react', 'angular'],
   [HilosPages.MCP_SKILLS_MCP]: ['vue', 'react', 'angular'],
   [HilosPages.MCP_SKILLS_MCP_LOGS]: ['vue', 'react', 'angular'],

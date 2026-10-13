@@ -77,6 +77,8 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
         $this->previousClusterEnabled === false
             ? putenv('CLUSTER_ENABLED')
             : putenv('CLUSTER_ENABLED=' . $this->previousClusterEnabled);
+        putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_ROLE');
         parent::tearDown();
     }
 
@@ -116,6 +118,8 @@ final class HilosDaemonPlacementPageWindowTest extends TestCase
     public function testUnrelatedMetricsAndCronDoNotResendButLeaderVerdictDoes(): void
     {
         putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=n1');
+        putenv('CLUSTER_NODE_ROLE=master');
         Hilos::$cluster = new ClusterContext();
         $agent = new PlacementWindowTestAgent();
         $roster = $this->roster(['x:1'], ['x:lost']);

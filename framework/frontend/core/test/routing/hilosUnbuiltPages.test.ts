@@ -48,10 +48,21 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV)).toBe(true)
   })
 
-  it('keeps the environment mismatch page and WebSockets unbuilt in every view layer', () => {
+  it('opens the Vue Daemon environment mismatch page while React and Angular remain unbuilt', () => {
+    expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(
+      false,
+    )
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(
+      true,
+    )
+    expect(
+      hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV_MISMATCH),
+    ).toBe(true)
+  })
+
+  it('keeps WebSockets unbuilt in every view layer', () => {
     for (const layer of ['vue', 'react', 'angular'] as const) {
       const unbuilt = hilosUnbuiltPages(layer)
-      expect(unbuilt.has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(true)
       expect(unbuilt.has(HilosPages.DAEMON_WEBSOCKETS)).toBe(true)
     }
   })

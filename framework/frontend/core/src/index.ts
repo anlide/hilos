@@ -2063,6 +2063,11 @@ export {
   daemonEnvMismatchCellView,
   daemonEnvMismatchStandsOut,
   daemonEnvMismatchFromExample,
+  readHilosDaemonEnvMismatchSummary,
+  daemonEnvMismatchNodes,
+  daemonEnvMismatchEmptyState,
+  daemonEnvMismatchSummarySchema,
+  DAEMON_ENV_MISMATCH_DATA,
   DAEMON_ENV_MISMATCH_KEY_FIELD,
   DAEMON_ENV_MISMATCH_SENSITIVE_FIELD,
   DAEMON_ENV_MISMATCH_VALUE_FIELD,
@@ -2076,6 +2081,8 @@ export {
   type HilosDaemonEnvMismatchContext,
   type HilosDaemonEnvMismatchTables,
   type HilosDaemonEnvMismatchCellView,
+  type HilosDaemonEnvMismatchSummary,
+  type HilosDaemonEnvMismatchEmptyState,
 } from './admin/daemon/hilosDaemonEnvMismatch.js'
 export {
   DAEMON_NODE_DATA,

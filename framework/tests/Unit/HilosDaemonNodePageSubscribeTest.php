@@ -62,6 +62,8 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         Hilos::$env = $this->previousEnv;
         Hilos::$browser = $this->previousBrowser;
         putenv('CLUSTER_ENABLED');
+        putenv('CLUSTER_NODE_ID');
+        putenv('CLUSTER_NODE_ROLE');
 
         parent::tearDown();
     }
@@ -142,18 +144,20 @@ final class HilosDaemonNodePageSubscribeTest extends TestCase
         $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
     }
 
-    public function testEnvironmentMismatchRefusesStandalone(): void
+    public function testEnvironmentMismatchAnswersStandalone(): void
     {
         $page = new DaemonNodePageTestEnvMismatchPage(new DaemonNodePageTestAgent());
 
-        $this->expectException(PageResourceNotFoundException::class);
-        $this->expectExceptionMessage('Environment mismatch is available only in a cluster');
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr?->getNextQueuedSignal()?->signalName->getName());
     }
 
     public function testEnvironmentMismatchAnswersInClusterMode(): void
     {
         putenv('CLUSTER_ENABLED=true');
+        putenv('CLUSTER_NODE_ID=cluster-node');
+        putenv('CLUSTER_NODE_ROLE=master');
         $page = new DaemonNodePageTestEnvMismatchPage(new DaemonNodePageTestAgent());
 
         $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));

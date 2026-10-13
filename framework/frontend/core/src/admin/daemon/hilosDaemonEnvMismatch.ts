@@ -1,6 +1,5 @@
 // Framework headless tables for the cluster environment verdict. The page
 // supplies its node list; rows come from the page worker's picture mirror.
-// SCAFFOLD: HIL-1396 will mount these tables and draw their cells in Vue.
 
 import { z } from 'zod'
 import { type HilosConnection } from '../../connection/HilosConnection.js'
@@ -8,7 +7,7 @@ import { HilosPages } from '../../routing/hilosPages.js'
 import { readBoolean, readString } from '../../state/fieldReaders.js'
 import { HIDDEN_VALUE, isHiddenValue } from '../../state/hiddenValue.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
-import { type ReadonlySignal } from '../../state/signal.js'
+import { computedSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumn } from '../../table/hilosTableColumn.js'
@@ -33,6 +32,42 @@ export const DAEMON_ENV_MISMATCH_SENSITIVE_FIELD = 'sensitive'
 export const DAEMON_ENV_MISMATCH_VALUE_FIELD = 'value'
 /** Row payload key of the per-node comparison cells. */
 export const DAEMON_ENV_MISMATCH_CELLS_FIELD = 'cells'
+
+/** Page-data key of the cluster environment mismatch summary. */
+export const DAEMON_ENV_MISMATCH_DATA = 'envMismatch'
+
+export const daemonEnvMismatchSummarySchema = z.strictObject({
+  clustered: z.boolean(),
+  servingNodeId: z.string(),
+  comparison: z
+    .strictObject({
+      nodes: z.array(z.string()),
+      answering: z.array(z.string()),
+      diverged: z.number().int(),
+      sourcesDiffer: z.number().int(),
+      perNode: z.array(z.string()),
+    })
+    .nullable(),
+})
+
+export type HilosDaemonEnvMismatchSummary = z.infer<
+  typeof daemonEnvMismatchSummarySchema
+>
+
+/**
+ * Read the current page's environment mismatch summary, including resends.
+ *
+ * @param scopes The page scope manager.
+ */
+export function readHilosDaemonEnvMismatchSummary(
+  scopes: ScopeManager,
+): ReadonlySignal<HilosDaemonEnvMismatchSummary | null> {
+  const source = scopes.pageDataSignal(DAEMON_ENV_MISMATCH_DATA)
+  return computedSignal(() => {
+    const parsed = daemonEnvMismatchSummarySchema.safeParse(source.get())
+    return parsed.success ? parsed.data : null
+  })
+}
 
 /** The node supplied a comparable fingerprint. */
 export const DAEMON_ENV_CELL_KNOWN = 'known'
@@ -63,6 +98,36 @@ const cellsSchema = z.array(
 export interface HilosDaemonEnvMismatchNode {
   readonly nodeId: string
   readonly serving: boolean
+}
+
+/**
+ * Extract the comparison nodes from the summary, identifying the serving node.
+ *
+ * @param summary Cluster environment mismatch summary, if available.
+ */
+export function daemonEnvMismatchNodes(
+  summary: HilosDaemonEnvMismatchSummary | null,
+): readonly HilosDaemonEnvMismatchNode[] {
+  if (summary === null || summary.comparison === null) {
+    return []
+  }
+  return summary.comparison.nodes.map((nodeId) => ({
+    nodeId,
+    serving: nodeId === summary.servingNodeId,
+  }))
+}
+
+export type HilosDaemonEnvMismatchEmptyState = 'alone' | 'agree'
+
+/**
+ * Determine the empty-state message for the diverged keys table.
+ *
+ * @param comparison Active comparison cluster summary.
+ */
+export function daemonEnvMismatchEmptyState(
+  comparison: NonNullable<HilosDaemonEnvMismatchSummary['comparison']>,
+): HilosDaemonEnvMismatchEmptyState {
+  return comparison.answering.length < 2 ? 'alone' : 'agree'
 }
 
 /** The comparison reading for one node and one key. */

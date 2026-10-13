@@ -125,6 +125,7 @@ export { default as HilosDaemonAgentsPage } from './admin/daemon/HilosDaemonAgen
 export { default as HilosDaemonCronPage } from './admin/daemon/HilosDaemonCronPage.vue'
 export { default as HilosDaemonHttpServerPage } from './admin/daemon/HilosDaemonHttpServerPage.vue'
 export { default as HilosDaemonEnvPage } from './admin/daemon/HilosDaemonEnvPage.vue'
+export { default as HilosDaemonEnvMismatchPage } from './admin/daemon/HilosDaemonEnvMismatchPage.vue'
 export { default as HilosDashboardPage } from './admin/dashboard/HilosDashboardPage.vue'
 export { default as HilosI18nLanguagePage } from './admin/i18n/details/HilosI18nLanguagePage.vue'
 export { default as HilosI18nLanguagesPage } from './admin/i18n/lists/HilosI18nLanguagesPage.vue'

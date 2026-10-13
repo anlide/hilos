@@ -278,7 +278,10 @@ per node a label, a type and a source. The one value they carry is the serving
 node's own, read in the page agent's process as the environment page reads its
 node's: never for a `sensitive` key, hidden for a view-mode viewer unless the
 catalog opens it. Their windows travel whole when a picture portion changes
-the comparison.
+the comparison. The page's own part, `envMismatch`, names the cluster mode, the
+serving node and, once a picture exists, the picture's nodes, the answering
+ones, the count of each bucket and the `per_node` keys. It travels whole when it
+changes, and the windows ride with it.
 
 The September 16 decision carried fingerprints in synchronized RT; the October 4
 decomposition moved them to the node frame, preserving the boundary on values.
@@ -400,20 +403,23 @@ replacing the index agent in chat. The environment child page is the exception:
 its thin project subclass inherits the framework's node-addressed
 `SUBSCRIPTION_AGENT_TYPE` and declares none of its own. The six node child
 addresses carry a required node ID, including on standalone installations; Env
-mismatch is a cluster-wide address without one.
+mismatch is a cluster-wide address without one. On a standalone installation it
+answers rather than refusing: `clustered` is false, and the page shows only that
+there is nothing to compare.
 
 The framework has eight abstract Daemon pages, with thin concrete subclasses in
 all five demos. Each key stays in
 [hilosUnbuiltPages](../../../framework/frontend/core/src/routing/hilosUnbuiltPages.ts)
 for every frontend that has not built it. Vue builds the root (HIL-1389),
-Workers (HIL-1391), Agents (HIL-1392), Cron (HIL-1393), HTTP (HIL-1394) and Environment (HIL-1395).
+Workers (HIL-1391), Agents (HIL-1392), Cron (HIL-1393), HTTP (HIL-1394),
+Environment (HIL-1395) and Env mismatch (HIL-1396).
 The root reads its node overview and safe primary database address from one
 whole page answer, alongside its catalog identity and placement windows. Its
 local node selection supplies child-card addresses and the inspector's log
 link, without another subscription or action. Chat and binance-btc-tracker mount
 it through a thin wrapper with their `connection` and `scopes` context; the
 built Vue children no longer need staged rows under the root. React and Angular
-still leave these six pages unbuilt.
+still leave these seven pages unbuilt.
 Keep WebSockets unbuilt after this section lands: it is outside this section's
 scope. For the layer-by-layer activation recipe, read
 [admin-feature-scaffold.md](admin-feature-scaffold.md), *daemon — the Daemon

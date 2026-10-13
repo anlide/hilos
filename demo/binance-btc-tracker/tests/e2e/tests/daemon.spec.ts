@@ -430,6 +430,31 @@ test('shows the standalone environment, its ladder and only the length of a secr
   await expect(page.locator('body')).not.toContainText('hilos_pass')
 })
 
+test('shows no environment comparison on a standalone installation', async ({
+  page,
+}) => {
+  await signUpAdmin(page)
+  await gotoPage(page, ROOT_PATH, PAGE_READY)
+
+  const child = page.getByTestId('hilos-admin-child-hilos_daemon_env_mismatch')
+  await expect(child).toBeVisible()
+  await expect(child).toHaveAttribute('href', '/hilos/daemon/env-mismatch')
+  await child.click()
+
+  await expectDaemonPage(page, 'hilos_daemon_env_mismatch')
+  const standalone = page.getByTestId('hilos-daemon-env-mismatch-standalone')
+  await expect(standalone).toBeVisible()
+  await expect(standalone).toContainText('standalone')
+
+  await expect(page.getByTestId('page-error')).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-daemon-env-mismatch-tile-answering'),
+  ).toHaveCount(0)
+  await expect(
+    page.getByTestId('hilos-daemon-env-mismatch-waiting'),
+  ).toHaveCount(0)
+})
+
 test.describe('restarting an agent', () => {
   // The master's 13-second caller window must be judged on the first attempt.
   test.describe.configure({ retries: 0 })
