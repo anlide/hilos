@@ -48,7 +48,7 @@ The verdict has a third reader: the change log ([change-log.md](change-log.md)).
 A column in `_pii` goes into the journal only as the fact that it changed, never
 with its value. A restore puts the journal's
 triggers back only after the anonymization pass, so the pass leaves nothing in
-the journal (not in the code yet — HIL-1451).
+the journal.
 
 ## Anonymization Belongs To The Restore, Not To The Archive
 

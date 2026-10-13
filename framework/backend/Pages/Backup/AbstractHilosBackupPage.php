@@ -412,7 +412,11 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
         // The levels ride in the index row, so the sidecar is not read from disk to answer a click.
         $migrationVerdict = $row === null
             ? null
-            : RestoreMigrationGuard::decide($row->connections, RestoreMigrationGuard::codeMigrationIndex());
+            : RestoreMigrationGuard::decide(
+                $row->connections,
+                RestoreMigrationGuard::codeMigrationIndex(),
+                RestoreMigrationGuard::targetCarriesJournal(),
+            );
 
         $refusal = RestoreUiGate::decide(
             $targetEnv,

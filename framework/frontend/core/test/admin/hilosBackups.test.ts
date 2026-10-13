@@ -403,7 +403,10 @@ describe('backupProgressPercent', () => {
     expect(backupProgressPercent(anchors('extracting', 0), NOW_MS)).toBe(5)
     expect(backupProgressPercent(anchors('importing', 0), NOW_MS)).toBe(20)
     expect(backupProgressPercent(anchors('migrating', 0), NOW_MS)).toBe(75)
-    expect(backupProgressPercent(anchors('anonymizing', 0), NOW_MS)).toBe(85)
+    expect(backupProgressPercent(anchors('anonymizing', 0), NOW_MS)).toBe(83)
+    expect(
+      backupProgressPercent(anchors('installing-triggers', 0), NOW_MS),
+    ).toBe(93)
     expect(backupProgressPercent(anchors('rehydrating', 0), NOW_MS)).toBe(95)
   })
 

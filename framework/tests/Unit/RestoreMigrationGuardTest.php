@@ -25,7 +25,7 @@ final class RestoreMigrationGuardTest extends TestCase
 {
     public function testEqualLevelsAllowWithNothingToReport(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40, false);
 
         $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
         $this->assertNull($result->reason);
@@ -33,9 +33,84 @@ final class RestoreMigrationGuardTest extends TestCase
         $this->assertSame([], $result->gaps, 'A matching connection has nothing to say about it');
     }
 
+    public function testAnInstallationWithJournalRefusesAnArchiveWithoutIt(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40, true);
+
+        $this->assertSame(RestoreMigrationDecision::REFUSE, $result->decision);
+        $this->assertSame(
+            'connection 1: the archive carries no change-log database; the journal cannot roll back with the data',
+            $result->reason,
+        );
+        $this->assertSame(40, $result->codeIndex);
+        $this->assertSame([], $result->gaps, 'A missing journal does not invent a migration gap');
+    }
+
+    public function testAnInstallationWithJournalAllowsAnArchiveCarryingBothConnections(): void
+    {
+        $result = RestoreMigrationGuard::decide(
+            [new BackupConnectionMeta(0, 'db', 40), new BackupConnectionMeta(1, 'db-change-log', 40)],
+            40,
+            true,
+        );
+
+        $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
+        $this->assertNull($result->reason);
+        $this->assertSame([], $result->gaps);
+    }
+
+    public function testAnInstallationWithoutJournalAllowsAnArchiveWithoutIt(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40, false);
+
+        $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
+        $this->assertNull($result->reason);
+    }
+
+    public function testAnInstallationWithoutJournalDoesNotRefuseAnArchiveForCarryingIt(): void
+    {
+        $result = RestoreMigrationGuard::decide(
+            [new BackupConnectionMeta(0, 'db', 40), new BackupConnectionMeta(1, 'db-change-log', 40)],
+            40,
+            false,
+        );
+
+        $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
+        $this->assertNull($result->reason);
+    }
+
+    public function testAMissingJournalIsRefusedEvenWhenMigrationLevelsCannotBeCompared(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], null, true);
+
+        $this->assertSame(RestoreMigrationDecision::REFUSE, $result->decision);
+        $this->assertSame(
+            'connection 1: the archive carries no change-log database; the journal cannot roll back with the data',
+            $result->reason,
+        );
+        $this->assertCount(1, $result->gaps);
+        $this->assertSame(0, $result->gaps[0]->connectionIndex);
+        $this->assertNull($result->gaps[0]->archiveIndex);
+    }
+
+    public function testAMissingJournalAndANewerArchiveReportBothRefusals(): void
+    {
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 44)], 40, true);
+
+        $this->assertSame(RestoreMigrationDecision::REFUSE, $result->decision);
+        $this->assertSame(
+            'connection 0: archive at migration 44, code expects 40 (4 ahead); there is no downgrade path; '
+            . 'connection 1: the archive carries no change-log database; the journal cannot roll back with the data',
+            $result->reason,
+        );
+        $this->assertCount(1, $result->gaps);
+        $this->assertSame(0, $result->gaps[0]->connectionIndex);
+        $this->assertSame(44, $result->gaps[0]->archiveIndex);
+    }
+
     public function testArchiveOlderThanCodeIsAllowedAndReportedAsAGap(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], 40, false);
 
         $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
         $this->assertNull($result->reason);
@@ -46,7 +121,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testArchiveNewerThanCodeIsRefusedWithTheExactGap(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 44)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 44)], 40, false);
 
         $this->assertSame(RestoreMigrationDecision::REFUSE, $result->decision);
         $this->assertNotNull($result->reason);
@@ -58,7 +133,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testUnrecordedArchiveLevelIsAllowedAsAGapWithNoNumber(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], 40, false);
 
         $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
         $this->assertCount(1, $result->gaps);
@@ -73,6 +148,7 @@ final class RestoreMigrationGuardTest extends TestCase
                 new BackupConnectionMeta(1, 'secondary', 44),
             ],
             40,
+            false,
         );
 
         $this->assertSame(RestoreMigrationDecision::REFUSE, $result->decision);
@@ -93,6 +169,7 @@ final class RestoreMigrationGuardTest extends TestCase
                 new BackupConnectionMeta(1, 'secondary', 44),
             ],
             null,
+            false,
         );
 
         $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
@@ -102,7 +179,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testAnArchiveWithNoConnectionsHasNothingToGate(): void
     {
-        $result = RestoreMigrationGuard::decide([], 40);
+        $result = RestoreMigrationGuard::decide([], 40, false);
 
         $this->assertSame(RestoreMigrationDecision::ALLOW, $result->decision);
         $this->assertSame([], $result->gaps);
@@ -110,7 +187,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testAnArchiveBehindTheCodeIsWordedWithTheMigrationsItWillApply(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], 40, false);
 
         $this->assertSame(
             [
@@ -123,7 +200,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testAnUnrecordedLevelIsWordedAsAMissingCheckRatherThanAProblem(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], 40, false);
 
         $this->assertSame(
             [
@@ -136,7 +213,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testAnInstallationWithNoMigrationsSaysSoRatherThanBlamingTheArchive(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], null);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 32)], null, false);
 
         $this->assertSame(
             [
@@ -149,7 +226,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testMatchingConnectionsAreWordedNotAtAll(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40, false);
 
         $this->assertSame([], $result->describeGaps());
     }
@@ -162,6 +239,7 @@ final class RestoreMigrationGuardTest extends TestCase
                 new BackupConnectionMeta(1, 'secondary', 36),
             ],
             40,
+            false,
         );
 
         $this->assertSame(8, $result->migrationsBehind());
@@ -175,6 +253,7 @@ final class RestoreMigrationGuardTest extends TestCase
                 new BackupConnectionMeta(1, 'secondary', 36),
             ],
             40,
+            false,
         );
 
         $this->assertSame(4, $result->migrationsBehind(), 'The unrecorded connection is not a lag of its own');
@@ -182,7 +261,7 @@ final class RestoreMigrationGuardTest extends TestCase
 
     public function testAnArchiveThatIsLevelWithTheCodeLagsByNothing(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 40)], 40, false);
 
         $this->assertNull($result->migrationsBehind());
     }
@@ -191,14 +270,14 @@ final class RestoreMigrationGuardTest extends TestCase
     {
         // Zero would read as "nothing to apply", which is a claim; null is the absence of one, and
         // the row's badge shows a number only when there is one to show.
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], null);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', null)], null, false);
 
         $this->assertNull($result->migrationsBehind());
     }
 
     public function testARefusedArchiveReportsNoLagFromTheConnectionThatIsAhead(): void
     {
-        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 44)], 40);
+        $result = RestoreMigrationGuard::decide([new BackupConnectionMeta(0, 'db', 44)], 40, false);
 
         $this->assertNull($result->migrationsBehind(), 'An archive ahead of the code is not behind it');
     }

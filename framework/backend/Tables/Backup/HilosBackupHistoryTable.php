@@ -592,7 +592,11 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
         $restored = $restore !== null && $restore->backupId === $id ? $restore : null;
         // The same verdict the restore action re-derives, computed here from the levels the index
         // row already carries, so the list answers "restorable?" without opening a single sidecar.
-        $migration = RestoreMigrationGuard::decide($history->connections, $this->codeMigrationIndex());
+        $migration = RestoreMigrationGuard::decide(
+            $history->connections,
+            $this->codeMigrationIndex(),
+            RestoreMigrationGuard::targetCarriesJournal(),
+        );
         $refused = $migration->decision === RestoreMigrationDecision::REFUSE;
 
         return new HilosBackupTableRow(

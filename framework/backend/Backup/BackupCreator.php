@@ -39,10 +39,10 @@ use Throwable;
  * `.json` sidecar atomically (temp path in the same directory, then rename), so the
  * read path never scans a half-written archive.
  *
- * The dumper is hardcoded to mysqldump inline (the project targets MySQL only); the
- * per-connection dump is isolated in {@see dumpConnection()} as the seam a future
- * per-driver dumper abstraction would replace (deferred until a non-MySQL connection
- * appears).
+ * The dumper is hardcoded to mysqldump inline (the project targets MariaDB through its
+ * mysqldump-compatible client); the per-connection dump is isolated in {@see dumpConnection()}
+ * as the seam a future per-driver dumper abstraction would replace (deferred until a
+ * non-MySQL connection appears).
  *
  * The engine also carries the failure bookkeeping the supervisor delegates to when a run
  * ends badly ({@see recordFailure()}): a child killed on timeout cannot clean up or write
@@ -643,7 +643,8 @@ final class BackupCreator
      * The migration level is read BEFORE the dump, not after it: reading it is what creates the
      * `migration` table ({@see Migration::initialize()}), so on a database that never migrated
      * the old order dumped a schema with no `migration` in it - and left the marker nothing to
-     * attach to.
+     * attach to. The journal has no migration table or dump marker; its sidecar records the
+     * primary level, and the primary track owns its schema.
      *
      * @param BackupScope $scope Backup scope
      * @param string $workDir Temp working directory receiving the sql files
@@ -667,10 +668,10 @@ final class BackupCreator
 
                 $config = Database::getConnectionConfig($index);
                 $sqlPath = $workDir . '/' . self::SQL_FILE_PREFIX . $index . self::SQL_FILE_SUFFIX;
+                $journalConnection = ChangeLogDatabase::isJournalConnection($index, $config->database);
                 // The derived journal has no migration track of its own. Asking Migration for
                 // its level there would create four framework tables in the six-table schema.
-                $migrationIndex = $index === DatabaseConnectionDefaults::PRIMARY_INDEX
-                    || ChangeLogDatabase::isJournalConnection($index, $config->database)
+                $migrationIndex = $index === DatabaseConnectionDefaults::PRIMARY_INDEX || $journalConnection
                     ? $primaryMigrationIndex
                     : Migration::getCurrentIndex();
 
@@ -679,7 +680,7 @@ final class BackupCreator
                     $config,
                     $sqlPath,
                     $references->tablesForConnection($index),
-                    self::scopeMarkerIndex($scope, $migrationIndex),
+                    $journalConnection ? null : self::scopeMarkerIndex($scope, $migrationIndex),
                 );
 
                 $connections[] = new BackupConnectionMeta($index, $config->database, $migrationIndex);
@@ -745,6 +746,10 @@ final class BackupCreator
      * This is the per-driver seam: a future dumper abstraction would replace the body
      * while the caller contract (scope + config + target file) stays the same.
      *
+     * Every pass skips triggers: their dumped bodies carry the source's journal database name
+     * and DEFINER, and triggers installed by the import would journal the anonymizer's writes.
+     * Restore installs the service triggers from their files after its own final write.
+     *
      * The migration marker is appended after the passes and is not one of them
      * ({@see scopeDumpPasses()} stays a mysqldump vocabulary): it is a statement this engine
      * writes itself, into the dump file and never into the live database.
@@ -768,7 +773,7 @@ final class BackupCreator
         try {
             foreach (self::scopeDumpPasses($scope, $referenceTables) as $pass) {
                 $params = array_merge(
-                    ['--defaults-extra-file=' . $iniPath, '--single-transaction', '--no-tablespaces'],
+                    ['--defaults-extra-file=' . $iniPath, '--single-transaction', '--no-tablespaces', '--skip-triggers'],
                     $pass['flags'],
                     [$config->database],
                     $pass['tables'],

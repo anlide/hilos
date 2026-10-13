@@ -62,7 +62,8 @@ a target that had none is left without one — the marker is the database's name
   initialization and trigger installation. The level is read again under the claim — another
   holder may have rolled the schema out meanwhile — and the claim is given up on success or
   failure. `db:migration:up`, `:down`, `:retry`, a restore and `test:db:reset` take the same
-  claim; `recordAppliedLevel()` does not.
+  claim; `recordAppliedLevel()` does not. A restore takes the primary claim again for journal
+  trigger installation, after anonymization and the settlement of restored pending deliveries.
 - **Waiting has no deadline.** A waiting process reads the row once a second and names the
   holder in its log on the first poll and every 30th after it: `Waiting for the schema rollout
   claim held by <holder> since <claimed_at>`. Only the row being gone lets it go on.
@@ -79,6 +80,10 @@ a target that had none is left without one — the marker is the database's name
   only while that holder still has it, and `db:migration:status` prints who holds the claim.
 - **A restore empties the table** before its migrate step: an archive may carry the row of a
   process that held the claim when the backup was taken.
+- **A restore never migrates the journal connection.** Its six tables are imported alongside
+  the data, and their schema moves through the primary database's migration track. Running the
+  migrator on the journal would create `migration`, `hilos_migration_claim`,
+  `hilos_admin_view_mode_latch` and `hilos_database_marker` there.
 
 ## A track the database cannot follow is refused (HIL-1238)
 

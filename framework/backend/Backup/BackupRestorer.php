@@ -13,6 +13,8 @@ use Hilos\Backup\Exception\RestoreArchiveNotFoundException;
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\ChangeLog\JournalTriggerInstaller;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionConfig;
 use Hilos\Database\DatabaseConnectionDefaults;
@@ -23,6 +25,7 @@ use Hilos\Database\Entity\Item\NotificationDelivery as EntityNotificationDeliver
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Migration;
 use Hilos\Database\MigrationClaim;
+use Hilos\Database\MigrationClaimHolder;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Exception\FilePermissionException;
 use Hilos\Fs\FsException;
@@ -50,13 +53,18 @@ use Throwable;
  * directs (mysqldump's default DROP TABLE IF EXISTS + CREATE); tables present in the
  * target but absent from the dump are left alone - reconciling those is HIL-436.
  *
+ * Dumps carry no triggers. After importing every connection, the engine migrates the
+ * data databases (the primary track also moves the journal schema), anonymizes, settles
+ * restored deliveries, then installs the journal's service triggers from their files.
+ * That last step runs only on installations with the journal and follows every restore write.
+ *
  * The ENV decision is made by {@see RestoreEnvGuard} in the caller and arrives here
  * as a value: the engine acts on it (runs the anonymization seam or not) but does not
  * re-derive it, so both execution paths act on the same recorded verdict. The migration
  * gate is the opposite case and is re-run here rather than passed in: it reads only the
- * sidecar and the migration files, both of which this process has, and the engine is the
- * last thing standing before the data is overwritten - the same argument that makes it
- * re-check the digest.
+ * sidecar, migration files and configured connections, all of which this process has,
+ * and the engine is the last thing standing before the data is overwritten - the same
+ * argument that makes it re-check the digest.
  *
  * The database marker ({@see DatabaseMarker}) does not travel with the archive: it is the name of
  * the database, not its content, and a production archive restored on staging would otherwise
@@ -100,6 +108,7 @@ final class BackupRestorer
         ?int $migrationIndexOverride = null,
         ?Closure $onPhase = null,
     ): void {
+        $targetCarriesJournal = RestoreMigrationGuard::targetCarriesJournal();
         if ($decision === RestoreEnvDecision::REFUSE) {
             throw new RestoreFailedException('Restore refused by the environment guard');
         }
@@ -118,6 +127,7 @@ final class BackupRestorer
         $migration = RestoreMigrationGuard::decide(
             $metadata->connections,
             RestoreMigrationGuard::codeMigrationIndex(),
+            $targetCarriesJournal,
         );
         if ($migration->decision === RestoreMigrationDecision::REFUSE) {
             throw new RestoreFailedException("Restore refused by the migration guard: {$migration->reason}");
@@ -205,6 +215,9 @@ final class BackupRestorer
                     $onPhase(RestorePhase::MIGRATING);
                 }
                 foreach ($connections as $connection) {
+                    if (ChangeLogDatabase::isJournalConnection($connection->index, $this->targetDatabaseOf($connection->index))) {
+                        continue;
+                    }
                     $this->migrateConnection($connection, $levels[$connection->index] ?? null);
                 }
                 if ($restoresPrimary) {
@@ -234,7 +247,13 @@ final class BackupRestorer
                 }
 
                 $this->settleRestoredDeliveries($scope, $restoresPrimary);
-            } catch (RestoreFailedException $e) {
+                if ($targetCarriesJournal) {
+                    if ($onPhase !== null) {
+                        $onPhase(RestorePhase::INSTALLING_TRIGGERS);
+                    }
+                    $this->installJournalTriggers();
+                }
+            } catch (DatabaseException | RestoreFailedException $e) {
                 throw RestoreFailedException::afterDestructive($e->getMessage(), $e);
             }
         } finally {
@@ -435,6 +454,10 @@ final class BackupRestorer
     /**
      * Brings one restored database up to the migration level the code expects.
      *
+     * The caller skips the journal connection: the primary track moves its schema through
+     * {{change_log_database}}. Calling initialize() there would create four service tables,
+     * and a FULL archive with no migration rows would replay the whole track (P-495).
+     *
      * Unconditional, including when the levels already match: `migrateUp` applies nothing
      * then, and the alternative - deciding here whether to call it - would put a second
      * copy of the gate's arithmetic in the engine. The archive can only be at or below the
@@ -479,6 +502,38 @@ final class BackupRestorer
             throw new RestoreFailedException(
                 "Failed to migrate connection {$connection->index} after the import: "
                 . $failure->getMessage(),
+                0,
+                $failure,
+            );
+        }
+    }
+
+    /**
+     * Installs service triggers after all restore writes under the primary schema rollout claim.
+     * The caller's active connection is restored on success and failure.
+     *
+     * @throws RestoreFailedException When the claim, trigger installation or connection restoration fails
+     */
+    private function installJournalTriggers(): void
+    {
+        try {
+            $originalIndex = Database::getCurrentIndex();
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            try {
+                $holder = MigrationClaimHolder::process();
+                MigrationClaim::take($holder);
+                try {
+                    JournalTriggerInstaller::apply();
+                } finally {
+                    Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+                    MigrationClaim::release($holder);
+                }
+            } finally {
+                Database::useConnection($originalIndex);
+            }
+        } catch (DatabaseException | EnvException $failure) {
+            throw new RestoreFailedException(
+                'Failed to install the journal triggers after the restore: ' . $failure->getMessage(),
                 0,
                 $failure,
             );
@@ -606,7 +661,8 @@ final class BackupRestorer
      * an empty map leaves {@see migrateConnection()} declaring nothing. Every connection is
      * resolved before any is imported, and one refusal ends the run - the rule
      * {@see RestoreMigrationGuard} already lives by, because a half-compatible restore is the
-     * same unusable system, only harder to notice.
+     * same unusable system, only harder to notice. The journal is skipped: its dump has no
+     * migration table to carry a marker, and only the primary track migrates its schema.
      *
      * @param BackupScope $scope Scope the archive was captured under
      * @param list<BackupConnectionMeta> $connections Connections the archive carries
@@ -615,6 +671,7 @@ final class BackupRestorer
      * @return array<int, int> Level to record, per connection index; empty for a FULL archive
      * @throws RestoreFailedException When a dump file is unreadable, or a connection's level
      *     cannot be resolved; nothing has been imported yet, so the database is intact
+     * @throws DatabaseException When the journal's primary connection is not configured
      */
     private function resolveMarkerLevels(
         BackupScope $scope,
@@ -629,6 +686,12 @@ final class BackupRestorer
         $codeIndex = RestoreMigrationGuard::codeMigrationIndex();
         $levels = [];
         foreach ($connections as $connection) {
+            if (
+                in_array($connection->index, Database::getConfiguredIndices(), true)
+                && ChangeLogDatabase::isJournalConnection($connection->index, $this->targetDatabaseOf($connection->index))
+            ) {
+                continue;
+            }
             $resolved = RestoreMigrationGuard::resolveLevel(
                 ArchiveMigrationMarker::read(self::dumpPath($connection->index, $workDir)),
                 $connection->migrationIndex,

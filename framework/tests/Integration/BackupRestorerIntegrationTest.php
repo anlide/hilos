@@ -289,6 +289,7 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
         );
 
         $this->assertContains(RestorePhase::MIGRATING, $phases);
+        $this->assertNotContains(RestorePhase::INSTALLING_TRIGGERS, $phases);
         $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
         $this->assertContains(
             self::MIGRATED_COLUMN,

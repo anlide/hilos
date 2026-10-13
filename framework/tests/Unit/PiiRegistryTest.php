@@ -115,10 +115,10 @@ final class PiiRegistryTest extends TestCase
 
         $this->assertNull($registry->strategiesFor(0, 'never_mentioned'));
         $this->assertNull($registry->notPersonalColumns(0, 'never_mentioned'));
-        $this->assertSame([], $registry->strategiesFor(0, 'hilos_change_log_table'));
+        $this->assertSame([], $registry->strategiesFor(0, 'migration'));
         $this->assertSame(
-            ['id', 'name'],
-            $registry->notPersonalColumns(0, 'hilos_change_log_table'),
+            ['index', 'failed'],
+            $registry->notPersonalColumns(0, 'migration'),
         );
     }
 

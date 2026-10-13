@@ -366,6 +366,7 @@ HELP;
         $result = RestoreMigrationGuard::decide(
             $metadata->connections,
             RestoreMigrationGuard::codeMigrationIndex(),
+            RestoreMigrationGuard::targetCarriesJournal(),
         );
         if ($result->decision === RestoreMigrationDecision::REFUSE) {
             echo "Error: {$result->reason}\n";

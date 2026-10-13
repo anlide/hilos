@@ -20,7 +20,7 @@ use Hilos\Database\MigrationClaim;
  * fail on every project that adopts a new framework subsystem. So the framework names
  * its own here, and a project adds its own through the audit's parameter.
  *
- * Three groups, each outside the ORM for the same reason - they are written by code
+ * Two groups, each outside the ORM for the same reason - they are written by code
  * that runs before or beneath an Entity, so an Entity would buy nothing:
  *
  * - **`migration`** and **`hilos_migration_claim`** are created by {@see Migration}
@@ -29,14 +29,12 @@ use Hilos\Database\MigrationClaim;
  *   a daemon ({@see AdminViewModeStartup}), before any agent exists.
  *   **`hilos_database_marker`** is created there as well, and is written by the start of a
  *   daemon in a cluster ({@see DatabaseMarker}), before the peer port opens.
- * - **The April change-log tables**, if an older installation still has them on its
- *   primary database, retain their verdict until HIL-1451 settles old archive restore.
- *   The new separate schema is classified by {@see ChangeLogTablesWithoutEntity}.
  * - **The analytics tables** are append-only facts and their dictionaries, written in
  *   bulk on the hot path.
  *
- * The new change-log tables stay outside the ORM. Whether any analytics
- * table gets an Entity is an Analytics Phase-2 question, HIL-1402; its standing decision
+ * The separate journal is classified by {@see ChangeLogTablesWithoutEntity}.
+ * Whether any analytics table gets an Entity is an Analytics Phase-2 question,
+ * HIL-1402; its standing decision
  * is ORM only over aggregate tables, with raw facts staying on raw SQL. Until then,
  * the tables are declared here rather than passing unnoticed.
  *
@@ -70,7 +68,7 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
      * Kept in step with the DDL the framework ships:
      * {@see Migration::initialize()} for `migration`, `hilos_migration_claim`,
      * `hilos_admin_view_mode_latch` and `hilos_database_marker`, and the
-     * `create_hilos_analytics.sql` and the applied April change-log migration for the rest.
+     * `create_hilos_analytics.sql` stub for the rest.
      * Applied on every database in the registry because those four are created on every
      * migrated database; a table a project does not create on a given database is simply
      * never seen by the gates, so the framework may classify everything it ships.
@@ -95,17 +93,6 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             AdminViewModeLatchTable::TABLE => [],
             // The database marker holds a random name, a node and a time: nothing personal.
             DatabaseMarker::TABLE => [],
-
-            'hilos_change_log' => [
-                'old_value' => AnonymizationStrategy::MASK,
-                'new_value' => AnonymizationStrategy::MASK,
-            ],
-            'hilos_change_log_table' => [],
-            'hilos_change_log_field' => [],
-            'hilos_change_log_value' => [
-                'old_value' => AnonymizationStrategy::MASK,
-                'new_value' => AnonymizationStrategy::MASK,
-            ],
 
             // `sha1_hash` beside each of these two values is deliberately left alone:
             // it carries a UNIQUE deduplication index, and masking it would collapse
@@ -184,20 +171,6 @@ final class FrameworkTablesWithoutEntity implements TablesWithoutEntityProvider
             MigrationClaim::TABLE => ['id', 'holder', 'claimed_at'],
             AdminViewModeLatchTable::TABLE => ['id', 'environment', 'node', 'closed_at'],
             DatabaseMarker::TABLE => ['id', 'marker', 'written_by', 'written_at'],
-
-            'hilos_change_log' => [
-                'id',
-                'batch_id',
-                'table_id',
-                'record_id',
-                'field_id',
-                'mutation_type',
-                'user_id',
-                'created_at',
-            ],
-            'hilos_change_log_table' => ['id', 'name'],
-            'hilos_change_log_field' => ['id', 'table_id', 'name'],
-            'hilos_change_log_value' => ['id', 'log_id'],
 
             'hilos_analytics_user_agent' => ['id', 'sha1_hash', 'created_ts'],
             'hilos_analytics_accept_language' => ['id', 'sha1_hash', 'created_ts'],

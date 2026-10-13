@@ -252,19 +252,22 @@ belong to HIL-1413.
 
 The backup creator dumps both configured connections. It records the primary
 migration level for the derived journal connection as well: asking the migrator
-for a level on connection 1 would create its framework tables there. HIL-1451
-owns the restore policy for the pair; a dump alone does not settle it.
+for a level on connection 1 would create its framework tables there. Restore
+imports the pair and migrates only the data database: its primary track also
+moves the journal schema. An installation with the journal refuses an archive
+without connection 1 before the first import, because the journal must roll
+back with the data.
 
 Only triggers write journal rows. The `hilos_change_log` agent reads them for
 the section through `ChangeLogSectionReader`. It is one cluster agent in a
 monopolistic worker, and the reader uses raw SQL: Entity models only the primary
 database, while the journal lives in a separate one.
 
-**The April placeholder is not the model.** Its remaining traces are:
-
-- `demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`;
-- its temporary compatibility verdicts in
-  `framework/backend/Database/Schema/FrameworkTablesWithoutEntity.php` until HIL-1451.
+**The April placeholder is not the model.** The applied
+`demo/chat/backend/Database/Migration/Schema/016_create_hilos_change_log.sql`
+remains as history. Its temporary personal-data verdicts on connection 0 are
+gone: archives from before migration 085 lack connection 1 and are refused,
+and 085 refuses nonempty April tables before removing them.
 
 That shape describes a person number on every row, retention cleanup,
 `track_values`, foreign keys, and an administrator's dry run. It is superseded,
@@ -402,19 +405,36 @@ belong to phase 2, HIL-1413.
 
 ## Backup And Restore
 
-A backup dump does not carry triggers (not in the code yet — HIL-1451).
-The journal travels in the backup as a second database and rolls back with the
-data; otherwise it would describe rows that are no longer there
-(not in the code yet — HIL-1451).
+Every mysqldump pass uses `--skip-triggers`, so no `db-<index>.sql` carries
+triggers that could fire during the import or the anonymizer's rewrites. The
+journal travels as the second database and rolls back with the data; otherwise
+it would describe rows that are no longer there. An installation with the
+journal refuses an archive without connection 1 before the first import:
+`connection 1: the archive carries no change-log database; the journal cannot
+roll back with the data`.
 
-Restore order is **import → migrations → anonymization → triggers → unfreeze**
-(not in the code yet — HIL-1451).
-Migrations already precede anonymization deliberately in
-`framework/backend/Backup/BackupRestorer.php`: the anonymizer needs the schema
-the code knows. Installing triggers only after that pass keeps its rewrites out
-of the journal (not in the code yet — HIL-1451).
-Whether installation gets its own `RestorePhase` or is expressed within the
-existing phases is HIL-1451's decision.
+Restore order is **import → migrations → anonymization → pending deliveries →
+installing-triggers → rehydrating → verification window → unfreeze**.
+`BackupRestorer` imports every connection, but never runs the migrator on the
+journal connection: the primary track owns its schema. This also leaves a
+schema-only restore with exactly the six empty journal tables, without the
+migrator's bookkeeping tables. The journal dump carries no migration-level
+marker, because that marker is an `ALTER TABLE migration` statement and the
+journal has no such table. Restore resolves the primary dump's marker and does
+not ask the journal dump for one; its sidecar still records the primary level.
+Migrations precede anonymization because the anonymizer needs the schema the
+code knows.
+
+After anonymization and the settlement of restored pending deliveries, the
+engine announces `RestorePhase::INSTALLING_TRIGGERS` (`installing-triggers`).
+It takes the primary schema rollout claim again, installs the journal triggers
+from the project's files through `JournalTriggerInstaller`, and releases the
+claim on success or failure, restoring the caller's connection. Its position
+after every restore write keeps those writes out of the journal. Trigger
+installation failure names the offending trigger or file and reports that the
+database has already been touched. The hot restore then rehydrates the running
+processes and enters the verification window; opening the system remains an
+explicit operator action ([protected-mode.md](protected-mode.md)).
 
 ## On A Cluster
 

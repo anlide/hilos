@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Backup;
 
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
+use Hilos\Database\Database;
 use Hilos\Database\Migration;
 
 /**
@@ -33,10 +35,15 @@ use Hilos\Database\Migration;
  * One disagreeing connection refuses the whole run: a partially compatible restore is
  * the same unusable system, only harder to notice.
  *
+ * The journal rolls back with the data: an installation carrying the change-log database
+ * refuses an archive without that connection. Archives taken before the journal database
+ * existed are not restorable there (owner decision, 2026-10-10; no production installations).
+ * The reverse case introduces no additional refusal.
+ *
  * {@see decide()} is a pure function of its inputs, the shape {@see RestoreEnvGuard}
  * established: the CLI preflight and the engine must reach the same answer from the
- * same inputs, and the one method that reads the disk is kept separate so the decision
- * is testable without a filesystem.
+ * same inputs. The disk read in codeMigrationIndex() and the configured-connection read in
+ * targetCarriesJournal() stay separate, so the decision needs neither filesystem nor database.
  */
 final class RestoreMigrationGuard
 {
@@ -45,13 +52,21 @@ final class RestoreMigrationGuard
      *
      * @param list<BackupConnectionMeta> $connections Connections recorded in the archive sidecar
      * @param ?int $codeIndex Migration level this code expects; null when it lists no migrations
+     * @param bool $targetCarriesJournal Whether the target installation has the change-log connection
      * @return RestoreMigrationDecisionResult Verdict, refusal reason, and the per-connection gaps
      */
-    public static function decide(array $connections, ?int $codeIndex): RestoreMigrationDecisionResult
-    {
+    public static function decide(
+        array $connections,
+        ?int $codeIndex,
+        bool $targetCarriesJournal,
+    ): RestoreMigrationDecisionResult {
         $gaps = [];
         $refusals = [];
+        $archiveCarriesJournal = false;
         foreach ($connections as $connection) {
+            if ($connection->index === ChangeLogDatabase::CONNECTION_INDEX) {
+                $archiveCarriesJournal = true;
+            }
             $archiveIndex = $connection->migrationIndex;
             if ($archiveIndex !== null && $codeIndex !== null && $archiveIndex === $codeIndex) {
                 continue;
@@ -61,6 +76,13 @@ final class RestoreMigrationGuard
             if ($archiveIndex !== null && $codeIndex !== null && $archiveIndex > $codeIndex) {
                 $refusals[] = self::aheadOfCode($connection->index, $archiveIndex, $codeIndex);
             }
+        }
+
+        if ($targetCarriesJournal && !$archiveCarriesJournal) {
+            $refusals[] = sprintf(
+                'connection %d: the archive carries no change-log database; the journal cannot roll back with the data',
+                ChangeLogDatabase::CONNECTION_INDEX,
+            );
         }
 
         if ($refusals !== []) {
@@ -150,6 +172,29 @@ final class RestoreMigrationGuard
     }
 
     /**
+     * Reads the migration level this installation's code expects.
+     * Migration files are read from disk, so this answers on a dead system too.
+     *
+     * @return ?int Highest available migration index; null when no migrations are listed
+     */
+    public static function codeMigrationIndex(): ?int
+    {
+        $available = Migration::getAvailableMigrations();
+
+        return $available === [] ? null : max($available);
+    }
+
+    /**
+     * Reads the configured connections without opening a database link.
+     *
+     * @return bool Whether the target installation carries the change-log database
+     */
+    public static function targetCarriesJournal(): bool
+    {
+        return in_array(ChangeLogDatabase::CONNECTION_INDEX, Database::getConfiguredIndices(), true);
+    }
+
+    /**
      * Words one connection whose level is ahead of the code's.
      *
      * Shared by both refusals of this gate, so the archive that is ahead and the operator who
@@ -170,21 +215,5 @@ final class RestoreMigrationGuard
             $codeIndex,
             $archiveIndex - $codeIndex,
         );
-    }
-
-    /**
-     * Reads the migration level this installation's code expects.
-     *
-     * The only non-pure member of the gate, kept here so both restore paths derive the
-     * level the same way. Migration files are read from disk, so this answers on a dead
-     * system too.
-     *
-     * @return ?int Highest available migration index; null when no migrations are listed
-     */
-    public static function codeMigrationIndex(): ?int
-    {
-        $available = Migration::getAvailableMigrations();
-
-        return $available === [] ? null : max($available);
     }
 }

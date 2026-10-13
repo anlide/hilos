@@ -36,7 +36,8 @@ final class BackupProgressTest extends TestCase
         $this->assertSame(5, $this->percentAt(RestorePhase::EXTRACTING, 0.0));
         $this->assertSame(20, $this->percentAt(RestorePhase::IMPORTING, 0.0));
         $this->assertSame(75, $this->percentAt(RestorePhase::MIGRATING, 0.0));
-        $this->assertSame(85, $this->percentAt(RestorePhase::ANONYMIZING, 0.0));
+        $this->assertSame(83, $this->percentAt(RestorePhase::ANONYMIZING, 0.0));
+        $this->assertSame(93, $this->percentAt(RestorePhase::INSTALLING_TRIGGERS, 0.0));
         $this->assertSame(95, $this->percentAt(RestorePhase::REHYDRATING, 0.0));
     }
 

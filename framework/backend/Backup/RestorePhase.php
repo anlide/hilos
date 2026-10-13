@@ -33,6 +33,12 @@ enum RestorePhase: string
     case ANONYMIZING = 'anonymizing';
 
     /**
+     * Putting the journal's service triggers back from their files, after every write the restore
+     * makes itself (HIL-1451); announced only when the installation has the change-log database.
+     */
+    case INSTALLING_TRIGGERS = 'installing-triggers';
+
+    /**
      * Re-reading the replaced database everywhere before anything is let back in (HIL-436).
      *
      * Set by the supervising agent rather than by the engine: the child process is already dead by
@@ -61,8 +67,9 @@ enum RestorePhase: string
         self::VERIFYING->value => 0.05,
         self::EXTRACTING->value => 0.15,
         self::IMPORTING->value => 0.55,
-        self::MIGRATING->value => 0.10,
+        self::MIGRATING->value => 0.08,
         self::ANONYMIZING->value => 0.10,
+        self::INSTALLING_TRIGGERS->value => 0.02,
         self::REHYDRATING->value => 0.05,
         self::SUCCEEDED->value => 0.0,
         self::FAILED->value => 0.0,
