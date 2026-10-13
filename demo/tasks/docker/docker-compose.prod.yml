@@ -71,7 +71,7 @@ services:
   # builder. Run on demand via the `build` profile, before bringing up
   # tasks-frontend-prod.
   tasks-frontend-builder:
-    image: node:22-bookworm-slim
+    image: node:24-bookworm-slim
     container_name: tasks-frontend-builder-prod
     volumes:
       - ../../..:/hilos

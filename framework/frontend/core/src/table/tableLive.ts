@@ -16,13 +16,7 @@
  * running on the table as a whole.
  */
 export type HilosTableLiveKind =
-  | 'report'
-  | 'bulk'
-  | 'pending'
-  | 'announce'
-  | 'frozen'
-  | 'stale'
-  | 'progress'
+  'report' | 'bulk' | 'pending' | 'announce' | 'frozen' | 'stale' | 'progress'
 
 /**
  * The kinds in order of precedence, the first holding the room.

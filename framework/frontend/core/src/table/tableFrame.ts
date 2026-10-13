@@ -149,14 +149,12 @@ export interface HilosTableFrame {
   readonly search?: HilosTableSearch
   /** The filters offered in the bar, in the order they are drawn. */
   readonly filters?:
-    | readonly HilosTableFilter[]
-    | (() => readonly HilosTableFilter[])
+    readonly HilosTableFilter[] | (() => readonly HilosTableFilter[])
   /** The one button at the right of the bar, offered again by the empty state. */
   readonly mainAction?: HilosTableMainAction
   /** The columns of the table, in display order. */
   readonly columns:
-    | readonly HilosTableColumn[]
-    | (() => readonly HilosTableColumn[])
+    readonly HilosTableColumn[] | (() => readonly HilosTableColumn[])
   /** The operations offered for the marked rows. */
   readonly bulkActions?: readonly HilosTableBulkAction[]
   /** What the table says when it is empty and nothing is filtering it. */
@@ -273,12 +271,7 @@ export interface HilosTableFooter {
  * refusal (HilosRouter.pageError), not a state of its table.
  */
 export type HilosTableBody =
-  | 'loading'
-  | 'empty'
-  | 'empty_filtered'
-  | 'empty_page'
-  | 'unavailable'
-  | 'rows'
+  'loading' | 'empty' | 'empty_filtered' | 'empty_page' | 'unavailable' | 'rows'
 
 /**
  * The readable frame state a {@link HilosTableFrame} declaration turns into —

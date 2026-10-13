@@ -37,8 +37,8 @@ const STYLE_SHEET_EXTENSIONS = ['.css', '.scss', '.sass', '.less']
 /** Extension of a single-file component, the second face's home. */
 const SFC_EXTENSION = '.vue'
 
-/** Extension of the files the third face is read in. */
-const TYPESCRIPT_EXTENSION = '.ts'
+/** Extensions of the files the third face is read in. */
+const TYPESCRIPT_EXTENSIONS = ['.ts', '.mts']
 
 /**
  * An SFC block opens at the top level of the file. A `<style` written at the
@@ -133,7 +133,9 @@ function judge(base: string, files: string[], sanctioned: string[]): string[] {
     }
     if (file.endsWith(SFC_EXTENSION)) {
       lines.push(...styleBlocks(file, readFileSync(join(base, file), 'utf8')))
-    } else if (file.endsWith(TYPESCRIPT_EXTENSION)) {
+    } else if (
+      TYPESCRIPT_EXTENSIONS.some((extension) => file.endsWith(extension))
+    ) {
       lines.push(
         ...componentStyles(file, readFileSync(join(base, file), 'utf8')),
       )

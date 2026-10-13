@@ -144,7 +144,7 @@ services:
   # `composer run test:e2e-build` to produce the dist that
   # ecommerce-shop-nginx-test serves.
   ecommerce-shop-frontend-cli-test:
-    image: node:22-bookworm-slim
+    image: node:24-bookworm-slim
     container_name: ecommerce-shop-frontend-cli-test
     volumes:
       - ../../..:/hilos

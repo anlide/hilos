@@ -1010,10 +1010,7 @@ export interface HilosStandingBadge {
   readonly tone: HilosStandingTone
   /** The Bootstrap Icon beside the word. */
   readonly icon:
-    | 'bi-sign-merge-left'
-    | 'bi-slash-circle'
-    | 'bi-snow'
-    | 'bi-trash'
+    'bi-sign-merge-left' | 'bi-slash-circle' | 'bi-snow' | 'bi-trash'
 }
 
 /**
@@ -1195,9 +1192,7 @@ export interface HilosPasswordFateChoice {
  */
 export function hilosPasswordFateChoices(
   survivor:
-    | Pick<HilosUserDetailRow, 'unverifiedPasswordAddress'>
-    | null
-    | undefined,
+    Pick<HilosUserDetailRow, 'unverifiedPasswordAddress'> | null | undefined,
   loser:
     | Pick<HilosMergeCandidateRow, 'unverifiedPasswordAddress'>
     | null
@@ -1871,9 +1866,7 @@ export const HILOS_USER_CARD_STEP_UP_OPERATIONS = {
 
 /** A window of the account card: one of the six confirmations, the merge, or the takeover. */
 export type HilosUserCardWindow =
-  | HilosUserLifecycleChoice
-  | 'merge'
-  | 'impersonate'
+  HilosUserLifecycleChoice | 'merge' | 'impersonate'
 
 /** The confirmation step of one account-card window (HIL-1275). */
 export interface HilosUserCardStepUp {

@@ -257,8 +257,7 @@ export type ParseFailure =
   | { kind: 'invalid-signal-data'; type: string; message: string }
 
 export type ParseResult =
-  | { ok: true; signal: ParsedSignal }
-  | { ok: false; failure: ParseFailure }
+  { ok: true; signal: ParsedSignal } | { ok: false; failure: ParseFailure }
 
 /**
  * Parse one raw WebSocket frame into a typed signal.

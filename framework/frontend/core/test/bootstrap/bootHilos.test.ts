@@ -311,8 +311,7 @@ describe('bootHilos', () => {
     })
 
     const ref = scopes.session.data.signal('currentUser').get() as
-      | { type: string; id: number }
-      | undefined
+      { type: string; id: number } | undefined
     expect(ref?.type).toBe('user')
   })
 

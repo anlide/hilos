@@ -169,10 +169,7 @@ export interface HilosBackupRow {
  * archive, and one that did not match what was recorded.
  */
 export type HilosBackupChecksumState =
-  | 'none'
-  | 'present'
-  | 'verified'
-  | 'mismatch'
+  'none' | 'present' | 'verified' | 'mismatch'
 
 /**
  * The off-machine copy state of a stored backup, mirroring the backend

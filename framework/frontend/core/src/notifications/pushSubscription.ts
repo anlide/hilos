@@ -40,10 +40,7 @@ export const PUSH_ACTION_UNSUBSCRIBE = 'push_unsubscribe'
  * retrying.
  */
 export type HilosPushPermission =
-  | 'unsupported'
-  | 'default'
-  | 'granted'
-  | 'denied'
+  'unsupported' | 'default' | 'granted' | 'denied'
 
 /**
  * A browser push subscription reduced to the wire fields the subscribe action

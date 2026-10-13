@@ -28,11 +28,7 @@ export const HILOS_STEP_UP_START_ACTION = 'hilos_step_up_start'
 export const HILOS_STEP_UP_CONFIRM_ACTION = 'hilos_step_up_confirm'
 
 export type HilosStepUpMethod =
-  | 'second_factor'
-  | 'password'
-  | 'email_code'
-  | 'sms_code'
-  | 'passkey'
+  'second_factor' | 'password' | 'email_code' | 'sms_code' | 'passkey'
 
 export interface HilosStepUpOpening {
   readonly required: boolean

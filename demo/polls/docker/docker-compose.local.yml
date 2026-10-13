@@ -286,7 +286,7 @@ services:
   # instead of a VITE_WS_URL override the dev server proxies the app's
   # same-origin /ws to the daemon (frontend/proxy.conf.json).
   polls-frontend-local:
-    image: node:22-bookworm-slim
+    image: node:24-bookworm-slim
     container_name: polls-frontend-local
     volumes:
       - ../../..:/hilos
@@ -304,7 +304,7 @@ services:
   # check). Profile cli so it never starts with the stack — invoked per command
   # via `run --rm` (see the composer frontend:* scripts).
   polls-frontend-cli-local:
-    image: node:22-bookworm-slim
+    image: node:24-bookworm-slim
     container_name: polls-frontend-cli-local
     volumes:
       - ../../..:/hilos

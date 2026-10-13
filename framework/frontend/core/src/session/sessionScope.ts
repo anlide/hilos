@@ -381,11 +381,7 @@ export interface AccountBlockedNotice {
  * scheduled deletion. Byte-equal to the backend `AccountStandingKind`.
  */
 export type HilosAccountStandingKind =
-  | 'none'
-  | 'merged'
-  | 'blocked'
-  | 'frozen'
-  | 'deletion_scheduled'
+  'none' | 'merged' | 'blocked' | 'frozen' | 'deletion_scheduled'
 
 /**
  * One legal document with an outstanding acceptance deadline: past it in

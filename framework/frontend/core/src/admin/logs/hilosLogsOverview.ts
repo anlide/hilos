@@ -178,8 +178,7 @@ export type HilosLogsOverviewRecentEntry = z.infer<typeof recentEntrySchema>
  * view keeps the open tab to itself and switching it asks the server for nothing.
  */
 export type HilosLogsRecentTab =
-  | typeof RECENT_TAB_ERRORS
-  | typeof RECENT_TAB_WARNINGS
+  typeof RECENT_TAB_ERRORS | typeof RECENT_TAB_WARNINGS
 
 /** The screen as the page answers a subscription with it. */
 export type HilosLogsOverview = z.infer<typeof overviewSchema>

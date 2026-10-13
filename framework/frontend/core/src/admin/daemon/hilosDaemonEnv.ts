@@ -72,11 +72,7 @@ export const DAEMON_ENV_SENSITIVE_HINT =
 
 /** The source that supplied an environment value. */
 export type HilosDaemonEnvSource =
-  | 'process'
-  | 'env'
-  | 'example'
-  | 'default'
-  | 'missing'
+  'process' | 'env' | 'example' | 'default' | 'missing'
 
 /** Resolution order of environment sources from strongest to weakest. */
 export const DAEMON_ENV_LADDER: readonly HilosDaemonEnvSource[] = [

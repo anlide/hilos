@@ -12,8 +12,7 @@
  * surface the message — build fail-fast, runtime keep-old (HIL-211 Flow Q1).
  */
 export type RenderResult =
-  | { ok: true; html: string }
-  | { ok: false; error: string }
+  { ok: true; html: string } | { ok: false; error: string }
 
 /**
  * Renders one public page to a full HTML document. Each view layer supplies its

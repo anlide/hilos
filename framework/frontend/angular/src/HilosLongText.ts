@@ -30,8 +30,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core'
         class="small mb-0 text-break hilos-pre-wrap"
         [attr.data-id]="dataId()"
         tabindex="0"
-        >{{ text() }}</pre
-      >
+        >{{ text() }}</pre>
     }
   `,
 })

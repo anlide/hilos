@@ -33,6 +33,5 @@ defineProps<{
     class="small mb-0 text-break hilos-pre-wrap"
     :data-id="dataId"
     tabindex="0"
-    >{{ text }}</pre
-  >
+    >{{ text }}</pre>
 </template>

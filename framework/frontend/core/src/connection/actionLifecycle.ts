@@ -32,10 +32,7 @@ const DEFAULT_TIMEOUT_MS = 30000
 
 /** Why a dispatched action settled, other than a plain success. */
 export type ActionFailureOutcome =
-  | 'fail'
-  | 'timeout'
-  | 'disconnected'
-  | 'invalid-reply'
+  'fail' | 'timeout' | 'disconnected' | 'invalid-reply'
 
 /**
  * A failure of a dispatched action: the action name, the outcome, and the reason.
@@ -164,8 +161,7 @@ export class ActionLifecycle {
   private readonly deferredLoadingMs: number
   private readonly timeoutMs: number
   private readonly onLateReply:
-    | ((action: string, outcome: 'success' | 'fail') => void)
-    | undefined
+    ((action: string, outcome: 'success' | 'fail') => void) | undefined
 
   /**
    * Bind the lifecycle to a connection: correlate its action replies and fail

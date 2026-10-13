@@ -114,15 +114,13 @@ export function createHilosDaemonPlacementTable(
         label: 'Kind',
         reads: [DAEMON_PLACEMENT_IDLE_FIELD],
       },
-      ...nodes.get().map(
-        (node): HilosTableColumn => ({
-          key: daemonPlacementNodeColumnKey(node.nodeId),
-          label: formatDaemonPlacementNodeLabel(node),
-          reads: [DAEMON_PLACEMENT_NODES_FIELD],
-          headerClass: 'text-center',
-          cellClass: 'text-center',
-        }),
-      ),
+      ...nodes.get().map((node): HilosTableColumn => ({
+        key: daemonPlacementNodeColumnKey(node.nodeId),
+        label: formatDaemonPlacementNodeLabel(node),
+        reads: [DAEMON_PLACEMENT_NODES_FIELD],
+        headerClass: 'text-center',
+        cellClass: 'text-center',
+      })),
       {
         key: DAEMON_PLACEMENT_UNPLACED_FIELD,
         label: 'State',

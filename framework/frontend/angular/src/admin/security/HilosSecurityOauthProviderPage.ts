@@ -383,8 +383,7 @@ export class HilosSecurityOauthProviderPage {
 
     return (
       (this.router.currentRoute.get().params['providerId'] as
-        | string
-        | undefined) ?? ''
+        string | undefined) ?? ''
     )
   })
   protected readonly providerKey = hilosSignal(this.providerSignal)

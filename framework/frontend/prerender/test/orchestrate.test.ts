@@ -76,9 +76,10 @@ it('writes one <route>.html per footer page and returns the routes', async () =>
 })
 
 it('passes the template and resolved title to renderRoute', async () => {
-  const renderRoute = vi.fn(
-    async (): Promise<RenderResult> => ({ ok: true, html: '<html></html>' }),
-  )
+  const renderRoute = vi.fn(async (): Promise<RenderResult> => ({
+    ok: true,
+    html: '<html></html>',
+  }))
 
   await prerenderPublicRoutes({
     components: allComponents(),
@@ -100,9 +101,10 @@ it('passes the template and resolved title to renderRoute', async () => {
 })
 
 it('fails the build fast and writes nothing when a render fails', async () => {
-  const renderRoute = vi.fn(
-    async (): Promise<RenderResult> => ({ ok: false, error: 'boom' }),
-  )
+  const renderRoute = vi.fn(async (): Promise<RenderResult> => ({
+    ok: false,
+    error: 'boom',
+  }))
 
   await expect(
     prerenderPublicRoutes({

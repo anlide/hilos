@@ -160,8 +160,7 @@ export class HilosCommunicationsDeliveriesPage {
     computedSignal(
       () =>
         (this.router?.currentRoute.get().params['channelId'] as
-          | string
-          | undefined) ?? '',
+          string | undefined) ?? '',
     ),
   )
 

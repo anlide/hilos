@@ -84,10 +84,7 @@ import { isReconnectDragging } from './reconnectDragging.js'
 import { Emitter } from './events.js'
 
 export type ConnectionState =
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'disconnected'
+  'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 
 /**
  * The place in a table's own order a window is taken from: the value it carries in every

@@ -45,9 +45,7 @@ export const hilosTableBulkAcceptedSchema = z
     progressKey: z.string(),
     total: z.number().optional(),
   })
-  .transform(
-    (reply): HilosTableBulkAccepted => ({
-      progressKey: reply.progressKey,
-      total: reply.total ?? null,
-    }),
-  )
+  .transform((reply): HilosTableBulkAccepted => ({
+    progressKey: reply.progressKey,
+    total: reply.total ?? null,
+  }))

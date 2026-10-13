@@ -96,7 +96,7 @@ const DEMO_ROOT = 'frontend'
 /** The four shapes a template can arrive in. */
 const SFC_EXTENSION = '.vue'
 const JSX_EXTENSION = '.tsx'
-const TYPESCRIPT_EXTENSION = '.ts'
+const TYPESCRIPT_EXTENSIONS = ['.ts', '.mts']
 const MARKUP_EXTENSION = '.html'
 
 /**
@@ -173,7 +173,7 @@ function sites(relativePath: string, source: string): Site[] {
   }
   if (
     relativePath.endsWith(JSX_EXTENSION) ||
-    relativePath.endsWith(TYPESCRIPT_EXTENSION)
+    TYPESCRIPT_EXTENSIONS.some((extension) => relativePath.endsWith(extension))
   ) {
     return typeScriptSites(relativePath, source, 0)
   }
@@ -613,7 +613,7 @@ function isRead(name: string): boolean {
   return [
     SFC_EXTENSION,
     JSX_EXTENSION,
-    TYPESCRIPT_EXTENSION,
+    ...TYPESCRIPT_EXTENSIONS,
     MARKUP_EXTENSION,
   ].some((extension) => name.endsWith(extension))
 }

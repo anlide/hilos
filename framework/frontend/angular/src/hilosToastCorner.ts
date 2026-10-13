@@ -9,7 +9,4 @@
 
 /** Which corner a {@link HilosToastHost} draws its stack in. */
 export type HilosToastCorner =
-  | 'bottom-end'
-  | 'bottom-start'
-  | 'top-end'
-  | 'top-start'
+  'bottom-end' | 'bottom-start' | 'top-end' | 'top-start'

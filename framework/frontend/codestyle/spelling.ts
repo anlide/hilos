@@ -44,7 +44,7 @@ const DEMO_DIRECTORY = 'demo'
 const DEMO_ROOTS = ['frontend/src', 'tests/e2e']
 
 /** The source forms this rule reads: the two the compiler parses, and the two it does not. */
-const READ_EXTENSIONS = ['.ts', '.tsx', '.vue', '.html']
+const READ_EXTENSIONS = ['.ts', '.mts', '.tsx', '.vue', '.html']
 
 /**
  * Never walked: a dependency tree is not this repository's code, and a build

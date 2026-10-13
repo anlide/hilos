@@ -276,7 +276,7 @@ services:
   # frontend/vite.config.ts). The host port defaults away from the chat demo's
   # 5173 so both local stacks can run side by side.
   tasks-frontend-local:
-    image: node:22-bookworm-slim
+    image: node:24-bookworm-slim
     container_name: tasks-frontend-local
     volumes:
       - ../../..:/hilos
@@ -294,7 +294,7 @@ services:
   # check). Profile cli so it never starts with the stack — invoked per command
   # via `run --rm` (see the composer frontend:* scripts).
   tasks-frontend-cli-local:
-    image: node:22-bookworm-slim
+    image: node:24-bookworm-slim
     container_name: tasks-frontend-cli-local
     volumes:
       - ../../..:/hilos

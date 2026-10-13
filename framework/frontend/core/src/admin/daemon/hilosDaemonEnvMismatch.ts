@@ -248,16 +248,11 @@ export function createHilosDaemonEnvMismatchTables(
       card: 'title',
       reads: [DAEMON_ENV_MISMATCH_SENSITIVE_FIELD],
     },
-    ...nodes.get().map(
-      (node): HilosTableColumn => ({
-        key: daemonEnvMismatchNodeColumnKey(node.nodeId),
-        label: formatDaemonEnvMismatchNodeLabel(node),
-        reads: [
-          DAEMON_ENV_MISMATCH_CELLS_FIELD,
-          DAEMON_ENV_MISMATCH_VALUE_FIELD,
-        ],
-      }),
-    ),
+    ...nodes.get().map((node): HilosTableColumn => ({
+      key: daemonEnvMismatchNodeColumnKey(node.nodeId),
+      label: formatDaemonEnvMismatchNodeLabel(node),
+      reads: [DAEMON_ENV_MISMATCH_CELLS_FIELD, DAEMON_ENV_MISMATCH_VALUE_FIELD],
+    })),
   ]
   const makeController = (
     tableKey: string,

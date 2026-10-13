@@ -248,16 +248,14 @@ function restartHarness(clustered = false, placement = 'node', viewer = false) {
   } as unknown as HilosConnection
   let resolve: (value: ActionResult) => void = () => {}
   let reject: (reason: unknown) => void = () => {}
-  const dispatch = vi.fn(
-    (): ActionHandle => ({
-      requestId: 'restart-1',
-      loading: createSignal(false),
-      done: new Promise((yes, no) => {
-        resolve = yes
-        reject = no
-      }),
+  const dispatch = vi.fn((): ActionHandle => ({
+    requestId: 'restart-1',
+    loading: createSignal(false),
+    done: new Promise((yes, no) => {
+      resolve = yes
+      reject = no
     }),
-  )
+  }))
   const router = {
     currentRoute: createSignal<PageRouteMatch>({
       page: HilosPages.DAEMON_AGENTS,

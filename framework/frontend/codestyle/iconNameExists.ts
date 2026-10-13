@@ -26,7 +26,7 @@ const PACKAGE_JSON_PATH =
   'framework/frontend/node_modules/bootstrap-icons/package.json'
 
 /** The extensions of source files this rule reads. */
-const SCANNED_EXTENSIONS = ['.ts', '.tsx', '.vue', '.html', '.php']
+const SCANNED_EXTENSIONS = ['.ts', '.mts', '.tsx', '.vue', '.html', '.php']
 
 /**
  * Regex matching Bootstrap icon class names in source text.

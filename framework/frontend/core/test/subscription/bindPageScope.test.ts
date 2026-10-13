@@ -193,8 +193,7 @@ describe('bindPageScope', () => {
 
     // The slot aliased `author` resolves under the canonical `user` type.
     const ref = scopes.page()?.data.signal('author').get() as
-      | { type: string; id: number }
-      | undefined
+      { type: string; id: number } | undefined
     expect(ref?.type).toBe('user')
     expect(ref?.id).toBe(7)
   })
