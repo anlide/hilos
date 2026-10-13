@@ -80,16 +80,16 @@ background without changing their colors or exporting a second theme asset.
   [MIT license](../../LICENSE), including its copyright notice; carry that
   notice when redistributing the sources or substantial copies.
 - The thematic references were the `navbar-brand` elements in the separate
-  `hilos-ops` repository at Design Base `74ada4b`, under
+  operations repository at Design Base `74ada4b`, under
   `mockups/demos/{chat,tasks,polls,binance-btc-tracker,ecommerce-shop,online-testing}/index.html`.
   Their Bootstrap Icon names are respectively `chat-dots`, `check2-square`,
   `ui-checks`, `currency-bitcoin`, `flower1` and `mortarboard`. Those are subject
   references, **not the source of these SVG paths**. In particular the shop
   mark here uses four broad petals, and the poll mark uses two answer rows.
-- The owner's decisions are recorded in `hilos-ops/notes/HIL-1316.md`,
-  “Согласованное решение”. `hilos-ops/design-debts/D-209-demo-hilos-brand-marks.md`
-  records the six mockup headers that still use separate thematic icons.
-  These ops paths identify the research record; the preview does not load them.
+- The owner's decisions are recorded with the interview of HIL-1316
+  (“Согласованное решение”). The design-debt record D-209 lists the six mockup
+  headers that still use separate thematic icons. Both live in the operations
+  repository and identify the research record; the preview does not load them.
 
 ## Source choice and export
 
@@ -116,14 +116,12 @@ For PNG output, the recipe below was executed with:
 
 Run from the repository root. Docker and the named image must be available.
 The first command installs only export tooling into `/tmp`; it needs network
-access on first use. Nothing is added to a demo's dependencies or build. On the
-shared Hilos stand, keep the `with-stand` wrapper on both Docker commands.
-Outside that stand, omit only the wrapper path and its `-t HIL-1316` arguments.
+access on first use. Nothing is added to a demo's dependencies or build.
 
 ```bash
 brand_output=/tmp/HIL-1316
 mkdir -p "$brand_output/tools"
-/home/cloud/hilos-ops/with-stand -t HIL-1316 docker run --rm \
+docker run --rm \
   --user "$(id -u):$(id -g)" \
   -e npm_config_cache=/out/npm-cache \
   -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
@@ -131,7 +129,7 @@ mkdir -p "$brand_output/tools"
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npm install --prefix /out/tools --no-save --package-lock=false playwright@1.60.0
 
-/home/cloud/hilos-ops/with-stand -t HIL-1316 docker run --rm --network none \
+docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   -e NODE_PATH=/out/tools/node_modules \
   -v "$PWD:/hilos:ro" -v "$brand_output:/out" \
@@ -197,8 +195,8 @@ This review does not establish rendering in Firefox, Safari, OS favicon caches,
 high-contrast modes or real browser tabs at different display scales. Check
 those on integration. Below 16 px, or on an arbitrary photographic background,
 readability is not promised. No product runtime or frontend suite was changed;
-the slice's required `composer run test:framework:unit` passed through
-`with-stand` (8,765 tests, 325,581 assertions, one skip).
+the slice's required `composer run test:framework:unit` passed (8,765 tests,
+325,581 assertions, one skip).
 
 ## Adding another demo
 
