@@ -29,6 +29,7 @@ document.
 | the handshake and cookie auth, the server-side session store, signals / actions / subscribe, discriminated-union parsing, requestId correlation, build-version forced refresh | [wire-protocol.md](wire-protocol.md) |
 | the entity store, the four scopes (page / session / user / group), the normalizer boundary, entity references, the rowKey / sourceKey / entityType keys | [data-model.md](data-model.md) |
 | tables: viewport subscriptions, the live-change taxonomy and Apply, sort-key window deltas, selection and bulk actions, progress bars, custom filters, search-as-filter | [table-subscription.md](table-subscription.md) |
+| researching departed-record geometry, column-width retention and declared row heights in both table projections — HIL-1321 research, not an implemented contract | [table-row-geometry-research.md](table-row-geometry-research.md) |
 | which sort orders a table may declare, what it refuses when asked for another, and what it answers — the index under every order, the primary key at its end, computed fields, mixed directions, stale sources, in-memory sets | [table-sort-orders.md](table-sort-orders.md) |
 | editing in a modal, the baseline / draft / incoming 3-way merge, surfacing conflicts, entity-deleted-while-open | [conflict-resolution.md](conflict-resolution.md) |
 | SDK packaging, the monorepo workspace, the two-tier component model and slots, Composer / tarball distribution | [sdk-packaging.md](sdk-packaging.md) |
