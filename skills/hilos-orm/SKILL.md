@@ -110,7 +110,7 @@ touched ORM surfaces.
 ## Examples
 
 ```php
-Hilos::$db->users->findBySession($sessionToken);
+Hilos::$db->sessions->findByToken($token);
 Hilos::$db->users->actions->register($sessionToken);
 
 if (!isset(Hilos::$db->settings[$key])) {
@@ -140,7 +140,7 @@ Hilos::$db->settings[$key]; // If the collection supports key access
 Use the named finder when the offset contract does not match the business key:
 
 ```php
-Hilos::$db->users->findBySession($sessionToken);
+Hilos::$db->sessions->findByToken($token);
 ```
 
 ## Hard Rules

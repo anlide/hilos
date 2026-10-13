@@ -31,7 +31,7 @@ lookup API only on the owning layer when no contract exists.
 | Documented DB collection key | `Hilos::$db->collection[$id]` |
 | Documented RT View collection key | `Hilos::$rt->collection[$id]` |
 | Documented key-based setting offset | `Hilos::$db->settings[$key]` |
-| Business key without array-offset contract | Existing named method such as `findBySession($sessionToken)` |
+| Business key without array-offset contract | Existing named method such as `findByToken($token)` |
 | Runtime rows for one DB item | Existing RT collection method such as `forUser($userId)` |
 | Direct relation from a loaded DB item | Existing bridge property such as `$event->eventMessage` |
 | Item-level derived value | Existing item property or result accessor |
@@ -62,7 +62,7 @@ business-key offset contract is absent, use the named accessor or add a typed
 contract before changing callers:
 
 ```php
-Hilos::$db->users->findBySession($sessionToken);
+Hilos::$db->sessions->findByToken($token);
 ```
 
 This rule is about using the existing model clearly. It does not require magic

@@ -11,7 +11,7 @@ Instructions for AI agents working with the Hilos framework.
 - **Do not use Repository or Service** for data access
 - Use `Hilos::$db-><collection>` and the collection's documented access contract:
   `[$id]`, magic/result accessors, or named methods such as `findByKey` and
-  `findBySession`
+  `findByToken`
 - Do not introduce Repository abstraction on top of DbCollection
 
 ---

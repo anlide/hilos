@@ -35,7 +35,7 @@ in a demo teaches the wrong pattern.
 ```php
 // ❌ DB lookup in the master while writing the 101 / handshake welcome —
 //    freezes the accept loop for every other connecting client:
-$user = Hilos::$db->users->findBySession($token);
+$session = Hilos::$db->sessions->findByToken($token);
 
 // ❌ File read on each connection in a master callback:
 $config = json_decode((string)file_get_contents($path), true);

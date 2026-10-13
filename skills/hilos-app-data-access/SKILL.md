@@ -139,7 +139,7 @@ switch to the focused data-layer skill first.
 | Need | Prefer |
 |---|---|
 | Load a known DB item | `Hilos::$db->collection[$id]` when supported |
-| Load by business key | Array access only when documented; otherwise an existing accessor such as `findBySession()` |
+| Load by business key | Array access only when documented; otherwise an existing accessor such as `findByToken()` |
 | Read key-based settings | `Hilos::$db->settings[$dto->key]` only when settings documents key-based offsets |
 | Create a DB item | `Hilos::$db->collection->actions->create(...)` |
 | Update one DB item | `$item->actions->update(...)` |
@@ -172,7 +172,7 @@ Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 Use a named accessor only when the lookup is not a documented collection offset:
 
 ```php
-Hilos::$db->users->findBySession($sessionToken);
+Hilos::$db->sessions->findByToken($token);
 ```
 
 Use actions for writes:

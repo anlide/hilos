@@ -60,8 +60,8 @@ Three things decide most cases:
   "because the collection is lazy" is often a query against a collection that
   is not.
 - **Keys and finders.** The documented offset (`Hilos::$db->users[$id]`), the
-  named finders (`findBySession()`), and the rows of one column value
-  (`whereColumnIs()`, `whereColumnIn()` on `DbCollection`, over
+  named finders (`Hilos::$db->sessions->findByToken()`), and the rows of one
+  column value (`whereColumnIs()`, `whereColumnIn()` on `DbCollection`, over
   `Objects::loadByColumn()`): [orm/accessor-contracts.md](orm/accessor-contracts.md)
   chooses between them.
 - **Bridges.** A relation from a loaded item is a bridge property on its View

@@ -71,7 +71,7 @@ Before writing DB-backed code:
 2. Check `setRepresent()` to locate the View collection, collection actions, and
    item actions.
 3. Inspect the View collection for existing array/magic access contracts and
-   lookup methods such as `offsetGet()` or `findBySession()`.
+   lookup methods such as `offsetGet()` or `findByToken()`.
 4. Inspect the Object collection for DB-loading/query helpers.
 5. Inspect collection actions for create/register/add operations.
 6. Inspect item actions for update/delete operations on one loaded item.
@@ -82,7 +82,7 @@ Before writing DB-backed code:
 Use `Hilos::$db->{collection}` from agents, pages, and handlers:
 
 ```php
-Hilos::$db->users->findBySession($sessionToken);
+Hilos::$db->sessions->findByToken($token);
 
 if (!isset(Hilos::$db->settings[$key])) {
     return;
@@ -107,7 +107,7 @@ Use this for nullable relation keys in View item bridges instead of adding
 caller-side guards around every collection access.
 
 Put reusable lookups on the collection layer instead of rebuilding the same
-filter in pages or tables. Example: `Users::findBySession()` delegates to the
+filter in pages or tables. Example: `Sessions::findByToken()` delegates to the
 Object collection and returns the matching `DbItem`.
 
 Do not put read-only helpers under `->actions`. Actions are write APIs; using

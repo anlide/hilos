@@ -99,7 +99,7 @@ Use a named finder when the lookup is not the collection key and the collection
 does not document a matching offset contract:
 
 ```php
-Hilos::$db->users->findBySession($sessionToken);
+Hilos::$db->sessions->findByToken($token);
 ```
 
 Use result or item accessors before adding a new finder:
