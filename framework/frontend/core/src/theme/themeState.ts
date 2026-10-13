@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { onBrowserValueErased } from '../browser/browserValueChanges.js'
-import { type ActionLifecycle } from '../connection/actionLifecycle.js'
+import {
+  type ActionHandle,
+  type ActionLifecycle,
+} from '../connection/actionLifecycle.js'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { applyTheme } from '../dom/applyTheme.js'
 import { entityFragmentSchema } from '../protocol/scopePayload.js'
@@ -17,7 +20,11 @@ import {
   createSignal,
   type ReadonlySignal,
 } from '../state/signal.js'
-import { resolveThemeChoice, type ThemeChoice } from './themeChoice.js'
+import {
+  resolveThemeChoice,
+  type ThemeChoice,
+  type ThemePosition,
+} from './themeChoice.js'
 import {
   DEFAULT_THEME_SETTINGS,
   readThemePick,
@@ -32,6 +39,7 @@ import {
   type ThemePick,
 } from './themeRule.js'
 
+const THEME_PICK_ACTION = 'hilos_theme_pick'
 const THEME_ADOPT_ACTION = 'hilos_theme_adopt'
 const themePickSchema = z.enum(['light', 'dark', 'system']).nullable()
 const themeSessionSchema = z.object({
@@ -62,9 +70,28 @@ export const hilosThemeChoice: ReadonlySignal<ThemeChoice | null> =
 interface ThemeBinding {
   release(): void
   setPick(pick: ThemePick): void
+  sendPick(pick: ThemePosition): ActionHandle
 }
 
 let activeBinding: ThemeBinding | null = null
+
+/**
+ * Ask to save an account's position on the application's bound lifecycle.
+ * Only the authoritative handshake changes the tab, browser copy and DOM.
+ *
+ * @param pick The position to save, including a repeated current position.
+ * @returns The tracked handle of the account write.
+ * @throws Error When no theme binding exists — a programming error.
+ */
+export function sendHilosThemePick(pick: ThemePosition): ActionHandle {
+  if (activeBinding === null) {
+    throw new Error(
+      'sendHilosThemePick() before bindThemeState(): bootHilos binds the theme.',
+    )
+  }
+
+  return activeBinding.sendPick(pick)
+}
 
 /**
  * Change the current tab immediately and remember the guest's position.
@@ -252,6 +279,8 @@ export function bindThemeState(
       writeThemePick(pick)
       recompute()
     },
+    sendPick: (pick) =>
+      actions.dispatch(THEME_PICK_ACTION, { themePick: pick }),
     release(): void {
       stopConnection()
       stopState()

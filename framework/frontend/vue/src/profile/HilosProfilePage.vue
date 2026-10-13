@@ -6,7 +6,9 @@ import {
   createHilosProfilePhotoFlow,
   createHilosProfileRenameFlow,
   createHilosProfileRootStore,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
   hilosChildLinks,
+  hilosImpersonation,
   HilosPages,
   HILOS_PROFILE_ROOT_COPY as COPY,
   HILOS_PROFILE_PHOTO_COPY as PHOTO_COPY,
@@ -15,7 +17,7 @@ import {
   type HilosProfileBinding,
   type HilosProfilePageContext,
 } from '@hilos/core'
-import { computed, inject, onMounted, onUnmounted } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import HilosAvatar from '../HilosAvatar.vue'
 import HilosLink from '../HilosLink.vue'
 import HilosPageHeading from '../HilosPageHeading.vue'
@@ -26,6 +28,7 @@ import HilosAccountDeletion from './HilosAccountDeletion.vue'
 import HilosProfileEmailChange from './HilosProfileEmailChange.vue'
 import HilosProfileRename from './HilosProfileRename.vue'
 import HilosProfilePhoto from './HilosProfilePhoto.vue'
+import HilosProfileTheme from './HilosProfileTheme.vue'
 
 const props = defineProps<{
   context: HilosProfilePageContext
@@ -51,6 +54,8 @@ const summaries = useSignal(root.summaries)
 const verifiedEmail = useSignal(root.verifiedEmail)
 const passkeyOnly = useSignal(root.passkeyOnly)
 const theme = useSignal(root.theme)
+const impersonation = useSignal(hilosImpersonation)
+const themeOpen = ref(false)
 const name = useSignal(props.binding.name)
 const rename =
   props.binding.rename === null
@@ -170,6 +175,18 @@ onUnmounted(() => {
             {{ theme }}
           </div>
         </div>
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          :disabled="impersonation !== null"
+          :aria-describedby="
+            impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
+          "
+          data-id="profile-theme-change"
+          @click="themeOpen = true"
+        >
+          {{ COPY.change }}
+        </button>
       </div>
     </div>
     <p v-else class="text-body-secondary" data-id="profile-loading">
@@ -222,6 +239,7 @@ onUnmounted(() => {
     <HilosProfileRename v-if="rename" :flow="rename" />
     <HilosProfilePhoto v-if="photoEnabled" :flow="photoFlow" />
     <HilosProfileEmailChange :flow="email" />
+    <HilosProfileTheme v-model="themeOpen" />
   </section>
   <!-- Nobody signed in, or the session is not known yet: a placeholder, never
   page content. The shell's auth gate mounts the sign-in surface in place once

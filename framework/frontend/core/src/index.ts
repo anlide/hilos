@@ -478,6 +478,7 @@ export {
   hilosThemeChoice,
   hilosThemeMode,
   hilosThemePick,
+  sendHilosThemePick,
   setHilosThemePick,
 } from './theme/themeState.js'
 export {

@@ -4,7 +4,9 @@
 // while the name is not known yet, and the Theme row (HIL-1434).
 import {
   ActionLifecycle,
+  bindImpersonation,
   bindSessionScope,
+  bindSignOut,
   bindThemeState,
   createSignal,
   HILOS_PROFILE_IDENTITIES_LIST,
@@ -15,6 +17,7 @@ import {
   type HilosConnection,
   type HilosPageIdentity,
   type HilosProfileBinding,
+  type HilosProfilePageContext,
   type HilosProfileRename,
   type HilosProfileSignInMethod,
   type HilosRouter,
@@ -34,11 +37,14 @@ const themeActions = new ActionLifecycle({
 })
 
 let releaseTheme: (() => void) | undefined
+let releaseSession: (() => void) | undefined
 
 afterEach(() => {
   document.body.innerHTML = ''
   releaseTheme?.()
   releaseTheme = undefined
+  releaseSession?.()
+  releaseSession = undefined
   setHilosThemePick(null)
   vi.unstubAllGlobals()
   const restore = bindThemeState(
@@ -206,6 +212,11 @@ function setMethods(
 function mountPage(
   binding: HilosProfileBinding,
   scopes: ScopeManager = signedInScopes(),
+  context: HilosProfilePageContext = {
+    connection: { on: () => () => {} } as unknown as HilosConnection,
+    scopes,
+    actions: {} as ActionLifecycle,
+  },
 ) {
   return mount(HilosProfilePage, {
     attachTo: document.body,
@@ -214,14 +225,46 @@ function mountPage(
       stubs: { HilosPageHeading: true, HilosAccountDeletion: true },
     },
     props: {
-      context: {
-        connection: { on: () => () => {} } as unknown as HilosConnection,
-        scopes,
-        actions: {} as ActionLifecycle,
-      },
+      context,
       binding,
     },
   })
+}
+
+/** A profile on the same live session/theme binding as the application shell. */
+function accountThemePage() {
+  const connection = fakeConnection()
+  const scopes = new ScopeManager()
+  const dispatch = vi.fn(() => ({
+    requestId: 'theme',
+    loading: createSignal(false),
+    done: Promise.resolve({}),
+  }))
+  const actions = { dispatch } as unknown as ActionLifecycle
+  bindSessionScope(connection as unknown as HilosConnection, scopes)
+  const stopSignOut = bindSignOut(scopes, actions)
+  const stopImpersonation = bindImpersonation(scopes, actions)
+  releaseSession = () => {
+    stopSignOut()
+    stopImpersonation()
+  }
+  releaseTheme = bindThemeState(
+    connection as unknown as HilosConnection,
+    scopes,
+    actions,
+  )
+  setHilosThemePick(null)
+  connection.emit('handshake_response', {
+    entities: { currentUser: { id: 1, name: 'Ann Lee', themePick: null } },
+    data: { themeSettings: { switchingEnabled: true, defaultTheme: 'system' } },
+  })
+  const wrapper = mountPage(nameOnly(), scopes, {
+    connection: connection as unknown as HilosConnection,
+    scopes,
+    actions,
+  })
+
+  return { connection, scopes, dispatch, wrapper }
 }
 
 describe('HilosProfilePage', () => {
@@ -439,6 +482,121 @@ describe('HilosProfilePage', () => {
     bindTheme({ switchingEnabled: false, defaultTheme: 'light' }, 'dark')
     const wrapper = mountPage(nameOnly())
     expect(wrapper.find('[data-id="profile-theme"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="profile-theme-change"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('opens the framework theme modal without a project rename and returns focus on Close', async () => {
+    const { wrapper, dispatch } = accountThemePage()
+    const change = wrapper.get('[data-id="profile-theme-change"]')
+    expect(wrapper.find('[data-id="profile-edit"]').exists()).toBe(false)
+    ;(change.element as HTMLButtonElement).focus()
+    await change.trigger('click')
+    await nextTick()
+    const modal = document.querySelector('[data-id="profile-theme-modal"]')
+    expect(modal).not.toBeNull()
+    expect(modal?.querySelectorAll('.list-group button')).toHaveLength(3)
+    expect(
+      modal?.querySelector('[data-id="profile-theme-option-system"]')
+        ?.textContent,
+    ).toContain('default')
+    const close = document.querySelector<HTMLButtonElement>(
+      '[data-id="profile-theme-close"]',
+    )
+    close?.click()
+    await nextTick()
+    expect(document.querySelector('[data-id="profile-theme-modal"]')).toBeNull()
+    expect(document.activeElement).toBe(change.element)
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it('updates both the profile row and open modal through the server echo', async () => {
+    const { wrapper, connection, dispatch } = accountThemePage()
+    await wrapper.get('[data-id="profile-theme-change"]').trigger('click')
+    connection.emit('handshake_response', {
+      entities: { currentUser: { id: 1, name: 'Ann Lee', themePick: 'dark' } },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-id="profile-theme"]').text()).toBe('Dark')
+    expect(
+      document
+        .querySelector('[data-id="profile-theme-option-dark"]')
+        ?.getAttribute('aria-current'),
+    ).toBe('true')
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
+  it.each(['off', 'signout', 'impersonation'] as const)(
+    'closes an open profile theme modal on %s and keeps it closed when availability returns',
+    async (change) => {
+      const { wrapper, connection, scopes } = accountThemePage()
+      await wrapper.get('[data-id="profile-theme-change"]').trigger('click')
+      expect(
+        document.querySelector('[data-id="profile-theme-modal"]'),
+      ).not.toBeNull()
+      if (change === 'off')
+        connection.emit('hilos_theme_settings', {
+          switchingEnabled: false,
+          defaultTheme: 'light',
+        })
+      else if (change === 'signout')
+        connection.emit('handshake_response', {
+          entities: { currentUser: null },
+        })
+      else scopes.session.data.set('impersonatedBy', { type: 'user', id: 9 })
+      await nextTick()
+      expect(
+        document.querySelector('[data-id="profile-theme-modal"]'),
+      ).toBeNull()
+      if (change === 'off')
+        expect(wrapper.find('[data-id="profile-theme-change"]').exists()).toBe(
+          false,
+        )
+      if (change === 'signout')
+        expect(wrapper.find('[data-id="profile-view"]').exists()).toBe(false)
+      scopes.session.data.set('impersonatedBy', null)
+      connection.emit('handshake_response', {
+        entities: {
+          currentUser: { id: 1, name: 'Ann Lee', themePick: 'light' },
+        },
+        data: {
+          themeSettings: { switchingEnabled: true, defaultTheme: 'light' },
+        },
+      })
+      await nextTick()
+      expect(wrapper.find('[data-id="profile-theme-change"]').exists()).toBe(
+        true,
+      )
+      expect(
+        document.querySelector('[data-id="profile-theme-modal"]'),
+      ).toBeNull()
+    },
+  )
+
+  it('dispatches a repeated default from the modal without changing the profile row on success', async () => {
+    const { wrapper, connection, dispatch } = accountThemePage()
+    await wrapper.get('[data-id="profile-theme-change"]').trigger('click')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="profile-theme-option-system"]',
+      )
+      ?.click()
+    await Promise.resolve()
+    await nextTick()
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith('hilos_theme_pick', {
+      themePick: 'system',
+    })
+    expect(wrapper.get('[data-id="profile-theme"]').text()).toBe(
+      'System · default',
+    )
+    connection.emit('handshake_response', {
+      entities: {
+        currentUser: { id: 1, name: 'Ann Lee', themePick: 'system' },
+      },
+    })
+    await nextTick()
+    expect(wrapper.get('[data-id="profile-theme"]').text()).toBe('System')
   })
 
   it('updates pick, default, and switching live without remounting', async () => {

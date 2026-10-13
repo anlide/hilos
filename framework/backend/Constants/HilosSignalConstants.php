@@ -641,6 +641,13 @@ final class HilosSignalConstants
     public const string HILOS_USER_THEME_PICK_ADOPT_DONE = 'hilos_user_theme_pick_adopt_done';
 
     /**
+     * The person's agent → users library: explicit theme choice succeeded or was refused (HIL-1437).
+     *
+     * Carried by {@see UserThemePickWriteDoneSignalData}; resumes the initiating browser action.
+     */
+    public const string HILOS_USER_THEME_PICK_DONE = 'hilos_user_theme_pick_done';
+
+    /**
      * The person's agent → sessions library: the block flag is written, or why not (HIL-1404).
      *
      * The library ends the blocked person's sessions only now, because the pass that ends them
@@ -1561,6 +1568,13 @@ final class HilosSignalConstants
      * Requires an ordinary signed-in session; the person is resolved from the connection, never from the payload.
      */
     public const string HILOS_THEME_ADOPT = 'hilos_theme_adopt';
+
+    /**
+     * Client → users library (page-independent): save the person's explicit theme choice (HIL-1437).
+     *
+     * Requires an ordinary current session; its person owns the write even when a previous choice exists.
+     */
+    public const string HILOS_THEME_PICK = 'hilos_theme_pick';
 
     /** Client → sessions library: end one other session owned by the acting user. */
     public const string HILOS_SESSION_END = 'hilos_session_end';

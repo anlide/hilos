@@ -125,6 +125,7 @@ use Hilos\Auth\Library\DTO\ConfirmRegisterActionDTO;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\DetectIdentifierActionDTO;
 use Hilos\Auth\Library\DTO\ThemeAdoptActionDTO;
+use Hilos\Auth\Library\DTO\ThemePickActionDTO;
 use Hilos\Auth\Library\DTO\LegalAcceptActionDTO;
 use Hilos\Auth\Library\DTO\LegalConsentActionDTO;
 use Hilos\Auth\Library\DTO\LegalReconsentActionDTO;
@@ -1074,6 +1075,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_USER_THEME_PICK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1373,6 +1375,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
             HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
             HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => UserThemePickWriteDoneSignalData::class,
+            HilosSignalConstants::HILOS_USER_THEME_PICK_DONE => UserThemePickWriteDoneSignalData::class,
             HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
@@ -1501,6 +1504,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => HilosAgentType::HILOS_DATA_EXPORT,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_THEME_ADOPT => HilosAgentType::HILOS_USERS_LIBRARY,
+            HilosSignalConstants::HILOS_THEME_PICK => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_CONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT => HilosAgentType::HILOS_USERS_LIBRARY,
             HilosSignalConstants::HILOS_LEGAL_ACCEPT => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1606,6 +1610,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_DATA_EXPORT_ORDER => DataExportOrderActionDTO::class,
             HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
             HilosSignalConstants::HILOS_THEME_ADOPT => ThemeAdoptActionDTO::class,
+            HilosSignalConstants::HILOS_THEME_PICK => ThemePickActionDTO::class,
             HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
             HilosSignalConstants::HILOS_LEGAL_RECONSENT => LegalReconsentActionDTO::class,
             HilosSignalConstants::HILOS_LEGAL_ACCEPT => LegalAcceptActionDTO::class,

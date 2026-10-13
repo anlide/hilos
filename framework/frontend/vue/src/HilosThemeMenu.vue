@@ -6,17 +6,20 @@ badge only when the person never picked. Open/close, outside-click, Escape and
 arrow-roving mirror HilosNotificationBell. The panel is a menu of menuitemradio,
 not a listbox: HilosDropdown is a full-width select with a caret, and this
 control is a bare icon. A guest's choice is applied and remembered immediately;
-signed-in choice lands in HIL-1437. Both close the menu and return focus. The
+an account choice waits for the server's handshake. Both close and return focus. The
 shell mounts it; a project passes nothing. Bootstrap classes only, no CSS of its own. -->
 <script setup lang="ts">
 import {
   formatHilosThemeLabel,
+  HILOS_IMPERSONATION_STRIP_TEXT_ID,
+  hilosImpersonation,
   hilosSignedIn,
   hilosThemeChoice,
+  sendHilosThemePick,
   setHilosThemePick,
   THEME_COPY,
   THEME_POSITIONS,
-  type ThemePick,
+  type ThemePosition,
 } from '@hilos/core'
 import {
   computed,
@@ -29,8 +32,14 @@ import {
 } from 'vue'
 
 import { useSignal } from './useSignal.js'
+import { useTrackedAction } from './useTrackedAction.js'
 
 const choice = useSignal(hilosThemeChoice)
+const signedIn = useSignal(hilosSignedIn)
+const impersonation = useSignal(hilosImpersonation)
+const action = useTrackedAction()
+const busy = computed(() => action.busy.value)
+const loading = computed(() => action.loading.value)
 const view = computed(() => {
   const current = choice.value
   if (current === null) {
@@ -70,6 +79,13 @@ function focusItem(which: 'first' | 'last'): void {
 }
 
 function openMenu(focus: 'first' | 'last' | 'none' = 'none'): void {
+  if (
+    action.busy.value ||
+    hilosThemeChoice.get() === null ||
+    hilosImpersonation.get() !== null
+  ) {
+    return
+  }
   open.value = true
   if (focus !== 'none') {
     void nextTick(() => focusItem(focus))
@@ -126,13 +142,22 @@ function onMenuKeydown(event: KeyboardEvent): void {
   }
 }
 
-function choose(pick: Exclude<ThemePick, null>): void {
-  if (!hilosSignedIn.get() && hilosThemeChoice.get() !== null) {
-    setHilosThemePick(pick)
-  } else if (hilosSignedIn.get()) {
-    // SCAFFOLD: not wired yet — signed-in choice lands in HIL-1437.
+function choose(pick: ThemePosition): void {
+  if (
+    action.busy.value ||
+    hilosThemeChoice.get() === null ||
+    hilosImpersonation.get() !== null
+  ) {
+    close(true)
+
+    return
   }
   close(true)
+  if (hilosSignedIn.get()) {
+    void action.run(sendHilosThemePick(pick))
+  } else {
+    setHilosThemePick(pick)
+  }
 }
 
 function onDocumentClick(event: MouseEvent): void {
@@ -148,6 +173,29 @@ watch(choice, (next) => {
     open.value = false
   }
 })
+watch([signedIn, impersonation], () => close(true))
+
+// Native disabled removes focus during the action. Return it only after Vue
+// has re-enabled the button; this watcher stops with the component's scope.
+watch(
+  busy,
+  (next, previous) => {
+    if (
+      next ||
+      !previous ||
+      !hilosSignedIn.get() ||
+      hilosThemeChoice.get() === null ||
+      hilosImpersonation.get() !== null
+    ) {
+      return
+    }
+    const button = toggleButton.value
+    if (button?.isConnected && !button.disabled) {
+      button.focus()
+    }
+  },
+  { flush: 'post' },
+)
 
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
@@ -158,7 +206,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     <button
       ref="toggleButton"
       type="button"
-      class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5"
+      class="btn btn-link nav-link d-inline-flex align-items-center p-0 fs-5 position-relative"
+      :disabled="busy || impersonation !== null"
+      :aria-describedby="
+        impersonation ? HILOS_IMPERSONATION_STRIP_TEXT_ID : undefined
+      "
+      :aria-busy="busy || undefined"
       :aria-expanded="open"
       :aria-controls="menuId"
       aria-haspopup="menu"
@@ -171,7 +224,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       @keydown.up.prevent="openMenu('last')"
       @keydown.esc.prevent="close(true)"
     >
-      <i class="bi" :class="view.icon" aria-hidden="true"></i>
+      <i
+        class="bi"
+        :class="[view.icon, { invisible: loading }]"
+        aria-hidden="true"
+      ></i>
+      <span
+        v-if="loading"
+        class="position-absolute top-50 start-50 translate-middle spinner-border spinner-border-sm"
+        role="status"
+        data-id="nav-theme-loading"
+        ><span class="visually-hidden">Loading…</span></span
+      >
     </button>
     <div
       v-show="open"
@@ -192,6 +256,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         :class="{ active: row.value === view.position }"
         role="menuitemradio"
         :aria-checked="row.value === view.position"
+        :disabled="busy"
         :data-id="`nav-theme-option-${row.value}`"
         @click="choose(row.value)"
       >

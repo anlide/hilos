@@ -38,6 +38,7 @@ use Hilos\Auth\Library\Command\SecondFactorCommands;
 use Hilos\Auth\Library\Command\StepUpCommands;
 use Hilos\Auth\Library\Command\UserRenameCommands;
 use Hilos\Auth\Library\DTO\ThemeAdoptActionDTO;
+use Hilos\Auth\Library\DTO\ThemePickActionDTO;
 use Hilos\Auth\Library\DTO\AuthOtherSessionsEndSignalData;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthRecoveryGrantedSignalData;
@@ -388,6 +389,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE => AuthRegistrationHoldReleaseSignalData::class,
         HilosSignalConstants::HILOS_AUTH_THROTTLE_VERDICT => ThrottleVerdictSignalData::class,
         HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE => UserThemePickWriteDoneSignalData::class,
+        HilosSignalConstants::HILOS_USER_THEME_PICK_DONE => UserThemePickWriteDoneSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_LOGIN_READY => OAuthLoginReadySignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET => AccountDeletionSetSignalData::class,
         HilosSignalConstants::HILOS_USER_ADMIN_RENAME => AdminRenameSignalData::class,
@@ -427,6 +429,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_DETECT_IDENTIFIER => DetectIdentifierActionDTO::class,
         HilosSignalConstants::HILOS_THEME_ADOPT => ThemeAdoptActionDTO::class,
+        HilosSignalConstants::HILOS_THEME_PICK => ThemePickActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_CONSENT => LegalConsentActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_RECONSENT => LegalReconsentActionDTO::class,
         HilosSignalConstants::HILOS_LEGAL_ACCEPT => LegalAcceptActionDTO::class,
@@ -590,6 +593,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     public const array AUTH_ACTIONS = [
         HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
         HilosSignalConstants::HILOS_THEME_ADOPT,
+        HilosSignalConstants::HILOS_THEME_PICK,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_OPTIONS,
         HilosSignalConstants::HILOS_PASSKEY_REGISTER_CONFIRM,
         HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
@@ -682,6 +686,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     private const string SECOND_FACTOR_RESET_SWEEP_CRON = '* * * * *';
 
     private const string THEME_ADOPT_SESSION_REFUSAL = 'Theme adoption requires your current signed-in session';
+    private const string THEME_PICK_SESSION_REFUSAL = 'Theme choice requires your current signed-in session';
 
     /**
      * Action name of the dispatch running right now, or null outside one.
@@ -1011,7 +1016,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
-     * @throws InvalidAgentSignalPayloadException When the theme adoption answer has the wrong payload
+     * @throws InvalidAgentSignalPayloadException When a theme choice answer has the wrong payload
      * @throws ValidationException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the failure frame cannot be named or queued
      * @throws FramePopOrderException When a resumed action leaves the execution frame stack imbalanced
@@ -1059,6 +1064,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE:
+            case HilosSignalConstants::HILOS_USER_THEME_PICK_DONE:
                 if (!$data->data instanceof UserThemePickWriteDoneSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, UserThemePickWriteDoneSignalData::class, $data->data);
                 }
@@ -2319,6 +2325,14 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
 
                 return null;
 
+            case HilosSignalConstants::HILOS_THEME_PICK:
+                if (!$dto instanceof ThemePickActionDTO) {
+                    throw new InvalidActionPayloadException($action, ThemePickActionDTO::class, $dto);
+                }
+                $this->pickTheme($acceptKey, $dto);
+
+                return null;
+
             case HilosSignalConstants::HILOS_DETECT_IDENTIFIER:
                 if (!$dto instanceof DetectIdentifierActionDTO) {
                     throw new InvalidActionPayloadException($action, DetectIdentifierActionDTO::class, $dto);
@@ -3072,6 +3086,41 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             action: HilosSignalConstants::HILOS_THEME_ADOPT,
             successMessage: null,
             adoptOnly: true,
+        ));
+    }
+
+    /**
+     * @param string $acceptKey Live connection submitting an explicit choice
+     * @param ThemePickActionDTO $dto Theme choice, with no client-supplied identity
+     * @throws ValidationException When the connection has no ordinary current session, or the person is gone or merged
+     * @throws LogicException When a collection's class constants are not configured
+     * @throws InvalidArgumentException When a loaded row has the wrong type, or the ask cannot be queued
+     * @throws DatabaseException When the session, person or merge cannot be read
+     */
+    private function pickTheme(string $acceptKey, ThemePickActionDTO $dto): void
+    {
+        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        if ($connection?->sessionToken === null || $connection->userId === null) {
+            throw new ValidationException(self::THEME_PICK_SESSION_REFUSAL);
+        }
+
+        $session = Hilos::$db->sessions->findByToken($connection->sessionToken);
+        if ($session?->userId === null || $session->userId !== $connection->userId
+            || $session->impersonatorUserId !== null
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::getSqlDateTime())
+        ) {
+            throw new ValidationException(self::THEME_PICK_SESSION_REFUSAL);
+        }
+
+        $this->askPersonAgent($session->userId, HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, new UserThemePickWriteSignalData(
+            userId: $session->userId,
+            themePick: $dto->themePick,
+            replySignal: HilosSignalConstants::HILOS_USER_THEME_PICK_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->currentActionRequestId(),
+            action: HilosSignalConstants::HILOS_THEME_PICK,
+            successMessage: null,
+            adoptOnly: false,
         ));
     }
 

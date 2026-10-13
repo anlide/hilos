@@ -49,7 +49,12 @@ unavailable, `system` resolves to light until a browser can supply its preferenc
 The core exposes `hilosThemePick: ReadonlySignal<ThemePick>`,
 `hilosThemeMode: ReadonlySignal<ThemeMode>`, and
 `hilosThemeChoice: ReadonlySignal<ThemeChoice | null>`;
-`setHilosThemePick(pick)` changes the current tab and remembers the pick.
+`setHilosThemePick(pick)` changes the guest's current tab and remembers the pick.
+`sendHilosThemePick(pick): ActionHandle` sends an explicit account choice through
+the action lifecycle already bound by `bootHilos`. It does not change the local
+choice or browser value; the authoritative handshake does that. A successful
+action reply completes the tracked action without reapplying its submitted choice,
+so a newer handshake cannot be overwritten by an older acknowledgement.
 `resolveThemeChoice` and `THEME_POSITIONS` are what the header and the profile
 row read: the position, its icon and its label, or no control when switching is
 off. `ThemePick` is `light | dark | system | null`; `ThemeMode` is
@@ -133,6 +138,49 @@ wearing the same theme.
 A cookie never carries the theme; the cookie is the auth credential only. See
 [wire-protocol.md](../frontend/wire-protocol.md).
 
+## Explicit Account Choices
+
+The signed-in person's header and profile send `hilos_theme_pick` with only
+`{themePick}`. The people library resolves the person from the live ordinary
+session belonging to `acceptKey`, with the same admission checks as adoption,
+then asks their owner through `hilos_user_theme_pick_write` with `adoptOnly=false`.
+Every explicit choice is a write, including the current position or the marked
+default: choosing the default makes it personal and removes the default badge.
+The owner's sequential queue orders choices from different sessions; the last
+processed explicit write wins. Automatic `hilos_theme_adopt` remains conditional
+with `adoptOnly=true` and cannot replace a stored personal choice.
+
+After the owner answers through `hilos_user_theme_pick_done`, the library resumes
+the tracked browser action. The existing session restate and handshake delivery
+update the worn mode, header marks, profile line, open profile modal and browser
+copy in every local session of that person. There is no second theme lifecycle,
+polling or separate browser fan-out signal. Cross-node delivery remains HIL-1443.
+
+Vue's `HilosThemeMenu` closes on a choice and returns focus to its toggle.
+`useTrackedAction` disables repeated submission while busy and shows delayed
+loading on the toggle. For an account action, a post-flush watcher returns focus
+after Vue removes the native disabled state, while the signed-in, switching and
+impersonation guards still allow the control. Refusal, timeout and disconnect
+use the usual action error toast; the last confirmed theme stays in place.
+Success needs no toast.
+Guests continue to use `setHilosThemePick`.
+
+The profile's Change control opens `HilosProfileTheme`, a focus-trapped
+`HilosModal` titled Theme. It marks the live position, including the default badge
+while no choice exists. Each click sends that position directly; there is no
+draft or Save. Pending work disables repeat clicks and shows delayed loading on
+the submitted row. Success closes the modal and returns focus to Change;
+refusal leaves it open with `HilosActionError` and the usual toast. Close, Escape
+and the backdrop close without writing; closing after admission does not cancel
+that write. A late success belongs to the opening that sent it and does not close
+a later opening or apply a local choice.
+
+Both account controls check current availability before sending: switching is
+on, the person is signed in and the session is not impersonating someone.
+Switching off, sign-out or impersonation closes an open surface. The server
+checks admission again. React and Angular controls remain to be built in
+HIL-1440 and HIL-1441.
+
 ## Before The App Loads
 
 The last project build step is
@@ -143,6 +191,10 @@ in every emitted HTML page: Vite's `index.html` and prerendered pages, Angular's
 from `resolveThemeMode` and the browser-value parsers in `themeStored.ts`; it
 reads only the pick and remembered settings, with no network, cookie or import.
 Nothing remembered on a new browser's first visit means `system`.
+
+An account's pick reaches this cache after a handshake. The head script on a
+clean browser's first visit cannot know a server choice before that handshake;
+the account first-frame check covers a browser that already synchronized it.
 
 The pass refuses a missing or unreadable output directory, a directory without
 HTML pages, a page without `</head>`, and a deferred stylesheet. Angular
@@ -253,6 +305,18 @@ existing action and answer routes. Local delivery reuses
 session state and `handshake_response`; no new browser live signal or page
 subscription is involved (HIL-1429).
 
+Explicit choice uses `HilosSignalConstants::HILOS_THEME_PICK`, wire name
+`hilos_theme_pick`, with `ThemePickActionDTO` carrying only
+`{themePick: 'light'|'dark'|'system'}`. The DTO requires a string in
+`ThemeSettingsCatalog::THEME_VALUES`; null, `auto`, a missing field or another
+type is refused. No client `userId` or `accountId` is accepted. The people
+library declares the action in `AGENT_ACTIONS` and `AUTH_ACTIONS`, and its answer
+`HilosSignalConstants::HILOS_USER_THEME_PICK_DONE`, wire name
+`hilos_user_theme_pick_done`, in `AGENT_SIGNALS` with the existing
+`UserThemePickWriteDoneSignalData`. The declarations provide the browser-to-library
+action and owner-to-library answer routes. The owner ask and answer shapes,
+DB/RT rows, page routes and session fan-out remain unchanged.
+
 The optional `themePick` key travels on seven account-creating actions:
 `hilos_complete_registration`, `hilos_complete_registration_passwordless`,
 `hilos_complete_registration_passkey`, `hilos_confirm_magic_link`,
@@ -266,4 +330,10 @@ its names into this file in the same commit that clears its marker.
 - Check the painting rule with `STYLE-THEME-PINNED`; see "Theming" in
   [styling-rules.md](../frontend/styling-rules.md) for the guard's scope and landing
   markers.
-- Run the theme e2e (not in the code yet — HIL-1442).
+- Run chat's `theme-guest.spec.ts` for browser choices and `theme-account.spec.ts`
+  for independent account sessions, both directions of delivery, a stranger's
+  isolation, System media, reload/new tabs, the synchronized browser's first frame
+  with application JS blocked, and profile/modal/header keyboard use at 375px.
+- Run binance-btc-tracker's `theme-smoke.spec.ts` for its signed-in header and
+  reload. The later redistribution of theme e2e remains HIL-1442; cross-node
+  account delivery remains pending (not in the code yet — HIL-1443).

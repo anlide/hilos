@@ -7,8 +7,10 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ThemeAdoptActionDTO;
+use Hilos\Auth\Library\DTO\ThemePickActionDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -17,6 +19,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -34,6 +37,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateSessionConnections;
@@ -53,9 +57,10 @@ use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Throwable;
 
 /**
- * Theme adoption crosses the real person owner, sessions library and framework handshake (HIL-1429).
+ * Theme actions cross the real person owner, sessions library and framework handshake (HIL-1429, HIL-1437).
  *
  * Two tokens of one person have three sockets; a stranger has a fourth. The harness carries
  * queued frames through the ordinary declarative router, with serialization at every agent hop.
@@ -90,6 +95,30 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
         foreach (['light', 'dark', 'system'] as $pick) {
             yield $pick => [$pick];
         }
+    }
+
+    /** @return iterable<string, array{?string, string}> Replacement, repeat and explicit default choices */
+    public static function explicitChoices(): iterable
+    {
+        yield 'dark to system' => ['dark', 'system'];
+        yield 'light to dark' => ['light', 'dark'];
+        yield 'system to light' => ['system', 'light'];
+        yield 'repeat current' => ['dark', 'dark'];
+        yield 'null to catalog default' => [null, 'system'];
+    }
+
+    /** @return iterable<string, array{string}> Both browser theme action names */
+    public static function themeActions(): iterable
+    {
+        yield 'adopt' => [HilosSignalConstants::HILOS_THEME_ADOPT];
+        yield 'explicit' => [HilosSignalConstants::HILOS_THEME_PICK];
+    }
+
+    /** @return iterable<string, array{Throwable, string}> Person-facing and internal write failures */
+    public static function writeFailures(): iterable
+    {
+        yield 'validation' => [new ValidationException('Theme write refused'), 'Theme write refused'];
+        yield 'database' => [new DatabaseException('Injected theme database failure'), SignalConstants::ACTION_FAILED_REASON];
     }
 
     /**
@@ -190,38 +219,121 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
         self::assertSame($pick, Hilos::$db->users[self::PERSON]->themePick);
     }
 
-    /** @throws HilosException When a fixture write or a delivery hop fails */
-    public function testAnExplicitOwnerWriteUsesTheSameSessionDelivery(): void
+    /**
+     * @param ?string $previous Stored position, or null before the first choice
+     * @param string $pick Explicit browser choice
+     * @throws HilosException When a fixture write or a delivery hop fails
+     */
+    #[DataProvider('explicitChoices')]
+    public function testAnExplicitBrowserChoiceRestatesBothTokensAndEveryTab(?string $previous, string $pick): void
     {
-        $this->submitAdoption(self::TAB_A, 'dark', 'adopt');
-        $this->carryFrames();
-        $this->users->sendToAgent(HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE, new UserThemePickWriteSignalData(
-            self::PERSON, 'system', HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE,
-            self::TAB_A, 'explicit', HilosSignalConstants::HILOS_THEME_ADOPT, null,
-        ));
+        if ($previous !== null) {
+            $this->asPerson(self::PERSON, static fn ($agent) => $agent->writeThemeForTest($previous));
+        }
+        $this->submitThemeAction(self::TAB_A, HilosSignalConstants::HILOS_THEME_PICK, $pick, 'explicit');
+        self::assertSame($previous, Hilos::$db->users[self::PERSON]->themePick);
 
         $frames = $this->carryFrames();
 
-        $this->assertHandshakePicks($frames, 'system');
-        self::assertSame('system', Hilos::$db->users[self::PERSON]->themePick);
-    }
-
-    /** @throws HilosException When an action or a delivery hop fails */
-    public function testAClientSuppliedUserIdCannotRedirectAdoption(): void
-    {
-        $this->submitAdoption(self::TAB_A, 'dark', 'injected-person', [UserThemePickWriteSignalData::userId => self::STRANGER]);
-
-        $frames = $this->carryFrames();
-
-        $this->assertHandshakePicks($frames, 'dark');
-        self::assertSame('dark', Hilos::$db->users[self::PERSON]->themePick);
+        $asks = $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE);
+        self::assertCount(1, $asks);
+        $ask = $asks[0]->data->data;
+        self::assertInstanceOf(UserThemePickWriteSignalData::class, $ask);
+        self::assertFalse($ask->adoptOnly);
+        self::assertSame(self::PERSON, $ask->userId);
+        self::assertSame($pick, $ask->themePick);
+        self::assertSame(HilosSignalConstants::HILOS_USER_THEME_PICK_DONE, $ask->replySignal);
+        self::assertSame('explicit', $ask->requestId);
+        self::assertSame(HilosSignalConstants::HILOS_THEME_PICK, $ask->action);
+        self::assertNull($ask->successMessage);
+        self::assertCount(2, $this->framesNamed($frames, HilosSignalConstants::HILOS_SESSION_STATE));
+        $this->assertHandshakePicks($frames, $pick);
+        $this->assertSilentSuccess($frames, 'explicit', self::TAB_A, HilosSignalConstants::HILOS_THEME_PICK);
+        self::assertSame($pick, Hilos::$db->users[self::PERSON]->themePick);
         self::assertNull(Hilos::$db->users[self::STRANGER]->themePick);
     }
 
     /** @throws HilosException When an action or a delivery hop fails */
-    public function testClosingTheInitiatorAfterAdmissionKeepsTheWriteOnTheVerifiedPerson(): void
+    public function testTheLastQueuedExplicitChoiceWinsAndLaterAdoptionKeepsIt(): void
     {
-        $this->submitAdoption(self::TAB_A, 'dark', 'closed-tab');
+        $this->submitThemeAction(self::TAB_C, HilosSignalConstants::HILOS_THEME_PICK, 'light', 'explicit-first');
+        $this->submitThemeAction(self::TAB_A, HilosSignalConstants::HILOS_THEME_PICK, 'dark', 'explicit-last');
+        self::assertNull(Hilos::$db->users[self::PERSON]->themePick);
+
+        $frames = $this->carryFrames();
+
+        self::assertCount(2, $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_THEME_PICK_WRITE));
+        $this->assertHandshakePicks($frames, 'dark', copies: 2);
+        $this->assertSilentSuccess($frames, 'explicit-first', self::TAB_C, HilosSignalConstants::HILOS_THEME_PICK);
+        $this->assertSilentSuccess($frames, 'explicit-last', self::TAB_A, HilosSignalConstants::HILOS_THEME_PICK);
+        self::assertSame('dark', Hilos::$db->users[self::PERSON]->themePick);
+
+        $this->submitAdoption(self::TAB_C, 'system', 'late-adopt');
+        $frames = $this->carryFrames();
+        $this->assertHandshakePicks($frames, 'dark');
+        $this->assertSilentSuccess($frames, 'late-adopt', self::TAB_C);
+        self::assertSame('dark', Hilos::$db->users[self::PERSON]->themePick);
+    }
+
+    /**
+     * @param Throwable $failure Failure injected at the owner's guarded write
+     * @param string $reason Expected person-facing refusal
+     * @throws HilosException When a fixture write or delivery hop fails
+     */
+    #[DataProvider('writeFailures')]
+    public function testAWriteFailureFailsTheOriginalExplicitActionWithoutSuccess(Throwable $failure, string $reason): void
+    {
+        $this->asPerson(self::PERSON, static function ($agent) use ($failure): void {
+            $agent->writeThemeForTest('light');
+            $agent->themeWriteFailure = $failure;
+        });
+        $this->submitThemeAction(self::TAB_C, HilosSignalConstants::HILOS_THEME_PICK, 'dark', 'write-failed');
+
+        $frames = $this->carryFrames();
+        $answers = $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_THEME_PICK_DONE);
+        self::assertCount(1, $answers);
+        self::assertSame($reason, $answers[0]->data->data->error);
+        $failures = $this->framesNamed($frames, SignalConstants::ACTION_ERROR);
+        self::assertCount(1, $failures);
+        self::assertSame(self::TAB_C, $failures[0]->data->targetAcceptKey);
+        $reply = $failures[0]->data->data;
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame(HilosSignalConstants::HILOS_THEME_PICK, $reply->action);
+        self::assertSame('write-failed', $reply->requestId);
+        self::assertSame($reason, $reply->reason);
+        self::assertNull($reply->errorDetail);
+        self::assertSame([], $this->framesNamed($frames, SignalConstants::ACTION_SUCCESS));
+        self::assertSame([], $this->framesNamed($frames, HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE));
+        self::assertSame([], $this->handshakeFrames($frames));
+        self::assertSame('light', Hilos::$db->users[self::PERSON]->themePick);
+        self::assertNull(Hilos::$db->users[self::STRANGER]->themePick);
+    }
+
+    /**
+     * @param string $action Adoption or explicit choice
+     * @throws HilosException When an action or a delivery hop fails
+     */
+    #[DataProvider('themeActions')]
+    public function testAClientSuppliedUserIdCannotRedirectAThemeAction(string $action): void
+    {
+        $this->submitThemeAction(self::TAB_A, $action, 'dark', 'injected-person', [UserThemePickWriteSignalData::userId => self::STRANGER]);
+
+        $frames = $this->carryFrames();
+
+        $this->assertHandshakePicks($frames, 'dark');
+        $this->assertSilentSuccess($frames, 'injected-person', self::TAB_A, $action);
+        self::assertSame('dark', Hilos::$db->users[self::PERSON]->themePick);
+        self::assertNull(Hilos::$db->users[self::STRANGER]->themePick);
+    }
+
+    /**
+     * @param string $action Adoption or explicit choice
+     * @throws HilosException When an action or a delivery hop fails
+     */
+    #[DataProvider('themeActions')]
+    public function testClosingTheInitiatorAfterAdmissionKeepsTheWriteOnTheVerifiedPerson(string $action): void
+    {
+        $this->submitThemeAction(self::TAB_A, $action, 'dark', 'closed-tab');
         ExecutionContext::run(
             new ExecutionFrame(agentId: $this->host->getId()),
             static fn () => Hilos::$rt->themeConnections[self::TAB_A]->actions->unregister(),
@@ -233,22 +345,25 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
         $this->assertHandshakePicks($this->carryFrames(), 'dark', ['theme-new-tab', self::TAB_B]);
     }
 
-    /** @return iterable<string, array{string}> Invalid identities on an otherwise live accept key */
+    /** @return iterable<string, array{string, string}> Invalid identities for each browser action */
     public static function refusedSessions(): iterable
     {
-        foreach (['anonymous', 'signed-out-session', 'expired', 'deleted', 'impersonated', 'changed-session-person',
-            'changed-connection-person', 'no-session-token', 'closed'] as $kind
-        ) {
-            yield $kind => [$kind];
+        foreach (self::themeActions() as $name => [$action]) {
+            foreach (['anonymous', 'signed-out-session', 'expired', 'deleted', 'impersonated', 'changed-session-person',
+                'changed-connection-person', 'no-session-token', 'closed'] as $kind
+            ) {
+                yield $name . ' ' . $kind => [$action, $kind];
+            }
         }
     }
 
     /**
+     * @param string $action Adoption or explicit choice
      * @param string $kind Session or connection defect
      * @throws HilosException When the fixture mutation fails
      */
     #[DataProvider('refusedSessions')]
-    public function testAdoptionRefusesAnAcceptKeyWithoutItsLiveOrdinaryOwnSession(string $kind): void
+    public function testThemeActionsRefuseAnAcceptKeyWithoutItsLiveOrdinaryOwnSession(string $action, string $kind): void
     {
         switch ($kind) {
             case 'anonymous':
@@ -295,8 +410,8 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
         $this->carryFrames();
 
         try {
-            $this->submitAdoption(self::TAB_A, 'dark', 'refused');
-            self::fail('Adoption requires the live ordinary session of this accept key');
+            $this->submitThemeAction(self::TAB_A, $action, 'dark', 'refused');
+            self::fail('A theme action requires the live ordinary session of this accept key');
         } catch (ValidationException $refusal) {
             self::assertStringContainsString('current signed-in session', $refusal->getMessage());
         }
@@ -376,14 +491,30 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
      */
     private function submitAdoption(string $acceptKey, string $pick, string $requestId, array $extra = []): void
     {
-        $action = new WebSocketActionSignalDTO($acceptKey, HilosSignalConstants::HILOS_THEME_ADOPT,
+        $this->submitThemeAction($acceptKey, HilosSignalConstants::HILOS_THEME_ADOPT, $pick, $requestId, $extra);
+    }
+
+    /**
+     * @param string $acceptKey Initiating tab
+     * @param string $actionName Adoption or explicit choice
+     * @param string $pick Proposed browser choice
+     * @param string $requestId Action correlation
+     * @param array<string, mixed> $extra Extra untrusted fields
+     */
+    private function submitThemeAction(string $acceptKey, string $actionName, string $pick, string $requestId, array $extra = []): void
+    {
+        $action = new WebSocketActionSignalDTO($acceptKey, $actionName,
             [ThemeAdoptActionDTO::themePick => $pick, ...$extra], $requestId);
         $signal = new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::ACTION),
             new SignalName($action->action), $action);
         $destination = $this->agentDestination($signal);
         self::assertSame($this->users::AGENT_TYPE, $destination->agentType);
         $dto = Hilos::$sr->createAgentActionPayloadDTO($action->action, $action->data, $destination->agentType);
-        self::assertInstanceOf(ThemeAdoptActionDTO::class, $dto);
+        self::assertInstanceOf(match ($actionName) {
+            HilosSignalConstants::HILOS_THEME_ADOPT => ThemeAdoptActionDTO::class,
+            HilosSignalConstants::HILOS_THEME_PICK => ThemePickActionDTO::class,
+            default => self::fail('Unknown theme action: ' . $actionName),
+        }, $dto);
         self::assertSame([ThemeAdoptActionDTO::themePick => $pick], $dto->toArray());
         ExecutionContext::run(new ExecutionFrame(agentId: $this->users->getId(), acceptKey: $acceptKey), function () use ($action, $dto): void {
             $this->users->beginActionDispatch($action->requestId);
@@ -510,8 +641,11 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
      * @param list<SignalDTO> $frames Observed queue
      * @param string $requestId Request that must complete
      * @param string $acceptKey Initiating socket
+     * @param string $action Browser theme action
      */
-    private function assertSilentSuccess(array $frames, string $requestId, string $acceptKey): void
+    private function assertSilentSuccess(array $frames, string $requestId, string $acceptKey,
+        string $action = HilosSignalConstants::HILOS_THEME_ADOPT,
+    ): void
     {
         $answers = [];
         foreach ($frames as $signal) {
@@ -523,18 +657,23 @@ final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTe
         }
         self::assertCount(1, $answers);
         self::assertSame($acceptKey, $answers[0]->targetAcceptKey);
-        self::assertSame(HilosSignalConstants::HILOS_THEME_ADOPT, $answers[0]->data->action);
+        self::assertSame($action, $answers[0]->data->action);
         self::assertNull($answers[0]->data->message);
         self::assertNull($answers[0]->data->reply);
         self::assertSame([], $this->framesNamed($frames, HilosSignalConstants::HILOS_SESSION_TOASTS));
-        foreach ($this->framesNamed($frames, HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE) as $signal) {
+        $done = $action === HilosSignalConstants::HILOS_THEME_PICK
+            ? HilosSignalConstants::HILOS_USER_THEME_PICK_DONE
+            : HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE;
+        $completions = $this->framesNamed($frames, $done);
+        self::assertNotEmpty($completions);
+        foreach ($completions as $signal) {
             self::assertInstanceOf(UserThemePickWriteDoneSignalData::class, $signal->data->data);
             self::assertNull($signal->data->data->error);
         }
     }
 }
 
-/** The users library's production adoption behavior, without overrides. */
+/** The users library's production theme actions, without overrides. */
 final class ThemeAccountSessionTestUsersLibrary extends AbstractUsersLibraryAgent
 {
     public const string AGENT_TYPE = 'theme_test_users';
@@ -549,14 +688,29 @@ final class ThemeAccountSessionTestSessionsLibrary extends AbstractSessionsLibra
 /** The real owner; this seam seeds a chosen account through its existing guarded write. */
 final class ThemeAccountSessionTestPerson extends AbstractUserAgent
 {
+    /** @var ?Throwable Failure injected at the owner's write */
+    public ?Throwable $themeWriteFailure = null;
+
     /**
      * @param string $pick Fixture account position
-     * @throws HilosException When the guarded theme write fails
-     * @throws LogicException When a collection's class constants are not configured
+     * @throws Throwable When the fixture injects a failure or the guarded production write fails
      */
     public function writeThemeForTest(string $pick): void
     {
         $this->writeThemePick($pick);
+    }
+
+    /**
+     * @param string $themePick Position reaching the owner's write
+     * @throws Throwable When the fixture injects a failure or the guarded production write fails
+     */
+    protected function writeThemePick(string $themePick): void
+    {
+        if ($this->themeWriteFailure !== null) {
+            throw $this->themeWriteFailure;
+        }
+
+        parent::writeThemePick($themePick);
     }
 }
 
