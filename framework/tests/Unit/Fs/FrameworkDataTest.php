@@ -113,7 +113,9 @@ final class FrameworkDataTest extends TestCase
             foreach (FsPath::entries($directory) as $name) {
                 $path = $directory . '/' . $name;
                 if (is_dir($path)) {
-                    if ($path !== dirname(__DIR__, 3) . '/data' && !in_array($name, ['node_modules', 'dist', '.angular', 'vendor'], true)) {
+                    if ($path !== dirname(__DIR__, 3) . '/data'
+                        && !in_array($name, ['node_modules', 'dist', '.angular', 'vendor', '.phpunit.cache'], true)
+                    ) {
                         $pending[] = $path;
                     }
                 } elseif (FsPath::size($path) > 1048576) {
