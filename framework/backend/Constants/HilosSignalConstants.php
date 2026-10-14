@@ -1121,6 +1121,15 @@ final class HilosSignalConstants
     /** Index agent → Maintenance page: confirmed entry, refusal or unconfirmed outcome of the deferred action (HIL-1362). */
     public const string MAINTENANCE_ENABLE_DONE = 'maintenance_enable_done';
 
+    /** Browser → Maintenance page: leave manual maintenance with an empty payload (HIL-1363). */
+    public const string MAINTENANCE_DISABLE = 'maintenance_disable';
+
+    /** Maintenance page → index agent: leave the manual window for an admitted administrator (HIL-1363). */
+    public const string MAINTENANCE_AGENT_DISABLE = 'maintenance_agent_disable';
+
+    /** Index agent → Maintenance page: confirmed exit, refusal or unconfirmed outcome (HIL-1363). */
+    public const string MAINTENANCE_DISABLE_DONE = 'maintenance_disable_done';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

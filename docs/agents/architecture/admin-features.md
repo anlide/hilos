@@ -71,6 +71,15 @@ through state pushes, closes only on its tracked success, and holds refusals in
 the dialog; timeout or disconnect asks the administrator to check Maintenance
 before trying again. A view-mode viewer finds the enable button disabled.
 
+The manual card offers **Turn off maintenance** to an admitted admin, with a
+confirmation explaining opening to everyone, automatic reload of every page and
+the end of code admission. Its `maintenance_disable` action keeps the ADMIN gate
+on the page and hands the exit to the index agent, which rechecks rights and
+admission. The tracked answer waits for inactive, while the ordinary lift reloads
+every browser independently of that answer. The dialog stays mounted through
+state pushes, holds refusals in its reserved error plate and blocks closing while
+busy. A viewer's opener and confirmation are disabled.
+
 A framework section may also come with a feature case that is not its own. The
 analytics section has no separate case: `HilosFeature::ANALYTICS` enables both
 collection and the section. Activation requires its agent and base page and

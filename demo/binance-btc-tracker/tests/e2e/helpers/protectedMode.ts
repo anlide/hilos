@@ -129,6 +129,23 @@ export async function openProtectedMode(): Promise<string> {
   return String(reply.phase ?? '')
 }
 
+/** Enter the manual window through the production command channel, with no browser initiator. */
+export async function enableManualMaintenance(): Promise<string> {
+  const reply = await sendCommand('maintenance:enable', {})
+
+  return String(reply.phase)
+}
+
+/** Mint a code through the production manual-window command, never the test freeze family. */
+export async function mintManualMaintenancePass(): Promise<string> {
+  const reply = await sendCommand('maintenance:pass', {})
+  if (typeof reply.pass !== 'string' || reply.pass === '') {
+    throw new Error('maintenance:pass returned no code')
+  }
+
+  return reply.pass
+}
+
 /** Disable manual maintenance through its existing CLI command, for cleanup. */
 export async function disableManualMaintenance(): Promise<string> {
   const reply = await sendProtectedModeDrive(

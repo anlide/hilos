@@ -16,8 +16,10 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
@@ -27,6 +29,7 @@ use Hilos\Notification\HilosNotifier;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Users\AccountStandingAudience;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
@@ -35,6 +38,7 @@ use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
 
@@ -61,6 +65,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
+        HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => ManualMaintenanceDisableSignalData::class,
     ];
 
     /**
@@ -164,6 +169,11 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
         switch ($name) {
             case HilosSignalConstants::MAINTENANCE_AGENT_ENABLE:
                 $this->handleManualMaintenanceEnable($data->data);
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_AGENT_DISABLE:
+                $this->handleManualMaintenanceDisable($data->data);
 
                 break;
 
@@ -447,6 +457,50 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
                 ManualMaintenanceOutcome::REFUSED => ActionRefusal::said($outcome->reason),
                 ManualMaintenanceOutcome::UNCONFIRMED => ActionRefusal::said(
                     'The result of turning on maintenance is unconfirmed. Check the state in Maintenance before trying again.'
+                    . ' ' . $outcome->reason,
+                ),
+            };
+
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+        });
+    }
+
+    /**
+     * Rechecks the acting browser before using the existing exit and its wait for inactive.
+     * Null runtime state means this process cannot admit an exit request.
+     *
+     * @param ManualMaintenanceDisableSignalData $ask Server-resolved browser identity and reply address
+     * @throws InvalidArgumentException When an immediate refusal cannot be sent
+     */
+    private function handleManualMaintenanceDisable(ManualMaintenanceDisableSignalData $ask): void
+    {
+        try {
+            PageAccessGate::assertAction(AbstractHilosMaintenancePage::class, $ask->acceptKey, HilosSignalConstants::MAINTENANCE_DISABLE);
+
+            if (Hilos::$rt?->hilosProtectedModeRuntime === null) {
+                throw new TableActionException('Protected-mode state is unavailable');
+            }
+
+            if (Hilos::$rt->hilosProtectedModeRuntime->locksOut($ask->acceptKey, $ask->sessionHash)) {
+                throw new TableActionException('This browser session is not admitted to maintenance');
+            }
+        } catch (WiringRefusal $e) {
+            // The waiting gatekeeper needs the wiring failure as an answer, never as an admission verdict.
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($e)));
+
+            return;
+        } catch (Throwable $e) {
+            $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($e)));
+
+            return;
+        }
+
+        $this->disableManualMaintenance(function (ManualMaintenanceOutcome $outcome) use ($ask): void {
+            $refusal = match ($outcome->status) {
+                ManualMaintenanceOutcome::SUCCEEDED => null,
+                ManualMaintenanceOutcome::REFUSED => ActionRefusal::said($outcome->reason),
+                ManualMaintenanceOutcome::UNCONFIRMED => ActionRefusal::said(
+                    'The result of turning off maintenance is unconfirmed. Check the state in Maintenance before trying again.'
                     . ' ' . $outcome->reason,
                 ),
             };

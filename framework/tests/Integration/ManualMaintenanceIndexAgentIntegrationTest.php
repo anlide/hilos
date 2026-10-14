@@ -9,6 +9,9 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\DaemonManager;
@@ -17,6 +20,10 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
@@ -34,6 +41,7 @@ use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -77,6 +85,7 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
         RtTruthSourceRegistry::unregisterDaemon(ProtectedModeRuntime::RT_ITEM);
         Hilos::$rt = null;
         Hilos::$sr = null;
+        Hilos::$browser = null;
         Hilos::$cluster = $this->previousCluster;
         Hilos::$env = $this->previousEnv;
         putenv(EnvConstants::DAEMON_LOG_FILE->name);
@@ -124,15 +133,63 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
             $row?->passHashes[0],
         );
 
-        $this->agent->disable($reply);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->admitSession('other-admin-session');
+        Hilos::$browser = new IdentityTestBrowser(7, true);
+        $notifier = $this->createMock(ProtectedModeClientNotifier::class);
+        $notifier->expects($this->once())->method('notifyProtectedModeState')->with(
+            $this->callback(static fn(ProtectedModeStateSignalData $state): bool => !$state->active),
+            null,
+            null,
+        );
+        Hilos::$cluster->registerProtectedModeClientNotifier($notifier);
+        $ask = new ManualMaintenanceDisableSignalData(
+            'other-admin-browser', 'other-admin-session', 'browser-disable', HilosSignalConstants::MAINTENANCE_DISABLE,
+            HilosSignalConstants::MAINTENANCE_DISABLE_DONE, 'Maintenance is off — pages are reloading',
+        );
+        $this->agent->onSignalAgent(
+            new AgentSignalData(ManualMaintenanceDisableSignalData::fromArray($ask->toArray())),
+            'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_DISABLE,
+        );
         $disable = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_DISABLE);
         $this->assertInstanceOf(ProtectedModeDisableSignalData::class, $disable);
-        $this->assertCount(2, $outcomes);
+        $this->agent->onTick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'No done before inactive');
         $this->mode->requestDisable($disable);
         $this->agent->onTick();
         $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, $row?->phase);
-        $this->assertSame(ManualMaintenanceOutcome::SUCCEEDED, $outcomes[2]->status);
+        $this->assertSame([], $row?->passHashes);
+        $this->assertSame([], $row?->admittedSessionTokenHashes);
+        $this->assertSame([], $row?->circleSessionTokenHashes);
+        $this->assertFalse($row?->locksOut('visitor', 'visitor-session'));
         $this->assertFileDoesNotExist($this->logDirectory . '/' . ProtectedModeFreezeStore::FILE_NAME);
+        $done = $this->nextRequest(SignalTypeConstants::AGENT_SIGNAL);
+        $this->assertInstanceOf(HandoverAnswerSignalData::class, $done?->data);
+        $this->assertSame('browser-disable', $done->data->requestId);
+        $this->assertNull($done->data->error);
+        $this->assertArrayNotHasKey('sessionHash', $done->data->toArray());
+    }
+
+    public function testBrowserDisableCannotChangeARestoreWindow(): void
+    {
+        Hilos::$browser = new IdentityTestBrowser(7, true);
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterActivating(
+            new ProtectedModeQuiesceData('restore', HilosAgentType::HILOS_INDEX, null, null, 'session-hash'),
+            'browser-key',
+        );
+        Hilos::$rt->hilosProtectedModeRuntime->actions->enterVerifying();
+        $before = Hilos::$rt->hilosProtectedModeRuntime->toArray();
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            continue;
+        }
+        $this->agent->onSignalAgent(new AgentSignalData(new ManualMaintenanceDisableSignalData(
+            'browser-key', 'session-hash', 'restore-refused', HilosSignalConstants::MAINTENANCE_DISABLE,
+            HilosSignalConstants::MAINTENANCE_DISABLE_DONE, null,
+        )), 'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_DISABLE);
+        $done = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_DISABLE_DONE, $done?->signalName->getName());
+        $this->assertSame('the current window is not manual maintenance', $done?->data->data->error);
+        $this->assertNull($this->nextRequest(SignalTypeConstants::PROTECTED_MODE_DISABLE));
+        $this->assertSame($before, Hilos::$rt->hilosProtectedModeRuntime->toArray());
     }
 
     public function testCliEntryRecordsNoBrowserAndRepeatIsRefusedBeforeTheCore(): void

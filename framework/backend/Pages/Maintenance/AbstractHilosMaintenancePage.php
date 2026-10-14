@@ -35,9 +35,12 @@ use Hilos\HilosException;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 
@@ -68,11 +71,13 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
         HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => MaintenanceCircleAddActionDTO::class,
         HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
         HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
     ];
 
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
             HilosSignalConstants::MAINTENANCE_ENABLE_DONE => HandoverAnswerSignalData::class,
+            HilosSignalConstants::MAINTENANCE_DISABLE_DONE => HandoverAnswerSignalData::class,
         ],
     ];
 
@@ -226,7 +231,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     }
 
     /**
-     * Routes circle edits and manual entry; entry answers only after the index agent reports its outcome.
+     * Routes circle edits and manual entry/exit; handovers answer after the index agent reports its outcome.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -234,8 +239,8 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @return ?ActionReplyDTO Always null: the ack carries the success sentence and the row arrives over the table
      * @throws AgentUnknownActionException When the action is not supported by this page
      * @throws InvalidActionPayloadException When the action payload does not match the action name
-     * @throws TableActionException When the circle edit is refused or the initiating browser has no session
-     * @throws InvalidArgumentException When the enable request cannot be named or queued
+     * @throws TableActionException When the circle edit or manual-window admission is refused, or the browser has no session
+     * @throws InvalidArgumentException When the maintenance request cannot be named or queued
      * @throws InvalidFormatException When the initiating browser identity is empty
      * @throws HilosException When an identity lookup, the circle read, the circle write or the delete fails
      */
@@ -266,6 +271,14 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
                 break;
 
+            case HilosSignalConstants::MAINTENANCE_DISABLE:
+                if (!$dto instanceof MaintenanceDisableActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenanceDisableActionDTO::class, $dto);
+                }
+                $this->handleDisable($acceptKey);
+
+                break;
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
@@ -286,6 +299,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
     {
         switch ($name) {
             case HilosSignalConstants::MAINTENANCE_ENABLE_DONE:
+            case HilosSignalConstants::MAINTENANCE_DISABLE_DONE:
                 $this->answerHandover($data->data);
 
                 break;
@@ -317,6 +331,49 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
                 action: HilosSignalConstants::MAINTENANCE_ENABLE,
                 replySignal: HilosSignalConstants::MAINTENANCE_ENABLE_DONE,
                 successMessage: 'Maintenance is on — the system is closed to visitors',
+            ),
+        );
+    }
+
+    /**
+     * Null runtime state means this process cannot admit an exit request.
+     *
+     * @param string $acceptKey Acting browser connection
+     * @throws TableActionException When the browser has no session or is outside the manual window
+     * @throws InvalidArgumentException When the request cannot be named or queued
+     * @throws InvalidFormatException When the browser identity is empty
+     */
+    private function handleDisable(string $acceptKey): void
+    {
+        $sessionHash = self::subscriberSessionTokenHash($acceptKey);
+        if ($sessionHash === null) {
+            throw new TableActionException('A browser session is required to turn off maintenance');
+        }
+
+        if (Hilos::$rt?->hilosProtectedModeRuntime === null) {
+            throw new TableActionException('Protected-mode state is unavailable');
+        }
+
+        if (
+            Hilos::$rt->hilosProtectedModeRuntime->phase !== StateProtectedModeRuntime::PHASE_VERIFYING
+            || !Hilos::$rt->hilosProtectedModeRuntime->isManualMaintenanceWindow()
+        ) {
+            throw new TableActionException('The current window is not manual maintenance');
+        }
+
+        if (Hilos::$rt->hilosProtectedModeRuntime->locksOut($acceptKey, $sessionHash)) {
+            throw new TableActionException('This browser session is not admitted to maintenance');
+        }
+
+        $this->forward(
+            HilosSignalConstants::MAINTENANCE_AGENT_DISABLE,
+            new ManualMaintenanceDisableSignalData(
+                acceptKey: $acceptKey,
+                sessionHash: $sessionHash,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::MAINTENANCE_DISABLE,
+                replySignal: HilosSignalConstants::MAINTENANCE_DISABLE_DONE,
+                successMessage: 'Maintenance is off — pages are reloading',
             ),
         );
     }

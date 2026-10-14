@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   ActionError,
   HILOS_MAINTENANCE_CIRCLE_COPY,
+  HILOS_MAINTENANCE_DISABLE_COPY,
   HILOS_MAINTENANCE_ENABLE_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
   MAINTENANCE_STATE_SIGNAL,
@@ -378,6 +379,33 @@ describe('HilosMaintenancePage', () => {
     )
   })
 
+  it('offers disable only in the manual card, for either entry source', async () => {
+    const { context, pushState } = seededContext([])
+    const wrapper = await mountPage(context)
+    const button = () => wrapper.find('[data-id="hilos-maintenance-disable"]')
+    expect(button().exists()).toBe(false)
+    for (const state of [
+      maintenanceState(),
+      maintenanceState({ phase: 'verifying', operation: 'restore' }),
+    ]) {
+      pushState(state)
+      await settled()
+      expect(button().exists()).toBe(false)
+    }
+    for (const enteredFromBrowser of [true, false]) {
+      pushState(
+        maintenanceState({
+          phase: 'verifying',
+          operation: 'manual_maintenance',
+          manual: true,
+          enteredFromBrowser,
+        }),
+      )
+      await settled()
+      expect(button().exists()).toBe(true)
+    }
+  })
+
   it('renders the manual card and redraws its pass count on a new frame', async () => {
     const { context, pushState } = seededContext([])
     const wrapper = await mountPage(context)
@@ -399,7 +427,9 @@ describe('HilosMaintenancePage', () => {
     )
     expect(card.text()).toContain('3 named · 2 let in')
     expect(card.text()).toContain('2 minutes ago')
-    expect(card.find('button').exists()).toBe(false)
+    expect(card.get('[data-id="hilos-maintenance-disable"]').text()).toBe(
+      HILOS_MAINTENANCE_DISABLE_COPY.disableTitle,
+    )
     pushState({ ...manual, passCount: 1 })
     await nextTick()
     expect(wrapper.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
@@ -1001,6 +1031,224 @@ describe('HilosMaintenancePage enable confirmation', () => {
   })
 })
 
+/** The disable confirmation's body; its parent HilosModal teleports to the document. */
+function disableModal(): HTMLElement | null {
+  return document.querySelector('[data-id="hilos-maintenance-disable-modal"]')
+}
+
+/** A button of the disable confirmation, which must already be open. */
+function disableButton(action: 'confirm' | 'cancel'): HTMLButtonElement {
+  return document.querySelector(
+    `[data-id="hilos-maintenance-disable-${action}"]`,
+  ) as HTMLButtonElement
+}
+
+/** Mount the real page and open its disable confirmation from a server manual frame. */
+async function openDisable() {
+  const { actions, dispatched } = makeActions()
+  const { context, pushState } = seededContext([], actions)
+  const wrapper = await mountPage(context)
+  pushState(
+    maintenanceState({
+      phase: 'verifying',
+      operation: 'manual_maintenance',
+      manual: true,
+    }),
+  )
+  await nextTick()
+  const opener = wrapper.get<HTMLButtonElement>(
+    '[data-id="hilos-maintenance-disable"]',
+  )
+  opener.element.focus()
+  opener.element.click()
+  await settled()
+
+  return { wrapper, pushState, dispatched, opener }
+}
+
+describe('HilosMaintenancePage disable confirmation', () => {
+  it.each(['cancel', 'close', 'escape', 'backdrop'] as const)(
+    'explains exit and allows %s before dispatch without sending anything',
+    async (method) => {
+      const { dispatched, opener } = await openDisable()
+      const dialog = disableModal()?.closest<HTMLElement>(
+        '[role="dialog"]',
+      ) as HTMLElement
+      expect(dialog.getAttribute('aria-label')).toBe(
+        HILOS_MAINTENANCE_DISABLE_COPY.disableTitle,
+      )
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(document.activeElement).toBe(dialog)
+      expect(dialog.querySelector('input, textarea')).toBeNull()
+      for (const text of [
+        HILOS_MAINTENANCE_DISABLE_COPY.lead,
+        HILOS_MAINTENANCE_DISABLE_COPY.footer,
+      ])
+        expect(dialog.textContent).toContain(text)
+      expect(
+        dialog.querySelector('[data-id="hilos-action-error-idle"]'),
+      ).not.toBeNull()
+
+      if (method === 'cancel') disableButton('cancel').click()
+      if (method === 'close')
+        dialog
+          .querySelector<HTMLButtonElement>('[data-id="modal-close"]')
+          ?.click()
+      if (method === 'escape')
+        dialog.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        )
+      if (method === 'backdrop') dialog.click()
+      await settled()
+
+      expect(disableModal()).toBeNull()
+      expect(dispatched).toHaveLength(0)
+      expect(document.activeElement).toBe(opener.element)
+    },
+  )
+
+  it('blocks repeat and every close while busy, survives inactive push and closes on its one success', async () => {
+    const { wrapper, pushState, dispatched } = await openDisable()
+    const dialog = disableModal()?.closest<HTMLElement>(
+      '[role="dialog"]',
+    ) as HTMLElement
+    disableButton('confirm').click()
+    disableButton('confirm').click()
+    await settled()
+
+    expect(dispatched).toMatchObject([
+      { action: 'maintenance_disable', payload: {} },
+    ])
+    expect(disableButton('confirm').disabled).toBe(true)
+    expect(disableButton('cancel').disabled).toBe(true)
+    disableButton('cancel').click()
+    dialog.querySelector<HTMLButtonElement>('[data-id="modal-close"]')?.click()
+    dialog.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    dialog.click()
+    await settled()
+    expect(disableModal()).not.toBeNull()
+    dispatched[0]?.loading.set(true)
+    await settled()
+    expect(disableButton('confirm').getAttribute('aria-busy')).toBe('true')
+
+    pushState(maintenanceState())
+    await settled()
+    expect(wrapper.find('[data-id="hilos-maintenance-disable"]').exists()).toBe(
+      false,
+    )
+    expect(
+      wrapper.find('[data-id="hilos-maintenance-state-open"]').exists(),
+    ).toBe(true)
+    expect(disableModal()?.closest('[role="dialog"]')).toBe(dialog)
+    expect(disableButton('cancel').disabled).toBe(true)
+    expect(hilosToasts.toasts.get()).toHaveLength(0)
+
+    const message = 'Maintenance is off — pages are reloading'
+    dispatched[0]?.settle({ message })
+    await settled()
+    expect(disableModal()).toBeNull()
+    expect(hilosToasts.toasts.get()).toMatchObject([
+      { message, severity: 'success', repeats: 1 },
+    ])
+    expect(dispatched).toHaveLength(1)
+  })
+
+  it.each([
+    maintenanceState(),
+    maintenanceState({ phase: 'active', operation: 'restore' }),
+  ])(
+    'blocks an unsent confirmation when the window is no longer manual: %j',
+    async (state) => {
+      const { pushState, dispatched } = await openDisable()
+      pushState(state)
+      await settled()
+      expect(disableButton('confirm').disabled).toBe(true)
+      disableButton('confirm').click()
+      expect(dispatched).toHaveLength(0)
+      expect(disableButton('cancel').disabled).toBe(false)
+      disableButton('cancel').click()
+      await settled()
+      expect(disableModal()).toBeNull()
+    },
+  )
+
+  it.each(['fail', 'timeout', 'disconnected', 'invalid-reply'] as const)(
+    'keeps %s readable in the modal, releases Cancel and never retries',
+    async (outcome) => {
+      const { dispatched, pushState } = await openDisable()
+      disableButton('confirm').click()
+      await settled()
+      // A changed state never answers the action, even when its eventual answer is a refusal.
+      pushState(maintenanceState())
+      const reason =
+        outcome === 'fail'
+          ? 'Another request is awaiting confirmation.'
+          : 'No reply received.'
+      dispatched[0]?.refuse(
+        new ActionError('maintenance_disable', outcome, reason),
+      )
+      await settled()
+
+      const message =
+        outcome === 'fail'
+          ? reason
+          : HILOS_MAINTENANCE_DISABLE_COPY.unconfirmedNote
+      expect(
+        disableModal()?.querySelector('[data-id="hilos-action-error"]')
+          ?.textContent,
+      ).toContain(message)
+      expect(
+        disableModal()
+          ?.querySelector('[data-id="hilos-action-error-slot"]')
+          ?.getAttribute('aria-live'),
+      ).toBe('assertive')
+      expect(disableButton('cancel').disabled).toBe(false)
+      expect(disableButton('confirm').disabled).toBe(true)
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message, severity: 'error' },
+      ])
+      expect(dispatched).toHaveLength(1)
+      disableButton('cancel').click()
+      await settled()
+      expect(disableModal()).toBeNull()
+    },
+  )
+
+  it('shows the entire backend unconfirmed reason and admin details through the standard refusal plate', async () => {
+    const { dispatched } = await openDisable()
+    disableButton('confirm').click()
+    await settled()
+    const reason = `${HILOS_MAINTENANCE_DISABLE_COPY.unconfirmedNote} The agent did not observe inactive.`
+    dispatched[0]?.refuse(
+      new ActionError(
+        'maintenance_disable',
+        'fail',
+        reason,
+        'MaintenanceFailure',
+        'Original detail',
+      ),
+    )
+    await settled()
+    disableModal()
+      ?.querySelector<HTMLButtonElement>(
+        '[data-id="hilos-action-error-details"]',
+      )
+      ?.click()
+    await settled()
+    expect(document.body.textContent).toContain(reason)
+    expect(document.body.textContent).toContain('MaintenanceFailure')
+    expect(document.body.textContent).toContain('Original detail')
+    expect(
+      [...document.querySelectorAll('[role="dialog"]')].map((dialog) =>
+        dialog.getAttribute('aria-label'),
+      ),
+    ).toContain(HILOS_MAINTENANCE_DISABLE_COPY.refusalTitle)
+    expect(disableButton('cancel').disabled).toBe(false)
+  })
+})
+
 describe('HilosMaintenancePage with the addresses hidden (HIL-1260)', () => {
   const HIDDEN = { _hidden: true } as const
 
@@ -1135,6 +1383,45 @@ describe('HilosMaintenancePage and the admin view mode', () => {
     enableButton('confirm').click()
     expect(dispatched).toHaveLength(0)
     expect(enableButton('cancel').disabled).toBe(false)
+  })
+
+  it('disables disable for a viewer and after a live revoke while confirmation is open', async () => {
+    const { handshake } = bindSession()
+    handshake(null, true)
+    const { actions, dispatched } = makeActions()
+    const { context, pushState } = seededContext([], actions)
+    const wrapper = await mountPage(context)
+    pushState(
+      maintenanceState({
+        phase: 'verifying',
+        operation: 'manual_maintenance',
+        manual: true,
+      }),
+    )
+    await settled()
+    const button = wrapper.get<HTMLButtonElement>(
+      '[data-id="hilos-maintenance-disable"]',
+    ).element
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-describedby')).toContain(
+      HILOS_VIEW_MODE_STRIP_TEXT_ID,
+    )
+    button.click()
+    await settled()
+    expect(disableModal()).toBeNull()
+
+    handshake({ id: 7, admin: true }, true)
+    await settled()
+    expect(button.disabled).toBe(false)
+    button.click()
+    await settled()
+    expect(disableButton('confirm').disabled).toBe(false)
+    handshake({ id: 7, admin: false }, true)
+    await settled()
+    expect(disableButton('confirm').disabled).toBe(true)
+    disableButton('confirm').click()
+    expect(dispatched).toHaveLength(0)
+    expect(disableButton('cancel').disabled).toBe(false)
   })
 
   it('a viewer opens the add dialog, may type an address and has nothing to send it with', async () => {

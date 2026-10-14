@@ -285,6 +285,32 @@ describe('createHilosMaintenanceActions', () => {
     }
   })
 
+  it('dispatches one tracked empty disable and never retries an unanswered command', async () => {
+    vi.useFakeTimers()
+    try {
+      const sendAction = vi.fn(() => true)
+      const actions = new ActionLifecycle({
+        sendAction,
+        on: () => () => {},
+      })
+      const handle = createHilosMaintenanceActions({
+        actions,
+      } as HilosMaintenanceContext).sendMaintenanceDisable()
+      const outcome = expect(handle.done).rejects.toMatchObject({
+        outcome: 'timeout',
+      })
+
+      expect(sendAction.mock.calls).toEqual([
+        ['maintenance_disable', {}, handle.requestId],
+      ])
+      await vi.runAllTimersAsync()
+      await outcome
+      expect(sendAction).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   /** A context whose action lifecycle records what was dispatched over it. */
   function dispatchContext(
     sent: Array<{ action: string; payload: unknown }>,

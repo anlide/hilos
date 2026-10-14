@@ -890,9 +890,16 @@ the state file is removed, and the lift frame goes to every connection at once.
 There is no stopped roster to resume and no lifted-roster hook to wait for.
 
 Any admitted admin may open the system from Maintenance: the page and agent
-check admin rights and that the window is manual
-(not in the code yet — HIL-1363). The core still checks the disabling agent's
-type and index. The CLI may also disable through `maintenance:disable`; the exit
+check admin rights, session admission and that the window is manual. The page's
+`maintenance_disable` action accepts an empty `MaintenanceDisableActionDTO`;
+identity is resolved on the server. It stays behind the ADMIN gate, outside
+`AGENT_ACTIONS` and `READING_ACTIONS`. The page refuses a missing session or
+runtime row, a non-verifying or non-manual window, and a locked-out session
+before forwarding. `maintenance_agent_disable` carries
+`ManualMaintenanceDisableSignalData` through the existing handover to the
+index agent, which repeats `PageAccessGate::assertAction()` and admission before
+calling `disableManualMaintenance()`. The existing agent-type/index and
+single-request checks remain. The CLI may also disable through `maintenance:disable`; the exit
 is the same `inactive` and reload for everyone. Restore's window still opens
 from Backups only for its initiating browser. Minting in Maintenance is only for
 this window and shows the code once (not in the code yet — HIL-1364), and the
@@ -983,9 +990,33 @@ plate, with Cancel available again. Client timeout, disconnect or unreadable rep
 show the unconfirmed instruction above, with no automatic retry or claim that
 the system stayed open.
 
-Enable is disabled for a view-mode viewer, including the button that opens its
-confirmation. Disable (not in the code yet — HIL-1363) and minting a code
-(not in the code yet — HIL-1364) will be disabled too. React and Angular manual
+Disable answers through `maintenance_disable_done` and the existing
+`HandoverAnswerSignalData`, preserving correlation after page recreation and
+keeping the session hash off the answer. Only observed `inactive` succeeds;
+queueing the request or receiving a state push does not. Refusal carries its
+reason; an unconfirmed result says "The result of turning off maintenance is
+unconfirmed. Check the state in Maintenance before trying again." followed by
+the reason. The same 13-second server wait and 30-second client timeout apply,
+with no retry or extra waiter. A late inactive produces no second answer.
+
+The Vue manual card alone offers the yellow **Turn off maintenance** button.
+Its confirmation explains opening to everyone, every page reloading itself,
+issued codes losing admission and a new enable being needed to close again.
+The core owns `MAINTENANCE_DISABLE_ACTION`, `sendMaintenanceDisable()` and
+`HILOS_MAINTENANCE_DISABLE_COPY`; dispatch sends `{}`. The modal uses the same
+tracked action, reserved error plate and busy-close rules as enable, and stands
+outside the manual card. A changed state blocks unsent confirmation without
+unmounting a pending request. Client timeout, disconnect or unreadable reply
+show the unconfirmed instruction. The existing lift clears the freeze and
+admission, removes its file and sends `protected_mode_state {active:false}` to
+every connection. The common connection handler reloads each document, including
+the actor's, without waiting for the ack. The component never reloads locally;
+if the ack arrives first, the ordinary tracked lifecycle may show the one server
+sentence "Maintenance is off — pages are reloading".
+
+Enable and disable are disabled for a view-mode viewer, including their
+confirmation openers. Minting a code (not in the code yet — HIL-1364) will be
+disabled too. React and Angular manual
 controls follow separately (not in the code yet — HIL-1365). There is no extra
 project wiring: the index agent already serves this page and owns manual entry.
 In a cluster all masters close; disable and code minting work from any node

@@ -241,6 +241,22 @@ export function hilosMaintenanceCard(
 /** Tracked browser action; the server supplies identity and entry options. */
 export const MAINTENANCE_ENABLE_ACTION = 'maintenance_enable'
 
+/** Tracked browser action; the server resolves the acting browser and manual window. */
+export const MAINTENANCE_DISABLE_ACTION = 'maintenance_disable'
+
+/** Words of the manual-exit confirmation, shared by every view. */
+export const HILOS_MAINTENANCE_DISABLE_COPY = {
+  disableTitle: 'Turn off maintenance',
+  confirm: 'Turn off',
+  cancel: 'Cancel',
+  lead: 'The system will open to everyone. Every open page will reload itself — the maintenance screen, the pages already inside, and this page too.',
+  footer:
+    'Issued codes will no longer let anyone in. To close the system again, turn maintenance on again.',
+  refusalTitle: "Couldn't turn off maintenance",
+  unconfirmedNote:
+    'The result of turning off maintenance is unconfirmed. Check the state in Maintenance before trying again.',
+} as const
+
 /** Words of the manual-entry confirmation, shared by every view. */
 export const HILOS_MAINTENANCE_ENABLE_COPY = {
   enableTitle: 'Turn on maintenance',
@@ -296,10 +312,12 @@ export interface HilosMaintenanceContext {
   readonly actions: ActionLifecycle
 }
 
-/** The manual-entry and verifier circle actions a maintenance view binds to. */
+/** The manual entry/exit and verifier circle actions a maintenance view binds to. */
 export interface HilosMaintenanceActions {
   /** Close to visitors, awaiting the server's ready outcome without retrying. */
   sendMaintenanceEnable(): ActionHandle
+  /** Open to everyone, awaiting the server's inactive outcome without retrying. */
+  sendMaintenanceDisable(): ActionHandle
   /**
    * Name one more person to the verifier circle, as a tracked action. The address
    * travels as the operator typed it: which identity proves it, and the form it is
@@ -561,7 +579,7 @@ export function createHilosMaintenanceCircleTable(
 }
 
 /**
- * The maintenance mutation surface: manual entry and circle changes each submit
+ * The maintenance mutation surface: manual entry/exit and circle changes submit
  * as a tracked action over the lifecycle, returning an ActionHandle whose `done`
  * resolves on the backend's success ack and rejects on its refusal. Each action is
  * answered in its own ack, so no listener for addressed failures is set here, and the
@@ -575,6 +593,9 @@ export function createHilosMaintenanceActions(
   return {
     sendMaintenanceEnable() {
       return context.actions.dispatch(MAINTENANCE_ENABLE_ACTION, {})
+    },
+    sendMaintenanceDisable() {
+      return context.actions.dispatch(MAINTENANCE_DISABLE_ACTION, {})
     },
     sendMaintenanceCircleAdd(identifier) {
       return context.actions.dispatch(MAINTENANCE_CIRCLE_ADD_ACTION, {

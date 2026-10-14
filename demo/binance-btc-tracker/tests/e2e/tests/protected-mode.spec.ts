@@ -25,10 +25,12 @@ import { signUp } from '../helpers/session'
 import {
   closeProtectedMode,
   disableManualMaintenance,
+  enableManualMaintenance,
   enterProtectedMode,
   inspectProtectedMode,
   leaveProtectedMode,
   mintProtectedModePass,
+  mintManualMaintenancePass,
   openProtectedMode,
   openProtectedModeIfAny,
 } from '../helpers/protectedMode'
@@ -141,6 +143,107 @@ test('an administrator turns on manual maintenance from the section and stays in
     }
   }
 })
+
+for (const source of ['browser', 'CLI'] as const) {
+  test(`another admitted admin turns off ${source} maintenance and every page reloads itself`, async ({
+    page,
+    browser,
+  }) => {
+    // Two administrator sessions and the visitor must already exist when the door closes.
+    test.slow() // Three browser sessions, production entry/admission and three independent reloads.
+    await grantAdminToSelf(page)
+    await gotoPage(page, MAINTENANCE_URL, PAGE_READY)
+    const adminContext = await browser.newContext()
+    const publicContext = await browser.newContext()
+    const otherAdmin = await adminContext.newPage()
+    const visitor = await publicContext.newPage()
+    try {
+      await grantAdminToSelf(otherAdmin)
+      await gotoPage(otherAdmin, MAINTENANCE_URL, PAGE_READY)
+      await gotoPage(visitor, '/')
+      await expect(visitor.getByTestId('conn-state')).toHaveText('connected')
+      if (source === 'browser') {
+        const open = page.getByTestId('hilos-maintenance-enable')
+        await open.scrollIntoViewIfNeeded()
+        await expect(open).toBeVisible()
+        await expect(open).toBeEnabled()
+        await open.focus()
+        await open.click()
+        const confirm = page.getByTestId('hilos-maintenance-enable-confirm')
+        await confirm.scrollIntoViewIfNeeded()
+        await expect(confirm).toBeVisible()
+        await expect(confirm).toBeEnabled()
+        await confirm.focus()
+        await confirm.click()
+        await expect(
+          page.getByTestId('hilos-maintenance-enable-modal'),
+        ).toBeHidden()
+        await expect(
+          page.getByTestId('hilos-maintenance-state-manual'),
+        ).toBeVisible()
+      } else {
+        expect(await enableManualMaintenance()).toBe('verifying')
+        await expect(page.getByTestId('maintenance')).toBeVisible()
+        await presentCode(page, await mintManualMaintenancePass())
+        await expect(page.getByTestId('maintenance')).toBeHidden()
+        await expectPageReady(page)
+      }
+      await expect(visitor.getByTestId('maintenance')).toHaveAttribute(
+        'data-operation',
+        'manual_maintenance',
+      )
+      await expect(otherAdmin.getByTestId('maintenance')).toBeVisible()
+      await presentCode(otherAdmin, await mintManualMaintenancePass())
+      await expect(otherAdmin.getByTestId('maintenance')).toBeHidden()
+      await expectPageReady(otherAdmin)
+      await expect(
+        otherAdmin.getByTestId('hilos-maintenance-state-manual'),
+      ).toBeVisible()
+      const off = otherAdmin.getByTestId('hilos-maintenance-disable')
+      await off.scrollIntoViewIfNeeded()
+      await expect(off).toBeVisible()
+      await expect(off).toBeEnabled()
+      await off.focus()
+      await off.click()
+      await expect(
+        otherAdmin.getByTestId('hilos-maintenance-disable-modal'),
+      ).toBeVisible()
+      for (const openPage of [page, otherAdmin, visitor])
+        await markDocument(openPage)
+      const confirm = otherAdmin.getByTestId(
+        'hilos-maintenance-disable-confirm',
+      )
+      await confirm.scrollIntoViewIfNeeded()
+      await expect(confirm).toBeVisible()
+      await expect(confirm).toBeEnabled()
+      await confirm.focus()
+      await confirm.click()
+      // Lift may precede the action ack: no toast or local navigation is needed to complete it.
+      for (const openPage of [page, otherAdmin, visitor]) {
+        await expectSelfReload(openPage)
+        await expectPageReady(openPage)
+        await expect(openPage.getByTestId('maintenance')).toBeHidden()
+        await expect(openPage.getByTestId('conn-state')).toHaveText('connected')
+      }
+      expect((await inspectProtectedMode()).phase).toBe('inactive')
+      await expect(
+        otherAdmin.getByTestId('hilos-maintenance-state-open'),
+      ).toBeVisible()
+      await expect(
+        otherAdmin.getByTestId('hilos-maintenance-disable'),
+      ).toHaveCount(0)
+    } finally {
+      try {
+        if ((await inspectProtectedMode()).operation === 'manual_maintenance') {
+          expect(await disableManualMaintenance()).toBe('inactive')
+        }
+      } finally {
+        await adminContext.close()
+        await publicContext.close()
+      }
+    }
+  })
+}
 
 test('a live window shows the maintenance stub while the mode is on', async ({
   page,

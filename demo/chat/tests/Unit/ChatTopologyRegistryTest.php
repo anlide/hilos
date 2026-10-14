@@ -288,6 +288,7 @@ use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutConfirmActionDTO;
 use Hilos\Pages\Logs\DTO\LogsTakeoutUndoActionDTO;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\Push\DTO\PushRemoveActionDTO;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
 use Hilos\Push\DTO\PushSubscriptionsGoneSignalData;
@@ -867,6 +868,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::MAINTENANCE_ENABLE => HilosPageConstants::HILOS_MAINTENANCE,
+            HilosSignalConstants::MAINTENANCE_DISABLE => HilosPageConstants::HILOS_MAINTENANCE,
             HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART => HilosPageConstants::HILOS_DAEMON_AGENTS,
             HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => PageConstants::HILOS_LOGS_ROTATIONS,
             HilosSignalConstants::LOGS_TAKEOUT_UNDO => PageConstants::HILOS_LOGS_ROTATIONS,
@@ -953,6 +955,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::MAINTENANCE_CIRCLE_ADD => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => AgentType::HILOS_INDEX,
             HilosSignalConstants::MAINTENANCE_ENABLE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_DISABLE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_DAEMON_AGENT_RESTART => AgentType::HILOS_DAEMON,
             HilosSignalConstants::LOGS_TAKEOUT_CONFIRM => AgentType::HILOS_LOGS,
             HilosSignalConstants::LOGS_TAKEOUT_UNDO => AgentType::HILOS_LOGS,
@@ -998,6 +1001,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE => HilosPageConstants::HILOS_APPEARANCE,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => HilosPageConstants::HILOS_BACKUP,
                 HilosSignalConstants::MAINTENANCE_ENABLE_DONE => HilosPageConstants::HILOS_MAINTENANCE,
+                HilosSignalConstants::MAINTENANCE_DISABLE_DONE => HilosPageConstants::HILOS_MAINTENANCE,
                 HilosSignalConstants::DAEMON_AGENT_RESTART_DONE => HilosPageConstants::HILOS_DAEMON_AGENTS,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE
                     => HilosPageConstants::HILOS_LOGS_SETTINGS,
@@ -1031,6 +1035,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_APPEARANCE_SETTING_WRITE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_BACKUP_DELETE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_ENABLE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::MAINTENANCE_DISABLE_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::DAEMON_AGENT_RESTART_DONE => AgentType::HILOS_DAEMON,
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
@@ -1170,6 +1175,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
             HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
+            HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
             HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => HilosAgentType::HILOS_LEGAL,
@@ -1474,6 +1480,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => SettingPresetApplySignalData::class,
             ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
             HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
+            HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => ManualMaintenanceDisableSignalData::class,
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => DaemonClusterPicturePortionSignalData::class,
             HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,

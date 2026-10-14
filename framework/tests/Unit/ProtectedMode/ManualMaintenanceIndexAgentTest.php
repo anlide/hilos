@@ -22,6 +22,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
@@ -532,6 +533,50 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
         $this->assertNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_REFREEZE));
     }
 
+    public function testBrowserDisableSharesTheExistingWaiterAndDoesNotAnswerOnReady(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING, admitted: ['session-hash']);
+        Hilos::$browser = new IdentityTestBrowser(7, true);
+        $agent = new ManualMaintenanceTestAgent();
+        $ask = new ManualMaintenanceDisableSignalData(
+            'browser-key', 'session-hash', 'disable-submit', HilosSignalConstants::MAINTENANCE_DISABLE,
+            HilosSignalConstants::MAINTENANCE_DISABLE_DONE, 'Maintenance is off — pages are reloading',
+        );
+        $agent->onSignalAgent(new AgentSignalData($ask), 'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_DISABLE);
+        $this->assertNotNull($this->nextSignal(SignalTypeConstants::PROTECTED_MODE_DISABLE));
+        $agent->onProtectedModeReady();
+        $agent->onTick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        $agent->onSignalAgent(new AgentSignalData($ask), 'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_DISABLE);
+        $busy = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_DISABLE_DONE, $busy?->signalName->getName());
+        $this->assertSame('another protected-mode request is still in flight', $busy?->data->data->error);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        $this->row(StateProtectedModeRuntime::PHASE_INACTIVE);
+        $agent->onTick();
+        $done = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_DISABLE_DONE, $done?->signalName->getName());
+        $this->assertNull($done?->data->data->error);
+        $agent->onTick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testBrowserDisableRefusesAForeignAgentIndexBeforeCore(): void
+    {
+        $this->row(StateProtectedModeRuntime::PHASE_VERIFYING, admitted: ['session-hash']);
+        Hilos::$browser = new IdentityTestBrowser(7, true);
+        new ManualMaintenanceTestAgent('3')->onSignalAgent(new AgentSignalData(new ManualMaintenanceDisableSignalData(
+            'browser-key', 'session-hash', 'disable-submit', HilosSignalConstants::MAINTENANCE_DISABLE,
+            HilosSignalConstants::MAINTENANCE_DISABLE_DONE, null,
+        )), 'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_DISABLE);
+        $done = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(HilosSignalConstants::MAINTENANCE_DISABLE_DONE, $done?->signalName->getName());
+        $this->assertSame('manual maintenance was initiated by another agent', $done?->data->data->error);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     private function askFromBrowser(ManualMaintenanceTestAgent $agent, string $requestId = 'browser-submit'): void
     {
         $agent->onSignalAgent(new AgentSignalData(new ManualMaintenanceEnableSignalData(
@@ -564,6 +609,7 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
      * @param ?string $initiatorType Recorded initiator type
      * @param ?string $entryMode How the row was entered
      * @param list<string> $passHashes Pass hashes on the row
+     * @param list<string> $admitted Admitted browser session hashes
      */
     private function row(
         string $phase,
@@ -571,6 +617,7 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
         ?string $initiatorType = HilosAgentType::HILOS_INDEX,
         ?string $entryMode = StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
         array $passHashes = [],
+        array $admitted = [],
     ): void {
         Hilos::$rt = new ManualMaintenanceTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, StateProtectedModeRuntime::fromRow([
@@ -580,7 +627,7 @@ final class ManualMaintenanceIndexAgentTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => $phase === StateProtectedModeRuntime::PHASE_INACTIVE ? null : $initiatorType,
             StateProtectedModeRuntime::initiatorAgentIndex => null,
             StateProtectedModeRuntime::passHashes => $passHashes,
-            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => $admitted,
             StateProtectedModeRuntime::circleSessionTokenHashes => [],
             StateProtectedModeRuntime::circleNamedCount => 0,
             StateProtectedModeRuntime::enteredFromBrowser => false,
