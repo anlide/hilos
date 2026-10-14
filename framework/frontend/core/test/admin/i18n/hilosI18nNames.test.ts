@@ -4,6 +4,7 @@ import {
   createHilosI18nNamesTable,
   HILOS_I18N_COUNTRY_NAMES,
   HILOS_I18N_LANGUAGE_NAMES,
+  HILOS_I18N_NAMES_COLUMNS,
   hilosI18nNameRowExpandable,
   resolveHilosI18nNameRow,
 } from '../../../src/admin/i18n/hilosI18nNames.js'
@@ -93,6 +94,21 @@ describe('resolveHilosI18nNameRow', () => {
     expect(empty.name).toBe('')
     expect(empty.corrections[0]?.name).toBeNull()
     expect(empty.corrections[0]?.countryName).toBeNull()
+  })
+
+  it('retains a stored empty correction under a stored empty base', () => {
+    const row = resolveHilosI18nNameRow(
+      nameRow('en', {
+        code: 'en',
+        nativeName: 'English',
+        name: '',
+        corrections: [{ ...BRITISH, name: '' }],
+      }),
+    )
+
+    expect(row.name).toBe('')
+    expect(row.corrections[0]?.name).toBe('')
+    expect(hilosI18nNameRowExpandable(row)).toBe(true)
   })
 
   it('shows a row it cannot read by its key with nothing written, rather than dropping it', () => {
@@ -204,14 +220,19 @@ describe('names table actions and focus', () => {
     'declares the actions and their rendered fields for $page',
     (target) => {
       const columns = target.frame.columns
+      expect(Array.isArray(columns) && columns.slice(0, -1)).toEqual(
+        HILOS_I18N_NAMES_COLUMNS,
+      )
       expect(
         Array.isArray(columns) &&
-          columns.find((column) => column.key === 'actions'),
-      ).toEqual({
-        key: 'actions',
-        label: 'Actions',
-        reads: ['code', 'nativeName', 'name', 'corrections'],
-      })
+          columns.filter((column) => column.key === 'actions'),
+      ).toEqual([
+        {
+          key: 'actions',
+          label: 'Actions',
+          reads: ['code', 'nativeName', 'name', 'corrections'],
+        },
+      ])
     },
   )
 
@@ -246,6 +267,14 @@ describe('names table actions and focus', () => {
         row: nameRow('en', { ...slot, name: null, corrections: [] }),
       })
       expect(controller.focusedRow.get()?.name).toBeNull()
+      expect(controller.rows.get()).toHaveLength(1)
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'en',
+        reason: 'left_set',
+        row: nameRow('en', { ...slot, name: 'Live outside the filter' }),
+      })
+      expect(controller.focusedRow.get()?.name).toBe('Live outside the filter')
       expect(controller.rows.get()).toHaveLength(1)
       controller.releaseFocus()
       expect(controller.focusedRow.get()).toBeUndefined()

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryNamesPage;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
@@ -20,6 +21,8 @@ use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameUpdateActionDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * The library takes the built-in catalog in on start when its fingerprint changed, and on the
@@ -172,6 +175,56 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
             0,
             $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_country_name` WHERE `country_id` = ?', [$ids['ownCountry']]),
         );
+        self::assertSame(BuiltInI18nCatalog::fingerprint(), Hilos::$db->i18nReflows->recordedFingerprint());
+    }
+
+    /** @return iterable<string, array{string}> Manual names, including an explicit empty value */
+    public static function manualCountryNames(): iterable
+    {
+        yield 'text' => ['A manual country name'];
+        yield 'empty' => [''];
+    }
+
+    /**
+     * @param string $name Literal value saved through the country names page
+     * @throws HilosException When the page action or catalog reflow fails
+     */
+    #[DataProvider('manualCountryNames')]
+    public function testPageEditLocksTheNameAgainstTheNextCatalogReflow(string $name): void
+    {
+        $this->startLibrary();
+        $this->underAgent($this->agent, function () use ($name): void {
+            $dto = new HilosI18nCountryNameUpdateActionDTO('us', 'en', null, $name, 'United States');
+            self::assertNull(new CountryNamesPage($this->agent)->onAction('reflow-editor', $dto->getAction(), $dto));
+            Hilos::$db->countryNames->findBase(
+                Hilos::$db->countries['de']->id, Hilos::$db->languages['en']->id,
+            )->actions->refreshFromCatalog('Outdated catalog name');
+            Hilos::$db->i18nReflows->actions->record(str_repeat('0', 64));
+        });
+        self::assertSame($name, Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id,
+        )->name);
+        self::assertTrue(Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id,
+        )->locked);
+        self::assertFalse(Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['de']->id, Hilos::$db->languages['en']->id,
+        )->locked);
+
+        $this->startLibrary();
+
+        self::assertSame($name, Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id,
+        )->name);
+        self::assertTrue(Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id,
+        )->locked);
+        self::assertSame(BuiltInI18nCatalog::countryName('de', 'en'), Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['de']->id, Hilos::$db->languages['en']->id,
+        )->name);
+        self::assertFalse(Hilos::$db->countryNames->findBase(
+            Hilos::$db->countries['de']->id, Hilos::$db->languages['en']->id,
+        )->locked);
         self::assertSame(BuiltInI18nCatalog::fingerprint(), Hilos::$db->i18nReflows->recordedFingerprint());
     }
 

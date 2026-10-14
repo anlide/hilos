@@ -25,6 +25,8 @@ const emit = defineEmits<{ 'update:modelValue': [open: boolean] }>()
 const copy = HILOS_I18N_COUNTRY_NAME_DELETE_COPY
 const action = useTrackedAction()
 const { locked } = useLookOnly()
+// The sibling edit window may take focus only after this write has settled.
+defineExpose({ busy: action.busy })
 let disposed = false
 onUnmounted(() => {
   disposed = true

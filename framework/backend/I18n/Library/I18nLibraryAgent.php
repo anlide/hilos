@@ -76,6 +76,8 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     private const string COUNTRY_NAMES_CURRENCY_SYMBOL = 'H1501';
     private const string COUNTRY_NAMES_CURRENCY_CODE = 'QJJ';
     private const string COUNTRY_NAMES_WRITING_MARKER = 'HIL-1501 writing';
+    private const string COUNTRY_NAMES_ADD_LOCALE_COUNTRY = 'fr';
+    private const string COUNTRY_NAMES_ADD_LANGUAGE = 'en';
 
     /** @var array<string, string> Existing country codes and literal correction values */
     private const array COUNTRY_NAMES_CORRECTIONS = ['gb' => 'Fixture correction', 'us' => ''];
@@ -224,6 +226,13 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 );
                 Hilos::$db->countryNames->actions->createManual($country, $language, $locale, $correction);
             }
+            Hilos::$db->locales->actions->create(
+                $language,
+                Hilos::$db->countries[self::COUNTRY_NAMES_ADD_LOCALE_COUNTRY]
+                    ?? throw new ValidationException('Missing fixture country: ' . self::COUNTRY_NAMES_ADD_LOCALE_COUNTRY),
+                LocaleTemplates::DATE[0], LocaleTemplates::TIME[0], LocaleTemplates::NUMBER[0],
+                LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0], MeasurementSystem::METRIC, LocaleTemplates::COLLATION[0],
+            );
             Database::transactionCommit();
         } catch (Throwable $failure) {
             try {
@@ -251,10 +260,14 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             $this->assertCountryNamesFixtureMarkers();
             $country = Hilos::$db->countries[self::COUNTRY_NAMES_TARGET_CODE];
             $language = Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE];
+            $addLanguage = Hilos::$db->languages[self::COUNTRY_NAMES_ADD_LANGUAGE];
+            if ($country !== null && $addLanguage !== null) {
+                Hilos::$db->countryNames->findBase($country->id, $addLanguage->id)?->actions->delete();
+            }
             if ($country !== null && $language !== null) {
                 Hilos::$db->countryNames->findBase($country->id, $language->id)?->actions->delete();
             }
-            foreach (array_keys(self::COUNTRY_NAMES_CORRECTIONS) as $countryCode) {
+            foreach ([...array_keys(self::COUNTRY_NAMES_CORRECTIONS), self::COUNTRY_NAMES_ADD_LOCALE_COUNTRY] as $countryCode) {
                 Hilos::$db->locales[self::COUNTRY_NAMES_WRITING_CODE . '-' . strtoupper($countryCode)]?->actions->delete();
             }
             Hilos::$db->languages[self::COUNTRY_NAMES_WRITING_CODE]?->actions->delete();

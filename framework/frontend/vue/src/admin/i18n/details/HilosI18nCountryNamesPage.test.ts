@@ -1,5 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import {
+  ActionError,
   COUNTRY_CARD_DATA,
   createSignal,
   bindAdminAccess,
@@ -7,6 +8,7 @@ import {
   HILOS_I18N_COUNTRY_NAMES_TABLE,
   HilosPages,
   ScopeManager,
+  type ActionResult,
   type ActionLifecycle,
   type HilosConnection,
   type HilosI18nCountryCard,
@@ -19,6 +21,7 @@ import { nextTick } from 'vue'
 
 import HilosI18nCountryNamesPage from './HilosI18nCountryNamesPage.vue'
 import HilosI18nCountryNameDelete from './HilosI18nCountryNameDelete.vue'
+import HilosI18nCountryNameWindow from './HilosI18nCountryNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 
@@ -222,9 +225,7 @@ describe('HilosI18nCountryNamesPage', () => {
     expect(section.find('tr [data-id="i18n-names-delete-en"]').exists()).toBe(
       true,
     )
-    expect(
-      section.findAll('input, select, textarea, form, .bi-plus, .bi-pencil'),
-    ).toHaveLength(0)
+    expect(section.findAll('input, select, textarea, form')).toHaveLength(0)
   })
 
   it('asks for the window of another country when the address moves to it', async () => {
@@ -363,6 +364,22 @@ async function settlePage(): Promise<void> {
   await nextTick()
   await nextTick()
   await nextTick()
+}
+
+function holdWrite(context: HilosI18nCountryContext) {
+  let settle: (result: ActionResult<never>) => void = () => {}
+  let refuse: (reason: ActionError) => void = () => {}
+  const done = new Promise<ActionResult<never>>((resolve, reject) => {
+    settle = resolve
+    refuse = reject
+  })
+  const dispatch = vi.fn(() => ({
+    requestId: 'held',
+    loading: createSignal(false),
+    done,
+  }))
+  context.actions.dispatch = dispatch
+  return { dispatch, settle, refuse }
 }
 
 describe('country name deletion from the page', () => {
@@ -513,5 +530,315 @@ describe('country name deletion from the page', () => {
       expect(button.attributes('aria-describedby')).toBeTruthy()
     }
     expect(s.modal().props('modelValue')).toBe(false)
+  })
+})
+
+describe('country name add/edit from the page', () => {
+  it('draws plus/pencil by null in both base and correction slots, preserving the trash', async () => {
+    const s = deletionPage()
+    s.controller.expandRow('qk', true)
+    await settlePage()
+    for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
+      for (const suffix of [
+        'edit-qk',
+        'edit-es',
+        'add-fr',
+        'locale-edit-qk-GB',
+        'locale-edit-qk-US',
+        'locale-add-qk-CA',
+      ]) {
+        expect(
+          s.wrapper
+            .find(`${surface} [data-id="i18n-country-name-${suffix}"]`)
+            .exists(),
+        ).toBe(true)
+      }
+      for (const key of ['qk', 'es', 'qk-GB', 'qk-US']) {
+        expect(
+          s.wrapper
+            .find(`${surface} [data-id="i18n-names-delete-${key}"]`)
+            .exists(),
+        ).toBe(true)
+      }
+    }
+    expect(
+      s.wrapper
+        .get('tr [data-id="i18n-country-name-edit-qk"]')
+        .attributes('aria-label'),
+    ).toBe('Edit name · United States in Writing')
+    expect(
+      s.wrapper
+        .get('tr [data-id="i18n-country-name-locale-add-qk-CA"]')
+        .attributes('aria-label'),
+    ).toBe('Add locale correction · United States in Writing · qk-CA')
+    // One actions column, the inherited HIL-1490 slots.
+    expect(
+      s.wrapper.findAll('th').filter((cell) => cell.text() === 'Actions'),
+    ).toHaveLength(1)
+  })
+
+  it('opens corrections under an empty base and takes their parent focus', async () => {
+    const s = deletionPage()
+    s.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'qk',
+      row: { rowKey: 'qk', slots: { language: { ...s.slot, name: '' } } },
+    })
+    s.controller.expandRow('qk', true)
+    await settlePage()
+    await s.wrapper
+      .get('tr [data-id="i18n-country-name-locale-add-qk-CA"]')
+      .trigger('click')
+    await settlePage()
+    const window = s.wrapper
+      .getComponent(HilosI18nCountryNameWindow)
+      .props('window')
+    expect(window.mode.get()).toBe('add')
+    expect(window.target.get()).toMatchObject({
+      inLanguageCode: 'qk',
+      localeCode: 'qk-CA',
+    })
+    expect(s.controller.focusedRow.get()?.name).toBe('')
+  })
+
+  it('keeps both components mounted while switching their shared focus', async () => {
+    const s = deletionPage()
+    await settlePage()
+    const component = s.wrapper.getComponent(HilosI18nCountryNameWindow)
+    const window = component.props('window')
+    const deletion = s.modal().vm.$
+    await s.wrapper.get('tr [data-id="i18n-names-delete-qk"]').trigger('click')
+    await settlePage()
+    expect(s.modal().props('modelValue')).toBe(true)
+    await s.wrapper
+      .get('tr [data-id="i18n-country-name-edit-es"]')
+      .trigger('click')
+    await settlePage()
+    expect(s.modal().props('modelValue')).toBe(false)
+    expect(window.opened.get()).toBe(true)
+    expect(s.controller.focusedRow.get()?.code).toBe('es')
+    expect(s.modal().vm.$).toBe(deletion)
+    await s.wrapper.get('tr [data-id="i18n-names-delete-qk"]').trigger('click')
+    await settlePage()
+    expect(window.opened.get()).toBe(false)
+    expect(s.modal().props('modelValue')).toBe(true)
+    expect(s.controller.focusedRow.get()?.code).toBe('qk')
+    expect(s.wrapper.getComponent(HilosI18nCountryNameWindow).vm.$).toBe(
+      component.vm.$,
+    )
+  })
+
+  it('cancels a pending delete opening without releasing the newly opened edit', async () => {
+    const s = deletionPage()
+    await settlePage()
+    ;(
+      s.wrapper.get('tr [data-id="i18n-names-delete-qk"]')
+        .element as HTMLButtonElement
+    ).click()
+    ;(
+      s.wrapper.get('tr [data-id="i18n-country-name-edit-es"]')
+        .element as HTMLButtonElement
+    ).click()
+    await settlePage()
+    expect(s.modal().props('modelValue')).toBe(false)
+    expect(
+      s.wrapper
+        .getComponent(HilosI18nCountryNameWindow)
+        .props('window')
+        .opened.get(),
+    ).toBe(true)
+    expect(s.controller.focusedRow.get()?.code).toBe('es')
+  })
+
+  it('keeps a draft when card=null, then releases it on a route change and on unmount', async () => {
+    const s = deletionPage()
+    await settlePage()
+    await s.wrapper
+      .get('tr [data-id="i18n-country-name-edit-qk"]')
+      .trigger('click')
+    const window = s.wrapper
+      .getComponent(HilosI18nCountryNameWindow)
+      .props('window')
+    window.patchForm({ name: 'Copy me' })
+    s.scope.data.set(COUNTRY_CARD_DATA, null)
+    await settlePage()
+    expect(window.opened.get()).toBe(true)
+    expect(window.form.get().name).toBe('Copy me')
+    expect(window.saveLabel.get()).toBe('Deleted')
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[data-id="i18n-country-name-input"]',
+      )?.disabled,
+    ).toBe(false)
+    s.route.set({
+      page: HilosPages.I18N_COUNTRY_NAMES,
+      params: { countryCode: 'qz' },
+      admin: true,
+    })
+    await settlePage()
+    expect(window.opened.get()).toBe(false)
+    expect(s.controller.focusedRow.get()).toBeUndefined()
+    s.scope.data.set(COUNTRY_CARD_DATA, { ...initialCard, code: 'qz' })
+    s.controller.ingestWindow(
+      [{ rowKey: 'qk', slots: { language: s.slot } }],
+      1,
+      true,
+      null,
+      null,
+      100,
+    )
+    await settlePage()
+    await s.wrapper
+      .get('tr [data-id="i18n-country-name-edit-qk"]')
+      .trigger('click')
+    expect(window.target.get()?.countryCode).toBe('qz')
+    expect(s.controller.focusedRow.get()?.code).toBe('qk')
+    s.wrapper.unmount()
+    mounted.splice(mounted.indexOf(s.wrapper), 1)
+    expect(window.opened.get()).toBe(false)
+    expect(s.controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it('lets the viewer open a form through either slot while its submit stays locked', async () => {
+    const s = deletionPage(true)
+    s.controller.expandRow('qk', true)
+    await settlePage()
+    for (const suffix of [
+      'add-fr',
+      'edit-es',
+      'locale-add-qk-CA',
+      'locale-edit-qk-US',
+    ]) {
+      const button = s.wrapper.get(`tr [data-id="i18n-country-name-${suffix}"]`)
+      expect((button.element as HTMLButtonElement).disabled).toBe(false)
+      await button.trigger('click')
+      await settlePage()
+      const window = s.wrapper
+        .getComponent(HilosI18nCountryNameWindow)
+        .props('window')
+      window.patchForm({ name: 'Viewer draft' })
+      await settlePage()
+      const submit = document.querySelector<HTMLButtonElement>(
+        '[data-id="i18n-country-name-submit"]',
+      )!
+      expect(submit.disabled).toBe(true)
+      expect(submit.getAttribute('aria-describedby')).toBeTruthy()
+      window.close()
+      await settlePage()
+    }
+  })
+})
+
+describe('country name windows sharing focus during tracked writes', () => {
+  it.each(['edit', 'delete'] as const)(
+    'keeps the busy %s window and its focus when another opening is requested',
+    async (kind) => {
+      const s = deletionPage()
+      const write = holdWrite(s.context)
+      await settlePage()
+      const window = s.wrapper
+        .getComponent(HilosI18nCountryNameWindow)
+        .props('window')
+      const opener =
+        kind === 'edit' ? 'i18n-country-name-edit-qk' : 'i18n-names-delete-qk'
+      await s.wrapper.get(`tr [data-id="${opener}"]`).trigger('click')
+      await settlePage()
+      if (kind === 'edit') window.patchForm({ name: 'My draft' })
+      await settlePage()
+      document
+        .querySelector<HTMLButtonElement>(
+          `[data-id="i18n-country-name-${kind === 'edit' ? 'submit' : 'delete-confirm'}"]`,
+        )!
+        .click()
+      expect(write.dispatch).toHaveBeenCalledTimes(1)
+      // Try both openings before Vue has had a render turn to disable anything.
+      ;(
+        s.wrapper.get('tr [data-id="i18n-country-name-edit-es"]')
+          .element as HTMLButtonElement
+      ).click()
+      ;(
+        s.wrapper.get('tr [data-id="i18n-names-delete-es"]')
+          .element as HTMLButtonElement
+      ).click()
+      await settlePage()
+      expect(window.opened.get()).toBe(kind === 'edit')
+      expect(s.modal().props('modelValue')).toBe(kind === 'delete')
+      expect(s.controller.focusedRow.get()?.code).toBe('qk')
+      write.refuse(new ActionError('write', 'fail', 'Try again.'))
+      await settlePage()
+      await s.wrapper
+        .get('tr [data-id="i18n-country-name-edit-es"]')
+        .trigger('click')
+      await settlePage()
+      expect(s.modal().props('modelValue')).toBe(false)
+      expect(window.target.get()?.inLanguageCode).toBe('es')
+      expect(s.controller.focusedRow.get()?.code).toBe('es')
+    },
+  )
+
+  it.each(['success', 'refusal'] as const)(
+    'ignores a previous country delete %s after the new country opens an edit',
+    async (outcome) => {
+      const s = deletionPage()
+      const write = holdWrite(s.context)
+      await settlePage()
+      await s.wrapper
+        .get('tr [data-id="i18n-names-delete-qk"]')
+        .trigger('click')
+      await settlePage()
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-id="i18n-country-name-delete-confirm"]',
+        )!
+        .click()
+      s.route.set({
+        page: HilosPages.I18N_COUNTRY_NAMES,
+        params: { countryCode: 'gb' },
+        admin: true,
+      })
+      s.scope.data.set(COUNTRY_CARD_DATA, { ...initialCard, code: 'gb' })
+      s.controller.ingestWindow(
+        [{ rowKey: 'qk', slots: { language: s.slot } }],
+        1,
+        true,
+        null,
+        null,
+        100,
+      )
+      await settlePage()
+      await s.wrapper
+        .get('tr [data-id="i18n-country-name-edit-qk"]')
+        .trigger('click')
+      const window = s.wrapper
+        .getComponent(HilosI18nCountryNameWindow)
+        .props('window')
+      window.patchForm({ name: 'New country draft' })
+      if (outcome === 'success') write.settle({})
+      else write.refuse(new ActionError('old', 'fail', 'Old refusal'))
+      await settlePage()
+      expect(window.opened.get()).toBe(true)
+      expect(window.form.get().name).toBe('New country draft')
+      expect(s.controller.focusedRow.get()?.code).toBe('qk')
+      expect(
+        document.querySelector('[data-id="i18n-country-name-error"]')
+          ?.textContent,
+      ).not.toContain('Old refusal')
+    },
+  )
+
+  it('cancels an awaited delete opening on unmount', async () => {
+    const s = deletionPage()
+    await settlePage()
+    ;(
+      s.wrapper.get('tr [data-id="i18n-names-delete-qk"]')
+        .element as HTMLButtonElement
+    ).click()
+    s.wrapper.unmount()
+    mounted.splice(mounted.indexOf(s.wrapper), 1)
+    await settlePage()
+    expect(s.controller.focusedRow.get()).toBeUndefined()
+    expect(
+      document.querySelector('[data-id="i18n-country-name-delete-window"]'),
+    ).toBeNull()
   })
 })

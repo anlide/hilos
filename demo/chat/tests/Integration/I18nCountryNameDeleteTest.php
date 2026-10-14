@@ -90,6 +90,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             Hilos::$db->countries->actions->create('qx', 'Other', 'QXX');
             Hilos::$db->countries['gb'] ?? Hilos::$db->countries->actions->create('gb', '£', 'GBP');
             Hilos::$db->countries['us'] ?? Hilos::$db->countries->actions->create('us', '$', 'USD');
+            Hilos::$db->countries['fr'] ?? Hilos::$db->countries->actions->create('fr', '€', 'EUR');
         });
         $this->connect('delete-ak', true);
     }
@@ -231,7 +232,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
         $writing = $scenario === 'missing-writing-language' ? 'zz' : 'qk';
         $dto = $override
             ? new HilosI18nCountryNameOverrideDeleteActionDTO(
-                $country, $writing, $writing . ($scenario === 'missing-locale' ? '-FR' : '-GB'), 'Fixture correction',
+                $country, $writing, $writing . ($scenario === 'missing-locale' ? '-DE' : '-GB'), 'Fixture correction',
             )
             : new HilosI18nCountryNameDeleteActionDTO($country, $writing, 'Fixture base');
         $failure = $this->dispatch($dto);
@@ -243,7 +244,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             'changed' => 'The name changed. Close this window and confirm again.',
             'missing-country' => 'Unknown country: zz',
             'missing-writing-language' => 'Unknown writing language: zz',
-            'missing-locale' => 'Unknown locale: qk-FR',
+            'missing-locale' => 'Unknown locale: qk-DE',
             default => 'The name no longer exists.',
         }, $failure->reason);
         self::assertSame($before, $this->nameSnapshot());
@@ -479,10 +480,11 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
             $row = $deltas[0]->row[PagePayload::slots][HilosI18nCountryNamesTable::ROW_SLOT];
             self::assertSame($override ? 'Fixture base' : null, $row['name']);
             if ($override) {
-                self::assertCount(2, $row['corrections']);
-                self::assertSame('qk-GB', $row['corrections'][0]['localeCode']);
-                self::assertNull($row['corrections'][0]['name']);
-                self::assertSame('', $row['corrections'][1]['name']);
+                self::assertCount(3, $row['corrections']);
+                $corrections = array_column($row['corrections'], 'name', 'localeCode');
+                self::assertNull($corrections['qk-FR']);
+                self::assertNull($corrections['qk-GB']);
+                self::assertSame('', $corrections['qk-US']);
             } else {
                 self::assertSame([], $row['corrections']);
             }
@@ -919,7 +921,7 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                     }
                 }
             }
-            foreach (['qk-GB', 'qk-US'] as $code) {
+            foreach (['qk-GB', 'qk-US', 'qk-FR'] as $code) {
                 Hilos::$db->locales[$code]?->actions->switchOff();
                 Hilos::$db->locales[$code]?->actions->delete();
             }

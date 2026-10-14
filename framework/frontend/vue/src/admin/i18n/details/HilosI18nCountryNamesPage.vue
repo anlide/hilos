@@ -9,8 +9,10 @@ Bootstrap classes only, painted with classes that follow the theme
 import {
   computedSignal,
   createHilosI18nCountryCard,
+  createHilosI18nCountryNameWindow,
   createHilosI18nNamesTable,
   HILOS_I18N_COUNTRY_NAMES,
+  HILOS_I18N_COUNTRY_NAME_COPY,
   HILOS_I18N_COUNTRY_NAME_DELETE_COPY,
   HilosPages,
   type HilosI18nCountryContext,
@@ -33,10 +35,12 @@ import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nCountryHeader from './HilosI18nCountryHeader.vue'
 import HilosI18nCountryNameDelete from './HilosI18nCountryNameDelete.vue'
+import HilosI18nCountryNameWindow from './HilosI18nCountryNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nCountryContext }>()
-const card = useSignal(createHilosI18nCountryCard(props.context))
+const liveCard = createHilosI18nCountryCard(props.context)
+const card = useSignal(liveCard)
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
@@ -53,8 +57,18 @@ const names = createHilosI18nNamesTable(
   HILOS_I18N_COUNTRY_NAMES,
   country,
 )
+const nameWindow = createHilosI18nCountryNameWindow(
+  names.controller,
+  liveCard,
+  country,
+  props.context,
+)
+const nameCopy = HILOS_I18N_COUNTRY_NAME_COPY
 const copy = HILOS_I18N_COUNTRY_NAME_DELETE_COPY
 const deleteOpen = ref(false)
+const deleteWindow = ref<InstanceType<
+  typeof HilosI18nCountryNameDelete
+> | null>(null)
 const target = shallowRef<HilosI18nCountryNameDeleteTarget | null>(null)
 const focused = useSignal(names.controller.focusedRow)
 const currentCountry = useSignal(country)
@@ -73,11 +87,21 @@ function closeDelete(): void {
   names.controller.releaseFocus()
 }
 
+function openName(
+  row: HilosI18nNameRow,
+  localeCode: string | null = null,
+): void {
+  if (nameWindow.saving.get() || deleteWindow.value?.busy) return
+  closeDelete()
+  nameWindow.open(row.code, localeCode)
+}
+
 async function openDelete(
   row: HilosI18nNameRow,
   localeCode?: string,
 ): Promise<void> {
-  if (deleteOpen.value) return
+  if (deleteOpen.value || nameWindow.saving.get()) return
+  nameWindow.close()
   const attempt = ++opening
   const countryCode = country.get()
   const resolved = await names.controller.focusRow(row.code)
@@ -117,9 +141,13 @@ async function openDelete(
 }
 
 watch(currentCountry, closeDelete, { flush: 'sync' })
-watch(deleteOpen, (open) => {
-  if (!open) names.controller.releaseFocus()
-})
+watch(
+  deleteOpen,
+  (open) => {
+    if (!open) names.controller.releaseFocus()
+  },
+  { flush: 'sync' },
+)
 onMounted(() => names.start())
 onUnmounted(() => {
   closeDelete()
@@ -144,6 +172,25 @@ onUnmounted(() => {
         </h2>
         <HilosI18nNamesTable :controller="names.controller">
           <template #name-actions="{ row }">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :aria-label="
+                nameCopy.open(
+                  row.name === null,
+                  card.summary.name ?? card.code.toUpperCase(),
+                  row.nativeName,
+                )
+              "
+              :data-id="`i18n-country-name-${row.name === null ? 'add' : 'edit'}-${row.code}`"
+              @click="openName(row)"
+            >
+              <i
+                class="bi"
+                :class="row.name === null ? 'bi-plus-lg' : 'bi-pencil'"
+                aria-hidden="true"
+              ></i>
+            </button>
             <LoadingButton
               v-if="row.name !== null"
               class="btn-sm btn-outline-danger"
@@ -154,6 +201,27 @@ onUnmounted(() => {
             ></LoadingButton>
           </template>
           <template #correction-actions="{ row, correction }">
+            <button
+              v-if="row.name !== null"
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :aria-label="
+                nameCopy.open(
+                  correction.name === null,
+                  card.summary.name ?? card.code.toUpperCase(),
+                  row.nativeName,
+                  correction.localeCode,
+                )
+              "
+              :data-id="`i18n-country-name-locale-${correction.name === null ? 'add' : 'edit'}-${correction.localeCode}`"
+              @click="openName(row, correction.localeCode)"
+            >
+              <i
+                class="bi"
+                :class="correction.name === null ? 'bi-plus-lg' : 'bi-pencil'"
+                aria-hidden="true"
+              ></i>
+            </button>
             <LoadingButton
               v-if="correction.name !== null"
               class="btn-sm btn-outline-danger"
@@ -185,10 +253,12 @@ onUnmounted(() => {
     </p>
     <HilosI18nCountryNameDelete
       :key="currentCountry"
+      ref="deleteWindow"
       v-model="deleteOpen"
       :context="context"
       :target="target"
       :source="source"
     />
+    <HilosI18nCountryNameWindow :window="nameWindow" />
   </HilosAdminPage>
 </template>

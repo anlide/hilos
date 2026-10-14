@@ -216,3 +216,41 @@ describe('shared names action slots', () => {
     },
   )
 })
+
+describe('country names action slots after a live write', () => {
+  it('keeps both projections in step when absent values become saved empty strings', async () => {
+    const { wrapper, controller } = mountNames(HILOS_I18N_COUNTRY_NAMES, true)
+    controller.expandRow('en', true)
+    await nextTick()
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'fr',
+      row: nameRow('fr', 'Français', ''),
+    })
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'en',
+      row: nameRow('en', 'English', 'German', [
+        {
+          localeCode: 'en-US',
+          countryCode: 'us',
+          countryName: null,
+          name: '',
+        },
+      ]),
+    })
+    await nextTick()
+    for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
+      expect(wrapper.get(`${surface} [data-id="test-base-fr"]`).text()).toBe('')
+      expect(
+        wrapper.get(`${surface} [data-id="test-correction-en-US"]`).text(),
+      ).toBe('en:')
+    }
+    expect(wrapper.find('[data-id="i18n-names-none-fr"]').exists()).toBe(false)
+    expect(wrapper.find('[data-id="i18n-names-inherit-en-US"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

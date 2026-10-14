@@ -269,8 +269,7 @@ state, while the reflow supplies 2,550 country names.
 
 - Editing a language name sets its lock automatically; there is no separate
   “pin” button.
-- Editing a country name sets its lock automatically, with no “pin” button
-  (not in the code yet — HIL-1500).
+- Editing a country name sets its lock automatically, with no “pin” button.
 - The reflow writes only unlocked names.
 
 An empty string saved by a person is their value and is locked too. To give
@@ -310,6 +309,16 @@ theirs on conflict. A missing source leaves the draft available to copy and
 blocks Save as Deleted. Busy and admin-view guards close the write controls;
 success closes the window, and committed names reach other open tabs without
 Apply or reload. The language and locale switches do not gate these name writes.
+
+The ADMIN country names page offers `hilos_i18n_country_name_add` and
+`hilos_i18n_country_name_update`, with `countryCode`, `inLanguageCode`, nullable
+`localeCode`, and literal `name`. They follow the same creation, editing and
+locked-value rules, including empty strings and whitespace. UPDATE carries the
+latest `expectedName` acknowledged by the row-edit session; ADD refuses an
+existing name. The country, language and locale switches do not gate these
+writes. The Vue window fixes its coordinates and mode on opening, keeps its
+draft on refusal or disappearance, and shares one table focus with deletion.
+Committed names and the country header reach both open tabs without Apply.
 
 The ADMIN language names page offers `hilos_i18n_language_name_delete` and
 `hilos_i18n_language_name_override_delete`. Both carry `languageCode`,
