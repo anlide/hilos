@@ -1,0 +1,5 @@
+# Only the running e2e runner joins the test daemon's PID namespace. Install,
+# check and build keep their usual namespace and can run before the daemon.
+services:
+  polls-e2e-runner:
+    pid: service:polls-daemon-test

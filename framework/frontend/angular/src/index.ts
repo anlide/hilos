@@ -153,3 +153,11 @@ export { HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.js'
 
 export { HilosLegalConsent } from './legal/HilosLegalConsent.js'
 export { HilosLegalReconsent } from './legal/HilosLegalReconsent.js'
+
+export { HilosDaemonPage } from './admin/daemon/HilosDaemonPage.js'
+export { HilosDaemonWorkersPage } from './admin/daemon/HilosDaemonWorkersPage.js'
+export { HilosDaemonAgentsPage } from './admin/daemon/HilosDaemonAgentsPage.js'
+export { HilosDaemonCronPage } from './admin/daemon/HilosDaemonCronPage.js'
+export { HilosDaemonHttpServerPage } from './admin/daemon/HilosDaemonHttpServerPage.js'
+export { HilosDaemonEnvPage } from './admin/daemon/HilosDaemonEnvPage.js'
+export { HilosDaemonEnvMismatchPage } from './admin/daemon/HilosDaemonEnvMismatchPage.js'

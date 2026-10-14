@@ -4,6 +4,7 @@ window, complete placement totals and the locally chosen cell. -->
 import {
   DAEMON_PLACEMENT_TYPE_FIELD,
   DAEMON_PLACEMENT_PLACEMENT_FIELD,
+  DAEMON_PLACEMENT_NODES_FIELD,
   DAEMON_PLACEMENT_UNPLACED_FIELD,
   daemonPlacementCellIds,
   daemonPlacementNodeColumnKey,
@@ -164,42 +165,44 @@ function cellIds(
             >{{ cellIds(row, node.nodeId) === null ? '?' : '·' }}</span
           >
         </template>
+        <template #[`detail-${DAEMON_PLACEMENT_NODES_FIELD}`]="{ row }">
+          <section
+            v-if="selectedCell?.rowKey === row.rowKey"
+            class="rounded bg-body-tertiary p-2"
+            data-id="hilos-daemon-placement-selection"
+            aria-label="Selected agent instances"
+          >
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <h2 class="h6 mb-0 text-break">
+                <code>{{ selectedCell.agentType }}</code>
+              </h2>
+              <span
+                >on
+                <code class="text-break">{{ selectedCell.nodeId }}</code></span
+              >
+              <span class="badge bg-body text-body border">
+                {{ selectedCell.agentIds.length }} instances
+              </span>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary ms-auto"
+                data-id="hilos-daemon-placement-collapse"
+                @click="view.closeCell()"
+              >
+                Collapse
+              </button>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <code
+                v-for="id in selectedCell.agentIds"
+                :key="id"
+                class="text-break"
+                >{{ id }}</code
+              >
+            </div>
+          </section>
+        </template>
       </HilosViewportTable>
-
-      <section
-        v-if="selectedCell"
-        class="border rounded bg-body-tertiary p-3 my-3"
-        data-id="hilos-daemon-placement-selection"
-        aria-label="Selected agent instances"
-      >
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-          <h2 class="h6 mb-0 text-break">
-            <code>{{ selectedCell.agentType }}</code>
-          </h2>
-          <span
-            >on <code class="text-break">{{ selectedCell.nodeId }}</code></span
-          >
-          <span class="badge bg-body text-body border">
-            {{ selectedCell.agentIds.length }} instances
-          </span>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary ms-auto"
-            data-id="hilos-daemon-placement-collapse"
-            @click="view.closeCell()"
-          >
-            Collapse
-          </button>
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-          <code
-            v-for="id in selectedCell.agentIds"
-            :key="id"
-            class="text-break"
-            >{{ id }}</code
-          >
-        </div>
-      </section>
 
       <div data-id="hilos-daemon-placement-alerts" class="mt-3">
         <p

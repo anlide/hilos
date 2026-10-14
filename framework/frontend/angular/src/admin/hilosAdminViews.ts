@@ -50,12 +50,7 @@ import { HilosBillingProviderPage } from './billing/HilosBillingProviderPage.js'
 import { HilosBillingPaymentsPage } from './billing/HilosBillingPaymentsPage.js'
 import { HilosBillingRefundsPage } from './billing/HilosBillingRefundsPage.js'
 import { HilosOperationsPage } from './operations/HilosOperationsPage.js'
-import { HilosDaemonPage } from './daemon/HilosDaemonPage.js'
-import { HilosDaemonWorkersPage } from './daemon/HilosDaemonWorkersPage.js'
-import { HilosDaemonAgentsPage } from './daemon/HilosDaemonAgentsPage.js'
-import { HilosDaemonCronPage } from './daemon/HilosDaemonCronPage.js'
 import { HilosDaemonWebsocketsPage } from './daemon/HilosDaemonWebsocketsPage.js'
-import { HilosDaemonHttpServerPage } from './daemon/HilosDaemonHttpServerPage.js'
 import { HilosChangeLogPage } from './changeLog/HilosChangeLogPage.js'
 import { HilosChangeLogTablesPage } from './changeLog/HilosChangeLogTablesPage.js'
 import { HilosChangeLogTablePage } from './changeLog/HilosChangeLogTablePage.js'
@@ -122,12 +117,8 @@ export function hilosAdminViews(): Record<string, Type<unknown>> {
     [HilosPages.BILLING_PAYMENTS]: HilosBillingPaymentsPage,
     [HilosPages.BILLING_REFUNDS]: HilosBillingRefundsPage,
     [HilosPages.OPERATIONS]: HilosOperationsPage,
-    [HilosPages.DAEMON]: HilosDaemonPage,
-    [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkersPage,
-    [HilosPages.DAEMON_AGENTS]: HilosDaemonAgentsPage,
-    [HilosPages.DAEMON_CRON]: HilosDaemonCronPage,
+    // The seven built Daemon pages require a project context and mount directly.
     [HilosPages.DAEMON_WEBSOCKETS]: HilosDaemonWebsocketsPage,
-    [HilosPages.DAEMON_HTTP_SERVER]: HilosDaemonHttpServerPage,
     // LOGS, LOGS_KEYS, LOGS_WORKERS, LOGS_ROTATIONS, LOGS_SETTINGS and LOGS_VIEW are
     // absent for the same reason as the deliveries journal: the stream lists and the
     // rotation history each read a live connection for their table and their header,

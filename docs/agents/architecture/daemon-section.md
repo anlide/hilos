@@ -137,7 +137,9 @@ The Cron page carries `cronReported`: while the section is null it says the node
 has not reported its schedule, or is silent and never reported it; only a
 reported empty list says there are no rules. Its non-leader notice comes from
 daemon rows with `idleReason`, and only a standby node gets the second sentence
-about starting here if leadership moves to this node.
+about starting here if leadership moves to this node. The view keeps the picture's
+original order, with no search or sort controls; adding them is the shared D-219
+debt outside the Angular port.
 The node agent does not expire a report by elapsed time: after its own restart,
 agent rows return on the agents' next changed or minute repair report, which can
 take up to a minute. The master forces its part as soon as the node agent
@@ -421,8 +423,11 @@ whole page answer, alongside its catalog identity and placement windows. Its
 local node selection supplies child-card addresses and the inspector's log
 link, without another subscription or action. Chat and binance-btc-tracker mount
 it through a thin wrapper with their `connection` and `scopes` context; the
-built Vue children no longer need staged rows under the root. React and Angular
-still leave these seven pages unbuilt.
+built Vue children no longer need staged rows under the root. Angular builds the
+same seven pages, mounted in polls through thin wrappers with its `connection`
+and `scopes`; Agents also receives the project's action lifecycle. Their SDK
+components require a context and stay outside the default admin view map.
+React still leaves these seven pages unbuilt.
 
 The root has two local tabs: Nodes and processes by default, and Agent placement.
 The second draws four totals from the complete `daemon.placement` summary,
@@ -436,10 +441,14 @@ unknown, an empty list means All placed, and each reported type gets one alarm.
 
 Tab switches keep node selection, search and the expanded cell without navigation
 or another subscription. Expansion reads current ids from the selected row/node
-pair; Collapse closes it. A loading search hides the panel until its window
-settles. A missing row, empty or unknown cell, silent or removed node, unknown
-picture, refusal or freeze clears the selection. Both desktop cells and narrow
-cards use the viewport's ordinary slots; ids wrap. Admin view-mode readers have
+pair and uses the viewport's ordinary row detail: directly under that type's row
+across the table's width, or inside that type's card on a narrow screen (D-216).
+Only one panel is open. Clicking the same cell again or Collapse closes it;
+another node of the same type changes its contents, and another type moves it.
+A loading search hides the panel until its window settles. A missing row, empty
+or unknown cell, silent or removed node, unknown picture, refusal or freeze
+clears the selection. Both desktop cells and narrow cards use the viewport's
+ordinary slots; ids wrap. Admin view-mode readers have
 the same local controls. A changed summary travels in the existing whole page
 answer with its window; changed ids with unchanged totals use the existing window
 delivery.

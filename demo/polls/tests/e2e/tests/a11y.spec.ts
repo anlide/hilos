@@ -163,3 +163,99 @@ test('an admin screen holds the refusal region before there is a refusal', async
   )
   await expect(page.getByTestId('hilos-action-error')).toHaveCount(0)
 })
+
+test('Daemon tables, placement and restart confirmation are named and keyboard operable', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/daemon')
+  await expect(page.getByTestId('hilos-daemon-inspector')).toBeVisible()
+  await expect(page.locator('h1')).toHaveCount(1)
+  const tab = page.getByTestId('hilos-daemon-placement-tab')
+  await tab.focus()
+  await tab.press('Enter')
+  await expect(tab).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('table', { name: 'Daemon' })).toBeVisible()
+  const cell = page
+    .getByTestId('hilos-daemon-placement-cell-hilos_daemon_node-standalone')
+    .filter({ visible: true })
+  await cell.focus()
+  await cell.press('Enter')
+  await expect(cell).toHaveAttribute('aria-expanded', 'true')
+  const collapse = page
+    .getByTestId('hilos-daemon-placement-collapse')
+    .filter({ visible: true })
+  await collapse.focus()
+  await collapse.press('Space')
+  await expect(cell).toHaveAttribute('aria-expanded', 'false')
+  await gotoPage(page, '/hilos/daemon/standalone/workers')
+  await expect(page.getByRole('table', { name: 'Workers' })).toBeVisible()
+  await gotoPage(page, '/hilos/daemon/standalone/agents')
+  await expect(page.getByRole('table', { name: 'Agents' })).toBeVisible()
+  const restart = page
+    .getByTestId('hilos-daemon-agent-restart-hilos_daemon_node')
+    .filter({ visible: true })
+  await restart.focus()
+  await restart.press('Enter')
+  const dialog = page.getByTestId('modal')
+  await expect(dialog).toHaveAccessibleName('Restart agent')
+  await expect(dialog).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(restart).toBeFocused()
+})
+
+test('Daemon Cron, HTTP, environment and comparison retain named headings and keyboard controls', async ({
+  page,
+}) => {
+  // The four live subscriptions include a catalog search and filter round trip.
+  test.slow()
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/daemon/standalone/cron')
+  await expect(page.getByRole('table', { name: 'Cron' })).toBeVisible()
+  await expect(page.locator('h1')).toHaveCount(1)
+  await expect(page.getByTestId(/^hilos-table-sort-/)).toHaveCount(0)
+  await gotoPage(page, '/hilos/daemon/standalone/http')
+  await expect(page.getByRole('table', { name: 'HTTP server' })).toBeVisible()
+  await expect(page.locator('h1')).toHaveCount(1)
+  await gotoPage(page, '/hilos/daemon/standalone/env')
+  await expect(page.locator('h1')).toHaveCount(1)
+  await expect(page.getByRole('table', { name: 'Catalog keys' })).toBeVisible()
+  await expect(
+    page.getByRole('table', { name: 'Reading ladder' }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('table', { name: 'Orphans in .env' }),
+  ).toBeVisible()
+  const attention = page.getByTestId('hilos-table-filter-attention')
+  await expect(attention).toHaveAccessibleName('Needs attention only')
+  await attention.focus()
+  await attention.press('Space')
+  await expect(attention).toBeChecked()
+  await attention.press('Space')
+  await expect(attention).not.toBeChecked()
+  const search = page.getByTestId('hilos-table-search')
+  await expect(search).toHaveAccessibleName('Key or value')
+  await search.focus()
+  await search.fill('')
+  await search.pressSequentially('DB_PASSWORD', { delay: 10 })
+  await expect(
+    page.getByTestId('hilos-table-row-DB_PASSWORD').filter({ visible: true }),
+  ).toBeVisible()
+  const crumb = page.getByTestId('hilos-breadcrumb-hilos_daemon')
+  await crumb.focus()
+  await crumb.press('Enter')
+  await expect(page.getByTestId('hilos-daemon-inspector')).toBeVisible()
+  const mismatch = page.getByTestId(
+    'hilos-admin-child-hilos_daemon_env_mismatch',
+  )
+  await mismatch.focus()
+  await mismatch.press('Enter')
+  await expect(
+    page.getByTestId('hilos-daemon-env-mismatch-standalone'),
+  ).toBeVisible()
+  await expect(page.locator('h1')).toHaveCount(1)
+  await expect(page.getByRole('table')).toHaveCount(0)
+})

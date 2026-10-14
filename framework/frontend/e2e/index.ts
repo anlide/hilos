@@ -87,3 +87,10 @@ export {
   readAnalyticsBrowserSession,
   type AnalyticsBrowserSession,
 } from './analytics.js'
+
+export {
+  RESTART_AGENT,
+  readRestartWorker,
+  withStoppedRestartWorker,
+  type RestartWorker,
+} from './daemonRestart.js'

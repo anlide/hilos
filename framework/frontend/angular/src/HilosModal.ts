@@ -135,6 +135,7 @@ export interface ModalActionsContext {
                 class="btn-close"
                 aria-label="Close"
                 data-id="modal-close"
+                [disabled]="closeDisabled()"
                 (click)="modal.requestClose()"
               ></button>
             </div>
@@ -255,6 +256,8 @@ export class HilosModal {
   readonly closeOnEsc = input(true)
   /** Close on a backdrop click (through the confirm guard). */
   readonly closeOnBackdrop = input(true)
+  /** Disable the header's close button while the owning action is in flight. */
+  readonly closeDisabled = input(false)
   /** Raise a confirm step before closing — set it when the draft is dirty. */
   readonly confirmOnClose = input(false)
   /** Confirm-step heading. */

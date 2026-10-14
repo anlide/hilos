@@ -15,40 +15,40 @@ describe('hilosUnbuiltPages', () => {
     expect(vue.has(HilosPages.ROLES)).toBe(true)
     expect(vue.has(HilosPages.DAEMON)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON)).toBe(true)
-    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON)).toBe(false)
     expect(vue.has(HilosPages.DAEMON_WORKERS)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_WORKERS)).toBe(true)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_WORKERS)).toBe(
-      true,
+      false,
     )
     expect(vue.has(HilosPages.DAEMON_AGENTS)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_AGENTS)).toBe(true)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_AGENTS)).toBe(
-      true,
+      false,
     )
     expect(vue.has(HilosPages.DAEMON_CRON)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_CRON)).toBe(true)
-    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_CRON)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_CRON)).toBe(false)
     expect(vue.has(HilosPages.DAEMON_HTTP_SERVER)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_HTTP_SERVER)).toBe(
       true,
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.DAEMON_HTTP_SERVER),
-    ).toBe(true)
+    ).toBe(false)
     expect(vue.has(HilosPages.SECURITY)).toBe(false)
     expect(vue.has(HilosPages.MAINTENANCE)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.MAINTENANCE)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
-  it('opens the Vue Daemon environment page while React and Angular remain unbuilt', () => {
+  it('opens the Vue and Angular Daemon environment page while React remains unbuilt', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV)).toBe(true)
-    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV)).toBe(false)
   })
 
-  it('opens the Vue Daemon environment mismatch page while React and Angular remain unbuilt', () => {
+  it('opens the Vue and Angular Daemon environment mismatch page while React remains unbuilt', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(
       false,
     )
@@ -57,7 +57,7 @@ describe('hilosUnbuiltPages', () => {
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV_MISMATCH),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('keeps WebSockets unbuilt in every view layer', () => {

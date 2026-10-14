@@ -169,6 +169,7 @@ describe('daemon placement viewport', () => {
       'node:node-2',
       'node:node-10',
       'unplacedAgentIds',
+      'nodes',
     ])
     expect(columns.map((column) => column.label)).toEqual([
       'Agent type',
@@ -177,6 +178,7 @@ describe('daemon placement viewport', () => {
       'node-2 ★',
       'node-10',
       'State',
+      'Instances',
     ])
     expect(columns[0]?.card).toBe('title')
     expect(columns[1]?.reads).toEqual(['idle'])
@@ -186,6 +188,8 @@ describe('daemon placement viewport', () => {
     expect(columns[5]?.card).toBe('badge')
     expect(columns[5]?.headerClass).toBe('text-end')
     expect(columns[5]?.cellClass).toBe('text-end')
+    expect(columns[6]?.detail).toBe(true)
+    expect(columns[6]?.detailWide).toBe(true)
     expect(columns.every((column) => column.sortable !== true)).toBe(true)
   })
 
@@ -195,7 +199,13 @@ describe('daemon placement viewport', () => {
     ])
     expect(
       table.controller.frame.columns.get().map((column) => column.key),
-    ).toEqual(['agentType', 'placement', 'node:standalone', 'unplacedAgentIds'])
+    ).toEqual([
+      'agentType',
+      'placement',
+      'node:standalone',
+      'unplacedAgentIds',
+      'nodes',
+    ])
     expect(table.controller.frame.columns.get()[2]?.label).toBe('standalone')
 
     nodeSignal.set([
@@ -210,6 +220,7 @@ describe('daemon placement viewport', () => {
       'node:node-1',
       'node:node-2',
       'unplacedAgentIds',
+      'nodes',
     ])
     expect(table.controller.frame.columns.get()[2]?.label).toBe('node-1 ★')
   })
@@ -366,8 +377,11 @@ describe('daemon placement view', () => {
     h.view.dispose()
   })
 
-  it('opens locally, keeps a repeated click open and follows current window ids', () => {
+  it('toggles the same cell through the row expansion and follows current window ids', () => {
     const h = stubView()
+    expect(h.view.controller.rows.get()[0]?.expandable).toBe(false)
+    h.view.controller.expandRow('chat_room', true)
+    expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
     h.view.openCell('chat_room', 'n1')
     expect(h.view.selectedCell.get()).toEqual({
       rowKey: 'chat_room',
@@ -375,11 +389,36 @@ describe('daemon placement view', () => {
       nodeId: 'n1',
       agentIds: ['chat_room:1', 'chat_room:2'],
     })
+    expect(h.view.controller.rows.get()[0]?.expanded).toBe(true)
+    h.view.openCell('chat_room', 'n1')
+    expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
+    expect(h.view.controller.rows.get()[0]?.expandable).toBe(false)
     h.view.openCell('chat_room', 'n1')
     h.window(['chat_room:99'])
     expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
     expect(h.sent).toEqual([])
     h.view.closeCell()
+    expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
+    h.view.dispose()
+  })
+
+  it('shares chevron collapse and reopening with the cell button without reopening on live updates', () => {
+    const h = stubView()
+    h.view.openCell('chat_room', 'n1')
+    h.view.controller.expandRow('chat_room', false)
+    expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.view.controller.rows.get()[0]?.expandable).toBe(true)
+    h.window(['chat_room:99'])
+    expect(h.view.selectedCell.get()).toBeNull()
+    h.view.controller.expandRow('chat_room', true)
+    expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
+    h.view.controller.expandRow('chat_room', false)
+    h.view.openCell('chat_room', 'n1')
+    expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
+    h.view.closeCell()
+    h.view.controller.expandRow('chat_room', true)
     expect(h.view.selectedCell.get()).toBeNull()
     h.view.dispose()
   })
@@ -418,6 +457,44 @@ describe('daemon placement view', () => {
     h.view.dispose()
   })
 
+  it('moves the only expansion between types and refuses chevrons on unselected rows', () => {
+    const h = stubView()
+    h.view.controller.ingestAppend(
+      rawRow('hilos_daemon_node', {
+        agentType: 'hilos_daemon_node',
+        nodes: [{ nodeId: 'n1', agentIds: ['hilos_daemon_node'] }],
+      }),
+      2,
+      true,
+      null,
+      null,
+    )
+    h.view.openCell('chat_room', 'n1')
+    h.view.controller.expandRow('hilos_daemon_node', true)
+    expect(
+      h.view.controller.rows
+        .get()
+        .filter((row) => row.expanded)
+        .map((row) => row.rowKey),
+    ).toEqual(['chat_room'])
+    h.view.openCell('hilos_daemon_node', 'n1')
+    expect(
+      h.view.controller.rows
+        .get()
+        .filter((row) => row.expanded)
+        .map((row) => row.rowKey),
+    ).toEqual(['hilos_daemon_node'])
+    expect(h.view.selectedCell.get()?.agentIds).toEqual(['hilos_daemon_node'])
+    h.view.openCell('chat_room', 'n1')
+    expect(
+      h.view.controller.rows
+        .get()
+        .filter((row) => row.expanded)
+        .map((row) => row.rowKey),
+    ).toEqual(['chat_room'])
+    h.view.dispose()
+  })
+
   it.each([[], null])(
     'forgets a selected cell whose new roster is %j',
     (ids) => {
@@ -425,6 +502,8 @@ describe('daemon placement view', () => {
       h.view.openCell('chat_room', 'n1')
       h.window(ids)
       expect(h.view.selectedCell.get()).toBeNull()
+      expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
+      expect(h.view.controller.rows.get()[0]?.expandable).toBe(false)
       h.view.openCell('chat_room', 'n1')
       h.window()
       expect(h.view.selectedCell.get()).toBeNull()
@@ -452,6 +531,22 @@ describe('daemon placement view', () => {
       null,
       25,
     )
+    h.window()
+    expect(h.view.selectedCell.get()).toBeNull()
+    h.view.dispose()
+  })
+
+  it('forgets an applied removal and does not reopen a row that returns', () => {
+    const h = stubView()
+    h.view.openCell('chat_room', 'n1')
+    h.view.controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'chat_room',
+      reason: 'deleted',
+    })
+    h.view.controller.apply()
+    expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.view.controller.rows.get().some((row) => row.expanded)).toBe(false)
     h.window()
     expect(h.view.selectedCell.get()).toBeNull()
     h.view.dispose()
@@ -494,6 +589,7 @@ describe('daemon placement view', () => {
       h.view.openCell('chat_room', 'n1')
       h.window(['chat_room:99'])
       expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
+      expect(h.view.controller.rows.get()[0]?.expanded).toBe(true)
       h.view.controller.setSearch('absent')
       vi.advanceTimersByTime(1000)
       h.view.controller.ingestWindow([], 0, true, null, null, 25)
@@ -505,6 +601,21 @@ describe('daemon placement view', () => {
     }
   })
 
+  it('preserves an open address through a fast search but keeps a chevron-collapsed cell closed', () => {
+    const h = stubView()
+    h.view.openCell('chat_room', 'n1')
+    h.view.controller.setSearch('99')
+    h.window(['chat_room:99'])
+    expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
+    h.view.controller.expandRow('chat_room', false)
+    h.view.controller.setSearch('room')
+    h.window(['chat_room:100'])
+    expect(h.view.selectedCell.get()).toBeNull()
+    h.view.controller.expandRow('chat_room', true)
+    expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:100'])
+    h.view.dispose()
+  })
+
   it.each(['freeze', 'refusal'] as const)(
     'forgets selection on %s',
     (state) => {
@@ -513,6 +624,9 @@ describe('daemon placement view', () => {
       if (state === 'freeze') h.view.controller.ingestFrozen(123)
       else h.view.controller.ingestRefusal('unavailable')
       expect(h.view.selectedCell.get()).toBeNull()
+      expect(h.view.controller.rows.get().some((row) => row.expanded)).toBe(
+        false,
+      )
       h.view.openCell('chat_room', 'n1')
       h.window()
       expect(h.view.selectedCell.get()).toBeNull()
@@ -529,13 +643,14 @@ describe('daemon placement view', () => {
     h.view.openCell('chat_room', 'n1')
     h.view.dispose()
     expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
     expect(h.unbind).toHaveBeenCalledTimes(bindings)
     expect(h.unregister).toHaveBeenCalledWith('hilosDaemonPlacement')
-    // After disposal no validity watcher is left to clear a choice on later changes.
+    // Disposal leaves no window watcher that could restore an expansion on search.
     h.view.openCell('chat_room', 'n1')
-    h.overview.set(null)
-    h.overview.set(viewPicture())
-    expect(h.view.selectedCell.get()?.rowKey).toBe('chat_room')
+    h.view.controller.setSearch('99')
+    h.window(['chat_room:99'])
+    expect(h.view.selectedCell.get()).toBeNull()
     h.view.closeCell()
   })
 })

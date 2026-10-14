@@ -40,6 +40,13 @@ import { LogRotations } from './views/hilos/logs/rotations'
 import { LogSettings } from './views/hilos/logs/settings'
 import { LogViewer } from './views/hilos/logs/view'
 import { LogWorkers } from './views/hilos/logs/workers'
+import { Daemon } from './views/hilos/daemon/daemon.js'
+import { DaemonWorkers } from './views/hilos/daemon/workers.js'
+import { DaemonAgents } from './views/hilos/daemon/agents.js'
+import { DaemonCron } from './views/hilos/daemon/cron.js'
+import { DaemonHttp } from './views/hilos/daemon/http.js'
+import { DaemonEnv } from './views/hilos/daemon/env.js'
+import { DaemonEnvMismatch } from './views/hilos/daemon/env-mismatch.js'
 import { LogsOverview } from './views/hilos/logs/overview'
 import { Maintenance } from './views/hilos/maintenance/maintenance.js'
 import { Main } from './views/main/main'
@@ -216,6 +223,14 @@ export class App {
     [HilosPages.PROFILE_AGREEMENTS]: ProfileAgreements,
     [HilosPages.PROFILE_AGREEMENTS_HISTORY]: ProfileAgreementsHistory,
     [HilosPages.PROFILE_DATA]: ProfileData,
+    // The three built Daemon screens bind this project to the SDK contexts.
+    [HilosPages.DAEMON]: Daemon,
+    [HilosPages.DAEMON_WORKERS]: DaemonWorkers,
+    [HilosPages.DAEMON_AGENTS]: DaemonAgents,
+    [HilosPages.DAEMON_CRON]: DaemonCron,
+    [HilosPages.DAEMON_HTTP_SERVER]: DaemonHttp,
+    [HilosPages.DAEMON_ENV]: DaemonEnv,
+    [HilosPages.DAEMON_ENV_MISMATCH]: DaemonEnvMismatch,
     // The framework logs section, activated whole: the framework owns the six
     // screens, their tables and every phrase on them; the project binds its
     // connection, scope stores and action lifecycle (views/hilos/logs) and, on its

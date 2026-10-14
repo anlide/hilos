@@ -13,6 +13,7 @@ import {
 } from '../helpers/daemonRestart.js'
 import { expectPageReady, gotoPage, PAGE_READY } from '../helpers/page.js'
 import {
+  ROWS,
   fitsInScrollport,
   shownByTestId,
   sidewaysOverflow,
@@ -275,24 +276,70 @@ test.describe('daemon overview', () => {
         ),
       )
       const cell = shownByTestId(page, PLACEMENT_CELL)
-      const selection = page.getByTestId('hilos-daemon-placement-selection')
+      const table = page.getByTestId('hilos-viewport-table').locator('table')
+      const selection = table.getByTestId('hilos-daemon-placement-selection')
+      const row = table.getByTestId(`hilos-table-row-${PLACEMENT_TYPE}`)
+      const detail = table.getByTestId(
+        `hilos-table-row-detail-${PLACEMENT_TYPE}`,
+      )
+      const expand = shownByTestId(page, `hilos-table-expand-${PLACEMENT_TYPE}`)
+      await expect(page.getByTestId(/^hilos-table-expand-/)).toHaveCount(0)
       await cell.click()
       await expect(cell).toHaveAttribute('aria-expanded', 'true')
       await expect(selection).toBeVisible()
+      await expect(
+        detail.getByTestId('hilos-daemon-placement-selection'),
+      ).toBeVisible()
+      expect(
+        await row.evaluate((element) =>
+          element.nextElementSibling?.getAttribute('data-id'),
+        ),
+      ).toBe(`hilos-table-row-detail-${PLACEMENT_TYPE}`)
+      await expect(expand).toHaveAttribute('aria-expanded', 'true')
       const ids = (await selection.locator('code').allTextContents()).slice(2)
       expect(ids).toEqual([PLACEMENT_TYPE])
       await expect(selection.locator('a, button')).toHaveCount(1)
-      await page.getByTestId('hilos-daemon-placement-collapse').click()
+      await expand.click()
+      await expect(
+        page.getByTestId('hilos-daemon-placement-selection'),
+      ).toHaveCount(0)
+      await expect(cell).toHaveAttribute('aria-expanded', 'false')
+      await expect(expand).toHaveAttribute('aria-expanded', 'false')
+      await expand.focus()
+      await expand.press('Enter')
+      await expect(selection).toContainText(ids[0])
+      await shownByTestId(page, 'hilos-daemon-placement-collapse').click()
       await expect(selection).toHaveCount(0)
       await expect(cell).toHaveAttribute('aria-expanded', 'false')
       await cell.focus()
       await cell.press('Space')
       await expect(selection).toContainText(ids[0])
 
+      const otherType = 'hilos_notifications_library'
+      await shownByTestId(
+        page,
+        `hilos-daemon-placement-cell-${otherType}-standalone`,
+      ).click()
+      await expect(detail).toHaveCount(0)
+      await expect(
+        table
+          .getByTestId(`hilos-table-row-detail-${otherType}`)
+          .getByTestId('hilos-daemon-placement-selection'),
+      ).toContainText(otherType)
+      await expect(selection).toHaveCount(1)
+      await expect(cell).toHaveAttribute('aria-expanded', 'false')
+      await cell.click()
+      await expect(
+        table.getByTestId(`hilos-table-row-detail-${otherType}`),
+      ).toHaveCount(0)
+      await expect(
+        detail.getByTestId('hilos-daemon-placement-selection'),
+      ).toContainText(ids[0])
+
       const search = page.getByTestId('hilos-table-search')
       await search.fill('')
       await search.pressSequentially(ids[0], { delay: 10 })
-      await expect(shownByTestId(page, /^hilos-table-row-/)).toHaveCount(1)
+      await expect(table.locator(ROWS)).toHaveCount(1)
       await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
       await expect(selection).toContainText(ids[0])
       for (const [index, total] of PLACEMENT_TOTALS.entries()) {
@@ -311,6 +358,11 @@ test.describe('daemon overview', () => {
       await expect(search).toHaveValue(ids[0])
       await expect(selection).toContainText(ids[0])
       await expect(cell).toHaveAttribute('aria-expanded', 'true')
+      await cell.click()
+      await expect(
+        page.getByTestId('hilos-daemon-placement-selection'),
+      ).toHaveCount(0)
+      await expect(cell).toHaveAttribute('aria-expanded', 'false')
       await cell.click()
       await expect(selection).toBeVisible()
 
@@ -416,7 +468,35 @@ test.describe('daemon overview', () => {
             `hilos-daemon-placement-cell-${longType}-standalone`,
           )
           await cell.click()
-          const selection = page.getByTestId('hilos-daemon-placement-selection')
+          const selection = shownByTestId(
+            page,
+            'hilos-daemon-placement-selection',
+          )
+          const detail = shownByTestId(
+            page,
+            `hilos-table-row-detail-${longType}`,
+          )
+          await expect(
+            detail.getByTestId('hilos-daemon-placement-selection'),
+          ).toBeVisible()
+          if (projection === 'card') {
+            await expect(
+              page
+                .getByTestId(`hilos-table-card-${longType}`)
+                .getByTestId('hilos-daemon-placement-selection'),
+            ).toBeVisible()
+          } else {
+            expect(
+              await page
+                .getByTestId(`hilos-table-row-${longType}`)
+                .evaluate((element) =>
+                  element.nextElementSibling?.getAttribute('data-id'),
+                ),
+            ).toBe(`hilos-table-row-detail-${longType}`)
+          }
+          await expect(
+            shownByTestId(page, 'hilos-daemon-placement-selection'),
+          ).toHaveCount(1)
           await expect(selection.locator('code')).toHaveText([
             longType,
             'standalone',
@@ -427,7 +507,7 @@ test.describe('daemon overview', () => {
             page.getByTestId('hilos-table-search'),
             cell,
             selection,
-            page.getByTestId('hilos-daemon-placement-collapse'),
+            shownByTestId(page, 'hilos-daemon-placement-collapse'),
             ...(await selection.locator('code').all()),
           ]) {
             await target.scrollIntoViewIfNeeded()
@@ -443,7 +523,7 @@ test.describe('daemon overview', () => {
               .screenshot(),
             contentType: 'image/png',
           })
-          await page.getByTestId('hilos-daemon-placement-collapse').click()
+          await shownByTestId(page, 'hilos-daemon-placement-collapse').click()
           await page.getByTestId('hilos-daemon-nodes-tab').click()
           await expectStandaloneOverview(page)
           await page.getByTestId(WORKERS_CHILD).click()

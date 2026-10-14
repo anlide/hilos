@@ -852,6 +852,9 @@ describe('HilosDaemonPage placement', () => {
     ).toBe('room:1')
     expect(h.view.find(panel).isVisible()).toBe(true)
     await h.view.find(cell).trigger('keydown', { key: ' ' })
+    expect(h.view.find(panel).exists()).toBe(false)
+    expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')
+    await h.view.find(cell).trigger('click')
     expect(h.view.find(panel).exists()).toBe(true)
     await h.view
       .find('[data-id="hilos-daemon-placement-collapse"]')
@@ -869,6 +872,85 @@ describe('HilosDaemonPage placement', () => {
     for (const [event, group] of h.listeners) {
       if (event.startsWith('table')) expect(group.size).toBe(0)
     }
+  })
+
+  it('draws one inline detail under its type and inside its card, with shared count and chevron toggles', async () => {
+    const rows = [
+      ...placementRows(['chat_room:1'], ['chat_room:55']),
+      {
+        rowKey: 'hilos_daemon_node',
+        slots: {
+          type: {
+            agentType: 'hilos_daemon_node',
+            placement: 'node',
+            idle: false,
+            nodes: [{ nodeId: 'n1', agentIds: ['hilos_daemon_node'] }],
+            unplacedAgentIds: [],
+          },
+        },
+      },
+    ]
+    const h = harness(false, placementPicture(), rows)
+    await h.view.find(placementTab).trigger('click')
+    const table = h.view.find('table')
+    const cards = h.view.find('[data-id="hilos-table-cards"]')
+    const expand = '[data-id="hilos-table-expand-chat_room"]'
+    const detail = '[data-id="hilos-table-row-detail-chat_room"]'
+    const card = cards.find('[data-id="hilos-table-card-chat_room"]')
+    expect(table.find(expand).exists()).toBe(false)
+    expect(card.find(expand).exists()).toBe(false)
+    await table.find(cell).trigger('click')
+    const row = table.find('[data-id="hilos-table-row-chat_room"]')
+    expect(row.element.nextElementSibling).toBe(table.find(detail).element)
+    expect(table.find(detail).find(panel).text()).toContain('chat_room:1')
+    expect(table.find(detail).find('td').attributes('colspan')).toBe(
+      String(row.findAll('td').length),
+    )
+    expect(table.find(detail).find('dl > .col-md-12').exists()).toBe(true)
+    expect(card.find(detail).find(panel).text()).toContain('chat_room:1')
+    expect(card.find(detail).find('dd').classes()).toContain('col-12')
+    expect(h.view.findAll(panel)).toHaveLength(2)
+    expect(table.find(expand).attributes('aria-expanded')).toBe('true')
+    expect(card.find(expand).attributes('aria-expanded')).toBe('true')
+    expect(card.find(cell).attributes('aria-expanded')).toBe('true')
+    await table.find(expand).trigger('click')
+    expect(h.view.findAll(panel)).toHaveLength(0)
+    expect(table.find(cell).attributes('aria-expanded')).toBe('false')
+    expect(card.find(expand).attributes('aria-expanded')).toBe('false')
+    await card.find(expand).trigger('click')
+    expect(table.find(detail).find(panel).text()).toContain('chat_room:1')
+    await card.find(cell).trigger('click')
+    expect(h.view.findAll(panel)).toHaveLength(0)
+    await table.find(cell).trigger('click')
+    await table
+      .find('[data-id="hilos-daemon-placement-cell-chat_room-n2"]')
+      .trigger('click')
+    expect(table.find(detail).find(panel).text()).toContain('chat_room:55')
+    expect(table.find(cell).attributes('aria-expanded')).toBe('false')
+    expect(
+      card
+        .find('[data-id="hilos-daemon-placement-cell-chat_room-n2"]')
+        .attributes('aria-expanded'),
+    ).toBe('true')
+    await table
+      .find('[data-id="hilos-daemon-placement-cell-hilos_daemon_node-n1"]')
+      .trigger('click')
+    const moved = table.find(
+      '[data-id="hilos-table-row-detail-hilos_daemon_node"]',
+    )
+    expect(
+      table.find('[data-id="hilos-table-row-hilos_daemon_node"]').element
+        .nextElementSibling,
+    ).toBe(moved.element)
+    expect(table.find(detail).exists()).toBe(false)
+    expect(table.findAll(panel)).toHaveLength(1)
+    expect(cards.findAll(panel)).toHaveLength(1)
+    expect(moved.find(panel).text()).toContain('hilos_daemon_node')
+    await cards
+      .find('[data-id="hilos-daemon-placement-collapse"]')
+      .trigger('click')
+    expect(h.view.findAll(panel)).toHaveLength(0)
+    h.view.unmount()
   })
 
   it('draws four complete totals and every unplaced type independently of server search', async () => {
@@ -931,7 +1013,10 @@ describe('HilosDaemonPage placement', () => {
     await h.view
       .find('[data-id="hilos-daemon-placement-cell-chat_room-n2"]')
       .trigger('click')
-    expect(h.view.findAll(panel)).toHaveLength(1)
+    expect(h.view.find('table').findAll(panel)).toHaveLength(1)
+    expect(
+      h.view.find('[data-id="hilos-table-cards"]').findAll(panel),
+    ).toHaveLength(1)
     expect(h.view.find(panel).text()).toContain('chat_room:55')
     expect(h.view.find(panel).text()).not.toContain(longId)
     expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')

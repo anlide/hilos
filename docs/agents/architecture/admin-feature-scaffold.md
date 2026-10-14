@@ -539,8 +539,10 @@ The project lists the feature in `Hilos::FEATURES` and registers the three agent
 It registers the section's eight thin pages; six node child addresses require a node ID, while the root and Env mismatch do not.
 The environment child page inherits its node-agent subscription route from the framework; its project subclass declares no page-agent owner.
 Startup refuses a partially activated feature.
-In a Vue project, mount the built Workers, Agents, Cron, HTTP and Environment pages through thin wrappers
-with the project's `connection` and `scopes` context, as for the Logs pages.
+In Vue and Angular projects, mount the seven built pages — root, Workers, Agents, Cron, HTTP,
+Environment and Env mismatch — through thin wrappers with the project's `connection` and `scopes`
+context, as for the Logs pages; Agents also receives the project's action lifecycle.
+Polls supplies these Angular mounts. The context-required SDK pages stay outside the default admin view map.
 For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
 
 ### analytics — the Analytics section

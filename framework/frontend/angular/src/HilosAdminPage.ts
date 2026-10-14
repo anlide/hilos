@@ -145,6 +145,9 @@ export class HilosAdminPage {
   /** The admin page key whose shell is rendered. */
   readonly page = input.required<string>()
 
+  /** Local selection used only to resolve links to this page's children. */
+  readonly childParams = input<Record<string, string>>({})
+
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
 
@@ -160,7 +163,7 @@ export class HilosAdminPage {
   protected readonly children = computed(() =>
     hilosChildLinks(
       this.identity()?.children ?? [],
-      this.route().params,
+      { ...this.route().params, ...this.childParams() },
       this.router.resolvePath,
     ),
   )

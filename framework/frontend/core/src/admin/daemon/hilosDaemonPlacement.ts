@@ -122,10 +122,12 @@ export function resolveHilosDaemonPlacementRow(
  *
  * @param context Connection and scope manager.
  * @param nodes Current page-header nodes, updated as the picture changes.
+ * @param expandable Whether a row has a locally selected, permitted cell.
  */
 export function createHilosDaemonPlacementTable(
   context: HilosDaemonPlacementContext,
   nodes: ReadonlySignal<readonly HilosDaemonPlacementNode[]>,
+  expandable: (row: HilosDaemonPlacementRow) => boolean = () => false,
 ): HilosDaemonPlacementTable {
   const frame: HilosTableFrame = {
     search: { placeholder: 'Search by agent id…' },
@@ -150,10 +152,17 @@ export function createHilosDaemonPlacementTable(
         headerClass: 'text-end',
         cellClass: 'text-end',
       },
+      {
+        key: DAEMON_PLACEMENT_NODES_FIELD,
+        label: 'Instances',
+        detail: true,
+        detailWide: true,
+      },
     ],
   }
   const controller = new TableViewportController<HilosDaemonPlacementRow>({
     resolve: resolveHilosDaemonPlacementRow,
+    expandable,
     sendViewport: (descriptor) =>
       context.connection.sendTableViewport(
         HilosPages.DAEMON,
@@ -206,8 +215,6 @@ export function createHilosDaemonPlacementView(
       leader: overview.get()?.clustered === true && node.state === 'leader',
     })),
   )
-  const table = createHilosDaemonPlacementTable(context, nodes)
-  const controller = table.controller
   const chosen = createSignal<{
     readonly rowKey: string
     readonly nodeId: string
@@ -219,6 +226,18 @@ export function createHilosDaemonPlacementView(
         (node) =>
           node.nodeId === nodeId && node.online && node.workers !== null,
       ) === true
+  const table = createHilosDaemonPlacementTable(context, nodes, (row) => {
+    const cell = chosen.get()
+    // Read only the supplied row and the chosen address: selectedCell reads
+    // controller.rows, so using it here would make rows depend on themselves.
+    return (
+      cell !== null &&
+      cell.rowKey === row.rowKey &&
+      knownNode(cell.nodeId) &&
+      (daemonPlacementCellIds(row, cell.nodeId)?.length ?? 0) > 0
+    )
+  })
+  const controller = table.controller
   const resolveCell = (
     rowKey: string,
     nodeId: string,
@@ -248,11 +267,21 @@ export function createHilosDaemonPlacementView(
     const cell = chosen.get()
     return cell !== null &&
       valid.get() &&
-      controller.frame.body.get() !== 'loading'
+      controller.frame.body.get() !== 'loading' &&
+      controller.rows
+        .get()
+        .some((row) => row.rowKey === cell.rowKey && row.expanded)
       ? resolveCell(cell.rowKey, cell.nodeId)
       : null
   })
-  let off: (() => void) | undefined
+  let restoreExpansion = false
+  const closeCell = (): void => {
+    restoreExpansion = false
+    const cell = chosen.get()
+    if (cell !== null) controller.expandRow(cell.rowKey, false)
+    chosen.set(null)
+  }
+  const teardown: Array<() => void> = []
 
   return {
     controller,
@@ -265,24 +294,62 @@ export function createHilosDaemonPlacementView(
         controller.frame.body.get() !== 'loading' &&
         resolveCell(rowKey, nodeId) !== null
       ) {
+        const previous = chosen.get()
+        if (
+          previous?.rowKey === rowKey &&
+          previous.nodeId === nodeId &&
+          controller.rows
+            .get()
+            .some((row) => row.rowKey === rowKey && row.expanded)
+        ) {
+          closeCell()
+          return
+        }
+        if (previous !== null && previous.rowKey !== rowKey) {
+          controller.expandRow(previous.rowKey, false)
+        }
         chosen.set({ rowKey, nodeId })
+        controller.expandRow(rowKey, true)
       }
     },
-    closeCell() {
-      chosen.set(null)
-    },
+    closeCell,
     start() {
-      if (off !== undefined) return
-      off = subscribeSignal(valid, (current) => {
-        if (!current) chosen.set(null)
-      })
+      if (teardown.length > 0) return
+      teardown.push(
+        subscribeSignal(valid, (current) => {
+          if (!current) closeCell()
+        }),
+        // The matrix keeps an open cell across search. Capture only whether
+        // its row was open before changeWindow clears the common expansion;
+        // the chosen address and every id still come from their own signals.
+        subscribeSignal(controller.search, () => {
+          const cell = chosen.get()
+          restoreExpansion =
+            cell !== null &&
+            controller.rows
+              .get()
+              .some((row) => row.rowKey === cell.rowKey && row.expanded)
+        }),
+        subscribeSignal(controller.rows, (rows) => {
+          if (!restoreExpansion) return
+          const cell = chosen.get()
+          if (cell === null) {
+            restoreExpansion = false
+          } else if (
+            rows.some((row) => row.rowKey === cell.rowKey && !row.expanded)
+          ) {
+            restoreExpansion = false
+            if (valid.get()) controller.expandRow(cell.rowKey, true)
+          }
+        }),
+      )
       table.start()
     },
     dispose() {
-      off?.()
-      off = undefined
+      for (const off of teardown.splice(0)) off()
+      restoreExpansion = false
       table.dispose()
-      chosen.set(null)
+      closeCell()
     },
   }
 }

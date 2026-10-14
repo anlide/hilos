@@ -121,6 +121,57 @@ function el(fixture: ComponentFixture<unknown>, id: string): Element | null {
 }
 
 describe('HilosAdminPage', () => {
+  it('changes child addresses locally while keeping breadcrumb params and the URL', () => {
+    const navigation = {
+      ...router({
+        label: 'Daemon',
+        lead: '',
+        breadcrumb: [
+          { page: HilosPages.DAEMON_WORKERS, label: 'Workers' },
+          { page: HilosPages.DAEMON, label: 'Daemon' },
+        ],
+        children: [
+          {
+            page: HilosPages.DAEMON_AGENTS,
+            label: 'Agents',
+            lead: '',
+            icon: null,
+          },
+        ],
+      }),
+      currentRoute: createSignal<PageRouteMatch>({
+        page: HilosPages.DAEMON,
+        params: { nodeId: 'route-node' },
+        admin: true,
+      }),
+      currentPath: createSignal('/hilos/daemon'),
+      resolvePath: (page: string, params: Record<string, string>) =>
+        `/hilos/${params.nodeId}/${page}`,
+    }
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: navigation }],
+    })
+    const fixture = TestBed.createComponent(HilosAdminPage)
+    fixture.componentRef.setInput('page', HilosPages.DAEMON)
+    fixture.componentRef.setInput('childParams', { nodeId: 'first' })
+    fixture.detectChanges()
+    const child = el(fixture, 'hilos-admin-child-hilos_daemon_agents')!
+    expect(child.getAttribute('href')).toContain('/first/')
+    fixture.componentRef.setInput('childParams', { nodeId: 'second' })
+    fixture.detectChanges()
+    expect(child.getAttribute('href')).toContain('/second/')
+    expect(
+      el(fixture, 'hilos-breadcrumb-hilos_daemon_workers')?.getAttribute(
+        'href',
+      ),
+    ).toContain('/route-node/')
+    expect(navigation.currentPath.get()).toBe('/hilos/daemon')
+    expect(navigation.currentRoute.get().params).toEqual({
+      nodeId: 'route-node',
+    })
+    fixture.destroy()
+  })
+
   it('renders the heading, breadcrumb, and child cards a section answered with', () => {
     const fixture = mount(BareHost, SECTION_IDENTITY)
 
