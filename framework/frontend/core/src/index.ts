@@ -147,6 +147,15 @@ export {
   type HilosI18nLanguageNameDeleteTarget,
 } from './admin/i18n/hilosI18nLanguageNameDelete.js'
 export {
+  HILOS_I18N_LANGUAGE_NAME_ADD_ACTION,
+  HILOS_I18N_LANGUAGE_NAME_UPDATE_ACTION,
+  HILOS_I18N_LANGUAGE_NAME_MAX,
+  HILOS_I18N_LANGUAGE_NAME_COPY,
+  createHilosI18nLanguageNameWindow,
+  type HilosI18nLanguageNameTarget,
+  type HilosI18nLanguageNameWindow,
+} from './admin/i18n/hilosI18nLanguageNameWindow.js'
+export {
   HILOS_I18N_LANGUAGE_UPDATE_ACTION,
   HILOS_I18N_LANGUAGE_ROW_UPDATE_ACTION,
   HILOS_I18N_LANGUAGE_NATIVE_NAME_MAX,

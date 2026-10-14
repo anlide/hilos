@@ -17,6 +17,7 @@ import { nextTick } from 'vue'
 
 import HilosI18nLanguageNamesPage from './HilosI18nLanguageNamesPage.vue'
 import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
+import HilosI18nLanguageNameWindow from './HilosI18nLanguageNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 
@@ -409,5 +410,203 @@ describe('language name deletion from the page', () => {
       expect(button.attributes('aria-describedby')).toBeTruthy()
     }
     expect(s.modal().props('modelValue')).toBe(false)
+  })
+})
+
+describe('language name add/edit from the page', () => {
+  it('draws plus/pencil by null in both base and correction slots, preserving the trash', async () => {
+    const s = deletionPage()
+    s.controller.expandRow('qw', true)
+    await settlePage()
+    for (const surface of ['table', '[data-id="hilos-table-cards"]']) {
+      for (const suffix of [
+        'edit-qw',
+        'edit-es',
+        'add-fr',
+        'locale-edit-qw-GB',
+        'locale-edit-qw-US',
+        'locale-add-qw-CA',
+      ]) {
+        expect(
+          s.wrapper
+            .find(`${surface} [data-id="i18n-language-name-${suffix}"]`)
+            .exists(),
+        ).toBe(true)
+      }
+      for (const key of ['qw', 'es', 'qw-GB', 'qw-US']) {
+        expect(
+          s.wrapper
+            .find(`${surface} [data-id="i18n-names-delete-${key}"]`)
+            .exists(),
+        ).toBe(true)
+      }
+    }
+    expect(
+      s.wrapper
+        .get('tr [data-id="i18n-language-name-edit-qw"]')
+        .attributes('aria-label'),
+    ).toBe('Edit name · Test language in Writing')
+    expect(
+      s.wrapper
+        .get('tr [data-id="i18n-language-name-locale-add-qw-CA"]')
+        .attributes('aria-label'),
+    ).toBe('Add locale correction · Test language in Writing · qw-CA')
+    // One actions column, the inherited HIL-1490 slots.
+    expect(
+      s.wrapper.findAll('th').filter((cell) => cell.text() === 'Actions'),
+    ).toHaveLength(1)
+  })
+
+  it('opens corrections under an empty base and takes their parent focus', async () => {
+    const s = deletionPage()
+    s.controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'qw',
+      row: { rowKey: 'qw', slots: { language: { ...s.slot, name: '' } } },
+    })
+    s.controller.expandRow('qw', true)
+    await settlePage()
+    await s.wrapper
+      .get('tr [data-id="i18n-language-name-locale-add-qw-CA"]')
+      .trigger('click')
+    await settlePage()
+    const window = s.wrapper
+      .getComponent(HilosI18nLanguageNameWindow)
+      .props('window')
+    expect(window.mode.get()).toBe('add')
+    expect(window.target.get()).toMatchObject({
+      inLanguageCode: 'qw',
+      localeCode: 'qw-CA',
+    })
+    expect(s.controller.focusedRow.get()?.name).toBe('')
+  })
+
+  it('keeps both components mounted while switching their shared focus', async () => {
+    const s = deletionPage()
+    await settlePage()
+    const component = s.wrapper.getComponent(HilosI18nLanguageNameWindow)
+    const window = component.props('window')
+    const deletion = s.modal().vm.$
+    await s.wrapper.get('tr [data-id="i18n-names-delete-qw"]').trigger('click')
+    await settlePage()
+    expect(s.modal().props('modelValue')).toBe(true)
+    await s.wrapper
+      .get('tr [data-id="i18n-language-name-edit-es"]')
+      .trigger('click')
+    await settlePage()
+    expect(s.modal().props('modelValue')).toBe(false)
+    expect(window.opened.get()).toBe(true)
+    expect(s.controller.focusedRow.get()?.code).toBe('es')
+    expect(s.modal().vm.$).toBe(deletion)
+    await s.wrapper.get('tr [data-id="i18n-names-delete-qw"]').trigger('click')
+    await settlePage()
+    expect(window.opened.get()).toBe(false)
+    expect(s.modal().props('modelValue')).toBe(true)
+    expect(s.controller.focusedRow.get()?.code).toBe('qw')
+    expect(s.wrapper.getComponent(HilosI18nLanguageNameWindow).vm.$).toBe(
+      component.vm.$,
+    )
+  })
+
+  it('cancels a pending delete opening without releasing the newly opened edit', async () => {
+    const s = deletionPage()
+    await settlePage()
+    ;(
+      s.wrapper.get('tr [data-id="i18n-names-delete-qw"]')
+        .element as HTMLButtonElement
+    ).click()
+    ;(
+      s.wrapper.get('tr [data-id="i18n-language-name-edit-es"]')
+        .element as HTMLButtonElement
+    ).click()
+    await settlePage()
+    expect(s.modal().props('modelValue')).toBe(false)
+    expect(
+      s.wrapper
+        .getComponent(HilosI18nLanguageNameWindow)
+        .props('window')
+        .opened.get(),
+    ).toBe(true)
+    expect(s.controller.focusedRow.get()?.code).toBe('es')
+  })
+
+  it('keeps a draft when card=null, then releases it on a route change and on unmount', async () => {
+    const s = deletionPage()
+    await settlePage()
+    await s.wrapper
+      .get('tr [data-id="i18n-language-name-edit-qw"]')
+      .trigger('click')
+    const window = s.wrapper
+      .getComponent(HilosI18nLanguageNameWindow)
+      .props('window')
+    window.patchForm({ name: 'Copy me' })
+    s.scope.data.set(LANGUAGE_CARD_DATA, null)
+    await settlePage()
+    expect(window.opened.get()).toBe(true)
+    expect(window.form.get().name).toBe('Copy me')
+    expect(window.saveLabel.get()).toBe('Deleted')
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[data-id="i18n-language-name-input"]',
+      )?.disabled,
+    ).toBe(false)
+    s.route.set({
+      page: HilosPages.I18N_LANGUAGE_NAMES,
+      params: { languageCode: 'qz' },
+      admin: true,
+    })
+    await settlePage()
+    expect(window.opened.get()).toBe(false)
+    expect(s.controller.focusedRow.get()).toBeUndefined()
+    s.scope.data.set(LANGUAGE_CARD_DATA, { ...testCard, code: 'qz' })
+    s.controller.ingestWindow(
+      [{ rowKey: 'qw', slots: { language: s.slot } }],
+      1,
+      true,
+      null,
+      null,
+      100,
+    )
+    await settlePage()
+    await s.wrapper
+      .get('tr [data-id="i18n-language-name-edit-qw"]')
+      .trigger('click')
+    expect(window.target.get()?.languageCode).toBe('qz')
+    expect(s.controller.focusedRow.get()?.code).toBe('qw')
+    s.wrapper.unmount()
+    mounted.splice(mounted.indexOf(s.wrapper), 1)
+    expect(window.opened.get()).toBe(false)
+    expect(s.controller.focusedRow.get()).toBeUndefined()
+  })
+
+  it('lets the viewer open a form through either slot while its submit stays locked', async () => {
+    const s = deletionPage(true)
+    s.controller.expandRow('qw', true)
+    await settlePage()
+    for (const suffix of [
+      'add-fr',
+      'edit-es',
+      'locale-add-qw-CA',
+      'locale-edit-qw-US',
+    ]) {
+      const button = s.wrapper.get(
+        `tr [data-id="i18n-language-name-${suffix}"]`,
+      )
+      expect((button.element as HTMLButtonElement).disabled).toBe(false)
+      await button.trigger('click')
+      await settlePage()
+      const window = s.wrapper
+        .getComponent(HilosI18nLanguageNameWindow)
+        .props('window')
+      window.patchForm({ name: 'Viewer draft' })
+      await settlePage()
+      const submit = document.querySelector<HTMLButtonElement>(
+        '[data-id="i18n-language-name-submit"]',
+      )!
+      expect(submit.disabled).toBe(true)
+      expect(submit.getAttribute('aria-describedby')).toBeTruthy()
+      window.close()
+      await settlePage()
+    }
   })
 })

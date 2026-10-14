@@ -9,8 +9,10 @@ classes that follow the theme (styling-rules.md). -->
 import {
   computedSignal,
   createHilosI18nLanguageCard,
+  createHilosI18nLanguageNameWindow,
   createHilosI18nNamesTable,
   HILOS_I18N_LANGUAGE_NAMES,
+  HILOS_I18N_LANGUAGE_NAME_COPY,
   HILOS_I18N_LANGUAGE_NAME_DELETE_COPY,
   HilosPages,
   type HilosI18nLanguageContext,
@@ -33,10 +35,12 @@ import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
 import HilosI18nLanguageNameDelete from './HilosI18nLanguageNameDelete.vue'
+import HilosI18nLanguageNameWindow from './HilosI18nLanguageNameWindow.vue'
 import HilosI18nNamesTable from './HilosI18nNamesTable.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
-const card = useSignal(createHilosI18nLanguageCard(props.context))
+const liveCard = createHilosI18nLanguageCard(props.context)
+const card = useSignal(liveCard)
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
@@ -53,6 +57,13 @@ const names = createHilosI18nNamesTable(
   HILOS_I18N_LANGUAGE_NAMES,
   language,
 )
+const nameWindow = createHilosI18nLanguageNameWindow(
+  names.controller,
+  liveCard,
+  language,
+  props.context,
+)
+const nameCopy = HILOS_I18N_LANGUAGE_NAME_COPY
 const copy = HILOS_I18N_LANGUAGE_NAME_DELETE_COPY
 const deleteOpen = ref(false)
 const target = shallowRef<HilosI18nLanguageNameDeleteTarget | null>(null)
@@ -73,11 +84,21 @@ function closeDelete(): void {
   names.controller.releaseFocus()
 }
 
+function openName(
+  row: HilosI18nNameRow,
+  localeCode: string | null = null,
+): void {
+  if (nameWindow.saving.get()) return
+  closeDelete()
+  nameWindow.open(row.code, localeCode)
+}
+
 async function openDelete(
   row: HilosI18nNameRow,
   localeCode?: string,
 ): Promise<void> {
-  if (deleteOpen.value) return
+  if (deleteOpen.value || nameWindow.saving.get()) return
+  nameWindow.close()
   const attempt = ++opening
   const languageCode = language.get()
   const resolved = await names.controller.focusRow(row.code)
@@ -117,9 +138,13 @@ async function openDelete(
 }
 
 watch(currentLanguage, closeDelete, { flush: 'sync' })
-watch(deleteOpen, (open) => {
-  if (!open) names.controller.releaseFocus()
-})
+watch(
+  deleteOpen,
+  (open) => {
+    if (!open) names.controller.releaseFocus()
+  },
+  { flush: 'sync' },
+)
 onMounted(() => names.start())
 onUnmounted(() => {
   closeDelete()
@@ -136,6 +161,21 @@ onUnmounted(() => {
       />
       <HilosI18nNamesTable :controller="names.controller">
         <template #name-actions="{ row }">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :aria-label="
+              nameCopy.open(row.name === null, card.nativeName, row.nativeName)
+            "
+            :data-id="`i18n-language-name-${row.name === null ? 'add' : 'edit'}-${row.code}`"
+            @click="openName(row)"
+          >
+            <i
+              class="bi"
+              :class="row.name === null ? 'bi-plus-lg' : 'bi-pencil'"
+              aria-hidden="true"
+            ></i>
+          </button>
           <LoadingButton
             v-if="row.name !== null"
             class="btn-sm btn-outline-danger"
@@ -146,6 +186,27 @@ onUnmounted(() => {
           ></LoadingButton>
         </template>
         <template #correction-actions="{ row, correction }">
+          <button
+            v-if="row.name !== null"
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            :aria-label="
+              nameCopy.open(
+                correction.name === null,
+                card.nativeName,
+                row.nativeName,
+                correction.localeCode,
+              )
+            "
+            :data-id="`i18n-language-name-locale-${correction.name === null ? 'add' : 'edit'}-${correction.localeCode}`"
+            @click="openName(row, correction.localeCode)"
+          >
+            <i
+              class="bi"
+              :class="correction.name === null ? 'bi-plus-lg' : 'bi-pencil'"
+              aria-hidden="true"
+            ></i>
+          </button>
           <LoadingButton
             v-if="correction.name !== null"
             class="btn-sm btn-outline-danger"
@@ -181,5 +242,6 @@ onUnmounted(() => {
       :target="target"
       :source="source"
     />
+    <HilosI18nLanguageNameWindow :window="nameWindow" />
   </HilosAdminPage>
 </template>

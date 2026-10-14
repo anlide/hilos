@@ -21,7 +21,7 @@ const CANCEL = 'i18n-language-name-delete-cancel'
 async function openNames(page: Page): Promise<void> {
   await gotoPage(page, NAMES_PATH, PAGE_READY)
   await expect(page.getByTestId('language-card-counts')).toHaveText(
-    'Locales: 0 · Names: 1',
+    'Locales: 1 · Names: 1',
   )
   await expect(shownByTestId(page, 'hilos-table-row-qw')).toContainText(
     'Fixture base',
@@ -92,7 +92,7 @@ test('cancels then deletes a base name and all corrections live in both windows'
       )
       await expect(shownByTestId(tab, 'hilos-table-row-qw')).toBeVisible()
       await expect(tab.getByTestId('language-card-counts')).toHaveText(
-        'Locales: 0 · Names: 0',
+        'Locales: 1 · Names: 0',
       )
       await expect(tab.getByTestId('i18n-names-correction-qw-GB')).toHaveCount(
         0,
@@ -152,7 +152,7 @@ test('removes one correction and then the saved empty correction at 375px, with 
       await expect(shownByTestId(tab, 'i18n-names-delete-qw-US')).toBeVisible()
       await expect(shownByTestId(tab, 'i18n-names-delete-qw')).toBeVisible()
       await expect(tab.getByTestId('language-card-counts')).toHaveText(
-        'Locales: 0 · Names: 1',
+        'Locales: 1 · Names: 1',
       )
     }
     await dismissToasts(page)
@@ -188,7 +188,7 @@ test('removes one correction and then the saved empty correction at 375px, with 
         'as in “HIL-1490 writing”',
       )
       await expect(tab.getByTestId('language-card-counts')).toHaveText(
-        'Locales: 0 · Names: 1',
+        'Locales: 1 · Names: 1',
       )
       await expect(shownByTestId(tab, 'i18n-names-delete-qw')).toBeVisible()
       await expect(tab.getByTestId('hilos-table-apply')).toHaveCount(0)

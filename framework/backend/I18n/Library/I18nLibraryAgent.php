@@ -60,6 +60,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
 
     private const string LANGUAGE_NAMES_TARGET_CODE = 'qv';
     private const string LANGUAGE_NAMES_WRITING_CODE = 'qw';
+    private const string LANGUAGE_NAMES_REVERSE_COUNTRY_CODE = 'gb';
 
     /** @var array<string, string> Fixed fixture addresses and their ownership markers */
     private const array LANGUAGE_NAMES_MARKERS = [
@@ -346,6 +347,13 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                 );
                 Hilos::$db->languageNames->actions->createManual($language, $inLanguage, $locale, $correction);
             }
+            Hilos::$db->locales->actions->create(
+                $language,
+                Hilos::$db->countries[self::LANGUAGE_NAMES_REVERSE_COUNTRY_CODE]
+                    ?? throw new ValidationException('Missing fixture country: ' . self::LANGUAGE_NAMES_REVERSE_COUNTRY_CODE),
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            );
             Database::transactionCommit();
         } catch (Throwable $failure) {
             try {
@@ -375,12 +383,16 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             $inLanguage = Hilos::$db->languages[self::LANGUAGE_NAMES_WRITING_CODE];
             if ($language !== null && $inLanguage !== null) {
                 Hilos::$db->languageNames->findBase($language->id, $inLanguage->id)?->actions->delete();
+                Hilos::$db->languageNames->findBase($inLanguage->id, $language->id)?->actions->delete();
             }
             foreach (array_keys(self::LANGUAGE_NAMES_CORRECTIONS) as $countryCode) {
                 $localeCode = self::LANGUAGE_NAMES_WRITING_CODE . '-' . strtoupper($countryCode);
                 Hilos::$db->locales[$localeCode]?->actions->switchOff();
                 Hilos::$db->locales[$localeCode]?->actions->delete();
             }
+            $reverseLocaleCode = self::LANGUAGE_NAMES_TARGET_CODE . '-' . strtoupper(self::LANGUAGE_NAMES_REVERSE_COUNTRY_CODE);
+            Hilos::$db->locales[$reverseLocaleCode]?->actions->switchOff();
+            Hilos::$db->locales[$reverseLocaleCode]?->actions->delete();
             foreach (array_keys(self::LANGUAGE_NAMES_MARKERS) as $code) {
                 Hilos::$db->languages[$code]?->actions->delete();
             }

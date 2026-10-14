@@ -62,6 +62,12 @@ function mountNames(
           countryName: null,
           name: null,
         },
+        {
+          localeCode: 'en-CA',
+          countryCode: 'ca',
+          countryName: 'Canada',
+          name: '',
+        },
       ]),
       nameRow('es', 'Español', ''),
       nameRow('fr', 'Français', null),
@@ -202,6 +208,9 @@ describe('shared names action slots', () => {
         expect(
           wrapper.get(`${surface} [data-id="test-correction-en-US"]`).text(),
         ).toBe('en:inherited')
+        expect(
+          wrapper.get(`${surface} [data-id="test-correction-en-CA"]`).text(),
+        ).toBe('en:')
       }
       wrapper.unmount()
     },

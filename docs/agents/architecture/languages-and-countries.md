@@ -268,7 +268,7 @@ only the section reads the switch.
 state, while the reflow supplies 2,550 country names.
 
 - Editing a language name sets its lock automatically; there is no separate
-  “pin” button (not in the code yet — HIL-1489).
+  “pin” button.
 - Editing a country name sets its lock automatically, with no “pin” button
   (not in the code yet — HIL-1500).
 - The reflow writes only unlocked names.
@@ -287,6 +287,29 @@ a name back to the catalog, delete it:
   returns because the catalog supplies no overrides.
 - Deleting a country-name override has the same effect: only that override
   disappears and does not return.
+
+The ADMIN language names page offers `hilos_i18n_language_name_add` and
+`hilos_i18n_language_name_update`. Both carry `languageCode`, `inLanguageCode`,
+nullable `localeCode` (`null` for the base), and the literal `name`. Creation
+and editing save `locked = true`, preserving empty strings and whitespace.
+A saved empty base permits a locale correction; a saved empty correction is
+its own value, not inheritance. The Vue table shows a pencil for either saved
+value and a plus only for `null`. Clearing the field never deletes a name.
+
+Update also carries `expectedName`: the latest committed text acknowledged by
+the row-edit session, including after Keep mine or Take theirs. The i18n library
+compares it and writes in one synchronous handler, refusing a missing or changed
+name; ADD refuses an existing base or correction. An equal-text replacement is
+accepted: there is no separate version or protection against an ABA change.
+
+The Vue window takes the parent row into focus and fixes its base/correction
+coordinates and ADD/EDIT mode on opening. A late creation leaves ADD open with
+its draft and receives the duplicate refusal in the modal. EDIT follows the
+live name through the shared row-edit session and offers Keep mine and Take
+theirs on conflict. A missing source leaves the draft available to copy and
+blocks Save as Deleted. Busy and admin-view guards close the write controls;
+success closes the window, and committed names reach other open tabs without
+Apply or reload. The language and locale switches do not gate these name writes.
 
 The ADMIN language names page offers `hilos_i18n_language_name_delete` and
 `hilos_i18n_language_name_override_delete`. Both carry `languageCode`,
