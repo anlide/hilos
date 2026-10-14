@@ -5,8 +5,7 @@ and are resolved with the Apply button. A removed row renders as a placeholder i
 its slot while the set still has rows elsewhere. It holds NO table logic
 (multiframework-core.md): the controller owns the descriptor, pending, and Apply.
 Body cells come from a `#cell-<key>` slot per declared column — the page gives
-the content, the framework writes the cell — or from the one `#row` slot while a
-page still passes its columns as a prop; plus one framework-owned cell at the end
+the content, the framework writes the cell — plus one framework-owned cell at the end
 of the row carrying the state of that row — it waits, its values are behind, or
 both — and the control that opens the row; the placeholder, header, paging, and
 the one room of live messages above the rows stay framework-owned.
@@ -22,17 +21,13 @@ row of its own under a row for work over that one row, stretched under whichever
 columns declared themselves. The room and the track are the framework's, while
 everything a reader sees beside them comes from the page through slots
 (mockups/components/table section 5).
-(Distinct from HilosTable, the client-side view.)
 On a narrow screen a declared table is drawn as a list of cards instead: the
 framework builds each card out of the very columns the page declared and fills
 it from the same `#cell-<key>` slots, so a project writes no second markup for
 its phone (mockups/components/table section 9). A card opens into its own panel,
 inside its own body and off an id base of its own. Both branches stand in the
 document and Bootstrap's visibility utilities show one of them.
-It draws its frame from what the page DECLARED (HilosTableBar, HilosTableFooter)
-when the controller carries a declaration, and from its own props when it does
-not — two epochs of the same table living side by side: the framework's admin
-tables declare, while its log pages still pass props.
+It draws HilosTableBar and HilosTableFooter from the page's HilosTableFrame.
 The body is drawn from the state the core decides (HilosTableBody): rows, a
 skeleton of rows while a window change is late, or one of the four worded states
 drawn by HilosTableEmptyState — the page's own "nothing here yet", the
@@ -73,22 +68,8 @@ const props = withDefaults(
   defineProps<{
     /** The headless server-windowed controller driving rows, descriptor, and pending. */
     controller: TableViewportController<R>
-    /**
-     * Column declarations for the header (labels and sort controls) of a table whose
-     * page declared no frame; a declared table takes its columns from the declaration
-     * and is not handed these.
-     */
-    columns?: HilosTableColumn[]
-    /** Accessible name for the table, rendered as a visually-hidden caption. */
-    label?: string
-    /** Show the search box above the table. */
-    searchable?: boolean
-    /** Placeholder for the search box. */
-    searchPlaceholder?: string
     /** Whether the search box owns focus when this table opens inside a modal. */
     autofocusSearch?: boolean
-    /** Message shown when there are no rows. */
-    emptyText?: string
     /**
      * The `data-id` the table's root carries, for a page that draws more than one of
      * them: the default is the shared handle, and a second table on the same page names
@@ -97,31 +78,15 @@ const props = withDefaults(
     dataId?: string
   }>(),
   {
-    columns: () => [],
-    label: undefined,
-    searchable: false,
-    searchPlaceholder: 'Search…',
     autofocusSearch: false,
-    emptyText: 'No rows.',
     dataId: 'hilos-viewport-table',
   },
 )
 
-// What the page declared about the frame, or null when it declared nothing —
-// the one switch between the two epochs of markup. It does not change over the
-// life of a table, so it is read once rather than wrapped in a signal.
+// The declaration is fixed for the life of the table; its resolved columns
+// remain reactive and drive the header, cells, detail, progress, and card.
 const declaration = props.controller.frame.declaration
-
-// The columns the table is drawn from: the declaration's own where there is one,
-// and the prop for a table whose page still passes one (the framework's log pages).
-// Everything that measures or draws a column — the header, the cells of a row,
-// the width of a full-row cell, the card — counts THIS list, so a declared table
-// cannot assemble its row from one list and its card from another (Design D7).
-// It is the one reader of the prop left in the component.
-const resolvedColumns = useSignal(props.controller.frame.columns)
-const frameColumns = computed<readonly HilosTableColumn[]>(() =>
-  declaration ? resolvedColumns.value : props.columns,
-)
+const frameColumns = useSignal(props.controller.frame.columns)
 
 // Which declared column takes which place of the card a row is drawn as on a
 // narrow screen — the head, the badge beside it, the labelled lines, the
@@ -163,21 +128,13 @@ const cardDetailBaseId = useId()
 const selectionEdge = inject(hilosTableSelectionEdgeKey, 'start')
 
 // The marks, and the one sign that this table has them: a page that declared bulk
-// operations. There is no second sign — a table drawing its frame from props has
-// no declaration, so `enabled` is already false for it (Flow F14).
+// operations (Flow F14).
 const selection = props.controller.selection
 const selectionEnabled = selection.enabled
 const selectionHeader = useSignal(selection.header)
 
 const rows = useSignal(props.controller.rows)
-const search = useSignal(props.controller.search)
 const order = useSignal(props.controller.order)
-const page = useSignal(props.controller.page)
-const pageCount = useSignal(props.controller.pageCount)
-const totalCount = useSignal(props.controller.totalCount)
-const totalExact = useSignal(props.controller.totalExact)
-const hasNextPage = useSignal(props.controller.hasNextPage)
-const hasPreviousPage = useSignal(props.controller.hasPreviousPage)
 const pendingCount = useSignal(props.controller.pendingCount)
 
 // Which state the body is in — rows, the skeleton, or one of the four worded
@@ -197,11 +154,6 @@ const skeletonRows = computed(() =>
 // The row bars this view draws itself. The table bar and the bulk bar are drawn by
 // the room of live messages above the rows (HilosTableLive).
 const rowProgress = useSignal(props.controller.progress.rows)
-
-// A table whose count stopped at its ceiling has no page count to compare against, and
-// the footer is what such a table still needs: it is the only place saying there is more.
-// The flag is the core's (controller.paginated, HIL-1087); this view only reads it.
-const paginated = useSignal(props.controller.paginated)
 
 // The fields that wait in a panel instead of taking a column of their own, and the
 // columns that are left standing in the row. Every place that measures or draws the
@@ -289,12 +241,6 @@ const progressCells = computed<readonly ProgressCell[]>(() => {
 
   return cells
 })
-
-// The total reads as "at least this many" when the count stopped at its ceiling, which is
-// what the trailing plus says. Spelling it out in words would say the same thing longer.
-const countLabel = computed(() =>
-  totalExact.value ? `${totalCount.value} total` : `${totalCount.value}+ total`,
-)
 
 // A row's tint, resolved in the order the mockup resolves it (section 4): amber
 // while a pending change waits on the row — a move and a removal alike — and green
@@ -420,10 +366,6 @@ function staleColumnText(column: HilosTableColumn): string {
     : TABLE_STALENESS_COPY.columnMark
 }
 
-function onSearchInput(event: Event): void {
-  props.controller.setSearch((event.target as HTMLInputElement).value)
-}
-
 // The checkbox tells the core the state it is now IN rather than asking it to
 // toggle: the state of a checkbox is what the reader sees, and a toggle sent from
 // a box the browser has already flipped is a second answer to one question
@@ -449,24 +391,9 @@ function onSelectPage(event: Event): void {
       :autofocus-search="autofocusSearch"
     />
 
-    <!-- The bar a table draws from props, kept while a page still passes them —
-    the framework's log pages do. It goes with the props themselves. -->
-    <div v-if="!declaration && searchable" class="mb-3">
-      <input
-        type="search"
-        class="form-control"
-        :placeholder="searchPlaceholder"
-        :aria-label="searchPlaceholder"
-        :value="search"
-        :data-autofocus="autofocusSearch ? '' : undefined"
-        data-id="hilos-table-search"
-        @input="onSearchInput"
-      />
-    </div>
-
     <!-- Everything live the table has to say — work running over the set, a
     source gone quiet, new rows the window cannot show, changes waiting for Apply —
-    in one room that never changes height, outside both epochs of the frame: it
+    in one room that never changes height: it
     speaks about what is happening to the rows, not about what the page
     declared. Next to running work, everything a reader sees comes from the page
     through the two slots, because it is the project's business logic and not
@@ -483,27 +410,16 @@ function onSelectPage(event: Event): void {
       </template>
     </HilosTableLive>
 
-    <!-- A DECLARED table is a table on a wide screen and a list of cards on a
-    narrow one, so its scroll wrapper goes with the table itself: there is
-    nothing left to scroll sideways once the columns became lines of a card
-    (Design D8). A table still drawn from props has no cards to fall back on and
-    keeps the wrapper at every width, scrollbar and all, until its page moves
-    onto the declaration. -->
+    <!-- The scroll wrapper belongs to the wide table: once columns become
+    lines of a card, there is nothing left to scroll sideways (Design D8). -->
     <div
       class="table-responsive"
       :class="{ 'd-none d-md-block': declaration !== null }"
     >
       <table
         class="table table-striped table-hover align-middle mb-0"
-        :aria-labelledby="declaration ? nameId : undefined"
+        :aria-labelledby="nameId"
       >
-        <!-- A declared table already shows its name as a heading, and a hidden
-        caption repeating it would name the table twice (Flow F9). -->
-        <caption v-if="!declaration && label" class="visually-hidden">
-          {{
-            label
-          }}
-        </caption>
         <thead>
           <tr>
             <!-- The checkbox column stands on the edge the installation chose,
@@ -673,14 +589,7 @@ function onSelectPage(event: Event): void {
                 ></i>
                 {{ hilosTablePlaceholder(view.removal).text }}
               </td>
-              <!-- What stands where a row's values do, one shape per epoch of
-              the frame. A DECLARED table hands the page one slot per column and
-              writes the cell around it: that is what makes a cell addressable by
-              column at all, and it is what lets the card next door be built from
-              the same slots instead of a second markup the page would write. A
-              table still drawing its frame from props has no column to address a
-              cell by, so it keeps handing over the whole row. -->
-              <template v-else-if="declaration">
+              <template v-else>
                 <!-- The cell stands even where the page filled no slot: a row one
                 cell short is a row narrower than its header (Flow F3). -->
                 <td
@@ -706,7 +615,6 @@ function onSelectPage(event: Event): void {
                   />
                 </td>
               </template>
-              <slot v-else name="row" :row="view.row" :row-key="view.rowKey" />
               <td
                 v-if="markColumn && !view.placeholder && view.row !== null"
                 class="text-end text-nowrap"
@@ -879,7 +787,7 @@ function onSelectPage(event: Event): void {
                     : 'empty'
                 "
               >
-                <slot name="empty">{{ emptyText }}</slot>
+                <slot name="empty">No rows.</slot>
               </HilosTableEmptyState>
             </td>
           </tr>
@@ -1161,49 +1069,10 @@ function onSelectPage(event: Event): void {
             : 'empty'
         "
       >
-        <slot name="empty">{{ emptyText }}</slot>
+        <slot name="empty">No rows.</slot>
       </HilosTableEmptyState>
     </div>
 
     <HilosTableFooter v-if="declaration" :controller="controller" />
-
-    <!-- The footer a table draws from its own comparisons, kept for the same
-    reason and going the same way as the bar above. -->
-    <div
-      v-if="!declaration && paginated"
-      class="d-flex justify-content-between align-items-center mt-3"
-    >
-      <span class="text-muted small" data-id="hilos-table-count">
-        {{ countLabel }}
-      </span>
-      <div class="btn-group" role="group" aria-label="Pagination">
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm"
-          :disabled="!hasPreviousPage"
-          data-id="hilos-table-prev"
-          @click="controller.prevPage()"
-        >
-          Previous
-        </button>
-        <span
-          v-if="pageCount !== null"
-          class="btn btn-sm disabled"
-          :aria-label="`Page ${page + 1} of ${pageCount}`"
-          data-id="hilos-table-page"
-        >
-          {{ page + 1 }} / {{ pageCount }}
-        </span>
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm"
-          :disabled="!hasNextPage"
-          data-id="hilos-table-next"
-          @click="controller.nextPage()"
-        >
-          Next
-        </button>
-      </div>
-    </div>
   </div>
 </template>

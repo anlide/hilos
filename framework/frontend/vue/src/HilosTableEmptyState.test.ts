@@ -6,7 +6,9 @@ import type { HilosTableFrame, TableViewportDescriptor } from '@hilos/core'
 
 import HilosTableEmptyState from './HilosTableEmptyState.vue'
 
-function makeController(frame?: HilosTableFrame): {
+function makeController(
+  frame: HilosTableFrame = { columns: [{ key: 'name', label: 'Name' }] },
+): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
 } {

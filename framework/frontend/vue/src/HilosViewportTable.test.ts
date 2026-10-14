@@ -12,6 +12,7 @@ import type {
 } from '@hilos/core'
 
 import HilosViewportTable from './HilosViewportTable.vue'
+import { hilosPageHeadingIdKey } from './hilosPageHeading.js'
 import {
   hilosTableSelectionEdgeKey,
   type HilosTableSelectionEdge,
@@ -41,7 +42,9 @@ const TWO_COLUMNS: HilosTableColumn[] = [
 
 // The controller is typed as unknown so the slot/controller line up with the
 // generic SFC, whose `R` @vue/test-utils does not infer from the prop value.
-function makeController(frame?: HilosTableFrame): {
+function makeController(
+  frame: HilosTableFrame = { title: 'Users', columns: COLUMNS },
+): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
 } {
@@ -55,22 +58,18 @@ function makeController(frame?: HilosTableFrame): {
   return { controller, sent }
 }
 
-function mountTable(
-  controller: TableViewportController<unknown>,
-  searchable = false,
-  columns: HilosTableColumn[] = COLUMNS,
-) {
+function mountTable(controller: TableViewportController<unknown>) {
   return mount(HilosViewportTable, {
-    props: { controller, columns, searchable },
+    props: { controller },
     slots: {
-      row: (props: { row: unknown; rowKey: string }) =>
-        h('td', { class: 'cell' }, (props.row as Row).name),
+      'cell-name': (props: { row: unknown; rowKey: string }) =>
+        h('span', { class: 'cell' }, (props.row as Row).name),
     },
   })
 }
 
 describe('HilosViewportTable', () => {
-  it('renders a row per window row through the #row slot', () => {
+  it('renders a row per window row through the cell slot', () => {
     const { controller } = makeController()
     controller.ingestWindow(
       [
@@ -101,12 +100,12 @@ describe('HilosViewportTable', () => {
   })
 
   it('marks every column an order of two runs by, not just the first', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: TWO_COLUMNS })
     controller.setOrder([
       { field: 'name', direction: 'desc' },
       { field: 'id', direction: 'desc' },
     ])
-    const wrapper = mountTable(controller, false, TWO_COLUMNS)
+    const wrapper = mountTable(controller)
     await wrapper.vm.$nextTick()
 
     // Sorted by both columns means an arrow on both: one arrow would name one of
@@ -118,12 +117,12 @@ describe('HilosViewportTable', () => {
   })
 
   it('numbers the columns of a composite order and says the place in words', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: TWO_COLUMNS })
     controller.setOrder([
       { field: 'name', direction: 'desc' },
       { field: 'id', direction: 'asc' },
     ])
-    const wrapper = mountTable(controller, false, TWO_COLUMNS)
+    const wrapper = mountTable(controller)
     await wrapper.vm.$nextTick()
 
     expect(wrapper.findAll('th sup').map((mark) => mark.text())).toEqual([
@@ -138,9 +137,9 @@ describe('HilosViewportTable', () => {
   })
 
   it('numbers nothing under an order of one column, where the arrow says it all', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: TWO_COLUMNS })
     controller.setSort('name')
-    const wrapper = mountTable(controller, false, TWO_COLUMNS)
+    const wrapper = mountTable(controller)
     await wrapper.vm.$nextTick()
 
     expect(wrapper.findAll('th sup')).toHaveLength(0)
@@ -461,8 +460,12 @@ describe('HilosViewportTable', () => {
     )
   })
 
-  it('names the table with a caption and reports sort state to assistive tech', async () => {
-    const { controller } = makeController()
+  it('names the table with its title and reports sort state to assistive tech', async () => {
+    const { controller } = makeController({
+      title: 'Users',
+      columns: COLUMNS,
+      search: {},
+    })
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
       1,
@@ -472,16 +475,19 @@ describe('HilosViewportTable', () => {
       10,
     )
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: COLUMNS, label: 'Users', searchable: true },
+      props: { controller },
       slots: {
-        row: (props: { row: unknown; rowKey: string }) =>
-          h('td', {}, (props.row as Row).name),
+        'cell-name': (props: { row: unknown; rowKey: string }) =>
+          h('span', {}, (props.row as Row).name),
       },
     })
 
-    const caption = wrapper.find('caption')
-    expect(caption.text()).toBe('Users')
-    expect(caption.classes()).toContain('visually-hidden')
+    const title = wrapper.find('[data-id="hilos-table-title"]')
+    expect(title.text()).toBe('Users')
+    expect(wrapper.find('table').attributes('aria-labelledby')).toBe(
+      title.attributes('id'),
+    )
+    expect(wrapper.find('caption').exists()).toBe(false)
     expect(
       wrapper.find('[data-id="hilos-table-search"]').attributes('aria-label'),
     ).toBe('Search…')
@@ -505,10 +511,10 @@ describe('HilosViewportTable with a declared frame', () => {
 
   function mountDeclared(controller: TableViewportController<unknown>) {
     return mount(HilosViewportTable, {
-      props: { controller, columns: COLUMNS, label: 'Users', searchable: true },
+      props: { controller },
       slots: {
-        row: (props: { row: unknown; rowKey: string }) =>
-          h('td', {}, (props.row as Row).name),
+        'cell-name': (props: { row: unknown; rowKey: string }) =>
+          h('span', {}, (props.row as Row).name),
       },
     })
   }
@@ -522,6 +528,34 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(wrapper.find('table').attributes('aria-labelledby')).toBe(
       title.attributes('id'),
     )
+    expect(wrapper.find('caption').exists()).toBe(false)
+  })
+
+  it('names the table and cards by the page heading when no title is declared', () => {
+    const { controller } = makeController({ columns: COLUMNS })
+    controller.ingestWindow(
+      [{ rowKey: 'a', slots: { name: 'Alice' } }],
+      1,
+      true,
+      null,
+      null,
+      10,
+    )
+    const wrapper = mount(HilosViewportTable, {
+      props: { controller },
+      global: {
+        provide: { [hilosPageHeadingIdKey as symbol]: 'page-heading' },
+      },
+    })
+
+    expect(wrapper.find('table').attributes('aria-labelledby')).toBe(
+      'page-heading',
+    )
+    expect(
+      wrapper
+        .find('[data-id="hilos-table-cards"] [role="list"]')
+        .attributes('aria-labelledby'),
+    ).toBe('page-heading')
     expect(wrapper.find('caption').exists()).toBe(false)
   })
 
@@ -541,13 +575,17 @@ describe('HilosViewportTable with a declared frame', () => {
     )
     const wrapper = mountTable(controller)
 
-    expect(wrapper.find('[data-id="hilos-table-page"]').text()).toBe('1 / 3')
+    expect(controller.frame.footer.get().page).toBe(0)
+    expect(wrapper.find('[data-id="hilos-table-count"]').text()).toBe(
+      '2 – 2 of 21',
+    )
+    expect(wrapper.find('[aria-current="page"]').text()).toBe('1')
     expect(
       wrapper.find('[data-id="hilos-table-prev"]').attributes('disabled'),
     ).toBeUndefined()
   })
 
-  it('draws the declared footer instead of the one built from props', () => {
+  it('draws the declared footer with the delivered row range', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -565,7 +603,7 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(wrapper.find('[data-id="hilos-table-page"]').exists()).toBe(false)
   })
 
-  it('leaves the props-driven bar out and keeps Apply in the waiting strip', () => {
+  it('draws one search bar and keeps Apply in the waiting strip', () => {
     const { controller } = makeController(FRAME)
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -582,8 +620,7 @@ describe('HilosViewportTable with a declared frame', () => {
     })
     const wrapper = mountDeclared(controller)
 
-    // One search box, the declared one; and the strips speak in both epochs of the
-    // frame, because they are about the rows and not about what the page declared.
+    // The declared search bar and the waiting strip each stand once.
     expect(wrapper.findAll('[data-id="hilos-table-search"]')).toHaveLength(1)
     expect(wrapper.find('[data-id="hilos-table-apply"]').exists()).toBe(true)
     expect(wrapper.find('[data-id="hilos-table-pending"]').text()).toBe('1')
@@ -620,7 +657,7 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
 
   function mountCells(controller: TableViewportController<unknown>) {
     return mount(HilosViewportTable, {
-      props: { controller, columns: CELL_COLUMNS },
+      props: { controller },
       slots: {
         'cell-name': (props: { row: unknown }) =>
           h('span', { class: 'named' }, (props.row as Row).name),
@@ -654,7 +691,7 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     const { controller } = makeController(CELL_FRAME)
     window(controller)
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: CELL_COLUMNS },
+      props: { controller },
       slots: {},
     })
 
@@ -663,13 +700,11 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     expect(cells[1]?.text()).toBe('')
   })
 
-  it('reads the columns off the declaration rather than off the prop', () => {
+  it('uses the same declared columns for the header and cells', () => {
     const { controller } = makeController(CELL_FRAME)
     window(controller)
     const wrapper = mount(HilosViewportTable, {
-      // A prop left behind from the props epoch: the declared table ignores it,
-      // so its row and its header cannot be assembled from two different lists.
-      props: { controller, columns: [{ key: 'name', label: 'Name' }] },
+      props: { controller },
       slots: {
         'cell-size': () => h('span', { class: 'sized' }, '1.2 GB'),
       },
@@ -678,16 +713,6 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     expect(wrapper.findAll('thead th')).toHaveLength(CELL_COLUMNS.length)
     expect(wrapper.find('thead').text()).toContain('Size')
     expect(wrapper.find('.sized').exists()).toBe(true)
-  })
-
-  it('keeps handing the whole row over while the page passes columns as a prop', () => {
-    const { controller } = makeController()
-    window(controller)
-    const wrapper = mountTable(controller)
-
-    expect(wrapper.find('[data-id="hilos-table-row-a"] td.cell').text()).toBe(
-      'Alice',
-    )
   })
 })
 
@@ -714,13 +739,12 @@ describe('HilosViewportTable with a selection column', () => {
   function mountWithEdge(
     controller: TableViewportController<unknown>,
     edge?: HilosTableSelectionEdge,
-    columns: HilosTableColumn[] = COLUMNS,
   ) {
     return mount(HilosViewportTable, {
-      props: { controller, columns },
+      props: { controller },
       slots: {
-        row: (props: { row: unknown; rowKey: string }) =>
-          h('td', {}, (props.row as Row).name),
+        'cell-name': (props: { row: unknown; rowKey: string }) =>
+          h('span', {}, (props.row as Row).name),
       },
       global:
         edge === undefined
@@ -970,7 +994,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     edge?: HilosTableSelectionEdge,
   ) {
     return mount(HilosViewportTable, {
-      props: { controller, columns: CARD_COLUMNS },
+      props: { controller },
       slots: CARD_SLOTS,
       global:
         edge === undefined
@@ -993,15 +1017,6 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(wide.classes()).toContain('d-md-block')
     // Nothing to scroll sideways once the columns became lines of a card.
     expect(cards.findAll('.table-responsive')).toHaveLength(0)
-  })
-
-  it('draws no cards and keeps the table at every width without a declaration', () => {
-    const { controller } = makeController()
-    window(controller)
-    const wrapper = mountTable(controller)
-
-    expect(wrapper.find('[data-id="hilos-table-cards"]').exists()).toBe(false)
-    expect(wrapper.find('.table-responsive').classes()).not.toContain('d-none')
   })
 
   it('lays the card out the way the core projected it', () => {
@@ -1044,7 +1059,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     const { controller } = makeController(CARD_FRAME)
     window(controller)
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: CARD_COLUMNS },
+      props: { controller },
       slots: { 'cell-name': () => h('span', { class: 'named' }, 'Alice') },
     })
 
@@ -1248,7 +1263,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
   it('says loading and then the page own empty words in both branches', async () => {
     const { controller } = makeController(CARD_FRAME)
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: CARD_COLUMNS },
+      props: { controller },
       slots: {
         ...CARD_SLOTS,
         empty: () => h('span', { class: 'none-yet' }, 'No backups yet'),
@@ -1369,7 +1384,7 @@ describe('HilosViewportTable expanding a card', () => {
 
   function mountDetailCards(controller: TableViewportController<unknown>) {
     return mount(HilosViewportTable, {
-      props: { controller, columns: CARD_DETAIL_COLUMNS },
+      props: { controller },
       slots: {
         'cell-name': () => h('span', { class: 'named' }, 'Alice'),
         'cell-kind': () => h('span', { class: 'kind' }, 'full'),
@@ -1490,13 +1505,7 @@ describe('HilosViewportTable expanding a card', () => {
     })
     window(controller)
     const wrapper = mount(HilosViewportTable, {
-      props: {
-        controller,
-        columns: [
-          { key: 'name', label: 'Name' },
-          { key: 'actions', label: '' },
-        ],
-      },
+      props: { controller },
       slots: { 'cell-name': () => h('span', { class: 'named' }, 'Alice') },
     })
 
@@ -1511,7 +1520,7 @@ describe('HilosViewportTable expanding a card', () => {
     const { controller } = makeController(CARD_DETAIL_FRAME)
     window(controller)
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: CARD_DETAIL_COLUMNS },
+      props: { controller },
       slots: { 'cell-name': () => h('span', { class: 'named' }, 'Alice') },
     })
     await wrapper
@@ -1625,10 +1634,10 @@ describe('HilosViewportTable drawing work in progress', () => {
       detail: { title: 'Nightly check' },
     })
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: COLUMNS },
+      props: { controller },
       slots: {
-        row: (props: { row: unknown; rowKey: string }) =>
-          h('td', {}, (props.row as Row).name),
+        'cell-name': (props: { row: unknown; rowKey: string }) =>
+          h('span', {}, (props.row as Row).name),
         'table-progress': (props: { progress: HilosTableProgress }) =>
           h(
             'span',
@@ -1727,10 +1736,10 @@ describe('HilosViewportTable drawing work over one row', () => {
   })
 
   it('stretches the bar under the marked columns and leaves the rest empty', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: MARKED_COLUMNS })
     window(controller)
     rowBar(controller, 'a')
-    const wrapper = mountTable(controller, false, MARKED_COLUMNS)
+    const wrapper = mountTable(controller)
 
     const cells = wrapper
       .get('[data-id="hilos-table-progress-row-a"]')
@@ -1760,7 +1769,7 @@ describe('HilosViewportTable drawing work over one row', () => {
   })
 
   it('adds the waiting cell to the bar row exactly as the header does', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: MARKED_COLUMNS })
     window(controller)
     rowBar(controller, 'a')
     controller.ingestDelta({
@@ -1768,7 +1777,7 @@ describe('HilosViewportTable drawing work over one row', () => {
       rowKey: 'b',
       reason: 'deleted',
     })
-    const wrapper = mountTable(controller, false, MARKED_COLUMNS)
+    const wrapper = mountTable(controller)
     await wrapper.vm.$nextTick()
 
     const spans = wrapper
@@ -1788,10 +1797,10 @@ describe('HilosViewportTable drawing work over one row', () => {
     window(controller)
     rowBar(controller, 'a')
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: COLUMNS },
+      props: { controller },
       slots: {
-        row: (props: { row: unknown; rowKey: string }) =>
-          h('td', {}, (props.row as Row).name),
+        'cell-name': (props: { row: unknown; rowKey: string }) =>
+          h('span', {}, (props.row as Row).name),
         'row-progress': (props: {
           progress: HilosTableProgress
           rowKey: string
@@ -1886,9 +1895,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   }
 
   it('raises the strip and names the columns built from the quiet source', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
 
     expect(wrapper.find('[data-id="hilos-table-stale"]').text()).toBe(
       'Presence is not updating: the link to its source was lost. The other columns are live.',
@@ -1908,9 +1917,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('keeps the sort control on a quiet column and carries the warning inside it', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
 
     const button = wrapper.find('[data-id="hilos-table-sort-presence"]')
     expect(button.exists()).toBe(true)
@@ -1926,9 +1935,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('sends a viewport when the name of a quiet column is clicked', async () => {
-    const { controller, sent } = makeController()
+    const { controller, sent } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
     sent.length = 0
     await wrapper.find('[data-id="hilos-table-sort-presence"]').trigger('click')
 
@@ -1936,13 +1945,13 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('numbers headers of a composite order whose first column is quiet and speaks both places', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
     controller.setOrder([
       { field: 'presence', direction: 'asc' },
       { field: 'name', direction: 'desc' },
     ])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
     await wrapper.vm.$nextTick()
 
     expect(wrapper.findAll('th sup').map((mark) => mark.text())).toEqual([
@@ -1955,9 +1964,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('keeps the standing order over a column that went quiet readable', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, [])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
     controller.setSort('presence')
     await wrapper.vm.$nextTick()
     controller.ingestDelta({
@@ -1975,9 +1984,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('marks exactly the rows whose own values are behind', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
 
     expect(wrapper.find('[data-id="hilos-table-stale-row-a"]').exists()).toBe(
       true,
@@ -1988,9 +1997,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('stands the mark cell up on a quiet source with nothing waiting at all', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
 
     expect(wrapper.findAll('thead th')).toHaveLength(SOURCED_COLUMNS.length + 1)
     expect(wrapper.find('thead th:last-child').text()).toBe(
@@ -2007,9 +2016,9 @@ describe('HilosViewportTable marking a source that went quiet', () => {
   })
 
   it('takes the strip, the snowflakes and the cell down when the source is current again', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({ columns: SOURCED_COLUMNS })
     window(controller, ['connections'])
-    const wrapper = mountTable(controller, false, SOURCED_COLUMNS)
+    const wrapper = mountTable(controller)
     controller.ingestDelta({
       kind: 'row_stale',
       rowKey: 'a',
@@ -2060,17 +2069,20 @@ describe('HilosViewportTable expanding a row', () => {
     },
   ) {
     return mount(HilosViewportTable, {
-      props: { controller, columns: DETAIL_COLUMNS, searchable: true },
+      props: { controller },
       slots: {
-        row: (props: { row: unknown; rowKey: string }) =>
-          h('td', { class: 'cell' }, (props.row as Row).name),
+        'cell-name': (props: { row: unknown; rowKey: string }) =>
+          h('span', { class: 'cell' }, (props.row as Row).name),
         ...detailSlots,
       },
     })
   }
 
   it('keeps a detail column out of the header and out of the width of a row', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller)
 
@@ -2083,7 +2095,10 @@ describe('HilosViewportTable expanding a row', () => {
   })
 
   it('offers the control only where a detail field was declared', () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
 
     expect(
@@ -2091,13 +2106,20 @@ describe('HilosViewportTable expanding a row', () => {
         .find('[data-id="hilos-table-expand-a"]')
         .exists(),
     ).toBe(true)
+    const plain = makeController()
+    window(plain.controller)
     expect(
-      mountTable(controller).find('[data-id="hilos-table-expand-a"]').exists(),
+      mountTable(plain.controller)
+        .find('[data-id="hilos-table-expand-a"]')
+        .exists(),
     ).toBe(false)
   })
 
   it('opens the panel of one row and closes it again from the same control', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller)
     const control = wrapper.find('[data-id="hilos-table-expand-a"]')
@@ -2129,7 +2151,10 @@ describe('HilosViewportTable expanding a row', () => {
   })
 
   it('points the control at its own panel and hides the chevron from the reader', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller)
     await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
@@ -2144,7 +2169,10 @@ describe('HilosViewportTable expanding a row', () => {
   })
 
   it('spans the panel across the whole row, tinted as the row it hangs under', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller)
     await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
@@ -2158,7 +2186,10 @@ describe('HilosViewportTable expanding a row', () => {
   })
 
   it('stands a dash in a field the page declared but drew nothing into', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller, {})
     await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
@@ -2169,7 +2200,10 @@ describe('HilosViewportTable expanding a row', () => {
   })
 
   it('closes every panel when the window changes', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller)
     await wrapper.find('[data-id="hilos-table-expand-a"]').trigger('click')
@@ -2187,7 +2221,10 @@ describe('HilosViewportTable expanding a row', () => {
   })
 
   it('hands a detail field the row and its key, as a cell is handed them', async () => {
-    const { controller } = makeController()
+    const { controller } = makeController({
+      columns: DETAIL_COLUMNS,
+      search: {},
+    })
     window(controller)
     const wrapper = mountDetailTable(controller, {
       'detail-lastError': (props: { row: unknown; rowKey: string }) =>
@@ -2227,7 +2264,7 @@ describe('HilosViewportTable drawing the states of the body', () => {
 
   function mountStates(controller: TableViewportController<unknown>) {
     return mount(HilosViewportTable, {
-      props: { controller, columns: STATE_COLUMNS },
+      props: { controller },
       slots: STATE_SLOTS,
     })
   }
@@ -2364,9 +2401,9 @@ describe('HilosViewportTable drawing the states of the body', () => {
     expect(wrapper.find('[data-id="hilos-table-count"]').exists()).toBe(false)
   })
 
-  it('says nothing was found on a table that still draws its frame from props', async () => {
-    const { controller } = makeController()
-    const wrapper = mountTable(controller, true)
+  it('says nothing was found when only search is declared', async () => {
+    const { controller } = makeController({ columns: COLUMNS, search: {} })
+    const wrapper = mountTable(controller)
     controller.ingestWindow([], 0, true, null, null, 10)
     controller.setSearch('night')
     controller.ingestWindow([], 0, true, null, null, 10)
@@ -2411,7 +2448,7 @@ describe('HilosViewportTable rows with nothing to expand and wide fields', () =>
       10,
     )
     const wrapper = mount(HilosViewportTable, {
-      props: { controller, columns: WIDE_COLUMNS },
+      props: { controller },
       slots: {
         'cell-name': (props: { row: unknown }) =>
           h('span', { class: 'named' }, (props.row as Row).name),
