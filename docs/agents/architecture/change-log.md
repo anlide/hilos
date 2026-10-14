@@ -28,7 +28,7 @@ belong to their leaf, not to this page.
 `JournalTriggerInstaller` installs them at node startup after migrations.
 
 The Entity declares which tables are journaled; nobody switches them on or off.
-The screens only show what is declared (not in the code yet — HIL-1461).
+The screens only show what is declared.
 
 For attribution a journal row carries only the receipt number; the receipt says
 who acted, on whose behalf and through what.
@@ -462,6 +462,25 @@ again. Its row key is the live table name, which is also the `name` field of its
 inline `table` slot; the slot carries neither `id` nor `rowKey`, and no journal
 dictionary number leaves the reader. The core formats column-mode counts for
 the view, combining personal and binary columns as facts and omitting zero parts.
+
+The Tracked tables page answers in that same opening `page_response` with
+`payload.data.changeLogNoisyColumns`: the complete snapshot of noisy columns on
+live journaled tables, ordered by table and column ascending. Each declaration
+has the live `table` name, `column` name and its nonempty `reason` from
+`_journalNoise`. These are schema metadata, declared `WireField::notPersonal()`;
+an admin and a view-mode viewer receive the same list. A valid empty list means
+no noisy columns are declared; absent or malformed data is not an empty result.
+The snapshot is read again on subscription, never sent as a companion signal.
+
+Vue mounts `HilosChangeLogTablesPage` with the project's `HilosChangeLogContext`,
+outside the context-free default admin view map. Chat binds it through its
+Change Log context. The view draws the framework viewport, the full noisy-column
+list as a table on wide screens and cards on narrow screens, and the core's
+column-mode reference. Viewport filters do not narrow the reference list. An
+untracked table carries its explicit no-label note and dashes for journal facts.
+`Open` appears only for a journaled table whose detail route resolves through
+the router; the unbuilt detail page therefore offers no link yet (HIL-1462).
+The address uses the live table name, never a journal dictionary number.
 
 ## Triggers Are Files
 

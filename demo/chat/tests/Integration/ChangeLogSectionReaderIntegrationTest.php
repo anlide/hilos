@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use DateTimeImmutable;
 use DateTimeZone;
 use Demo\Chat\Database\Database;
+use Hilos\Backup\Anonymization\LiveSchemaReader;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
@@ -21,10 +22,17 @@ use Hilos\Database\ChangeLog\Section\ChangeLogFeedFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogFeedItemKind;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryFilter;
+use Hilos\Database\ChangeLog\Section\ChangeLogNoisyColumn;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\UnplacedJournalColumnException;
 use Hilos\Database\Migration;
+use Hilos\Database\PhpType;
 use Hilos\Database\Schema\JournalColumnMode;
+use Hilos\Database\Schema\JournaledTables;
+use Hilos\Hilos;
 
 /** The section reader sees real chat triggers and the two configured databases. */
 final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
@@ -130,6 +138,95 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         }
         $this->assertFalse($tables['event']->journaled);
         $this->assertFalse($tables['event_message']->journaled);
+    }
+
+    public function testNoisyColumnsMatchLiveDeclarationsInTableAndColumnOrder(): void
+    {
+        $schemas = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $expected = [];
+        foreach (JournaledTables::mounted() as $entityClass) {
+            if (!isset($schemas[$entityClass::_table])) {
+                continue;
+            }
+            foreach ($entityClass::_journalNoise as $column => $reason) {
+                $expected[$entityClass::_table . '.' . $column] = [
+                    'table' => $entityClass::_table, 'column' => $column, 'reason' => $reason,
+                ];
+            }
+        }
+        ksort($expected, SORT_STRING);
+        $this->assertNotEmpty($expected);
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        $noisyColumns = new ChangeLogSectionReader()->noisyColumns();
+        $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        $this->assertSame(array_values($expected), array_map(get_object_vars(...), $noisyColumns));
+        foreach ($noisyColumns as $column) {
+            $this->assertInstanceOf(ChangeLogNoisyColumn::class, $column);
+            $this->assertNotEmpty($column->reason);
+            $this->assertNotContains($column->column, $schemas[$column->table]->primaryKey);
+            foreach (JournaledTables::mounted() as $entityClass) {
+                if ($entityClass::_table === $column->table) {
+                    $this->assertNotContains($column->column, $entityClass::_journalSecrets);
+                }
+            }
+        }
+    }
+
+    public function testProjectNoiseRequiresALiveTableAndRestoresConnectionOnPolicyFailure(): void
+    {
+        $originalContext = Hilos::$db;
+        $context = new ChangeLogNoiseDbContext();
+        $context->entities = $originalContext->getMountedEntities();
+        $context->entities['noiseProbe'] = ChangeLogNoiseProbeEntity::class;
+        Hilos::$db = $context;
+        try {
+            $this->assertNotContains(ChangeLogNoiseProbeEntity::_table, array_map(
+                static fn(ChangeLogNoisyColumn $column): string => $column->table,
+                new ChangeLogSectionReader()->noisyColumns(),
+            ));
+            Database::sql('CREATE TABLE `' . ChangeLogNoiseProbeEntity::_table . '`'
+                . ' (`id` INT NOT NULL PRIMARY KEY, `noisy_counter` INT NOT NULL) ENGINE=InnoDB');
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            $probeColumns = array_values(array_filter(
+                new ChangeLogSectionReader()->noisyColumns(),
+                static fn(ChangeLogNoisyColumn $column): bool => $column->table === ChangeLogNoiseProbeEntity::_table,
+            ));
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            $this->assertSame([[
+                'table' => ChangeLogNoiseProbeEntity::_table,
+                'column' => 'noisy_counter',
+                'reason' => 'Fixture counter changes automatically',
+            ]], array_map(get_object_vars(...), $probeColumns));
+
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            Database::sql('ALTER TABLE `' . ChangeLogNoiseProbeEntity::_table . '` DROP COLUMN `noisy_counter`');
+            Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+            try {
+                new ChangeLogSectionReader()->noisyColumns();
+                $this->fail('An invalid live noise declaration must refuse the read');
+            } catch (UnplacedJournalColumnException $exception) {
+                $this->assertStringContainsString(ChangeLogNoiseProbeEntity::_table . '.noisy_counter', $exception->getMessage());
+                $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+            }
+        } finally {
+            Hilos::$db = $originalContext;
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            Database::sql('DROP TABLE IF EXISTS `' . ChangeLogNoiseProbeEntity::_table . '`');
+        }
+    }
+
+    public function testNoisyColumnsAreEmptyWithoutMountedJournaledEntities(): void
+    {
+        $originalContext = Hilos::$db;
+        Hilos::$db = new ChangeLogNoiseDbContext();
+        Database::useConnection(ChangeLogDatabase::CONNECTION_INDEX);
+        try {
+            $this->assertSame([], new ChangeLogSectionReader()->noisyColumns());
+            $this->assertSame(ChangeLogDatabase::CONNECTION_INDEX, Database::getCurrentIndex());
+        } finally {
+            Hilos::$db = $originalContext;
+            Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
     }
 
     public function testTableUsesLiveColumnPlacementAndTriggerHeaders(): void
@@ -663,4 +760,33 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             . ' FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY TRIGGER_NAME');
         return Database::rows();
     }
+}
+
+/** Supplies only mounted metadata; every replacement is scoped to one test's finally block. */
+final class ChangeLogNoiseDbContext extends HilosDbContext
+{
+    /** @var array<string, class-string<Entity>> Mounted project and fixture Entity declarations */
+    public array $entities = [];
+
+    /** @return array<string, class-string<Entity>> Fixture's mounted declarations */
+    public function getMountedEntities(): array
+    {
+        return $this->entities;
+    }
+}
+
+/** Journaled project counter used only with a temporary live table. */
+final class ChangeLogNoiseProbeEntity extends Entity
+{
+    public const string _table = 'hilos_change_log_noise_probe';
+    public const bool _journaled = true;
+    public const string _primary = 'id';
+    public const array _columns = ['id', 'noisy_counter'];
+    public const array _types = ['id' => PhpType::INTEGER->value, 'noisy_counter' => PhpType::INTEGER->value];
+    public const array _journalNoise = ['noisy_counter' => 'Fixture counter changes automatically'];
+    public const array _pii = [];
+    public const array _piiNotPersonal = ['id', 'noisy_counter'];
+
+    public int $id;
+    public int $noisy_counter;
 }

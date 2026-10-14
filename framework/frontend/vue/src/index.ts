@@ -113,6 +113,7 @@ export { default as HilosSecurityStepUpPage } from './admin/security/HilosSecuri
 export { default as HilosSecurityImpersonationPage } from './admin/security/HilosSecurityImpersonationPage.vue'
 export { default as HilosCommunicationsDeliveriesPage } from './admin/communications/HilosCommunicationsDeliveriesPage.vue'
 export { default as HilosChangeLogPage } from './admin/changeLog/HilosChangeLogPage.vue'
+export { default as HilosChangeLogTablesPage } from './admin/changeLog/HilosChangeLogTablesPage.vue'
 export { default as HilosLogsPage } from './admin/logs/HilosLogsPage.vue'
 export { default as HilosLogsKeysPage } from './admin/logs/HilosLogsKeysPage.vue'
 export { default as HilosLogsRotationsPage } from './admin/logs/HilosLogsRotationsPage.vue'

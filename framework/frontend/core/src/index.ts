@@ -2238,6 +2238,21 @@ export {
   type HilosChangeLogTablesTable,
 } from './admin/changeLog/hilosChangeLogTables.js'
 export {
+  CHANGE_LOG_NOISY_COLUMNS_SECTION,
+  changeLogNoisyColumnsSchema,
+  CHANGE_LOG_TABLES_NOTE,
+  CHANGE_LOG_NOISY_COLUMNS_TITLE,
+  CHANGE_LOG_NOISY_COLUMNS_NOTE,
+  CHANGE_LOG_NOISY_COLUMNS_EMPTY,
+  CHANGE_LOG_NOISY_COLUMNS_COLUMN_LABEL,
+  CHANGE_LOG_NOISY_COLUMNS_REASON_LABEL,
+  CHANGE_LOG_TABLES_OPEN_LABEL,
+  CHANGE_LOG_COLUMN_MODES_TITLE,
+  CHANGE_LOG_COLUMN_MODES,
+  readHilosChangeLogNoisyColumns,
+  type HilosChangeLogNoisyColumn,
+} from './admin/changeLog/hilosChangeLogTablePolicies.js'
+export {
   CHANGE_LOG_OVERVIEW_SECTION,
   changeLogOverviewSchema,
   CHANGE_LOG_SECTION_NOTE,

@@ -430,7 +430,7 @@ final class HilosPageCatalog
         ],
         HilosPageConstants::HILOS_CHANGE_LOG_TABLES => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Tracked tables',
-            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Tables with change tracking enabled.',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Database tables, their journal label and column rules.',
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_CHANGE_LOG,
         ],
         HilosPageConstants::HILOS_CHANGE_LOG_TABLE => [

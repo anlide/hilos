@@ -615,9 +615,9 @@ For its data and privacy boundaries, read
    `AbstractHilosChangeLogTablePage`. Bind the framework feed, tables and history
    tables respectively in `TABLES`, the project `TableContext` and `PAGE_TABLES`.
    Pages and tables use the framework `ChangeLogSectionReader`.
-7. In a Vue project, mount `HilosChangeLogPage` from `@hilos/vue` through a thin
-   wrapper carrying the project's connection and scopes. The tracked-tables and
-   table-detail Vue mounts follow their own leaves (HIL-1461/HIL-1462).
+7. In a Vue project, mount `HilosChangeLogPage` and `HilosChangeLogTablesPage` from
+   `@hilos/vue` through thin wrappers carrying the project's connection and scopes.
+   The table-detail Vue mount follows its own leaf (HIL-1462).
 
 The schema, receipt, trigger and restore contracts live in
 [change-log.md](change-log.md). All six demos activate the backend section.

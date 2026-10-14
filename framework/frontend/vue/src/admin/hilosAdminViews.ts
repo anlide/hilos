@@ -52,7 +52,6 @@ import HilosBillingPaymentsPage from './billing/HilosBillingPaymentsPage.vue'
 import HilosBillingRefundsPage from './billing/HilosBillingRefundsPage.vue'
 import HilosOperationsPage from './operations/HilosOperationsPage.vue'
 import HilosDaemonWebsocketsPage from './daemon/HilosDaemonWebsocketsPage.vue'
-import HilosChangeLogTablesPage from './changeLog/HilosChangeLogTablesPage.vue'
 import HilosChangeLogTablePage from './changeLog/HilosChangeLogTablePage.vue'
 import HilosAnalyticsPage from './analytics/HilosAnalyticsPage.vue'
 import HilosMcpSkillsPage from './mcpSkills/HilosMcpSkillsPage.vue'
@@ -125,7 +124,8 @@ export function hilosAdminViews(): Record<string, Component> {
     // drawn from. So a project mounts HilosLogsPage, HilosLogsKeysPage,
     // HilosLogsWorkersPage, HilosLogsRotationsPage, HilosLogsSettingsPage and
     // HilosLogsViewPage directly with its own context.
-    [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTablesPage,
+    // CHANGE_LOG and CHANGE_LOG_TABLES also require a live connection and page
+    // scope: mount HilosChangeLogPage and HilosChangeLogTablesPage with context.
     [HilosPages.CHANGE_LOG_TABLE]: HilosChangeLogTablePage,
     [HilosPages.ANALYTICS]: HilosAnalyticsPage,
     [HilosPages.MCP_SKILLS]: HilosMcpSkillsPage,

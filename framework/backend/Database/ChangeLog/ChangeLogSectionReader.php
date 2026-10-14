@@ -21,6 +21,7 @@ use Hilos\Database\ChangeLog\Section\ChangeLogFieldChange;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryAnchor;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryFilter;
 use Hilos\Database\ChangeLog\Section\ChangeLogHistoryRow;
+use Hilos\Database\ChangeLog\Section\ChangeLogNoisyColumn;
 use Hilos\Database\ChangeLog\Section\ChangeLogOverview;
 use Hilos\Database\ChangeLog\Section\ChangeLogPerson;
 use Hilos\Database\ChangeLog\Section\ChangeLogReceipt;
@@ -36,6 +37,7 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
+use Hilos\Database\Schema\JournalColumnMode;
 use Hilos\Database\Schema\JournalColumnPolicy;
 use Hilos\Database\Schema\JournaledTables;
 use Hilos\HilosException;
@@ -151,6 +153,38 @@ final class ChangeLogSectionReader
                 );
             }
             return $summaries;
+        });
+    }
+
+    /**
+     * @return list<ChangeLogNoisyColumn> Live journaled noise declarations in table and column order
+     * @throws HilosException When live schema, personal-data verdicts, or column placement cannot be read
+     */
+    public function noisyColumns(): array
+    {
+        return $this->onPrimary(function (): array {
+            $schemas = LiveSchemaReader::read(DatabaseConnectionDefaults::PRIMARY_INDEX);
+            $pii = PiiRegistry::collect();
+            $mounted = [];
+            foreach (JournaledTables::mounted() as $entityClass) {
+                $mounted[$entityClass::_table] = $entityClass;
+            }
+
+            $noisyColumns = [];
+            foreach ($schemas as $table => $schema) {
+                $entityClass = $mounted[$table] ?? null;
+                if ($entityClass === null) {
+                    continue;
+                }
+                foreach (JournalColumnPolicy::forTable($entityClass, $schema, $pii) as $column => $placement) {
+                    if ($placement->mode === JournalColumnMode::NOISE) {
+                        $noisyColumns[] = new ChangeLogNoisyColumn($table, $column, $placement->reason);
+                    }
+                }
+            }
+            usort($noisyColumns, static fn(ChangeLogNoisyColumn $left, ChangeLogNoisyColumn $right): int =>
+                strcmp($left->table, $right->table) ?: strcmp($left->column, $right->column));
+            return $noisyColumns;
         });
     }
 

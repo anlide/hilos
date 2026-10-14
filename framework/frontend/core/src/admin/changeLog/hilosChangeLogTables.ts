@@ -1,5 +1,3 @@
-// SCAFFOLD: the Tracked tables view mounts this controller in HIL-1461.
-
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readBoolean,

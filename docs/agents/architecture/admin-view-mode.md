@@ -709,6 +709,15 @@ cursor refusals and receipt portions. The Vue detail rendering is covered by
 `demo/chat/tests/e2e/tests/change-log.spec.ts` opens the reader's own bot-update
 receipt and registration receipt through the built Vue page.
 
+The Tracked tables page carries its complete noisy-column snapshot and opening
+table window under both verdicts in
+`demo/chat/tests/Integration/ChangeLogTablesPageIntegrationTest.php`. Table names,
+column names and noise reasons are schema metadata, not personal values. Its Vue
+unit, `framework/frontend/vue/src/admin/changeLog/HilosChangeLogTablesPage.test.ts`,
+draws the same metadata and column-mode reference for admins and viewers, with
+no mutation controls. `demo/chat/tests/e2e/tests/change-log-tables.spec.ts` follows
+the section card, journal-label filtering and narrow-screen reference cards.
+
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page
 (`framework/frontend/vue/src/admin/backup/HilosBackupPage.test.ts`); its e2e

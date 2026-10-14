@@ -99,6 +99,7 @@ import HilosDaemonHttp from './views/Hilos/Daemon/Http.vue'
 import HilosDaemonEnv from './views/Hilos/Daemon/Env.vue'
 import HilosDaemonEnvMismatch from './views/Hilos/Daemon/EnvMismatch.vue'
 import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.vue'
+import HilosChangeLogTables from './views/Hilos/ChangeLog/ChangeLogTables.vue'
 
 // The auth gate is created in bootstrap (it needs the navigator, the current
 // user, and the connection) and passed in as a root prop; App wires it and the
@@ -140,6 +141,7 @@ const pages: Record<string, Component> = {
   [HilosPages.COMMUNICATIONS_CHANNEL]: HilosCommunicationsChannel,
   [HilosPages.COMMUNICATIONS_DELIVERIES]: HilosCommunicationsDeliveries,
   [HilosPages.CHANGE_LOG]: HilosChangeLog,
+  [HilosPages.CHANGE_LOG_TABLES]: HilosChangeLogTables,
   [HilosPages.SECURITY_OAUTH]: HilosSecurityOauth,
   [HilosPages.SECURITY_OAUTH_PROVIDER]: HilosSecurityOauthProvider,
   [HilosPages.SECURITY_SIGN_IN_METHODS]: HilosSecuritySignInMethods,
