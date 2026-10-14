@@ -16,6 +16,7 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
@@ -26,6 +27,12 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
+use Hilos\Database\Entity\Item\LanguageName as EntityLanguageName;
+use Hilos\Database\Entity\Item\CountryName as EntityCountryName;
+use Hilos\Database\Entity\Item\Locale as EntityLocale;
+use Hilos\Database\Object\Item\Locale as ObjectLocale;
+use Hilos\Database\View\Collection\LanguageNames;
+use Hilos\Database\View\Collection\CountryNames;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\Database\Schema\Schema;
@@ -344,8 +351,12 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
 
         try {
             $locale->actions->delete();
-            $this->fail('Expected a default locale to be protected by the country key');
-        } catch (ForeignKeyConstraintException) {
+            $this->fail('Expected a default locale to be protected before the country key');
+        } catch (ValidationException $failure) {
+            $this->assertSame(
+                "Locale 'en-QX' is the country's default: choose another locale for the country first.",
+                $failure->getMessage(),
+            );
             $this->assertNotNull(Hilos::$db->locales[$locale->id]);
         }
         try {
@@ -795,6 +806,243 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame([], Hilos::$db->countryNames->overridesFor($country->id, $language->id));
     }
 
+    /** @return iterable<string, array{bool}> Both locale address shapes */
+    public static function localeAddressShapes(): iterable
+    {
+        yield 'countryless' => [false];
+        yield 'pair' => [true];
+    }
+
+    /**
+     * @param bool $regional Whether the locale has a country
+     * @throws HilosException When fixture creation or deletion fails
+     */
+    #[DataProvider('localeAddressShapes')]
+    public function testLocaleDeletionEvictsBothCachesAndAnnouncesOnlyItsRemoval(bool $regional): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $regional ? $country : null);
+        $other = self::createLocale($language, $regional ? null : $country);
+        $languageBase = Hilos::$db->languageNames->actions->createManual($language, $language, null, '');
+        $countryBase = Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Britain');
+        $otherName = Hilos::$db->countryNames->actions->createManual($country, $language, $other, 'Other edition');
+        $id = $locale->id;
+        $code = $locale->code;
+        self::assertSame($locale->getObject(), Hilos::$db->locales[$id]->getObject());
+        self::assertSame(Hilos::$db->locales[$id], Hilos::$db->locales[$code]);
+        self::assertNull($locale->deleteReason());
+        $before = $this->changes->count;
+
+        // The caller already holds a transaction, as the existing test-cleanup command does.
+        Database::transactionStart();
+        try {
+            $locale->actions->delete();
+            self::assertNull(Hilos::$db->locales[$id]);
+            self::assertSame($before, $this->changes->count);
+            Database::transactionCommit();
+        } catch (HilosException $failure) {
+            Database::transactionRollback();
+            throw $failure;
+        }
+
+        self::assertSame($before + 1, $this->changes->count);
+        $change = $this->changes->last;
+        self::assertNotNull($change);
+        self::assertSame(HilosDbContext::locales, $change->sourceKey);
+        self::assertSame((string) $id, $change->sourceId);
+        self::assertSame(TableMutationType::Delete, $change->mutationType);
+        self::assertNull(Hilos::$db->locales[$id]);
+        self::assertNull(Hilos::$db->locales[$code]);
+        self::assertNull(Hilos::$db->locales->getObjectCollection()[$id]);
+        self::assertSame(0, EntityLocale::count([EntityLocale::id => $id]));
+        self::assertSame($other->getObject(), Hilos::$db->locales[$other->id]->getObject());
+        self::assertSame($languageBase->getObject(), Hilos::$db->languageNames[$languageBase->id]->getObject());
+        self::assertSame($countryBase->getObject(), Hilos::$db->countryNames[$countryBase->id]->getObject());
+        self::assertSame($otherName->getObject(), Hilos::$db->countryNames[$otherName->id]->getObject());
+        self::assertSame(1, EntityLanguageName::count([EntityLanguageName::id => $languageBase->id]));
+        self::assertSame(2, EntityCountryName::count());
+    }
+
+    /** @throws HilosException When fixture writes or the deletion rule fail */
+    public function testLocaleDeletionReasonsFollowCurrentStateInPriorityOrder(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $country);
+        Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Britain');
+        $override = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, '');
+        $country->actions->update('£', 'GBP', $locale->id);
+        $locale->actions->switchOn();
+        self::assertSame(Locale::DELETE_ENABLED, $locale->deleteReason());
+        $this->assertLocaleDeleteRefused($locale, I18nRowFrozenException::class,
+            "Locale 'en-GB' is switched on: switch it off before deleting it.");
+
+        $locale->actions->switchOff();
+        foreach ([false, true] as $countryEnabled) {
+            if ($countryEnabled) {
+                $country->actions->switchOn();
+            }
+            self::assertSame(Locale::DELETE_COUNTRY_DEFAULT, $locale->deleteReason());
+            $this->assertLocaleDeleteRefused($locale, ValidationException::class,
+                "Locale 'en-GB' is the country's default: choose another locale for the country first.");
+        }
+        $country->actions->switchOff();
+        $country->actions->update('£', 'GBP', null);
+        self::assertSame(Locale::DELETE_NAMES, $locale->deleteReason());
+        $this->assertLocaleDeleteRefused($locale, ValidationException::class,
+            "Locale 'en-GB' has name overrides: remove them before deleting it.");
+        $override->actions->delete();
+        self::assertNull($locale->deleteReason());
+        $locale->actions->delete();
+        self::assertNull(Hilos::$db->locales['en-GB']);
+    }
+
+    /** @return iterable<string, array{bool, string, bool}> Every referenced name protects the locale */
+    public static function localeNameOverrides(): iterable
+    {
+        foreach ([false, true] as $countryName) {
+            foreach (['', 'Correction'] as $name) {
+                foreach ([false, true] as $locked) {
+                    yield ($countryName ? 'country' : 'language') . ' ' . var_export([$name, $locked], true)
+                        => [$countryName, $name, $locked];
+                }
+            }
+        }
+    }
+
+    /**
+     * @param bool $countryName Which names collection references the locale
+     * @param string $name Literal override, including the empty string
+     * @param bool $locked Whether the override is locked
+     * @throws HilosException When fixture setup, inspection or removal fails
+     */
+    #[DataProvider('localeNameOverrides')]
+    public function testAnyNameOverrideProtectsTheLocaleUntilTheLastOneIsRemoved(bool $countryName, string $name, bool $locked): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $country);
+        $collection = $countryName ? Hilos::$db->countryNames : Hilos::$db->languageNames;
+        $subject = $countryName ? $country : $language;
+        $base = $collection->actions->createManual($subject, $language, null, 'Base');
+        $overrideId = $collection->actions->createManual($subject, $language, $locale, $name)->id;
+        if (!$locked) {
+            // An unlocked override is a deliberately unusual fixture, with no public unlock door.
+            $table = $countryName ? 'hilos_country_name' : 'hilos_language_name';
+            Database::sqlRun("UPDATE `{$table}` SET `locked` = 0 WHERE `id` = ?", [$overrideId]);
+            $collection->getObjectCollection()->reHydrate();
+            $collection->clearCache();
+        }
+        $override = $collection[$overrideId];
+        $baseObject = $collection[$base->id]->getObject();
+        self::assertSame(Locale::DELETE_NAMES, $locale->deleteReason());
+        $this->assertLocaleDeleteRefused($locale, ValidationException::class,
+            "Locale 'en-GB' has name overrides: remove them before deleting it.");
+        self::assertSame($override, $collection[$overrideId]);
+        self::assertSame($name, $override->name);
+        self::assertSame($locked, $override->locked);
+        self::assertSame($baseObject, $collection[$base->id]->getObject());
+
+        $override->actions->delete();
+        self::assertNull($locale->deleteReason());
+        $locale->actions->delete();
+        self::assertNull(Hilos::$db->locales['en-GB']);
+        self::assertSame($baseObject, $collection[$base->id]->getObject());
+        self::assertSame('Base', $collection[$base->id]->name);
+    }
+
+    /** @throws HilosException When fixture writes, bridges or query measurement fail */
+    public function testLocaleNameBridgesAreTypedFreshAndReadWarmCollectionsWithoutSelects(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $country = Hilos::$db->countries->actions->create('gb', '£', 'GBP');
+        $locale = self::createLocale($language, $country);
+        $other = self::createLocale($language, null);
+        Hilos::$db->languageNames->actions->createManual($language, $language, null, 'English');
+        Hilos::$db->countryNames->actions->createManual($country, $language, null, 'Britain');
+        $foreignLanguageName = Hilos::$db->languageNames->actions->createManual($language, $language, $other, 'Other');
+        $foreignCountryName = Hilos::$db->countryNames->actions->createManual($country, $language, $other, 'Other');
+        self::assertInstanceOf(LanguageNames::class, $locale->languageNames);
+        self::assertInstanceOf(CountryNames::class, $locale->countryNames);
+        self::assertCount(0, $locale->languageNames);
+        self::assertCount(0, $locale->countryNames);
+        foreach ([null, PHP_INT_MAX] as $missing) {
+            self::assertCount(0, Hilos::$db->languageNames->forLocaleId($missing));
+            self::assertCount(0, Hilos::$db->countryNames->forLocaleId($missing));
+        }
+        $unpersisted = new Locale(ObjectLocale::fromEntity(new EntityLocale()));
+        self::assertCount(0, $unpersisted->languageNames);
+        self::assertCount(0, $unpersisted->countryNames);
+
+        $languageName = Hilos::$db->languageNames->actions->createManual($language, $language, $locale, '');
+        $countryName = Hilos::$db->countryNames->actions->createManual($country, $language, $locale, 'Correction');
+        self::assertSame(Hilos::$db->languageNames[$languageName->id], $locale->languageNames[$languageName->id]);
+        self::assertSame(Hilos::$db->countryNames[$countryName->id], $locale->countryNames[$countryName->id]);
+        self::assertNull($locale->languageNames[$foreignLanguageName->id]);
+        self::assertNull($locale->countryNames[$foreignCountryName->id]);
+        self::assertSame($country->getObject(), $locale->country->getObject());
+        $before = (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value'];
+        self::assertCount(1, $locale->languageNames);
+        self::assertCount(1, $locale->countryNames);
+        self::assertSame(Locale::DELETE_NAMES, $locale->deleteReason());
+        self::assertSame($before, (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_select'")->firstRow()['Value']);
+
+        $languageName->actions->delete();
+        self::assertCount(0, $locale->languageNames);
+        self::assertSame(Locale::DELETE_NAMES, $locale->deleteReason());
+        $countryName->actions->delete();
+        self::assertCount(0, $locale->countryNames);
+        self::assertNull($locale->deleteReason());
+        self::assertSame(Hilos::$db->languageNames[$foreignLanguageName->id], $other->languageNames[$foreignLanguageName->id]);
+        self::assertSame(Hilos::$db->countryNames[$foreignCountryName->id], $other->countryNames[$foreignCountryName->id]);
+    }
+
+    /** @throws HilosException When fixture setup or the ownership check fails */
+    public function testLocaleDeletionRequiresTheOwnerBeforeCheckingDomainReasons(): void
+    {
+        $language = Hilos::$db->languages->actions->create('en', 'English', false);
+        $locale = self::createLocale($language, null);
+        $locale->actions->switchOn();
+        ExecutionContext::setCurrentAgentId('test-agent:outsider');
+        $this->expectException(WriteNotAllowedException::class);
+        $locale->actions->delete();
+    }
+
+    /**
+     * SQL snapshots are an independent persistence oracle; the mutation uses the item door.
+     *
+     * @param Locale $locale Cached target
+     * @param class-string<ValidationException> $exception Expected refusal class
+     * @param string $message Exact domain refusal
+     * @throws HilosException When the oracle or action fails unexpectedly
+     */
+    private function assertLocaleDeleteRefused(Locale $locale, string $exception, string $message): void
+    {
+        $rows = [];
+        foreach (self::TABLES as $table) {
+            $rows[$table] = Database::sql("SELECT * FROM `{$table}` ORDER BY `id`")->rows();
+        }
+        $before = $this->changes->count;
+        $object = $locale->getObject();
+        $cached = Hilos::$db->locales[$locale->id];
+        try {
+            $locale->actions->delete();
+            self::fail('The locale must remain protected');
+        } catch (ValidationException $failure) {
+            self::assertSame($exception, $failure::class);
+            self::assertSame($message, $failure->getMessage());
+        }
+        self::assertSame($before, $this->changes->count);
+        self::assertSame($cached, Hilos::$db->locales[$locale->id]);
+        self::assertSame($cached, Hilos::$db->locales[$locale->code]);
+        self::assertSame($object, Hilos::$db->locales->getObjectCollection()[$locale->id]);
+        self::assertTrue($object->isRelated());
+        foreach (self::TABLES as $table) {
+            self::assertSame($rows[$table], Database::sql("SELECT * FROM `{$table}` ORDER BY `id`")->rows());
+        }
+    }
+
     /**
      * @return list<array<string, mixed>> Persisted names, independent of the ORM cache
      * @throws DatabaseException When the test oracle cannot read the table
@@ -845,9 +1093,15 @@ final class I18nReferenceTestDbContext extends HilosDbContext
 final class I18nChangeRecorder implements SourceChangeSubscriberInterface
 {
     public int $count = 0;
+    public ?SourceChange $last = null;
 
+    /**
+     * @param SourceChange $change Announced reference mutation
+     * @param SourceChangeProvenance $provenance Mutation origin (unused)
+     */
     public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
     {
         $this->count++;
+        $this->last = $change;
     }
 }

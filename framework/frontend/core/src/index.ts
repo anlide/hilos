@@ -237,6 +237,12 @@ export {
   type HilosI18nLocaleFormats,
 } from './admin/i18n/hilosI18nLocales.js'
 export {
+  HILOS_I18N_LOCALE_DELETE_ACTION,
+  HILOS_I18N_LOCALE_DELETE_COPY,
+  createHilosI18nLocaleDelete,
+  type HilosI18nLocaleDeleteTarget,
+} from './admin/i18n/hilosI18nLocaleDelete.js'
+export {
   HILOS_I18N_LOCALE_ADD_ACTION,
   HILOS_I18N_LOCALE_UPDATE_ACTION,
   HILOS_I18N_LOCALE_SWITCH_ON_ACTION,

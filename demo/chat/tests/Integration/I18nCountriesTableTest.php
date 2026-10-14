@@ -436,6 +436,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             [['code' => 'en-QX', 'enabled' => true]],
         );
 
+        $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$localeId]->actions->switchOff());
         $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$localeId]->actions->delete());
         $deleted = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(
             HilosDbContext::locales, (string) $localeId, [ObjectLocale::countryId => $countryId],
@@ -631,6 +632,7 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             );
             self::assertSame(TableMutationType::Update, $switched->type);
             self::assertSame(CountryCardSummary::DELETE_LOCALES, $switched->row->deleteReason);
+            $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$locale->id]->actions->switchOff());
             $this->underAgent($this->agent, static fn () => Hilos::$db->locales[$locale->id]->actions->delete());
             $this->assertLiveDeleteVerdict(SourceChange::dbDeleted(HilosDbContext::locales, (string) $locale->id,
                 [ObjectLocale::countryId => $countryId]), true, null);

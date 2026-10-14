@@ -328,6 +328,9 @@ final class HilosSignalConstants
     /** Client → language locales page: switch off one locale. */
     public const string HILOS_I18N_LOCALE_SWITCH_OFF = 'hilos_i18n_locale_switch_off';
 
+    /** Client → language locales page: delete one unreferenced switched-off locale. */
+    public const string HILOS_I18N_LOCALE_DELETE = 'hilos_i18n_locale_delete';
+
     /** Subscription signal for Hilos i18n language names. */
     public const string SUBSCRIPTION_PAGE_HILOS_I18N_LANGUAGE_NAMES = 'subscription_page_hilos_i18n_language_names';
 

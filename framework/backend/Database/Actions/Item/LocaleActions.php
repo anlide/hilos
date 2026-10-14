@@ -100,6 +100,8 @@ class LocaleActions extends DbActions
     /**
      * @throws ItemNotFoundForDeleteException When the row has no persisted id
      * @throws ObjectCollectionNullException When the item is detached from its collection
+     * @throws I18nRowFrozenException When the locale is switched on
+     * @throws ValidationException When the locale is a country's default or has name overrides
      * @throws HilosException When ownership, the database or collection refuses removal
      */
     public function delete(): void
@@ -107,6 +109,21 @@ class LocaleActions extends DbActions
         $this->ensureCanWrite(TruthSourceOperation::Remove);
         if ($this->object->id === null) {
             throw new ItemNotFoundForDeleteException('Locale not found for delete (id is null)');
+        }
+
+        switch ($this->item->deleteReason()) {
+            case Locale::DELETE_ENABLED:
+                throw new I18nRowFrozenException(
+                    "Locale '{$this->object->code}' is switched on: switch it off before deleting it.",
+                );
+            case Locale::DELETE_COUNTRY_DEFAULT:
+                throw new ValidationException(
+                    "Locale '{$this->object->code}' is the country's default: choose another locale for the country first.",
+                );
+            case Locale::DELETE_NAMES:
+                throw new ValidationException(
+                    "Locale '{$this->object->code}' has name overrides: remove them before deleting it.",
+                );
         }
 
         $objectCollection = $this->getObjectCollection()

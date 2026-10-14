@@ -17,20 +17,24 @@ import {
   computedSignal,
   createHilosI18nLanguageCard,
   createHilosI18nLanguageLocalesTable,
+  createHilosI18nLocaleDelete,
   createHilosI18nLocaleTemplates,
+  hilosI18nLocaleCountryLabel,
   HILOS_I18N_LOCALE_COPY,
   HilosPages,
   type HilosI18nLanguageContext,
+  type HilosI18nLocaleDeleteTarget,
   type HilosI18nLocaleRow,
   type HilosI18nLocaleWindowMode,
 } from '@hilos/core'
-import { inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../../HilosAdminPage.vue'
 import HilosViewportTable from '../../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
 import { useSignal } from '../../../useSignal.js'
 import HilosI18nLanguageHeader from './HilosI18nLanguageHeader.vue'
+import HilosI18nLocaleDelete from './HilosI18nLocaleDelete.vue'
 import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
 
 const props = defineProps<{ context: HilosI18nLanguageContext }>()
@@ -39,6 +43,8 @@ const templates = useSignal(createHilosI18nLocaleTemplates(props.context))
 const opened = ref<{ rowKey: string; mode: HilosI18nLocaleWindowMode } | null>(
   null,
 )
+const deleteTarget = ref<HilosI18nLocaleDeleteTarget | null>(null)
+const { deleteLocale } = createHilosI18nLocaleDelete(props.context)
 const router = inject(hilosRouterKey)
 if (!router) {
   throw new Error(
@@ -51,8 +57,31 @@ const language = computedSignal(
     (router.currentRoute.get().params.languageCode as string | undefined) ?? '',
 )
 const locales = createHilosI18nLanguageLocalesTable(props.context, language)
+const focusedRow = useSignal(locales.controller.focusedRow)
+const deleteSource = computed<HilosI18nLocaleDeleteTarget | null>(() => {
+  const row = focusedRow.value
+  if (
+    deleteTarget.value === null ||
+    card.value?.code !== deleteTarget.value.languageCode ||
+    row?.rowKey !== deleteTarget.value.localeCode ||
+    row.localeCode === null ||
+    row.formats === null
+  ) {
+    return null
+  }
+  return {
+    languageCode: card.value.code,
+    countryCode: row.countryCode,
+    localeCode: row.localeCode,
+    nativeName: card.value.nativeName,
+    countryLabel: hilosI18nLocaleCountryLabel(row),
+  }
+})
 onMounted(() => locales.start())
-onUnmounted(() => locales.dispose())
+onUnmounted(() => {
+  locales.controller.releaseFocus()
+  locales.dispose()
+})
 
 /** A plate standing where there is no value of its own, in both themes. */
 const PLATE = 'badge bg-body-tertiary text-body-secondary border fw-normal'
@@ -66,7 +95,35 @@ function openWindow(
   row: HilosI18nLocaleRow,
   mode: HilosI18nLocaleWindowMode,
 ): void {
+  if (opened.value !== null || deleteTarget.value !== null) return
   opened.value = { rowKey: row.rowKey, mode }
+}
+
+function openDelete(row: HilosI18nLocaleRow): void {
+  if (opened.value !== null || deleteTarget.value !== null) return
+  const fresh = locales.controller.focusRow(row.rowKey)
+  if (
+    !fresh ||
+    fresh.localeCode === null ||
+    fresh.formats === null ||
+    card.value?.code !== language.get()
+  ) {
+    locales.controller.releaseFocus()
+    return
+  }
+  deleteTarget.value = {
+    languageCode: card.value.code,
+    countryCode: fresh.countryCode,
+    localeCode: fresh.localeCode,
+    nativeName: card.value.nativeName,
+    countryLabel: hilosI18nLocaleCountryLabel(fresh),
+  }
+}
+
+function closeDelete(open: boolean): void {
+  if (open) return
+  deleteTarget.value = null
+  locales.controller.releaseFocus()
 }
 </script>
 
@@ -122,39 +179,52 @@ function openWindow(
           />
         </template>
         <template #cell-actions="{ row }">
-          <button
-            v-if="row.localeCode === null"
-            type="button"
-            class="btn btn-sm btn-primary"
-            :title="HILOS_I18N_LOCALE_COPY.open.add"
-            :aria-label="HILOS_I18N_LOCALE_COPY.open.add"
-            :data-id="`i18n-locales-add-${row.rowKey}`"
-            @click="openWindow(row, 'add')"
-          >
-            <i class="bi bi-plus-lg" aria-hidden="true"></i>
-          </button>
-          <button
-            v-else-if="row.enabled === false"
-            type="button"
-            class="btn btn-sm btn-outline-primary"
-            :title="HILOS_I18N_LOCALE_COPY.open.edit"
-            :aria-label="HILOS_I18N_LOCALE_COPY.open.edit"
-            :data-id="`i18n-locales-edit-${row.rowKey}`"
-            @click="openWindow(row, 'edit')"
-          >
-            <i class="bi bi-pencil" aria-hidden="true"></i>
-          </button>
-          <button
-            v-else
-            type="button"
-            class="btn btn-sm btn-outline-secondary"
-            :title="HILOS_I18N_LOCALE_COPY.open.view"
-            :aria-label="HILOS_I18N_LOCALE_COPY.open.view"
-            :data-id="`i18n-locales-view-${row.rowKey}`"
-            @click="openWindow(row, 'view')"
-          >
-            <i class="bi bi-eye" aria-hidden="true"></i>
-          </button>
+          <div class="hilos-button-row">
+            <button
+              v-if="row.localeCode === null"
+              type="button"
+              class="btn btn-sm btn-primary"
+              :title="HILOS_I18N_LOCALE_COPY.open.add"
+              :aria-label="HILOS_I18N_LOCALE_COPY.open.add"
+              :data-id="`i18n-locales-add-${row.rowKey}`"
+              @click="openWindow(row, 'add')"
+            >
+              <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            </button>
+            <button
+              v-else-if="row.enabled === false"
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              :title="HILOS_I18N_LOCALE_COPY.open.edit"
+              :aria-label="HILOS_I18N_LOCALE_COPY.open.edit"
+              :data-id="`i18n-locales-edit-${row.rowKey}`"
+              @click="openWindow(row, 'edit')"
+            >
+              <i class="bi bi-pencil" aria-hidden="true"></i>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :title="HILOS_I18N_LOCALE_COPY.open.view"
+              :aria-label="HILOS_I18N_LOCALE_COPY.open.view"
+              :data-id="`i18n-locales-view-${row.rowKey}`"
+              @click="openWindow(row, 'view')"
+            >
+              <i class="bi bi-eye" aria-hidden="true"></i>
+            </button>
+            <button
+              v-if="row.localeCode !== null"
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              :title="`Delete locale ${row.localeCode}`"
+              :aria-label="`Delete locale ${row.localeCode}`"
+              :data-id="`i18n-locales-delete-${row.rowKey}`"
+              @click="openDelete(row)"
+            >
+              <i class="bi bi-trash" aria-hidden="true"></i>
+            </button>
+          </div>
         </template>
       </HilosViewportTable>
     </template>
@@ -182,6 +252,13 @@ function openWindow(
       :templates="templates"
       :opened="opened"
       @close="opened = null"
+    />
+    <HilosI18nLocaleDelete
+      :model-value="deleteTarget !== null"
+      :target="deleteTarget"
+      :source="deleteSource"
+      :delete-locale="deleteLocale"
+      @update:model-value="closeDelete"
     />
   </HilosAdminPage>
 </template>

@@ -8,7 +8,9 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\CountryNamesActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\CollectionNotManualException;
 use Hilos\Database\Object\Collection\CountryNames as ObjectCountryNames;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\CountryName as ObjectCountryName;
 use Hilos\Database\View\Item\CountryName;
 
@@ -22,6 +24,22 @@ class CountryNames extends DbCollection
 {
     public const string DB_ITEM_CLASS = CountryName::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectCountryNames::class;
+
+    /**
+     * @param ?int $localeId Override locale primary id; null selects no rows
+     * @return static Current overrides for the locale, excluding base names
+     * @throws LogicException When collection classes are not configured
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws DatabaseException When loading the names fails
+     * @throws ObjectGetIdStringNotImplementedException When a name has no object key contract
+     * @throws CollectionNotManualException When the filtered collection refuses an item
+     */
+    public function forLocaleId(?int $localeId): static
+    {
+        return $localeId === null
+            ? static::initEmpty()
+            : $this->filter(static fn (CountryName $name): bool => $name->localeId === $localeId);
+    }
 
     /**
      * @param int $languageId Writing language primary id

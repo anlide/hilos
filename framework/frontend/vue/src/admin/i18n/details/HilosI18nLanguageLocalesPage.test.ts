@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import {
   createSignal,
   HILOS_I18N_LANGUAGE_LOCALES_TABLE,
@@ -6,17 +6,27 @@ import {
   HilosPages,
   LANGUAGE_CARD_DATA,
   ScopeManager,
+  hilosToasts,
   type ActionLifecycle,
+  type ActionResult,
   type HilosConnection,
   type HilosI18nLanguageCard,
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosI18nLanguageLocalesPage from './HilosI18nLanguageLocalesPage.vue'
+import HilosI18nLocaleWindow from './HilosI18nLocaleWindow.vue'
 import { hilosRouterKey } from '../../../hilosRouterKey.js'
+
+const mounted: VueWrapper[] = []
+afterEach(() => {
+  for (const view of mounted) view.unmount()
+  mounted.length = 0
+  hilosToasts.clear()
+})
 
 const russianCard: HilosI18nLanguageCard = {
   code: 'ru',
@@ -97,9 +107,13 @@ function makeConnection(): {
   connection: HilosConnection
   pushWindow: (rows: Record<string, unknown>[]) => void
   filters: Record<string, unknown>[]
+  focused: string[]
+  delta: (row: Record<string, unknown>) => void
 } {
   const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  const deltaListeners: ((signal: { data: unknown }) => void)[] = []
   const filters: Record<string, unknown>[] = []
+  const focused: string[] = []
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
       if (event === 'tableWindow') {
@@ -107,11 +121,17 @@ function makeConnection(): {
           listener as unknown as (signal: { data: unknown }) => void,
         )
       }
-
+      if (event === 'tableViewportDelta') {
+        deltaListeners.push(
+          listener as unknown as (signal: { data: unknown }) => void,
+        )
+      }
       return () => {}
     },
     sendTableRendered(): void {},
-    sendTableRowFocus(): void {},
+    sendTableRowFocus(_page: string, _tableKey: string, rowKey: string): void {
+      focused.push(rowKey)
+    },
     registerTableWindow(): void {},
     unregisterTableWindow(): void {},
     tableWindowDescriptors: () => ({}),
@@ -142,6 +162,20 @@ function makeConnection(): {
       }
     },
     filters,
+    focused,
+    delta(row: Record<string, unknown>): void {
+      for (const listener of deltaListeners) {
+        listener({
+          data: {
+            page: HilosPages.I18N_LANGUAGE_LOCALES,
+            tableKey: HILOS_I18N_LANGUAGE_LOCALES_TABLE,
+            kind: 'row_updated',
+            rowKey: row.rowKey,
+            row: { rowKey: row.rowKey, slots: { locale: row } },
+          },
+        })
+      }
+    },
   }
 }
 
@@ -165,20 +199,22 @@ function pair(
 }
 
 /** The locales page of Russian: its own locale on, Ukraine's off, and Andorra and Belarus without a locale. */
-async function mountPage() {
-  const { connection, pushWindow, filters } = makeConnection()
+async function mountPage(actions = {} as ActionLifecycle) {
+  const { connection, pushWindow, filters, focused, delta } = makeConnection()
   const route = localesRoute()
   const scopes = new ScopeManager()
   const scope = scopes.openPage(HilosPages.I18N_LANGUAGE_LOCALES)
   scope.data.set(LANGUAGE_CARD_DATA, russianCard)
   scope.data.set(LOCALE_TEMPLATES_DATA, templates)
   const wrapper = mount(HilosI18nLanguageLocalesPage, {
-    props: { context: { connection, scopes, actions: {} as ActionLifecycle } },
+    props: { context: { connection, scopes, actions } },
+    attachTo: document.body,
     global: {
       provide: { [hilosRouterKey as symbol]: router(route) },
       stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
     },
   })
+  mounted.push(wrapper)
   pushWindow([
     pair('ru', null, null, true),
     pair('ru-AD', 'ad', null, null),
@@ -187,7 +223,7 @@ async function mountPage() {
   ])
   await nextTick()
 
-  return { wrapper, filters, route, scope }
+  return { wrapper, filters, route, scope, focused, delta }
 }
 
 describe('HilosI18nLanguageLocalesPage', () => {
@@ -206,6 +242,7 @@ describe('HilosI18nLanguageLocalesPage', () => {
         stubs: { HilosAdminPage: { template: '<main><slot /></main>' } },
       },
     })
+    mounted.push(wrapper)
     await nextTick()
 
     expect(wrapper.find('[aria-label="Loading language"]').exists()).toBe(true)
@@ -373,5 +410,171 @@ describe('HilosI18nLanguageLocalesPage', () => {
     expect(
       wrapper.find('[data-id="i18n-locales-country-ru-BY"]').classes(),
     ).not.toContain('text-body-secondary')
+  })
+
+  it('offers deletion for existing locales only, beside edit or view', async () => {
+    const { wrapper } = await mountPage()
+    for (const key of ['ru', 'ru-UA']) {
+      const button = wrapper.get(`[data-id="i18n-locales-delete-${key}"]`)
+      expect(button.attributes('aria-label')).toBe(`Delete locale ${key}`)
+      expect(button.attributes('title')).toBe(`Delete locale ${key}`)
+      expect(button.classes()).toContain('btn-outline-danger')
+      expect(
+        button.element.parentElement?.classList.contains('hilos-button-row'),
+      ).toBe(true)
+    }
+    expect(wrapper.find('[data-id="i18n-locales-delete-ru-AD"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-id="i18n-locales-delete-ru-BY"]').exists()).toBe(
+      false,
+    )
+  })
+
+  it('freezes the fresh focused row, keeps the locale window mounted and releases on cancel/unmount', async () => {
+    const s = await mountPage()
+    const localeWindow = s.wrapper.findComponent(HilosI18nLocaleWindow).vm.$
+    const opener = s.wrapper.get('[data-id="i18n-locales-delete-ru-UA"]')
+    s.delta(pair('ru-UA', 'ua', 'Fresh country', false))
+    await opener.trigger('click')
+    expect(s.focused).toEqual(['ru-UA'])
+    expect(document.body.textContent).toContain(
+      'Delete locale · Русский in Fresh country',
+    )
+    expect(s.wrapper.findComponent(HilosI18nLocaleWindow).vm.$).toBe(
+      localeWindow,
+    )
+    s.delta(pair('ru-UA', 'ua', 'Another country label', false))
+    await nextTick()
+    expect(document.body.textContent).toContain(
+      'Delete locale · Русский in Fresh country',
+    )
+    await s.wrapper.get('[data-id="i18n-locales-edit-ru-UA"]').trigger('click')
+    expect(document.querySelector('[data-id="i18n-locale-window"]')).toBeNull()
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-locale-delete-cancel"]',
+      )!
+      .click()
+    await nextTick()
+    await nextTick()
+    expect(s.focused).toEqual(['ru-UA', ''])
+    await opener.trigger('click')
+    s.wrapper.unmount()
+    expect(s.focused).toEqual(['ru-UA', '', 'ru-UA', ''])
+  })
+
+  it('does not open a stale trash control when the pair has already lost its locale', async () => {
+    const s = await mountPage()
+    const opener = s.wrapper.get('[data-id="i18n-locales-delete-ru-UA"]')
+    s.delta(pair('ru-UA', 'ua', 'Украина', null))
+    await opener.trigger('click')
+    expect(
+      document.querySelector('[data-id="i18n-locale-delete-window"]'),
+    ).toBeNull()
+    expect(s.focused).toEqual(['ru-UA', ''])
+    expect(s.wrapper.find('[data-id="i18n-locales-add-ru-UA"]').exists()).toBe(
+      true,
+    )
+  })
+
+  it.each(['locale', 'formats', 'language', 'other-language'] as const)(
+    'holds the idle confirmation when its %s disappears',
+    async (gone) => {
+      const s = await mountPage()
+      await s.wrapper
+        .get('[data-id="i18n-locales-delete-ru-UA"]')
+        .trigger('click')
+      if (gone === 'locale') s.delta(pair('ru-UA', 'ua', 'Украина', null))
+      if (gone === 'formats')
+        s.delta({ ...pair('ru-UA', 'ua', 'Украина', false), formats: null })
+      if (gone === 'language') s.scope.data.set(LANGUAGE_CARD_DATA, [])
+      if (gone === 'other-language')
+        s.scope.data.set(LANGUAGE_CARD_DATA, { ...russianCard, code: 'en' })
+      await nextTick()
+      expect(
+        document.querySelector('[data-id="i18n-locale-delete-window"]'),
+      ).not.toBeNull()
+      expect(document.body.textContent).toContain('Deleted elsewhere.')
+      expect(
+        document.querySelector<HTMLButtonElement>(
+          '[data-id="i18n-locale-delete-confirm"]',
+        )!.disabled,
+      ).toBe(true)
+      expect(s.focused).toEqual(['ru-UA'])
+    },
+  )
+
+  it('keeps confirmation available after enabled and country-default change', async () => {
+    const s = await mountPage()
+    await s.wrapper
+      .get('[data-id="i18n-locales-delete-ru-UA"]')
+      .trigger('click')
+    s.delta({ ...pair('ru-UA', 'ua', 'Украина', true), isCountryDefault: true })
+    await nextTick()
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-id="i18n-locale-delete-confirm"]',
+      )!.disabled,
+    ).toBe(false)
+    expect(document.body.textContent).not.toContain('Deleted elsewhere.')
+  })
+
+  it('keeps its pending action through pair and card echoes and releases only on success', async () => {
+    let settle: (result: ActionResult) => void = () => {}
+    const done = new Promise<ActionResult>((resolve) => {
+      settle = resolve
+    })
+    const dispatch = vi.fn(() => ({
+      requestId: 'delete',
+      loading: createSignal(false),
+      done,
+    }))
+    const s = await mountPage({ dispatch } as unknown as ActionLifecycle)
+    await s.wrapper.get('[data-id="i18n-locales-delete-ru"]').trigger('click')
+    document
+      .querySelector<HTMLButtonElement>(
+        '[data-id="i18n-locale-delete-confirm"]',
+      )!
+      .click()
+    expect(dispatch).toHaveBeenCalledWith('hilos_i18n_locale_delete', {
+      languageCode: 'ru',
+      countryCode: null,
+    })
+    s.delta(pair('ru', null, null, null))
+    s.scope.data.set(LANGUAGE_CARD_DATA, {
+      ...russianCard,
+      summary: { ...russianCard.summary, localeCount: 2 },
+    })
+    await nextTick()
+    expect(s.wrapper.get('[data-id="language-card-counts"]').text()).toBe(
+      'Locales: 2 · Names: 5',
+    )
+    expect(s.wrapper.get('[data-id="i18n-locales-none-ru"]').text()).toBe(
+      'No locale',
+    )
+    expect(s.wrapper.find('[data-id="i18n-locales-add-ru"]').exists()).toBe(
+      true,
+    )
+    for (const control of ['enabled', 'view', 'edit', 'delete']) {
+      expect(
+        s.wrapper.find(`[data-id="i18n-locales-${control}-ru"]`).exists(),
+      ).toBe(false)
+    }
+    s.scope.data.set(LANGUAGE_CARD_DATA, [])
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-locale-delete-window"]'),
+    ).not.toBeNull()
+    expect(document.body.textContent).not.toContain('Deleted elsewhere.')
+    expect(s.focused).toEqual(['ru'])
+    settle({ message: 'Locale deleted.' })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(
+      document.querySelector('[data-id="i18n-locale-delete-window"]'),
+    ).toBeNull()
+    expect(s.focused).toEqual(['ru', ''])
   })
 })

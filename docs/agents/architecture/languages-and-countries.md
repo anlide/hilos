@@ -475,9 +475,18 @@ will give those refusals their user-facing text.
   `hilos_i18n_language_row_delete` on the list — take only `languageCode` and
   call that item action. They acknowledge success with `Language deleted.`
 - Deleting a locale is refused while it is switched on or selected as any
-  country's default locale (not in the code yet — HIL-1492).
-- Deleting a locale removes its seven formats; texts for that pair take the
-  language's countryless locale (not in the code yet — HIL-1492).
+  country's default locale, even when that country is switched off. Any language
+  or country name override referring to the locale also refuses deletion,
+  including an empty or unlocked override. Remove those overrides first;
+  deletion never cascades into names.
+- The locale item action checks those three reasons again at write time, in
+  that order. The ADMIN page action `hilos_i18n_locale_delete` takes only
+  `languageCode` and the required nullable `countryCode`, calls that item action,
+  and acknowledges success with `Locale deleted.`
+- Deleting a locale removes its seven formats and leaves its language/country
+  pair in the table. The intended Phase-2 fallback for that pair is the language's
+  countryless locale; without that locale, it is the default language. This
+  deletion flow does not implement the formatting resolver (HIL-1424).
 - A known country is never deleted — reflow would bring it back; switch it
   off instead.
 - An own country can be deleted only while no locale or name references it
@@ -593,8 +602,19 @@ its address and the table's normal removal/Apply model. An admin-view reader
 may open a free language's modal, with confirmation disabled.
 The Vue locales page adds a locale from a pair without one, edits a switched-off
 locale, and shows a switched-on locale in the same window (HIL-1491). The server
-actions serve all six demos; deletion is HIL-1492. The edit window switches a
-locale on (HIL-1493); switching off from the view window is HIL-1494.
+actions serve all six demos. Each existing locale also has a trash button,
+including a switched-on or country-default locale. Its separate confirmation
+focuses the fresh row, freezes the codes and labels, and releases focus on close
+or unmount. A late switch or default selection leaves Delete available for the
+server's refusal. An idle missing locale, country or language says
+`Deleted elsewhere.`; the window stays open with Delete disabled. During its own request it retains
+the target and tracked action through the deletion echo, closing only on success.
+Failures stay in the reserved error row; pending blocks closing and repeat sends.
+A viewer can read the window with Delete disabled. The table keeps the same pair
+in place, immediately shows `No locale` and the plus instead of its tick and
+edit/view/delete controls in every tab, and lowers the card's locale count.
+The edit window switches a locale on (HIL-1493); switching off from the view
+window is HIL-1494.
 Vue serves the countries list at `/hilos/i18n/countries` (HIL-1475), the main
 country card at `/hilos/i18n/countries/{countryCode}` (HIL-1482) and its names
 at `/hilos/i18n/countries/{countryCode}/names` (HIL-1483). The card shows the

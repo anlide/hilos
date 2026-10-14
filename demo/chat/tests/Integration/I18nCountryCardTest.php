@@ -319,6 +319,7 @@ final class I18nCountryCardTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function (): void {
             Hilos::$db->countries['qx']->actions->switchOff();
             Hilos::$db->countries['qx']->actions->update('Q', 'QXQ', null);
+            Hilos::$db->locales['en-QX']->actions->switchOff();
             Hilos::$db->locales['en-QX']->actions->delete();
         });
         Hilos::$browser->record(SourceChange::dbDeleted(
