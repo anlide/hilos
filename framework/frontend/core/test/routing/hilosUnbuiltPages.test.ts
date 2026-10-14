@@ -69,20 +69,40 @@ describe('hilosUnbuiltPages', () => {
     }
   })
 
-  it('opens the Vue languages and countries lists and their cards while sibling i18n pages remain unbuilt', () => {
-    for (const layer of ['vue', 'react', 'angular'] as const) {
-      const unbuilt = hilosUnbuiltPages(layer)
-      expect(unbuilt.has(HilosPages.I18N)).toBe(layer !== 'vue')
-      expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(layer !== 'vue')
-      expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(layer !== 'vue')
-      expect(unbuilt.has(HilosPages.I18N_LANGUAGE)).toBe(layer !== 'vue')
-      expect(unbuilt.has(HilosPages.I18N_LANGUAGE_NAMES)).toBe(layer !== 'vue')
-      expect(unbuilt.has(HilosPages.I18N_LANGUAGE_LOCALES)).toBe(
-        layer !== 'vue',
-      )
-      expect(unbuilt.has(HilosPages.I18N_COUNTRY)).toBe(layer !== 'vue')
-      expect(unbuilt.has(HilosPages.I18N_COUNTRY_NAMES)).toBe(layer !== 'vue')
-    }
+  it('opens all eight completed Vue i18n pages', () => {
+    const unbuilt = hilosUnbuiltPages('vue')
+    expect(unbuilt.has(HilosPages.I18N)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE_NAMES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE_LOCALES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRY)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRY_NAMES)).toBe(false)
+  })
+
+  it('opens all eight completed React i18n pages', () => {
+    const unbuilt = hilosUnbuiltPages('react')
+    expect(unbuilt.has(HilosPages.I18N)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE_NAMES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE_LOCALES)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRY)).toBe(false)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRY_NAMES)).toBe(false)
+  })
+
+  it('keeps all eight i18n pages unbuilt in Angular', () => {
+    const unbuilt = hilosUnbuiltPages('angular')
+    expect(unbuilt.has(HilosPages.I18N)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGES)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRIES)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE_NAMES)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_LANGUAGE_LOCALES)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRY)).toBe(true)
+    expect(unbuilt.has(HilosPages.I18N_COUNTRY_NAMES)).toBe(true)
   })
 
   it('removes project views only from this result and ignores unrelated keys', () => {

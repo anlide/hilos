@@ -86,6 +86,34 @@ export {
 export { HilosAdminPage, type HilosAdminPageProps } from './HilosAdminPage.js'
 export { hilosAdminViews } from './admin/hilosAdminViews.js'
 export {
+  HilosI18nLanguagesPage,
+  type HilosI18nLanguagesPageProps,
+} from './admin/i18n/lists/HilosI18nLanguagesPage.js'
+export {
+  HilosI18nLanguagePage,
+  type HilosI18nLanguagePageProps,
+} from './admin/i18n/details/HilosI18nLanguagePage.js'
+export {
+  HilosI18nLanguageNamesPage,
+  type HilosI18nLanguageNamesPageProps,
+} from './admin/i18n/details/HilosI18nLanguageNamesPage.js'
+export {
+  HilosI18nLanguageLocalesPage,
+  type HilosI18nLanguageLocalesPageProps,
+} from './admin/i18n/details/HilosI18nLanguageLocalesPage.js'
+export {
+  HilosI18nCountriesPage,
+  type HilosI18nCountriesPageProps,
+} from './admin/i18n/lists/HilosI18nCountriesPage.js'
+export {
+  HilosI18nCountryPage,
+  type HilosI18nCountryPageProps,
+} from './admin/i18n/details/HilosI18nCountryPage.js'
+export {
+  HilosI18nCountryNamesPage,
+  type HilosI18nCountryNamesPageProps,
+} from './admin/i18n/details/HilosI18nCountryNamesPage.js'
+export {
   HilosDaemonPage,
   type HilosDaemonPageProps,
 } from './admin/daemon/HilosDaemonPage.js'

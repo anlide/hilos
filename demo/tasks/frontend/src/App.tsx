@@ -43,6 +43,13 @@ import HilosDaemonAgents from './views/Hilos/Daemon/Agents.js'
 import HilosDaemonHttp from './views/Hilos/Daemon/Http.js'
 import HilosDaemonEnv from './views/Hilos/Daemon/Env.js'
 import HilosDaemonEnvMismatch from './views/Hilos/Daemon/EnvMismatch.js'
+import HilosI18nLanguages from './views/Hilos/I18n/Languages/Languages.js'
+import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.js'
+import HilosI18nLanguageNames from './views/Hilos/I18n/LanguageNames/LanguageNames.js'
+import HilosI18nLanguageLocales from './views/Hilos/I18n/LanguageLocales/LanguageLocales.js'
+import HilosI18nCountries from './views/Hilos/I18n/Countries/Countries.js'
+import HilosI18nCountry from './views/Hilos/I18n/Country/Country.js'
+import HilosI18nCountryNames from './views/Hilos/I18n/CountryNames/CountryNames.js'
 import HilosLogsKeys from './views/Hilos/Logs/Keys'
 import HilosLogsOverview from './views/Hilos/Logs/Overview'
 import HilosLogsRotations from './views/Hilos/Logs/Rotations'
@@ -83,6 +90,13 @@ const pages: Record<string, ComponentType> = {
   // the pages it implements itself; the rest render the framework default, never
   // recopied per project (page-module-structure.md).
   ...hilosAdminViews(),
+  [HilosPages.I18N_LANGUAGES]: HilosI18nLanguages,
+  [HilosPages.I18N_LANGUAGE]: HilosI18nLanguage,
+  [HilosPages.I18N_LANGUAGE_NAMES]: HilosI18nLanguageNames,
+  [HilosPages.I18N_LANGUAGE_LOCALES]: HilosI18nLanguageLocales,
+  [HilosPages.I18N_COUNTRIES]: HilosI18nCountries,
+  [HilosPages.I18N_COUNTRY]: HilosI18nCountry,
+  [HilosPages.I18N_COUNTRY_NAMES]: HilosI18nCountryNames,
   [HilosPages.DAEMON]: HilosDaemon,
   [HilosPages.DAEMON_WORKERS]: HilosDaemonWorkers,
   [HilosPages.DAEMON_CRON]: HilosDaemonCron,

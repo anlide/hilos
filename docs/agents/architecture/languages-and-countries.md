@@ -540,7 +540,9 @@ whole with its table (HIL-1475), the catalog tally callout above it
 table's own fan-out. It has an Add country main action with the own-country
 confirmation (HIL-1495). The callout and legend are the shared components of
 the languages and countries lists. The root shows the Countries card (HIL-1475).
-React and Angular remain unbuilt until HIL-1502/1503.
+React also serves all eight reference pages (HIL-1502); its section root remains
+the self-contained default shell with Languages and Countries cards.
+Angular remains unbuilt until HIL-1503.
 
 | Page key | Route |
 |---|---|
@@ -629,7 +631,15 @@ followed by Deletion blocked. The table row's trash control and the card's
 State section keep their live deletion verdict and open the shared delete
 confirmation (HIL-1499). A viewer may open these windows and fill the edit
 fields; Save and the delete confirmation are disabled by the admin view mode.
-React and Angular stay unbuilt until HIL-1502/1503.
+React exports `HilosI18nLanguagesPage`, `HilosI18nLanguagePage`,
+`HilosI18nLanguageNamesPage`, `HilosI18nLanguageLocalesPage`,
+`HilosI18nCountriesPage`, `HilosI18nCountryPage` and
+`HilosI18nCountryNamesPage`, with their public props (HIL-1502). The tasks and
+ecommerce-shop demos mount seven thin consumers over their own
+`hilosI18nLanguageContext` and `hilosI18nCountryContext`, each bound to that
+demo's connection, actions and scopes. These context-required pages stay outside
+`hilosAdminViews()`; the section root remains its default shell.
+Angular stays unbuilt until HIL-1503.
 
 Startup refuses a missing page or agent; the topology tests check that the
 six migration files are present after registration.

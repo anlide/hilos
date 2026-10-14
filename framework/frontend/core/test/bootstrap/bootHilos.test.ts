@@ -216,10 +216,10 @@ describe('bootHilos', () => {
   )
 
   it.each(['vue', 'react', 'angular'] as const)(
-    'keeps i18n URLs closed before subscription in %s',
+    'subscribes only completed i18n section and list views in %s',
     (viewLayer) => {
       for (const page of [
-        ...(viewLayer === 'vue'
+        ...(viewLayer !== 'angular'
           ? []
           : [
               HilosPages.I18N,
@@ -251,7 +251,7 @@ describe('bootHilos', () => {
         })
         expect(connection.sent).toEqual([])
       }
-      if (viewLayer === 'vue') {
+      if (viewLayer !== 'angular') {
         for (const page of [
           HilosPages.I18N,
           HilosPages.I18N_LANGUAGES,
@@ -278,6 +278,87 @@ describe('bootHilos', () => {
           expect(router.resolvePath(page)).toBe(
             HILOS_ROUTE_DECLARATIONS[page].path,
           )
+          expect(connection.sent).toEqual([])
+          connection.emitProjectSignal('handshake_response', {
+            entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+          })
+          expect(connection.sent).toEqual([
+            { type: 'page_subscribe', page, params: {} },
+          ])
+        }
+      }
+    },
+  )
+
+  it.each(['vue', 'react', 'angular'] as const)(
+    'subscribes exactly the completed i18n detail views in %s',
+    (viewLayer) => {
+      for (const [page, path] of [
+        [HilosPages.I18N_LANGUAGE, '/hilos/i18n/languages/en'],
+        [HilosPages.I18N_LANGUAGE_NAMES, '/hilos/i18n/languages/en/names'],
+        [HilosPages.I18N_LANGUAGE_LOCALES, '/hilos/i18n/languages/en/locales'],
+        [HilosPages.I18N_COUNTRY, '/hilos/i18n/countries/us'],
+        [HilosPages.I18N_COUNTRY_NAMES, '/hilos/i18n/countries/us/names'],
+      ] as const) {
+        const connection = fakeConnection()
+        const hilosConnection = connection as unknown as HilosConnection
+        const router = bootHilos({
+          viewLayer,
+          connection: hilosConnection,
+          actions: new ActionLifecycle(hilosConnection),
+          scopes: new ScopeManager(),
+          router: createAppPageRouter(
+            { main: { path: '/', admin: false } },
+            { fallback: 'main' },
+          ),
+          navigationEnvironment: fakeNavigation(path),
+        })
+        expect(router.currentRoute.get()).toMatchObject({
+          page,
+          params:
+            page === HilosPages.I18N_COUNTRY ||
+            page === HilosPages.I18N_COUNTRY_NAMES
+              ? { countryCode: 'us' }
+              : { languageCode: 'en' },
+        })
+        expect(connection.sent).toEqual([])
+        connection.emitProjectSignal('handshake_response', {
+          entities: { currentUser: { id: 1, name: 'Ada', admin: true } },
+        })
+        if (viewLayer === 'angular') {
+          expect(router.pageError.get()?.errorCode).toBe('not_served')
+          expect(
+            router.resolvePath(
+              page,
+              page === HilosPages.I18N_COUNTRY ||
+                page === HilosPages.I18N_COUNTRY_NAMES
+                ? { countryCode: 'us' }
+                : { languageCode: 'en' },
+            ),
+          ).toBeUndefined()
+          expect(connection.sent).toEqual([])
+        } else {
+          expect(router.pageError.get()?.errorCode).toBeUndefined()
+          expect(
+            router.resolvePath(
+              page,
+              page === HilosPages.I18N_COUNTRY ||
+                page === HilosPages.I18N_COUNTRY_NAMES
+                ? { countryCode: 'us' }
+                : { languageCode: 'en' },
+            ),
+          ).toBe(path)
+          expect(connection.sent).toEqual([
+            {
+              type: 'page_subscribe',
+              page,
+              params:
+                page === HilosPages.I18N_COUNTRY ||
+                page === HilosPages.I18N_COUNTRY_NAMES
+                  ? { countryCode: 'us' }
+                  : { languageCode: 'en' },
+            },
+          ])
         }
       }
     },
