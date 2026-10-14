@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Analytics;
 
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Hilos\AbstractHilosAnalyticsAgent;
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Core\Analytics\AnalyticsSectionReader;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\Core\Feature\Definition\AnalyticsFeature;
@@ -26,6 +28,9 @@ use Hilos\Legal\StandardSetCatalog;
 use Hilos\Pages\AbstractHilosAnalyticsPage;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -97,6 +102,37 @@ final class AnalyticsActivationTest extends TestCase
         };
 
         self::assertInstanceOf(AnalyticsSectionReader::class, $agent->sectionReader());
+    }
+
+    public function testBrowserSessionProbeDeclaresItsTestOnlyCommand(): void
+    {
+        self::assertContains(AnalyticsCommandConstants::TEST_BROWSER_SESSION, AbstractHilosAnalyticsAgent::AGENT_COMMANDS);
+        self::assertTrue(TestOnlyCommandRegistry::isTestOnly(AnalyticsCommandConstants::TEST_BROWSER_SESSION));
+    }
+
+    public function testBrowserSessionProbeRejectsMalformedUserIdsWithoutReading(): void
+    {
+        foreach ([[], ['userId' => null], ['userId' => '7'], ['userId' => ''], ['userId' => 1.5],
+            ['userId' => 0], ['userId' => -1], ['userId' => true], ['userId' => []]] as $payload) {
+            $agent = new AnalyticsProbeValidationAgent();
+            $agent->onSignalCommand(new CommandRequestDTO('probe-invalid', AnalyticsCommandConstants::TEST_BROWSER_SESSION, $payload), '', '');
+
+            self::assertCount(1, $agent->replies);
+            self::assertSame('probe-invalid', $agent->replies[0]->correlationId);
+            self::assertFalse($agent->replies[0]->isOk());
+            self::assertStringContainsString('positive integer userId', $agent->replies[0]->payload[CommandConstants::FIELD_MESSAGE]);
+        }
+    }
+
+    public function testBrowserSessionProbeAnswersUnknownCommandsExactlyOnce(): void
+    {
+        $agent = new AnalyticsProbeValidationAgent();
+        $agent->onSignalCommand(new CommandRequestDTO('probe-unknown', 'analytics:no-such-command'), '', '');
+
+        self::assertCount(1, $agent->replies);
+        self::assertSame('probe-unknown', $agent->replies[0]->correlationId);
+        self::assertFalse($agent->replies[0]->isOk());
+        self::assertStringContainsString('Unknown command', $agent->replies[0]->payload[CommandConstants::FIELD_MESSAGE]);
     }
 
     public function testTheRegistryKnowsTheFeature(): void
@@ -301,4 +337,23 @@ abstract class AnalyticsActivationOldPrivacyHilos extends AnalyticsActivationHil
 abstract class AnalyticsActivationDeclaredHilos extends AnalyticsActivationHilos
 {
     protected const ?string LEGAL_CATALOG = AnalyticsActivationDeclaredPrivacyCatalog::class;
+}
+
+/** A malformed probe must answer before it reaches the database. */
+final class AnalyticsProbeValidationAgent extends AbstractHilosAnalyticsAgent
+{
+    /** @var list<CommandReplyDTO> Replies produced by one command */
+    public array $replies = [];
+
+    /** @return AnalyticsSectionReader Never reached by validation cases */
+    public function sectionReader(): AnalyticsSectionReader
+    {
+        TestCase::fail('Invalid requests must not read analytics');
+    }
+
+    /** @param CommandReplyDTO $reply Captured reply */
+    public function replyToCommand(CommandReplyDTO $reply): void
+    {
+        $this->replies[] = $reply;
+    }
 }

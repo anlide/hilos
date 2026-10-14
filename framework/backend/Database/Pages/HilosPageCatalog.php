@@ -459,6 +459,11 @@ final class HilosPageCatalog
             PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
             PageCatalogConstants::CATALOG_ENTRY_ICON => 'bi-bar-chart',
         ],
+        HilosPageConstants::HILOS_ANALYTICS_BROWSER_SESSION => [
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Browser session',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Actions recorded in one browser session, in source-time order.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_ANALYTICS,
+        ],
         HilosPageConstants::HILOS_MCP_SKILLS => [
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP & Skills',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'MCP servers, skills, and their usage logs.',

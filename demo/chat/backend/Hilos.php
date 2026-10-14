@@ -98,6 +98,7 @@ use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Pages\Hilos\AboutPage;
 use Demo\Chat\Pages\Hilos\AppearancePage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
+use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
@@ -389,6 +390,7 @@ final class Hilos extends HilosFacade
         GuardianPage::PAGE => GuardianPage::class,
         GuardianAgentPage::PAGE => GuardianAgentPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionPage::PAGE => BrowserSessionPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         DaemonPage::PAGE => DaemonPage::class,
@@ -798,6 +800,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        BrowserSessionPage::PAGE => [
+            ChatTableContext::hilosAnalyticsActions => [],
+        ],
         AdminBotsPage::PAGE => [
             ChatTableContext::bots => [],
         ],

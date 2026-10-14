@@ -148,6 +148,8 @@ export { default as HilosLegalPage } from './admin/legal/HilosLegalPage.vue'
 export { default as HilosLegalDocumentPage } from './admin/legal/HilosLegalDocumentPage.vue'
 export { default as HilosLegalRevisionPage } from './admin/legal/HilosLegalRevisionPage.vue'
 
+export { default as HilosAnalyticsBrowserSessionPage } from './admin/analytics/HilosAnalyticsBrowserSessionPage.vue'
+
 export { default as HilosLegalAcceptancesPage } from './admin/legal/HilosLegalAcceptancesPage.vue'
 
 export { default as HilosLegalSettingsPage } from './admin/legal/HilosLegalSettingsPage.vue'

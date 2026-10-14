@@ -406,6 +406,9 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos analytics page. */
     public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS = 'subscription_page_hilos_analytics';
 
+    /** Subscription signal for one analytics browser session. */
+    public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS_BROWSER_SESSION = 'subscription_page_hilos_analytics_browser_session';
+
     /** Subscription signal for Hilos backup page. */
     public const string SUBSCRIPTION_PAGE_HILOS_BACKUP = 'subscription_page_hilos_backup';
 

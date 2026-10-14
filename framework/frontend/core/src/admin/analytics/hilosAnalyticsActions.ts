@@ -1,6 +1,6 @@
-// SCAFFOLD: The browser-session page mounts this viewport in HIL-1419.
-
-import { readNumberOrNull, readStringOrNull } from '../../state/fieldReaders.js'
+import { z } from 'zod'
+import { hideable } from '../../state/hideableSchema.js'
+import { type Hideable } from '../../state/hiddenValue.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
 import { bindTableViewport } from '../../subscription/bindTableViewport.js'
 import { type HilosTableColumnOf } from '../../table/hilosTableColumn.js'
@@ -24,9 +24,9 @@ export const ANALYTICS_ACTION_NAME_FIELD = 'actionName'
 /** One action recorded in a numbered browser session. */
 export interface HilosAnalyticsActionRow {
   readonly rowKey: number
-  readonly createdTs: number
-  readonly pageName: string | null
-  readonly actionName: string
+  readonly createdTs: Hideable<number>
+  readonly pageName: Hideable<string | null>
+  readonly actionName: Hideable<string>
 }
 
 /** Browser controller and mount lifecycle of the session's actions. */
@@ -42,6 +42,14 @@ export interface HilosAnalyticsActionsOptions {
   readonly browserSessionId: number
 }
 
+const actionSchema = z.object({
+  [ANALYTICS_ACTION_CREATED_TS_FIELD]: hideable(z.number()).catch(0),
+  [ANALYTICS_ACTION_PAGE_NAME_FIELD]: hideable(z.string().nullable()).catch(
+    null,
+  ),
+  [ANALYTICS_ACTION_NAME_FIELD]: hideable(z.string()).catch(''),
+})
+
 /** Read an inline slot, or an empty record when absent or malformed. */
 function recordSlot(slot: unknown): Record<string, unknown> {
   return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
@@ -50,7 +58,7 @@ function recordSlot(slot: unknown): Record<string, unknown> {
 }
 
 /**
- * Resolve one inline action slot, folding hidden fields into safe defaults.
+ * Resolve one inline action slot, preserving hidden fields and defaulting malformed values.
  *
  * @param row Table row in the page scope; the fragment owns its row key.
  */
@@ -60,9 +68,7 @@ export function resolveHilosAnalyticsActionRow(
   const slot = recordSlot(row.slots[ANALYTICS_ACTIONS_SLOT])
   return {
     rowKey: Number(row.rowKey),
-    createdTs: readNumberOrNull(slot, ANALYTICS_ACTION_CREATED_TS_FIELD) ?? 0,
-    pageName: readStringOrNull(slot, ANALYTICS_ACTION_PAGE_NAME_FIELD),
-    actionName: readStringOrNull(slot, ANALYTICS_ACTION_NAME_FIELD) ?? '',
+    ...actionSchema.parse(slot),
   }
 }
 

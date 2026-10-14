@@ -83,3 +83,7 @@ export {
   isSessionCookie,
   isRotateCookie,
 } from './sessionCookie.js'
+export {
+  readAnalyticsBrowserSession,
+  type AnalyticsBrowserSession,
+} from './analytics.js'

@@ -383,8 +383,12 @@ layer that has built the section, currently Vue.
   open from their admin page, with an "Open users" link when the users-list path
   resolves. It carries no values, so an admin-view-mode viewer sees the same line.
 - A browser-session page shows its actions in order — when, on which page, and
-  the action's name — with a short browser description in the header
-  (not in the code yet — HIL-1419).
+  the action's name. Its key is `hilos_analytics_browser_session`, its route is
+  `/hilos/analytics/browser-sessions/{browserSessionId}`, and its Vue SDK view is
+  `HilosAnalyticsBrowserSessionPage`. The opening `page_response` carries the
+  short browser description and last signed-in person in `data.browserSession`,
+  with `data.pageLabel` naming the session. A view-mode viewer receives a hidden
+  header and the catalog label `Browser session`, without the personal number.
 - A person's page lists the browser sessions in which they were the last to
   sign in, each linking to its session page; the entry is on the admin user card
   (not in the code yet — HIL-1420).
@@ -418,8 +422,17 @@ The numeric identity belongs to the fragment's `rowKey`, never an `id` in the
 slot. A missing preset gives an empty window without SQL; a value other than a
 positive integer refuses the window. These tables have no search, mutations or
 live source-change frames. The frontend core supplies their controllers,
-column declarations, row readers and local-time labels; pages follow in
-HIL-1419/1420.
+column declarations, row readers and local-time labels. The Vue browser-session
+page opens the actions table with its route's session number as the preset;
+the person's sessions page follows in HIL-1420.
+
+The section agent also answers the read-only `test:analytics:browser-session`
+command through the existing non-production command-channel gate. Given a
+positive integer `userId`, it returns `browserSessionId` (null until loaded)
+and `actionNames`: at most 50 names from that user's latest browser session,
+through the same bounded reader. It writes nothing and exposes no browser
+endpoint; e2e polls it to observe journal rotation and writer loading before
+opening the page.
 
 `browser` is a short browser/version and operating-system label, not a raw
 User-Agent excerpt of 160 characters. An unrecognized User-Agent falls back to
@@ -448,9 +461,11 @@ screen does not read it yet. A full visit model remains a Phase-2 question
 (HIL-1402). A session in which nobody signed in names nobody.
 
 The reader checks `hilos_user` afresh and returns `Deleted user #<id>` when the
-account row is gone, never a remembered name. The page presentation follows in
-HIL-1419/1420. Account erasure leaves the numeric id, analytic events and
-addresses; the project's Privacy revision states this.
+account row is gone, never a remembered name. The browser-session header renders
+that current label under `Last signed in`, or says that nobody has signed in;
+the person's sessions page follows in HIL-1420. Account erasure leaves the
+numeric id, analytic events and addresses; the project's Privacy revision
+states this.
 
 ### What the screen never shows
 
@@ -474,7 +489,8 @@ addresses; the project's Privacy revision states this.
 A session number is not permanent. A token rename that finds rows under both
 tokens merges the old session into the new one and deletes the old row
 ([Loading](#loading)). A page addressed by that vanished number answers as for
-a missing resource (not in the code yet — HIL-1419).
+a missing resource: a new subscription raises `PageResourceNotFoundException`
+(404), without looking for a successor through tokens or aliases.
 
 Order actions by their source moment, `created_ts`, breaking ties by row number.
 Never order them by loading: files from different nodes arrive in any order

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { resolveHilosPath } from '../../src/routing/hilosAdmin.js'
 import { createPageRouter } from '../../src/routing/PageRouter.js'
+import { hilosUnbuiltPages } from '../../src/routing/hilosUnbuiltPages.js'
 import {
   HilosPages,
   HILOS_ROUTE_DECLARATIONS,
@@ -103,6 +104,30 @@ describe('HILOS_ROUTE_DECLARATIONS', () => {
     expect(router.match('/hilos/daemon/http/old-server').page).toBe(
       HilosPages.DASHBOARD,
     )
+  })
+
+  it('addresses a browser session by its numeric id and stages the other view layers', () => {
+    const router = createPageRouter(HILOS_ROUTE_DECLARATIONS, {
+      fallback: HilosPages.DASHBOARD,
+    })
+    const page = HilosPages.ANALYTICS_BROWSER_SESSION
+    expect(page).toBe('hilos_analytics_browser_session')
+    expect(HILOS_ROUTE_DECLARATIONS[page]).toEqual({
+      path: '/hilos/analytics/browser-sessions/{browserSessionId}',
+      admin: true,
+    })
+    expect(resolveHilosPath(page, { browserSessionId: '57' })).toBe(
+      '/hilos/analytics/browser-sessions/57',
+    )
+    expect(router.match('/hilos/analytics/browser-sessions/57')).toEqual({
+      page,
+      params: { browserSessionId: '57' },
+      admin: true,
+    })
+    expect(router.match('/hilos/analytics').page).toBe(HilosPages.ANALYTICS)
+    expect(hilosUnbuiltPages('vue').has(page)).toBe(false)
+    expect(hilosUnbuiltPages('react').has(page)).toBe(true)
+    expect(hilosUnbuiltPages('angular').has(page)).toBe(true)
   })
 
   it('declares a route for every Hilos page key', () => {

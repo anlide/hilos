@@ -40,6 +40,7 @@ use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPa
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\DashboardPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AnalyticsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\LicensePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Daemon\DaemonWorkersPage;
@@ -228,6 +229,7 @@ final class Hilos extends HilosFacade
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
+        BrowserSessionPage::PAGE => BrowserSessionPage::class,
         BackupPage::PAGE => BackupPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
@@ -451,6 +453,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        BrowserSessionPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosAnalyticsActions => [],
+        ],
         BackupPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosBackups => [],
         ],

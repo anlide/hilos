@@ -2232,6 +2232,15 @@ export {
   type HilosAnalyticsContext,
 } from './admin/analytics/hilosAnalytics.js'
 export {
+  ANALYTICS_BROWSER_SESSION_SECTION,
+  ANALYTICS_BROWSER_SESSION_ROUTE_PARAM,
+  ANALYTICS_BROWSER_SESSION_COPY,
+  hilosAnalyticsBrowserSessionSchema,
+  hilosAnalyticsBrowserSession,
+  formatAnalyticsLastSignedIn,
+  type HilosAnalyticsBrowserSession,
+} from './admin/analytics/hilosAnalyticsBrowserSession.js'
+export {
   ANALYTICS_ACTIONS_FILTER_BROWSER_SESSION,
   ANALYTICS_ACTION_CREATED_TS_FIELD,
   ANALYTICS_ACTION_PAGE_NAME_FIELD,

@@ -37,6 +37,7 @@ export const HilosPages = {
   SETTINGS: 'hilos_settings',
   APPEARANCE: 'hilos_appearance',
   ANALYTICS: 'hilos_analytics',
+  ANALYTICS_BROWSER_SESSION: 'hilos_analytics_browser_session',
   ROLES: 'hilos_roles',
   OPERATIONS: 'hilos_operations',
   BACKUP: 'hilos_backup',
@@ -155,6 +156,10 @@ export const HILOS_ROUTE_DECLARATIONS: Record<
   [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },
   [HilosPages.APPEARANCE]: { path: '/hilos/appearance', admin: true },
   [HilosPages.ANALYTICS]: { path: '/hilos/analytics', admin: true },
+  [HilosPages.ANALYTICS_BROWSER_SESSION]: {
+    path: '/hilos/analytics/browser-sessions/{browserSessionId}',
+    admin: true,
+  },
   [HilosPages.ROLES]: { path: '/hilos/roles', admin: true },
   [HilosPages.OPERATIONS]: { path: '/hilos/operations', admin: true },
   [HilosPages.BACKUP]: { path: '/hilos/backup', admin: true },

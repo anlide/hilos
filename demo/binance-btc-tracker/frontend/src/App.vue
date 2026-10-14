@@ -37,6 +37,7 @@ import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveri
 import HilosMaintenance from './views/Hilos/Maintenance/Maintenance.vue'
 import HilosSettings from './views/Hilos/Settings/Settings.vue'
 import HilosAppearance from './views/Hilos/Appearance/Appearance.vue'
+import HilosAnalyticsBrowserSession from './views/Hilos/Analytics/BrowserSession.vue'
 import HilosUsers from './views/Hilos/Users/Users.vue'
 import HilosUser from './views/Hilos/Users/User.vue'
 import HilosI18nLanguage from './views/Hilos/I18n/Language/Language.vue'
@@ -80,6 +81,7 @@ const pages: Record<string, Component> = {
   [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.SETTINGS]: HilosSettings,
   [HilosPages.APPEARANCE]: HilosAppearance,
+  [HilosPages.ANALYTICS_BROWSER_SESSION]: HilosAnalyticsBrowserSession,
   [HilosPages.USERS]: HilosUsers,
   [HilosPages.USER]: HilosUser,
   [HilosPages.I18N_LANGUAGES]: HilosI18nLanguages,

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\BinanceBtcTracker\Tests\Unit;
 
+use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
+
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\BinanceBtcTracker\Pages\Hilos\AnalyticsPage;
+use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
 use Hilos\Core\Analytics\AnalyticsWriterAgent;
@@ -194,6 +197,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
+            BrowserSessionPage::PAGE => BrowserSessionPage::class,
             BackupPage::PAGE => BackupPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
@@ -236,6 +240,14 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
     {
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
+    }
+
+    /** The numeric browser-session page uses the Analytics owner and its existing action table. */
+    public function testAnalyticsBrowserSessionPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
     }
 
     /** The Daemon environment page names the node whose replica serves it. */
@@ -1147,6 +1159,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         $this->assertContains(HilosFeature::ANALYTICS, Hilos::features());
         $this->assertSame(AnalyticsPage::class, Hilos::PAGES[AnalyticsPage::PAGE]);
         $this->assertSame(AgentType::HILOS_ANALYTICS, AnalyticsPage::SUBSCRIPTION_AGENT_TYPE);
+        $this->assertSame(
+            AgentType::HILOS_ANALYTICS,
+            Hilos::getCommandAgentRoutes()[AnalyticsCommandConstants::TEST_BROWSER_SESSION],
+        );
         $this->assertSame(
             HilosAnalyticsActionsTable::class,
             Hilos::TABLES[BinanceBtcTrackerTableContext::hilosAnalyticsActions],

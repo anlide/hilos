@@ -13,6 +13,7 @@ import {
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
 import { type PageResponseWire } from '../../../src/protocol/scopePayload.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 
 function rawRow(slot: unknown): TableRow {
@@ -114,16 +115,31 @@ describe('hilosAnalyticsActions row', () => {
     expect(row.pageName).toBeNull()
   })
 
-  it('folds the viewer hidden marks into safe defaults', () => {
-    expect(
-      resolveHilosAnalyticsActionRow(
-        rawRow({
-          createdTs: { _hidden: true },
-          pageName: { _hidden: true },
-          actionName: { _hidden: true },
-        }),
-      ),
-    ).toEqual({ rowKey: 9, createdTs: 0, pageName: null, actionName: '' })
+  it('preserves the viewer hidden marks as the shared hidden value', () => {
+    const row = resolveHilosAnalyticsActionRow(
+      rawRow({
+        createdTs: { _hidden: true },
+        pageName: { _hidden: true },
+        actionName: { _hidden: true },
+      }),
+    )
+    expect(row.rowKey).toBe(9)
+    expect(row.createdTs).toBe(HIDDEN_VALUE)
+    expect(row.pageName).toBe(HIDDEN_VALUE)
+    expect(row.actionName).toBe(HIDDEN_VALUE)
+  })
+
+  it('defaults malformed fields without discarding valid or hidden siblings', () => {
+    const row = resolveHilosAnalyticsActionRow(
+      rawRow({
+        createdTs: 'bad',
+        pageName: { _hidden: true },
+        actionName: 'rename',
+      }),
+    )
+    expect(row.createdTs).toBe(0)
+    expect(row.pageName).toBe(HIDDEN_VALUE)
+    expect(row.actionName).toBe('rename')
   })
 
   it.each([

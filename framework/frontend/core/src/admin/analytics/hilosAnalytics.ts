@@ -1,4 +1,4 @@
-// SCAFFOLD: The Analytics pages consume this context in HIL-1419 / HIL-1420.
+// SCAFFOLD: The person's browser-session list also consumes this context in HIL-1420.
 
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'

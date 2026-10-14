@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Demo\Chat\Pages\Hilos\Analytics\BrowserSessionPage;
+
+use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
@@ -573,6 +576,14 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
     {
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
+    }
+
+    /** The numeric browser-session page uses the Analytics owner and its existing action table. */
+    public function testAnalyticsBrowserSessionPageIsWired(): void
+    {
+        self::assertSame(BrowserSessionPage::class, Hilos::PAGES[BrowserSessionPage::PAGE]);
+        self::assertSame(AgentType::HILOS_ANALYTICS, Hilos::getPageRoutes()[BrowserSessionPage::PAGE]);
+        self::assertSame([ChatTableContext::hilosAnalyticsActions => []], Hilos::PAGE_TABLES[BrowserSessionPage::PAGE]);
     }
 
     /** The Daemon environment page names the node whose replica serves it. */
@@ -1260,6 +1271,7 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::MAINTENANCE_ENABLE => AgentType::HILOS_INDEX,
             CliCommands::MAINTENANCE_DISABLE => AgentType::HILOS_INDEX,
             CliCommands::MAINTENANCE_PASS => AgentType::HILOS_INDEX,
+            AnalyticsCommandConstants::TEST_BROWSER_SESSION => AgentType::HILOS_ANALYTICS,
             CliCommands::BACKUP_TEST_AGE => AgentType::HILOS_BACKUP,
             BackupConstants::PRUNE_COMMAND => AgentType::HILOS_BACKUP,
             BackupConstants::SHIP_COMMAND => AgentType::HILOS_BACKUP,
