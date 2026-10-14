@@ -250,8 +250,8 @@ for journal rows.
 
 When a person has been erased, the soft reference keeps their number. The
 section reader returns the current name when the row still exists and
-`Deleted user #N` when it does not. The screen presents that label
-(not in the code yet — HIL-1460).
+`Deleted user #N` when it does not. The screen presents that label with an
+explanation that the receipt keeps the deleted person's number.
 
 ## Where The Journal Lives
 
@@ -414,6 +414,31 @@ number with each label. It exposes live table names and column policies without
 exposing journal dictionary row numbers. A service trigger's valid-from
 migration comes from the header of its project SQL file, never from the SQL
 body sent to a browser.
+
+The dashboard's two reading actions open details on intent:
+`hilos_change_log_receipt_read` answers with a complete `receipt` header,
+`entries` (at most 50), and `nextAfterEntryId`; `hilos_change_log_entry_read`
+answers with one complete `entry` that has no receipt. The receipt header keeps
+the actor and subject numbers, current labels, channel, literal action, source,
+actual writer and total entry count. A continuation cursor is the last entry
+of the portion and must belong to that receipt. Entries arrive in ascending
+time and id order, with full long values and distinct absent, NULL and empty
+sides. Creation is a fact, deletion is the saved snapshot, and personal fields
+carry a fact without a value; the current record is never read to rebuild it.
+
+The Vue feed's actions cell opens the wide read-only modal in both the table
+and its narrow-screen cards. A receipt larger than 50 shows `Shown N of M` and
+`Show more` at the end of `What changed`. Each press appends at most 50 entries.
+After expansion, `Hide` restores the first portion, its count and cursor,
+clears a continuation refusal, and returns focus and scroll to the block's
+heading; it remains available after the last portion and during another read.
+Receipts of 50 or fewer and bare entries have no pagination controls. A failed
+read offers `Retry`, preserving visible entries on a continuation failure.
+
+Closing, reopening, leaving the page, replacing its identity or resetting its
+scope discards the detail snapshot and invalidates pending replies. Details
+are read afresh on reopening, independently of the feed filters. There is no
+polling, automatic continuation or live delivery into an open modal.
 
 The framework tables `hilosChangeLogFeed` and `hilosChangeLogHistory` serve
 the feed and one table's history through that reader. They are frozen windows:

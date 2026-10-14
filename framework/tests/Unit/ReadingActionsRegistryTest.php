@@ -10,6 +10,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Pages\AbstractHilosProfileAgreementsHistoryPage;
 use Hilos\Pages\AbstractHilosTermsPage;
+use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -36,6 +37,10 @@ final class ReadingActionsRegistryTest extends TestCase
             HilosSignalConstants::HILOS_LEGAL_REVISION_CHANGES,
         ],
         AbstractHilosTermsPage::class => [HilosSignalConstants::HILOS_TERMS_REVISION_TEXT],
+        AbstractHilosChangeLogDashboardPage::class => [
+            HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ,
+            HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ,
+        ],
         AbstractHilosLogsViewPage::class => [
             HilosSignalConstants::LOGS_READ_LINES,
             HilosSignalConstants::LOGS_FOLLOW_START,

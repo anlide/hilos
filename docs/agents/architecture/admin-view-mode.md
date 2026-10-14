@@ -231,7 +231,7 @@ and open only outside a takeover ([account-standing.md](account-standing.md)).
 The start refuses a reading name the page does not own through `ACTIONS` or
 the agent through `AGENT_ACTIONS` (`TopologyValidator`): a typo would quietly
 close a reading action. The same agent validation checks `FROZEN_EXIT_ACTIONS`.
-No owner is required to mark its actions. Today there are nine reading actions,
+No owner is required to mark its actions. Today there are eleven reading actions,
 pinned by `ReadingActionsRegistryTest`:
 
 | Owner (`READING_ACTIONS`) | Actions |
@@ -240,10 +240,17 @@ pinned by `ReadingActionsRegistryTest`:
 | `AbstractHilosTermsPage` | `HILOS_TERMS_REVISION_TEXT` (`hilos_terms_revision_text`) |
 | `AbstractHilosProfileAgreementsHistoryPage` | `HILOS_LEGAL_REVISION_TEXT` (`hilos_legal_revision_text`), `HILOS_LEGAL_REVISION_CHANGES` (`hilos_legal_revision_changes`) |
 | `AbstractUsersLibraryAgent` | `HILOS_LEGAL_CONSENT` (`hilos_legal_consent`), `HILOS_LEGAL_RECONSENT` (`hilos_legal_reconsent`), `HILOS_LEGAL_RECONSENT_PREVIEW` (`hilos_legal_reconsent_preview`) |
+| `AbstractHilosChangeLogDashboardPage` | `HILOS_CHANGE_LOG_RECEIPT_READ` (`hilos_change_log_receipt_read`), `HILOS_CHANGE_LOG_ENTRY_READ` (`hilos_change_log_entry_read`) |
 
 The logs viewer page sends its view-mode verdict to the file owner, which
 hides line text (HIL-1257). The users library's re-consent reply carries a null
 identifier under a takeover.
+
+The Change Log dashboard rechecks the viewer on each detail read and hides
+`actorLabel` and `subjectLabel` through `hideForViewer()` and the users-name
+column verdict before placing the reply in `ActionReplyDTO`. Page `dataFields`
+do not mask an action acknowledgement automatically. The non-personal journal
+snapshot and personal-change facts remain readable with the names hidden.
 
 `COMMUNICATIONS_CHANNEL_TEST` (`communications_channel_test`) is not reading:
 it sends a real message. `LEGAL_ACCEPTANCES_EXPORT` orders a data export,
@@ -690,8 +697,17 @@ stand for a viewer the same as for an admin (HIL-1255).
 The Change Log section carries its viewer case as a unit of the dashboard page
 (`framework/frontend/vue/src/admin/changeLog/HilosChangeLogPage.test.ts`):
 the tiles remain complete, while person names in the feed become a hidden mark
-beside the person's number. The page-response data integration is covered by
+beside the person's number. Its receipt modal also preserves hidden labels and
+numbers while reading, expanding and collapsing the non-personal snapshot.
+The page-response data integration is covered by
 `demo/chat/tests/Integration/ChangeLogDashboardPageIntegrationTest.php`.
+`demo/chat/tests/Integration/ChangeLogReceiptPageIntegrationTest.php` exercises
+both routed reading actions under admin and viewer verdicts, including name
+masking in the reply before acknowledgement, deleted people, full value sides,
+cursor refusals and receipt portions. The Vue detail rendering is covered by
+`framework/frontend/vue/src/admin/changeLog/HilosChangeLogReceiptModal.test.ts`;
+`demo/chat/tests/e2e/tests/change-log.spec.ts` opens the reader's own bot-update
+receipt and registration receipt through the built Vue page.
 
 The backup section carries the viewer cases of its keep toggle and of its
 restore and reopen dialogs as a unit of its page

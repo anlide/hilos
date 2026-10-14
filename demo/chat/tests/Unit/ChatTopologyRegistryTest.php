@@ -31,6 +31,8 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Hilos\Pages\ChangeLog\DTO\HilosChangeLogEntryReadActionDTO;
+use Hilos\Pages\ChangeLog\DTO\HilosChangeLogReceiptReadActionDTO;
 use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
@@ -479,6 +481,14 @@ final class ChatTopologyRegistryTest extends TestCase
         self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogDashboardPage::SUBSCRIPTION_AGENT_TYPE);
         self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTablePage::SUBSCRIPTION_AGENT_TYPE);
         self::assertSame(AgentType::HILOS_CHANGE_LOG, ChangeLogTablesPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame([
+            HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => HilosChangeLogReceiptReadActionDTO::class,
+            HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => HilosChangeLogEntryReadActionDTO::class,
+        ], ChangeLogDashboardPage::ACTIONS);
+        self::assertSame(HilosChangeLogReceiptReadActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ]);
+        self::assertSame(HilosChangeLogEntryReadActionDTO::class,
+            Hilos::getActionDtoRoutes()[HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ]);
     }
 
     /** Appearance reuses the index agent and the framework's self-snapshot table. */
@@ -923,6 +933,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => HilosPageConstants::HILOS_SECURITY_SIGN_IN_METHODS,
             HilosSignalConstants::SECURITY_IMPERSONATION_SWITCH_SET => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
             HilosSignalConstants::SECURITY_IMPERSONATION_SCOPE_SET => HilosPageConstants::HILOS_SECURITY_IMPERSONATION,
+            HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => HilosPageConstants::HILOS_CHANGE_LOG,
+            HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => HilosPageConstants::HILOS_CHANGE_LOG,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => HilosPageConstants::HILOS_TERMS,
         ], Hilos::getPageActionRoutes());
     }
@@ -1012,6 +1024,8 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SECURITY_PASSKEY_UNPROVEN_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_IMPERSONATION_SWITCH_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::SECURITY_IMPERSONATION_SCOPE_SET => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_CHANGE_LOG_RECEIPT_READ => AgentType::HILOS_CHANGE_LOG,
+            HilosSignalConstants::HILOS_CHANGE_LOG_ENTRY_READ => AgentType::HILOS_CHANGE_LOG,
             HilosSignalConstants::HILOS_TERMS_REVISION_TEXT => AgentType::HILOS_INDEX,
         ], Hilos::getActionAgentRoutes());
     }

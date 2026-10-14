@@ -550,6 +550,12 @@ final class HilosSignalConstants
     /** Subscription signal for Hilos change log table detail. */
     public const string SUBSCRIPTION_PAGE_HILOS_CHANGE_LOG_TABLE = 'subscription_page_hilos_change_log_table';
 
+    /** Client → server: read a receipt and one bounded portion of its full entries. */
+    public const string HILOS_CHANGE_LOG_RECEIPT_READ = 'hilos_change_log_receipt_read';
+
+    /** Client → server: read a full journal entry written without a receipt. */
+    public const string HILOS_CHANGE_LOG_ENTRY_READ = 'hilos_change_log_entry_read';
+
     /** Wire signal name for incremental table row mutations. */
     public const string TABLE_MUTATION = 'table_mutation';
 

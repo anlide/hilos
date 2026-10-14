@@ -14,7 +14,9 @@ import {
   changeLogChannelBadge,
   changeLogFeedEmpty,
   changeLogJournalNote,
+  computedSignal,
   createHilosChangeLogFeedTable,
+  createHilosChangeLogReceiptReader,
   formatChangeLogCoverage,
   formatChangeLogEntries,
   formatChangeLogOnBehalfOf,
@@ -24,7 +26,9 @@ import {
   HilosPages,
   isHiddenValue,
   readHilosChangeLogOverview,
-  type HilosChangeLogContext,
+  subscribeSignal,
+  type HilosChangeLogFeedRow,
+  type HilosChangeLogReceiptContext,
 } from '@hilos/core'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
@@ -34,10 +38,11 @@ import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
+import HilosChangeLogReceiptModal from './HilosChangeLogReceiptModal.vue'
 
 const props = defineProps<{
-  /** The project's connection and page scope. */
-  context: HilosChangeLogContext
+  /** The project's connection, page scope, and shared tracked actions. */
+  context: HilosChangeLogReceiptContext
 }>()
 
 const router = inject(hilosRouterKey)
@@ -50,9 +55,36 @@ const tablesPath = router?.resolvePath(HilosPages.CHANGE_LOG_TABLES, {})
 const feed = createHilosChangeLogFeedTable(props.context, {
   tables: () => overview.value?.journaledTables ?? [],
 })
+const reader = createHilosChangeLogReceiptReader(props.context)
+const dialog = useSignal(reader.dialog)
+const offLeave = router?.onLeave(() => reader.close())
+const offIdentity = router
+  ? subscribeSignal(router.pageIdentity, () => reader.close())
+  : undefined
+// A re-decided page replaces its scope even when the address stays the same.
+// Discard attribution synchronously, before a viewer can render the new scope.
+const offScope = subscribeSignal(
+  computedSignal(() => props.context.scopes.page()),
+  () => reader.close(),
+)
+
+/** Open only the address carried by the selected feed row. */
+function openDetails(row: HilosChangeLogFeedRow): void {
+  if (row.kind === 'receipt' && row.receiptId !== null) {
+    void reader.openReceipt(row.receiptId)
+  } else if (row.kind === 'entry' && row.entryId !== null) {
+    void reader.openEntry(row.entryId)
+  }
+}
 
 onMounted(() => feed.start())
-onUnmounted(() => feed.dispose())
+onUnmounted(() => {
+  offLeave?.()
+  offIdentity?.()
+  offScope()
+  reader.dispose()
+  feed.dispose()
+})
 </script>
 
 <template>
@@ -139,6 +171,20 @@ onUnmounted(() => feed.dispose())
           formatChangeLogTouched(row.touched)
         }}</code>
       </template>
+      <template #cell-actions="{ row }">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary text-wrap"
+          :data-id="`hilos-change-log-open-${row.rowKey}`"
+          @click="openDetails(row)"
+        >
+          {{
+            row.kind === 'receipt'
+              ? `View receipt #${row.receiptId}`
+              : `View change #${row.entryId}`
+          }}
+        </button>
+      </template>
       <template #empty>
         <div data-id="hilos-change-log-feed-empty" :data-state="empty.kind">
           <i
@@ -157,5 +203,6 @@ onUnmounted(() => feed.dispose())
         </div>
       </template>
     </HilosViewportTable>
+    <HilosChangeLogReceiptModal :reader="reader" :dialog="dialog" />
   </HilosAdminPage>
 </template>
