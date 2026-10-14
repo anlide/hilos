@@ -1,12 +1,9 @@
 // The Angular view under the case names the Vue view and the React port run for it.
-// The first group draws a table whose page declared no frame: the numbers a
+// The first group draws a table from its frame: the numbers a
 // composite order puts on its headers (HIL-811), its rows' tint, the mark column,
 // and the room of live messages above the rows (HIL-803, HIL-812). The
-// next ones take the branch on a declared frame (HIL-801, HIL-810), whose cells the
-// host fills one marked template per column (HIL-815); a table on no frame still
-// takes the `#row` template — either of which a component created directly could not
-// be handed. The
-// admin-page group stands the table inside the admin shell, the way the framework's
+// next ones take the cells the host fills one marked template per column (HIL-815).
+// The admin-page group stands the table inside the admin shell, the way the framework's
 // admin pages draw it, where a table declaring no title is named by the page heading.
 // The last two open a row and a card into the panel of fields that did not fit a
 // column (HIL-816), whose values the host marks one template per field.
@@ -54,49 +51,42 @@ const FRAME: HilosTableFrame = {
   columns: COLUMNS,
 }
 
-/** A host drawing a table that also passes the props of the older branch. */
+/** A host drawing a table with declared columns and cells. */
 @Component({
   selector: 'test-viewport-table-host',
   imports: [HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-viewport-table
-      [controller]="controller"
-      [columns]="columns"
-      label="Users"
-      [searchable]="true"
-    >
+    <hilos-viewport-table [controller]="controller">
       <ng-template hilosTableCell="name" let-row>{{ row.name }}</ng-template>
     </hilos-viewport-table>
   `,
 })
 class ViewportTableHost {
   controller!: TableViewportController<Row>
-  columns = COLUMNS
 }
 
-/** A host drawing a table whose page declared no frame, from its inputs alone. */
+/** A host drawing a table with plain name cells. */
 @Component({
   selector: 'test-plain-viewport-table-host',
-  imports: [HilosViewportTable],
+  imports: [HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-viewport-table [controller]="controller" [columns]="columns">
-      <ng-template #row let-row>
-        <td class="cell">{{ row.name }}</td>
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name" let-row>
+        <span class="cell">{{ row.name }}</span>
       </ng-template>
     </hilos-viewport-table>
   `,
 })
 class PlainTableHost {
   controller!: TableViewportController<Row>
-  columns = COLUMNS
 }
 
 /** A host filling every place a page has beside running work. */
 @Component({
   selector: 'test-progress-table-host',
-  imports: [HilosViewportTable],
+  imports: [HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-viewport-table [controller]="controller" [columns]="columns">
+    <hilos-viewport-table [controller]="controller">
       <ng-template #tableProgress let-progress>
         <span data-id="page-progress-title"
           >{{ progress.detail['title'] }} — {{ progress.current }} of
@@ -113,15 +103,14 @@ class PlainTableHost {
           progress.detail['note']
         }}</span>
       </ng-template>
-      <ng-template #row let-row>
-        <td>{{ row.name }}</td>
+      <ng-template hilosTableCell="name" let-row>
+        <span class="cell">{{ row.name }}</span>
       </ng-template>
     </hilos-viewport-table>
   `,
 })
 class ProgressTableHost {
   controller!: TableViewportController<Row>
-  columns = COLUMNS
 }
 
 // Columns that name where a row's bar goes: under the two content columns and not
@@ -136,21 +125,17 @@ const MARKED_COLUMNS: HilosTableColumn[] = [
 /** A host drawing a table whose columns mark where a row's bar goes. */
 @Component({
   selector: 'test-marked-table-host',
-  imports: [HilosViewportTable],
+  imports: [HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-viewport-table [controller]="controller" [columns]="columns">
-      <ng-template #row let-row>
-        <td></td>
-        <td>{{ row.name }}</td>
-        <td></td>
-        <td></td>
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name" let-row>
+        <span class="cell">{{ row.name }}</span>
       </ng-template>
     </hilos-viewport-table>
   `,
 })
 class MarkedTableHost {
   controller!: TableViewportController<Row>
-  columns = MARKED_COLUMNS
 }
 
 /**
@@ -206,26 +191,6 @@ const CELL_COLUMNS: HilosTableColumn[] = [
 class CellsTableHost {
   controller!: TableViewportController<Row>
   withSize = true
-}
-
-/**
- * A host whose table is declared while the page still passes a column list of the
- * props epoch, and fills only the column that list does not name.
- */
-@Component({
-  selector: 'test-stale-columns-table-host',
-  imports: [HilosTableCell, HilosViewportTable],
-  template: `
-    <hilos-viewport-table [controller]="controller" [columns]="columns">
-      <ng-template hilosTableCell="size">
-        <span class="sized">1.2 GB</span>
-      </ng-template>
-    </hilos-viewport-table>
-  `,
-})
-class StaleColumnsTableHost {
-  controller!: TableViewportController<Row>
-  columns: HilosTableColumn[] = [{ key: 'name', label: 'Name' }]
 }
 
 // One column of each place a card has, plus one the page keeps out of it: the whole
@@ -323,7 +288,7 @@ const STATE_COLUMNS: HilosTableColumn[] = [
   selector: 'test-states-table-host',
   imports: [HilosTableCell, HilosViewportTable],
   template: `
-    <hilos-viewport-table [controller]="controller" [columns]="columns">
+    <hilos-viewport-table [controller]="controller">
       <ng-template hilosTableCell="name" let-row>
         <span class="named">{{ row.name }}</span>
       </ng-template>
@@ -332,7 +297,6 @@ const STATE_COLUMNS: HilosTableColumn[] = [
 })
 class StatesTableHost {
   controller!: TableViewportController<Row>
-  columns = STATE_COLUMNS
 }
 
 function makeController(
@@ -376,7 +340,7 @@ function query(
 }
 
 describe('HilosViewportTable', () => {
-  function makePlainController(): {
+  function makePlainController(columns = COLUMNS): {
     controller: TableViewportController<Row>
     sent: TableViewportDescriptor[]
   } {
@@ -384,6 +348,7 @@ describe('HilosViewportTable', () => {
     const controller = new TableViewportController<Row>({
       resolve: (raw) => ({ name: String(raw.slots['name']) }),
       sendViewport: (descriptor) => sent.push(descriptor),
+      frame: { columns },
     })
 
     return { controller, sent }
@@ -391,11 +356,9 @@ describe('HilosViewportTable', () => {
 
   function mountTable(
     controller: TableViewportController<Row>,
-    columns: HilosTableColumn[] = COLUMNS,
   ): ComponentFixture<PlainTableHost> {
     const fixture = TestBed.createComponent(PlainTableHost)
     fixture.componentInstance.controller = controller
-    fixture.componentInstance.columns = columns
     fixture.detectChanges()
 
     return fixture
@@ -411,12 +374,12 @@ describe('HilosViewportTable', () => {
   }
 
   it('numbers the columns of a composite order and says the place in words', () => {
-    const { controller } = makePlainController()
+    const { controller } = makePlainController(TWO_COLUMNS)
     controller.setOrder([
       { field: 'name', direction: 'desc' },
       { field: 'id', direction: 'asc' },
     ])
-    const fixture = mountTable(controller, TWO_COLUMNS)
+    const fixture = mountTable(controller)
 
     expect(all(fixture, 'th sup').map((mark) => mark.textContent)).toEqual([
       '1',
@@ -432,9 +395,9 @@ describe('HilosViewportTable', () => {
   })
 
   it('numbers nothing under an order of one column, where the arrow says it all', () => {
-    const { controller } = makePlainController()
+    const { controller } = makePlainController(TWO_COLUMNS)
     controller.setSort('name')
-    const fixture = mountTable(controller, TWO_COLUMNS)
+    const fixture = mountTable(controller)
 
     expect(all(fixture, 'th sup')).toHaveLength(0)
   })
@@ -699,9 +662,9 @@ describe('HilosViewportTable', () => {
     }
 
     it('raises the strip and names the columns built from the quiet source', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
 
       expect(
         query(fixture, '[data-id="hilos-table-stale"]')?.textContent?.trim(),
@@ -725,9 +688,9 @@ describe('HilosViewportTable', () => {
     })
 
     it('keeps the sort control on a quiet column and carries the warning inside it', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
 
       const button = query(fixture, '[data-id="hilos-table-sort-presence"]')
       expect(button).not.toBeNull()
@@ -741,12 +704,12 @@ describe('HilosViewportTable', () => {
     })
 
     it('marks a quiet column that was never sortable without giving it a control', () => {
-      const { controller } = makePlainController()
-      window(controller, ['connections'])
-      const fixture = mountTable(controller, [
+      const { controller } = makePlainController([
         SOURCED_COLUMNS[0]!,
         { ...SOURCED_COLUMNS[1]!, sortable: false },
       ])
+      window(controller, ['connections'])
+      const fixture = mountTable(controller)
 
       const header = headers(fixture)[1]
       expect(query(fixture, '[data-id="hilos-table-sort-presence"]')).toBeNull()
@@ -760,9 +723,9 @@ describe('HilosViewportTable', () => {
     })
 
     it('sends a viewport when the name of a quiet column is clicked', () => {
-      const { controller, sent } = makePlainController()
+      const { controller, sent } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
       sent.length = 0
       query(fixture, '[data-id="hilos-table-sort-presence"]')?.click()
 
@@ -770,13 +733,13 @@ describe('HilosViewportTable', () => {
     })
 
     it('numbers headers of a composite order whose first column is quiet and speaks both places', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
       controller.setOrder([
         { field: 'presence', direction: 'asc' },
         { field: 'name', direction: 'desc' },
       ])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
 
       expect(all(fixture, 'th sup').map((mark) => mark.textContent)).toEqual([
         '2',
@@ -790,9 +753,9 @@ describe('HilosViewportTable', () => {
     })
 
     it('keeps the standing order over a column that went quiet readable', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, [])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
       controller.setSort('presence')
       fixture.detectChanges()
       controller.ingestDelta({
@@ -810,9 +773,9 @@ describe('HilosViewportTable', () => {
     })
 
     it('marks exactly the rows whose own values are behind', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
 
       expect(
         query(fixture, '[data-id="hilos-table-stale-row-a"]'),
@@ -821,9 +784,9 @@ describe('HilosViewportTable', () => {
     })
 
     it('stands the mark cell up on a quiet source with nothing waiting at all', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
 
       expect(headers(fixture)).toHaveLength(SOURCED_COLUMNS.length + 1)
       expect(query(fixture, 'thead th:last-child')?.textContent?.trim()).toBe(
@@ -840,9 +803,9 @@ describe('HilosViewportTable', () => {
     })
 
     it('takes the strip, the snowflakes and the cell down when the source is current again', () => {
-      const { controller } = makePlainController()
+      const { controller } = makePlainController(SOURCED_COLUMNS)
       window(controller, ['connections'])
-      const fixture = mountTable(controller, SOURCED_COLUMNS)
+      const fixture = mountTable(controller)
       controller.ingestDelta({
         kind: 'row_stale',
         rowKey: 'a',
@@ -875,7 +838,7 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(query(fixture, 'caption')).toBeNull()
   })
 
-  it('draws the declared footer instead of the one built from props', () => {
+  it('draws the declared footer with the delivered row range', () => {
     const controller = makeController()
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -890,10 +853,9 @@ describe('HilosViewportTable with a declared frame', () => {
     expect(
       query(fixture, '[data-id="hilos-table-count"]')?.textContent?.trim(),
     ).toBe('1 – 1 of 128')
-    expect(query(fixture, '[data-id="hilos-table-page"]')).toBeNull()
   })
 
-  it('leaves the props-driven bar out and keeps Apply in the waiting strip', () => {
+  it('draws one search bar and keeps Apply in the waiting strip', () => {
     const controller = makeController()
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
@@ -910,8 +872,7 @@ describe('HilosViewportTable with a declared frame', () => {
     })
     const fixture = mountDeclared(controller)
 
-    // One search box, the declared one; and the strips speak in both epochs of the
-    // frame, because they are about the rows and not about what the page declared.
+    // The declared search bar and the waiting strip each stand once.
     expect(
       (fixture.nativeElement as HTMLElement).querySelectorAll(
         '[data-id="hilos-table-search"]',
@@ -944,7 +905,7 @@ describe('HilosViewportTable on an admin page', () => {
     expect(query(fixture, '[data-id="hilos-table-title"]')).toBeNull()
   })
 
-  it('draws the header and the empty words from the declaration when handed no columns', () => {
+  it('draws the header and the empty words from the declaration', () => {
     const controller = makeController(UNTITLED)
     controller.ingestWindow([], 0, true, null, null, 20)
     const fixture = mountInAdminPage(controller)
@@ -1023,10 +984,10 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     expect(cells[1]?.textContent?.trim()).toBe('')
   })
 
-  it('reads the columns off the declaration rather than off the prop', () => {
+  it('uses the same declared columns for the header and cells', () => {
     const controller = makeController(CELL_FRAME)
     window(controller)
-    const fixture = TestBed.createComponent(StaleColumnsTableHost)
+    const fixture = TestBed.createComponent(CellsTableHost)
     fixture.componentInstance.controller = controller
     fixture.detectChanges()
 
@@ -1034,21 +995,6 @@ describe('HilosViewportTable drawing the cells of a declared table', () => {
     expect(root.querySelectorAll('thead th')).toHaveLength(CELL_COLUMNS.length)
     expect(root.querySelector('thead')?.textContent).toContain('Size')
     expect(root.querySelector('.sized')).not.toBeNull()
-  })
-
-  it('keeps handing the whole row over while the page passes columns as a prop', () => {
-    const controller = new TableViewportController<Row>({
-      resolve: (raw) => ({ name: String(raw.slots['name']) }),
-      sendViewport: () => undefined,
-    })
-    window(controller)
-    const fixture = TestBed.createComponent(PlainTableHost)
-    fixture.componentInstance.controller = controller
-    fixture.detectChanges()
-
-    expect(
-      query(fixture, '[data-id="hilos-table-row-a"] td.cell')?.textContent,
-    ).toBe('Alice')
   })
 })
 
@@ -1145,22 +1091,6 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(wide.classList.contains('d-md-block')).toBe(true)
     // Nothing to scroll sideways once the columns became lines of a card.
     expect(cards.querySelectorAll('.table-responsive')).toHaveLength(0)
-  })
-
-  it('draws no cards and keeps the table at every width without a declaration', () => {
-    const controller = new TableViewportController<Row>({
-      resolve: (raw) => ({ name: String(raw.slots['name']) }),
-      sendViewport: () => undefined,
-    })
-    window(controller)
-    const fixture = TestBed.createComponent(PlainTableHost)
-    fixture.componentInstance.controller = controller
-    fixture.detectChanges()
-
-    expect(query(fixture, '[data-id="hilos-table-cards"]')).toBeNull()
-    expect(
-      query(fixture, '.table-responsive')?.classList.contains('d-none'),
-    ).toBe(false)
   })
 
   it('lays the card out the way the core projected it', () => {
@@ -1711,18 +1641,13 @@ describe('HilosViewportTable with a selection column', () => {
   })
 })
 
-// A controller for a table whose page declared no frame: the default of
-// makeController would hand it one.
-function makeUndeclaredController(): TableViewportController<Row> {
-  return new TableViewportController<Row>({
-    resolve: (raw) => ({ name: String(raw.slots['name']) }),
-    sendViewport: () => undefined,
-  })
-}
-
 describe('HilosViewportTable drawing work in progress', () => {
   it('hands the whole bar, detail and all, to the places beside the track', () => {
-    const controller = makeUndeclaredController()
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+      frame: { columns: COLUMNS },
+    })
     controller.ingestWindow(
       [{ rowKey: 'a', slots: { name: 'Alice' } }],
       1,
@@ -1758,8 +1683,14 @@ describe('HilosViewportTable drawing work in progress', () => {
 })
 
 describe('HilosViewportTable drawing work over one row', () => {
-  function plainController(): TableViewportController<Row> {
-    const controller = makeUndeclaredController()
+  function plainController(
+    columns: HilosTableColumn[] = COLUMNS,
+  ): TableViewportController<Row> {
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+      frame: { columns },
+    })
     controller.ingestWindow(
       [
         { rowKey: 'a', slots: { name: 'Alice' } },
@@ -1824,7 +1755,7 @@ describe('HilosViewportTable drawing work over one row', () => {
   })
 
   it('stretches the bar under the marked columns and leaves the rest empty', () => {
-    const controller = plainController()
+    const controller = plainController(MARKED_COLUMNS)
     rowBar(controller, 'a')
     const fixture = mount(MarkedTableHost, controller)
 
@@ -1851,7 +1782,7 @@ describe('HilosViewportTable drawing work over one row', () => {
   })
 
   it('adds the waiting cell to the bar row exactly as the header does', () => {
-    const controller = plainController()
+    const controller = plainController(MARKED_COLUMNS)
     rowBar(controller, 'a')
     const fixture = mount(MarkedTableHost, controller)
     controller.ingestDelta({
@@ -1952,20 +1883,16 @@ const DETAIL_COLUMNS: HilosTableColumn[] = [
 ]
 
 /**
- * A host drawing that table from its inputs; `detail` picks what the page marks for
+ * A host drawing that table; `detail` picks what the page marks for
  * the field — the reason, the row and its key, or nothing at all.
  */
 @Component({
   selector: 'test-detail-table-host',
-  imports: [HilosTableDetail, HilosViewportTable],
+  imports: [HilosTableCell, HilosTableDetail, HilosViewportTable],
   template: `
-    <hilos-viewport-table
-      [controller]="controller"
-      [columns]="columns"
-      [searchable]="true"
-    >
-      <ng-template #row let-row>
-        <td class="cell">{{ row.name }}</td>
+    <hilos-viewport-table [controller]="controller">
+      <ng-template hilosTableCell="name" let-row>
+        <span class="cell">{{ row.name }}</span>
       </ng-template>
       @if (detail === 'reason') {
         <ng-template hilosTableDetail="lastError">
@@ -1981,7 +1908,6 @@ const DETAIL_COLUMNS: HilosTableColumn[] = [
 })
 class DetailTableHost {
   controller!: TableViewportController<Row>
-  columns = DETAIL_COLUMNS
   detail: 'reason' | 'keyed' | 'none' = 'reason'
 }
 
@@ -2158,7 +2084,11 @@ describe('HilosViewportTable expanding a row', () => {
   }
 
   function detailController(): TableViewportController<Row> {
-    const controller = makeUndeclaredController()
+    const controller = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+      frame: { search: {}, columns: DETAIL_COLUMNS },
+    })
     ingestTwo(controller)
 
     return controller
@@ -2177,8 +2107,14 @@ describe('HilosViewportTable expanding a row', () => {
 
   it('offers the control only where a detail field was declared', () => {
     const controller = detailController()
+    const plainController = new TableViewportController<Row>({
+      resolve: (raw) => ({ name: String(raw.slots['name']) }),
+      sendViewport: () => undefined,
+      frame: { columns: COLUMNS },
+    })
+    ingestTwo(plainController)
     const plain = TestBed.createComponent(PlainTableHost)
-    plain.componentInstance.controller = controller
+    plain.componentInstance.controller = plainController
     plain.detectChanges()
 
     expect(
@@ -2296,7 +2232,7 @@ describe('HilosViewportTable drawing the states of the body', () => {
     empty: { title: 'Nothing here yet' },
   }
 
-  function makeStates(frame?: HilosTableFrame): {
+  function makeStates(frame: HilosTableFrame = STATE_FRAME): {
     controller: TableViewportController<Row>
     sent: TableViewportDescriptor[]
   } {
@@ -2466,24 +2402,6 @@ describe('HilosViewportTable drawing the states of the body', () => {
       'The rows of this list could not be fetched. The rest of the page still works.',
     )
     expect(all(fixture, '[data-id="hilos-table-count"]')).toHaveLength(0)
-  })
-
-  it('says nothing was found on a table that still draws its frame from props', () => {
-    const { controller } = makeStates()
-    const fixture = TestBed.createComponent(ViewportTableHost)
-    fixture.componentInstance.controller = controller
-    fixture.detectChanges()
-    controller.ingestWindow([], 0, true, null, null, 10)
-    controller.setSearch('night')
-    controller.ingestWindow([], 0, true, null, null, 10)
-    fixture.detectChanges()
-
-    expect(
-      all(
-        fixture,
-        '[data-id="hilos-table-no-matches-terms"]',
-      )[0]?.textContent?.trim(),
-    ).toBe('No rows match “night”')
   })
 })
 

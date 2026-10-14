@@ -5,22 +5,16 @@
 // as a placeholder in its slot while the set still has rows elsewhere. It holds
 // NO table logic (multiframework-core.md): the controller owns the descriptor,
 // pending, and Apply. Body cells come from the page — one
-// `<ng-template hilosTableCell="<column key>">` per declared column for a table whose
-// page declared a frame, the whole row through `<ng-template #row let-row
-// let-rowKey="rowKey">` for one whose page did not — plus one framework-owned cell at
-// the end of the row carrying what waits on that row; the placeholder, header,
-// paging, and the one room of live messages above the rows stay framework-owned.
-// The controller arrives via
-// input, carrying core signals, so the view mirrors them into Angular signals.
-// (Distinct from HilosTable, the client-side view.) A table whose page DECLARED a
-// frame draws the bar and the footer from that declaration instead
-// (HilosTableBar, HilosTableFooter), and takes its columns, its name, and the words
-// it says when empty from there too; a table whose page declared nothing is drawn
-// from its inputs, the older of the two epochs, which the framework's log pages
-// still take. A table whose page declared bulk operations also carries the
-// framework's checkbox column, on whichever edge the installation provided — one
-// choice for the whole application rather than an input of this table
-// (mockups/components/table section 6). Below the md breakpoint a declared table is
+// `<ng-template hilosTableCell="<column key>">` per declared column — plus one
+// framework-owned cell at the end of the row carrying what waits on that row;
+// the placeholder, header, paging, and the one room of live messages above the
+// rows stay framework-owned. The controller arrives via input, carrying core signals,
+// so the view mirrors them into Angular signals. It draws the bar and the footer
+// from the declaration (HilosTableBar, HilosTableFooter), and takes its columns,
+// its name, and the words it says when empty from there too. A table whose page
+// declared bulk operations also carries the framework's checkbox column, on
+// whichever edge the installation provided — one choice for the whole application
+// rather than an input of this table (mockups/components/table section 6). Below the md breakpoint a declared table is
 // a list of cards instead, built from the same declared columns and filled by the
 // same marked templates (mockups/components/table section 9). A field that did not
 // fit a column of its own is declared `detail` and waits in a panel under the row:
@@ -87,14 +81,6 @@ import { HILOS_TABLE_SELECTION_EDGE } from './hilosTableSelectionEdge.js'
 // same title.
 let viewportTableSeq = 0
 
-/** The context a HilosViewportTable `#row` template receives. */
-export interface ViewportTableRowContext<R> {
-  /** The resolved row view-model (the template's implicit `let-row`). */
-  $implicit: R
-  /** The row's stable key. */
-  rowKey: string
-}
-
 /** The context a HilosViewportTable `#tableProgress` or `#tableProgressAction` template receives. */
 export interface ViewportTableProgressContext {
   /** The bar of the work running on the table (the template's implicit `let-progress`). */
@@ -142,26 +128,9 @@ export interface BulkUntouchedContext {
         />
       }
 
-      <!-- The bar a table draws from inputs, kept while a page still passes them —
-      the framework's log pages do. It goes with the inputs themselves. -->
-      @if (!declaration() && searchable()) {
-        <div class="mb-3">
-          <input
-            type="search"
-            class="form-control"
-            [placeholder]="searchPlaceholder()"
-            [attr.aria-label]="searchPlaceholder()"
-            [value]="search()"
-            [attr.data-autofocus]="autofocusSearch() ? '' : null"
-            data-id="hilos-table-search"
-            (input)="onSearchInput($event)"
-          />
-        </div>
-      }
-
       <!-- Everything live the table has to say — work running over the set, a
       source gone quiet, new rows the window cannot show, changes waiting for Apply —
-      in one room that never changes height, outside both epochs of the frame: it
+      in one room that never changes height: it
       speaks about what is happening to the rows, not about what the page
       declared. -->
       <hilos-table-live
@@ -172,11 +141,8 @@ export interface BulkUntouchedContext {
         [bulkUntouched]="bulkUntouched()"
       />
 
-      <!-- A DECLARED table is a table on a wide screen and a list of cards on a
-      narrow one, so its scroll wrapper goes with the table itself: there is
-      nothing left to scroll sideways once the columns became lines of a card. A
-      table still drawn from inputs has no cards to fall back on and keeps the
-      wrapper at every width, scrollbar and all. -->
+      <!-- The scroll wrapper belongs to the wide table: once columns become
+      lines of a card, there is nothing left to scroll sideways (Design D8). -->
       <div
         class="table-responsive"
         [class.d-none]="declaration() !== null"
@@ -184,17 +150,8 @@ export interface BulkUntouchedContext {
       >
         <table
           class="table table-striped table-hover align-middle mb-0"
-          [attr.aria-labelledby]="declaration() ? nameId() : null"
+          [attr.aria-labelledby]="nameId()"
         >
-          <!-- A declared table already shows its name as a heading, and a hidden
-          caption repeating it would name the table twice. -->
-          @if (!declaration() && label(); as label) {
-            <caption class="visually-hidden">
-              {{
-                label
-              }}
-            </caption>
-          }
           <thead>
             <tr>
               <!-- The checkbox column stands on the edge the installation chose,
@@ -360,13 +317,9 @@ export interface BulkUntouchedContext {
                       ></i>
                       {{ placeholder(view.removal).text }}
                     </td>
-                  } @else if (declaration()) {
-                    <!-- What stands where a row's values do, one shape per epoch of
-                  the frame. A DECLARED table hands the page one template per
-                  column and writes the cell around it: that is what makes a cell
-                  addressable by column at all. The cell stands even where the page
-                  marked no template, or the row comes out narrower than its header
-                  (Flow F3). -->
+                  } @else {
+                    <!-- The cell stands even where the page marked no template,
+                    or the row comes out narrower than its header (Flow F3). -->
                     @for (column of rowColumns(); track column.key) {
                       <td [class]="column.cellClass ?? ''">
                         @if (column.key === actionsKey) {
@@ -392,16 +345,6 @@ export interface BulkUntouchedContext {
                         }
                       </td>
                     }
-                  } @else if (row(); as rowTemplate) {
-                    <!-- A table still drawing its frame from inputs has no column to
-                  address a cell by, so it keeps handing over the whole row. -->
-                    <ng-container
-                      [ngTemplateOutlet]="rowTemplate"
-                      [ngTemplateOutletContext]="{
-                        $implicit: view.row,
-                        rowKey: view.rowKey,
-                      }"
-                    />
                   }
                   @if (markColumn() && !view.placeholder) {
                     <td class="text-end text-nowrap">
@@ -910,55 +853,14 @@ export interface BulkUntouchedContext {
         <hilos-table-footer [controller]="controller()" />
       }
 
-      <!-- The footer a table draws from its own comparisons, for the same tables
-      as the bar above. -->
-      @if (!declaration() && paginated()) {
-        <div class="d-flex justify-content-between align-items-center mt-3">
-          <span class="text-muted small" data-id="hilos-table-count">
-            {{ countLabel() }}
-          </span>
-          <div class="btn-group" role="group" aria-label="Pagination">
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm"
-              [disabled]="!hasPreviousPage()"
-              data-id="hilos-table-prev"
-              (click)="controller().prevPage()"
-            >
-              Previous
-            </button>
-            @if (pageCount() !== null) {
-              <span
-                class="btn btn-sm disabled"
-                [attr.aria-label]="
-                  'Page ' + (page() + 1) + ' of ' + pageCount()
-                "
-                data-id="hilos-table-page"
-              >
-                {{ page() + 1 }} / {{ pageCount() }}
-              </span>
-            }
-            <button
-              type="button"
-              class="btn btn-outline-secondary btn-sm"
-              [disabled]="!hasNextPage()"
-              data-id="hilos-table-next"
-              (click)="controller().nextPage()"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      }
-
       <!-- The page's own words for the "nothing here yet" tile when it declared no
-      empty state: its #empty template, or else the emptyText input. Handed to the
+      empty state: its #empty template, or else the fallback words. Handed to the
       tile as a template, because the tile stands in both branches at once. -->
       <ng-template #emptyFallback>
         @if (empty(); as emptyTemplate) {
           <ng-container [ngTemplateOutlet]="emptyTemplate" />
         } @else {
-          {{ emptyText() }}
+          No rows.
         }
       </ng-template>
     </div>
@@ -967,22 +869,8 @@ export interface BulkUntouchedContext {
 export class HilosViewportTable<R> {
   /** The headless server-windowed controller driving rows, descriptor, and pending. */
   readonly controller = input.required<TableViewportController<R>>()
-  /**
-   * Column declarations for the header (labels and sort controls) of a table whose
-   * page declared no frame; a declared table takes its columns from the declaration
-   * and is not handed these.
-   */
-  readonly columns = input<HilosTableColumn[]>([])
-  /** Accessible name for the table, rendered as a visually-hidden caption. */
-  readonly label = input<string>()
-  /** Show the search box above the table. */
-  readonly searchable = input(false)
-  /** Placeholder for the search box. */
-  readonly searchPlaceholder = input('Search…')
   /** Whether the search box owns focus when this table opens inside a modal. */
   readonly autofocusSearch = input(false)
-  /** Message shown when there are no rows and the page declared no empty state. */
-  readonly emptyText = input('No rows.')
   /**
    * The `data-id` the table's root carries, for a page that draws more than one of them:
    * the default is the shared handle, and a second table on the same page names itself so
@@ -998,13 +886,6 @@ export class HilosViewportTable<R> {
     return hilosTablePlaceholder(removal)
   }
 
-  /**
-   * The cells of one row of a table whose page declared no frame:
-   * `<ng-template #row let-row let-rowKey="rowKey">` filling the row with `<td>`s. A
-   * declared table takes the marked cell templates instead and is not handed this.
-   */
-  protected readonly row =
-    contentChild<TemplateRef<ViewportTableRowContext<R>>>('row')
   /**
    * The content of the cells of a declared table, one `<ng-template
    * hilosTableCell="<column key>">` per column. Collected through descendants,
@@ -1024,7 +905,7 @@ export class HilosViewportTable<R> {
   /**
    * The values of the fields of the panel a row expands into, one `<ng-template
    * hilosTableDetail="<column key>">` per field. Collected through descendants, as
-   * the cells are, and read in both epochs of the frame.
+   * the cells are.
    */
   protected readonly details = contentChildren(HilosTableDetail, {
     descendants: true,
@@ -1076,13 +957,9 @@ export class HilosViewportTable<R> {
   protected readonly declaration = computed(
     () => this.controller().frame.declaration,
   )
-  // The columns the table is drawn from: the declaration's own where there is one,
-  // and the input for a table whose page declared nothing. The header and every cell
-  // spanning the whole row count this one list, so they cannot disagree on its width.
-  private readonly resolvedColumns = signal<readonly HilosTableColumn[]>([])
-  protected readonly frameColumns = computed<readonly HilosTableColumn[]>(() =>
-    this.declaration() ? this.resolvedColumns() : this.columns(),
-  )
+  // The header and every cell spanning the whole row count this one list, so
+  // they cannot disagree on its width.
+  protected readonly frameColumns = signal<readonly HilosTableColumn[]>([])
   // The fields that wait in a panel instead of taking a column of their own, and the
   // columns that are left standing in the row. Every place that measures or draws the
   // row itself — the header, the width of a full-row cell, the cells of a row bar —
@@ -1119,8 +996,7 @@ export class HilosViewportTable<R> {
     })
   })
   // The marks, and the one sign that this table has them: a page that declared bulk
-  // operations. There is no second sign — a table drawing its frame from inputs has
-  // no declaration, so `enabled` is already false for it (Flow F14).
+  // operations (Flow F14).
   protected readonly selectionEnabled = computed(
     () => this.controller().selection.enabled,
   )
@@ -1189,14 +1065,7 @@ export class HilosViewportTable<R> {
     this.declaration()?.title ? this.titleId : this.pageHeadingId,
   )
   protected readonly rows = signal<readonly TableViewportRow<R>[]>([])
-  protected readonly search = signal('')
   protected readonly order = signal<TableSortOrder | undefined>(undefined)
-  protected readonly page = signal(0)
-  protected readonly pageCount = signal<number | null>(1)
-  protected readonly totalCount = signal(0)
-  protected readonly totalExact = signal(true)
-  protected readonly hasNextPage = signal(false)
-  protected readonly hasPreviousPage = signal(false)
   protected readonly pendingCount = signal(0)
   // Which state the body is in — rows, the skeleton, or one of the four worded
   // states. The core decides it (tableFrame.ts, HilosTableBody) so that the three
@@ -1240,16 +1109,6 @@ export class HilosViewportTable<R> {
   protected readonly rowProgressBars = signal<
     ReadonlyMap<string, HilosTableProgressState>
   >(new Map())
-  // A table whose count stopped at its ceiling has no page count to compare against, and
-  // the footer is what such a table still needs: it is the only place saying there is more.
-  protected readonly paginated = signal<boolean>(true)
-  // The total reads as "at least this many" when the count stopped at its ceiling, which is
-  // what the trailing plus says.
-  protected readonly countLabel = computed(() =>
-    this.totalExact()
-      ? `${this.totalCount()} total`
-      : `${this.totalCount()}+ total`,
-  )
 
   // The cells of a row bar's row, in the order the columns are declared: runs of
   // marked columns merge into one covered cell, runs of unmarked ones into one
@@ -1305,18 +1164,10 @@ export class HilosViewportTable<R> {
       }
       const subscriptions = [
         bind(controller.rows, this.rows),
-        bind(controller.search, this.search),
         bind(controller.order, this.order),
-        bind(controller.page, this.page),
-        bind(controller.pageCount, this.pageCount),
-        bind(controller.paginated, this.paginated),
-        bind(controller.totalCount, this.totalCount),
-        bind(controller.totalExact, this.totalExact),
-        bind(controller.hasNextPage, this.hasNextPage),
-        bind(controller.hasPreviousPage, this.hasPreviousPage),
         bind(controller.pendingCount, this.pendingCount),
         bind(controller.frame.body, this.body),
-        bind(controller.frame.columns, this.resolvedColumns),
+        bind(controller.frame.columns, this.frameColumns),
         bind(controller.frame.card, this.resolvedCard),
         bind(controller.pageSize, this.pageSize),
         bind(controller.selection.header, this.selectionHeader),
@@ -1464,10 +1315,6 @@ export class HilosViewportTable<R> {
     return column.sortable === true
       ? TABLE_STALENESS_COPY.sortWarning
       : TABLE_STALENESS_COPY.columnMark
-  }
-
-  protected onSearchInput(event: Event): void {
-    this.controller().setSearch((event.target as HTMLInputElement).value)
   }
 
   // The checkbox tells the core the state it is now IN rather than asking it to

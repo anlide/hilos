@@ -10,7 +10,7 @@
 // (HilosEditNotice). Success is state-driven (the committed name reaches the
 // name it sent over the live table, closing the modal); a failure surfaces from the
 // backend fail ack inside the modal. The context arrives via input and
-// carries core signals, so — like HilosTable — an effect builds the selectors
+// carries core signals, so — like HilosViewportTable — an effect builds the selectors
 // once it binds and mirrors them into Angular signals. The person's standing is
 // one verdict (createHilosUserStanding, HIL-945): the badge beside the presence
 // in the header shows the standing shown, and the access section draws the

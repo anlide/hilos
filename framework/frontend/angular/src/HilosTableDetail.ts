@@ -4,9 +4,7 @@
 // row.lastError }}</ng-template>`. The page writes the value only; the table writes
 // the label and the room around it, under the row and inside the card alike. Apart
 // from hilosTableCell because a field of the panel is not a cell: its column left the
-// row, and the panel works on a table drawing its frame from inputs as well, where no
-// cell is addressed by column at all. The context is the cell's own — a field is
-// handed exactly what a cell is.
+// row. The context is the cell's own — a field is handed exactly what a cell is.
 import { Directive, TemplateRef, inject, input } from '@angular/core'
 
 import type { HilosTableCellContext } from './HilosTableCell.js'

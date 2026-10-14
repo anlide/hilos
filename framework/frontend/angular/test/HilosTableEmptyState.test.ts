@@ -28,7 +28,9 @@ class EmptyStateHost {
   kind: 'empty' | 'empty_filtered' | 'empty_page' | 'unavailable' = 'empty'
 }
 
-function makeController(frame?: HilosTableFrame): {
+function makeController(
+  frame: HilosTableFrame = { columns: [{ key: 'name', label: 'Name' }] },
+): {
   controller: TableViewportController<unknown>
   sent: TableViewportDescriptor[]
 } {

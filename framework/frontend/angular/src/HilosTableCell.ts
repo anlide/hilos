@@ -1,10 +1,10 @@
-// HilosTableCell — the mark a page puts on an ng-template to hand a declared
+// HilosTableCell — the mark a page puts on an ng-template to hand a
 // HilosViewportTable the content of one column: `<ng-template hilosTableCell="name"
 // let-row let-rowKey="rowKey">{{ row.name }}</ng-template>`. The page writes the
 // content only; the table writes the `<td>` around it in a row, and the place it takes
-// in a card on a narrow screen, both out of this one template. A static name
-// (`#row`) could not carry it: the column a template fills is known only at run time,
-// so the table collects every marked template and reads the key off each.
+// in a card on a narrow screen, both out of this one template. The column a template
+// fills is known only at run time, so the table collects every marked template and
+// reads the key off each.
 import { Directive, TemplateRef, inject, input } from '@angular/core'
 
 /** The context a `hilosTableCell` template receives. */

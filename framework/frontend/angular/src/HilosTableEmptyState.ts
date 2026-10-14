@@ -92,10 +92,9 @@ function filterTerm(view: HilosTableFilterView): string {
             </p>
           }
         } @else {
-          <!-- A table with no declared empty state still says what its page
-          passed in the #empty template or the emptyText input: the framework's
-          log pages hand their words over that way, and no leaf moves them onto
-          the declaration yet. -->
+          <!-- A frame without an empty declaration uses the words the page
+          passed in the #empty template: the log tables and the daemon section
+          speak that way. -->
           <div class="text-muted" [class.mb-3]="!!declaration()?.mainAction">
             <ng-container [ngTemplateOutlet]="fallback()" />
           </div>
