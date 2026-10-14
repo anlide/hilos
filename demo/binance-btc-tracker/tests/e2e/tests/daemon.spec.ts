@@ -341,6 +341,9 @@ test.describe('daemon overview', () => {
       await search.pressSequentially(ids[0], { delay: 10 })
       await expect(table.locator(ROWS)).toHaveCount(1)
       await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(selection).toHaveCount(0)
+      await expect(cell).toHaveAttribute('aria-expanded', 'false')
+      await cell.click()
       await expect(selection).toContainText(ids[0])
       for (const [index, total] of PLACEMENT_TOTALS.entries()) {
         await expect(

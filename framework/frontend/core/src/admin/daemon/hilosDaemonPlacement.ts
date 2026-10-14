@@ -274,9 +274,7 @@ export function createHilosDaemonPlacementView(
       ? resolveCell(cell.rowKey, cell.nodeId)
       : null
   })
-  let restoreExpansion = false
   const closeCell = (): void => {
-    restoreExpansion = false
     const cell = chosen.get()
     if (cell !== null) controller.expandRow(cell.rowKey, false)
     chosen.set(null)
@@ -319,35 +317,11 @@ export function createHilosDaemonPlacementView(
         subscribeSignal(valid, (current) => {
           if (!current) closeCell()
         }),
-        // The matrix keeps an open cell across search. Capture only whether
-        // its row was open before changeWindow clears the common expansion;
-        // the chosen address and every id still come from their own signals.
-        subscribeSignal(controller.search, () => {
-          const cell = chosen.get()
-          restoreExpansion =
-            cell !== null &&
-            controller.rows
-              .get()
-              .some((row) => row.rowKey === cell.rowKey && row.expanded)
-        }),
-        subscribeSignal(controller.rows, (rows) => {
-          if (!restoreExpansion) return
-          const cell = chosen.get()
-          if (cell === null) {
-            restoreExpansion = false
-          } else if (
-            rows.some((row) => row.rowKey === cell.rowKey && !row.expanded)
-          ) {
-            restoreExpansion = false
-            if (valid.get()) controller.expandRow(cell.rowKey, true)
-          }
-        }),
       )
       table.start()
     },
     dispose() {
       for (const off of teardown.splice(0)) off()
-      restoreExpansion = false
       table.dispose()
       closeCell()
     },

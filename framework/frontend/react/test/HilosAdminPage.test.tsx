@@ -105,6 +105,64 @@ describe('HilosAdminPage', () => {
     ).not.toBeNull()
   })
 
+  it('changes child addresses locally while breadcrumbs and the route keep their params', () => {
+    const route = createSignal<PageRouteMatch>({
+      page: HilosPages.DAEMON,
+      params: { nodeId: 'n1', section: 'daemon' },
+      admin: true,
+    })
+    const currentPath = createSignal('/hilos/daemon')
+    const navigator: HilosRouter = {
+      ...router({
+        label: 'Daemon',
+        lead: '',
+        breadcrumb: [
+          { page: HilosPages.DASHBOARD, label: 'Hilos' },
+          { page: HilosPages.DAEMON, label: 'Daemon' },
+        ],
+        children: [
+          {
+            page: HilosPages.DAEMON_WORKERS,
+            label: 'Workers',
+            lead: '',
+            icon: null,
+          },
+        ],
+      }),
+      currentRoute: route,
+      currentPath,
+      resolvePath: (page, params = {}) =>
+        `/hilos/${params.section}/${params.nodeId}/${page}`,
+    }
+    const view = (nodeId: string) => (
+      <HilosRouterContext.Provider value={navigator}>
+        <HilosAdminPage page={HilosPages.DAEMON} childParams={{ nodeId }} />
+      </HilosRouterContext.Provider>
+    )
+    const { container, rerender } = render(view('n2'))
+    const child = () =>
+      container
+        .querySelector(
+          `[data-id="hilos-admin-child-${HilosPages.DAEMON_WORKERS}"]`,
+        )
+        ?.getAttribute('href')
+    const breadcrumb = () =>
+      container.querySelector('[data-id="hilos-breadcrumb"]')?.innerHTML
+    const initialBreadcrumb = breadcrumb()
+
+    expect(child()).toBe(`/hilos/daemon/n2/${HilosPages.DAEMON_WORKERS}`)
+    expect(initialBreadcrumb).toContain(
+      `/hilos/daemon/n1/${HilosPages.DASHBOARD}`,
+    )
+
+    rerender(view('n3'))
+
+    expect(child()).toBe(`/hilos/daemon/n3/${HilosPages.DAEMON_WORKERS}`)
+    expect(breadcrumb()).toBe(initialBreadcrumb)
+    expect(route.get().params).toEqual({ nodeId: 'n1', section: 'daemon' })
+    expect(currentPath.get()).toBe('/hilos/daemon')
+  })
+
   it('renders the empty stub for a leaf', () => {
     const { container } = renderPage(HilosPages.I18N_LANGUAGE, LEAF_IDENTITY)
     expect(

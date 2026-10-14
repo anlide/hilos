@@ -115,3 +115,43 @@ test('the home page exposes a single top-level heading', async ({ page }) => {
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tasks')
 })
+
+test('environment names both windows and its reading ladder, with a keyboard attention filter', async ({
+  page,
+}) => {
+  await grantAdminToSelf(page)
+  await gotoPage(page, '/hilos/daemon/standalone/env')
+  await expect(page.getByTestId('hilos-admin-page')).toHaveAttribute(
+    'data-page',
+    'hilos_daemon_env',
+  )
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Environment',
+  )
+  await expect(
+    page.getByRole('table', { name: 'Catalog keys', exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('table', { name: 'Orphans in .env', exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('table', { name: 'Reading ladder', exact: true }),
+  ).toBeVisible()
+  const search = page.getByTestId('hilos-table-search')
+  await expect(search).toHaveAccessibleName('Key or value')
+  await search.fill('')
+  await search.pressSequentially('APP_ENV', { delay: 10 })
+  await expect(page.getByTestId('hilos-table-row-APP_ENV')).toBeVisible()
+  const attention = page.getByTestId('hilos-table-filter-attention')
+  await expect(attention).toHaveAccessibleName('Needs attention only')
+  await attention.focus()
+  await expect(attention).toBeFocused()
+  await attention.press('Space')
+  await expect(attention).toBeChecked()
+  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+  await expect(
+    page
+      .getByTestId('hilos-daemon-env-keys-empty-attention')
+      .filter({ visible: true }),
+  ).toHaveText('No key needs attention.')
+})

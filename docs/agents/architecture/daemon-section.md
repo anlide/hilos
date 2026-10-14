@@ -338,10 +338,12 @@ When the mark ends, that temporary row disappears unless the instance is live
 on that node again. Marks are part of the page's roster fingerprint; metrics
 and report times do not resend agent windows.
 
-The Vue confirmation names the agent and the page's node. It says the restart
-starts immediately under the placement rules and leaves neighboring agents
-alone. Only a clustered `POLICY` agent gets a warning that it may come back on
-another node. The equivalent CLI includes `--node` only in cluster mode.
+The Vue, React and Angular confirmations use the shared
+`createHilosDaemonAgentRestart` lifecycle. Each names the agent and the page's
+node, and says the restart starts immediately under the placement rules and
+leaves neighboring agents alone. Only a clustered `POLICY` agent gets a warning
+that it may come back on another node. The equivalent CLI includes `--node`
+only in cluster mode.
 Restart is disabled while a request is pending, the node is silent, the agent
 is restarting, or the viewer is in the admin view mode. The ordinary ADMIN
 action gate refuses a viewer's forged submit too; restart is not a reading action.
@@ -427,7 +429,10 @@ built Vue children no longer need staged rows under the root. Angular builds the
 same seven pages, mounted in polls through thin wrappers with its `connection`
 and `scopes`; Agents also receives the project's action lifecycle. Their SDK
 components require a context and stay outside the default admin view map.
-React still leaves these seven pages unbuilt.
+React builds the same seven context-backed SDK pages, mounted in tasks through
+thin wrappers with its `connection` and `scopes`, plus the action lifecycle for
+Agents. These pages also stay outside the default admin view map. The root's
+APP_ENV link opens the selected node's Environment page; its value stays there.
 
 The root has two local tabs: Nodes and processes by default, and Agent placement.
 The second draws four totals from the complete `daemon.placement` summary,
@@ -445,7 +450,9 @@ pair and uses the viewport's ordinary row detail: directly under that type's row
 across the table's width, or inside that type's card on a narrow screen (D-216).
 Only one panel is open. Clicking the same cell again or Collapse closes it;
 another node of the same type changes its contents, and another type moves it.
-A loading search hides the panel until its window settles. A missing row, empty
+Changing the window by search, filter, order or page closes the panel and clears
+the selection; the arriving window does not reopen it. Local tab switches keep
+the selection. A missing row, empty
 or unknown cell, silent or removed node, unknown picture, refusal or freeze
 clears the selection. Both desktop cells and narrow cards use the viewport's
 ordinary slots; ids wrap. Admin view-mode readers have

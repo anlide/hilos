@@ -14,24 +14,26 @@ describe('hilosUnbuiltPages', () => {
     const vue = hilosUnbuiltPages('vue')
     expect(vue.has(HilosPages.ROLES)).toBe(true)
     expect(vue.has(HilosPages.DAEMON)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON)).toBe(false)
     expect(vue.has(HilosPages.DAEMON_WORKERS)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_WORKERS)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_WORKERS)).toBe(
+      false,
+    )
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_WORKERS)).toBe(
       false,
     )
     expect(vue.has(HilosPages.DAEMON_AGENTS)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_AGENTS)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_AGENTS)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_AGENTS)).toBe(
       false,
     )
     expect(vue.has(HilosPages.DAEMON_CRON)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_CRON)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_CRON)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_CRON)).toBe(false)
     expect(vue.has(HilosPages.DAEMON_HTTP_SERVER)).toBe(false)
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_HTTP_SERVER)).toBe(
-      true,
+      false,
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.DAEMON_HTTP_SERVER),
@@ -42,18 +44,18 @@ describe('hilosUnbuiltPages', () => {
     expect(hilosUnbuiltPages('angular').has(HilosPages.MAINTENANCE)).toBe(false)
   })
 
-  it('opens the Vue and Angular Daemon environment page while React remains unbuilt', () => {
+  it('opens the Daemon environment page in all three view layers', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV)).toBe(false)
-    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV)).toBe(true)
+    expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV)).toBe(false)
     expect(hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV)).toBe(false)
   })
 
-  it('opens the Vue and Angular Daemon environment mismatch page while React remains unbuilt', () => {
+  it('opens the Daemon environment mismatch page in all three view layers', () => {
     expect(hilosUnbuiltPages('vue').has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(
       false,
     )
     expect(hilosUnbuiltPages('react').has(HilosPages.DAEMON_ENV_MISMATCH)).toBe(
-      true,
+      false,
     )
     expect(
       hilosUnbuiltPages('angular').has(HilosPages.DAEMON_ENV_MISMATCH),

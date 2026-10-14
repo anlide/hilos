@@ -832,6 +832,9 @@ describe('HilosDaemonPage placement', () => {
     await search.setValue('room:1')
     h.window(placementRows(['chat_room:1']))
     await nextTick()
+    expect(h.view.find(panel).exists()).toBe(false)
+    expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')
+    await h.view.find(cell).trigger('click')
     await h.view.find(nodesTab).trigger('click')
     expect(h.view.find(panel).isVisible()).toBe(false)
     expect(
@@ -1046,7 +1049,7 @@ describe('HilosDaemonPage placement', () => {
     h.view.unmount()
   })
 
-  it('hides a selected panel while search loads and forgets freeze and refusal', async () => {
+  it('keeps a searched panel closed after loading and forgets freeze and refusal', async () => {
     vi.useFakeTimers()
     const h = harness()
     try {
@@ -1060,6 +1063,9 @@ describe('HilosDaemonPage placement', () => {
       expect(h.view.find(panel).exists()).toBe(false)
       h.window(placementRows(['chat_room:99']))
       await nextTick()
+      expect(h.view.find(panel).exists()).toBe(false)
+      expect(h.view.find(cell).attributes('aria-expanded')).toBe('false')
+      await h.view.find(cell).trigger('click')
       expect(h.view.find(panel).text()).toContain('chat_room:99')
       h.emit('tableViewportFrozen', {
         data: {

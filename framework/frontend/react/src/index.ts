@@ -86,6 +86,34 @@ export {
 export { HilosAdminPage, type HilosAdminPageProps } from './HilosAdminPage.js'
 export { hilosAdminViews } from './admin/hilosAdminViews.js'
 export {
+  HilosDaemonPage,
+  type HilosDaemonPageProps,
+} from './admin/daemon/HilosDaemonPage.js'
+export {
+  HilosDaemonWorkersPage,
+  type HilosDaemonWorkersPageProps,
+} from './admin/daemon/HilosDaemonWorkersPage.js'
+export {
+  HilosDaemonCronPage,
+  type HilosDaemonCronPageProps,
+} from './admin/daemon/HilosDaemonCronPage.js'
+export {
+  HilosDaemonAgentsPage,
+  type HilosDaemonAgentsPageProps,
+} from './admin/daemon/HilosDaemonAgentsPage.js'
+export {
+  HilosDaemonHttpServerPage,
+  type HilosDaemonHttpServerPageProps,
+} from './admin/daemon/HilosDaemonHttpServerPage.js'
+export {
+  HilosDaemonEnvPage,
+  type HilosDaemonEnvPageProps,
+} from './admin/daemon/HilosDaemonEnvPage.js'
+export {
+  HilosDaemonEnvMismatchPage,
+  type HilosDaemonEnvMismatchPageProps,
+} from './admin/daemon/HilosDaemonEnvMismatchPage.js'
+export {
   HilosDashboardPage,
   type HilosDashboardPageProps,
 } from './admin/dashboard/HilosDashboardPage.js'

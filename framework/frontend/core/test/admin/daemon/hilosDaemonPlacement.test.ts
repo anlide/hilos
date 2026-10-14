@@ -577,7 +577,7 @@ describe('daemon placement view', () => {
     },
   )
 
-  it('hides loading without judging old search rows, then checks the new window', () => {
+  it('closes on search and keeps the arriving window collapsed until a cell opens', () => {
     vi.useFakeTimers()
     const h = stubView()
     try {
@@ -588,6 +588,9 @@ describe('daemon placement view', () => {
       expect(h.view.selectedCell.get()).toBeNull()
       h.view.openCell('chat_room', 'n1')
       h.window(['chat_room:99'])
+      expect(h.view.selectedCell.get()).toBeNull()
+      expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
+      h.view.openCell('chat_room', 'n1')
       expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
       expect(h.view.controller.rows.get()[0]?.expanded).toBe(true)
       h.view.controller.setSearch('absent')
@@ -601,11 +604,14 @@ describe('daemon placement view', () => {
     }
   })
 
-  it('preserves an open address through a fast search but keeps a chevron-collapsed cell closed', () => {
+  it('closes through a fast search and keeps a chevron-collapsed cell closed', () => {
     const h = stubView()
     h.view.openCell('chat_room', 'n1')
     h.view.controller.setSearch('99')
     h.window(['chat_room:99'])
+    expect(h.view.selectedCell.get()).toBeNull()
+    expect(h.view.controller.rows.get()[0]?.expanded).toBe(false)
+    h.view.openCell('chat_room', 'n1')
     expect(h.view.selectedCell.get()?.agentIds).toEqual(['chat_room:99'])
     h.view.controller.expandRow('chat_room', false)
     h.view.controller.setSearch('room')

@@ -6,6 +6,8 @@
 // pageIdentity — what the page's own subscription answered with, not a frontend
 // constant. It is page-agnostic — it renders whichever key it is given, never
 // choosing the page itself (that is the app shell's page->view map).
+// A page's local childParams override only the cards' route parameters, leaving
+// the breadcrumb on the current address.
 //
 // Under the heading the shell always draws the section's sub-navigation cards —
 // one for every child the live params can resolve — and a page's own content
@@ -43,6 +45,8 @@ import { useSignal } from './useSignal.js'
 export interface HilosAdminPageProps {
   /** The admin page key whose shell is rendered. */
   page: string
+  /** Local parameters for child cards; breadcrumbs keep the current route. */
+  childParams?: Record<string, string>
   /**
    * The page's own content, drawn under the cards to its children. Omit it on a
    * leaf with nothing to show yet, and the shell draws its stub empty state.
@@ -54,9 +58,13 @@ export interface HilosAdminPageProps {
  * The admin section shell: breadcrumb, heading, lead, the cards to the page's
  * children, and the page's own content beneath them.
  *
- * @param props The admin page key and the page's optional own content.
+ * @param props The page key, optional local child params and own content.
  */
-export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
+export function HilosAdminPage({
+  page,
+  childParams,
+  children,
+}: HilosAdminPageProps) {
   const router = useContext(HilosRouterContext)
   if (!router) {
     throw new Error('HilosAdminPage requires a HilosRouterContext provider.')
@@ -73,7 +81,7 @@ export function HilosAdminPage({ page, children }: HilosAdminPageProps) {
   )
   const adminChildren = hilosChildLinks(
     identity?.children ?? [],
-    route.params,
+    { ...route.params, ...childParams },
     router.resolvePath,
   )
 
