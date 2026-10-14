@@ -533,6 +533,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 // each node reports and watches the index for the section agent.
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
+                HilosSignalConstants::MAINTENANCE_AGENT_PASS => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::ANALYTICS_JOURNAL_APPEND => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosSignalConstants::ANALYTICS_JOURNAL_READ => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
                 HilosSignalConstants::ANALYTICS_JOURNAL_LOADED => HilosAgentType::HILOS_ANALYTICS_JOURNAL,
@@ -864,6 +865,10 @@ final class PollsTopologyRegistryTest extends TestCase
         $this->assertSame(
             HilosPageConstants::HILOS_MAINTENANCE,
             Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_DISABLE],
+        );
+        $this->assertSame(
+            HilosPageConstants::HILOS_MAINTENANCE,
+            Hilos::getPageActionRoutes()[HilosSignalConstants::MAINTENANCE_PASS],
         );
     }
 

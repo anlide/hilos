@@ -6,6 +6,7 @@ import {
   CIRCLE_ONLINE,
   addToMaintenanceCircle,
   clearMaintenanceCircle,
+  dismissToasts,
   maintenanceCircleOnline,
   maintenanceCircleRow,
   shownByTestId,
@@ -140,6 +141,131 @@ test('an administrator turns on manual maintenance from the section and stays in
       }
     } finally {
       await publicContext.close()
+    }
+  }
+})
+
+test('a code issued in Maintenance admits two independent browsers and is shown only once', async ({
+  page,
+  browser,
+}) => {
+  test.slow() // Three independent sessions enter through the production manual window and its code reply.
+  await grantAdminToSelf(page)
+  await gotoPage(page, MAINTENANCE_URL, PAGE_READY)
+  await clearMaintenanceCircle(page)
+  await page.setViewportSize({ width: 375, height: 812 })
+  const secondContext = await browser.newContext()
+  const thirdContext = await browser.newContext()
+  const second = await secondContext.newPage()
+  const third = await thirdContext.newPage()
+  try {
+    // Administrators outside the captured circle still need the code to enter.
+    for (const other of [second, third]) {
+      await grantAdminToSelf(other)
+      await gotoPage(other, MAINTENANCE_URL, PAGE_READY)
+    }
+    const enable = page.getByTestId('hilos-maintenance-enable')
+    await enable.scrollIntoViewIfNeeded()
+    await expect(enable).toBeVisible()
+    await expect(enable).toBeEnabled()
+    await enable.focus()
+    await enable.click()
+    const enableConfirm = page.getByTestId('hilos-maintenance-enable-confirm')
+    await enableConfirm.scrollIntoViewIfNeeded()
+    await expect(enableConfirm).toBeVisible()
+    await expect(enableConfirm).toBeEnabled()
+    await enableConfirm.focus()
+    await enableConfirm.click()
+    await expect(
+      page.getByTestId('hilos-maintenance-enable-modal'),
+    ).toBeHidden()
+    await expect(
+      page.getByTestId('hilos-maintenance-state-manual'),
+    ).toBeVisible()
+    for (const other of [second, third]) {
+      await expect(other.getByTestId('maintenance')).toBeVisible()
+    }
+    await expect(page.getByTestId('hilos-maintenance-pass-count')).toHaveText(
+      '0',
+    )
+    await dismissToasts(page)
+    const issue = page.getByTestId('hilos-maintenance-pass')
+    await issue.scrollIntoViewIfNeeded()
+    await expect(issue).toBeVisible()
+    await expect(issue).toBeEnabled()
+    await issue.focus()
+    await issue.click()
+    const mint = page.getByTestId('hilos-maintenance-pass-confirm')
+    await mint.scrollIntoViewIfNeeded()
+    await expect(mint).toBeVisible()
+    await expect(mint).toBeEnabled()
+    await mint.focus()
+    await mint.click()
+    await expect(
+      page.getByTestId('hilos-maintenance-pass-result'),
+    ).toBeVisible()
+    const value = page.getByTestId('hilos-maintenance-pass-value')
+    await expect(value).toBeFocused()
+    const code = (await value.innerText()).trim()
+    expect(code.length).toBeGreaterThan(0)
+    await expect(page.getByTestId('hilos-maintenance-pass-count')).toHaveText(
+      '1',
+    )
+    await expect(page.getByTestId('hilos-toasts')).not.toContainText(code)
+    for (const other of [second, third]) {
+      await presentCode(other, code)
+      await expect(other.getByTestId('maintenance')).toBeHidden()
+      await expectPageReady(other)
+      await expect(
+        other.getByTestId('hilos-maintenance-state-manual'),
+      ).toBeVisible()
+      await expect(
+        other.getByTestId('hilos-maintenance-pass-count'),
+      ).toHaveText('1')
+    }
+    const close = page.getByTestId('hilos-maintenance-pass-cancel')
+    await close.scrollIntoViewIfNeeded()
+    await expect(close).toBeVisible()
+    await expect(close).toBeEnabled()
+    await close.focus()
+    await close.click()
+    await expect(page.getByTestId('hilos-maintenance-pass-modal')).toBeHidden()
+    await expect(value).toHaveCount(0)
+    await dismissToasts(page)
+    await issue.scrollIntoViewIfNeeded()
+    await expect(issue).toBeVisible()
+    await expect(issue).toBeEnabled()
+    await issue.focus()
+    await issue.click()
+    await expect(page.getByTestId('hilos-maintenance-pass-modal')).toBeVisible()
+    await expect(
+      page.getByTestId('hilos-maintenance-pass-modal'),
+    ).not.toContainText(code)
+    await expect(value).toHaveCount(0)
+    // A second issuance pushes its count to both already admitted browsers too.
+    await mint.scrollIntoViewIfNeeded()
+    await expect(mint).toBeVisible()
+    await expect(mint).toBeEnabled()
+    await mint.focus()
+    await mint.click()
+    await expect(
+      page.getByTestId('hilos-maintenance-pass-result'),
+    ).toBeVisible()
+    await expect(value).not.toHaveText(code)
+    for (const admitted of [page, second, third]) {
+      await expect(
+        admitted.getByTestId('hilos-maintenance-pass-count'),
+      ).toHaveText('2')
+      await expect(admitted.getByTestId('hilos-toasts')).not.toContainText(code)
+    }
+  } finally {
+    try {
+      if ((await inspectProtectedMode()).operation === 'manual_maintenance') {
+        expect(await disableManualMaintenance()).toBe('inactive')
+      }
+    } finally {
+      await secondContext.close()
+      await thirdContext.close()
     }
   }
 })

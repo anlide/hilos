@@ -902,10 +902,11 @@ calling `disableManualMaintenance()`. The existing agent-type/index and
 single-request checks remain. The CLI may also disable through `maintenance:disable`; the exit
 is the same `inactive` and reload for everyone. Restore's window still opens
 from Backups only for its initiating browser. Minting in Maintenance is only for
-this window and shows the code once (not in the code yet — HIL-1364), and the
-CLI mints too via `maintenance:pass`, only in the manual window. The code uses
-secure randomness; only its hash stands on the row, its clear value in the
-reply.
+this window and shows the code once. The CLI mints too via `maintenance:pass`,
+only in the manual window. The code uses secure randomness; only its hash
+stands on the row, its clear value in the reply. One code admits several
+browser sessions while the window lasts. Closing the result does not revoke
+it; disabling maintenance or restarting the daemon invalidates every code.
 
 The watchdog exempts the manual window on the row (operation `manual_maintenance`
 with `entryMode` `verification_window`; a full freeze carrying that name is still
@@ -1014,9 +1015,51 @@ the actor's, without waiting for the ack. The component never reloads locally;
 if the ack arrives first, the ordinary tracked lifecycle may show the one server
 sentence "Maintenance is off — pages are reloading".
 
-Enable and disable are disabled for a view-mode viewer, including their
-confirmation openers. Minting a code (not in the code yet — HIL-1364) will be
-disabled too. React and Angular manual
+The Vue manual card also offers **Issue code**. Its confirmation sends the
+tracked `maintenance_pass` action with an empty `MaintenancePassActionDTO`;
+untracked requests are refused before minting. The page resolves the session
+and checks the verifying manual window and admission. Its ADMIN gate keeps
+this write outside `READING_ACTIONS` and `AGENT_ACTIONS`. Any admitted admin
+may ask, whether admitted as initiator, circle member or code holder, and
+whether the window was opened in a browser or from the CLI.
+
+`maintenance_agent_pass` carries `ManualMaintenancePassSignalData` through the
+existing handover. The index agent repeats `PageAccessGate::assertAction()`,
+compares the current server session hash to the ask and checks admission, then
+calls the existing `mintManualMaintenancePass()`. The existing single-request,
+window and initiator-agent checks apply. Only observing the new hash in
+`passHashes` succeeds. `maintenance_pass_done` carries a local typed wrapper,
+`ManualMaintenancePassDoneSignalData`, with the unchanged handover answer and
+a nonempty `pass` only on success. A refusal carries no code. Before disclosure
+the page repeats the current access, session and admission checks; loss of
+access answers the tracked submit with a failure. Success returns
+`MaintenancePassReplyDTO` only in that submit's `::success.reply`, with the
+sentence "Code issued". No code enters the page state, count push, broadcast,
+error, toast, log, URL or browser storage.
+
+The core owns `MAINTENANCE_PASS_ACTION`, `maintenancePassReplySchema`,
+`HilosMaintenancePassReply`, `sendMaintenancePass()` and
+`HILOS_MAINTENANCE_PASS_COPY`. A missing or empty reply code is `invalid-reply`.
+Vue uses the existing tracked runner, loading button and reserved refusal
+plate. Pending blocks every close and repeat submit; a changed state blocks
+an unsent confirmation, and the modal stands outside the conditional card.
+A confirmed reply replaces the confirmation with **Verification code**, focuses
+the code, and offers the modal's standard Copy/Copied alongside Close. The raw
+value is text and remains selectable when clipboard access is unavailable.
+Closing by any route or leaving the page forgets it; reopening starts a fresh
+confirmation. A late promise after unmount cannot restore the result.
+
+Refusals retain their reason. Unconfirmed server outcomes append the original
+reason to: "The result of issuing a code is unconfirmed. A code may have been
+issued, but it cannot be recovered. Issue a new code if needed; turn maintenance
+off and on to invalidate all issued codes." Client timeout, disconnect and
+invalid reply show the same instruction. There is no automatic retry or secret
+recovery. The existing 13-second owner wait and 30-second client timeout remain;
+a late hash produces no second answer. The ordinary state push updates only
+the pass count for every admitted subscriber.
+
+Enable, disable and code issuance are disabled for a view-mode viewer,
+including their confirmation openers. React and Angular manual
 controls follow separately (not in the code yet — HIL-1365). There is no extra
 project wiring: the index agent already serves this page and owns manual entry.
 In a cluster all masters close; disable and code minting work from any node

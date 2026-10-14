@@ -8,6 +8,7 @@ use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -18,6 +19,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
+use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
@@ -37,12 +39,18 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
+use Hilos\Pages\Maintenance\DTO\MaintenancePassReplyDTO;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
+use Hilos\WiringRefusal;
+use Throwable;
 
 /**
  * AbstractHilosMaintenancePage - Abstract base for the Hilos maintenance section (HIL-1119).
@@ -72,12 +80,14 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
         HilosSignalConstants::MAINTENANCE_CIRCLE_REMOVE => MaintenanceCircleRemoveActionDTO::class,
         HilosSignalConstants::MAINTENANCE_ENABLE => MaintenanceEnableActionDTO::class,
         HilosSignalConstants::MAINTENANCE_DISABLE => MaintenanceDisableActionDTO::class,
+        HilosSignalConstants::MAINTENANCE_PASS => MaintenancePassActionDTO::class,
     ];
 
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
             HilosSignalConstants::MAINTENANCE_ENABLE_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::MAINTENANCE_DISABLE_DONE => HandoverAnswerSignalData::class,
+            HilosSignalConstants::MAINTENANCE_PASS_DONE => ManualMaintenancePassDoneSignalData::class,
         ],
     ];
 
@@ -279,6 +289,14 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
 
                 break;
 
+            case HilosSignalConstants::MAINTENANCE_PASS:
+                if (!$dto instanceof MaintenancePassActionDTO) {
+                    throw new InvalidActionPayloadException($action, MaintenancePassActionDTO::class, $dto);
+                }
+                $this->handlePass($acceptKey);
+
+                break;
+
             default:
                 throw new AgentUnknownActionException("Unknown action: {$action}");
         }
@@ -294,6 +312,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @param string $name Page-owned signal name
      * @throws AgentUnknownSignalException When the signal is not owned by this page
      * @throws InvalidArgumentException When the action answer cannot be named
+     * @throws InvalidFormatException When a successful outcome contains an empty code
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -301,6 +320,11 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             case HilosSignalConstants::MAINTENANCE_ENABLE_DONE:
             case HilosSignalConstants::MAINTENANCE_DISABLE_DONE:
                 $this->answerHandover($data->data);
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_PASS_DONE:
+                $this->handlePassDone($data->data);
 
                 break;
 
@@ -376,6 +400,121 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
                 successMessage: 'Maintenance is off — pages are reloading',
             ),
         );
+    }
+
+    /**
+     * @param string $acceptKey Acting browser connection
+     * @throws TableActionException When the request is untracked or the browser is outside the manual window
+     * @throws InvalidArgumentException When the request cannot be named or queued
+     * @throws InvalidFormatException When the browser identity or correlation is empty
+     */
+    private function handlePass(string $acceptKey): void
+    {
+        if ($this->currentActionRequestId() === null || $this->currentActionRequestId() === '') {
+            throw new TableActionException('Issuing a code requires a tracked request');
+        }
+
+        $this->forward(
+            HilosSignalConstants::MAINTENANCE_AGENT_PASS,
+            new ManualMaintenancePassSignalData(
+                acceptKey: $acceptKey,
+                sessionHash: $this->assertPassAdmission($acceptKey),
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::MAINTENANCE_PASS,
+                replySignal: HilosSignalConstants::MAINTENANCE_PASS_DONE,
+                successMessage: 'Code issued',
+            ),
+        );
+    }
+
+    /**
+     * Null runtime state means this process cannot admit a code request or disclose its result.
+     *
+     * @param string $acceptKey Acting browser connection
+     * @return string Current server-resolved session hash
+     * @throws TableActionException When the session or manual window is missing or admission is lost
+     */
+    private function assertPassAdmission(string $acceptKey): string
+    {
+        $sessionHash = self::subscriberSessionTokenHash($acceptKey);
+        if ($sessionHash === null) {
+            throw new TableActionException('A browser session is required to issue a code');
+        }
+
+        if (Hilos::$rt?->hilosProtectedModeRuntime === null) {
+            throw new TableActionException('Protected-mode state is unavailable');
+        }
+
+        if (
+            Hilos::$rt->hilosProtectedModeRuntime->phase !== StateProtectedModeRuntime::PHASE_VERIFYING
+            || !Hilos::$rt->hilosProtectedModeRuntime->isManualMaintenanceWindow()
+        ) {
+            throw new TableActionException('The current window is not manual maintenance');
+        }
+
+        if (Hilos::$rt->hilosProtectedModeRuntime->locksOut($acceptKey, $sessionHash)) {
+            throw new TableActionException('This browser session is not admitted to maintenance');
+        }
+
+        return $sessionHash;
+    }
+
+    /**
+     * Rechecks current access before disclosing a code to the originating tracked submit.
+     *
+     * @param ManualMaintenancePassDoneSignalData $done Addressed outcome from the owner
+     * @throws InvalidArgumentException When the answer cannot be named
+     * @throws InvalidFormatException When a successful outcome contains an empty code
+     */
+    private function handlePassDone(ManualMaintenancePassDoneSignalData $done): void
+    {
+        if ($done->answer->error !== null) {
+            $this->answerHandover($done->answer);
+
+            return;
+        }
+
+        try {
+            PageAccessGate::assertAction(static::class, $done->answer->acceptKey, HilosSignalConstants::MAINTENANCE_PASS);
+            $this->assertPassAdmission($done->answer->acceptKey);
+        } catch (WiringRefusal $e) {
+            // The waiting browser receives the wiring failure without the code.
+            $this->refusePassDisclosure($done->answer, ActionRefusal::fromThrowable($e));
+
+            return;
+        } catch (Throwable $e) {
+            $this->refusePassDisclosure($done->answer, ActionRefusal::fromThrowable($e));
+
+            return;
+        }
+
+        if ($done->answer->successMessage !== null) {
+            $this->setActionSuccessMessage($done->answer->successMessage);
+        }
+        $this->sendActionSuccess(
+            $done->answer->acceptKey,
+            $done->answer->action,
+            $done->answer->requestId,
+            new MaintenancePassReplyDTO($done->pass),
+        );
+    }
+
+    /**
+     * @param HandoverAnswerSignalData $answer Original correlation
+     * @param ActionRefusal $refusal Current admission refusal
+     * @throws InvalidArgumentException When the refusal cannot be named
+     */
+    private function refusePassDisclosure(HandoverAnswerSignalData $answer, ActionRefusal $refusal): void
+    {
+        $this->answerHandover(new HandoverAnswerSignalData(
+            $answer->acceptKey,
+            $answer->requestId,
+            $answer->action,
+            null,
+            $refusal->reason,
+            $refusal->errorType,
+            $refusal->errorDetail,
+        ));
     }
 
     /**

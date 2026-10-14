@@ -22,6 +22,7 @@ import {
   HILOS_MAINTENANCE_CIRCLE_COPY,
   HILOS_MAINTENANCE_DISABLE_COPY,
   HILOS_MAINTENANCE_ENABLE_COPY,
+  HILOS_MAINTENANCE_PASS_COPY,
   HILOS_MAINTENANCE_STATE_COPY,
   HilosPages,
   hilosMaintenanceCard,
@@ -30,7 +31,7 @@ import {
   type HilosMaintenanceCircleRow,
   type HilosMaintenanceContext,
 } from '@hilos/core'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -89,6 +90,7 @@ onUnmounted(() => {
 const {
   sendMaintenanceEnable,
   sendMaintenanceDisable,
+  sendMaintenancePass,
   sendMaintenanceCircleAdd,
   sendMaintenanceCircleRemove,
 } = createHilosMaintenanceActions(props.context)
@@ -143,6 +145,61 @@ async function submitDisable(): Promise<void> {
   if (disableBusy.value || position.value !== 'manual') return
   if (await disableAction.run(sendMaintenanceDisable())) closeDisable()
 }
+
+// The clear code belongs only to this dialog's result and is forgotten on every exit.
+const passOpen = ref(false)
+const pass = ref<string | null>(null)
+const passStep = ref<'confirm' | 'result'>('confirm')
+const passValue = ref<HTMLElement>()
+let passDisposed = false
+const passAction = useTrackedAction({
+  describeError: (error) =>
+    error instanceof ActionError && error.outcome === 'fail'
+      ? error.message
+      : HILOS_MAINTENANCE_PASS_COPY.unconfirmedNote,
+})
+const { loading: passLoading, busy: passBusy } = passAction
+
+function openPass(): void {
+  if (passDisposed || passBusy.value || position.value !== 'manual') return
+  pass.value = null
+  passStep.value = 'confirm'
+  passAction.clearError()
+  passOpen.value = true
+}
+
+function closePass(): void {
+  if (passBusy.value) return
+  passOpen.value = false
+  pass.value = null
+  passStep.value = 'confirm'
+}
+
+async function submitPass(): Promise<void> {
+  if (
+    passDisposed ||
+    !passOpen.value ||
+    passBusy.value ||
+    passStep.value !== 'confirm' ||
+    position.value !== 'manual'
+  )
+    return
+  const handle = sendMaintenancePass()
+  if (await passAction.run(handle)) {
+    const result = await handle.done
+    if (passDisposed || !passOpen.value) return
+    pass.value = result.reply!.pass
+    passStep.value = 'result'
+    await nextTick()
+    passValue.value?.focus()
+  }
+}
+
+onUnmounted(() => {
+  passDisposed = true
+  pass.value = null
+  passOpen.value = false
+})
 
 // The add dialog. It closes on the server's word only: a refusal keeps it open with
 // what was typed, and the named row arrives over the live table, not from here.
@@ -343,16 +400,29 @@ async function submitCircleRemove(): Promise<void> {
             <dt class="col-sm-3">{{ HILOS_MAINTENANCE_STATE_COPY.circle }}</dt>
             <dd class="col-sm-9">{{ stateCard.circle }}</dd>
           </dl>
-          <LoadingButton
+          <div
             v-if="stateCard.position === 'manual'"
-            class="btn-warning btn-sm mt-3"
-            :loading="disableLoading"
-            :disabled="disableBusy"
-            data-id="hilos-maintenance-disable"
-            @click="openDisable"
+            class="hilos-button-row mt-3"
           >
-            {{ HILOS_MAINTENANCE_DISABLE_COPY.disableTitle }}
-          </LoadingButton>
+            <LoadingButton
+              class="btn-outline-primary btn-sm"
+              :loading="passLoading"
+              :disabled="passBusy"
+              data-id="hilos-maintenance-pass"
+              @click="openPass"
+            >
+              {{ HILOS_MAINTENANCE_PASS_COPY.issue }}
+            </LoadingButton>
+            <LoadingButton
+              class="btn-warning btn-sm"
+              :loading="disableLoading"
+              :disabled="disableBusy"
+              data-id="hilos-maintenance-disable"
+              @click="openDisable"
+            >
+              {{ HILOS_MAINTENANCE_DISABLE_COPY.disableTitle }}
+            </LoadingButton>
+          </div>
         </div>
       </section>
     </div>
@@ -447,6 +517,74 @@ async function submitCircleRemove(): Promise<void> {
           @click="submitDisable"
         >
           {{ HILOS_MAINTENANCE_DISABLE_COPY.confirm }}
+        </LoadingButton>
+      </template>
+    </HilosModal>
+
+    <HilosModal
+      :model-value="passOpen"
+      :title="
+        passStep === 'confirm'
+          ? HILOS_MAINTENANCE_PASS_COPY.mintTitle
+          : HILOS_MAINTENANCE_PASS_COPY.codeTitle
+      "
+      :close-on-backdrop="!passBusy"
+      :close-on-esc="!passBusy"
+      :copy-text="pass ?? ''"
+      initial-focus="dialog"
+      @update:model-value="closePass"
+    >
+      <div data-id="hilos-maintenance-pass-modal">
+        <template v-if="passStep === 'confirm'">
+          <HilosActionError
+            :action="passAction"
+            :details-title="HILOS_MAINTENANCE_PASS_COPY.refusalTitle"
+          />
+          <p class="mb-2">{{ HILOS_MAINTENANCE_PASS_COPY.lead }}</p>
+          <p class="mb-0 text-body-secondary">
+            {{ HILOS_MAINTENANCE_PASS_COPY.reuseNote }}
+          </p>
+        </template>
+        <div v-else data-id="hilos-maintenance-pass-result">
+          <p class="mb-2 text-body-secondary">
+            {{ HILOS_MAINTENANCE_PASS_COPY.resultLead }}
+          </p>
+          <div
+            ref="passValue"
+            tabindex="-1"
+            class="border rounded-3 p-3 bg-body-tertiary text-center user-select-all text-break"
+            data-id="hilos-maintenance-pass-value"
+          >
+            <code class="fs-5">{{ pass }}</code>
+          </div>
+          <p class="small text-body-secondary mt-2 mb-0">
+            {{ HILOS_MAINTENANCE_PASS_COPY.resultNote }}
+          </p>
+        </div>
+      </div>
+      <template #actions="{ requestClose }">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          :disabled="passBusy"
+          data-id="hilos-maintenance-pass-cancel"
+          @click="requestClose"
+        >
+          {{
+            passStep === 'confirm'
+              ? HILOS_MAINTENANCE_PASS_COPY.cancel
+              : HILOS_MAINTENANCE_PASS_COPY.close
+          }}
+        </button>
+        <LoadingButton
+          v-if="passStep === 'confirm'"
+          class="btn-primary"
+          :loading="passLoading"
+          :disabled="passBusy || position !== 'manual'"
+          data-id="hilos-maintenance-pass-confirm"
+          @click="submitPass"
+        >
+          {{ HILOS_MAINTENANCE_PASS_COPY.mint }}
         </LoadingButton>
       </template>
     </HilosModal>

@@ -13,6 +13,15 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalRouter;
@@ -72,6 +81,7 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
         Hilos::$cluster = new ClusterContext();
         Hilos::$sr = new SignalRouter();
         Hilos::$rt = new IntegrationManualRtContext();
+        Hilos::$rt->configure();
         Hilos::$rt->mountFeatureRuntime([]);
         RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
 
@@ -167,6 +177,73 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
         $this->assertSame('browser-disable', $done->data->requestId);
         $this->assertNull($done->data->error);
         $this->assertArrayNotHasKey('sessionHash', $done->data->toArray());
+    }
+
+    #[DataProvider('codeInvalidation')]
+    public function testBrowserCodeTraversesTheOwnerAndAdmitsTwoSessionsUntilInvalidated(bool $restart): void
+    {
+        Hilos::$browser = new IdentityTestBrowser(7, true);
+        $sessionHash = ProtectedModeRuntime::hashSessionToken('browser-session');
+        $this->agent->enable('browser-key', $sessionHash, static function (ManualMaintenanceOutcome $outcome): void {
+        });
+        $this->mode->requestEnable($this->nextRequest(SignalTypeConstants::PROTECTED_MODE_ENABLE));
+        $ask = new ManualMaintenancePassSignalData(
+            'browser-key', $sessionHash, 'browser-pass', HilosSignalConstants::MAINTENANCE_PASS,
+            HilosSignalConstants::MAINTENANCE_PASS_DONE, 'Code issued',
+        );
+        $this->agent->onSignalAgent(
+            new AgentSignalData(ManualMaintenancePassSignalData::fromArray($ask->toArray())),
+            'agent/hilos_index', HilosSignalConstants::MAINTENANCE_AGENT_PASS,
+        );
+        $mint = $this->nextRequest(SignalTypeConstants::PROTECTED_MODE_PASS);
+        $this->assertInstanceOf(ProtectedModePassSignalData::class, $mint);
+        $this->agent->onTick();
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal(), 'No done before the hash lands');
+        $this->mode->requestPass($mint);
+        $this->agent->onTick();
+        $done = $this->nextRequest(SignalTypeConstants::AGENT_SIGNAL);
+        $this->assertInstanceOf(ManualMaintenancePassDoneSignalData::class, $done->data);
+        $page = new IntegrationManualMaintenancePage($this->agent);
+        $page->onSignalAgent(
+            new AgentSignalData(ManualMaintenancePassDoneSignalData::fromArray($done->data->toArray())),
+            'agent/hilos_index', HilosSignalConstants::MAINTENANCE_PASS_DONE,
+        );
+        $ack = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalConstants::ACTION_SUCCESS, $ack?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $ack->data);
+        $this->assertSame('browser-key', $ack->data->targetAcceptKey);
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $ack->data->data);
+        $this->assertSame('browser-pass', $ack->data->data->requestId);
+        $code = $ack->data->data->reply['pass'];
+        $this->assertSame($mint->passHash, hash(ProtectedModeAdmissionConstants::PASS_HASH_ALGO, $code));
+        $this->assertSame([$mint->passHash], Hilos::$rt->hilosProtectedModeRuntime->passHashes);
+        $this->assertStringNotContainsString($code, json_encode(Hilos::$rt->hilosProtectedModeRuntime->toArray()));
+        $this->assertStringNotContainsString(
+            $code, file_get_contents($this->logDirectory . '/' . ProtectedModeFreezeStore::FILE_NAME),
+        );
+        foreach (['second-session', 'third-session'] as $session) {
+            $this->mode->requestAdmit($mint->passHash, $session);
+            $this->assertFalse(Hilos::$rt->hilosProtectedModeRuntime->locksOut('other-browser', $session));
+            $this->assertSame([$mint->passHash], Hilos::$rt->hilosProtectedModeRuntime->passHashes);
+        }
+        if ($restart) {
+            $this->restartTheNode();
+            $this->assertSame(ProtectedModeRuntime::PHASE_VERIFYING, Hilos::$rt->hilosProtectedModeRuntime->phase);
+            $this->assertTrue(Hilos::$rt->hilosProtectedModeRuntime->locksOut('other-browser', 'second-session'));
+        } else {
+            $this->agent->disable(static function (ManualMaintenanceOutcome $outcome): void {
+            });
+            $this->mode->requestDisable($this->nextRequest(SignalTypeConstants::PROTECTED_MODE_DISABLE));
+            $this->agent->onTick();
+            $this->assertSame(ProtectedModeRuntime::PHASE_INACTIVE, Hilos::$rt->hilosProtectedModeRuntime->phase);
+        }
+        $this->assertSame([], Hilos::$rt->hilosProtectedModeRuntime->passHashes);
+        $this->assertSame([], Hilos::$rt->hilosProtectedModeRuntime->admittedSessionTokenHashes);
+    }
+
+    public static function codeInvalidation(): array
+    {
+        return [[false], [true]];
     }
 
     public function testBrowserDisableCannotChangeARestoreWindow(): void
@@ -397,6 +474,7 @@ final class ManualMaintenanceIndexAgentIntegrationTest extends TestCase
         Hilos::$sr = new SignalRouter();
         Hilos::$cluster = new ClusterContext();
         Hilos::$rt = new IntegrationManualRtContext();
+        Hilos::$rt->configure();
         Hilos::$rt->mountFeatureRuntime([]);
         RtTruthSourceRegistry::registerDaemon(ProtectedModeRuntime::RT_ITEM);
 
@@ -470,6 +548,44 @@ final class IntegrationManualIndexAgent extends AbstractHilosIndexAgent
 final class IntegrationManualRtContext extends RtContext
 {
     public function configure(): void
+    {
+        $connections = IntegrationManualConnections::init();
+        $connections->add(IntegrationManualConnection::create('browser-key', 7, 'browser-session'));
+        $this->_stateCollections[IntegrationManualConnections::RT_COLLECTION] = $connections;
+    }
+}
+
+final class IntegrationManualMaintenancePage extends AbstractHilosMaintenancePage
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+}
+
+final class IntegrationManualConnections extends HilosSessionConnections
+{
+    public const string RT_COLLECTION = 'integrationManualConnections';
+    public const string STATE_CLASS = IntegrationManualConnection::class;
+}
+
+final class IntegrationManualConnection extends HilosSessionConnection
+{
+    /** This fixture adds no fields. */
+    protected function initOwn(): void
+    {
+    }
+
+    /** @param array<string, mixed> $row No fixture fields */
+    protected function hydrateOwn(array $row): void
+    {
+    }
+
+    /** @return array<string, mixed> No fixture fields */
+    protected function ownToArray(): array
+    {
+        return [];
+    }
+
+    /** @param array<string, mixed> $diff No fixture fields */
+    protected function applyOwnDiff(array $diff): void
     {
     }
 }

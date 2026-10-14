@@ -148,6 +148,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'maintenance_circle_remove',
         'maintenance_disable',
         'maintenance_enable',
+        'maintenance_pass',
         'security_2fa_setting_set',
         'security_impersonation_scope_set',
         'security_impersonation_switch_set',

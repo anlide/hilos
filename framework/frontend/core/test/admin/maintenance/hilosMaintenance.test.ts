@@ -10,6 +10,8 @@ import {
   MAINTENANCE_CIRCLE_ONLINE_FIELD,
   MAINTENANCE_STATE_SIGNAL,
   MAINTENANCE_STATE_SIGNAL_SCHEMAS,
+  maintenancePassReplySchema,
+  type HilosMaintenancePassReply,
   type HilosMaintenanceCircleTableView,
   type HilosMaintenanceContext,
   type HilosMaintenanceState,
@@ -19,6 +21,7 @@ import {
   resolveHilosMaintenanceCircleRow,
 } from '../../../src/admin/maintenance/hilosMaintenance.js'
 import { HILOS_TABLE_ACTIONS_KEY } from '../../../src/table/hilosTableColumn.js'
+import type { ActionSuccessSignal } from '../../../src/protocol/parseSignal.js'
 import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { type HilosConnection } from '../../../src/connection/HilosConnection.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
@@ -259,6 +262,125 @@ describe('createHilosMaintenanceCircleTable', () => {
 })
 
 describe('createHilosMaintenanceActions', () => {
+  it.each([
+    undefined,
+    {},
+    { pass: '' },
+    { pass: null },
+    { pass: 7 },
+    { pass: 'raw+code/unchanged' },
+  ])(
+    'validates the correlated code reply without storing it in page state: %j',
+    async (reply) => {
+      const sendAction = vi.fn(() => true)
+      let success: (signal: ActionSuccessSignal) => void = () => {}
+      const actions = new ActionLifecycle({
+        sendAction,
+        on(event, listener) {
+          if (event === 'actionSuccess')
+            success = listener as (signal: ActionSuccessSignal) => void
+          return () => {}
+        },
+      })
+      let pushState: (signal: {
+        type: string
+        data: unknown
+      }) => void = () => {}
+      const context = {
+        actions,
+        connection: {
+          on(
+            event: string,
+            listener: (signal: { type: string; data: unknown }) => void,
+          ) {
+            if (event === 'projectSignal') pushState = listener
+            return () => {}
+          },
+        },
+      } as unknown as HilosMaintenanceContext
+      const pageState = createHilosMaintenanceState(context)
+      pageState.start()
+      pushState({
+        type: MAINTENANCE_STATE_SIGNAL,
+        data: state({ passCount: 1 }),
+      })
+      const handle =
+        createHilosMaintenanceActions(context).sendMaintenancePass()
+      expect(sendAction.mock.calls).toEqual([
+        ['maintenance_pass', {}, handle.requestId],
+      ])
+      const valid = reply?.pass === 'raw+code/unchanged'
+      expect(maintenancePassReplySchema.safeParse(reply).success).toBe(valid)
+      const outcome = valid
+        ? handle.done
+        : expect(handle.done).rejects.toMatchObject({
+            outcome: 'invalid-reply',
+          })
+      success({
+        kind: 'actionSuccess',
+        envelope: { type: 'action_success', data: {} },
+        action: 'maintenance_pass',
+        requestId: handle.requestId,
+        message: 'Code issued',
+        reply,
+      })
+      await outcome
+      if (valid) {
+        const result: HilosMaintenancePassReply | undefined = (
+          await handle.done
+        ).reply
+        expect(result).toEqual(reply)
+        expect(pageState.state.get()).toEqual(state({ passCount: 1 }))
+        expect(JSON.stringify(pageState.state.get())).not.toContain(
+          result?.pass,
+        )
+      }
+      pageState.dispose()
+      expect(sendAction).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('times out code issuance without retrying and ignores the late secret', async () => {
+    vi.useFakeTimers()
+    try {
+      const sendAction = vi.fn(() => true)
+      let success: (signal: ActionSuccessSignal) => void = () => {}
+      const late = vi.fn()
+      const actions = new ActionLifecycle(
+        {
+          sendAction,
+          on(event, listener) {
+            if (event === 'actionSuccess')
+              success = listener as (signal: ActionSuccessSignal) => void
+            return () => {}
+          },
+        },
+        { onLateReply: late },
+      )
+      const handle = createHilosMaintenanceActions({
+        actions,
+      } as HilosMaintenanceContext).sendMaintenancePass()
+      const outcome = expect(handle.done).rejects.toMatchObject({
+        outcome: 'timeout',
+      })
+      await vi.runAllTimersAsync()
+      await outcome
+      success({
+        kind: 'actionSuccess',
+        envelope: { type: 'action_success', data: {} },
+        action: 'maintenance_pass',
+        requestId: handle.requestId,
+        reply: { pass: 'late-secret' },
+        message: undefined,
+      })
+      expect(sendAction).toHaveBeenCalledTimes(1)
+      expect(JSON.stringify(late.mock.calls)).not.toContain('late-secret')
+      await expect(handle.done).rejects.toMatchObject({ outcome: 'timeout' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('dispatches one tracked empty enable and never retries an unanswered command', async () => {
     vi.useFakeTimers()
     try {

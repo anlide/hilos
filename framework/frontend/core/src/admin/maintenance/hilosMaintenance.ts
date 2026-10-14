@@ -244,6 +244,37 @@ export const MAINTENANCE_ENABLE_ACTION = 'maintenance_enable'
 /** Tracked browser action; the server resolves the acting browser and manual window. */
 export const MAINTENANCE_DISABLE_ACTION = 'maintenance_disable'
 
+/** Tracked browser action returning a code only to its originating submit. */
+export const MAINTENANCE_PASS_ACTION = 'maintenance_pass'
+
+/** A code is opaque: validate presence without inventing a format. */
+export const maintenancePassReplySchema = z.object({ pass: z.string().min(1) })
+
+/** The code returned once, kept only by the issuing dialog. */
+export type HilosMaintenancePassReply = z.infer<
+  typeof maintenancePassReplySchema
+>
+
+/** Words of code issuance and its single display, shared by every view. */
+export const HILOS_MAINTENANCE_PASS_COPY = {
+  issue: 'Issue code',
+  mintTitle: 'Mint a verification code',
+  mint: 'Mint',
+  cancel: 'Cancel',
+  lead: 'The code is shown once and cannot be retrieved again. Only its SHA-256 hash remains on the node.',
+  reuseNote:
+    'One code can admit several browsers while this maintenance window is open. Codes stop working when maintenance is turned off or the daemon restarts.',
+  codeTitle: 'Verification code',
+  resultLead:
+    'Give this code to the person who will check the system. This screen will not show it again.',
+  resultNote:
+    'Enter the code on the maintenance screen at an administrative address.',
+  close: 'Close',
+  refusalTitle: "Couldn't issue a code",
+  unconfirmedNote:
+    'The result of issuing a code is unconfirmed. A code may have been issued, but it cannot be recovered. Issue a new code if needed; turn maintenance off and on to invalidate all issued codes.',
+} as const
+
 /** Words of the manual-exit confirmation, shared by every view. */
 export const HILOS_MAINTENANCE_DISABLE_COPY = {
   disableTitle: 'Turn off maintenance',
@@ -318,6 +349,8 @@ export interface HilosMaintenanceActions {
   sendMaintenanceEnable(): ActionHandle
   /** Open to everyone, awaiting the server's inactive outcome without retrying. */
   sendMaintenanceDisable(): ActionHandle
+  /** Issue a code, awaiting its confirmed hash without retrying or retaining the reply. */
+  sendMaintenancePass(): ActionHandle<HilosMaintenancePassReply>
   /**
    * Name one more person to the verifier circle, as a tracked action. The address
    * travels as the operator typed it: which identity proves it, and the form it is
@@ -596,6 +629,15 @@ export function createHilosMaintenanceActions(
     },
     sendMaintenanceDisable() {
       return context.actions.dispatch(MAINTENANCE_DISABLE_ACTION, {})
+    },
+    sendMaintenancePass() {
+      return context.actions.dispatch(
+        MAINTENANCE_PASS_ACTION,
+        {},
+        {
+          replySchema: maintenancePassReplySchema,
+        },
+      )
     },
     sendMaintenanceCircleAdd(identifier) {
       return context.actions.dispatch(MAINTENANCE_CIRCLE_ADD_ACTION, {

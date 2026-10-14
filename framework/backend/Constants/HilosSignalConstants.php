@@ -1130,6 +1130,15 @@ final class HilosSignalConstants
     /** Index agent → Maintenance page: confirmed exit, refusal or unconfirmed outcome (HIL-1363). */
     public const string MAINTENANCE_DISABLE_DONE = 'maintenance_disable_done';
 
+    /** Tracked browser action: mint one manual-maintenance code. */
+    public const string MAINTENANCE_PASS = 'maintenance_pass';
+
+    /** Maintenance page → index agent: server-resolved browser identity and correlation. */
+    public const string MAINTENANCE_AGENT_PASS = 'maintenance_agent_pass';
+
+    /** Index agent → Maintenance page: an addressed outcome, with a clear code only on success. */
+    public const string MAINTENANCE_PASS_DONE = 'maintenance_pass_done';
+
     // ── Hilos backup admin: restore progress (server → the connection that asked) ──
     /**
      * BackupAgent → restore initiator: one snapshot of the restore runtime row.

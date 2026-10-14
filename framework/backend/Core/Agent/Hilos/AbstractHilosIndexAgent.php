@@ -16,6 +16,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\ProtectedModeOperatorTrait;
 use Hilos\Core\Agent\ProtectedModeTestDriverTrait;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
@@ -31,6 +32,8 @@ use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Users\AccountStandingAudience;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceEnableSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -66,6 +69,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => ManualMaintenanceEnableSignalData::class,
         HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => ManualMaintenanceDisableSignalData::class,
+        HilosSignalConstants::MAINTENANCE_AGENT_PASS => ManualMaintenancePassSignalData::class,
     ];
 
     /**
@@ -161,6 +165,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      * @throws AgentUnknownSignalException When the parent refuses an unknown signal
      * @throws HilosException When the parent handler fails
      * @throws InvalidArgumentException When the answer cannot be named or queued
+     * @throws InvalidFormatException When a code outcome lacks its code or correlation
      * @throws LogicException When the parent rejects a runtime row
      * @throws RandomException When the parent cannot draw from the random source
      */
@@ -174,6 +179,11 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 
             case HilosSignalConstants::MAINTENANCE_AGENT_DISABLE:
                 $this->handleManualMaintenanceDisable($data->data);
+
+                break;
+
+            case HilosSignalConstants::MAINTENANCE_AGENT_PASS:
+                $this->handleManualMaintenancePass($data->data);
 
                 break;
 
@@ -506,6 +516,66 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
             };
 
             $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+        });
+    }
+
+    /**
+     * Rechecks the current browser identity before minting through the existing owner wait.
+     * Null runtime state means this process cannot admit a code request.
+     *
+     * @param ManualMaintenancePassSignalData $ask Server-resolved identity and tracked reply address
+     * @throws InvalidArgumentException When an immediate outcome cannot be sent
+     * @throws InvalidFormatException When an outcome lacks its code or correlation
+     */
+    private function handleManualMaintenancePass(ManualMaintenancePassSignalData $ask): void
+    {
+        try {
+            PageAccessGate::assertAction(AbstractHilosMaintenancePage::class, $ask->acceptKey, HilosSignalConstants::MAINTENANCE_PASS);
+            $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($ask->acceptKey)?->sessionToken;
+            if (
+                $sessionToken === null || $sessionToken === ''
+                || !hash_equals($ask->sessionHash, StateProtectedModeRuntime::hashSessionToken($sessionToken))
+            ) {
+                throw new TableActionException('The browser session changed before the code could be issued');
+            }
+
+            if (Hilos::$rt?->hilosProtectedModeRuntime === null) {
+                throw new TableActionException('Protected-mode state is unavailable');
+            }
+
+            if (Hilos::$rt->hilosProtectedModeRuntime->locksOut($ask->acceptKey, $ask->sessionHash)) {
+                throw new TableActionException('This browser session is not admitted to maintenance');
+            }
+        } catch (WiringRefusal $e) {
+            // The waiting gatekeeper receives the wiring failure as an answer, never an admission verdict.
+            $this->sendToAgent($ask->replySignal, new ManualMaintenancePassDoneSignalData(
+                HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($e)), null,
+            ));
+
+            return;
+        } catch (Throwable $e) {
+            $this->sendToAgent($ask->replySignal, new ManualMaintenancePassDoneSignalData(
+                HandoverAnswerSignalData::to($ask, ActionRefusal::fromThrowable($e)), null,
+            ));
+
+            return;
+        }
+
+        $this->mintManualMaintenancePass(function (ManualMaintenanceOutcome $outcome) use ($ask): void {
+            $refusal = match ($outcome->status) {
+                ManualMaintenanceOutcome::SUCCEEDED => null,
+                ManualMaintenanceOutcome::REFUSED => ActionRefusal::said($outcome->reason),
+                ManualMaintenanceOutcome::UNCONFIRMED => ActionRefusal::said(
+                    'The result of issuing a code is unconfirmed. A code may have been issued, but it cannot be recovered.'
+                    . ' Issue a new code if needed; turn maintenance off and on to invalidate all issued codes.'
+                    . ' ' . $outcome->reason,
+                ),
+            };
+
+            $this->sendToAgent($ask->replySignal, new ManualMaintenancePassDoneSignalData(
+                HandoverAnswerSignalData::to($ask, $refusal),
+                $outcome->status === ManualMaintenanceOutcome::SUCCEEDED ? $outcome->pass : null,
+            ));
         });
     }
 
