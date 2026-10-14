@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Entity\Item;
 
 use Demo\Chat\Database\Entity\Collection\Bots as EntityBots;
@@ -35,6 +37,7 @@ final class Bot extends Entity
     // Table meta information
     public const string _table = 'bot';
     public const string _primary = self::id;
+    public const bool _journaled = true;
     public const array _columns = [
         self::id,
         self::name,

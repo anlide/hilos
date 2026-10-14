@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Entity\Item;
 
 use Demo\Chat\Database\Entity\Collection\ModeratorPromptPieces as EntityModeratorPromptPieces;
@@ -25,6 +27,7 @@ final class ModeratorPromptPiece extends Entity
     // Table meta information
     public const string _table = 'moderator_prompt_piece';
     public const string _primary = self::id;
+    public const bool _journaled = true;
     public const array _columns = [
         self::id,
         self::section,

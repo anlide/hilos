@@ -136,6 +136,14 @@ use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * Guards the project-level online-testing topology registry.
@@ -145,6 +153,28 @@ use PHPUnit\Framework\TestCase;
  */
 final class OnlineTestingTopologyRegistryTest extends TestCase
 {
+    /** All three journal pages use the cluster reader and the framework tables. */
+    public function testChangeLogSectionIsFullyActivated(): void
+    {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
+        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        self::assertSame([
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ], Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]);
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
+        self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogFeed]);
+        self::assertSame([OnlineTestingTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogTables]);
+        self::assertSame([OnlineTestingTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
+        self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[OnlineTestingTableContext::hilosChangeLogHistory]);
+        self::assertSame([OnlineTestingTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+    }
+
     /** The archive address is answered by the export owner. */
     public function testDataExportHttpRoute(): void
     {
@@ -166,6 +196,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testPageRegistryIncludesTheAdminSections(): void
     {
         $this->assertSame([
+            ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+            ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+            ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MainPage::PAGE => MainPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -258,6 +291,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testAgentRegistryIncludesTheAdminSectionsAndTheClusterProbes(): void
     {
         $this->assertSame([
+            AgentType::HILOS_CHANGE_LOG,
             AgentType::ONLINE_TESTING,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
@@ -577,6 +611,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         // stopped being routed here would otherwise look like a working surface until somebody
         // submitted the form it belongs to.
         $this->assertSame([
+            HilosFeature::CHANGE_LOG,
             HilosFeature::ANALYTICS,
                 HilosFeature::SETTINGS,
             HilosFeature::I18N,
@@ -705,6 +740,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testSettingsAndUsersAdminFeaturesAreActivated(): void
     {
         $this->assertSame([
+            OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+            OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+            OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             OnlineTestingTableContext::settings => HilosSettingsTable::class,
             OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
             OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -733,6 +771,9 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             Hilos::BROWSER_TABLES,
         );
         $this->assertSame([
+            ChangeLogDashboardPage::PAGE,
+            ChangeLogTablesPage::PAGE,
+            ChangeLogTablePage::PAGE,
             SettingsPage::PAGE,
             MaintenancePage::PAGE,
             LogsKeysPage::PAGE,

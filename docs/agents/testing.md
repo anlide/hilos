@@ -345,28 +345,30 @@ firing ([frontend/testing-strategy.md](frontend/testing-strategy.md)).
 ## The cluster stands — three demos, three shapes
 
 The framework's multi-node behavior is proved on the cluster stands of three
-empty demos, each with its own shape of Hilos cluster and its own MySQL
-topology. All of it runs in docker on one machine: a multi-machine stand does
+empty demos, each with its own shape of Hilos cluster. All three use one ordinary
+MariaDB 11.4 server per stand, holding the primary database and its derived
+`<primary>-change-log` journal (the owner's decision, 2026-10-14, HIL-1453).
+All of it runs in docker on one machine: a multi-machine stand does
 not exist, and HIL-348 closed without one. The one stand that carried every
 scenario on a single shape is retired (HIL-1218).
 
-| Demo | View | Hilos cluster | MySQL | Scenarios |
+| Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere |
-| ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | a primary and an asynchronous read-only replica; the nodes know only the primary's address, and nothing reads the replica | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 31 the replica keeps up with the primary |
-| online-testing | Angular | three equal masters that host work themselves | a MariaDB Galera of three members behind one HAProxy address, every member written to, reads waiting for the cluster's writes | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 26 the database is one cluster of every member, the application connected to each, 27 a database member dies under load and every node writes on through the others, 28 a member that comes back catches up and is handed connections again |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere |
+| ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node |
+| online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere |
 
-Why the scenarios fall this way (the owner's word, 2026-09-27): quorum, a
-network partition and TLS are proved on the simplest database, so that two
-sources of nondeterminism never share one run; placement and failover are
-proved where the leader is stable; everything about a shared database is
-proved where the database is a real cluster.
+The Hilos shapes keep their original purpose: quorum, network partitions and
+TLS on binance-btc-tracker; placement and failover with a stable leader on
+ecommerce-shop; shared database facts and simultaneous schema rollout on
+online-testing. The former primary/replica and Galera database topologies were
+replaced by one MariaDB per existing stand by the owner's decision above.
+Specialized database topologies and six new demos are deferred in P-567 until
+2026-10-24. Scenarios **26/27/28/31 have no current carrier**: their implementations,
+registry entries and shape guards stay in the harness for future stands. They
+are not run or counted as passed by any current matrix.
 
-The move goes **cluster → e2e → MySQL**. The scenarios move first, every
-stand still on one database server — a scenario never changes its database in
-the same step as its stand; the e2e specs move next; the MySQL topologies and
-the browser on a multi-node stand come last. The one-time schema rollout went
-ahead of all of them (HIL-1228): it is needed on one server too. Nodes that
+The one-time schema rollout is needed on one server too (HIL-1228). Nodes that
 start together also read one marker of their database — the first write is
 decided by the insert, like the rollout claim — and a node naming another
 marker is refused by every other (HIL-1206).
@@ -405,24 +407,38 @@ scenarios`. A scenario the stand names but cannot carry by its shape — too few
 masters or slaves, no stranger, no cluster directory — is refused before the
 stand is raised, and so is a stand that leaves out what the harness reads.
 
-A stand whose database has more than one server labels every member
-`hilos.database.member: "true"` and exactly one of them `hilos.role: database` —
-the one `db-sql` and the step's artifact collector reach. The nodes use one
-address: online-testing's proxy over all members, or ecommerce-shop's primary
-itself, never a replica. The replica is declared by `MARIADB_MASTER_HOST` and
-has no `MYSQL_DATABASE`, `MYSQL_USER` or `MYSQL_PASSWORD` of its own: the primary
-replicates the schema and users, and creating them locally stops its SQL thread
-at the first `CREATE USER` (error 1396). The harness signs in with the database
-service's credentials. Scenario 26 asks every member of a multi-primary;
-scenario 31 asks every replica.
-The proxy service is labelled `hilos.database.proxy: "true"`; scenario 28 reads
-its server states, and a member that is not Synced takes no new connection.
+The harness retains multi-server database capabilities for P-567. Such a stand
+labels every member `hilos.database.member: "true"` and exactly one
+`hilos.role: database` — the one `db-sql` and the artifact collector reach.
+The nodes use one address leading to the writable database. A replica is
+declared by `MARIADB_MASTER_HOST` and has no `MYSQL_DATABASE`, `MYSQL_USER` or
+`MYSQL_PASSWORD` of its own: its schema and users arrive from the primary.
+The harness uses the database service's application credentials. Scenario 26
+asks every member of a multi-primary; scenario 31 asks every replica. A proxy
+is labeled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
+None of the three current stands declares a database member or proxy label;
+each labels its single MariaDB `hilos.role: database`.
 
 Every server of a fleet's database, whether one server or a member of a cluster,
 keeps its data in a host directory under `/dev/shm` and mounts
 `framework/docker/mysql/test-stand.cnf`. A new fleet database server does the
 same. The harness wipes these directories on `down --volumes`; a member killed
-and started again keeps its data.
+and started again keeps its data. Each current stand mounts its existing
+`mysql/init-change-log.sh` at `/docker-entrypoint-initdb.d/init-change-log.sh`
+and `mysql/provision-change-log.sh` at `/usr/local/bin/provision-change-log.sh`.
+Fresh initialization creates and grants the derived journal before Hilos
+starts; an existing ordinary MariaDB directory is provisioned with the root
+script before the new Hilos code starts, without DROP or reset. Repeating that
+script and restarting on the same directory preserve primary and journal data.
+
+Before changing an older compose, stop it through its old file without
+`--volumes`, so removed replica/proxy/member containers do not become orphans.
+Online-testing uses the new `/dev/shm/hilos-online-testing-cluster-mysql-data`;
+its old `hilos-online-testing-cluster-galera{1,2,3}-data` directories remain
+untouched and must not be mounted as ordinary MariaDB data. No automatic
+transfer from Galera is provided. Ecommerce's former replica data stays too.
+Local/test volumes are outside this transition. The per-demo README gives the
+exact provisioning commands.
 
 A demo's cluster stand is `docker/docker-compose.cluster.yml` beside its other
 stacks, and a compose project of its own: the demo's e2e steps take their whole

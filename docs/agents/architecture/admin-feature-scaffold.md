@@ -581,6 +581,53 @@ activating this backend section.
 For its data and privacy boundaries, read
 [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
+### change_log — the Change Log section
+
+1. Declare `HilosFeature::CHANGE_LOG` in `FEATURES`. It mounts no runtime row
+   and does not depend on Backup.
+2. Copy the current `create_hilos_change_log.sql` stub and its down file into
+   the project's primary migration track. The stub targets the derived schema;
+   never start a second migrator on connection 1.
+3. Provision `<primary>-change-log` on the same server and grant the application
+   access. Configure/connect index 1 through `ChangeLogDatabase` after the
+   primary connection and schema, before `if ($initHilos)`, keeping primary
+   active. Mount `init-change-log.sh` at
+   `/docker-entrypoint-initdb.d/init-change-log.sh` and `provision-change-log.sh`
+   at `/usr/local/bin/provision-change-log.sh` on each MariaDB service: local,
+   test and cluster. The init script calls the same repeatable root script
+   used to provision an existing ordinary MariaDB directory before Hilos starts;
+   it creates/grants the journal without clearing either database. All existing
+   cluster stands use one ordinary MariaDB server each. Their transition and
+   the separate new directory for online-testing are in
+   [change-log.md](change-log.md#where-the-journal-lives) and the demo READMEs.
+   The shared `test:db:reset` recreates the pair when the feature is declared.
+4. In the Docker application's `postMigration` hook, call
+   `ChangeLogPartitions::ensureUnderClaim()` under the existing rollout claim.
+   Startup initializes Hilos, validates the complete trigger-file set and runs
+   the framework installer before releasing that claim.
+5. Declare the Entity journal policies, apply test migrations and run
+   `db:change-log:generate`. Commit generated trigger files; unchanged bodies
+   keep their older valid-from headers. Generate the complete set before
+   starting a daemon.
+6. Register a thin `AbstractHilosChangeLogAgent` subclass and a monopolistic
+   daemon under `HilosAgentType::HILOS_CHANGE_LOG`. Register thin subclasses of
+   `AbstractHilosChangeLogDashboardPage`, `AbstractHilosChangeLogTablesPage` and
+   `AbstractHilosChangeLogTablePage`. Bind the framework feed, tables and history
+   tables respectively in `TABLES`, the project `TableContext` and `PAGE_TABLES`.
+   Pages and tables use the framework `ChangeLogSectionReader`.
+7. In a Vue project, mount `HilosChangeLogPage` from `@hilos/vue` through a thin
+   wrapper carrying the project's connection and scopes. The tracked-tables and
+   table-detail Vue mounts follow their own leaves (HIL-1461/HIL-1462).
+
+The schema, receipt, trigger and restore contracts live in
+[change-log.md](change-log.md). All six demos activate the backend section.
+Chat journals the four framework tables plus `bot` and `moderator_prompt_piece`;
+binance-btc-tracker, ecommerce-shop, tasks, online-testing and polls each journal
+only the four framework tables. Chat and binance-btc-tracker mount the ready Vue
+dashboard. The remaining view mounts keep the leaf boundaries above. Where
+Backup is already active, name `ChangeLogTablesWithoutEntity` under connection
+1 in its catalog; activating the journal does not activate Backup.
+
 ### a future framework feature (roles, …)
 
 A new framework admin feature ships the same shape: a base page (subscribe +

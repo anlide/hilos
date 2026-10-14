@@ -66,16 +66,10 @@ final class Database extends BaseDatabase
 
         // Connect to primary database
         self::connect(DatabaseConnectionDefaults::PRIMARY_INDEX, retryOnConnectionError: $retryConnection);
+        self::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
         // Initialize database schema structure
         Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);
-
-        // Initialize Hilos facade with storage (for read-only data access).
-        // Hilos depends on Database, so initialize it here.
-        // Can be skipped for commands that need to work with broken database context files.
-        if ($initHilos) {
-            Hilos::init();
-        }
 
         self::configure(
             index: ChangeLogDatabase::CONNECTION_INDEX,
@@ -87,5 +81,10 @@ final class Database extends BaseDatabase
             charset: DatabaseConnectionDefaults::CHARSET,
         );
         self::connect(ChangeLogDatabase::CONNECTION_INDEX, retryOnConnectionError: $retryConnection);
+
+        // The journal connection must be configured before Hilos validates coverage.
+        if ($initHilos) {
+            Hilos::init();
+        }
     }
 }

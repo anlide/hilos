@@ -122,7 +122,9 @@ final class ChangeLogDashboardPageIntegrationTest extends IntegrationTestCase
             $viewerSession->token, (int)$viewerSession->id);
 
         $before = $this->overview('change-log-admin');
-        self::assertSame(['hilos_identity', 'hilos_second_factor', 'hilos_setting', 'hilos_user'], $before['journaledTables']);
+        self::assertSame([
+            'bot', 'hilos_identity', 'hilos_second_factor', 'hilos_setting', 'hilos_user', 'moderator_prompt_piece',
+        ], $before['journaledTables']);
         self::assertGreaterThanOrEqual(count($before['journaledTables']), $before['liveTables']);
         self::assertIsInt($before['journalEntries']);
         self::assertIsInt($before['journalBytes']);

@@ -7,6 +7,7 @@ namespace Hilos\Core\Feature;
 use Hilos\Core\Feature\Definition\AnalyticsFeature;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
+use Hilos\Core\Feature\Definition\ChangeLogFeature;
 use Hilos\Core\Feature\Definition\CodeChannelsFeature;
 use Hilos\Core\Feature\Definition\BackupFeature;
 use Hilos\Core\Feature\Definition\DaemonFeature;
@@ -108,6 +109,7 @@ class FeatureRegistry
             new ImagesFeature(),
             new ProfilePhotoFeature(),
             new AnalyticsFeature(),
+            new ChangeLogFeature(),
         ];
     }
 }

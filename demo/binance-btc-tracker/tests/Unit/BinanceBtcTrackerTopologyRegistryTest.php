@@ -7,7 +7,9 @@ namespace Demo\BinanceBtcTracker\Tests\Unit;
 use Demo\BinanceBtcTracker\Pages\Hilos\Analytics\BrowserSessionPage;
 
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\BinanceBtcTracker\Pages\Hilos\AnalyticsPage;
 use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
@@ -47,6 +49,9 @@ use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
@@ -117,6 +122,9 @@ use Hilos\Sms\Delivery\SmsDeliveryChannelAgentDaemon;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
@@ -173,6 +181,28 @@ use PHPUnit\Framework\TestCase;
  */
 final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
 {
+    /** All three journal pages use the cluster reader and the framework tables. */
+    public function testChangeLogSectionIsFullyActivated(): void
+    {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
+        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        self::assertSame([
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ], Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]);
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
+        self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogFeed]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogTables]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
+        self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[BinanceBtcTrackerTableContext::hilosChangeLogHistory]);
+        self::assertSame([BinanceBtcTrackerTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+    }
+
     /** The archive address is answered by the export owner. */
     public function testDataExportHttpRoute(): void
     {
@@ -199,6 +229,9 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionPage::PAGE => BrowserSessionPage::class,
             BackupPage::PAGE => BackupPage::class,
+            ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+            ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+            ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
             AppearancePage::PAGE => AppearancePage::class,
@@ -304,6 +337,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             AgentType::BINANCE_BTC_TRACKER,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
+            AgentType::HILOS_CHANGE_LOG,
             HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosAgentType::HILOS_ANALYTICS_WRITER,
             AgentType::HILOS_DAEMON,
@@ -1006,6 +1040,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 HilosFeature::AUTH,
                 HilosFeature::AUTH_THROTTLE,
                 HilosFeature::BACKUP,
+                HilosFeature::CHANGE_LOG,
                 HilosFeature::SETTINGS,
             HilosFeature::I18N,
                 HilosFeature::HILOS_USERS,

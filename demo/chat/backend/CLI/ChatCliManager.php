@@ -9,14 +9,13 @@ use Hilos\Core\CLI\CliManager;
 /**
  * Chat CLI manager - the place a project adds commands of its own, kept empty on purpose.
  *
- * Chat replaces only the test database reset so its paired journal database is
- * recreated alongside the primary database. The other commands remain the
- * framework's; this override demonstrates the project command seam.
+ * All current commands belong to the framework, including the feature-aware
+ * paired test database reset. This override demonstrates the project seam.
  */
 final class ChatCliManager extends CliManager
 {
+    /** No project commands are registered; the framework supplies the complete registry. */
     protected function registerProjectCommands(): void
     {
-        $this->addCommand(new ChatChangeLogDbTestResetCommand());
     }
 }

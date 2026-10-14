@@ -8,6 +8,7 @@ use Demo\BinanceBtcTracker\Hilos;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\Database as BaseDatabase;
+use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
@@ -26,9 +27,8 @@ use Hilos\HilosException;
 final class Database extends BaseDatabase
 {
     /**
-     * Initialize database connections from environment variables.
-     *
-     * Configures database connection index 0 (primary) from .env file.
+     * Connects the primary database and its derived journal on the same server.
+     * The primary schema alone is initialized; primary stays active for Hilos initialization.
      *
      * Environment variables used:
      * - DB_HOST: Database host (default: DatabaseConnectionDefaults::HOST)
@@ -64,13 +64,23 @@ final class Database extends BaseDatabase
 
         // Connect to primary database
         self::connect(DatabaseConnectionDefaults::PRIMARY_INDEX, retryOnConnectionError: $retryConnection);
+        self::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
         // Initialize database schema structure
         Schema::initialize(DatabaseConnectionDefaults::PRIMARY_INDEX);
 
-        // Initialize Hilos facade with storage (for read-only data access).
-        // Hilos depends on Database, so initialize it here.
-        // Can be skipped for commands that need to work with broken database context files.
+        self::configure(
+            index: ChangeLogDatabase::CONNECTION_INDEX,
+            host: Hilos::$env[EnvConstants::DB_HOST]->string(),
+            user: Hilos::$env[EnvConstants::DB_USERNAME]->string(),
+            password: Hilos::$env[EnvConstants::DB_PASSWORD]->string(),
+            database: ChangeLogDatabase::configuredName(),
+            port: Hilos::$env[EnvConstants::DB_PORT]->int(),
+            charset: DatabaseConnectionDefaults::CHARSET,
+        );
+        self::connect(ChangeLogDatabase::CONNECTION_INDEX, retryOnConnectionError: $retryConnection);
+
+        // The journal connection must be configured before Hilos validates coverage.
         if ($initHilos) {
             Hilos::init();
         }

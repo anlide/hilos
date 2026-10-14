@@ -340,6 +340,7 @@ final class Hilos extends HilosFacade
         HilosFeature::IMAGES,
         HilosFeature::PROFILE_PHOTO,
         HilosFeature::ANALYTICS,
+        HilosFeature::CHANGE_LOG,
     ];
 
     public const ?string PROFILE_PHOTO_CHECKER = AgentType::MODERATOR;

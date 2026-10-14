@@ -34,6 +34,8 @@ services:
     tmpfs:
       - /var/lib/mysql
     volumes:
+      - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/10-change-log.sh:ro
+      - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
       - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
     command: >
       --character-set-server=utf8mb4

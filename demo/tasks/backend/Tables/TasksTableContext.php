@@ -42,6 +42,9 @@ use Hilos\Tables\Security\HilosSecurityTwoFactorTable;
 use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * TasksTableContext - App-specific table context ($table layer) for tasks.
@@ -50,6 +53,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * Hilos users table activation; accessed via Hilos::$table->settings /
  * Hilos::$table->hilosUsers.
  *
+ * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
+ * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
+ * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosLogKeysTable $hilosLogKeys
  * @property-read HilosLogRotationsTable $hilosLogRotations
@@ -88,6 +94,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  */
 final class TasksTableContext extends TableContext
 {
+    public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
+    public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
+    public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosLogKeys = HilosLogKeysTable::TABLE;
     public const string hilosLogRotations = HilosLogRotationsTable::TABLE;

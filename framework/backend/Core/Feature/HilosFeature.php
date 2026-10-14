@@ -79,4 +79,7 @@ enum HilosFeature: string
 
     /** Analytics through node journals: the collector in every process, the journal agent of each node and the cluster writer (HIL-1154). */
     case ANALYTICS = 'analytics';
+
+    /** Database change log: the derived journal, cluster reader and three admin pages. */
+    case CHANGE_LOG = 'change_log';
 }

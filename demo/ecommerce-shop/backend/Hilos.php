@@ -8,6 +8,7 @@ use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\EcommerceShop\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
@@ -18,6 +19,7 @@ use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
@@ -30,6 +32,9 @@ use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
@@ -96,6 +101,9 @@ use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
@@ -143,6 +151,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
+        HilosFeature::CHANGE_LOG,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
@@ -159,6 +168,9 @@ final class Hilos extends HilosFacade
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BackupPage::PAGE => BackupPage::class,
+        ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+        ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
         I18nPage::PAGE => I18nPage::class,
@@ -193,6 +205,10 @@ final class Hilos extends HilosFacade
         DemoHilosAnalyticsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        DemoHilosChangeLogAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
         ],
         AnalyticsJournalAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AnalyticsJournalAgent::class,
@@ -282,6 +298,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        EcommerceShopTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+        EcommerceShopTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        EcommerceShopTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         EcommerceShopTableContext::hilosBackups => HilosBackupHistoryTable::class,
         EcommerceShopTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         EcommerceShopTableContext::settings => HilosSettingsTable::class,
@@ -323,6 +342,15 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ChangeLogDashboardPage::PAGE => [
+            EcommerceShopTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablesPage::PAGE => [
+            EcommerceShopTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogTablePage::PAGE => [
+            EcommerceShopTableContext::hilosChangeLogHistory => [],
+        ],
         BackupPage::PAGE => [
             EcommerceShopTableContext::hilosBackups => [],
         ],

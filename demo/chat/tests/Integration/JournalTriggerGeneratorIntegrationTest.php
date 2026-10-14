@@ -44,7 +44,7 @@ final class JournalTriggerGeneratorIntegrationTest extends IntegrationTestCase
             Database::sqlRun('DELETE FROM `hilos_identity` WHERE `identifier` = ?', ['journal-fixture@example.test']);
             Database::sqlRun('DELETE FROM `hilos_setting` WHERE `key` = ?', ['journal.fixture']);
             $files = JournalTriggerGenerator::plan();
-            $this->assertCount(12, $files);
+            $this->assertCount(18, $files);
             $this->assertSame([], JournalTriggerFiles::write($files));
             $storedFiles = JournalTriggerFiles::readAll($files, Migration::getCurrentIndex());
             foreach ($files as $index => $file) {

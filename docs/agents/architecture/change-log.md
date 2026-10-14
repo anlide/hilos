@@ -66,11 +66,21 @@ its anonymization strategy: `NULLIFY` can describe data that is not a secret,
 and `hilos_second_factor` is purged whole. Its key still identifies a row, while
 every non-key, non-secret, non-noisy column is journaled only as a fact.
 
-In a demo, journal what a person changes by a decision, not the stream: chat bots
-are journaled, messages are not; polls are journaled, votes are not; quotes in
-binance-btc-tracker are not (not in the code yet — HIL-1453).
-The exact table list per demo and the feature's activation shape belong to
-HIL-1453. The column mode for a custom trigger belongs to phase 2, HIL-1413.
+In a demo, journal what a person changes by a decision, not the stream.
+All six demos declare `HilosFeature::CHANGE_LOG`. Chat journals exactly six
+tables: the four framework tables above, `bot` and `moderator_prompt_piece`.
+Binance-btc-tracker, ecommerce-shop, tasks, online-testing and polls each journal
+exactly the four framework tables; this activation adds no subject tables.
+Messages, events, attachments, guests and rename histories stay outside the
+journal. Quotes and votes are streams, not decisions.
+The column mode for a custom trigger belongs to phase 2, HIL-1413.
+
+`HilosFeature::CHANGE_LOG` requires the three Change Log pages, their feed,
+tables and history bindings, the `hilos_change_log` reader agent and the
+`db:change-log:generate` CLI command. It mounts no runtime state and depends
+on no Backup feature. Its derived schema follows the primary migration track;
+the six journal tables are checked against the real second database, rather
+than listed as primary-table migration requirements.
 
 ## What A Trigger Writes
 
@@ -85,8 +95,9 @@ HIL-1453. The column mode for a custom trigger belongs to phase 2, HIL-1413.
   know lengths: numbers, short strings and dates fit in the journal row; long
   text and JSON go into a neighboring journal table.
 - A bridge insert or delete is a create or delete in the bridge table's own
-  history. Showing the link in the history of both ends begins with the first
-  journaled bridge table (not in the code yet — HIL-1453).
+  history. Showing a link in the history of both ends is deferred until the
+  first leaf that introduces a real journaled bridge table (owner, 2026-10-13;
+  HIL-1453 interview). That leaf implements it; HIL-1453 introduces no such table.
 - A write without a receipt is allowed and produces a journal row with a NULL
   receipt number. The section reader returns one feed row per changed record
   and includes it in the table history. The feed's core view model labels its
@@ -260,8 +271,9 @@ The journal has no foreign keys onto data rows: otherwise deleting a row would
 either be refused or erase its history. The four append-only tables have monthly
 partitions over `created_at` in UTC, with `p_future` catching writes after the
 prepared window. The project migration creates `p_future`; before `Hilos::init`,
-chat's Docker bootstrap extends the current month and the following 24 under the
-primary database's `hilos_migration_claim`. It runs no DDL when the window is
+a journal-enabled project's Docker bootstrap extends the current month and the
+following 24 under the primary database's `hilos_migration_claim`, through its
+`postMigration` hook. It runs no DDL when the window is
 already complete. A node that runs past it keeps writing to `p_future`; its next
 bootstrap reorganizes that partition and moves those rows into their months.
 
@@ -282,14 +294,44 @@ and nullable hash. Field rows distinguish inline, fact-only and long values;
 their presence flags distinguish an absent side from SQL NULL. The new verdict
 for every column is `ChangeLogTablesWithoutEntity` on connection 1.
 
-A fresh chat local or test volume runs `init-change-log.sh` and grants the app
-access to exactly the derived database. An existing local volume needs the
-repeatable root bootstrap before the new code starts:
+A project carrying `CHANGE_LOG` provisions the derived database and grants the
+app access to it before starting. Its `Database::initialize()` configures and
+connects index 1 through `ChangeLogDatabase` after the primary connection and
+schema, before the `if ($initHilos)` branch. Only the primary schema is
+initialized, and the primary connection stays active. This ordering also covers
+a direct CLI or worker entry, so Hilos sees the journal configuration when it
+checks column coverage.
+
+Every demo's fresh local volume, test tmpfs or cluster data directory runs
+`init-change-log.sh` and grants the app access to exactly the derived database.
+All existing cluster stands use one ordinary MariaDB 11.4 server each, holding
+both primary and journal. Before updating an existing ordinary MariaDB data
+directory, run its repeatable root provisioning script. Provisioning
+creates a missing database and grants access without clearing existing data.
+It uses the same `MYSQL_DATABASE`, `MYSQL_USER` and `MYSQL_ROOT_PASSWORD`; no
+journal-specific environment keys are needed. From the repository root, chat is:
 
 ```bash
 docker compose -f demo/chat/docker/docker-compose.local.yml exec mysql-local \
   /usr/local/bin/provision-change-log.sh
 ```
+
+For each other demo, use `demo/<demo>/docker/docker-compose.local.yml` and its
+actual service key, `<demo>-mysql-local`: `binance-btc-tracker-mysql-local`,
+`ecommerce-shop-mysql-local`, `tasks-mysql-local`, `online-testing-mysql-local`
+or `polls-mysql-local`. Local volumes stay in place; the test database remains
+tmpfs. Dev compose with an external database adds no MariaDB service.
+
+The three cluster compose files mount the same pair of scripts at
+`/docker-entrypoint-initdb.d/init-change-log.sh` and
+`/usr/local/bin/provision-change-log.sh`. Use the cluster compose file and
+`<demo>-cluster-mysql` service for binance-btc-tracker, ecommerce-shop and
+online-testing. Repeating provisioning and restarting on the same ordinary
+MariaDB directory preserve both databases. Stop an older cluster compose
+without `--volumes` before replacing it, so removed replica/proxy/member
+containers do not remain. Online-testing starts on a new disposable directory;
+its old Galera directories stay untouched, with no automatic transfer or reuse
+as ordinary MariaDB data. Exact paths and commands are in the demo READMEs.
 
 An external MariaDB operator does the same two statements, with the actual
 main name, app user and host. Escape `_` and `%` in the database part of the
@@ -301,13 +343,29 @@ CREATE DATABASE IF NOT EXISTS `<main>-change-log`
 GRANT ALL PRIVILEGES ON `<escaped-main>-change-log`.* TO '<app-user>'@'<app-host>';
 ```
 
-Without the schema or its grant, chat's connection 1 refuses startup and names
-the needed database. Migration 085 in chat's primary track creates the six
-tables in that schema and drops the April tables from the primary database only
-when all four are empty; down checks every new table before restoring the April
-form. Applied migration 016 stays unchanged. `test:db:reset` recreates the pair
-and prepares partitions. Phase 1 retains rows forever; archiving and retention
-belong to HIL-1413.
+Without the schema or its grant, connection 1 refuses startup and names the
+needed database. The primary migrations copy the current framework journal stub:
+039 in binance-btc-tracker, 038 in ecommerce-shop, 051 in tasks, 038 in
+online-testing and 051 in polls. Each creates the same six tables, including
+`open_handovers`, and its down file refuses any nonempty journal table. There
+is no second migration journal or bookkeeping table on connection 1.
+
+Migration 085 in chat's primary track creates the six tables in that schema
+and drops the April tables from the primary database only when all four are
+empty; down checks every new table before restoring the April form. Applied
+migration 016 stays unchanged.
+
+The framework's `test:db:reset` checks the TestOnly guard before any DDL. For a
+facade declaring `CHANGE_LOG`, it validates the derived name, recreates both
+databases on its existing server-level connection before applying primary
+migrations, applies seeds, then configures and connects the journal and prepares
+partitions through `ChangeLogPartitions::ensure()`. An empty primary env name
+uses the command's existing test default before deriving the journal name.
+The command finishes with the primary connection active. A facade without the
+feature resets only the primary database and leaves every secondary database
+untouched; no project reset subclass is needed. Database DROP/CREATE stays in
+this existing offline command, outside the Entity/DbCollection row API.
+Phase 1 retains rows forever; archiving and retention belong to HIL-1413.
 
 The backup creator dumps both configured connections. It records the primary
 migration level for the derived journal connection as well: asking the migrator
@@ -413,12 +471,17 @@ schema, missing journal tables and unsupported column types. It writes changed
 files atomically and leaves unchanged files, including their older valid-from
 headers, alone. It does not install SQL in the database.
 
-For a project with the journal connection configured, `DockerApplication` runs
-this sequence before starting a daemon, worker or socket:
+All six demos configure the journal connection and use `DockerApplication`'s
+same startup sequence before starting a daemon, worker or socket. Chat commits
+18 generated triggers for its six journaled tables; every other demo commits
+12 for the four framework tables. Generation runs through the existing test
+CLI after migrations, and a repeat leaves matching files untouched.
+
+Startup then follows these steps:
 
 1. Connect the databases and take the primary `hilos_migration_claim`.
 2. Apply project migrations.
-3. Run `postMigration`; chat prepares journal partitions through
+3. Run the project's `postMigration` hook to prepare journal partitions through
    `ChangeLogPartitions::ensureUnderClaim()`, without taking the claim again.
 4. Initialize Hilos so the generator reads the project's mounted Entities.
 5. Validate the complete trigger-file set against `JournalTriggerGenerator::plan()`.
@@ -497,13 +560,19 @@ explicit operator action ([protected-mode.md](protected-mode.md)).
 
 ## On A Cluster
 
-Triggers are installed once under the schema rollout claim
+All three existing Hilos cluster stands use one ordinary MariaDB server with
+the primary and derived journal provisioned before nodes start (HIL-1453).
+Startup prepares journal partitions and installs triggers under the existing
+primary schema rollout claim. New cluster scenarios proving journal guarantees,
+including a receipt read identically through every node, belong to HIL-1465
 (not in the code yet — HIL-1465).
-On Galera journal rows are not duplicated (not in the code yet — HIL-1465).
-With a primary and a replica, triggers do not fire a second time on the replica
-(not in the code yet — HIL-1465).
-A receipt created through any node is read identically through any other
-(not in the code yet — HIL-1465).
+
+The existing stands no longer carry primary/replica or Galera topologies, by
+the owner's decision of 2026-10-14. Specialized database carriers and six new
+demos are P-567, deferred until 2026-10-24. The shared harness retains scenarios
+26/27/28/31 and their shape guards, but no current stand carries them. This leaf
+does not establish non-duplication on Galera or trigger behavior on a replica;
+those guarantees need their future carriers as well as journal scenarios.
 
 ## What Phase 1 Leaves Out
 

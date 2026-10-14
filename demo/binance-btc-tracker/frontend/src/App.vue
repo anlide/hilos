@@ -31,6 +31,7 @@ import Privacy from './views/Privacy/Privacy.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import Terms from './views/Terms/Terms.vue'
 import HilosBackup from './views/Hilos/Backup/Backup.vue'
+import HilosChangeLog from './views/Hilos/ChangeLog/ChangeLog.vue'
 import HilosCommunications from './views/Hilos/Communications/Communications.vue'
 import HilosCommunicationsChannel from './views/Hilos/Communications/Channel.vue'
 import HilosCommunicationsDeliveries from './views/Hilos/Communications/Deliveries.vue'
@@ -78,6 +79,7 @@ const pages: Record<string, Component> = {
   [PAGE_MAIN]: Main,
   ...hilosAdminViews(),
   [HilosPages.BACKUP]: HilosBackup,
+  [HilosPages.CHANGE_LOG]: HilosChangeLog,
   [HilosPages.MAINTENANCE]: HilosMaintenance,
   [HilosPages.SETTINGS]: HilosSettings,
   [HilosPages.APPEARANCE]: HilosAppearance,

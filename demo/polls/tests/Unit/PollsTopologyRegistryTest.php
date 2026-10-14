@@ -166,12 +166,42 @@ use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use Demo\Polls\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * Guards the project-level polls topology registry.
  */
 final class PollsTopologyRegistryTest extends TestCase
 {
+    /** All three journal pages use the cluster reader and the framework tables. */
+    public function testChangeLogSectionIsFullyActivated(): void
+    {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
+        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        self::assertSame([
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ], Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]);
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
+        self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogFeed]);
+        self::assertSame([PollsTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogTables]);
+        self::assertSame([PollsTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
+        self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[PollsTableContext::hilosChangeLogHistory]);
+        self::assertSame([PollsTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+    }
+
     /** Legal administration is bound to its own worker, page routes and tables. */
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
@@ -580,6 +610,7 @@ final class PollsTopologyRegistryTest extends TestCase
         // silently stopped being routed here would otherwise look like a working surface
         // until somebody submitted the form it belongs to.
         $this->assertSame([
+            HilosFeature::CHANGE_LOG,
             HilosFeature::ANALYTICS,
                 HilosFeature::SETTINGS,
             HilosFeature::I18N,
@@ -727,6 +758,9 @@ final class PollsTopologyRegistryTest extends TestCase
         // and hilos-users (the users list page + the user-detail page with its
         // rename action and a filtered detail browser table).
         $this->assertSame([
+            PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+            PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+            PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             PollsTableContext::settings => HilosSettingsTable::class,
             PollsTableContext::hilosUsers => HilosUsersTable::class,
             PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -770,6 +804,9 @@ final class PollsTopologyRegistryTest extends TestCase
 
         $this->assertSame(
             [
+                ChangeLogDashboardPage::PAGE,
+                ChangeLogTablesPage::PAGE,
+                ChangeLogTablePage::PAGE,
                 SettingsPage::PAGE,
                 MaintenancePage::PAGE,
                 LogsKeysPage::PAGE,

@@ -28,10 +28,16 @@ use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * OnlineTestingTableContext - table bindings for this demo's admin sections.
  *
+ * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
+ * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
+ * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosSettingsTable $settings
  * @property-read HilosUsersTable $hilosUsers
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
@@ -57,6 +63,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  */
 final class OnlineTestingTableContext extends TableContext
 {
+    public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
+    public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
+    public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;

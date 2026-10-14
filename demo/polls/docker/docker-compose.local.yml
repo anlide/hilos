@@ -36,6 +36,8 @@ services:
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - TZ=UTC
     volumes:
+      - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/10-change-log.sh:ro
+      - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
       - ../data/mysql:/var/lib/mysql
       - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: >

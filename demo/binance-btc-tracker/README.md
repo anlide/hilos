@@ -57,6 +57,51 @@ The design lives in `hilos-ops/mockups/demos/binance-btc-tracker`:
 - **Chart**: candles with an RSI panel, the zones, divergences and trade
   levels marked on it, and the RSI of all fifteen timeframes in one strip.
 
+## Change Log
+
+The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
+`hilos_second_factor` and `hilos_setting`. The journal is the primary database name
+plus `-change-log`, on the same MariaDB server with the same host, port, user,
+password and charset. No additional environment keys are needed. The primary
+migration track creates its six tables; connection 1 runs no separate migrator.
+Backup includes the pair and the journal's personal-data verdicts.
+
+Before updating an existing local volume, provision the derived database once
+(or repeat the same command safely). Run from this demo's directory:
+
+```bash
+docker compose -f docker/docker-compose.local.yml exec binance-btc-tracker-mysql-local \
+  /usr/local/bin/provision-change-log.sh
+```
+
+This only creates a missing database and grants access; it does not reset or
+remove existing data. Fresh local and test databases run the same provisioning
+from the MariaDB init directory. Local keeps its volume; test keeps its tmpfs.
+The framework's shared `test:db:reset`, invoked by
+`composer run test:db-reset`, recreates both test databases because the demo
+declares `CHANGE_LOG`. To regenerate triggers
+on the test stand after migrations, use `composer run test:change-log:generate`;
+repeating it leaves matching files untouched. Commit the complete generated set
+before starting a daemon. Startup prepares monthly partitions and installs the
+files under its existing schema rollout claim; a repeated start keeps matches.
+
+For dev with an external MariaDB, its operator provisions the derived database
+before startup using the actual primary name, application user and host:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `<primary>-change-log`
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+GRANT ALL PRIVILEGES ON `<escaped-primary>-change-log`.* TO '<app-user>'@'<app-host>';
+```
+
+Escape `_` and `%` in the database identifier used by `GRANT`, where they are
+patterns even inside backticks. The provisioning script validates names and the
+64-character limit and performs that escaping. It never clears a database.
+
+The Vue dashboard is mounted at `/hilos/change-log` with the ready SDK overview
+and feed. The tracked-tables and table-detail views follow in HIL-1461/HIL-1462;
+React/Angular parity follows in HIL-1463.
+
 ## First run
 
 All tooling runs in project-defined docker containers — never on the host
@@ -157,9 +202,10 @@ pointed at a subset.
 masters, `m1`–`m3`, that declare no capacity and so take no placed work; two
 slaves, `s1` and `s2`, both `worker,ram=10`; and `x1`, a node certified by an
 authority the cluster does not trust, under the compose profile `stranger` so
-it never comes up with the rest. All of them share one MariaDB and one schema,
-on the subnet 10.221, and nothing is published on the host. It is a compose
-project of its own, `hilos-binance-btc-tracker-cluster`, because the e2e steps
+it never comes up with the rest. All of them share one MariaDB 11.4 server,
+with the primary database and its derived journal, on subnet 10.221. Nothing
+is published on the host. It is a compose project of its own,
+`hilos-binance-btc-tracker-cluster`, because the e2e steps
 take their whole project down when they start.
 The one nginx entry is `10.221.0.30` inside the stand network, unpublished on the
 host. `hilos_stand_master=m1|m2|m3` selects the master behind it; without the cookie
@@ -176,8 +222,9 @@ re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser,
 refused, 20 rt set width across nodes, 23 verifier circle on every master, 25
 freeze settles on every master, 29 a node with its own cluster directory
 refused on both ends, and 30 a ready export copy outliving the node its agent
-lived on, 33 every master takes browsers, 34 a tab is the same on every master
-under protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
+lived on, 32 a node with another admin view mode refused on both ends,
+33 every master takes browsers, 34 a tab is the same on every master under
+protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
 cut off with its leader stops its work (skipped as flaky since 2026-10-10;
 `docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
@@ -216,6 +263,45 @@ directly, from `demo/binance-btc-tracker`:
 ```bash
 python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml inspect m1
 ```
+
+### Database
+
+One MariaDB 11.4 server holds `hilos-demo-binance-btc-tracker-cluster` and
+`hilos-demo-binance-btc-tracker-cluster-change-log`. The fresh data directory
+runs `docker/mysql/init-change-log.sh`, mounted at
+`/docker-entrypoint-initdb.d/init-change-log.sh`; it calls
+`docker/mysql/provision-change-log.sh`, mounted at
+`/usr/local/bin/provision-change-log.sh`. The existing app user receives access
+to the derived journal before any Hilos node starts. The nodes then apply the
+primary migration track, prepare the journal's partitions and install its
+triggers under the existing schema rollout claim. The journal has exactly six
+tables and no migration bookkeeping of its own.
+
+Before replacing an older cluster compose file, stop that stand using the old
+file, without `--volumes`, so removed services cannot become orphan containers:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml --profile '*' down
+```
+
+For an existing ordinary MariaDB data directory, provision the journal as root
+before starting Hilos with the new code. From `demo/binance-btc-tracker`:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml up -d --wait binance-btc-tracker-cluster-mysql
+docker compose -f docker/docker-compose.cluster.yml exec binance-btc-tracker-cluster-mysql \
+  /usr/local/bin/provision-change-log.sh
+composer run test:cluster:up
+```
+
+Provisioning uses the existing `MYSQL_DATABASE`, `MYSQL_USER` and
+`MYSQL_ROOT_PASSWORD`. It is repeatable: it creates a missing journal and
+refreshes its grant without DROP or reset. Provisioning again and restarting
+on the same data directory preserve both primary and journal rows. The stand
+mounts `/dev/shm/hilos-binance-btc-tracker-cluster-mysql-data` and the shared
+`test-stand.cnf`; `test:cluster:down` preserves that data, while
+`test:cluster:down-volumes` and each fresh scenario run clear it. Local and test
+volumes are separate and are not part of this transition.
 
 ### TLS fixtures
 

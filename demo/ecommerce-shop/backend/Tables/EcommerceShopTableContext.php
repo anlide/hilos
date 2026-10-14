@@ -7,6 +7,9 @@ namespace Demo\EcommerceShop\Tables;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
@@ -27,6 +30,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  * Hilos::$table->hilosUsers. The other admin sections arrive with the leaves that move their e2e
  * onto this demo, each with its table.
  *
+ * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
+ * @property-read HilosChangeLogHistoryTable $hilosChangeLogHistory
+ * @property-read HilosChangeLogTablesTable $hilosChangeLogTables
  * @property-read HilosBackupHistoryTable $hilosBackups
  * @property-read HilosVerifierCircleTable $hilosVerifierCircle
  * @property-read HilosSettingsTable $settings
@@ -41,6 +47,9 @@ use Hilos\Tables\Settings\HilosSettingsTable;
  */
 final class EcommerceShopTableContext extends TableContext
 {
+    public const string hilosChangeLogFeed = HilosChangeLogFeedTable::TABLE;
+    public const string hilosChangeLogHistory = HilosChangeLogHistoryTable::TABLE;
+    public const string hilosChangeLogTables = HilosChangeLogTablesTable::TABLE;
     public const string hilosBackups = HilosBackupHistoryTable::TABLE;
     public const string hilosVerifierCircle = HilosVerifierCircleTable::TABLE;
     public const string settings = HilosSettingsTable::TABLE;

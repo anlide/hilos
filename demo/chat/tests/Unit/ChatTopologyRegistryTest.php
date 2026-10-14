@@ -31,6 +31,8 @@ use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\Chat\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\Chat\Pages\Hilos\Legal\LegalPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalDocumentPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalRevisionPage;
@@ -453,6 +455,13 @@ final class ChatTopologyRegistryTest extends TestCase
     /** The change-log agent serves all three journal table viewports. */
     public function testChangeLogSectionTables(): void
     {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
+        self::assertSame(ChangeLogDashboardPage::class, Hilos::PAGES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame(ChangeLogTablesPage::class, Hilos::PAGES[ChangeLogTablesPage::PAGE]);
+        self::assertSame(ChangeLogTablePage::class, Hilos::PAGES[ChangeLogTablePage::PAGE]);
+        self::assertSame(DemoHilosChangeLogAgent::class, AgentRegistry::workerClass(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertSame(DemoHilosChangeLogAgentDaemon::class, AgentRegistry::daemonClass(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
         self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogFeed]);
         self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogHistory]);
         self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[ChatTableContext::hilosChangeLogTables]);

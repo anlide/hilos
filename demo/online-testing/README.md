@@ -49,6 +49,50 @@ The design lives in `hilos-ops/mockups/demos/online-testing`:
 - **Your AI**: the tools an administrator's AI uses over MCP to read the answers
   to check and write its verdict.
 
+## Change Log
+
+The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
+`hilos_second_factor` and `hilos_setting`. The journal is the primary database name
+plus `-change-log`, on the same MariaDB server with the same host, port, user,
+password and charset. No additional environment keys are needed. The primary
+migration track creates its six tables; connection 1 runs no separate migrator.
+This demo does not activate Backup.
+
+Before updating an existing local volume, provision the derived database once
+(or repeat the same command safely). Run from this demo's directory:
+
+```bash
+docker compose -f docker/docker-compose.local.yml exec online-testing-mysql-local \
+  /usr/local/bin/provision-change-log.sh
+```
+
+This only creates a missing database and grants access; it does not reset or
+remove existing data. Fresh local and test databases run the same provisioning
+from the MariaDB init directory. Local keeps its volume; test keeps its tmpfs.
+The framework's shared `test:db:reset`, invoked by
+`composer run test:db-reset`, recreates both test databases because the demo
+declares `CHANGE_LOG`. To regenerate triggers
+on the test stand after migrations, use `composer run test:change-log:generate`;
+repeating it leaves matching files untouched. Commit the complete generated set
+before starting a daemon. Startup prepares monthly partitions and installs the
+files under its existing schema rollout claim; a repeated start keeps matches.
+
+For dev with an external MariaDB, its operator provisions the derived database
+before startup using the actual primary name, application user and host:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `<primary>-change-log`
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+GRANT ALL PRIVILEGES ON `<escaped-primary>-change-log`.* TO '<app-user>'@'<app-host>';
+```
+
+Escape `_` and `%` in the database identifier used by `GRANT`, where they are
+patterns even inside backticks. The provisioning script validates names and the
+64-character limit and performs that escaping. It never clears a database.
+
+The backend registers all three journal pages and their table bindings.
+The Angular views follow in HIL-1463.
+
 ## First run
 
 All tooling runs in project-defined docker containers — never on the host
@@ -149,20 +193,17 @@ three equal masters, `m1`–`m3`, each declaring `worker,ram=10`: every master i
 the consensus and the data plane at once and carries placed work itself, and
 the leader is still last among them, so the work lives on the two that do not
 lead until a re-election hands the leader what it carried. All three share one
-schema on a MariaDB Galera of three members, `galera1`–`galera3`, which every
-node writes to through one address, an HAProxy in front of them
-(`online-testing-cluster-proxy`, leastconn); reads wait for the cluster's writes
-(`wsrep_sync_wait=1`). All of it sits on the subnet 10.223, and nothing is
-published on the host. It is a compose project of its own,
+MariaDB 11.4 server, `online-testing-cluster-mysql`, with the primary database
+and its derived journal. The database is at 10.223.0.10; all of the stand sits
+on subnet 10.223, and nothing is published on the host. It is a compose project of its own,
 `hilos-online-testing-cluster`, because the e2e steps take their whole project
 down when they start.
 
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
-the scenarios it names — 21 schema rolled out once, 24 cut-off leader stops its
-work (skipped as flaky since 2026-10-10), 26 database is one cluster, 11
-cross-node db fact, 15 db interest addressing, 22 other database refused, 27 a
-database member dies under load, and 28 a returning member catches up
+the scenarios it names — 11 cross-node db fact, 15 db interest addressing,
+21 schema rolled out once, 22 other database refused, and 24 cut-off leader
+stops its work (skipped as flaky since 2026-10-10)
 (`docs/agents/testing.md`, "The cluster stands — three demos, three shapes"). The framework's probe fleet and
 database probe are in this demo's `AGENTS`, and they start only here: on one
 node, on the Playwright stand and in production the rows are carried and
@@ -170,10 +211,10 @@ nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the three database members, the proxy in front of them, the three nodes and the cli container |
+| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 24` runs only the ones named |
-| `composer run test:cluster:down-volumes` | take the stand down, the database members' volumes included |
+| `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`, `inspect`
@@ -185,34 +226,53 @@ python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.
 
 ### Database
 
-`galera1` raises the cluster, and only while `galera2` and `galera3` are silent;
-the other two always join, one after the other. That is why
-`test:cluster:down` followed by `test:cluster:up` brings the stand back with its
-data: `galera1` finds nobody to join and raises the cluster again from what it
-kept. The members share `docker/galera/galera.cnf`, the proxy reads
-`docker/haproxy/haproxy.cfg`.
+One MariaDB 11.4 server holds `hilos-demo-online-testing-cluster` and
+`hilos-demo-online-testing-cluster-change-log`. The fresh data directory
+runs `docker/mysql/init-change-log.sh`, mounted at
+`/docker-entrypoint-initdb.d/init-change-log.sh`; it calls
+`docker/mysql/provision-change-log.sh`, mounted at
+`/usr/local/bin/provision-change-log.sh`. The existing app user receives access
+to the derived journal before any Hilos node starts. The nodes then apply the
+primary migration track, prepare the journal's partitions and install its
+triggers under the existing schema rollout claim. The journal has exactly six
+tables and no migration bookkeeping of its own.
 
-Each member runs an agent on the cluster network. It answers `up` only while
-Galera reports `Synced`; a member joining or donating a full copy receives no
-new connection. HAProxy redispatches a failed new connection to another member
-while its health check catches up with a member's death. Existing connections
-remain on their member until that link closes.
-
-`db-sql` runs a statement in `galera1`, and on the member named after it
-otherwise:
+Before replacing an older cluster compose file, stop that stand using the old
+file, without `--volumes`, so removed services cannot become orphan containers:
 
 ```bash
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-sql "SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size'" online-testing-cluster-galera2
+docker compose -f docker/docker-compose.cluster.yml --profile '*' down
 ```
 
-The harness can kill a member, start that same container with its data, and read
-the proxy's server states:
+For an existing ordinary MariaDB data directory, provision the journal as root
+before starting Hilos with the new code. From `demo/online-testing`:
 
 ```bash
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-kill online-testing-cluster-galera2
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-start online-testing-cluster-galera2
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-proxy
+docker compose -f docker/docker-compose.cluster.yml up -d --wait online-testing-cluster-mysql
+docker compose -f docker/docker-compose.cluster.yml exec online-testing-cluster-mysql \
+  /usr/local/bin/provision-change-log.sh
+composer run test:cluster:up
 ```
+
+Provisioning uses the existing `MYSQL_DATABASE`, `MYSQL_USER` and
+`MYSQL_ROOT_PASSWORD`. It is repeatable: it creates a missing journal and
+refreshes its grant without DROP or reset. Provisioning again and restarting
+on the same data directory preserve both primary and journal rows. The stand
+mounts `/dev/shm/hilos-online-testing-cluster-mysql-data` and the shared
+`test-stand.cnf`; `test:cluster:down` preserves that data, while
+`test:cluster:down-volumes` and each fresh scenario run clear it. Local and test
+volumes are separate and are not part of this transition.
+
+This is a new, separate disposable data directory. The former Galera data
+stays at `/dev/shm/hilos-online-testing-cluster-galera1-data`,
+`/dev/shm/hilos-online-testing-cluster-galera2-data` and
+`/dev/shm/hilos-online-testing-cluster-galera3-data`: do not delete those
+paths or mount them as an ordinary MariaDB data directory. No automatic data
+transfer from Galera is provided. Stop its old members and proxy with the old
+compose file before switching. The Galera scripts and proxy configuration stay
+in Git history. Scenarios 26/27/28 remain in the shared harness, with no current
+stand carrying them; specialized database topologies and six new demos are
+P-567, deferred to 2026-10-24. They are not passing checks of this stand.
 
 ### TLS fixtures
 

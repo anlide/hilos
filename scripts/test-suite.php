@@ -270,12 +270,12 @@ $steps = array_merge($steps, [
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the
-    // whole demo on a MariaDB primary with a read-only replica beside it (HIL-1229). Beside the
+    // whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside the
     // other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in ecommerce-shop-php. The seconds are the median of ten fresh
-    // matrices run alone on nova-de (2026-10-05, HIL-1229): 131 s, max 136 s, no retries, with
-    // scenarios 9 and 16 parked. Returning either scenario changes the estimate.
+    // demo's unit suite runs in ecommerce-shop-php. Seconds retain the historical estimate:
+    // ten fresh primary/replica matrices on nova-de (2026-10-05, HIL-1229), median 131 s,
+    // max 136 s, no retries, scenarios 9 and 16 parked; not remeasured for the single server.
     [
         'id' => 'ecommerce-shop-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -288,11 +288,11 @@ $steps = array_merge($steps, [
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
-    // the whole demo on a MariaDB Galera of three members behind one proxy (HIL-1230). Beside
+    // the whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside
     // the other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does.
-    // The demo's unit suite runs in online-testing-php. The seconds are the median of ten fresh
-    // stands after the database member death and return scenarios were added (HIL-1231).
+    // The demo's unit suite runs in online-testing-php. Seconds retain the historical median of
+    // ten fresh Galera stands with member death and return (HIL-1231), not a single-server timing.
     [
         'id' => 'online-testing-cluster',
         'command' => 'composer run test:cluster:scenarios',

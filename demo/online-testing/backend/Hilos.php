@@ -130,6 +130,14 @@ use Hilos\Tables\Logs\HilosLogWorkersTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Demo\OnlineTesting\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\OnlineTesting\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\OnlineTesting\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -164,6 +172,7 @@ final class Hilos extends HilosFacade
     protected const ?string LEGAL_CATALOG = OnlineTestingLegalCatalog::class;
 
     protected const array FEATURES = [
+        HilosFeature::CHANGE_LOG,
         HilosFeature::ANALYTICS,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
@@ -181,6 +190,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGES = [
+        ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+        ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -221,6 +233,10 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        DemoHilosChangeLogAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ],
         OnlineTestingAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => OnlineTestingAgent::class,
             AgentRegistryKey::DAEMON => OnlineTestingAgentDaemon::class,
@@ -334,6 +350,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        OnlineTestingTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+        OnlineTestingTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        OnlineTestingTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         OnlineTestingTableContext::settings => HilosSettingsTable::class,
         OnlineTestingTableContext::hilosUsers => HilosUsersTable::class,
         OnlineTestingTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -386,6 +405,15 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ChangeLogDashboardPage::PAGE => [
+            OnlineTestingTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablesPage::PAGE => [
+            OnlineTestingTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogTablePage::PAGE => [
+            OnlineTestingTableContext::hilosChangeLogHistory => [],
+        ],
         SettingsPage::PAGE => [
             OnlineTestingTableContext::settings => [],
         ],

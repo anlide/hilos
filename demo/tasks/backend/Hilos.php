@@ -173,6 +173,14 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Demo\Tasks\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -208,6 +216,7 @@ final class Hilos extends HilosFacade
     protected const ?string LEGAL_CATALOG = TasksLegalCatalog::class;
 
     protected const array FEATURES = [
+        HilosFeature::CHANGE_LOG,
         HilosFeature::ANALYTICS,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
@@ -227,6 +236,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGES = [
+        ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+        ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -284,6 +296,10 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        DemoHilosChangeLogAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ],
         DataExportAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DataExportAgent::class,
             AgentRegistryKey::DAEMON => DataExportAgentDaemon::class,
@@ -414,6 +430,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+        TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        TasksTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         TasksTableContext::settings => HilosSettingsTable::class,
         TasksTableContext::hilosUsers => HilosUsersTable::class,
         TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
@@ -492,6 +511,15 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ChangeLogDashboardPage::PAGE => [
+            TasksTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablesPage::PAGE => [
+            TasksTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogTablePage::PAGE => [
+            TasksTableContext::hilosChangeLogHistory => [],
+        ],
         SettingsPage::PAGE => [
             TasksTableContext::settings => [],
         ],

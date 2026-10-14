@@ -1,7 +1,7 @@
 # The cluster stand of binance-btc-tracker (HIL-1215): three masters, two slaves and a
 # stranger on one database.
 #
-# One shared MariaDB carrying ONE schema for the whole stand (HIL-712) — the model
+# One shared MariaDB carrying the primary and its derived journal for the whole stand — the model
 # Hilos is built on, and what makes "node A writes a row, node B reads it" sayable —
 # five daemon nodes that roll that schema out themselves as they start together,
 # under the rollout claim in the database (HIL-1228), on a dedicated bridge with
@@ -143,6 +143,8 @@ services:
       # the harness wipes it on down --volumes (HIL-1327).
       - /dev/shm/hilos-binance-btc-tracker-cluster-mysql-data:/var/lib/mysql
       - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+      - ./mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
+      - ./mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci

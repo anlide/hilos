@@ -161,12 +161,42 @@ use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use PHPUnit\Framework\TestCase;
+use Demo\Tasks\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\Tasks\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\Tasks\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * Guards the project-level tasks topology registry.
  */
 final class TasksTopologyRegistryTest extends TestCase
 {
+    /** All three journal pages use the cluster reader and the framework tables. */
+    public function testChangeLogSectionIsFullyActivated(): void
+    {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
+        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        self::assertSame([
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ], Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]);
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
+        self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogFeed]);
+        self::assertSame([TasksTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogTables]);
+        self::assertSame([TasksTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
+        self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[TasksTableContext::hilosChangeLogHistory]);
+        self::assertSame([TasksTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+    }
+
     /** Legal administration is bound to its own worker, page routes and tables. */
     public function testLegalAdministrationUsesItsOwnMonopolisticAgentAndFrameworkTables(): void
     {
@@ -584,6 +614,7 @@ final class TasksTopologyRegistryTest extends TestCase
         // silently stopped being routed here would otherwise look like a working surface
         // until somebody submitted the form it belongs to.
         $this->assertSame([
+            HilosFeature::CHANGE_LOG,
             HilosFeature::ANALYTICS,
                 HilosFeature::SETTINGS,
             HilosFeature::I18N,
@@ -732,6 +763,9 @@ final class TasksTopologyRegistryTest extends TestCase
         // and hilos-users (the users list page + the user-detail page with its
         // rename action and a filtered detail browser table).
         $this->assertSame([
+            TasksTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+            TasksTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+            TasksTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
             TasksTableContext::settings => HilosSettingsTable::class,
             TasksTableContext::hilosUsers => HilosUsersTable::class,
             TasksTableContext::hilosBackups => HilosBackupHistoryTable::class,
@@ -776,6 +810,9 @@ final class TasksTopologyRegistryTest extends TestCase
 
         $this->assertSame(
             [
+                ChangeLogDashboardPage::PAGE,
+                ChangeLogTablesPage::PAGE,
+                ChangeLogTablePage::PAGE,
                 SettingsPage::PAGE,
                 BackupPage::PAGE,
                 MaintenancePage::PAGE,

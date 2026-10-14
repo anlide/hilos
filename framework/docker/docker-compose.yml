@@ -249,6 +249,8 @@ services:
       DB_DATABASE: ${MYSQL_FRAMEWORK_TEST_DATABASE:-hilos-framework-test}
       DB_USERNAME: ${MYSQL_USER:-hilos}
       DB_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      # The reset integration fixture creates and removes its own databases.
+      DB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
     networks:
       - hilos-framework-test-network
     profiles: [test]

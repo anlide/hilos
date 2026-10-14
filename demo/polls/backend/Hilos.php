@@ -176,6 +176,14 @@ use Hilos\Tables\Security\HilosSecurityStepUpTable;
 use Hilos\Tables\Security\HilosSecurityImpersonationTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
+use Demo\Polls\Agents\Hilos\DemoHilosChangeLogAgent;
+use Demo\Polls\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\Polls\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 
 /**
  * Hilos - Main app facade for data access.
@@ -211,6 +219,7 @@ final class Hilos extends HilosFacade
     // TODO(HIL-1090): switch HilosFeature::BACKUP on in polls once more than six demos are implemented.
     // Until then, its page answers 404 and has no dashboard card.
     protected const array FEATURES = [
+        HilosFeature::CHANGE_LOG,
         HilosFeature::ANALYTICS,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
@@ -229,6 +238,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGES = [
+        ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+        ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MainPage::PAGE => MainPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -288,6 +300,10 @@ final class Hilos extends HilosFacade
     ];
 
     public const array AGENTS = [
+        DemoHilosChangeLogAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ],
         DataExportAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DataExportAgent::class,
             AgentRegistryKey::DAEMON => DataExportAgentDaemon::class,
@@ -413,6 +429,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        PollsTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+        PollsTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        PollsTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         PollsTableContext::settings => HilosSettingsTable::class,
         PollsTableContext::hilosUsers => HilosUsersTable::class,
         PollsTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
@@ -518,6 +537,15 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ChangeLogDashboardPage::PAGE => [
+            PollsTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablesPage::PAGE => [
+            PollsTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogTablePage::PAGE => [
+            PollsTableContext::hilosChangeLogHistory => [],
+        ],
         SettingsPage::PAGE => [
             PollsTableContext::settings => [],
         ],

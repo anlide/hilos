@@ -53,6 +53,50 @@ The design lives in `hilos-ops/mockups/demos/ecommerce-shop`:
   vouchers and orders.
 - **Your AI**: the shop's read-only tools over MCP — search, products, stock.
 
+## Change Log
+
+The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
+`hilos_second_factor` and `hilos_setting`. The journal is the primary database name
+plus `-change-log`, on the same MariaDB server with the same host, port, user,
+password and charset. No additional environment keys are needed. The primary
+migration track creates its six tables; connection 1 runs no separate migrator.
+Backup includes the pair and the journal's personal-data verdicts.
+
+Before updating an existing local volume, provision the derived database once
+(or repeat the same command safely). Run from this demo's directory:
+
+```bash
+docker compose -f docker/docker-compose.local.yml exec ecommerce-shop-mysql-local \
+  /usr/local/bin/provision-change-log.sh
+```
+
+This only creates a missing database and grants access; it does not reset or
+remove existing data. Fresh local and test databases run the same provisioning
+from the MariaDB init directory. Local keeps its volume; test keeps its tmpfs.
+The framework's shared `test:db:reset`, invoked by
+`composer run test:db-reset`, recreates both test databases because the demo
+declares `CHANGE_LOG`. To regenerate triggers
+on the test stand after migrations, use `composer run test:change-log:generate`;
+repeating it leaves matching files untouched. Commit the complete generated set
+before starting a daemon. Startup prepares monthly partitions and installs the
+files under its existing schema rollout claim; a repeated start keeps matches.
+
+For dev with an external MariaDB, its operator provisions the derived database
+before startup using the actual primary name, application user and host:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `<primary>-change-log`
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+GRANT ALL PRIVILEGES ON `<escaped-primary>-change-log`.* TO '<app-user>'@'<app-host>';
+```
+
+Escape `_` and `%` in the database identifier used by `GRANT`, where they are
+patterns even inside backticks. The provisioning script validates names and the
+64-character limit and performs that escaping. It never clears a database.
+
+The backend registers all three journal pages and their table bindings.
+The React views follow in HIL-1463.
+
 ## First run
 
 All tooling runs in project-defined docker containers — never on the host
@@ -155,10 +199,10 @@ so it takes no placed work and stays the leader for as long as it lives:
 placement and failover are proved where the leader is stable. The slaves are of
 unequal room on purpose — `s1` declares `worker,ram=10`, `s2` `worker,ram=4` —
 because scenario 18 fills them by the room they declare, not by their number.
-All three share one schema on the MariaDB primary, `ecommerce-shop-cluster-mysql`:
-it is the only database address the nodes and cli know. An asynchronous, read-only
-replica, `ecommerce-shop-cluster-replica`, is read and written by nobody. The stand
-uses subnet 10.222, publishes nothing on the host and has a compose project of its own,
+All three share one MariaDB 11.4 server, `ecommerce-shop-cluster-mysql`,
+with the primary database and its derived journal. It is the only database
+address the nodes and cli know. The stand uses subnet 10.222, publishes nothing
+on the host and has a compose project of its own,
 `hilos-ecommerce-shop-cluster`, because the e2e steps take their whole project
 down when they start.
 
@@ -167,18 +211,17 @@ Nothing here drives the stand: the framework's shared cluster harness
 the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused,
 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
-19 worker death on a live node and 31 replica keeps up with the primary
-(`docs/agents/testing.md`, "The cluster stands —
+and 19 worker death on a live node (`docs/agents/testing.md`, "The cluster stands —
 three demos, three shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
 
 | Command | What it does |
 |---|---|
-| `composer run test:cluster:up` | build the images and start the primary and replica, the three nodes and the cli container |
+| `composer run test:cluster:up` | build the images and start the database, the three nodes and the cli container |
 | `composer run test:cluster:status` | the containers and one line of each node's view: phase, leader, placements |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
-| `composer run test:cluster:down-volumes` | take the stand down and wipe the bases of both primary and replica |
+| `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | take the stand down the way the test runner does |
 
 The harness's other commands — `kill`, `partition`, `crash-daemon`,
@@ -191,22 +234,48 @@ python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.
 
 ### Database
 
-The MariaDB image sets up replication on first boot: `MARIADB_REPLICATION_*` names
-the replication account on both servers, and `MARIADB_MASTER_HOST` points the replica
-at the primary. The replica has no `MYSQL_DATABASE`, `MYSQL_USER` or `MYSQL_PASSWORD`
-of its own. It receives the schema and users from the primary's binary log; creating
-them locally would stop replication at the primary's first `CREATE USER`. The
-cluster harness uses the primary's application credentials to inspect the replica.
+One MariaDB 11.4 server holds `hilos-demo-ecommerce-shop-cluster` and
+`hilos-demo-ecommerce-shop-cluster-change-log`. The fresh data directory
+runs `docker/mysql/init-change-log.sh`, mounted at
+`/docker-entrypoint-initdb.d/init-change-log.sh`; it calls
+`docker/mysql/provision-change-log.sh`, mounted at
+`/usr/local/bin/provision-change-log.sh`. The existing app user receives access
+to the derived journal before any Hilos node starts. The nodes then apply the
+primary migration track, prepare the journal's partitions and install its
+triggers under the existing schema rollout claim. The journal has exactly six
+tables and no migration bookkeeping of its own.
 
-From `demo/ecommerce-shop`, inspect its threads or the log that explains a stopped
-thread:
+Before replacing an older cluster compose file, stop that stand using the old
+file, without `--volumes`, so removed services cannot become orphan containers:
 
 ```bash
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-sql "SHOW GLOBAL STATUS LIKE 'Slaves_running'" ecommerce-shop-cluster-replica
-python3 ../../framework/docker/cluster/cluster.py docker/docker-compose.cluster.yml db-log ecommerce-shop-cluster-replica
+docker compose -f docker/docker-compose.cluster.yml --profile '*' down
 ```
 
-The stand does not switch to the replica when the primary dies.
+For an existing ordinary MariaDB data directory, provision the journal as root
+before starting Hilos with the new code. From `demo/ecommerce-shop`:
+
+```bash
+docker compose -f docker/docker-compose.cluster.yml up -d --wait ecommerce-shop-cluster-mysql
+docker compose -f docker/docker-compose.cluster.yml exec ecommerce-shop-cluster-mysql \
+  /usr/local/bin/provision-change-log.sh
+composer run test:cluster:up
+```
+
+Provisioning uses the existing `MYSQL_DATABASE`, `MYSQL_USER` and
+`MYSQL_ROOT_PASSWORD`. It is repeatable: it creates a missing journal and
+refreshes its grant without DROP or reset. Provisioning again and restarting
+on the same data directory preserve both primary and journal rows. The stand
+mounts `/dev/shm/hilos-ecommerce-shop-cluster-mysql-data` and the shared
+`test-stand.cnf`; `test:cluster:down` preserves that data, while
+`test:cluster:down-volumes` and each fresh scenario run clear it. Local and test
+volumes are separate and are not part of this transition.
+
+The former replica is removed by the old compose file's `down`; its data
+stays at `/dev/shm/hilos-ecommerce-shop-cluster-replica-data`. Scenario 31
+remains in the shared harness, with no current stand carrying it. Specialized
+database topologies and six new demos are P-567, deferred to 2026-10-24;
+replication is not a passing check of this stand.
 
 ### TLS fixtures
 

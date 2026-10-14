@@ -237,9 +237,9 @@ What keeps each promise on each topology:
 
 | Topology | `ONE_LOGICAL_DATABASE` | `READ_AFTER_WRITE` |
 |---|---|---|
-| one server | kept | kept |
-| primary + replica behind one address that always leads to the primary | kept | kept; the cluster stand of ecommerce-shop runs this row (`demo/ecommerce-shop/docker/docker-compose.cluster.yml`) |
-| multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL); the cluster stand of online-testing runs this row (`demo/online-testing/docker/galera/galera.cnf`) |
+| one server | kept | kept; all three existing cluster stands run this row (HIL-1453) |
+| primary + replica behind one address that always leads to the primary | kept | kept; no current stand, specialized carriers deferred in P-567 until 2026-10-24 |
+| multi-primary, nodes on different servers | kept | only with `wsrep_sync_wait` ≥ 1 (Galera) or `group_replication_consistency` `BEFORE` or stronger (MySQL); no current stand, specialized carriers deferred in P-567 until 2026-10-24 |
 | a proxy that hands reads to replicas, or reads from an asynchronous replica | kept | **not kept — not supported** |
 
 Two operator moves split a cluster through the marker, and both are the

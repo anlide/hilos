@@ -14,6 +14,9 @@ use Hilos\Constants\HilosAgentType;
  */
 final class AgentType
 {
+    /** Change Log section reader agent type. */
+    public const string HILOS_CHANGE_LOG = HilosAgentType::HILOS_CHANGE_LOG;
+
     /** Analytics section agent type. */
     public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;
 

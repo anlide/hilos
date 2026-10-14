@@ -121,10 +121,15 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertGreaterThanOrEqual(1, $tables['hilos_setting']->changesLast24h);
         $this->assertNotNull($tables['hilos_setting']->lastChangeAt);
         $this->assertSame(1, $tables['hilos_setting']->modeCounts[JournalColumnMode::RECORD_KEY->value]);
-        $this->assertSame('project', $tables['bot']->owner->value);
-        $this->assertFalse($tables['bot']->journaled);
-        $this->assertSame([], $tables['bot']->modeCounts);
-        $this->assertNull($tables['bot']->changesLast24h);
+        foreach (['bot' => 12, 'moderator_prompt_piece' => 2] as $table => $valueColumns) {
+            $this->assertSame('project', $tables[$table]->owner->value);
+            $this->assertTrue($tables[$table]->journaled);
+            $this->assertSame(1, $tables[$table]->modeCounts[JournalColumnMode::RECORD_KEY->value]);
+            $this->assertSame($valueColumns, $tables[$table]->modeCounts[JournalColumnMode::VALUE->value]);
+            $this->assertNotNull($tables[$table]->changesLast24h);
+        }
+        $this->assertFalse($tables['event']->journaled);
+        $this->assertFalse($tables['event_message']->journaled);
     }
 
     public function testTableUsesLiveColumnPlacementAndTriggerHeaders(): void
@@ -152,7 +157,19 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
             $this->assertGreaterThan(0, $trigger->validFromMigration);
         }
 
-        $untracked = $reader->table('bot');
+        foreach (['bot', 'moderator_prompt_piece'] as $table) {
+            $project = $reader->table($table);
+            $this->assertNotNull($project);
+            $this->assertCount(3, $project->triggers);
+            foreach ($project->triggers as $trigger) {
+                $this->assertSame(95, $trigger->validFromMigration);
+            }
+            $this->assertSame(JournalColumnMode::RECORD_KEY, $project->columns[0]->mode);
+            foreach (array_slice($project->columns, 1) as $column) {
+                $this->assertSame(JournalColumnMode::VALUE, $column->mode);
+            }
+        }
+        $untracked = $reader->table('event');
         $this->assertNotNull($untracked);
         $this->assertSame([], $untracked->triggers);
         $this->assertNull($untracked->columns[0]->mode);
@@ -553,8 +570,8 @@ final class ChangeLogSectionReaderIntegrationTest extends IntegrationTestCase
         $this->assertSame(0, $reader->historyCount('hilos_setting', new ChangeLogHistoryFilter(
             until: $since,
         )));
-        $this->assertSame(0, $reader->historyCount('bot', new ChangeLogHistoryFilter()));
-        $this->assertSame([], $reader->historyWindow('bot', new ChangeLogHistoryFilter(),
+        $this->assertSame(0, $reader->historyCount('event', new ChangeLogHistoryFilter()));
+        $this->assertSame([], $reader->historyWindow('event', new ChangeLogHistoryFilter(),
             true, null, TableAnchorDirection::After, 50));
 
         Database::sqlRun('DELETE FROM `hilos_user` WHERE `id` = ?', [$actorId]);

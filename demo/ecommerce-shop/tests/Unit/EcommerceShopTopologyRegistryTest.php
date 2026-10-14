@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Unit;
 
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\EcommerceShop\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\EcommerceShop\Pages\Hilos\AnalyticsPage;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
 use Hilos\Core\Analytics\AnalyticsJournalAgentDaemon;
@@ -38,6 +40,9 @@ use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\EcommerceShop\Pages\Hilos\DashboardPage;
 use Demo\EcommerceShop\Pages\Hilos\LicensePage;
 use Demo\EcommerceShop\Pages\Hilos\Maintenance\MaintenancePage;
@@ -84,6 +89,9 @@ use Hilos\Push\PushSubscriptionAction;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\ProtectedMode\HilosVerifierCircleTable;
 use Hilos\Tables\Settings\HilosSettingsTable;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
@@ -115,6 +123,28 @@ use PHPUnit\Framework\TestCase;
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
+    /** All three journal pages use the cluster reader and the framework tables. */
+    public function testChangeLogSectionIsFullyActivated(): void
+    {
+        self::assertTrue(Hilos::hasFeature(HilosFeature::CHANGE_LOG));
+        foreach ([ChangeLogDashboardPage::class, ChangeLogTablesPage::class, ChangeLogTablePage::class] as $page) {
+            self::assertSame($page, Hilos::PAGES[$page::PAGE]);
+            self::assertSame(AgentType::HILOS_CHANGE_LOG, $page::SUBSCRIPTION_AGENT_TYPE);
+        }
+        self::assertSame([
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
+        ], Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]);
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope(Hilos::AGENTS[AgentType::HILOS_CHANGE_LOG]));
+        self::assertTrue((new DemoHilosChangeLogAgentDaemon())->requiresMonopolisticProcess());
+        self::assertSame(HilosChangeLogFeedTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogFeed]);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogFeed => []], Hilos::PAGE_TABLES[ChangeLogDashboardPage::PAGE]);
+        self::assertSame(HilosChangeLogTablesTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogTables]);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogTables => []], Hilos::PAGE_TABLES[ChangeLogTablesPage::PAGE]);
+        self::assertSame(HilosChangeLogHistoryTable::class, Hilos::TABLES[EcommerceShopTableContext::hilosChangeLogHistory]);
+        self::assertSame([EcommerceShopTableContext::hilosChangeLogHistory => []], Hilos::PAGE_TABLES[ChangeLogTablePage::PAGE]);
+    }
+
     /** The archive address is answered by the export owner. */
     public function testDataExportHttpRoute(): void
     {
@@ -140,6 +170,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BackupPage::PAGE => BackupPage::class,
+            ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+            ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+            ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             SettingsPage::PAGE => SettingsPage::class,
             I18nPage::PAGE => I18nPage::class,
@@ -214,6 +247,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::ECOMMERCE_SHOP,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
+            AgentType::HILOS_CHANGE_LOG,
             HilosAgentType::HILOS_ANALYTICS_JOURNAL,
             HilosAgentType::HILOS_ANALYTICS_WRITER,
             HilosAgentType::HILOS_DATA_EXPORT,
@@ -537,6 +571,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosFeature::AUTH,
             HilosFeature::AUTH_THROTTLE,
             HilosFeature::BACKUP,
+            HilosFeature::CHANGE_LOG,
             HilosFeature::SETTINGS,
             HilosFeature::I18N,
             HilosFeature::HILOS_USERS,

@@ -36,6 +36,50 @@ signals yet): enough for the frontend transport to reach a live `connected`
 state. The tasks views and the CRUD contract land with the data-on-screen
 rewrite steps.
 
+## Change Log
+
+The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
+`hilos_second_factor` and `hilos_setting`. The journal is the primary database name
+plus `-change-log`, on the same MariaDB server with the same host, port, user,
+password and charset. No additional environment keys are needed. The primary
+migration track creates its six tables; connection 1 runs no separate migrator.
+Backup includes the pair and the journal's personal-data verdicts.
+
+Before updating an existing local volume, provision the derived database once
+(or repeat the same command safely). Run from this demo's directory:
+
+```bash
+docker compose -f docker/docker-compose.local.yml exec tasks-mysql-local \
+  /usr/local/bin/provision-change-log.sh
+```
+
+This only creates a missing database and grants access; it does not reset or
+remove existing data. Fresh local and test databases run the same provisioning
+from the MariaDB init directory. Local keeps its volume; test keeps its tmpfs.
+The framework's shared `test:db:reset`, invoked by
+`composer run test:db-reset`, recreates both test databases because the demo
+declares `CHANGE_LOG`. To regenerate triggers
+on the test stand after migrations, use `composer run test:change-log:generate`;
+repeating it leaves matching files untouched. Commit the complete generated set
+before starting a daemon. Startup prepares monthly partitions and installs the
+files under its existing schema rollout claim; a repeated start keeps matches.
+
+For dev with an external MariaDB, its operator provisions the derived database
+before startup using the actual primary name, application user and host:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `<primary>-change-log`
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+GRANT ALL PRIVILEGES ON `<escaped-primary>-change-log`.* TO '<app-user>'@'<app-host>';
+```
+
+Escape `_` and `%` in the database identifier used by `GRANT`, where they are
+patterns even inside backticks. The provisioning script validates names and the
+64-character limit and performs that escaping. It never clears a database.
+
+The backend registers all three journal pages and their table bindings.
+The React views follow in HIL-1463.
+
 ## First run
 
 All tooling runs in project-defined docker containers — never on the host

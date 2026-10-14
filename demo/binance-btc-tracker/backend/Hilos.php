@@ -8,6 +8,7 @@ use Demo\BinanceBtcTracker\Agents\BinanceBtcTrackerAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DataExportAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\BinanceBtcTracker\Agents\Hilos\NotificationsLibraryAgent;
@@ -20,6 +21,7 @@ use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\BinanceBtcTrackerAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
@@ -35,6 +37,9 @@ use Demo\BinanceBtcTracker\Legal\BinanceBtcTrackerLegalCatalog;
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
 use Demo\BinanceBtcTracker\Pages\Hilos\AboutPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Backup\BackupPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ChangeLog\ChangeLogTablePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Communications\CommunicationsPage;
@@ -133,6 +138,9 @@ use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Tables\Backup\HilosBackupHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogHistoryTable;
+use Hilos\Tables\ChangeLog\HilosChangeLogTablesTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelFieldsTable;
 use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
@@ -211,6 +219,7 @@ final class Hilos extends HilosFacade
         HilosFeature::AUTH,
         HilosFeature::AUTH_THROTTLE,
         HilosFeature::BACKUP,
+        HilosFeature::CHANGE_LOG,
         HilosFeature::SETTINGS,
         HilosFeature::I18N,
         HilosFeature::HILOS_USERS,
@@ -231,6 +240,9 @@ final class Hilos extends HilosFacade
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionPage::PAGE => BrowserSessionPage::class,
         BackupPage::PAGE => BackupPage::class,
+        ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+        ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         SettingsPage::PAGE => SettingsPage::class,
         AppearancePage::PAGE => AppearancePage::class,
@@ -284,6 +296,10 @@ final class Hilos extends HilosFacade
         DemoHilosAnalyticsAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
             AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        DemoHilosChangeLogAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosChangeLogAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosChangeLogAgentDaemon::class,
         ],
         AnalyticsJournalAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AnalyticsJournalAgent::class,
@@ -396,6 +412,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array TABLES = [
+        BinanceBtcTrackerTableContext::hilosChangeLogFeed => HilosChangeLogFeedTable::class,
+        BinanceBtcTrackerTableContext::hilosChangeLogHistory => HilosChangeLogHistoryTable::class,
+        BinanceBtcTrackerTableContext::hilosChangeLogTables => HilosChangeLogTablesTable::class,
         BinanceBtcTrackerTableContext::hilosBackups => HilosBackupHistoryTable::class,
         BinanceBtcTrackerTableContext::hilosVerifierCircle => HilosVerifierCircleTable::class,
         BinanceBtcTrackerTableContext::settings => HilosSettingsTable::class,
@@ -453,6 +472,15 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        ChangeLogDashboardPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosChangeLogFeed => [],
+        ],
+        ChangeLogTablesPage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosChangeLogTables => [],
+        ],
+        ChangeLogTablePage::PAGE => [
+            BinanceBtcTrackerTableContext::hilosChangeLogHistory => [],
+        ],
         BrowserSessionPage::PAGE => [
             BinanceBtcTrackerTableContext::hilosAnalyticsActions => [],
         ],
